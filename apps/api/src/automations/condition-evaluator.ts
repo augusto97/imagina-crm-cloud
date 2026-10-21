@@ -54,6 +54,46 @@ export function evaluateCondition(
     return true;
 }
 
+/** v0.1.289 — una regla evaluada (lo que muestra «Probar»: POR QUÉ sí o no). */
+export interface ConditionRuleCheck {
+    field: string;
+    op: string;
+    expected: unknown;
+    actual: unknown;
+    ok: boolean;
+}
+
+/**
+ * v0.1.289 — La misma evaluación que `evaluateCondition`, regla por regla
+ * (comparte `evalOp`: lo que explica «Probar» es exactamente lo que decide
+ * el motor). `matched` es el resultado AND.
+ */
+export function explainCondition(
+    condition: ConditionData | null | undefined,
+    fieldValue: (slug: string) => unknown,
+    opts: ConditionOptions = {},
+): { matched: boolean; checks: ConditionRuleCheck[] } {
+    const checks: ConditionRuleCheck[] = [];
+    if (condition === null || condition === undefined) return { matched: true, checks };
+    if (Array.isArray(condition)) {
+        for (const rule of condition) {
+            if (!rule || typeof rule !== 'object') continue;
+            const field = String((rule as { field?: unknown; slug?: unknown }).field ?? (rule as { slug?: unknown }).slug ?? '');
+            const op = String((rule as { op?: unknown }).op ?? 'eq');
+            const expected = (rule as { value?: unknown }).value ?? null;
+            const actual = field === '' ? undefined : fieldValue(field);
+            checks.push({ field, op, expected, actual, ok: field !== '' && evalOp(actual, op, expected, opts) });
+        }
+    } else {
+        for (const [slug, expected] of Object.entries(condition)) {
+            if (slug === '') continue;
+            const actual = fieldValue(slug);
+            checks.push({ field: slug, op: 'eq', expected, actual, ok: valuesEqual(actual, expected) });
+        }
+    }
+    return { matched: checks.every((c) => c.ok), checks };
+}
+
 function evalOp(actual: unknown, op: string, expected: unknown, opts: ConditionOptions): boolean {
     switch (op) {
         case 'eq':

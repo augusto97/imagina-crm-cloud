@@ -9,6 +9,7 @@ import { AutomationBulkRunner } from './automation-bulk-runner.service';
 import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { AutomationWaitsService } from './automation-waits.service';
 import { AutomationHooksController } from './automation-hooks.controller';
 import { AutomationsCatalogController } from './automations-catalog.controller';
 import { AutomationsController } from './automations.controller';
@@ -34,6 +35,7 @@ import { AutomationsService } from './automations.service';
         AutomationScheduler,
         AutomationEngine,
         AutomationBulkRunner,
+        AutomationWaitsService,
         AutomationsQueueBootstrap,
         FieldsRepository,
         RecordsRepository,

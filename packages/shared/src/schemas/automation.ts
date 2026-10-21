@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { FALLBACK_TIME_ZONE, isValidTimeZone } from './timezone';
 import { idSchema, isoDateTimeSchema } from './common';
 import { filterOperatorSchema } from './filter';
+import { RESPONSE_NAME_RE, waitConfigProblem } from './automation-flow';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -63,6 +64,9 @@ export const AUTOMATION_ACTIONS = [
     'bulk_edit',
     'generate_pdf',
     'if_else',
+    // v0.1.289 — esperar (tiempo o fecha de un campo) y repetir por cada vinculado.
+    'wait',
+    'for_each_linked',
 ] as const;
 
 export interface ActionSpec {
@@ -113,6 +117,8 @@ export const automationSchema = z.object({
         .object({ status: z.string(), error: z.string().nullable(), at: isoDateTimeSchema })
         .nullable()
         .optional(),
+    /** v0.1.289 — cuántas corridas están en pausa en un «Esperar» (sólo en el listado). */
+    waiting_runs: z.number().int().nonnegative().optional(),
 });
 export type Automation = z.infer<typeof automationSchema>;
 
@@ -134,13 +140,21 @@ export const updateAutomationSchema = z
         trigger_config: triggerConfigSchema,
         actions: z.array(actionSpecSchema).min(1),
         is_active: z.boolean(),
+        /**
+         * v0.1.289 — el cambio restaura una versión anterior (sólo para la
+         * nota del historial de versiones: «Restauró la versión del …»).
+         */
+        restored_from: idSchema,
     })
     .partial()
     .refine((p) => Object.keys(p).length > 0, { message: 'El patch no puede estar vacío' });
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
 
 // --- Runs ---
-export const AUTOMATION_RUN_STATUSES = ['pending', 'running', 'success', 'failed'] as const;
+// v0.1.289 — `waiting`: la corrida está en pausa en un «Esperar» y se reanuda
+// sola a su hora; `cancelled`: no siguió (se canceló la espera, se pausó la
+// automatización, se borró el registro…), con el motivo en `error`.
+export const AUTOMATION_RUN_STATUSES = ['pending', 'running', 'success', 'failed', 'waiting', 'cancelled'] as const;
 export const automationRunStatusSchema = z.enum(AUTOMATION_RUN_STATUSES);
 export type AutomationRunStatus = z.infer<typeof automationRunStatusSchema>;
 
@@ -166,6 +180,8 @@ export const automationRunSchema = z.object({
     started_at: isoDateTimeSchema.nullable(),
     finished_at: isoDateTimeSchema.nullable(),
     created_at: isoDateTimeSchema.nullable(),
+    /** v0.1.289 — una corrida `waiting` se reanuda a esta hora. */
+    resume_at: isoDateTimeSchema.nullable().optional(),
 });
 export type AutomationRun = z.infer<typeof automationRunSchema>;
 
@@ -441,13 +457,34 @@ export interface AutomationConfigIssue {
 const isBlankConfig = (v: unknown): boolean =>
     v === null || v === undefined || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0);
 
-function actionIssues(actions: unknown, base: string, depth: number, out: AutomationConfigIssue[]): void {
+interface IssueScope {
+    /** Dentro de «Repetir por cada registro vinculado». */
+    inLoop: boolean;
+    /** Nombres de respuesta ya usados (para avisar de repetidos). */
+    responseNames: Set<string>;
+}
+
+function actionIssues(actions: unknown, base: string, depth: number, out: AutomationConfigIssue[], scope: IssueScope): void {
     if (!Array.isArray(actions) || depth > 6) return;
     actions.forEach((a, i) => {
         if (!a || typeof a !== 'object') return;
         const spec = a as { type?: unknown; config?: unknown };
         const cfg = (spec.config && typeof spec.config === 'object' ? spec.config : {}) as Record<string, unknown>;
         const at = `${base}.${i}`;
+        // v0.1.289 — una respuesta con nombre (`{{respuestas.<nombre>.body}}`).
+        if ((spec.type === 'call_webhook' || spec.type === 'connector_action') && !isBlankConfig(cfg.response_name)) {
+            const name = String(cfg.response_name).trim();
+            if (!RESPONSE_NAME_RE.test(name)) {
+                out.push({
+                    path: `${at}.config.response_name`,
+                    message: 'El nombre de la respuesta usa sólo minúsculas, números y guion bajo, y empieza con una letra (por ejemplo «pedido_erp»).',
+                });
+            } else if (scope.responseNames.has(name)) {
+                out.push({ path: `${at}.config.response_name`, message: `Ya hay otro paso que guarda su respuesta como «${name}»: usa otro nombre.` });
+            } else {
+                scope.responseNames.add(name);
+            }
+        }
         switch (spec.type) {
             case 'send_email':
                 if (isBlankConfig(cfg.to)) out.push({ path: `${at}.config.to`, message: 'El correo necesita un destinatario («Para»).' });
@@ -461,6 +498,9 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                 const values = cfg.values;
                 if (!values || typeof values !== 'object' || Object.keys(values as object).length === 0) {
                     out.push({ path: `${at}.config.values`, message: 'Elige al menos un campo para actualizar.' });
+                }
+                if (cfg.target === 'item' && !scope.inLoop) {
+                    out.push({ path: `${at}.config.target`, message: '«El registro vinculado» sólo existe dentro de «Repetir por cada registro vinculado».' });
                 }
                 break;
             }
@@ -479,9 +519,36 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                     out.push({ path: `${at}.config.operations`, message: 'Agrega al menos un cambio para la edición en lote.' });
                 }
                 break;
+            case 'wait': {
+                // Una espera dentro de un bucle no tiene un "después" claro (¿por
+                // ítem? ¿todas juntas?): no se permite, y se explica.
+                if (scope.inLoop) {
+                    out.push({ path: `${at}.type`, message: 'No se puede esperar dentro de «Repetir por cada registro vinculado»: pon la espera antes o después de la repetición.' });
+                    break;
+                }
+                const problem = waitConfigProblem(cfg);
+                if (problem) out.push({ path: `${at}.config`, message: problem });
+                break;
+            }
+            case 'for_each_linked': {
+                if (scope.inLoop) {
+                    out.push({ path: `${at}.type`, message: 'No se puede repetir dentro de otra repetición.' });
+                    break;
+                }
+                const rel = Number(cfg.relation_field_id);
+                if (!Number.isInteger(rel) || rel <= 0) {
+                    out.push({ path: `${at}.config.relation_field_id`, message: 'Elige la relación por la que se repite.' });
+                }
+                const inner = Array.isArray(cfg.actions) ? cfg.actions : [];
+                if (inner.length === 0) {
+                    out.push({ path: `${at}.config.actions`, message: 'Agrega al menos una acción para repetir.' });
+                }
+                actionIssues(inner, `${at}.config.actions`, depth + 1, out, { ...scope, inLoop: true });
+                break;
+            }
             case 'if_else':
-                actionIssues(cfg.then_actions, `${at}.config.then_actions`, depth + 1, out);
-                actionIssues(cfg.else_actions, `${at}.config.else_actions`, depth + 1, out);
+                actionIssues(cfg.then_actions, `${at}.config.then_actions`, depth + 1, out, scope);
+                actionIssues(cfg.else_actions, `${at}.config.else_actions`, depth + 1, out, scope);
                 break;
             default:
                 break;
@@ -517,6 +584,82 @@ export function automationConfigIssues(input: {
     if (input.trigger_type === 'field_changed' && isBlankConfig(cfg.field)) {
         out.push({ path: 'trigger_config.field', message: 'Elige el campo a observar.' });
     }
-    if (input.actions !== undefined) actionIssues(input.actions, 'actions', 0, out);
+    if (input.actions !== undefined) actionIssues(input.actions, 'actions', 0, out, { inLoop: false, responseNames: new Set() });
     return out;
 }
+
+// --- v0.1.289: «Probar» paso a paso (simulación) ---
+// Corre la automatización TAL COMO SE ESTÁ EDITANDO (sin guardar) contra un
+// registro real en modo simulación: el motor resuelve todo con el MISMO código
+// que en una corrida de verdad, pero no escribe, no envía y no llama — salvo
+// los webhooks/conectores que la persona marque para ejecutar de verdad.
+export const automationTestRunInputSchema = z.object({
+    trigger_type: automationTriggerSlugSchema,
+    trigger_config: triggerConfigSchema.default({}),
+    actions: z.array(actionSpecSchema).max(60).default([]),
+    /** Registro de prueba. Default: el último de la lista. */
+    record_id: z.number().int().positive().optional(),
+    /** La automatización guardada (si existe): para leer la última captura del webhook entrante. */
+    automation_id: z.number().int().positive().optional(),
+    /** Rutas (`2.then.0`) de webhooks/conectores que se ejecutan DE VERDAD. */
+    real_steps: z.array(z.string().max(120)).max(10).default([]),
+});
+export type AutomationTestRunInput = z.infer<typeof automationTestRunInputSchema>;
+
+/** Una condición evaluada, regla por regla (para decir POR QUÉ). */
+export interface ConditionCheck {
+    field: string;
+    label: string;
+    op: string;
+    expected: unknown;
+    actual: unknown;
+    ok: boolean;
+}
+
+export type TestStepStatus = 'would_run' | 'ran' | 'skipped' | 'failed' | 'info';
+
+/** Un paso simulado: qué haría, con lo resuelto (correo, petición, cambios…). */
+export interface AutomationTestStep {
+    /** Ruta del paso (`2.then.0`). */
+    path: string;
+    depth: number;
+    action: string;
+    status: TestStepStatus;
+    message: string;
+    /** Detalle por tipo: `email`, `request`, `response`, `changes`, `values`, `checks`… */
+    details: Record<string, unknown>;
+}
+
+export interface AutomationTestRunResult {
+    record: { id: number; title: string } | null;
+    trigger: { matches: boolean; message: string; checks: ConditionCheck[]; notes: string[] };
+    steps: AutomationTestStep[];
+    /**
+     * Cuerpos de las respuestas reales obtenidas (por ruta del paso), para que
+     * el editor sugiera sus campos como variables de los pasos siguientes.
+     */
+    responses: Record<string, unknown>;
+}
+
+// --- v0.1.289: historial de versiones ---
+// Cada guardado deja una foto de la automatización (sin secretos) con autor y
+// fecha; se conservan las últimas 50.
+export const AUTOMATION_VERSIONS_KEPT = 50;
+/** Lo que se guarda en lugar de un secreto en una versión. */
+export const AUTOMATION_SECRET_MARKER = '[oculto]';
+
+export const automationVersionSchema = z.object({
+    id: idSchema,
+    automation_id: idSchema,
+    name: z.string(),
+    description: z.string().nullable(),
+    trigger_type: z.string(),
+    trigger_config: z.record(z.unknown()),
+    actions: z.array(actionSpecSchema),
+    is_active: z.boolean(),
+    author: z.object({ id: idSchema, name: z.string() }).nullable(),
+    /** «Creó la automatización», «Restauró la versión del …», «Duplicada de …». */
+    note: z.string().nullable(),
+    created_at: isoDateTimeSchema,
+});
+export type AutomationVersion = z.infer<typeof automationVersionSchema>;

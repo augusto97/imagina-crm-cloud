@@ -102,8 +102,59 @@ export class AutomationsRepository {
     ): Promise<void> {
         await tx
             .update(automationRuns)
-            .set(values)
+            // v0.1.289 — una corrida que termina deja de tener espera pendiente.
+            .set({ ...values, resumeAt: null, resumeState: null })
             .where(and(eq(automationRuns.tenantId, tenantId), eq(automationRuns.id, runId)));
+    }
+
+    /**
+     * v0.1.289 — La corrida queda en pausa en un «Esperar»: `waiting` con la
+     * hora de reanudación y el estado (puntero + contexto). El reloj de las
+     * esperas la toma cuando vence.
+     */
+    async pauseRun(
+        tx: Tx,
+        tenantId: number,
+        runId: number,
+        values: { actionsLog: typeof automationRuns.$inferInsert.actionsLog; resumeAt: Date; resumeState: Record<string, unknown>; error: string | null },
+    ): Promise<void> {
+        await tx
+            .update(automationRuns)
+            .set({ status: 'waiting', resumedAt: null, finishedAt: null, ...values })
+            .where(and(eq(automationRuns.tenantId, tenantId), eq(automationRuns.id, runId)));
+    }
+
+    /**
+     * v0.1.289 — Cancela las esperas de una automatización (al pausarla) o
+     * una sola (`runId`). Devuelve cuántas canceló.
+     */
+    async cancelWaiting(
+        tx: Tx,
+        tenantId: number,
+        automationId: number,
+        reason: string,
+        runId?: number,
+    ): Promise<number> {
+        const rows = await tx
+            .update(automationRuns)
+            .set({
+                status: 'cancelled',
+                error: reason,
+                finishedAt: sql`now()`,
+                resumeAt: null,
+                resumeState: null,
+                actionsLog: sql`${automationRuns.actionsLog} || ${JSON.stringify([{ action: 'wait', status: 'skipped', message: reason, details: {} }])}::jsonb`,
+            })
+            .where(
+                and(
+                    eq(automationRuns.tenantId, tenantId),
+                    eq(automationRuns.automationId, automationId),
+                    eq(automationRuns.status, 'waiting'),
+                    runId !== undefined ? eq(automationRuns.id, runId) : undefined,
+                ),
+            )
+            .returning({ id: automationRuns.id });
+        return rows.length;
     }
 
     listRuns(

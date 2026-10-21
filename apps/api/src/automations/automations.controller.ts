@@ -12,11 +12,15 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    automationTestRunInputSchema,
     createAutomationSchema,
     updateAutomationSchema,
     emailTestInputSchema,
     webhookTestInputSchema,
     type Automation,
+    type AutomationTestRunInput,
+    type AutomationTestRunResult,
+    type AutomationVersion,
     type CreateAutomationInput,
     type UpdateAutomationInput,
     type WebhookTestInput,
@@ -85,6 +89,45 @@ export class AutomationsController {
         return this.automations.testEmail(req.tenant!.tenantId, list, input, { id: req.authUserId!, email });
     }
 
+    /**
+     * v0.1.289 — «Probar» paso a paso: simula la automatización (con los
+     * cambios sin guardar) contra un registro real, sin efectos salvo los
+     * webhooks/conectores marcados para ejecutar de verdad.
+     */
+    @Post('test-run')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    testRun(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(automationTestRunInputSchema)) input: AutomationTestRunInput,
+    ): Promise<AutomationTestRunResult> {
+        return this.automations.testRun(req.tenant!.tenantId, list, input);
+    }
+
+    /** v0.1.289 — Duplicar: una copia pausada «Nombre (copia)». */
+    @Post(':id/duplicate')
+    @HttpCode(201)
+    @RequireCapability('manage_automations')
+    duplicate(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<Automation> {
+        return this.automations.duplicate(req.tenant!.tenantId, list, id, req.authUserId ?? null);
+    }
+
+    /** v0.1.289 — Historial de versiones (más nueva primero). */
+    @Get(':id/versions')
+    @RequireCapability('manage_automations')
+    versions(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ data: AutomationVersion[] }> {
+        return this.automations.versions(req.tenant!.tenantId, list, id).then((data) => ({ data }));
+    }
+
     /** v0.1.221 — «Ejecutar ahora» de una automatización programada. */
     @Post(':id/run')
     @HttpCode(202)
@@ -105,7 +148,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createAutomationSchema)) input: CreateAutomationInput,
     ): Promise<Automation> {
-        return this.automations.create(req.tenant!.tenantId, list, input);
+        return this.automations.create(req.tenant!.tenantId, list, input, { actorId: req.authUserId ?? null });
     }
 
     @Patch(':id')
@@ -116,7 +159,7 @@ export class AutomationsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateAutomationSchema)) patch: UpdateAutomationInput,
     ): Promise<Automation> {
-        return this.automations.update(req.tenant!.tenantId, list, id, patch);
+        return this.automations.update(req.tenant!.tenantId, list, id, patch, { actorId: req.authUserId ?? null });
     }
 
     @Delete(':id')

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { ActionMeta, AutomationRun, HookCapture, TriggerMeta } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -34,6 +34,9 @@ const ACTIONS: ActionMeta[] = [
     // v0.1.266 — un PDF con una plantilla de documento (cuenta de cobro, recibo).
     { slug: 'generate_pdf', label: 'Generar un PDF', config_schema: {} },
     { slug: 'if_else', label: 'Si / sino (condicional)', config_schema: {} },
+    // v0.1.289 — esperar un tiempo o hasta una fecha, y repetir por cada vinculado.
+    { slug: 'wait', label: 'Esperar', config_schema: {} },
+    { slug: 'for_each_linked', label: 'Repetir por cada registro vinculado', config_schema: {} },
 ];
 
 @Controller()
@@ -97,6 +100,18 @@ export class AutomationsCatalogController {
         return this.automations.runsById(req.tenant!.tenantId, id, {
             cursor: cursor ? Number(cursor) : undefined,
         });
+    }
+
+    /** v0.1.289 — «Cancelar espera» de una corrida en pausa (desde el historial). */
+    @Post('automations/:id/runs/:runId/cancel')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    cancelRun(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('runId', ParseIntPipe) runId: number,
+    ): Promise<{ cancelled: boolean }> {
+        return this.automations.cancelWaitingRun(req.tenant!.tenantId, id, runId, req.authUserId as number);
     }
 
     /**
