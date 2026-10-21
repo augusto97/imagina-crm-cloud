@@ -5,6 +5,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordLayoutDataService } from './record-layout-data.service';
 
@@ -21,6 +22,8 @@ export class RecordLayoutController {
     @Post()
     @HttpCode(200)
     @RequireCapability('view_records', 'view_own_records')
+    // ADR-S09: lectura (POST por el body) — vale en solo-lectura.
+    @AllowReadOnly()
     data(
         @Req() req: FastifyRequest,
         @Param('list') list: string,

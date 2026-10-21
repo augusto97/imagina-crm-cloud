@@ -9,11 +9,12 @@ import {
 import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
-import { listsKeys } from '@/hooks/useLists';
+import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
 import { AGGREGATES_NS, invalidateForList, isRecentLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { notificationKeys } from '@/hooks/useNotifications';
+import { invalidateDashboardsForList } from '@/hooks/useDashboards';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -40,10 +41,25 @@ export function useRealtime(): void {
         const join = () => socket.emit(RT_EVENT_JOIN, { tenantId });
         socket.on('connect', join);
 
+        // v0.1.286 — los eventos llegan en RÁFAGAS (aplicar una plantilla crea
+        // 2-3 listas con sus campos y vistas: un evento por cada cosa) y cada
+        // uno re-pedía lo mismo — `GET /lists` ×5 tras crear una lista desde
+        // una plantilla. Se juntan los iguales durante 150 ms y se invalida
+        // UNA vez por tema/lista.
+        const pending = new Map<string, RtInvalidate>();
+        let flushTimer: number | null = null;
+        const flush = (): void => {
+            flushTimer = null;
+            const batch = [...pending.values()];
+            pending.clear();
+            for (const ev of batch) invalidate(ev);
+        };
         socket.on(RT_EVENT_INVALIDATE, (raw: unknown) => {
             const parsed = rtInvalidateSchema.safeParse(raw);
             if (!parsed.success) return;
-            invalidate(parsed.data);
+            const ev = parsed.data;
+            pending.set(`${ev.topic}:${ev.listId ?? '*'}`, ev);
+            if (flushTimer === null) flushTimer = window.setTimeout(flush, 150);
         });
 
         function invalidate(ev: RtInvalidate): void {
@@ -54,11 +70,18 @@ export function useRealtime(): void {
             // refrescaban la lista abierta hasta recargar.
             switch (ev.topic) {
                 case 'lists':
-                    void qc.invalidateQueries({ queryKey: listsKeys.all });
+                    // El eco de un cambio hecho en ESTA pestaña: la mutación ya
+                    // refrescó las listas (v0.1.286). `cancelRefetch: false`: si
+                    // ya se están trayendo, no se corta para pedirlas otra vez.
+                    if (!isRecentLocalListsChange()) {
+                        void qc.invalidateQueries({ queryKey: listsKeys.all }, { cancelRefetch: false });
+                    }
                     break;
                 case 'fields':
                     if (ev.listId !== undefined) invalidateForList(qc, fieldsKeys.all, ev.listId);
                     else void qc.invalidateQueries({ queryKey: fieldsKeys.all });
+                    // Un campo convertido o borrado cambia lo que calculan.
+                    invalidateDashboardsForList(qc, ev.listId);
                     break;
                 case 'records':
                     // El eco de una edición hecha en ESTA pestaña: la mutación
@@ -73,6 +96,10 @@ export function useRealtime(): void {
                     // v0.1.230 — los gráficos y vinculados de una ficha abierta
                     // leen OTRAS listas: un cambio en cualquiera puede moverlos.
                     void qc.invalidateQueries({ queryKey: layoutDataKeys.all });
+                    // v0.1.286 — los tableros con algún widget sobre esa lista
+                    // (antes quedaban viejos hasta recargar). También el eco
+                    // local: la mutación de la tabla no toca los tableros.
+                    invalidateDashboardsForList(qc, ev.listId);
                     break;
                 case 'views':
                     if (ev.listId !== undefined) invalidateForList(qc, viewsKeys.all, ev.listId);
@@ -86,6 +113,7 @@ export function useRealtime(): void {
         }
 
         return () => {
+            if (flushTimer !== null) window.clearTimeout(flushTimer);
             socket.off('connect', join);
             socket.disconnect();
         };

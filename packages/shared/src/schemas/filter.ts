@@ -42,6 +42,15 @@ export const DATE_RANGE_PRESETS = [
     'last_30_days',
     'this_year',
     'last_year',
+    // v0.1.286 — rangos hacia adelante y trimestres (tableros: "lo que vence
+    // en los próximos 30 días", "este trimestre"), y "de hoy en adelante"
+    // para las tablas de próximos vencimientos/cierres.
+    'next_7_days',
+    'next_30_days',
+    'last_90_days',
+    'this_quarter',
+    'last_quarter',
+    'from_today',
 ] as const;
 export const dateRangePresetSchema = z.enum(DATE_RANGE_PRESETS);
 export type DateRangePreset = z.infer<typeof dateRangePresetSchema>;

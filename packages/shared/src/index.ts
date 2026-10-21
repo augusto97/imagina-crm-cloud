@@ -16,6 +16,7 @@ export * from './schemas/form';
 export * from './schemas/notifications';
 export * from './schemas/filter';
 export * from './schemas/saved-filter';
+export * from './schemas/search';
 export * from './schemas/record';
 export * from './schemas/bulk-edit';
 export * from './schemas/bulk-history';

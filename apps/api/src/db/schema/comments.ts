@@ -20,6 +20,8 @@ export const comments = pgTable('comments', {
     kind: varchar('kind', { length: 16 }).notNull().default('note'),
     parentId: bigint('parent_id', { mode: 'number' }),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    // Quién lo ve: 'internal' (sólo el equipo) | 'client' (también el portal).
+    visibility: varchar('visibility', { length: 16 }).notNull().default('internal'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),

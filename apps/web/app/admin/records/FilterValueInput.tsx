@@ -4,6 +4,7 @@ import { AutocompleteInput } from '@/components/ui/autocomplete-input';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { __ } from '@/lib/i18n';
+import { formatDateStr } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
 import type { FilterOperator } from '@/types/record';
 
@@ -48,6 +49,27 @@ export function FilterValueInput({
     // (`this_month`, `last_year`, etc.). Persistimos el slug, no las
     // fechas resueltas — el backend las computa en cada query.
     if (op === 'between_relative') {
+        // v0.1.286 — un RANGO FIJO (`{from, to}`: llega desde un tablero, al
+        // abrir el segmento de un gráfico o con un período personalizado) se
+        // muestra tal cual; elegir un preset lo reemplaza.
+        const fixed = value !== null && typeof value === 'object' && !Array.isArray(value)
+            && typeof (value as { from?: unknown }).from === 'string' && typeof (value as { to?: unknown }).to === 'string'
+            ? (value as { from: string; to: string })
+            : null;
+        if (fixed) {
+            return (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Select value="" onChange={(e) => { if (e.target.value !== '') onChange(e.target.value); }}>
+                        <option value="">{`${formatDateStr(fixed.from)} → ${formatDateStr(fixed.to)}`}</option>
+                        {DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom').map((p) => (
+                            <option key={p.id} value={p.id}>
+                                {p.label}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+            );
+        }
         const current = typeof value === 'string' && value !== '' ? value : 'this_month';
         const fieldType = field.type === 'datetime' ? 'datetime' : 'date';
         // Preview del rango actual para que el usuario sepa qué

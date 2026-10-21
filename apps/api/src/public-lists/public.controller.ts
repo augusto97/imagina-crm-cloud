@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Body, Controller, Get, Param, Patch, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
     publicRecordsQuerySchema,
@@ -14,7 +15,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { frameAncestors, renderPublicListPage } from './public-page';
+import { publicListPageCsp, publicListUnavailablePage, renderPublicListPage } from './public-page';
 import { AuditService } from '../audit/audit.service';
 import { PublicListsService } from './public-lists.service';
 
@@ -56,12 +57,28 @@ export class PublicPageController {
 
     @Get(':token')
     async page(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
-        const { name, allowed_domains } = await this.publicLists.pageBootstrap(token);
+        const nonce = randomBytes(16).toString('base64');
+        let boot: { name: string; allowed_domains: string[] };
+        try {
+            boot = await this.publicLists.pageBootstrap(token);
+        } catch {
+            // Desconocido, despublicado o vencido: una página amable (no el
+            // JSON del 404 dentro del marco del sitio que la inserta).
+            reply
+                .status(404)
+                .header('Content-Security-Policy', publicListPageCsp(nonce, []))
+                .header('X-Robots-Tag', 'noindex')
+                .header('Cache-Control', 'no-store')
+                .type('text/html; charset=utf-8')
+                .send(publicListUnavailablePage());
+            return;
+        }
         reply
-            .header('Content-Security-Policy', frameAncestors(allowed_domains))
+            .header('Content-Security-Policy', publicListPageCsp(nonce, boot.allowed_domains))
             .header('X-Robots-Tag', 'noindex')
+            .header('Referrer-Policy', 'strict-origin-when-cross-origin')
             .type('text/html; charset=utf-8')
-            .send(renderPublicListPage(token, name));
+            .send(renderPublicListPage(token, boot.name, nonce));
     }
 }
 

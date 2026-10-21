@@ -347,6 +347,30 @@ describe('AuthService (Postgres + Redis reales)', () => {
             .from(users)
             .where(sql`lower(${users.email}) = 'boss@platform.test'`);
         expect(rows).toHaveLength(1);
+
+        // `/auth/me` dice si la consola se puede usar (mismo criterio que el
+        // SuperadminGuard), así la app no sondea `/platform/stats` al bootear.
+        const bossId = provisioned!.id;
+        const viaPassword = await superAuth.me(bossId, undefined, 'password');
+        expect(viaPassword.is_superadmin).toBe(true);
+        expect(viaPassword.platform_reauth).toBe(false);
+        const oldSession = await superAuth.me(bossId, undefined, null);
+        expect(oldSession.is_superadmin).toBe(false);
+        expect(oldSession.platform_reauth).toBe(true);
+        const impersonating = await superAuth.me(bossId, 999, 'password');
+        expect(impersonating.is_superadmin).toBe(false);
+        expect(impersonating.platform_reauth).toBe(false);
+        // Un usuario común nunca, y sin `sessionVia` (login/register) no viaja.
+        const someone = await superAuth.register({
+            email: 'cualquiera@acme.test',
+            password: 'secreto-123',
+            name: 'Cualquiera',
+            workspace_name: 'Cualquiera',
+        });
+        const common = await superAuth.me(someone.user.id, undefined, 'password');
+        expect(common.is_superadmin).toBe(false);
+        expect(common.platform_reauth).toBe(false);
+        expect((await superAuth.me(someone.user.id)).is_superadmin).toBeUndefined();
     });
 
     // ─────────────── v0.1.120: verificación en dos pasos ───────────────

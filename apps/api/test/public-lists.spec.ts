@@ -19,8 +19,8 @@ import { RelationsRepository } from '../src/records/relations.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
-import { PublicListsService } from '../src/public-lists/public-lists.service';
-import { frameAncestors } from '../src/public-lists/public-page';
+import { PublicListsService, isExpired } from '../src/public-lists/public-lists.service';
+import { frameAncestors, publicListPageCsp, publicListUnavailablePage, renderPublicListPage } from '../src/public-lists/public-page';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
@@ -313,6 +313,104 @@ describe('Listas públicas embebibles', () => {
         await publish({ per_page: 25 });
         expect((await pub.getRecords(cfg.token, {})).data).toHaveLength(3);
         await expect(pub.getRecords('token-viejo', {})).rejects.toThrow();
+    });
+
+    it('los campos se guardan por ID: renombrar el slug no los saca de la página', async () => {
+        await seed();
+        const cfg = await publish();
+        const list = await lists_.get(tenantId, 'directorio');
+        const stored = list.settings.public as Record<string, unknown>;
+        expect(stored.visible_field_ids).toEqual([f.nombre!.id, f.email!.id, f.monto!.id]);
+        expect(stored.visible_field_slugs).toBeUndefined();
+        expect(stored.cache_ttl).toBeUndefined();
+        await fields_.update(tenantId, 'directorio', String(f.monto!.id), { slug: 'importe' });
+        const meta = await pub.getMeta(cfg.token);
+        expect(meta.fields.map((x) => x.slug)).toContain('importe');
+        expect(meta.sort_allowed).toContain('importe');
+        const page = await pub.getRecords(cfg.token, { sort: 'importe:desc' });
+        expect(page.data.map((r) => r.data.importe)).toEqual([300, 200, 100]);
+        // La config vieja (por slug) se sigue leyendo.
+        const admin = await pub.getAdmin(tenantId, 'directorio');
+        expect(admin.visible_field_slugs).toContain('importe');
+    });
+
+    it('config vieja por slug: se lee y se convierte a ids al guardar', async () => {
+        await seed();
+        const cfg = await publish();
+        const list = await lists_.get(tenantId, 'directorio');
+        await lists_.update(tenantId, 'directorio', {
+            settings: {
+                ...list.settings,
+                public: { enabled: true, token: cfg.token, visible_field_slugs: ['nombre'], sort_allowed_slugs: ['nombre'], default_sort: 'nombre:desc', cache_ttl: 60 },
+            },
+        });
+        const meta = await pub.getMeta(cfg.token);
+        expect(meta.fields.map((x) => x.slug)).toEqual(['nombre']);
+        expect(meta.default_sort).toBe('nombre:desc');
+        await pub.updateAdmin(tenantId, 'directorio', { per_page: 10 });
+        const stored = (await lists_.get(tenantId, 'directorio')).settings.public as Record<string, unknown>;
+        expect(stored).toMatchObject({ visible_field_ids: [f.nombre!.id], default_sort_field_id: f.nombre!.id, default_sort_dir: 'desc' });
+        expect(stored.visible_field_slugs).toBeUndefined();
+        expect(stored.default_sort).toBeUndefined();
+    });
+
+    it('orden NUMÉRICO (no como texto: 9 < 10 < 100)', async () => {
+        for (const n of [100, 9, 10]) {
+            await recs.create(tenantId, admin, 'directorio', { data: { [key('nombre')]: `N${n}`, [key('monto')]: n } });
+        }
+        const cfg = await publish();
+        const asc = await pub.getRecords(cfg.token, { sort: 'monto:asc' });
+        expect(asc.data.map((r) => r.data.monto)).toEqual([9, 10, 100]);
+        const desc = await pub.getRecords(cfg.token, { sort: 'monto:desc' });
+        expect(desc.data.map((r) => r.data.monto)).toEqual([100, 10, 9]);
+    });
+
+    it('meta trae lo necesario para mostrar como la app; personas y archivos llegan legibles', async () => {
+        const estado = await fields_.create(tenantId, 'directorio', {
+            label: 'Estado',
+            type: 'select',
+            slug: 'estado',
+            config: { options: [{ value: 'al_dia', label: 'Al día', color: '#16a34a' }] },
+        });
+        const resp = await fields_.create(tenantId, 'directorio', { label: 'Responsable', type: 'user', slug: 'resp' });
+        const adj = await fields_.create(tenantId, 'directorio', { label: 'Contrato', type: 'file', slug: 'contrato' });
+        const [u] = await pg.db.insert(users).values({ email: `ana-${Date.now()}@acme.test`, passwordHash: 'x', name: 'Ana Pérez' }).returning();
+        const [att] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(attachments).values({ tenantId, filename: 'contrato.pdf', mime: 'application/pdf', sizeBytes: 3, storageKey: `t${tenantId}/c.pdf`, createdBy: u!.id }).returning(),
+        );
+        await recs.create(tenantId, admin, 'directorio', {
+            data: { [key('nombre')]: 'Con todo', [`f${estado.id}`]: 'al_dia', [`f${resp.id}`]: u!.id, [`f${adj.id}`]: [att!.id] },
+        });
+        await pg.db.update(tenants).set({ settings: { format: { number_format: 'dot_comma', date_format: 'dmy', time_format: 'h24', timezone: 'America/Bogota' } } }).where(eq(tenants.id, tenantId));
+        const cfg = await pub.updateAdmin(tenantId, 'directorio', {
+            enabled: true,
+            visible_field_ids: [f.nombre!.id, estado.id, resp.id, adj.id],
+        });
+        const meta = await pub.getMeta(cfg.token);
+        expect(meta.format).toMatchObject({ number_format: 'dot_comma', date_format: 'dmy' });
+        expect(meta.fields.find((x) => x.slug === 'estado')!.options).toEqual([{ value: 'al_dia', label: 'Al día', color: '#16a34a' }]);
+        const row = (await pub.getRecords(cfg.token, {})).data[0]!;
+        expect(row.data.resp).toBe('Ana Pérez');
+        expect(row.data.contrato).toEqual([{ name: 'contrato.pdf', url: expect.stringMatching(/^\/api\/v1\/files\/\d+\/signed\?/) }]);
+        await pg.db.update(tenants).set({ settings: {} }).where(eq(tenants.id, tenantId));
+    });
+
+    it('la caducidad vale hasta el final del día en la zona de la empresa', () => {
+        const tarde = new Date('2026-10-21T03:00:00Z'); // 22:00 del 20 en Bogotá
+        expect(isExpired('2026-10-20', 'America/Bogota', tarde)).toBe(false);
+        expect(isExpired('2026-10-20', 'UTC', tarde)).toBe(true);
+        expect(isExpired('2026-10-20', 'America/Bogota', new Date('2026-10-21T05:01:00Z'))).toBe(true);
+    });
+
+    it('la página no disponible es HTML amable y la CSP sólo deja correr su script', () => {
+        const csp = publicListPageCsp('n0nce', ['acme.com']);
+        expect(csp).toContain("script-src 'nonce-n0nce'");
+        expect(csp).toContain("default-src 'none'");
+        expect(csp).toContain("frame-ancestors 'self' acme.com");
+        const html = publicListUnavailablePage();
+        expect(html).toContain('Esta lista no está disponible');
+        expect(html).not.toContain('public_list');
+        expect(renderPublicListPage('tok', 'Mi lista', 'n0nce')).toContain('<script nonce="n0nce">');
     });
 
     it('token inexistente → 404', async () => {

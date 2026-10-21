@@ -6,7 +6,7 @@ import type {
     ListTemplateSummary,
 } from '@imagina-base/shared';
 
-import { listsKeys } from '@/hooks/useLists';
+import { listsKeys, trackLocalListsChange } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import type { ListSummary } from '@/types/list';
 
@@ -40,7 +40,7 @@ export function useDuplicateList() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async ({ listId, input }: { listId: number | string; input: DuplicateListInput }) => {
-            const res = await api.post<MaterializeResult>(`/lists/${listId}/duplicate`, input);
+            const res = await trackLocalListsChange(api.post<MaterializeResult>(`/lists/${listId}/duplicate`, input));
             return res.data;
         },
         onSuccess: () => {
@@ -78,7 +78,7 @@ export function useApplyListTemplate() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, input }: { id: string; input: ApplyListTemplateInput }) => {
-            const res = await api.post<MaterializeResult>(`/list-templates/${id}/apply`, input);
+            const res = await trackLocalListsChange(api.post<MaterializeResult>(`/list-templates/${id}/apply`, input));
             return res.data;
         },
         onSuccess: () => {

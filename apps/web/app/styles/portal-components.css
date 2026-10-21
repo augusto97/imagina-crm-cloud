@@ -1338,6 +1338,25 @@
     font-size: 12px;
     color: hsl(var(--imcrm-muted-foreground));
 }
+.imcrm-portal-comments__author {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: hsl(var(--imcrm-foreground));
+}
+/* Lo que escribió el cliente, a la derecha y con el tinte de la marca. */
+.imcrm-portal-comments__item--mine {
+    align-self: flex-end;
+    max-width: 92%;
+    background: hsl(var(--imcrm-primary) / 0.07);
+    border-color: hsl(var(--imcrm-primary) / 0.25);
+}
+.imcrm-portal-activity__changes {
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
 
 .imcrm-portal-comments__composer {
     display: flex;
@@ -1905,4 +1924,17 @@
 }
 .imcrm-style-fw :where(p, span, div, a, li, td, dd, blockquote) {
     font-weight: inherit !important;
+}
+
+/* ===========================================================================
+ * iOS agranda la página al tocar un campo de menos de 16px: en el teléfono,
+ * todos los campos del portal van a 16px (el `html` del portal lleva la clase
+ * `imcrm-portal-app`; la especificidad gana a las utilidades de tamaño).
+ * ========================================================================= */
+@media (max-width: 768px) {
+    .imcrm-portal-app input,
+    .imcrm-portal-app select,
+    .imcrm-portal-app textarea {
+        font-size: 16px;
+    }
 }

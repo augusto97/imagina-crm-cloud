@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
@@ -475,6 +476,24 @@ const applyView = (view: SavedViewEntity | null): void => {
     const [searchParams, setSearchParams] = useSearchParams();
     useEffect(() => {
         if (! viewApplied || ! list.data) return;
+        // v0.1.286 — `?ft=<filter_tree JSON>`: el segmento de un gráfico con
+        // TODO lo que contó (filtro del widget, período, filtros del tablero
+        // y el valor del segmento). Un JSON roto se ignora.
+        const ftRaw = searchParams.get('ft');
+        if (ftRaw !== null) {
+            try {
+                const parsed = JSON.parse(ftRaw) as import('@/types/record').FilterTree;
+                if (parsed && parsed.type === 'group' && Array.isArray(parsed.children)) {
+                    setState((s2) => ({ ...s2, filterTree: parsed, page: 1 }));
+                }
+            } catch {
+                // parámetro inválido: se descarta
+            }
+            const next = new URLSearchParams(searchParams);
+            next.delete('ft');
+            setSearchParams(next, { replace: true });
+            return;
+        }
         const gf = Number(searchParams.get('gf'));
         if (! Number.isInteger(gf) || gf <= 0) return;
         const gv = searchParams.get('gv') ?? '';
@@ -769,9 +788,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                     >
                         {__('Listas')}
                     </Link>
-                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
+                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground">
                         /
                     </span>
+                    <ListFolderCrumb groupId={list.data.group_id} />
                     <h1 className="imcrm-truncate imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight">
                         {list.data.name}
                     </h1>

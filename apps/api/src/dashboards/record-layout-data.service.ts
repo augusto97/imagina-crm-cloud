@@ -3,6 +3,7 @@ import {
     CHART_KIND_WIDGET,
     layoutChartConfigSchema,
     layoutRelatedConfigSchema,
+    soundsInternalField,
     type Field,
     type FilterGroup,
     type FilterNode,
@@ -341,7 +342,10 @@ export class RecordLayoutDataService {
             const title = visible.find((f) => f.is_primary) ?? visible.find((f) => f.type === 'text');
             if (title) wanted.add(title.id);
             if (wanted.size === 1 && cfg.field_ids === undefined) {
-                for (const f of visible.filter((x) => !['long_text', 'relation', 'file'].includes(x.type)).slice(0, 6)) wanted.add(f.id);
+                // Un bloque sin columnas elegidas (diseño viejo o hecho por API):
+                // unas pocas columnas legibles, NUNCA las que suenan internas.
+                const safe = visible.filter((x) => !['long_text', 'relation', 'file', 'user'].includes(x.type) && !soundsInternalField(x));
+                for (const f of safe.slice(0, 6)) wanted.add(f.id);
             }
             // Las relaciones y las personas se resuelven con datos del admin
             // (títulos de otros registros, nombres del equipo): no viajan.

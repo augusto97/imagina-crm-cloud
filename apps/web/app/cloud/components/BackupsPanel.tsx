@@ -12,6 +12,7 @@ import { CloudApiError } from '@/lib/cloud/client';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 
 import { BackupsDrivePanel, DRIVE_STATUS_KEY } from './BackupsDrivePanel';
+import { useStatusTransition } from '@/hooks/useStatusTransition';
 
 const IN_PROGRESS: BackupRunStatus[] = ['queued', 'running', 'restoring'];
 const STATUS_LABEL: Record<BackupRunStatus, string> = {
@@ -63,12 +64,15 @@ export function BackupsPanel(): JSX.Element | null {
     const driveQ = useQuery({ queryKey: DRIVE_STATUS_KEY, queryFn: () => api.backupDriveStatus(), retry: false });
     const driveReady = !!driveQ.data?.connected && !!driveQ.data.passphrase_set && !driveQ.data.broken;
     const runStatus = statusQ.data?.run.status;
-    useEffect(() => {
-        if (runStatus === 'success' || runStatus === 'failed') {
+    // v0.1.286 — sólo cuando la corrida TERMINA mientras se mira: al abrir la
+    // pestaña con la última corrida ya terminada, esto volvía a pedir el
+    // estado del Drive que se acababa de traer (requests duplicadas).
+    useStatusTransition(runStatus, (st) => {
+        if (st === 'success' || st === 'failed') {
             void qc.invalidateQueries({ queryKey: DRIVE_STATUS_KEY });
             void qc.invalidateQueries({ queryKey: ['backups-drive-files'] });
         }
-    }, [runStatus, qc]);
+    });
     const uploadToDrive = useMutation({
         mutationFn: (name: string) => api.backupUploadToDrive(name),
         onSuccess: (r) => {
@@ -297,7 +301,11 @@ export function BackupsPanel(): JSX.Element | null {
                 <CardHeader>
                     <CardTitle>Copias guardadas</CardTitle>
                     <CardDescription>
-                        {s.snapshots.length === 0 ? 'Todavía no hay copias.' : `${s.snapshots.length} archivo(s) en el servidor.`}
+                        {s.snapshots.length === 0
+                            ? 'Todavía no hay copias.'
+                            : s.snapshots.length === 1
+                              ? '1 archivo en el servidor.'
+                              : `${s.snapshots.length} archivos en el servidor.`}
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="imcrm-pt-0">

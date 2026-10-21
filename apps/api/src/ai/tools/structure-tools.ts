@@ -15,7 +15,6 @@ import {
     filterOperatorSchema,
     parseFieldConfig,
     parseViewConfig,
-    publicListSettingsSchema,
     readPortalConfig,
     migrateCrmV2ToV3,
     migratePortalTemplateToV3,
@@ -103,6 +102,7 @@ import {
     type DesignFieldRef,
 } from './design-builders';
 import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
+import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
@@ -803,7 +803,9 @@ export class StructureTools implements AiProposalApplier {
         const settings = (list.settings ?? {}) as Record<string, unknown>;
         const { portal, template } = readPortalConfig(settings);
         const layout = readRecordLayout(settings);
-        const pub = publicListSettingsSchema.safeParse(settings.public ?? {});
+        // La lista pública guarda sus campos por id (v0.1.286): se leen como slugs actuales.
+        const pubCfg = canonicalPublicSettings(settings.public ?? {}, fields);
+        const pub = { success: true as const, data: { ...pubCfg, visible_field_slugs: pubCfg.visible_field_ids.map((id) => fieldById.get(id)?.slug).filter((x): x is string => !!x) } };
         const related = await this.detectRelatedLists(ctx.tenantId, list);
         // v0.1.232 — listas vinculadas en los DOS sentidos (para `design`:
         // gráficos y tablas de vinculados en la ficha).
