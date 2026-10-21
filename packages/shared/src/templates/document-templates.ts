@@ -594,7 +594,8 @@ function buildSalesDocument(
     const columns: DocItemsColumn[] = [
         fieldCol('descripcion', 'Descripción', 'left', 'fill'),
         fieldCol('cantidad', 'Cant.', 'center'),
-        fieldCol('precio', 'Precio unitario', 'right'),
+        // El precio unitario con el MISMO formato que el total de la línea.
+        { ...fieldCol('precio', 'Precio unitario', 'right'), format: 'currency', decimals, prefix: '$ ' },
     ];
     if (hasDiscount) columns.push(fieldCol('descuento', 'Desc. %', 'center'));
     columns.push({

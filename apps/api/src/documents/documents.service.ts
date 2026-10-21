@@ -1351,7 +1351,10 @@ export class DocumentsService {
                 const f = bySlug.get(c.slug)!;
                 const raw = data[jsonbKeyForField(f.id)];
                 const n = parseLooseAmount(firstScalar(raw));
-                if (n !== null && isNumericField(display.get(f.id) ?? f)) sums.set(c.slug, (sums.get(c.slug) ?? 0) + n);
+                const numeric = isNumericField(display.get(f.id) ?? f);
+                if (n !== null && numeric) sums.set(c.slug, (sums.get(c.slug) ?? 0) + n);
+                // v0.1.292 — Un formato elegido en la columna pisa el del campo.
+                if (c.format && n !== null && numeric) return formatComputedCell(n, c, fmt.number_format);
                 return formatValue(display.get(f.id) ?? f, raw, fmt, (id) => names.get(id) ?? null);
             }),
         );

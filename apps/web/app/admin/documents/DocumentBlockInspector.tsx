@@ -860,6 +860,12 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                                         ))}
                                     </Select>
                                 )}
+                                {c.kind !== 'computed' && fields.some((f) => f.slug === c.slug && NUMERIC.has(f.type)) && (
+                                    <FieldColumnFormat
+                                        column={c}
+                                        onChange={(patch) => setColumns(block.columns.map((x, k) => (k === i ? { ...x, ...patch } : x)))}
+                                    />
+                                )}
                                 {c.kind === 'computed' && (
                                     <ComputedColumnEditor
                                         column={c}
@@ -1024,6 +1030,55 @@ const FORMULA_LABELS: Record<FormulaKind, string> = {
  * o un número fijo). Una fórmula armada por el asistente que no encaja en
  * ninguna forma se muestra tal cual y se puede reemplazar.
  */
+/**
+ * v0.1.292 — Cómo se ve una columna de campo numérico: como en la lista (el
+ * formato del campo) o con el mismo formato que las calculadas — así el
+ * precio unitario y el total de la línea se ven igual.
+ */
+function FieldColumnFormat({ column, onChange }: { column: DocItemsColumn; onChange: (patch: Partial<DocItemsColumn>) => void }): JSX.Element {
+    const cls = 'imcrm-h-7 imcrm-text-xs';
+    return (
+        <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1" data-field-column-format>
+            <Select
+                value={column.format ?? ''}
+                onChange={(e) =>
+                    onChange(
+                        e.target.value === ''
+                            ? { format: undefined, decimals: undefined, prefix: undefined }
+                            : { format: e.target.value as DocItemsColumn['format'] },
+                    )
+                }
+                className={cls}
+                aria-label={__('Mostrar como')}
+            >
+                <option value="">{__('Como en la lista')}</option>
+                <option value="currency">{__('Moneda')}</option>
+                <option value="number">{__('Número')}</option>
+                <option value="percent">%</option>
+            </Select>
+            {column.format && (
+                <>
+                    <Select value={String(column.decimals ?? 2)} onChange={(e) => onChange({ decimals: Number(e.target.value) })} className={cls} aria-label={__('Decimales')}>
+                        {[0, 1, 2, 3, 4].map((n) => (
+                            <option key={n} value={n}>
+                                {n} {__('dec.')}
+                            </option>
+                        ))}
+                    </Select>
+                    <Input
+                        value={column.prefix ?? '$ '}
+                        maxLength={8}
+                        disabled={column.format !== 'currency'}
+                        onChange={(e) => onChange({ prefix: e.target.value })}
+                        className={cls}
+                        aria-label={__('Antes del número')}
+                    />
+                </>
+            )}
+        </div>
+    );
+}
+
 function ComputedColumnEditor({
     column,
     operands,

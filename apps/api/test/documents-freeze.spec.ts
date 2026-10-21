@@ -210,6 +210,8 @@ describe('v0.1.292 — documentos congelados, cotización y tabla editable (Post
         expect(rows).toHaveLength(3);
         expect(rows.map((r) => r[0])).toEqual(['Diseño', 'Hosting', 'Soporte']);
         expect(rows.map((r) => r[r.length - 1])).toEqual(['$ 270.000', '$ 149.999', '$ 37.500']);
+        // El precio unitario con el MISMO formato que el total de la línea (no el del campo).
+        expect(rows[0]![2]).toBe('$ 150.000');
         expect(rendered.content.totals).toMatchObject({
             subtotal: '$ 487.499',
             descuentos: '-$ 30.000',

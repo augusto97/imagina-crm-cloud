@@ -229,9 +229,13 @@ export const docItemsColumnSchema = z
         /** v0.1.292 — `computed`: el valor sale de `expr` (sin campo detrás). */
         kind: z.enum(['field', 'computed']).optional(),
         expr: docItemExprSchema.optional(),
-        /** Cómo se muestra una columna calculada (moneda con `prefix`, número, %). */
+        /**
+         * Cómo se muestra una columna calculada (moneda con `prefix`, número, %).
+         * En una columna de CAMPO numérico, si está, pisa el formato del campo:
+         * así el precio unitario y el total de la línea se ven igual.
+         */
         format: z.enum(DOC_ITEM_COLUMN_FORMATS).optional(),
-        /** Decimales de una columna calculada: se REDONDEA a esto (la moneda). */
+        /** Decimales de una columna calculada (se REDONDEA a esto) o con `format`. */
         decimals: z.number().int().min(0).max(4).optional(),
         prefix: z.string().max(8).optional(),
         /** Se calcula (y suma) pero no se dibuja: el bruto de cada línea. */
