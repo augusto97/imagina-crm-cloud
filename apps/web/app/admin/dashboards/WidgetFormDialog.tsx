@@ -769,7 +769,7 @@ export function WidgetFormDialog({
                             </label>
                         )}
 
-                        {/* v0.1.287 — la vista previa aparece apenas hay lista: lo
+                        {/* v0.1.286 — la vista previa aparece apenas hay lista: lo
                             que falte (agrupar, fecha, campo a calcular) se dice
                             DENTRO del recuadro en vez de dejarlo vacío. */}
                         {open && dashboardId !== undefined && dashboardId > 0 && ! isContentWidget(type) && listId > 0 && (
@@ -1648,7 +1648,7 @@ export function listOptionLabel(
 }
 
 /**
- * v0.1.287 — ¿Le falta algo al widget para que la vista previa dibuje algo?
+ * v0.1.286 — ¿Le falta algo al widget para que la vista previa dibuje algo?
  * Un gráfico de barras sin «Agrupar por» salía en blanco, sin pista de por
  * qué. Devuelve el texto a mostrar en su lugar, o `null` si ya se puede.
  */

@@ -100,7 +100,7 @@ export class CommentsService {
             // Comentar te suscribe al registro (ADR-S40) — en el MISMO tx, no
             // después: el aviso de `NotifyHub` corre en segundo plano y el
             // botón «Seguir» de la ficha releía el estado antes de que llegara
-            // (v0.1.287). El hub lo repite y no pasa nada (conflict → nada).
+            // (v0.1.286). El hub lo repite y no pasa nada (conflict → nada).
             if (actor.role !== 'client') {
                 await tx
                     .insert(recordFollows)

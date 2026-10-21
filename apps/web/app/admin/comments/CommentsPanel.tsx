@@ -78,7 +78,7 @@ export function CommentsPanel({
     }, [draft, cursor]);
 
     // Scroll al final al recibir nuevos comentarios — UX típica de chat.
-    // v0.1.287 — se mueve SÓLO el contenedor del hilo (su scrollTop). Antes
+    // v0.1.286 — se mueve SÓLO el contenedor del hilo (su scrollTop). Antes
     // era `scrollIntoView`, que también scrollea a los ancestros: la página
     // del registro abría corrida hacia abajo (162-197 px en escritorio,
     // ~1100 en el celular) apenas cargaban los comentarios. Al cargar, salta

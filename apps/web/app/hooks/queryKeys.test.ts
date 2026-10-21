@@ -182,7 +182,7 @@ describe('descripción del registro', () => {
     });
 });
 
-describe('v0.1.287 — cambio de lista y arranque en frío', () => {
+describe('v0.1.286 — cambio de lista y arranque en frío', () => {
     it('la data previa SÓLO se conserva dentro de la misma lista', () => {
         const qc = clientWithLists();
         const keep = keepPreviousForList<string>(qc, '42');

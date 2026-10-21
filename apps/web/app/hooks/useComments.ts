@@ -91,7 +91,7 @@ export function useCreateComment(
             // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
             markLocalRecordsChange(qc, listId);
             // Comentar te suscribe al registro (ADR-S40): «Seguir» tiene que
-            // reflejarlo sin recargar. v0.1.287 — se marca al toque (el estado
+            // reflejarlo sin recargar. v0.1.286 — se marca al toque (el estado
             // también vive sembrado por el bundle de la ficha, que no se
             // vuelve a pedir) y después se confirma contra el servidor.
             qc.setQueryData<FollowStateDto>(notificationKeys.follow(recordId), (prev) => followAfterComment(prev));

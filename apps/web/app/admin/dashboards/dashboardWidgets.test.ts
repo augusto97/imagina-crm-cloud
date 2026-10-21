@@ -154,7 +154,7 @@ describe('v0.1.286 — diálogo del widget y tablero', () => {
     });
 });
 
-describe('v0.1.287 — vista previa del widget', () => {
+describe('v0.1.286 — vista previa del widget', () => {
     it('un gráfico sin «Agrupar por» explica qué falta en vez de quedar en blanco', () => {
         expect(widgetPreviewHint({ type: 'chart_bar', config: { group_by_field_id: 0 } })).toMatch(/agrupar/);
         expect(widgetPreviewHint({ type: 'chart_pie', config: {} })).toMatch(/agrupar/);

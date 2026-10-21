@@ -142,7 +142,7 @@ export function useRecordView(
     const keyList = on ? canonicalListId(qc, listKey) : '';
     const query = useQuery({
         queryKey: recordViewKeys.forRecord(keyList, recordId ?? 0),
-        // v0.1.287 — si la key pasó de slug a id con el pedido en vuelo, se
+        // v0.1.286 — si la key pasó de slug a id con el pedido en vuelo, se
         // reusa (sin segundo `/view`).
         queryFn: () =>
             joinInflight(qc, recordViewKeys.forRecord(keyList, recordId ?? 0), recordViewKeys.forRecord(String(listKey ?? ''), recordId ?? 0), async () => {

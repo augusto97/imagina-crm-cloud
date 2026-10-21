@@ -21,7 +21,7 @@ export function useFields(listId: string | number | undefined) {
     const key = listId === undefined || listId === '' ? '' : canonicalListId(qc, listId);
     return useQuery({
         queryKey: fieldsKeys.forList(key),
-        // v0.1.287 — si la key pasó de slug a id con el pedido del slug aún en
+        // v0.1.286 — si la key pasó de slug a id con el pedido del slug aún en
         // vuelo (arranque en frío), se reusa ese pedido: antes salían dos.
         queryFn: () =>
             joinInflight(qc, fieldsKeys.forList(key), fieldsKeys.forList(String(listId)), async () => {

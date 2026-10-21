@@ -76,7 +76,7 @@ const ARROW_OWNERS = '[role="tablist"], [role="radiogroup"], [role="radio"], [ro
 
 /**
  * Atajo de teclado del modal del registro: J o ↓ → siguiente, K o ↑ →
- * anterior (v0.1.287 suma las flechas). Nunca con un modificador, ni con el
+ * anterior (v0.1.286 suma las flechas). Nunca con un modificador, ni con el
  * foco en un campo, ni dentro de un control que ya usa las flechas.
  */
 export function recordNavDirection(

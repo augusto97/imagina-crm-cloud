@@ -434,7 +434,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">{d.description}</p>
                     )}
                 </div>
-                {/* v0.1.287 — barra COMPACTA (h-8, 13 px) que no se parte: a
+                {/* v0.1.286 — barra COMPACTA (h-8, 13 px) que no se parte: a
                     1440 px «Añadir widget» caía a un segundo renglón y el
                     selector de período se cortaba. Si no entra junto al
                     título, la barra entera baja a su propio renglón (el

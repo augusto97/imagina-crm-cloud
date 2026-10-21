@@ -228,7 +228,7 @@ export function RecordDetailDrawer({
         void confirmDiscard().then((ok) => ok && onNavigate(dir));
     };
 
-    // J / K (y ↓ / ↑, v0.1.287): registro siguiente / anterior (como en Gmail
+    // J / K (y ↓ / ↑, v0.1.286): registro siguiente / anterior (como en Gmail
     // o Linear), sólo si el foco no está en un campo ni en un control que ya
     // usa las flechas, y no hay otra capa encima (un menú, la confirmación).
     useEffect(() => {

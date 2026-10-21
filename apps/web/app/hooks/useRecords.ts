@@ -82,7 +82,7 @@ export function canonicalListId(qc: QueryClient, idOrSlug: string | number): str
 }
 
 /**
- * v0.1.287 — `placeholderData` que conserva lo anterior SÓLO dentro de la
+ * v0.1.286 — `placeholderData` que conserva lo anterior SÓLO dentro de la
  * MISMA lista (paginar, filtrar, buscar). Con `keepPreviousData` a secas, al
  * pasar de una lista a otra la tabla mostraba un instante las filas de la
  * anterior con el id de la nueva, y las recurrencias se pedían como
@@ -100,7 +100,7 @@ export function keepPreviousForList<T>(qc: QueryClient, listKey: string | number
 }
 
 /**
- * v0.1.287 — Regla de oro nº 7 en el arranque en frío: mientras el índice de
+ * v0.1.286 — Regla de oro nº 7 en el arranque en frío: mientras el índice de
  * listas no llegó, la key se arma con el slug; cuando llega, pasa al id. Si la
  * query del slug seguía EN VUELO, la del id salía a pedir lo mismo otra vez
  * (2× `GET /lists/<slug>/fields`). Aquí la query canónica se ENGANCHA a la que

@@ -171,7 +171,7 @@ function BigValue({ field, value, prefix, suffix, size = 'lg' }: FieldDisplayPro
         ? formatFieldValueText(field, value)
         : null;
     if (text !== null) {
-        // «70 %» con sufijo «%» configurado no se repite (v0.1.287).
+        // «70 %» con sufijo «%» configurado no se repite (v0.1.286).
         const affix = effectiveAffixes(text, prefix ?? '', suffix ?? '');
         return (
             <span className={cn(cls, 'imcrm-font-semibold imcrm-leading-none imcrm-tracking-tight imcrm-tabular-nums imcrm-text-foreground')}>

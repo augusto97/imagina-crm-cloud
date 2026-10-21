@@ -209,7 +209,7 @@ export function PlatformTenantsCard(): JSX.Element {
     return (
         <Card>
             <CardHeader>
-                {/* v0.1.287 — en el celular se APILA (título y descripción a lo
+                {/* v0.1.286 — en el celular se APILA (título y descripción a lo
                     ancho, controles debajo): en fila, la descripción quedaba de
                     una palabra por renglón y «Ver archivadas» pisaba el título. */}
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between">
