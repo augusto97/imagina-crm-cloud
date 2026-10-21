@@ -1,13 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import {
-    addDaysYmd,
-    dateRangePresetSchema,
+    dayRangeInstants,
+    datetimeFilterRange as sharedDatetimeFilterRange,
     FALLBACK_TIME_ZONE,
     isDataField,
     isThroughField,
     jsonbKeyForField,
-    zonedInstant,
-    zonedToday,
+    parseCustomDateRange,
+    parseDateRangePreset,
+    presetDateRange,
+    relativeRangeFor as sharedRelativeRangeFor,
     type DateRangePreset,
     type FieldType,
     type FilterCondition,
@@ -348,31 +350,13 @@ function compileDatetimeComparison(expr: SQL, op: FilterOperator, value: unknown
     }
 }
 
-const DATE_ONLY_RE = /^(\d{4}-\d{2}-\d{2})$/;
-const NAIVE_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/;
-
-/** Intervalo `[from, to)` (instantes ISO) de un valor de filtro de fecha y hora. */
+/**
+ * Intervalo `[from, to)` (instantes ISO) de un valor de filtro de fecha y hora.
+ * v0.1.287 — la implementación vive en `packages/shared` (la usan también los
+ * colores condicionales de la tabla, que evalúan en el navegador).
+ */
 export function datetimeFilterRange(value: unknown, timeZone: string): { from: string; to: string } | null {
-    if (typeof value !== 'string') return null;
-    const v = value.trim();
-    const day = DATE_ONLY_RE.exec(v);
-    if (day) {
-        return {
-            from: zonedInstant(day[1]!, timeZone).toISOString(),
-            to: zonedInstant(addDaysYmd(day[1]!, 1), timeZone).toISOString(),
-        };
-    }
-    let start: Date;
-    const naive = NAIVE_DATETIME_RE.exec(v);
-    if (naive) {
-        start = zonedInstant(naive[1]!, timeZone, { h: Number(naive[2]), m: Number(naive[3]) });
-    } else {
-        const t = Date.parse(v);
-        if (!Number.isFinite(t)) return null;
-        start = new Date(Math.floor(t / 60_000) * 60_000);
-    }
-    if (!Number.isFinite(start.getTime())) return null;
-    return { from: start.toISOString(), to: new Date(start.getTime() + 60_000).toISOString() };
+    return sharedDatetimeFilterRange(value, timeZone);
 }
 
 /** Expresión de texto JSONB de un campo: `(data->>'fN')`. */
@@ -531,100 +515,9 @@ export interface Range {
     to: string;
 }
 
+/** v0.1.287 — el cálculo del rango vive en `packages/shared` (`presetDateRange`). */
 function computePresetRange(preset: DateRangePreset, type: FieldType, clock: QueryClock): Range {
-    // v0.1.263 — "hoy" es el de la EMPRESA (antes, el del servidor: en
-    // Colombia, de 7 pm a medianoche "hoy" ya era mañana). La aritmética se
-    // hace sobre fechas de calendario puras (YYYY-MM-DD), sin zona.
-    const today = zonedToday(clock.timeZone, clock.now);
-    const [y, m] = today.split('-').map(Number) as [number, number];
-    const ymd = (yy: number, mm: number, dd: number) => new Date(Date.UTC(yy, mm - 1, dd)).toISOString().slice(0, 10);
-    // Semana ISO: lunes como primer día.
-    const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
-    const startOfWeek = addDaysYmd(today, -dow);
-
-    let from: string;
-    let to: string;
-    switch (preset) {
-        case 'today':
-            from = today;
-            to = today;
-            break;
-        case 'yesterday':
-            from = addDaysYmd(today, -1);
-            to = from;
-            break;
-        case 'this_week':
-            from = startOfWeek;
-            to = addDaysYmd(startOfWeek, 6);
-            break;
-        case 'last_week':
-            from = addDaysYmd(startOfWeek, -7);
-            to = addDaysYmd(startOfWeek, -1);
-            break;
-        case 'this_month':
-            from = ymd(y, m, 1);
-            to = ymd(y, m + 1, 0);
-            break;
-        case 'last_month':
-            from = ymd(y, m - 1, 1);
-            to = ymd(y, m, 0);
-            break;
-        case 'last_7_days':
-            from = addDaysYmd(today, -6);
-            to = today;
-            break;
-        case 'last_15_days':
-            from = addDaysYmd(today, -14);
-            to = today;
-            break;
-        case 'last_30_days':
-            from = addDaysYmd(today, -29);
-            to = today;
-            break;
-        case 'this_year':
-            from = ymd(y, 1, 1);
-            to = ymd(y, 12, 31);
-            break;
-        case 'last_year':
-            from = ymd(y - 1, 1, 1);
-            to = ymd(y - 1, 12, 31);
-            break;
-        // v0.1.286 — hacia adelante, 90 días y trimestres.
-        case 'next_7_days':
-            from = today;
-            to = addDaysYmd(today, 6);
-            break;
-        case 'next_30_days':
-            from = today;
-            to = addDaysYmd(today, 29);
-            break;
-        case 'last_90_days':
-            from = addDaysYmd(today, -89);
-            to = today;
-            break;
-        case 'this_quarter': {
-            const q = Math.floor((m - 1) / 3);
-            from = ymd(y, q * 3 + 1, 1);
-            to = ymd(y, q * 3 + 4, 0);
-            break;
-        }
-        case 'last_quarter': {
-            const q = Math.floor((m - 1) / 3) - 1;
-            from = ymd(y, q * 3 + 1, 1);
-            to = ymd(y, q * 3 + 4, 0);
-            break;
-        }
-        case 'from_today':
-            // "De hoy en adelante": un tope lejano pero representable (el
-            // instante de un datetime tiene que existir).
-            from = today;
-            to = '2999-12-31';
-            break;
-    }
-
-    // Un datetime cubre los días completos en el reloj de la empresa.
-    if (type === 'datetime') return dayRangeInstants(from, to, clock.timeZone);
-    return { from, to };
+    return presetDateRange(preset, type, clock);
 }
 
 /**
@@ -641,24 +534,11 @@ export function relativeDateRange(value: unknown, clock: QueryClock): { from: st
  * El rango de un `between_relative` (preset «este mes» o rango fijo
  * `{from, to}`) en el reloj de la empresa: fechas YYYY-MM-DD para un campo
  * fecha, instantes ISO para un fecha-hora. `null` si el valor no es válido.
- * Lo comparten el SQL de los filtros y el evaluador de condiciones de las
- * automatizaciones (que evalúa en memoria): así «este mes» es el mismo mes.
+ * Lo comparten el SQL de los filtros y el evaluador de condiciones (que
+ * evalúa en memoria): así «este mes» es el mismo mes.
  */
 export function relativeRangeFor(value: unknown, type: 'date' | 'datetime', clock: QueryClock): Range | null {
-    try {
-        const custom = asCustomRange(value);
-        if (custom !== null) return type === 'datetime' ? dayRangeInstants(custom.from, custom.to, clock.timeZone) : custom;
-        return computePresetRange(asPreset(value), type, clock);
-    } catch {
-        return null;
-    }
-}
-
-/** De las 00:00 de `from` a las 23:59:59.999 de `to`, en `tz`, como instantes ISO. */
-function dayRangeInstants(from: string, to: string, tz: string): Range {
-    const start = zonedInstant(from, tz);
-    const end = new Date(zonedInstant(addDaysYmd(to, 1), tz).getTime() - 1);
-    return { from: start.toISOString(), to: end.toISOString() };
+    return sharedRelativeRangeFor(value, type, clock);
 }
 
 // --- helpers ---
@@ -676,38 +556,30 @@ function toArray(value: unknown): unknown[] {
     return [value];
 }
 
-const CUSTOM_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 /** Rango fijo `{from, to}` (YYYY-MM-DD) del período personalizado, o null. */
 function asCustomRange(value: unknown): { from: string; to: string } | null {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
-    const from = (value as { from?: unknown }).from;
-    const to = (value as { to?: unknown }).to;
-    if (typeof from !== 'string' || typeof to !== 'string') return null;
-    if (!CUSTOM_DATE_RE.test(from) || !CUSTOM_DATE_RE.test(to)) {
+    const custom = parseCustomDateRange(value);
+    if (custom === 'invalid') {
         throw new BadRequestException('Rango personalizado inválido (se espera YYYY-MM-DD)');
     }
-    // Extremos invertidos → se corrigen en vez de devolver 0 filas confusas.
-    return from <= to ? { from, to } : { from: to, to: from };
+    return custom;
 }
 
 function asPreset(value: unknown): DateRangePreset {
-    const preset =
+    // SEC-19: validar contra el enum. Un preset desconocido dejaba from/to en
+    // undefined → TypeError → 500. Ahora es un 400 explícito.
+    const preset = parseDateRangePreset(value);
+    if (preset !== null) return preset;
+    const raw =
         typeof value === 'string'
             ? value
             : value && typeof value === 'object' && 'preset' in value
               ? (value as { preset?: unknown }).preset
               : undefined;
-    if (typeof preset !== 'string') {
+    if (typeof raw !== 'string') {
         throw new BadRequestException('between_relative requiere el slug de un preset');
     }
-    // SEC-19: validar contra el enum. Un preset desconocido dejaba from/to en
-    // undefined → TypeError → 500. Ahora es un 400 explícito.
-    const parsed = dateRangePresetSchema.safeParse(preset);
-    if (!parsed.success) {
-        throw new BadRequestException(`Preset de fecha inválido: ${preset}`);
-    }
-    return parsed.data;
+    throw new BadRequestException(`Preset de fecha inválido: ${raw}`);
 }
 
 function escapeLike(value: string): string {

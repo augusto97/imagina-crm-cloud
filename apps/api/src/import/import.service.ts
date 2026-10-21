@@ -19,9 +19,11 @@ import {
     type ImportRowsInput,
     type Role,
     type SelectOption,
+    coerceTextToFieldValue,
+    normalizeDateString as sharedNormalizeDateString,
 } from '@imagina-base/shared';
 import { parseCsv } from './csv-parser';
-import { cleanNumberString, detectFieldType } from './field-type-detector';
+import { detectFieldType } from './field-type-detector';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
 import { effectivePermissions, hiddenFieldsFor } from '../lists/list-acl';
@@ -700,54 +702,13 @@ function readOptions(field: Field): SelectOption[] {
  * Convierte el string del CSV al shape que espera `validateFieldValue` para
  * cada tipo. Best-effort: si no parsea, se devuelve el crudo y el validador
  * reporta el error con mensaje por campo.
+ *
+ * v0.1.287 — la implementación vive en `packages/shared`
+ * (`coerceTextToFieldValue`): la comparte el PEGAR de la tabla, que convierte
+ * en el navegador. Así un valor pegado se lee igual que uno importado.
  */
 export function coerceCellValue(raw: string, field: Field, members?: Map<string, number>): unknown {
-    const trimmed = raw.trim();
-    if (trimmed === '') return field.type === 'multi_select' ? [] : null;
-
-    switch (field.type) {
-        case 'select':
-            return resolveSelectValue(trimmed, field);
-        case 'multi_select':
-            return trimmed
-                .split(/[,;]/)
-                .map((v) => resolveSelectValue(v.trim(), field))
-                .filter((v) => v !== '');
-        case 'checkbox':
-            return ['1', 'true', 'yes', 'sí', 'si', 'x', 'on'].includes(trimmed.toLowerCase());
-        case 'number':
-        case 'currency': {
-            const clean = cleanNumberString(trimmed);
-            return clean !== '' && !Number.isNaN(Number(clean)) ? Number(clean) : trimmed;
-        }
-        case 'user':
-            // v0.1.252 — el CSV exporta el NOMBRE de la persona: se acepta el
-            // nombre o el email de un miembro (además del id).
-            if (/^\d+$/.test(trimmed)) return Number(trimmed);
-            return members?.get(trimmed.toLowerCase()) ?? trimmed;
-        case 'file':
-            return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
-        case 'date':
-        case 'datetime':
-            return normalizeDateString(trimmed, field.type);
-        default:
-            return trimmed;
-    }
-}
-
-/**
- * Resuelve el valor crudo del CSV (típicamente la etiqueta humana) al `value`
- * de la opción — case-insensitive contra label y value. Sin match devuelve el
- * crudo (el validador lo rechaza; `expandSelectOptions` corre antes y cubre
- * los valores presentes).
- */
-function resolveSelectValue(raw: string, field: Field): string {
-    if (raw === '') return '';
-    const needle = ciKey(raw);
-    for (const opt of readOptions(field)) {
-        if (ciKey(opt.label) === needle || ciKey(opt.value) === needle) return opt.value;
-    }
-    return raw;
+    return coerceTextToFieldValue(raw, field, { members });
 }
 
 /** Lower-case Unicode-aware ("AL DÍA" ↔ "al día"). */
@@ -755,47 +716,9 @@ function ciKey(s: string): string {
     return s.toLocaleLowerCase('es');
 }
 
-/**
- * Normaliza fechas a `YYYY-MM-DD` (date) / `YYYY-MM-DD HH:MM:SS` (datetime):
- *  1. ISO → truncado a fecha si el destino es `date` (ClickUp emite
- *     "2024-07-23T00:00:00.000+00:00" para fechas sin hora).
- *  2. `DD/MM/YYYY` o `MM/DD/YYYY`: si el primer grupo > 12 es DD/MM; si el
- *     segundo > 12, MM/DD; ambiguo → DD/MM (locale ES).
- *  3. Fallback `Date.parse` (cubre formatos humanos tipo "May 21st 2026").
- * Sin parse posible → crudo (el validador reporta "Fecha inválida").
- */
+/** Normaliza una fecha escrita a mano (ver `normalizeDateString` en shared). */
 export function normalizeDateString(v: string, type: 'date' | 'datetime'): string {
-    const iso = v.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (iso) return type === 'date' ? iso[1]! : v;
-
-    const slashed = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(.*)$/);
-    if (slashed) {
-        const a = Number(slashed[1]);
-        const b = Number(slashed[2]);
-        let year = Number(slashed[3]);
-        if (year < 100) year += 2000;
-        const tail = (slashed[4] ?? '').trim();
-        let day = a;
-        let month = b;
-        if (b > 12 && a <= 12) {
-            day = b;
-            month = a;
-        }
-        const isoDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        return type === 'datetime' && tail !== '' ? `${isoDate} ${tail}` : isoDate;
-    }
-
-    const cleaned = v.replace(/(\d)(st|nd|rd|th)\b/gi, '$1');
-    const ts = Date.parse(cleaned);
-    if (!Number.isNaN(ts)) {
-        const d = new Date(ts);
-        const pad = (n: number): string => String(n).padStart(2, '0');
-        const date = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-        return type === 'datetime'
-            ? `${date} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
-            : date;
-    }
-    return v;
+    return sharedNormalizeDateString(v, type);
 }
 
 /**
