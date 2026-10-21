@@ -30,6 +30,7 @@ import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { EmailComposer, type ComposedEmail } from './email-composer';
 import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
@@ -82,6 +83,8 @@ export class AutomationsService {
         // v0.1.266 — los PDF adjuntos de la prueba.
         @Optional() private readonly documents?: DocumentsService,
         @Optional() private readonly incidents?: IncidentHub,
+        // El dispatcher cachea qué disparadores tiene cada lista: guardar los invalida.
+        @Optional() private readonly dispatcher?: AutomationDispatcher,
     ) {}
 
     /**
@@ -238,6 +241,7 @@ export class AutomationsService {
                 isActive: input.is_active ?? true,
             }),
         );
+        await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
     }
@@ -264,6 +268,7 @@ export class AutomationsService {
             if (!updated) throw notFound(id);
             return updated;
         });
+        await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
     }
@@ -276,6 +281,7 @@ export class AutomationsService {
             return this.repo.remove(tx, tenantId, id);
         });
         if (!deleted) throw notFound(id);
+        await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.remove(id);
         // v0.1.285 — lo que ya no existe no puede seguir "fallando".
         this.incidents?.resolve(tenantId, `automation:${id}`);

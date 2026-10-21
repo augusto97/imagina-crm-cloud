@@ -17,13 +17,23 @@ class RedisLifecycle implements OnApplicationShutdown {
     }
 }
 
+/**
+ * El cliente Redis PRINCIPAL (sesiones, caches, frenos): con tope por comando
+ * (`commandTimeout`) para que un Redis colgado haga FALLAR los pedidos en vez
+ * de dejarlos esperando para siempre. NO es para BullMQ (necesita comandos
+ * bloqueantes y `maxRetriesPerRequest: null`: cada cola abre los suyos).
+ */
+export function createCoreRedis(url: string, commandTimeoutMs: number): Redis {
+    return guardRedis(new Redis(url, { maxRetriesPerRequest: 3, commandTimeout: commandTimeoutMs }), logger, 'core');
+}
+
 @Global()
 @Module({
     providers: [
         {
             provide: REDIS,
             useFactory: (env: Env) => {
-                const client = guardRedis(new Redis(env.REDIS_URL, { maxRetriesPerRequest: 3 }), logger, 'core');
+                const client = createCoreRedis(env.REDIS_URL, env.REDIS_COMMAND_TIMEOUT_MS);
                 // v0.1.238 — el registro de diagnóstico (Plataforma → Diagnóstico).
                 attachDiagnostics(client);
                 return client;

@@ -145,6 +145,32 @@ describe('Cuota mensual de correos (ADR-S18)', () => {
         await pg.db.update(plans).set({ maxEmailsMonth: 100 }).where(eq(plans.slug, 'trial'));
     });
 
+    it('envíos simultáneos con la cuota casi agotada: salen sólo los que entran; un envío fallido devuelve su lugar', async () => {
+        await pg.db.update(plans).set({ maxEmailsMonth: 2 }).where(eq(plans.slug, 'trial'));
+        try {
+            const q = new EmailQuotaService(pg.db, new PlansService(pg.db));
+            const transport = new CapturingMailTransport();
+            const mail = new MailService(env, transport, undefined, smtp, q);
+            // Antes: "chequear y después sumar" → los 6 veían 0/2 y salían todos.
+            const results = await Promise.allSettled(
+                Array.from({ length: 6 }, (_, i) => mail.sendNow({ tenantId, to: `c${i}@test.local`, subject: 's', text: 'x' })),
+            );
+            expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+            for (const r of results) if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(EmailQuotaExceededError);
+            expect(transport.sent).toHaveLength(2);
+            expect(await q.usedThisMonth(tenantId)).toBe(2);
+
+            // Un correo que no salió no se cobra: la reserva vuelve.
+            const [t2] = await pg.db.insert(tenants).values({ slug: `mailq-fail-${counter}`, name: 'B', plan: 'trial', status: 'trialing' }).returning();
+            const failing: MailTransport = { name: 'falla', send: () => Promise.reject(new Error('SMTP caído')) };
+            const broken = new MailService(env, failing, undefined, smtp, q);
+            await expect(broken.sendNow({ tenantId: t2!.id, to: 'x@test.local', subject: 's', text: 'x' })).rejects.toThrow('SMTP caído');
+            expect(await q.usedThisMonth(t2!.id)).toBe(0);
+        } finally {
+            await pg.db.update(plans).set({ maxEmailsMonth: 100 }).where(eq(plans.slug, 'trial'));
+        }
+    });
+
     it('los correos de CUENTA (sin empresa) nunca se limitan', async () => {
         await pg.db.update(plans).set({ maxEmailsMonth: 0 }).where(eq(plans.slug, 'trial'));
         const q = new EmailQuotaService(pg.db, new PlansService(pg.db));
