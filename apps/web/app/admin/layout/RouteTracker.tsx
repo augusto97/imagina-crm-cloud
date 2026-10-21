@@ -170,11 +170,26 @@ function useCachedRecordTitle(listKeys: string[], recordId: number | null): stri
             setTitle((prev) => (prev === found ? prev : found));
         };
         compute();
-        return qc.getQueryCache().subscribe((event) => {
+        // El cache avisa también mientras OTRO componente renderiza (al armar
+        // su useQuery); actualizar estado ahí dispara el aviso de React
+        // "Cannot update a component while rendering". Se difiere al próximo
+        // tick y se juntan las ráfagas en un solo cálculo.
+        let pending = false;
+        let alive = true;
+        const unsubscribe = qc.getQueryCache().subscribe((event) => {
             if (event.type !== 'updated' && event.type !== 'added') return;
             const k = event.query.queryKey;
-            if (k[0] === 'records' || k[0] === 'fields') compute();
+            if ((k[0] !== 'records' && k[0] !== 'fields') || pending) return;
+            pending = true;
+            queueMicrotask(() => {
+                pending = false;
+                if (alive) compute();
+            });
         });
+        return () => {
+            alive = false;
+            unsubscribe();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps -- keysSig resume listKeys
     }, [qc, keysSig, recordId]);
     return title;
