@@ -3038,6 +3038,19 @@ trae al directorio de transferencias (sin pisar un archivo con el mismo nombre).
 Desde ahí se importa como siempre. Subir y traer corren en segundo plano, una
 operación a la vez, con el estado en Redis (`transfers:drive:run`).
 
+**Addendum v0.1.287 (qué cliente de Google usan las copias — decidido).** Se
+evaluó conectar el Drive de las copias con la app web de Plataforma →
+Integraciones (un botón «Autorizar», sin crear otro cliente) y dejar el código
+de dispositivo sólo para restaurar. Se descartó: restaurar en un servidor recién
+instalado, sin dominio ni HTTPS, exige igual el cliente «TV y dispositivos de
+entrada limitada» (la app web necesita una URI de redirección registrada), así
+que el operador no se ahorra ningún paso; y dos clientes conectando el MISMO
+Drive de las copias sumaban una segunda forma de autorizar que también habría
+que mantener y probar en la recuperación, que es justo la parte que no puede
+fallar. Queda una sola vía: el cliente de código de dispositivo, creado en el
+mismo proyecto de Google Cloud que la integración (el panel lo indica). El
+usuario dejó la decisión a criterio de quien implementa (2026-10-21).
+
 ### ADR-S44 — Problemas: lo que corre solo y falla, a la vista (v0.1.285)
 
 **Contexto.** Reporte de los clientes: «no se avisa cuando una conexión falla,
@@ -3166,6 +3179,46 @@ creación. Quedan como carencias propuestas (no hechas): pasos de espera y
 bucles en automatizaciones, prueba paso a paso con un registro, formularios de
 varias páginas, captcha, enlace público de tableros y versiones por campo.
 
+
+### ADR-S46 — La tabla como hoja de cálculo: agrupado en dos niveles y deshacer sin pisar (v0.1.287)
+
+**Contexto.** El usuario pidió hacer todas las carencias que dejó propuestas la
+auditoría II (ADR-S45). Las de la tabla eran copiar y pegar como en Excel,
+rellenar, deshacer, fijar columnas, colores condicionales y agrupar por dos
+campos. Cuatro decisiones trascienden la pantalla.
+
+**Decisión.**
+1. **Agrupado en dos niveles como capacidad GENERAL del motor de agregados**, no
+   de la vista: `AggregateService` acepta `sub_group_by_field_id` (+
+   `sub_time_bucket`) y devuelve `groups[].sub_groups`, con las mismas reglas
+   del primer nivel (multi_select por combinación normalizada, sin valor → null,
+   relación y archivo no agrupan, ACL de quien mira, derivados con su
+   expresión, top-N con «Otros» y su desglose). Es UNA consulta con
+   `GROUPING SETS ((grp, sub), (grp))` sobre una subconsulta que calcula las dos
+   claves una vez por fila; el valor del grupo se calcula sobre todo el grupo
+   (no sumando subgrupos), así vale también para promedios y únicos. Tope de
+   2.000 pares, lo que no entra se informa. La usa la vista agrupada y está
+   pensada para las barras apiladas y la tabla dinámica de los tableros.
+2. **Escritura de varias filas con valores distintos por fila**:
+   `PATCH /lists/:l/records/batch` pasa cada fila por `RecordsService.update`
+   (no un UPDATE masivo), así la validación, el ACL por fila, la actividad, las
+   automatizaciones y las reglas de la tienda valen igual que al editar una
+   celda; errores por fila sin abortar el resto y un solo evento realtime.
+3. **Deshacer sin pisar**: el deshacer manda el valor que espera encontrar
+   (`expect`) y el servidor responde 409 `record_changed` si la fila cambió
+   desde entonces. El historial es de la sesión (50 pasos), en el navegador; no
+   hay bloqueo ni historial del lado del servidor.
+4. **Una regla, varias superficies**: pegar convierte con la misma función que
+   el import (`coerceTextToFieldValue` en shared) y los colores condicionales
+   evalúan con el mismo evaluador que las automatizaciones
+   (`evaluateFilterCondition` en shared).
+
+**Consecuencias.** Todo vive en `saved_views.config` (sin migración). Un clic
+sigue abriendo el editor de la celda (v0.1.74); el rango se arma con
+Mayús+clic, Mayús+flechas o arrastrando, y Escape lo quita. Fuera de alcance: un
+rango que cruce grupos en la vista agrupada, rellenar hacia arriba o de lado,
+pegar relaciones y archivos, y cortar (Ctrl+X).
+
 ---
 
-**Versión del documento:** 1.84.0 (auditoría integral II — ADR-S45)
+**Versión del documento:** 1.85.0 (la tabla como hoja de cálculo — ADR-S46)

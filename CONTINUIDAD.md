@@ -352,15 +352,32 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.286** (auditoría integral II: decenas de fallas reales corregidas en toda la app, ADR-S45), en `main`.
+versión publicada: **v0.1.287** (la tabla como hoja de cálculo, ADR-S46), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
+  la auditoría II, y dejó a mi criterio los pendientes de PDF y del cliente de
+  Google. Plan: seis entregas trabajadas en paralelo en copias aisladas y
+  publicadas en el orden en que terminan — **tabla** (hecha, v0.1.287),
+  automatizaciones (esperar, repetir por vinculados, probar paso a paso,
+  respuesta de webhook, programado por registro, duplicar, versiones), ficha
+  (historial por campo con restaurar, reacciones e hilos, vista previa de
+  adjuntos, registro de tiempo), portal y formularios (varias páginas, captcha,
+  confirmación por correo, contraseña del portal, pagar desde el portal),
+  tableros (barras apiladas, enlace público, exportar widget, envío programado,
+  tabla dinámica) y PDF (cotización/factura con IVA y descuento, ítems
+  editables en la ficha, congelar al emitir). Decisión sobre el cliente de
+  Google de las copias: se queda el de código de dispositivo como única vía
+  (addendum de ADR-S43). **Ojo al integrar**: el migrador de drizzle salta una
+  migración cuyo `when` sea menor que el de la última aplicada, así que al
+  publicar fuera de orden se renumera la migración de cada entrega a la
+  siguiente libre.
 - 2026-10-21 — **Pedido del usuario: auditoría PROFUNDA de toda la app**
   ("creía que la app ya tenía todo bien pero cada vez hay cosas con errores").
   Hecho en **v0.1.286** (ADR-S45): 8 relevamientos en paralelo + 7 equipos de
   corrección en copias aisladas, integrados y re-verificados con un segundo
-  recorrido en el navegador. **Carencias propuestas y NO hechas** (esperando
-  que el usuario elija): automatizaciones — paso «esperar N días», bucle sobre
+  recorrido en el navegador. **Carencias propuestas** (el usuario pidió
+  hacerlas todas — ver el hilo de arriba): automatizaciones — paso «esperar N días», bucle sobre
   registros vinculados, prueba paso a paso con un registro, usar la respuesta
   de un webhook en los pasos siguientes, programado «para cada registro que
   cumpla», duplicar con un clic, historial de versiones; portal/formularios —
@@ -389,7 +406,8 @@ versión publicada: **v0.1.286** (auditoría integral II: decenas de fallas real
   sistema habilitado integrado). Se le ofreció: (1) plantilla «Cotización /
   Factura con IVA y descuento» que arme las dos listas, la relación y los
   calculados solos; (2) editar los ítems como tablita en la ficha; (3) «Congelar
-  al emitir». **Queda esperando su respuesta** (pasó a otro tema).
+  al emitir». **Respondido el 2026-10-21: «hazlo como mejor te parezca» → se
+  hacen las tres** (entrega de PDF del plan «hazlo todo»).
 - 2026-10-18 — **Pregunta del usuario sobre F12**: «¿hay que crear otro
   cliente de Google para el backup si ya tenemos la integración de Google en
   Ajustes?». Respuesta: sí es OAuth, pero el de las copias usa el tipo «TV y
@@ -400,7 +418,9 @@ versión publicada: **v0.1.286** (auditoría integral II: decenas de fallas real
   propuso: en el servidor que ya funciona, conectar el Drive de las copias con
   la app web de Plataforma → Integraciones (un botón «Autorizar», sin cliente
   extra) y dejar el código de dispositivo sólo para restaurar en un servidor
-  sin dominio. **Queda esperando su respuesta.**
+  sin dominio. **Respondido el 2026-10-21 («hazlo como mejor te parezca»):
+  se queda el código de dispositivo como única vía** — ver el addendum de
+  ADR-S43.
 - 2026-10-18 — **Recuperar el servidor desde Google Drive** (ADR-S43, pedido
   del usuario: en un VPS limpio correr unos comandos, conectar el Drive, elegir
   la copia y restaurar). Plan acordado: «Las tres» entregas y «Los dos»
@@ -554,6 +574,19 @@ versión publicada: **v0.1.286** (auditoría integral II: decenas de fallas real
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.287** — **La tabla como hoja de cálculo** (ADR-S46),
+  primera entrega del «hazlo todo» del usuario sobre las carencias de la
+  auditoría II. Rango de celdas (Mayús+clic, Mayús+flechas, arrastrar, Ctrl+A),
+  copiar en texto legible y pegar bloques de Excel/Sheets con la conversión del
+  import (ahora en shared), rellenar hacia abajo (Ctrl+D y el asa), Supr,
+  deshacer/rehacer de 50 pasos que no pisa cambios ajenos (`expect` → 409),
+  columnas fijas, colores condicionales por fila o celda y agrupar por dos
+  campos. Endpoint nuevo `PATCH /lists/:l/records/batch` (cada fila por
+  `RecordsService.update`). El motor de agregados gana el agrupado en dos
+  niveles como capacidad general (también para tableros). Sin migración. Un
+  clic sigue abriendo el editor de la celda. Además se decidió que las copias
+  en Drive siguen con el cliente de código de dispositivo (addendum ADR-S43).
+  Queda: el resto de las entregas del plan (ver §10).
 - **2026-10-21 · v0.1.286** — **Auditoría integral II** (ADR-S45). Pedido
   del usuario: auditar a fondo toda la app porque seguían apareciendo errores.
   Ocho relevamientos en paralelo reprodujeron decenas de fallas reales; siete
