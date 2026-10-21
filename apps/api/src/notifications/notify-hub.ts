@@ -17,6 +17,16 @@ export type NotifyEvent =
           body: string;
           /** Ya mencionados en ESE comentario (reciben `mention`, no `comment`). */
           mentioned: number[];
+          commentId?: number;
+          /** `client` = el cliente del portal también lo ve. */
+          visibility?: 'internal' | 'client';
+          /**
+           * Lo escribió el CLIENTE desde su portal (no un miembro del equipo):
+           * el aviso dice «El cliente comentó…» y a él no se lo pone a seguir.
+           */
+          fromClient?: boolean;
+          /** Nombre del cliente que comentó (si `fromClient`). */
+          clientName?: string;
       }
     | {
           type: 'description_mention';

@@ -21,6 +21,26 @@ export class CommentsRepository {
             .orderBy(asc(comments.id));
     }
 
+    /**
+     * La conversación que ve el CLIENTE en su portal: sólo los comentarios
+     * marcados visibles para él (los suyos lo son siempre).
+     */
+    listClientVisible(tx: Tx, tenantId: number, recordId: number, limit = 200): Promise<CommentRow[]> {
+        return tx
+            .select()
+            .from(comments)
+            .where(
+                and(
+                    eq(comments.tenantId, tenantId),
+                    eq(comments.recordId, recordId),
+                    eq(comments.visibility, 'client'),
+                    isNull(comments.deletedAt),
+                ),
+            )
+            .orderBy(asc(comments.id))
+            .limit(Math.min(Math.max(limit, 1), 500));
+    }
+
     async findById(tx: Tx, tenantId: number, id: number): Promise<CommentRow | null> {
         const [row] = await tx
             .select()

@@ -27,6 +27,8 @@ export interface RecordChange {
      * los avisos: no se le avisa a alguien de lo que hizo él mismo.
      */
     actorId?: number;
+    /** El cambio lo hizo el CLIENTE desde su portal (`actorId` es su usuario). */
+    viaPortal?: boolean;
 }
 
 type Listener = (change: RecordChange) => void | Promise<void>;

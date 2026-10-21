@@ -26,6 +26,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CommentsRepository } from '../src/comments/comments.repository';
+import { CommentsService } from '../src/comments/comments.service';
+import { NotifyHub, type NotifyEvent } from '../src/notifications/notify-hub';
+import { RecordChangeHub, type RecordChange } from '../src/records/record-change-hub';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { DomainsService } from '../src/domains/domains.service';
 import { FilesService } from '../src/files/files.service';
@@ -268,12 +271,16 @@ describe('PortalService (Postgres + Redis reales)', () => {
         return session!.userId;
     }
 
-    it('comments: el cliente lista y crea notas de SU record', async () => {
+    it('comments: el cliente lista y crea notas de SU record (con conversación en el diseño)', async () => {
+        await listsService.update(tenantId, 'clientes', {
+            settings: { portal_template: { blocks: [{ type: 'comments_thread' }, { type: 'activity_timeline' }] } },
+        });
         const uid = await clientSession('coment@acme.test');
         expect(await portal.myComments(actor(uid))).toHaveLength(0);
         const created = await portal.createMyComment(actor(uid), { content: 'Hola, ¿novedades?' });
-        expect(created).toMatchObject({ record_id: recordId, user_id: uid, kind: 'note' });
-        expect((created as { content?: string }).content).toBe('Hola, ¿novedades?');
+        expect(created).toMatchObject({ mine: true, author_name: 'Tú', content: 'Hola, ¿novedades?' });
+        // Nunca el id de un usuario ni metadatos internos.
+        expect(created).not.toHaveProperty('user_id');
         const items = await portal.myComments(actor(uid));
         expect(items).toHaveLength(1);
     });
@@ -284,6 +291,8 @@ describe('PortalService (Postgres + Redis reales)', () => {
         // Al menos el record_created del seed.
         expect(items.length).toBeGreaterThan(0);
         expect(items.every((a) => a.record_id === recordId)).toBe(true);
+        // Del equipo no se expone quién fue.
+        expect(items.every((a) => a.user_id === null || a.user_id === uid)).toBe(true);
     });
 
     it('updateMe: whitelist del template — sin editable_form nadie edita; slug fuera → 403', async () => {
@@ -324,39 +333,22 @@ describe('PortalService (Postgres + Redis reales)', () => {
         );
     });
 
-    it('listRecords + aggregates: scope por relation hacia el record del cliente (fail-closed)', async () => {
-        const uid = await clientSession('scope@acme.test');
+    it('las listas vinculadas sólo se leen por el diseño (no hay endpoint para leer cualquier lista)', async () => {
+        // v0.1.286 — `/portal/lists/:slug/records` y `/aggregates` aceptaban
+        // CUALQUIER lista de la empresa y devolvían todas sus columnas. Se
+        // eliminaron: lo vinculado se ve sólo en los bloques del diseño.
+        expect((portal as unknown as Record<string, unknown>).listRecords).toBeUndefined();
+        expect((portal as unknown as Record<string, unknown>).aggregates).toBeUndefined();
 
-        // Lista "pedidos" con relación → clientes y un monto.
+        // Lista "pedidos" con relación → clientes (la usan los tests siguientes).
         await listsService.create(tenantId, { name: 'Pedidos' });
-        const monto = await fieldsService.create(tenantId, 'pedidos', { label: 'Monto', type: 'number', slug: 'monto' });
-        const cliRel = await fieldsService.create(tenantId, 'pedidos', {
+        await fieldsService.create(tenantId, 'pedidos', { label: 'Monto', type: 'number', slug: 'monto' });
+        await fieldsService.create(tenantId, 'pedidos', {
             label: 'Cliente', type: 'relation', slug: 'cliente',
             config: { target_list_id: (await listsService.get(tenantId, 'clientes')).id },
         });
-
-        // Otro record cliente (ajeno) para verificar el aislamiento.
-        const otro = await recordsService.create(tenantId, admin, 'clientes', { data: { [`f${fieldId}`]: 'Otra Corp' } });
-
-        // 2 pedidos del cliente, 1 del ajeno.
-        await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 100, [`f${cliRel.id}`]: [recordId] } });
-        await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 250, [`f${cliRel.id}`]: [recordId] } });
-        await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 999, [`f${cliRel.id}`]: [otro.id] } });
-
-        const page = await portal.listRecords(actor(uid), 'pedidos', 1, 10);
-        expect(page.meta.total).toBe(2);
-        expect(page.data.map((r) => r.fields.monto).sort()).toEqual([100, 250]);
-
-        const agg = await portal.aggregates(actor(uid), 'pedidos', String(monto.id));
-        expect(agg.totals.monto).toMatchObject({ count: 2, sum: 350 });
-
-        // Lista sin vínculo con el cliente → fail-closed (vacío), nunca todo.
         await listsService.create(tenantId, { name: 'Secretos' });
-        const sf = await fieldsService.create(tenantId, 'secretos', { label: 'Dato', type: 'text', slug: 'dato' });
-        await recordsService.create(tenantId, admin, 'secretos', { data: { [`f${sf.id}`]: 'confidencial' } });
-        const closed = await portal.listRecords(actor(uid), 'secretos', 1, 10);
-        expect(closed.meta.total).toBe(0);
-        expect(closed.data).toHaveLength(0);
+        await fieldsService.create(tenantId, 'secretos', { label: 'Dato', type: 'text', slug: 'dato' });
     });
 
     it('el acceso QUEDA registrado: se ve quién lo tiene y cuándo entró (v0.1.153)', async () => {
@@ -408,16 +400,14 @@ describe('PortalService (Postgres + Redis reales)', () => {
         // Una lista sin vínculo NO es candidata (no habría forma de acotarla).
         expect(options.some((o) => o.slug === 'secretos')).toBe(false);
 
-        // Sin elección explícita, el cliente no ve ninguna otra lista.
+        // Las listas vinculadas se ven donde el DISEÑO las pone (nunca "todas
+        // las columnas al pie"): `related_lists` ya no viaja al portal.
         expect((await portal.me(actor(uid))).related_lists).toEqual([]);
-
-        // El admin habilita "Pedidos" → aparece en el portal del cliente.
         const clientes = await listsService.get(tenantId, 'clientes');
         await listsService.update(tenantId, 'clientes', {
             settings: { ...clientes.settings, portal: { enabled: true, related_lists: [pedidos!.list_id] } },
         });
-        const boot = await portal.me(actor(uid));
-        expect(boot.related_lists.map((r) => r.slug)).toEqual(['pedidos']);
+        expect((await portal.me(actor(uid))).related_lists).toEqual([]);
     });
 
     describe('v0.1.245: white-label del portal', () => {
@@ -690,6 +680,10 @@ describe('PortalService (Postgres + Redis reales)', () => {
             const boot = await portal.me(chosen);
             expect(boot.record.id).toBe(recordId);
             expect(boot.account_id).toBe(other.id);
+            // v0.1.286 — el cliente sólo comenta si el diseño tiene conversación.
+            await listsService.update(tenantId, 'clientes', {
+                settings: { portal_template: { blocks: [{ type: 'comments_thread' }] } },
+            });
             await portal.createMyComment(chosen, { content: 'desde la cuenta elegida' });
             expect((await portal.myComments(chosen)).some((c) => (c as { content?: string }).content === 'desde la cuenta elegida')).toBe(true);
             expect((await portal.myComments(actorB)).some((c) => (c as { content?: string }).content === 'desde la cuenta elegida')).toBe(false);
@@ -904,8 +898,8 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect(data.rows).toHaveLength(2);
             expect(data.fields.map((f) => f.id)).not.toContain(notaId);
             expect(data.rows.every((r) => r.data[`f${notaId}`] === undefined)).toBe(true);
-            // La lista ya se ve en el diseño: no se repite al pie.
-            expect(boot.related_lists.map((r) => r.list_id)).not.toContain(cuotas.id);
+            // Nada se repite «al pie» con todas las columnas.
+            expect(boot.related_lists).toEqual([]);
             await listsService.update(tenantId, 'socios', { settings: { ...socios.settings, portal: { enabled: true, related_lists: [] } } });
         });
 
@@ -1034,6 +1028,177 @@ describe('PortalService (Postgres + Redis reales)', () => {
                     settings: { portal_layout_v3: { v: 3, pages: [{ id: 'p', name: 'P', sections: [{ id: 's', columns: [5], blocks: [[]] }] }] } },
                 }),
             ).rejects.toBeInstanceOf(BadRequestException);
+        });
+    });
+
+    describe('auditoría v0.1.286 — lo que el portal NO entrega', () => {
+        let mine: number;
+        let other: number;
+        let nombreId: number;
+        let emailId: number;
+        let costoId: number;
+        let comments: CommentsService;
+        const notifyEvents: NotifyEvent[] = [];
+        const changeEvents: RecordChange[] = [];
+
+        const layout = (extra: { readonlyComments?: boolean; noComments?: boolean } = {}) => ({
+            v: 3,
+            header: { title_field_id: nombreId, subtitle_field_ids: [], chip_field_ids: [] },
+            pages: [
+                {
+                    id: 'inicio',
+                    name: 'Inicio',
+                    sections: [
+                        {
+                            id: 's1',
+                            columns: [12],
+                            blocks: [
+                                [
+                                    { id: 'datos', type: 'fields', config: { field_ids: [emailId], editable: true } },
+                                    ...(extra.noComments ? [] : [{ id: 'conv', type: 'comments', config: { readonly: extra.readonlyComments === true } }]),
+                                    { id: 'hist', type: 'activity', config: {} },
+                                ],
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        async function setLayout(extra: Parameters<typeof layout>[0] = {}): Promise<void> {
+            const l = await listsService.get(tenantId, 'contratos');
+            await listsService.update(tenantId, 'contratos', {
+                settings: { ...l.settings, portal: { enabled: true }, portal_layout_v3: layout(extra) },
+            });
+        }
+
+        async function contratoSession(email: string, record = mine): Promise<number> {
+            const link = await portal.issue(tenantId, 'contratos', { record_id: record, email });
+            const { sessionToken } = await portal.consume(link.token!);
+            return (await sessions.get(sessionToken))!.userId;
+        }
+
+        beforeAll(async () => {
+            await listsService.create(tenantId, { name: 'Contratos' });
+            nombreId = (await fieldsService.create(tenantId, 'contratos', { label: 'Nombre', type: 'text', slug: 'nombre_c' })).id;
+            emailId = (await fieldsService.create(tenantId, 'contratos', { label: 'Email', type: 'email', slug: 'email_c' })).id;
+            costoId = (await fieldsService.create(tenantId, 'contratos', { label: 'Costo interno', type: 'number', slug: 'costo_c' })).id;
+            mine = (
+                await recordsService.create(tenantId, admin, 'contratos', {
+                    data: { [`f${nombreId}`]: 'Mi contrato', [`f${emailId}`]: 'yo@cliente.test', [`f${costoId}`]: 777 },
+                })
+            ).id;
+            other = (await recordsService.create(tenantId, admin, 'contratos', { data: { [`f${nombreId}`]: 'Otro' } })).id;
+            await setLayout();
+            comments = new CommentsService(tenantDb, new CommentsRepository(), listsService, recordsService, rt);
+            const notify = new NotifyHub();
+            notify.subscribe((e) => void notifyEvents.push(e));
+            const changes = new RecordChangeHub();
+            changes.subscribe((c) => void changeEvents.push(c));
+            Object.assign(portal as unknown as Record<string, unknown>, { notify, changes });
+        });
+
+        afterAll(() => {
+            Object.assign(portal as unknown as Record<string, unknown>, { notify: undefined, changes: undefined });
+        });
+
+        it('GET /me sólo manda los campos que el diseño muestra (+ título y editables)', async () => {
+            const uid = await contratoSession('vis1@cliente.test');
+            const boot = await portal.me(actor(uid));
+            expect(boot.fields.map((f) => f.id).sort()).toEqual([nombreId, emailId].sort());
+            expect(boot.record.data[`f${costoId}`]).toBeUndefined();
+            expect(boot.record.data[`f${emailId}`]).toBe('yo@cliente.test');
+            expect(JSON.stringify(boot)).not.toContain('777');
+            // Cuentas y primera página de la conversación en el MISMO request.
+            expect(boot.accounts?.accounts.some((a) => a.record_id === mine)).toBe(true);
+            expect(boot.comments).toEqual([]);
+        });
+
+        it('la actividad sólo muestra cambios de campos que el cliente ve', async () => {
+            const uid = await contratoSession('vis2@cliente.test');
+            await recordsService.update(tenantId, admin, 'contratos', mine, { data: { [`f${costoId}`]: 900 } });
+            await recordsService.update(tenantId, admin, 'contratos', mine, { data: { [`f${emailId}`]: 'nuevo@cliente.test' } });
+            const items = await portal.myActivity(actor(uid), 50);
+            const all = JSON.stringify(items);
+            expect(all).not.toContain(`f${costoId}`);
+            expect(all).not.toContain('900');
+            const updates = items.filter((a) => a.action === 'record_updated');
+            expect(updates).toHaveLength(1);
+            expect(Object.keys(updates[0]!.diff as Record<string, unknown>)).toEqual([`f${emailId}`]);
+            const created = items.find((a) => a.action === 'record_created')!;
+            expect(Object.keys(created.diff as Record<string, unknown>)).not.toContain(`f${costoId}`);
+        });
+
+        it('los comentarios INTERNOS jamás llegan al portal; los visibles para el cliente sí, sin ids del equipo', async () => {
+            const uid = await contratoSession('vis3@cliente.test');
+            await comments.create(tenantId, admin, 'contratos', mine, { body: 'Ojo: este cliente paga tarde', kind: 'note' });
+            await comments.create(tenantId, admin, 'contratos', mine, { body: 'Hola, ya revisamos tu caso', kind: 'note', visibility: 'client' });
+            const seen = await portal.myComments(actor(uid));
+            expect(seen.map((c) => c.body)).toEqual(['Hola, ya revisamos tu caso']);
+            expect(seen[0]).toMatchObject({ mine: false, from_team: true, author_name: 'Admin' });
+            expect(JSON.stringify(seen)).not.toContain('paga tarde');
+            const boot = await portal.me(actor(uid));
+            expect(boot.comments?.map((c) => c.body)).toEqual(['Hola, ya revisamos tu caso']);
+
+            // Lo que escribe el cliente queda visible para él y marcado para el equipo.
+            await portal.createMyComment(actor(uid), { content: '¡Gracias!' });
+            const team = await comments.list(tenantId, admin, 'contratos', mine);
+            const fromClient = team.find((c) => c.body === '¡Gracias!')!;
+            expect(fromClient).toMatchObject({ visibility: 'client', from_client: true });
+            const internal = team.find((c) => c.body.includes('paga tarde'))!;
+            expect(internal.visibility).toBe('internal');
+        });
+
+        it('el comentario y el cambio del cliente avisan (seguidores, automatizaciones, campos con IA)', async () => {
+            const uid = await contratoSession('vis4@cliente.test');
+            notifyEvents.length = 0;
+            changeEvents.length = 0;
+            await portal.createMyComment(actor(uid), { content: 'Necesito ayuda' });
+            expect(notifyEvents).toHaveLength(1);
+            expect(notifyEvents[0]).toMatchObject({ type: 'comment', recordId: mine, actorId: uid, fromClient: true, visibility: 'client' });
+            await portal.updateMe(actor(uid), { fields: { email_c: 'otra@cliente.test' } });
+            expect(changeEvents).toHaveLength(1);
+            expect(changeEvents[0]).toMatchObject({ recordId: mine, actorId: uid, viaPortal: true });
+            expect(changeEvents[0]!.after[`f${emailId}`]).toBe('otra@cliente.test');
+            // La escritura es parcial: lo que el cliente no tocó queda igual.
+            expect(changeEvents[0]!.after[`f${costoId}`]).toBe(900);
+        });
+
+        it('comentar exige conversación escribible en el diseño y la empresa activa', async () => {
+            const uid = await contratoSession('vis5@cliente.test');
+            await setLayout({ readonlyComments: true });
+            await expect(portal.createMyComment(actor(uid), { content: 'x' })).rejects.toMatchObject({
+                response: { code: 'portal_comments_disabled' },
+            });
+            await setLayout({ noComments: true });
+            expect(await portal.myComments(actor(uid))).toEqual([]);
+            expect((await portal.me(actor(uid))).comments).toBeNull();
+            await expect(portal.createMyComment(actor(uid), { content: 'x' })).rejects.toBeInstanceOf(ForbiddenException);
+            await setLayout();
+            // Empresa en solo-lectura (ADR-S09): ni comentarios ni ediciones.
+            await pg.db.update(tenants).set({ subscriptionEndsAt: new Date(Date.now() - 1000) }).where(eq(tenants.id, tenantId));
+            try {
+                await expect(portal.createMyComment(actor(uid), { content: 'x' })).rejects.toMatchObject({
+                    response: { code: 'workspace_read_only' },
+                });
+                await expect(portal.updateMe(actor(uid), { fields: { email_c: 'z@cliente.test' } })).rejects.toMatchObject({
+                    response: { code: 'workspace_read_only' },
+                });
+            } finally {
+                await pg.db.update(tenants).set({ subscriptionEndsAt: null }).where(eq(tenants.id, tenantId));
+            }
+        });
+
+        it('un registro BORRADO deja de existir para el cliente y no recibe accesos nuevos', async () => {
+            const uid = await contratoSession('vis6@cliente.test', other);
+            expect((await portal.me(actor(uid))).record.id).toBe(other);
+            await recordsService.remove(tenantId, admin, 'contratos', other);
+            await expect(portal.me(actor(uid))).rejects.toBeInstanceOf(NotFoundException);
+            await expect(portal.updateMe(actor(uid), { fields: { email_c: 'a@b.test' } })).rejects.toBeInstanceOf(NotFoundException);
+            await expect(portal.myComments(actor(uid))).rejects.toBeInstanceOf(NotFoundException);
+            await expect(
+                portal.issue(tenantId, 'contratos', { record_id: other, email: 'nuevo-borrado@cliente.test' }),
+            ).rejects.toBeInstanceOf(NotFoundException);
         });
     });
 });

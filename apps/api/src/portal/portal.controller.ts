@@ -22,7 +22,7 @@ import {
     portalRequestAccessSchema,
     portalUpdateMeSchema,
     type ActivityDto,
-    type CommentDto,
+    type PortalCommentDto,
     type ConsumeMagicLinkInput,
     type IssueMagicLinkInput,
     type PortalLayoutData,
@@ -281,7 +281,7 @@ export class PortalController {
 
     @Get('portal/me/comments')
     @UseGuards(SessionGuard)
-    async myComments(@Req() req: FastifyRequest): Promise<{ data: CommentDto[] }> {
+    async myComments(@Req() req: FastifyRequest): Promise<{ data: PortalCommentDto[] }> {
         return { data: await this.portal.myComments(portalActor(req)) };
     }
 
@@ -291,7 +291,7 @@ export class PortalController {
     async createMyComment(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(portalCommentSchema)) input: PortalCommentInput,
-    ): Promise<{ data: CommentDto }> {
+    ): Promise<{ data: PortalCommentDto }> {
         return { data: await this.portal.createMyComment(portalActor(req), input) };
     }
 
@@ -320,29 +320,6 @@ export class PortalController {
             .header('x-content-type-options', 'nosniff')
             .header('cache-control', 'private, no-store')
             .send(doc.buffer);
-    }
-
-    /** Records de otra lista visibles bajo el scope del portal. */
-    @Get('portal/lists/:slug/records')
-    @UseGuards(SessionGuard)
-    listRecords(
-        @Req() req: FastifyRequest,
-        @Param('slug') slug: string,
-        @Query('page') page?: string,
-        @Query('per_page') perPage?: string,
-    ) {
-        return this.portal.listRecords(portalActor(req), slug, Number(page ?? 1), Number(perPage ?? 10));
-    }
-
-    /** Totales bajo el scope del portal (KPI / stats grid). */
-    @Get('portal/lists/:slug/aggregates')
-    @UseGuards(SessionGuard)
-    async aggregates(
-        @Req() req: FastifyRequest,
-        @Param('slug') slug: string,
-        @Query('fields') fields?: string,
-    ) {
-        return { data: await this.portal.aggregates(portalActor(req), slug, fields ?? '') };
     }
 }
 
