@@ -275,11 +275,20 @@ export class NotificationsService implements OnModuleInit {
                     company,
                     title: n.title,
                     body,
-                    link: n.recordId !== null && links.listSlug ? `${links.base}/#/lists/${links.listSlug}/records/${n.recordId}` : `${links.base}/#/my-work`,
+                    link:
+                        kind === 'failure'
+                            ? `${links.base}/#/settings?s=problemas`
+                            : n.recordId !== null && links.listSlug
+                              ? `${links.base}/#/lists/${links.listSlug}/records/${n.recordId}`
+                              : `${links.base}/#/my-work`,
                     settingsLink: links.settings,
+                    ...(kind === 'failure' ? { cta: 'Ver el problema' } : {}),
                 });
+                // v0.1.285 — el aviso de una FALLA sale por el correo de la
+                // plataforma: si lo que falla es el correo de la empresa, por
+                // ahí no llegaría nunca (y tampoco gasta su cuota).
                 await this.mail
-                    .enqueue({ tenantId, to: r.email, ...content })
+                    .enqueue({ ...(kind === 'failure' ? {} : { tenantId }), to: r.email, ...content })
                     .catch((err) => this.logger.warn(`Correo de aviso a ${r.userId}: ${String(err)}`));
             }
         }

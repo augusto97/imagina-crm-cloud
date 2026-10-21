@@ -63,6 +63,7 @@ export * from './schemas/store-rules';
 export * from './schemas/store-bulk';
 export * from './schemas/sql-sync';
 export * from './schemas/tenant-transfer';
+export * from './schemas/incidents';
 export * from './templates/automation-recipes';
 export * from './schemas/record-layout';
 export * from './templates/record-layout-builders';

@@ -43,6 +43,7 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { collectionHooks, connections, fields, lists, paymentLinks, records, type PaymentLinkRowDb } from '../db/schema';
+import { IncidentHub } from '../incidents/incident-hub';
 import { FieldsService } from '../fields/fields.service';
 import { effectivePermissions, resolvePermissions, rowInScope } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
@@ -132,6 +133,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         private readonly dispatcher: AutomationDispatcher,
         private readonly audit: AuditService,
         @Optional() private readonly fieldsService?: FieldsService,
+        // v0.1.285 (ADR-S44) — avisos de pago que no se pueden aplicar: avisar.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     onModuleInit(): void {
@@ -576,15 +579,33 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         if (!isCollectionProvider(hook.provider)) return 'ignored';
         await this.db.update(collectionHooks).set({ lastHookAt: new Date() }).where(eq(collectionHooks.token, token));
         const tenantId = hook.tenantId;
-        const conn = await this.connectors.integrationCredsFor(tenantId, hook.connectionId);
-        if (!conn) return 'ignored';
+        const label = COLLECTION_PROVIDER_LABEL[hook.provider];
+        // v0.1.285 — antes estos casos se ignoraban en silencio: los pagos
+        // llegaban y el registro nunca quedaba «Pagado», sin que nadie lo supiera.
+        const failed = (message: string) =>
+            this.incidents?.report({
+                tenantId,
+                key: `collections:${hook.connectionId}:hooks`,
+                source: 'collections',
+                sourceId: hook.connectionId,
+                title: `Los pagos de ${label} no se están registrando`,
+                message,
+            });
+        const conn = await this.connectors.integrationCredsFor(tenantId, hook.connectionId).catch(() => null);
+        if (!conn) {
+            failed(`Llegó un aviso de pago y no se pudo leer la clave de ${label}. Vuelve a conectar la cuenta en Ajustes → Integraciones.`);
+            return 'ignored';
+        }
 
         let paymentId: string | null;
         if (hook.provider === 'mercadopago') {
             paymentId = mpNotificationPaymentId(query, body);
         } else {
             const secret = (conn.creds.signingSecret ?? '').trim();
-            if (secret !== '' && !verifyWompiChecksum(body, secret)) return 'bad_signature';
+            if (secret !== '' && !verifyWompiChecksum(body, secret)) {
+                failed(`Llegó un aviso de ${label} con una firma que no coincide. Revisa que el «secreto de eventos» guardado en Ajustes → Integraciones sea el de tu cuenta de ${label}.`);
+                return 'bad_signature';
+            }
             paymentId = wompiEventTransactionId(body);
         }
         if (!paymentId) return 'ignored';
@@ -592,7 +613,11 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         // El estado se RELEE del proveedor con la credencial de la empresa.
         const req = paymentRequest(hook.provider, conn.creds, paymentId, this.bases);
         const res = await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, captureBody: true, timeoutMs: FETCH_TIMEOUT_MS });
-        if (res.status >= 500) throw new Error(`${COLLECTION_PROVIDER_LABEL[hook.provider]} respondió ${res.status} al releer el pago`);
+        if (res.status >= 500) throw new Error(`${label} respondió ${res.status} al releer el pago`);
+        if (res.status === 401 || res.status === 403) {
+            failed(`${label} rechazó la clave al consultar un pago (${res.status}): puede que la hayan cambiado o revocado. Vuelve a conectar la cuenta en Ajustes → Integraciones.`);
+            return 'ignored';
+        }
         const payment = parsePayment(hook.provider, res.status, res.body ?? '');
         if (!payment || !payment.linkRef) return 'ignored';
 
@@ -610,6 +635,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                 )
                 .limit(1),
         );
+        this.incidents?.resolve(tenantId, `collections:${hook.connectionId}:hooks`);
         if (!link) return 'ignored';
         const changed = await this.applyPayment(tenantId, link.id, payment);
         return changed ? 'applied' : 'ignored';

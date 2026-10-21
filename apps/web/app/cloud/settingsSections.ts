@@ -13,6 +13,7 @@ import {
     PenLine,
     Sparkles,
     SunMoon,
+    TriangleAlert,
     Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -34,6 +35,7 @@ export type SettingsSectionId =
     | 'correo'
     | 'almacenamiento'
     | 'conectores'
+    | 'problemas'
     | 'asistente'
     | 'firma'
     | 'apariencia'
@@ -79,7 +81,11 @@ export function settingsSectionGroups({
                 // quien arma automatizaciones ve qué hay conectado, aunque
                 // conectar para el equipo sea del admin (lo decide el backend).
                 ...(isAdmin || canManageAutomations
-                    ? ([{ id: 'conectores', label: 'Integraciones', icon: Plug }] satisfies SettingsSectionItem[])
+                    ? ([
+                          { id: 'conectores', label: 'Integraciones', icon: Plug },
+                          // v0.1.285 (ADR-S44) — lo que corre solo y dejó de funcionar.
+                          { id: 'problemas', label: 'Problemas', icon: TriangleAlert },
+                      ] satisfies SettingsSectionItem[])
                     : []),
             ],
         },

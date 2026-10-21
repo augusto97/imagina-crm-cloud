@@ -26,6 +26,7 @@ import { useList, useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { relativeTime } from '@/admin/activity/activityText';
 import type { AutomationEntity } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
@@ -360,6 +361,29 @@ function AutomationCard({
                     </Badge>
                 )}
             </div>
+
+            {/* v0.1.285 — si la última corrida falló, se ve aquí sin abrir el historial. */}
+            {automation.last_run?.status === 'failed' && (
+                <button
+                    type="button"
+                    className="imcrm-ml-12 imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-destructive/25 imcrm-bg-destructive/5 imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-xs imcrm-text-destructive hover:imcrm-bg-destructive/10"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onShowRuns(automation);
+                    }}
+                    data-testid="automation-last-failed"
+                >
+                    <AlertCircle className="imcrm-mt-px imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+                    <span className="imcrm-min-w-0">
+                        <span className="imcrm-font-semibold">
+                            {sprintf(__('Falló la última vez (%s)'), relativeTime(automation.last_run.at))}
+                        </span>
+                        {automation.last_run.error && (
+                            <span className="imcrm-line-clamp-2 imcrm-block imcrm-text-destructive/80">{automation.last_run.error}</span>
+                        )}
+                    </span>
+                </button>
+            )}
         </li>
     );
 }

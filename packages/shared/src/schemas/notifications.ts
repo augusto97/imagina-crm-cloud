@@ -12,7 +12,12 @@ import { idSchema } from './common';
  * `memberships.settings.notifications`: son por persona Y por empresa.
  */
 
-export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder'] as const;
+/**
+ * v0.1.285 (ADR-S44) — `failure`: algo que corre solo dejó de funcionar (una
+ * automatización, el correo, un conector, una sincronización). Sólo le llega a
+ * los admins de la empresa y a quien creó lo que falla.
+ */
+export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
@@ -21,6 +26,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     comment: 'Comentan un registro que sigues',
     update: 'Cambia un registro que sigues',
     reminder: 'Tus recordatorios',
+    failure: 'Algo dejó de funcionar (automatizaciones, correo, conectores)',
 };
 
 export interface NotificationDto {
@@ -74,6 +80,8 @@ export const notificationPrefsSchema = z.object({
             comment: z.boolean().default(false),
             update: z.boolean().default(false),
             reminder: z.boolean().default(true),
+            /** v0.1.285 — encendido: una falla que nadie ve es justo el problema. */
+            failure: z.boolean().default(true),
         })
         .default({}),
     /**
@@ -98,6 +106,7 @@ export const updateNotificationPrefsSchema = z
                 comment: z.boolean(),
                 update: z.boolean(),
                 reminder: z.boolean(),
+                failure: z.boolean(),
             })
             .partial(),
         digest: z.enum(['off', 'daily']),

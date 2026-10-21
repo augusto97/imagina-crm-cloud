@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { IncidentHub } from '../incidents/incident-hub';
 import {
     defaultStoreEditable,
     validateFieldValue,
@@ -90,6 +91,7 @@ interface ListTarget {
 interface RunCtx {
     tenantId: number;
     syncId: number;
+    connectionId: number;
     actorId: number;
     settings: SyncSettings;
     state: SyncState;
@@ -120,7 +122,36 @@ export class StoreSyncEngine {
         private readonly automations: AutomationDispatcher,
         private readonly activity: ActivityService,
         @Inject(REDIS) private readonly redis: Redis,
+        // v0.1.285 (ADR-S44) — una sincronización que se corta abre un problema.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
+
+    /**
+     * v0.1.285 (ADR-S44) — abre (con error) o cierra (sin error) el problema de
+     * la tienda. `part` separa la corrida, los avisos en tiempo real y los
+     * envíos desde la app: arreglarse uno no cierra el otro.
+     */
+    storeIncident(
+        ctx: Pick<RunCtx, 'tenantId' | 'connectionId' | 'actorId'>,
+        part: 'run' | 'realtime' | 'push',
+        error: string | null,
+        title: string,
+    ): void {
+        const key = `store_sync:${ctx.connectionId}:${part}`;
+        if (error === null) {
+            this.incidents?.resolve(ctx.tenantId, key);
+            return;
+        }
+        this.incidents?.report({
+            tenantId: ctx.tenantId,
+            key,
+            source: 'store_sync',
+            sourceId: ctx.connectionId,
+            ownerId: ctx.actorId > 0 ? ctx.actorId : null,
+            title,
+            message: error,
+        });
+    }
 
     // ── Candado (una corrida a la vez por sincronización) ──────────────────
 
@@ -208,6 +239,16 @@ export class StoreSyncEngine {
                 patch.last_success_at = now.toISOString();
             }
             await this.saveState(tenantId, syncId, patch);
+            // Que otra corrida haya tomado el candado no es una falla.
+            const lostLock = error !== null && error.startsWith('Otra corrida');
+            if (!lostLock) {
+                this.storeIncident(
+                    ctx,
+                    'run',
+                    error,
+                    `No se pudo sincronizar la tienda ${storeHost(settings.store_url)}`,
+                );
+            }
             const minutes = settings.mode === 'realtime' ? 60 : settings.interval_minutes;
             await this.setNextRun(tenantId, syncId, new Date(now.getTime() + minutes * 60_000));
             for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
@@ -238,6 +279,7 @@ export class StoreSyncEngine {
         const ctx: RunCtx = {
             tenantId,
             syncId,
+            connectionId: row.connectionId,
             actorId: row.createdBy ?? 0,
             settings,
             state,
@@ -294,6 +336,7 @@ export class StoreSyncEngine {
             error = err instanceof Error ? err.message : String(err);
             this.logger.warn(`Aviso ${topic} de la sincronización #${syncId}: ${error}`);
         }
+        this.storeIncident(ctx, 'realtime', error, `No se pudo aplicar un cambio de la tienda ${storeHost(settings.store_url)}`);
         await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .update(connectionSyncs)
@@ -1492,4 +1535,13 @@ function optionLabels(field: Field | undefined): Map<string, string> {
         }
     }
     return out;
+}
+
+/** «tienda.com» (sin esquema ni ruta), para los títulos de los avisos. */
+function storeHost(url: string | null | undefined): string {
+    try {
+        return url ? new URL(url).host : '';
+    } catch {
+        return '';
+    }
 }

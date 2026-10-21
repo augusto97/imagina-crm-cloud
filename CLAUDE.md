@@ -7994,6 +7994,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         un servidor nuevo en un comando que restaura con unos clics, y empresas
         que se mueven entre servidores por el mismo Drive.**
 
+  - [x] **Problemas: lo que corre solo y falla, a la vista (v0.1.285,
+        ADR-S44, reporte de los clientes: "no se reporta cuando una conexión
+        falla, una API da error, un conector deja de funcionar, no se envían los
+        correos de una automatización o no se generó algo")**. Un relevamiento
+        de todo el trabajo en segundo plano lo confirmó: **ninguna falla le
+        avisaba a nadie** — quedaba en el historial de cada automatización, en
+        la tarjeta de cada conector o sólo en el log del servidor.
+        (a) **Problema = una fila abierta por (empresa, `key`)** (`incidents`,
+        migración 0072, RLS): las fallas repetidas de lo mismo suman `count` y
+        guardan el último error. Al abrirse, aviso nuevo tipo **`failure`**
+        (campana + correo, encendido por defecto) a los **admins** y a quien
+        creó lo que falla; si sigue abierto, «Sigue fallando: … N veces desde
+        hace D días» a lo sumo una vez por día. El correo del aviso sale por el
+        correo de la **plataforma** (si lo que falla es el de la empresa, por
+        ahí no llegaría). Se **cierra solo** cuando vuelve a funcionar (el
+        camino feliz sólo mira una marca en Redis) o al borrar lo que fallaba;
+        «Ya lo arreglé» lo cierra a mano. `IncidentHub` global, sin acoplar
+        módulos (mismo patrón que `NotifyHub`).
+        (b) **Qué reporta**: automatizaciones (corrida fallida con el paso y el
+        registro, trabajo caído antes de registrar la corrida, evento que no se
+        pudo encolar), correo de la empresa (configuración rota, último intento
+        de la cola, cuota agotada), conectores (autorización vencida/revocada,
+        renovación fallida, credencial ilegible — también queda en la tarjeta),
+        sincronización SQL, tienda (corrida, tiempo real, cambios de la app que
+        la tienda rechazó, clave ilegible), campos con IA en segundo plano,
+        formularios que perdieron una respuesta, recurrencias y avisos de pago
+        ignorados (clave ilegible, firma, clave rechazada).
+        (c) **Motor más robusto**: cada acción en su **savepoint** — antes un
+        error de la base en UNA acción abortaba la transacción y la corrida ni
+        siquiera quedaba registrada (aunque los correos anteriores ya hubieran
+        salido); y por vencimiento una automatización rota se reintenta **3
+        veces por registro** (antes, cada 5 minutos para siempre). Los errores
+        de la base se muestran por su motivo, no con la consulta SQL.
+        (d) **Interfaz**: Ajustes → **Problemas** (abiertos/resueltos, qué
+        falló, cuántas veces, «Ir a arreglarlo» y «Ya lo arreglé»), pastilla
+        **«N problemas»** en la barra superior mientras haya alguno, aviso en
+        rojo en la campana, preferencia de correo nueva, y en el índice de
+        automatizaciones «Falló la última vez» con el motivo (`last_run` en el
+        listado). El admin ve todo; el resto, lo que creó. De paso, «recién» →
+        «hace un momento» en las fechas relativas (español neutro).
+        12 tests nuevos (incidentes, motor real con un trigger que rompe en la
+        base, tope de reintentos, correo de la empresa, conector con clave
+        ilegible) + E2E navegador 26/26 (falla real → pastilla y campana sin
+        recargar → Problemas → «Ir a arreglarlo» → índice con «Falló» → se
+        cierra solo al arreglarla → «Ya lo arreglé» → celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

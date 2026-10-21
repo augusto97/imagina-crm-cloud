@@ -13,6 +13,7 @@ import IORedis from 'ioredis';
 import { resolvePublicHost } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { recordMail } from '../observability/diagnostics';
+import { IncidentHub } from '../incidents/incident-hub';
 import { guardRedis } from '../redis/redis.util';
 import { EmailQuotaExceededError, EmailQuotaService } from './email-quota.service';
 import {
@@ -56,6 +57,8 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         // v0.1.249 — la cuenta de Google/Microsoft de la empresa (lo provee el
         // módulo de conectores; opcional para los specs de correo).
         @Optional() @Inject(MAIL_ACCOUNT_SENDER) private readonly accountSender?: TenantMailAccountSender,
+        // v0.1.285 (ADR-S44) — el correo de la empresa que deja de salir abre un problema.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     /**
@@ -174,7 +177,12 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
      * un correo que no salió no se cobra— y sólo cuando sale por el SMTP de la
      * plataforma: con SMTP propio no hay límite.
      */
-    private async deliver(message: MailMessage): Promise<void> {
+    /**
+     * `final`: si falla, ya no se reintenta (envío directo, o el último
+     * intento de la cola) → recién ahí abre un problema. Un error pasajero que
+     * el reintento resuelve no le avisa a nadie.
+     */
+    private async deliver(message: MailMessage, final: boolean): Promise<void> {
         const scope = message.tenantId === undefined ? 'account' : 'tenant';
         const base = { to: message.to, subject: message.subject, scope, tenant_id: message.tenantId ?? null } as const;
         let via: MailVia = 'none';
@@ -187,6 +195,8 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             const failedVia: MailVia =
                 message.tenantId === undefined ? 'platform_smtp' : err instanceof MailAccountUnusableError ? 'tenant_account' : 'tenant_smtp';
             recordMail({ ...base, via: failedVia, status: 'failed', error: errorText(err) });
+            // Configuración rota: no se arregla reintentando → se avisa ya.
+            this.reportMail(message.tenantId, failedVia, err);
             throw err;
         }
         const metered = !own && message.tenantId !== undefined && this.quota !== undefined;
@@ -209,6 +219,9 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             await transport.send(outgoing);
         } catch (err) {
             recordMail({ ...base, via, status: 'failed', error: errorText(err) });
+            if (final || err instanceof EmailQuotaExceededError || err instanceof MailAccountLimitError) {
+                this.reportMail(message.tenantId, via, err);
+            }
             throw err;
         }
         // v0.1.238 — el transporte de registro NO envía: se anota como "no
@@ -219,6 +232,10 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             status: via === 'none' ? 'not_sent' : 'sent',
             error: via === 'none' ? 'No hay SMTP configurado: el correo quedó sólo en el registro del servidor.' : null,
         });
+        if (message.tenantId !== undefined && via !== 'none') {
+            this.incidents?.resolve(message.tenantId, 'mail');
+            this.incidents?.resolve(message.tenantId, 'mail:quota');
+        }
         if (metered) {
             // Best-effort: si falla el contador, el correo YA salió — no tiene
             // sentido reintentarlo ni romperle la operación al cliente.
@@ -226,6 +243,34 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 this.logger.warn(`No se pudo contabilizar el correo del tenant ${message.tenantId}: ${String(err)}`),
             );
         }
+    }
+
+    /** v0.1.285 (ADR-S44) — sólo correos de una EMPRESA (los de cuenta no tienen a quién avisar). */
+    private reportMail(tenantId: number | undefined, via: MailVia, err: unknown): void {
+        if (tenantId === undefined || !this.incidents) return;
+        if (err instanceof EmailQuotaExceededError) {
+            this.incidents.report({
+                tenantId,
+                key: 'mail:quota',
+                source: 'mail',
+                title: 'Se agotó la cuota de correos del plan',
+                message: `${errorText(err)} Los correos de las automatizaciones y del portal no se están enviando hasta el mes que viene. Para no depender de la cuota, configura el correo de tu empresa en Ajustes → Correo.`,
+            });
+            return;
+        }
+        const hint =
+            via === 'tenant_account'
+                ? 'Revisa la cuenta de Google o Microsoft elegida en Ajustes → Correo (puede que haya que reconectarla).'
+                : via === 'tenant_smtp'
+                  ? 'Revisa el servidor SMTP en Ajustes → Correo (usuario, contraseña, puerto) y usa «Probar envío».'
+                  : 'El correo de la plataforma no está respondiendo; si sigue, avísale al administrador de la plataforma.';
+        this.incidents.report({
+            tenantId,
+            key: 'mail',
+            source: 'mail',
+            title: 'No se están enviando los correos de la empresa',
+            message: `${errorText(err)} ${hint}`,
+        });
     }
 
     onModuleInit(): void {
@@ -245,7 +290,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 MAIL_QUEUE,
                 async (job) => {
                     try {
-                        await this.deliver(job.data);
+                        await this.deliver(job.data, job.attemptsMade + 1 >= (job.opts.attempts ?? 1));
                     } catch (err) {
                         // Sin cuota no sirve reintentar: el mes no cambia en 2s.
                         if (err instanceof EmailQuotaExceededError) throw new UnrecoverableError(err.message);
@@ -282,7 +327,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
 
     /** Envía sin pasar por la cola (tests, o degradación sin Redis). */
     async sendNow(message: MailMessage): Promise<void> {
-        return this.deliver(message);
+        return this.deliver(message, true);
     }
 
     async onApplicationShutdown(): Promise<void> {

@@ -194,6 +194,7 @@ export class SqlSyncService {
                 meta: { sync_id: syncId },
             });
         });
+        this.engine.forgetIncident(tenantId, row.connectionId, syncId);
         await this.markList(tenantId, row.listId);
     }
 

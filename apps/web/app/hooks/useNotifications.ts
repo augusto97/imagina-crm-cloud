@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
     CreateReminderInput,
+    IncidentsPage,
     FollowStateDto,
     MarkNotificationsInput,
     MyWorkDto,
@@ -25,7 +26,32 @@ export const notificationKeys = {
     work: ['notifications', 'my-work'] as const,
     follow: (recordId: number) => ['notifications', 'follow', recordId] as const,
     reminders: (recordId: number | null) => ['notifications', 'reminders', recordId] as const,
+    // v0.1.285 — bajo 'notifications': el aviso realtime de una falla los refresca.
+    incidents: (status: 'open' | 'resolved' | 'all') => ['notifications', 'incidents', status] as const,
 };
+
+/**
+ * v0.1.285 (ADR-S44) — Problemas de la empresa: lo que corre solo y dejó de
+ * funcionar. `enabled` = falso para quien no lo puede ver (no admin y sin
+ * automatizaciones): así no hay un request que ya sabemos inútil.
+ */
+export function useIncidents(status: 'open' | 'resolved' | 'all' = 'open', enabled = true) {
+    return useQuery({
+        queryKey: notificationKeys.incidents(status),
+        queryFn: async () => (await api.get<IncidentsPage>('/workspaces/current/incidents', { query: { status, limit: 100 } })).data,
+        enabled,
+        refetchInterval: 5 * 60 * 1000,
+        staleTime: 30_000,
+    });
+}
+
+export function useResolveIncident() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => (await api.post<{ ok: true }>(`/workspaces/current/incidents/${id}/resolve`, {})).data,
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['notifications', 'incidents'] }),
+    });
+}
 
 export function useNotifications(unread = false) {
     return useQuery({

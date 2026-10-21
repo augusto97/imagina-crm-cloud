@@ -29,6 +29,7 @@ import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { IncidentHub } from '../incidents/incident-hub';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
@@ -114,6 +115,8 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         @Inject(ENV) private readonly env: Env,
         @Optional() private readonly changes?: RecordChangeHub,
         @Optional() @Inject(AI_CLIENT_FACTORY) clientFactory?: AiClientFactory,
+        // v0.1.285 (ADR-S44) — un campo que deja de calcularse en segundo plano avisa.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {
         this.clientFactory = clientFactory ?? defaultClientFactory;
     }
@@ -133,7 +136,7 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
                 QUEUE,
                 async (job) => {
                     const d = job.data as AiFieldJob;
-                    await this.compute(d.tenantId, d.listId, d.recordId, d.fieldId).catch(() => undefined);
+                    await this.compute(d.tenantId, d.listId, d.recordId, d.fieldId, true).catch(() => undefined);
                 },
                 { connection: conn(), concurrency: 2 },
             );
@@ -174,10 +177,11 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
      * (IA desactivada, cuota, configuración incompleta, respuesta inválida);
      * en segundo plano el motivo queda como «último error» del campo.
      */
-    async compute(tenantId: number, listId: number, recordId: number, fieldId: number): Promise<string | null> {
+    async compute(tenantId: number, listId: number, recordId: number, fieldId: number, background = false): Promise<string | null> {
         try {
             const value = await this.computeInner(tenantId, listId, recordId, fieldId);
             await this.redis.del(errKey(tenantId, fieldId)).catch(() => undefined);
+            if (background) this.incidents?.resolve(tenantId, `ai_field:${fieldId}`);
             return value;
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -185,6 +189,23 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
                 .set(errKey(tenantId, fieldId), JSON.stringify({ message, record_id: recordId, at: new Date().toISOString() }), 'EX', 7 * 86_400)
                 .catch(() => undefined);
             this.logger.warn(`Campo con IA ${fieldId} (registro ${recordId}): ${message}`);
+            // v0.1.285 — en segundo plano nadie ve el error (desde la ficha, la persona sí).
+            const code = (err as { response?: { code?: string } }).response?.code;
+            if (background && code !== 'field_not_found') {
+                const label = await this.fields
+                    .listByListId(tenantId, listId)
+                    .then((fs) => fs.find((f) => f.id === fieldId)?.label ?? null)
+                    .catch(() => null);
+                this.incidents?.report({
+                    tenantId,
+                    key: `ai_field:${fieldId}`,
+                    source: 'ai_field',
+                    sourceId: fieldId,
+                    listId,
+                    title: `El campo con IA «${label ?? `#${fieldId}`}» no se está calculando`,
+                    message: `${message} (registro #${recordId})`,
+                });
+            }
             throw err;
         }
     }

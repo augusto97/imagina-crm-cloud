@@ -34,6 +34,7 @@ import { RecurrencesRepository, type RecurrenceRow } from './recurrences.reposit
 import { BillingService } from '../billing/billing.service';
 import { effectivePermissions, resolvePermissions, rowInScope, scopeWhere } from '../lists/list-acl';
 import { tenantIsReadOnly } from '../tenancy/read-only';
+import { IncidentHub } from '../incidents/incident-hub';
 
 /** Resultado interno de un fire (para emitir realtime/automations tras el tx). */
 interface FireOutcome {
@@ -79,6 +80,8 @@ export class RecurrencesService {
         @Optional() private readonly billing?: BillingService,
         // v0.1.263 — "hoy" de la empresa para `days_after` con fechas sin hora.
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.285 (ADR-S44) — una recurrencia que no puede repetir avisa.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     /**
@@ -299,6 +302,8 @@ export class RecurrencesService {
             (await tenantIsReadOnly(tx, tenantId)) ? null : this.fireInTx(tx, rec),
         );
         if (!outcome) return;
+        this.incidents?.resolve(tenantId, `recurrence:${rec.listId}:plan`);
+        this.incidents?.resolve(tenantId, `recurrence:${rec.listId}:error`);
         this.realtime.records(tenantId, rec.listId);
         this.automations.dispatch({
             tenantId,
@@ -366,6 +371,15 @@ export class RecurrencesService {
                     await this.billing.assertCanCreateRecords(tenantId, 1);
                 } catch {
                     this.logger.warn(`recurrencia ${rec.id}: límite de registros del plan alcanzado, no se clonó`);
+                    this.incidents?.report({
+                        tenantId,
+                        key: `recurrence:${rec.listId}:plan`,
+                        source: 'recurrence',
+                        listId: rec.listId,
+                        title: 'Las recurrencias no pueden crear los registros que tocan',
+                        message:
+                            'Se llegó al límite de registros del plan, así que los registros que se repiten solos (facturas mensuales, por ejemplo) no se están creando. Sube de plan o libera espacio y se crearán en la próxima vuelta.',
+                    });
                     return null;
                 }
             }
@@ -486,6 +500,14 @@ export class RecurrencesService {
                 this.logger.error(
                     `Tick de recurrencia ${rec.id} (tenant ${rec.tenantId}) falló: ${String(err)}`,
                 );
+                this.incidents?.report({
+                    tenantId: rec.tenantId,
+                    key: `recurrence:${rec.listId}:error`,
+                    source: 'recurrence',
+                    listId: rec.listId,
+                    title: 'Una recurrencia no se pudo aplicar',
+                    message: `El registro #${rec.recordId} tenía que repetirse y falló: ${err instanceof Error ? err.message : String(err)}`,
+                });
             }
         }
     }

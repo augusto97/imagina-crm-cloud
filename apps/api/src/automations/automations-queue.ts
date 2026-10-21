@@ -10,6 +10,7 @@ import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { AutomationsService } from './automations.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { IncidentHub, errorText } from '../incidents/incident-hub';
 
 interface SchedulerJobData {
     tenantId: number;
@@ -43,6 +44,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
         private readonly bulkRunner: AutomationBulkRunner,
         private readonly automations: AutomationsService,
         @Optional() private readonly timeZones?: TenantTimeZones,
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -81,9 +83,23 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 },
                 { connection: conn(), concurrency: 5 },
             );
-            this.worker.on('failed', (job, err) =>
-                this.logger.error(`Job ${job?.id} falló: ${err.message}`),
-            );
+            this.worker.on('failed', (job, err) => {
+                this.logger.error(`Job ${job?.id} falló: ${err.message}`);
+                // v0.1.285 (ADR-S44) — el trabajo se cayó ANTES de poder
+                // registrar la corrida: sin esto, sólo quedaba en el log.
+                const d = (job?.data ?? {}) as Partial<SchedulerJobData & TriggerEvent>;
+                if (!job || job.name === RECURRENCES_TICK_JOB || typeof d.tenantId !== 'number') return;
+                const automationId = typeof d.automationId === 'number' ? d.automationId : null;
+                this.incidents?.report({
+                    tenantId: d.tenantId,
+                    key: automationId ? `automation:${automationId}` : `automations:list:${d.listId ?? 0}`,
+                    source: 'automation',
+                    sourceId: automationId,
+                    listId: typeof d.listId === 'number' ? d.listId : null,
+                    title: automationId ? 'Una automatización no pudo correr' : 'Las automatizaciones de una lista no pudieron correr',
+                    message: `El motor se detuvo antes de terminar: ${errorText(err)}`,
+                });
+            });
             this.worker.on('error', (err) => this.logger.warn(`Worker de automatizaciones con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue);
             this.scheduler.setQueue(this.queue);

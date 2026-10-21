@@ -65,6 +65,8 @@ export interface AutomationEntity {
     created_by: number;
     created_at: string;
     updated_at: string;
+    /** v0.1.285 — la última corrida (sólo en el listado). */
+    last_run?: { status: string; error: string | null; at: string } | null;
 }
 
 export interface CreateAutomationInput {

@@ -252,6 +252,8 @@ export class StoreRealtimeService {
             this.logger.warn(`Envío a la tienda (sincronización #${job.syncId}, registro ${job.recordId}): ${error}`);
         }
         if (!sent && !error) return;
+        // v0.1.285 (ADR-S44) — un cambio hecho en la app que la tienda rechazó: avisar.
+        await this.storeIncident(job.tenantId, job.syncId, 'push', error, 'Un cambio hecho en la app no llegó a la tienda');
         await this.tenantDb.withTenant(job.tenantId, (tx) =>
             tx
                 .update(connectionSyncs)
@@ -365,6 +367,27 @@ export class StoreRealtimeService {
                 })
                 .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.id, syncId))),
         );
+        if ('error' in patch) {
+            await this.storeIncident(tenantId, syncId, 'realtime', patch.error ?? null, 'La tienda dejó de avisar los cambios en tiempo real');
+        }
+    }
+
+    private async storeIncident(
+        tenantId: number,
+        syncId: number,
+        part: 'realtime' | 'push',
+        error: string | null,
+        title: string,
+    ): Promise<void> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ connectionId: connectionSyncs.connectionId, createdBy: connectionSyncs.createdBy })
+                .from(connectionSyncs)
+                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.id, syncId)))
+                .limit(1),
+        );
+        if (!row) return;
+        this.engine.storeIncident({ tenantId, connectionId: row.connectionId, actorId: row.createdBy ?? 0 }, part, error, title);
     }
 }
 

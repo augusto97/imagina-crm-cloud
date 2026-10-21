@@ -42,6 +42,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { forms, tenants, type FormRow } from '../db/schema';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
+import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
@@ -118,6 +119,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         private readonly dispatcher: AutomationDispatcher,
         @Inject(ENV) private readonly env: Env,
         @Optional() private readonly billing?: BillingService,
+        // v0.1.285 (ADR-S44) — una respuesta que no se pudo guardar avisa a la empresa.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     onModuleInit(): void {
@@ -413,7 +416,19 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 const mapped = mapRecordErrors(f.config, fields, recErrors);
                 if (Object.keys(mapped).length > 0) throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors: mapped });
             }
-            this.logger.warn(`Formulario ${f.row.id}: no se pudo guardar la respuesta: ${err instanceof Error ? err.message : String(err)}`);
+            const reason = err instanceof Error ? err.message : String(err);
+            this.logger.warn(`Formulario ${f.row.id}: no se pudo guardar la respuesta: ${reason}`);
+            // Antes sólo quedaba en el log: la empresa perdía respuestas sin enterarse.
+            this.incidents?.report({
+                tenantId: f.row.tenantId,
+                key: `form:${f.row.id}`,
+                source: 'form',
+                sourceId: f.row.id,
+                listId: f.row.listId,
+                ownerId: f.row.createdBy ?? null,
+                title: `El formulario «${f.row.name}» está perdiendo respuestas`,
+                message: `Alguien lo envió y no se pudo guardar: ${reason} A quien lo llenó le dijimos que pruebe más tarde.`,
+            });
             throw new HttpException(
                 {
                     code: 'form_unavailable',
@@ -424,6 +439,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             );
         }
 
+        this.incidents?.resolve(f.row.tenantId, `form:${f.row.id}`);
         await this.tenantDb
             .withTenant(f.row.tenantId, (tx) =>
                 tx

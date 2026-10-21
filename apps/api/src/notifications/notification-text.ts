@@ -50,6 +50,10 @@ export function notificationTitle(
         case 'reminder':
             out = `Recordatorio: ${rec}`;
             break;
+        case 'failure':
+            // v0.1.285 — los avisos de falla arman su propio título (no hablan de un registro).
+            out = `Algo dejó de funcionar: ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }
@@ -163,15 +167,18 @@ export function notificationEmail(o: {
     body: string;
     link: string;
     settingsLink: string;
+    /** Texto del botón (por defecto «Abrir»). */
+    cta?: string;
 }): MailContent {
     const body = o.body.trim();
+    const cta = o.cta ?? 'Abrir';
     const inner = `<p style="margin:0 0 10px;font-size:17px;font-weight:600">${escapeHtml(o.title)}</p>
 ${body ? `<p style="margin:0;padding:10px 12px;background:#f9fafb;border-left:3px solid #d1d5db;border-radius:4px;color:#374151;white-space:pre-wrap">${escapeHtml(body)}</p>` : ''}
-${button(o.link, 'Abrir')}`;
+${button(o.link, cta)}`;
     const footer = `Recibes este correo por tus preferencias de avisos. <a href="${escapeHtml(o.settingsLink)}" style="color:#6b7280">Cambiarlas</a>`;
     return {
         subject: o.title,
-        text: `${o.title}\n\n${body ? `${body}\n\n` : ''}Abrir: ${o.link}\n\nCambia tus preferencias de avisos: ${o.settingsLink}`,
+        text: `${o.title}\n\n${body ? `${body}\n\n` : ''}${cta}: ${o.link}\n\nCambia tus preferencias de avisos: ${o.settingsLink}`,
         html: shell(o.company, inner, footer),
     };
 }

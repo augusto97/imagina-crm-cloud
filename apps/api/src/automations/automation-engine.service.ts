@@ -42,6 +42,7 @@ import { RecordChangeHub } from '../records/record-change-hub';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { evaluateCondition } from './condition-evaluator';
@@ -102,6 +103,22 @@ interface RunContext {
  * trigger_config (field_filters + changed_fields) + actions[] con condición por
  * acción + `if_else` recursivo + merge tags. Corre en el worker BullMQ.
  */
+/** v0.1.285 — intentos por registro de una automatización por vencimiento que falla. */
+export const DUE_DATE_MAX_ATTEMPTS = 3;
+
+/** v0.1.285 — nombre legible de cada paso, para el aviso de falla. */
+const ACTION_NAMES: Record<string, string> = {
+    send_email: 'Enviar email',
+    call_webhook: 'Llamar webhook',
+    connector_action: 'Acción de una app conectada',
+    update_field: 'Actualizar campo',
+    create_record: 'Crear registro',
+    generate_pdf: 'Generar PDF',
+    bulk_edit: 'Editar en lote',
+    if_else: 'Condición',
+    engine: 'Motor de automatizaciones',
+};
+
 @Injectable()
 export class AutomationEngine {
     private readonly logger = new Logger(AutomationEngine.name);
@@ -128,6 +145,8 @@ export class AutomationEngine {
         @Optional() private readonly timeZones?: TenantTimeZones,
         // v0.1.266 — documentos PDF (acción «Generar PDF» y adjuntos del correo).
         @Optional() private readonly documents?: DocumentsService,
+        // v0.1.285 (ADR-S44) — una corrida fallida abre un problema y avisa.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     /** Marca de lista de tienda (v0.1.213), o null. */
@@ -243,9 +262,15 @@ export class AutomationEngine {
             const tz = await this.tenantTimeZone(tx, tenantId);
             const dueExpr = field.type === 'date' ? sql`((${typed})::timestamp AT TIME ZONE ${tz})` : typed;
             const threshold = sql`now() - make_interval(mins => ${offset})`;
-            const alreadyRan = sql`exists (select 1 from ${automationRuns} ar
+            // v0.1.285 — una corrida fallida se reintenta, pero con tope: antes
+            // una automatización rota corría (y fallaba, y volvía a mandar los
+            // pasos que sí salían) cada 5 minutos por registro, para siempre.
+            const alreadyRan = sql`(exists (select 1 from ${automationRuns} ar
                 where ar.tenant_id = ${tenantId} and ar.automation_id = ${auto.id}
-                  and ar.record_id = ${records.id} and ar.status <> 'failed')`;
+                  and ar.record_id = ${records.id} and ar.status <> 'failed')
+                or (select count(*) from ${automationRuns} ar
+                where ar.tenant_id = ${tenantId} and ar.automation_id = ${auto.id}
+                  and ar.record_id = ${records.id} and ar.status = 'failed') >= ${DUE_DATE_MAX_ATTEMPTS})`;
 
             // v0.1.252 — keyset por id en tandas de 500. Antes era UN `limit 500`
             // sin orden: los vencidos que no pasan los field_filters no
@@ -418,6 +443,31 @@ export class AutomationEngine {
             startedAt,
             finishedAt: new Date(),
         });
+        this.reportRun(ctx, auto, hadFail ? log : null);
+    }
+
+    /**
+     * v0.1.285 (ADR-S44) — Una corrida fallida abre (o suma) el problema de esa
+     * automatización y avisa a los admins; una corrida buena lo cierra.
+     */
+    private reportRun(ctx: RunContext, auto: AutomationRow, failedLog: ActionLogEntry[] | null): void {
+        const key = `automation:${auto.id}`;
+        if (!failedLog) {
+            this.incidents?.resolve(ctx.tenantId, key);
+            return;
+        }
+        const failed = failedLog.find((l) => l.status === 'failed');
+        const step = failed ? (ACTION_NAMES[failed.action] ?? failed.action) : 'Acción';
+        const where = ctx.recordId !== null ? ` (registro #${ctx.recordId})` : '';
+        this.incidents?.report({
+            tenantId: ctx.tenantId,
+            key,
+            source: 'automation',
+            sourceId: auto.id,
+            listId: auto.listId,
+            title: `Falló la automatización «${auto.name}»`,
+            message: `${step}: ${failed?.message ?? 'Falló una acción'}${where}`,
+        });
     }
 
     /**
@@ -440,10 +490,21 @@ export class AutomationEngine {
             return this.executeIfElse(tx, ctx, spec.config ?? {}, depth);
         }
 
+        // v0.1.285 — cada acción en su SAVEPOINT. Antes compartían la
+        // transacción de la corrida: un error de base de datos en una acción
+        // abortaba todo y la corrida no quedaba registrada (ni se avisaba),
+        // aunque los correos o webhooks anteriores ya hubieran salido.
+        let out: ActionLogEntry | null = null;
         try {
-            return [await this.execAction(tx, ctx, spec)];
+            await tx.transaction(async (sp) => {
+                out = await this.execAction(sp as Tx, ctx, spec);
+            });
+            return [out!];
         } catch (err) {
-            return [{ action: spec.type, status: 'failed', message: err instanceof Error ? err.message : String(err), details: {} }];
+            const done = out as ActionLogEntry | null;
+            if (done?.status === 'failed') return [done];
+            const message = done ? `Se deshizo por un error de la base de datos: ${errorText(err)}` : errorText(err, 2000);
+            return [{ action: spec.type, status: 'failed', message, details: {} }];
         }
     }
 

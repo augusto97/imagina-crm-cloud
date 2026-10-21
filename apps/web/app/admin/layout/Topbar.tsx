@@ -1,6 +1,7 @@
 import { LogOut, Menu, Settings, Sparkles } from 'lucide-react';
 
 import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assistantPanelStore';
+import { IncidentsPill } from '@/admin/layout/IncidentsPill';
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { useSession } from '@/cloud/session';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -72,6 +73,9 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
             </div>
 
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                {/* v0.1.285 — algo que corre solo dejó de funcionar. */}
+                <IncidentsPill />
+
                 {/* v0.1.181 — asistente IA (ADR-S21). */}
                 <Button
                     variant="ghost"

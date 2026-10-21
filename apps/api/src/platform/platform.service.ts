@@ -62,6 +62,7 @@ import {
     listSlugHistory,
     mentions,
     notifications,
+    incidents,
     recordFollows,
     reminders,
     personalAccessTokens,
@@ -345,6 +346,8 @@ export class PlatformService {
             await tx.delete(notifications).where(eq(notifications.tenantId, id));
             await tx.delete(recordFollows).where(eq(recordFollows.tenantId, id));
             await tx.delete(reminders).where(eq(reminders.tenantId, id));
+            // v0.1.285 — problemas (la FK a lists/users se borra antes que ellas).
+            await tx.delete(incidents).where(eq(incidents.tenantId, id));
             // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
             await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
             await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));
