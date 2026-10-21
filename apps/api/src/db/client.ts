@@ -78,6 +78,12 @@ export function createPool(connectionString: string, timeouts: PoolTimeouts = {}
         // Parámetros de arranque de cada conexión (0 = no se manda: sin tope).
         ...(statementTimeout > 0 ? { statement_timeout: statementTimeout } : {}),
         ...(idleInTx > 0 ? { idle_in_transaction_session_timeout: idleInTx } : {}),
+        // v0.1.286 — JIT apagado por defecto (DB_JIT=on lo vuelve a prender).
+        // Las subconsultas de los campos derivados (rollup, lookup, calculado,
+        // set de multi_select) inflan el costo estimado y Postgres compila la
+        // consulta en cada pedido: 130-270 ms de compilación para consultas que
+        // corren en 200. Para una app de muchas consultas cortas no paga nunca.
+        ...(process.env.DB_JIT === 'on' ? {} : { options: '-c jit=off' }),
     });
     pool.on('error', (err) => {
         logger.warn(`Conexión a Postgres cerrada (se abre otra en la próxima consulta): ${err.message}`);
