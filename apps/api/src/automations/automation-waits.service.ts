@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs
 import { waitResumeAt } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { automationRuns } from '../db/schema';
+import { automationRuns, automations } from '../db/schema';
+import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
@@ -38,6 +39,7 @@ export class AutomationWaitsService implements OnModuleInit {
         private readonly dispatcher: AutomationDispatcher,
         @Optional() private readonly changes?: RecordChangeHub,
         @Optional() private readonly timeZones?: TenantTimeZones,
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     onModuleInit(): void {
@@ -90,11 +92,33 @@ export class AutomationWaitsService implements OnModuleInit {
             await this.engine.resumeRun(tenantId, runId);
         } catch (err) {
             this.logger.error(`No se pudo reanudar la corrida ${runId}: ${String(err)}`);
+            const message = `No se pudo seguir después de la espera: ${errorText(err)}`;
             await this.db
                 .update(automationRuns)
-                .set({ status: 'failed', error: `No se pudo seguir después de la espera: ${err instanceof Error ? err.message : String(err)}`, finishedAt: new Date(), resumeAt: null })
+                .set({ status: 'failed', error: message, finishedAt: new Date(), resumeAt: null })
                 .where(and(eq(automationRuns.id, runId), eq(automationRuns.status, 'running')))
                 .catch(() => undefined);
+            // Que no quede en silencio (ADR-S44): el problema es de esa
+            // automatización (la misma clave que sus corridas fallidas, así una
+            // corrida buena lo cierra).
+            const [row] = await this.db
+                .select({ automationId: automationRuns.automationId, recordId: automationRuns.recordId, name: automations.name, listId: automations.listId })
+                .from(automationRuns)
+                .innerJoin(automations, eq(automations.id, automationRuns.automationId))
+                .where(eq(automationRuns.id, runId))
+                .limit(1)
+                .catch(() => []);
+            if (row) {
+                this.incidents?.report({
+                    tenantId,
+                    key: `automation:${row.automationId}`,
+                    source: 'automation',
+                    sourceId: row.automationId,
+                    listId: row.listId,
+                    title: `Falló la automatización «${row.name}»`,
+                    message: `${message}${row.recordId !== null ? ` (registro #${row.recordId})` : ''}`,
+                });
+            }
         }
     }
 

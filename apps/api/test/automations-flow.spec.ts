@@ -613,4 +613,35 @@ describe('Automatizaciones — esperas, bucles, respuestas, simulación y versio
         const own = await withTenant(pg.db, tenantId, (tx) => tx.select().from(automationVersions).where(and(eq(automationVersions.automationId, auto.id))));
         expect(own.length).toBe(3);
     });
+    it('si la reanudación revienta, la corrida queda fallida con el motivo y se abre un Problema (ADR-S44)', async () => {
+        const cliente = await recs.create(tenantId, admin, 'clientes', { data: { [ck('nombre')]: 'Eva', [ck('email')]: 'eva@cliente.test' } });
+        const auto = await autos.create(tenantId, 'clientes', {
+            name: 'Espera frágil',
+            trigger_type: 'record_created',
+            actions: [
+                { type: 'wait', config: { mode: 'duration', amount: 5, unit: 'minutes' } },
+                { type: 'update_field', config: { values: { nota: 'después' } } },
+            ],
+        });
+        await engine.process(await event(cliente.id, cliente.data));
+        await expireWaits(auto.id);
+        const reports: Array<{ key: string; title: string; message: string }> = [];
+        const broken = new AutomationWaitsService(
+            pg.db,
+            tenantDb,
+            { resumeRun: () => Promise.reject(new Error('conexión perdida')) } as never,
+            new AutomationDispatcher(),
+            undefined,
+            undefined,
+            { report: (r: { key: string; title: string; message: string }) => reports.push(r), resolve: () => undefined } as never,
+        );
+        expect(await broken.tick()).toBe(1);
+        const [run] = await runsOf(auto.id);
+        expect(run!.status).toBe('failed');
+        expect(run!.error).toMatch(/No se pudo seguir después de la espera: conexión perdida/);
+        expect(reports).toHaveLength(1);
+        expect(reports[0]!.key).toBe(`automation:${auto.id}`);
+        expect(reports[0]!.title).toBe('Falló la automatización «Espera frágil»');
+        expect(reports[0]!.message).toContain(`registro #${cliente.id}`);
+    });
 });
