@@ -25,7 +25,7 @@ import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { dashboardColor, dashboardIcon } from '@/lib/dashboardIcon';
-import { __, sprintf } from '@/lib/i18n';
+import { __, _n, sprintf } from '@/lib/i18n';
 import { DEFAULT_DASHBOARD_ICON, DEFAULT_LIST_ICON, listColor, listIcon, type ListIconComponent } from '@/lib/listIcons';
 import { paletteMatches, paletteRank } from '@/lib/paletteSearch';
 import { CAP, useCan } from '@/lib/permissions';
@@ -415,7 +415,7 @@ export function GlobalCommandPalette({
                                 {__('cerrar')}
                             </span>
                         </span>
-                        <span>{typing && query.trim().length < 2 ? __('Escribe 2 letras para buscar registros') : sprintf(__('%d resultados'), commands.length)}</span>
+                        <span>{typing && query.trim().length < 2 ? __('Escribe 2 letras para buscar registros') : sprintf(_n('%d resultado', '%d resultados', commands.length), commands.length)}</span>
                     </footer>
                 </Dialog.Content>
             </Dialog.Portal>

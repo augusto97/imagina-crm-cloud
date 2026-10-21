@@ -219,7 +219,7 @@ export function StoreVariationsDialog({ open, onOpenChange, listId, selectedIds,
                                         </button>
                                     )}
                                     <p className={cn('imcrm-text-xs', combos > STORE_VARIATIONS_MAX_PER_PRODUCT ? 'imcrm-text-destructive' : 'imcrm-text-muted-foreground')}>
-                                        {sprintf(__('%d combinaciones por producto (máximo %d). Las que un producto ya tenga se saltean.'), combos, STORE_VARIATIONS_MAX_PER_PRODUCT)}
+                                        {sprintf(_n('%d combinación por producto (máximo %d). Si un producto ya la tiene, se salta.', '%d combinaciones por producto (máximo %d). Las que un producto ya tenga se saltan.', combos), combos, STORE_VARIATIONS_MAX_PER_PRODUCT)}
                                     </p>
                                 </div>
 
