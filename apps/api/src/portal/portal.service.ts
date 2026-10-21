@@ -9,6 +9,7 @@ import {
     Injectable,
     Logger,
     NotFoundException,
+    type OnModuleInit,
     Optional,
 } from '@nestjs/common';
 import {
@@ -72,7 +73,8 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { NotifyHub } from '../notifications/notify-hub';
 import { RecordChangeHub } from '../records/record-change-hub';
-import { portalAccessEmail, senderName, type PortalEmailBrand } from './portal-email';
+import { portalAccessEmail, portalReplyEmail, senderName, type PortalEmailBrand } from './portal-email';
+import { RecordsService } from '../records/records.service';
 import { filterActivityDiff, portalConversation, portalRecordFieldIds } from './portal-visibility';
 
 const MAGIC_TTL_SECONDS = 60 * 60 * 24; // 24h
@@ -142,8 +144,11 @@ function firstName(name: string | null | undefined): string {
     return n.split(/\s+/)[0] ?? '';
 }
 
+/** Un aviso de respuesta por registro y cliente cada 15 minutos (no un correo por mensaje). */
+const REPLY_EMAIL_WINDOW_S = 15 * 60;
+
 @Injectable()
-export class PortalService {
+export class PortalService implements OnModuleInit {
     private readonly inFlight = new Set<Promise<void>>();
     private readonly logger = new Logger(PortalService.name);
 
@@ -170,7 +175,169 @@ export class PortalService {
         // la bandeja del equipo (NotifyHub).
         @Optional() private readonly changes?: RecordChangeHub,
         @Optional() private readonly notify?: NotifyHub,
+        // El cliente crea registros (abre un ticket) por el MISMO camino que
+        // la app: validación, límite del plan, actividad, automatizaciones.
+        @Optional() private readonly records_?: RecordsService,
     ) {}
+
+    onModuleInit(): void {
+        // Cuando el equipo le escribe al cliente (comentario visible para él),
+        // le llega un correo — salvo que lo haya apagado.
+        this.notify?.subscribe((e) => {
+            if (e.type !== 'comment' || e.visibility !== 'client' || e.fromClient) return;
+            return this.emailClientsAboutReply(e).then(
+                () => undefined,
+                (err: unknown) => this.logger.warn(`Aviso de respuesta al cliente: ${err instanceof Error ? err.message : String(err)}`),
+            );
+        });
+    }
+
+    /**
+     * Correo a los clientes con acceso al registro cuando el equipo publica un
+     * comentario visible para ellos. Respeta su preferencia (opt-out en el
+     * portal), el portal apagado y un freno de un correo cada 15 minutos por
+     * registro y cliente. Devuelve a cuántos les salió.
+     */
+    async emailClientsAboutReply(e: { tenantId: number; listId: number; recordId: number; actorId: number; body: string }): Promise<number> {
+        if (await this.portalSwitchedOff(e.tenantId, e.listId)) return 0;
+        if ((await this.liveRecordIds(e.tenantId, [e.recordId])).size === 0) return 0;
+        const links = await this.db
+            .select({ id: portalLinks.id, userId: portalLinks.userId, email: users.email, disabledAt: users.disabledAt })
+            .from(portalLinks)
+            .innerJoin(users, eq(users.id, portalLinks.userId))
+            .where(and(eq(portalLinks.tenantId, e.tenantId), eq(portalLinks.recordId, e.recordId)))
+            .limit(20);
+        if (links.length === 0) return 0;
+        const { author, recordTitle } = await this.tenantDb.withTenant(e.tenantId, async (tx) => {
+            const [actor] = await tx.select({ name: users.name }).from(users).where(eq(users.id, e.actorId)).limit(1);
+            const ctx = await this.portalCtx(tx, e.tenantId, e.listId);
+            const [rec] = await tx.select({ data: records.data }).from(records).where(eq(records.id, e.recordId)).limit(1);
+            const raw = ctx.titleFieldId !== null ? (rec?.data as Record<string, unknown> | undefined)?.[`f${ctx.titleFieldId}`] : null;
+            return { author: firstName(actor?.name), recordTitle: typeof raw === 'string' ? raw : '' };
+        });
+        const base = await this.domains.baseUrlFor(e.tenantId, 'portal');
+        const brand = await this.emailBrand(e.tenantId, base);
+        let sent = 0;
+        for (const l of links) {
+            if (l.disabledAt !== null || l.userId === e.actorId) continue;
+            const wants = await this.tenantDb.withTenant(e.tenantId, (tx) => this.notifyEmailPref(tx, e.tenantId, l.userId));
+            if (!wants) continue;
+            const key = `portalreply:${e.tenantId}:${e.recordId}:${l.userId}`;
+            const fresh = await this.redis.set(key, '1', 'EX', REPLY_EMAIL_WINDOW_S, 'NX').catch(() => 'OK');
+            if (fresh !== 'OK') continue;
+            const message = portalReplyEmail(brand, `${base}/portal?cuenta=${l.id}`, {
+                author: author || brand.name,
+                snippet: e.body,
+                recordTitle,
+            });
+            try {
+                await this.mail.sendNow({
+                    tenantId: e.tenantId,
+                    to: l.email,
+                    subject: message.subject,
+                    text: message.text,
+                    html: message.html,
+                    ...(brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
+                });
+                sent++;
+            } catch (err) {
+                this.logger.warn(`Aviso de respuesta a ${maskEmail(l.email)}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        return sent;
+    }
+
+    /** PATCH /portal/me/preferences — el cliente decide si recibe correos de respuesta. */
+    async setPreferences(actor: PortalActor, input: { notify_email: boolean }): Promise<{ notify_email: boolean }> {
+        const link = await this.requireLink(actor);
+        await this.tenantDb.withTenant(link.tenantId, (tx) =>
+            tx
+                .update(memberships)
+                .set({ settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('portal_notify', ${input.notify_email}::boolean)` })
+                .where(and(eq(memberships.tenantId, link.tenantId), eq(memberships.userId, actor.userId))),
+        );
+        return { notify_email: input.notify_email };
+    }
+
+    /**
+     * POST /portal/lists/:listId/records — el cliente crea un registro (abre un
+     * ticket, hace un pedido) en una lista que la empresa habilitó para eso.
+     * Sólo los campos permitidos; la relación hacia SU registro la pone el
+     * servidor (nunca el cliente). Avisa a quien sigue su registro.
+     */
+    async createRecord(actor: PortalActor, listId: number, input: { fields: Record<string, unknown> }): Promise<{ id: number }> {
+        const link = await this.requireLink(actor);
+        const tenantId = link.tenantId;
+        if (!this.records_) throw portalGone();
+        const target = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await this.assertWritable(tx, tenantId);
+            const ctx = await this.portalCtx(tx, tenantId, link.listId);
+            const t = (await this.creatableTargets(tx, tenantId, ctx)).find((x) => x.listId === listId);
+            if (!t) {
+                throw new NotFoundException({
+                    code: 'portal_list_not_creatable',
+                    message: 'Aquí no se pueden crear registros',
+                    data: { status: 404 },
+                });
+            }
+            return t;
+        });
+        const allowed = new Map(target.fields.map((f) => [String(f.id), f]));
+        const data: Record<string, unknown> = {};
+        const errors: Record<string, string> = {};
+        for (const [key, value] of Object.entries(input.fields)) {
+            const field = allowed.get(key);
+            if (!field) {
+                throw new ForbiddenException({
+                    code: 'portal_field_forbidden',
+                    message: 'Ese dato no se puede completar desde el portal',
+                    data: { status: 403 },
+                });
+            }
+            const res = validateFieldValue({ type: field.type, config: field.config, is_required: field.is_required }, value);
+            if (!res.ok) errors[key] = res.error;
+            else if (res.value !== null && res.value !== undefined) data[jsonbKeyForField(field.id)] = res.value;
+        }
+        for (const f of target.fields) {
+            if (f.is_required && (data[jsonbKeyForField(f.id)] === undefined || data[jsonbKeyForField(f.id)] === '')) {
+                errors[String(f.id)] ??= 'Este dato es obligatorio.';
+            }
+        }
+        if (Object.keys(errors).length > 0) {
+            throw new BadRequestException({ code: 'validation_failed', message: 'Revisa los datos marcados.', data: { status: 400, errors } });
+        }
+        // El vínculo con el cliente lo pone el servidor.
+        data[jsonbKeyForField(target.relationFieldId)] = [link.recordId];
+        let created: { id: number; data: Record<string, unknown> };
+        try {
+            // Sin persona del equipo detrás (como un formulario público).
+            created = await this.records_.create(tenantId, { userId: 0, role: 'admin' }, String(target.listId), { data });
+        } catch (err) {
+            if (err instanceof HttpException && err.getStatus() === 400) {
+                throw new BadRequestException({
+                    code: 'portal_create_failed',
+                    message: 'No se pudo crear: la empresa pide datos que este formulario no tiene. Avísale a la empresa.',
+                    data: { status: 400 },
+                });
+            }
+            throw err;
+        }
+        const [me] = await this.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, actor.userId)).limit(1);
+        const titleField = target.fields.find((f) => f.type === 'text');
+        const title = titleField ? String(created.data[jsonbKeyForField(titleField.id)] ?? '') : '';
+        this.notify?.emit({
+            type: 'portal_record_created',
+            tenantId,
+            listId: target.listId,
+            recordId: created.id,
+            actorId: actor.userId,
+            clientName: (me?.name || me?.email || '').trim(),
+            parentRecordId: link.recordId,
+            title,
+            listName: target.name,
+        });
+        return { id: created.id };
+    }
 
     /**
      * Reemplaza los IDs de attachments de los campos `file` por URLs firmadas

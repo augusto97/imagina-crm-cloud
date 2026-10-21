@@ -19,6 +19,8 @@ import {
     layoutDataRequestSchema,
     issueMagicLinkSchema,
     portalCommentSchema,
+    portalCreateRecordSchema,
+    portalPreferencesSchema,
     portalRequestAccessSchema,
     portalUpdateMeSchema,
     type ActivityDto,
@@ -34,6 +36,8 @@ import {
     type PortalEmailLinkResult,
     type PortalSwitchResult,
     type PortalCommentInput,
+    type PortalCreateRecordInput,
+    type PortalPreferencesInput,
     type PortalRequestAccessInput,
     type PortalRelatedOptions,
     type PortalUpdateMeInput,
@@ -302,6 +306,28 @@ export class PortalController {
         @Query('limit') limit?: string,
     ): Promise<{ data: ActivityDto[] }> {
         return { data: await this.portal.myActivity(portalActor(req), Number(limit ?? 50)) };
+    }
+
+    /** El cliente decide si recibe un correo cuando el equipo le responde. */
+    @Patch('portal/me/preferences')
+    @UseGuards(SessionGuard)
+    setPreferences(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(portalPreferencesSchema)) input: PortalPreferencesInput,
+    ): Promise<{ notify_email: boolean }> {
+        return this.portal.setPreferences(portalActor(req), input);
+    }
+
+    /** El cliente crea un registro en una lista que la empresa habilitó (abrir un ticket). */
+    @Post('portal/lists/:listId/records')
+    @HttpCode(201)
+    @UseGuards(SessionGuard)
+    async createRecord(
+        @Req() req: FastifyRequest,
+        @Param('listId') listId: string,
+        @Body(new ZodValidationPipe(portalCreateRecordSchema)) input: PortalCreateRecordInput,
+    ): Promise<{ data: { id: number } }> {
+        return { data: await this.portal.createRecord(portalActor(req), Number(listId) || 0, input) };
     }
 
     /** v0.1.267 — PDF publicado en el portal, del registro del cliente. */

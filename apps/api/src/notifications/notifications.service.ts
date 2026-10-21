@@ -115,6 +115,20 @@ export class NotificationsService implements OnModuleInit {
     // ─────────────────────────── Eventos ───────────────────────────
 
     async onNotify(e: NotifyEvent): Promise<void> {
+        if (e.type === 'portal_record_created') {
+            // Lo que el cliente abre desde su portal le llega a quien sigue SU
+            // registro (no hay seguidores en uno recién creado).
+            const followers = await this.followerIds(e.tenantId, e.parentRecordId);
+            await this.follow(e.tenantId, e.listId, e.recordId, followers);
+            await this.deliver(e.tenantId, 'update', followers, {
+                listId: e.listId,
+                recordId: e.recordId,
+                actorId: e.actorId,
+                title: `${clientLabel(e.clientName)} creó «${(e.title || 'Sin título').slice(0, 80)}» en «${e.listName}»`,
+                body: 'Lo abrió desde su portal.',
+            });
+            return;
+        }
         const ctx = await this.recordCtx(e.tenantId, e.listId, e.recordId);
         if (!ctx) return;
         // Lo que hace el CLIENTE desde su portal se nombra como tal: el equipo

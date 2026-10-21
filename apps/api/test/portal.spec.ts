@@ -1189,6 +1189,76 @@ describe('PortalService (Postgres + Redis reales)', () => {
             }
         });
 
+        it('el cliente CREA un registro en una lista habilitada: sólo los campos permitidos y vinculado a él', async () => {
+            const uid = await contratoSession('crea1@cliente.test');
+            const contratos = await listsService.get(tenantId, 'contratos');
+            const tickets = await listsService.create(tenantId, { name: 'Tickets contrato' });
+            const asunto = await fieldsService.create(tenantId, tickets.slug, { label: 'Asunto', type: 'text', slug: 'asunto_t', is_required: true });
+            const prioridad = await fieldsService.create(tenantId, tickets.slug, {
+                label: 'Prioridad', type: 'select', slug: 'prioridad_t',
+                config: { options: [{ value: 'alta', label: 'Alta' }, { value: 'baja', label: 'Baja' }] },
+            });
+            const interno = await fieldsService.create(tenantId, tickets.slug, { label: 'Nota interna', type: 'text', slug: 'interno_t' });
+            const rel = await fieldsService.create(tenantId, tickets.slug, {
+                label: 'Contrato', type: 'relation', slug: 'contrato_t', config: { target_list_id: contratos.id },
+            });
+            Object.assign(portal as unknown as Record<string, unknown>, { records_: recordsService });
+
+            // Sin habilitar: nada.
+            expect((await portal.me(actor(uid))).creatable_lists).toEqual([]);
+            await expect(portal.createRecord(actor(uid), tickets.id, { fields: { [asunto.id]: 'x' } })).rejects.toMatchObject({
+                response: { code: 'portal_list_not_creatable' },
+            });
+
+            const fresh = await listsService.get(tenantId, 'contratos');
+            await listsService.update(tenantId, 'contratos', {
+                settings: {
+                    ...fresh.settings,
+                    portal: { ...(fresh.settings.portal as object), enabled: true, creatable_lists: [{ list_id: tickets.id, field_ids: [asunto.id, prioridad.id, rel.id], label: 'Abrir un ticket' }] },
+                },
+            });
+            const boot = await portal.me(actor(uid));
+            expect(boot.creatable_lists).toHaveLength(1);
+            expect(boot.creatable_lists[0]!.label).toBe('Abrir un ticket');
+            // La relación nunca la elige el cliente: no se ofrece.
+            expect(boot.creatable_lists[0]!.fields.map((f) => f.id)).toEqual([asunto.id, prioridad.id]);
+
+            // Un campo no permitido → 403; falta el obligatorio → 400.
+            await expect(portal.createRecord(actor(uid), tickets.id, { fields: { [asunto.id]: 'x', [interno.id]: 'hack' } })).rejects.toBeInstanceOf(ForbiddenException);
+            await expect(portal.createRecord(actor(uid), tickets.id, { fields: { [prioridad.id]: 'alta' } })).rejects.toBeInstanceOf(BadRequestException);
+
+            notifyEvents.length = 0;
+            const created = await portal.createRecord(actor(uid), tickets.id, { fields: { [asunto.id]: 'No me llega la factura', [prioridad.id]: 'alta' } });
+            const rec = await recordsService.get(tenantId, admin, tickets.slug, created.id);
+            expect(rec.data[`f${asunto.id}`]).toBe('No me llega la factura');
+            expect(rec.relations?.[`f${rel.id}`]).toEqual([mine]);
+            expect(notifyEvents[0]).toMatchObject({ type: 'portal_record_created', recordId: created.id, parentRecordId: mine, actorId: uid });
+        });
+
+        it('el equipo responde → el cliente recibe un correo (una vez cada 15 min y si no lo apagó)', async () => {
+            const uid = await contratoSession('aviso1@cliente.test');
+            const sentBefore = mailbox.sent.length;
+            const event = { tenantId, listId: (await listsService.get(tenantId, 'contratos')).id, recordId: mine, actorId: admin.userId, body: 'Ya quedó lista tu factura' };
+            await redis.del(`portalreply:${tenantId}:${mine}:${uid}`);
+            const n = await portal.emailClientsAboutReply(event);
+            expect(n).toBeGreaterThanOrEqual(1);
+            const mail = mailbox.sent.slice(sentBefore).find((m) => m.to === 'aviso1@cliente.test')!;
+            expect(mail.subject).toMatch(/te respondió/);
+            expect(mail.text).toContain('Ya quedó lista tu factura');
+            expect(mail.text).toContain('/portal?cuenta=');
+            // Freno: otro mensaje enseguida no manda otro correo.
+            const again = mailbox.sent.length;
+            await portal.emailClientsAboutReply(event);
+            expect(mailbox.sent.slice(again).some((m) => m.to === 'aviso1@cliente.test')).toBe(false);
+            // Apagado por el cliente: nada.
+            await portal.setPreferences(actor(uid), { notify_email: false });
+            expect((await portal.me(actor(uid))).notify_email).toBe(false);
+            await redis.del(`portalreply:${tenantId}:${mine}:${uid}`);
+            const afterOff = mailbox.sent.length;
+            await portal.emailClientsAboutReply(event);
+            expect(mailbox.sent.slice(afterOff).some((m) => m.to === 'aviso1@cliente.test')).toBe(false);
+        });
+
         it('un registro BORRADO deja de existir para el cliente y no recibe accesos nuevos', async () => {
             const uid = await contratoSession('vis6@cliente.test', other);
             expect((await portal.me(actor(uid))).record.id).toBe(other);

@@ -29,6 +29,23 @@ export type NotifyEvent =
           clientName?: string;
       }
     | {
+          /**
+           * El CLIENTE creó un registro desde su portal (abrió un ticket): se
+           * avisa a quienes siguen SU registro (el del portal).
+           */
+          type: 'portal_record_created';
+          tenantId: number;
+          /** El registro nuevo. */
+          listId: number;
+          recordId: number;
+          actorId: number;
+          clientName: string;
+          /** El registro del cliente (el de su portal). */
+          parentRecordId: number;
+          title: string;
+          listName: string;
+      }
+    | {
           type: 'description_mention';
           tenantId: number;
           listId: number;
