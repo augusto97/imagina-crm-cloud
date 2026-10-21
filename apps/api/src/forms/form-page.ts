@@ -98,6 +98,8 @@ const BASE_CSS = `
          font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   body.embedded { background: transparent; }
   .wrap { max-width: 660px; margin: 0 auto; padding: 32px 16px 48px; }
+  /* Lo oculto se oculta SIEMPRE (si no, .btn { display:inline-flex } gana a [hidden]). */
+  [hidden] { display: none !important; }
   body.embedded .wrap { padding: 8px 4px 16px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
           box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 24px rgba(16,24,40,.06); overflow: hidden; }

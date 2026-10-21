@@ -234,12 +234,15 @@ export function PortalPaymentsPreview({
     config,
     amount,
     currency,
+    recordTitle = '',
 }: {
     config: Record<string, unknown>;
     /** El valor del campo del monto en el registro de muestra. */
     amount: unknown;
     /** La moneda del campo del monto (Wompi siempre cobra en COP). */
     currency: string;
+    /** El título del registro de muestra (el concepto cuando no se escribe uno). */
+    recordTitle?: string;
 }): JSX.Element {
     const cfg = readPortalPaymentsConfig(config);
     const conns = useQuery({ queryKey: ['collections-connections'], queryFn: () => api.collectionConnections(), retry: false, staleTime: 60_000 });
@@ -263,7 +266,7 @@ export function PortalPaymentsPreview({
                   label: cfg.pay_button.label || 'Pagar ahora',
                   amount: n,
                   currency: conn.provider === 'wompi' ? 'COP' : currency,
-                  concept: cfg.pay_button.concept || 'Concepto del pago',
+                  concept: cfg.pay_button.concept || recordTitle || 'Concepto del pago',
                   provider: conn.provider,
               }
             : null;

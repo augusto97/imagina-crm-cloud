@@ -1142,7 +1142,7 @@ function SettingsInspector({
                         <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-captcha-unavailable">
                             {__('No hay llaves de captcha configuradas.')}{' '}
                             {captcha?.can_configure ? (
-                                <a href="/settings?s=portal" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline">
+                                <a href="/#/settings?s=portal" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline">
                                     {__('Cárgalas en Ajustes → Portal y formularios')}
                                 </a>
                             ) : (

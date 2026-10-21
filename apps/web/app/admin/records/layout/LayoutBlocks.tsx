@@ -308,7 +308,16 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
             if (ctx.preview) {
                 const amountField = ctx.fieldsById.get(Number((c.pay_button as { amount_field_id?: unknown } | undefined)?.amount_field_id));
                 const currency = typeof amountField?.config?.currency === 'string' ? amountField.config.currency.toUpperCase() : 'COP';
-                return <PortalPaymentsPreview config={c} amount={amountField ? ctx.values[amountField.slug] : null} currency={currency} />;
+                const titleField = ctx.fields.find((f) => f.is_primary);
+                const titleValue = titleField ? ctx.values[titleField.slug] : null;
+                return (
+                    <PortalPaymentsPreview
+                        config={c}
+                        amount={amountField ? ctx.values[amountField.slug] : null}
+                        currency={currency}
+                        recordTitle={typeof titleValue === 'string' || typeof titleValue === 'number' ? String(titleValue) : ''}
+                    />
+                );
             }
             const data = ctx.portalPayments?.[block.id];
             return data ? <PortalPaymentsBlockView blockId={block.id} data={data} /> : null;
