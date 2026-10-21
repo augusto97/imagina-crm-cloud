@@ -562,7 +562,7 @@ export function AutomationCanvas({
                         style={{ left: f.x, top: f.y, width: f.w, height: f.h }}
                         data-testid="imcrm-canvas-loop-frame"
                     >
-                        <span className="imcrm-absolute imcrm-left-3 imcrm-top-2 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wide imcrm-text-[hsl(var(--imcrm-info-ink))]">
+                        <span className="imcrm-absolute imcrm-right-3 imcrm-top-2 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wide imcrm-text-[hsl(var(--imcrm-info-ink))]">
                             {__('Por cada vinculado')}
                         </span>
                     </div>
@@ -604,8 +604,9 @@ export function AutomationCanvas({
                                               : 'imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-text-warning',
                                     )}
                                     style={{
-                                        left: e.sx + (e.tx - e.sx) * 0.28,
-                                        top: e.sy + (e.ty - e.sy) * 0.28,
+                                        // «Cada uno» va pegado al nodo, por encima del marco.
+                                        left: e.sx + (e.tx - e.sx) * (e.label === 'cada' ? 0.14 : 0.28),
+                                        top: e.sy + (e.ty - e.sy) * (e.label === 'cada' ? 0.14 : 0.28),
                                         transform: 'translate(-50%, -50%)',
                                     }}
                                 >
