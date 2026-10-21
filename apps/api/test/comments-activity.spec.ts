@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, comments, fields, lists, memberships, mentions, records, tenants, users } from '../src/db/schema';
+import { activity, comments, fields, lists, memberships, mentions, recordFollows, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
@@ -147,7 +147,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
             body: 'Primer contacto',
             kind: 'call',
         });
-        expect(c1).toMatchObject({ kind: 'call', parent_id: null, user_id: ana.userId });
+        expect(c1).toMatchObject({ kind: 'call', parent_id: null, user_id: ana.userId, user_name: 'Ana' });
 
         const reply = await commentsService.create(tenantA, beto, 'clientes', rec.id, {
             body: 'Respuesta',
@@ -158,6 +158,8 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
 
         const all = await commentsService.list(tenantA, ana, 'clientes', rec.id);
         expect(all).toHaveLength(2);
+        // El nombre del autor viaja en el DTO: la ficha no dice "Usuario #2".
+        expect(all.map((c) => c.user_name)).toEqual(['Ana', 'Beto']);
 
         // parent de otro record → 400.
         const rec2 = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'Y' } });
@@ -183,6 +185,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
 
         const updated = await commentsService.update(tenantA, ana, 'clientes', rec.id, c.id, { body: 'editado' });
         expect(updated.body).toBe('editado');
+        expect(updated.user_name).toBe('Ana');
         await commentsService.remove(tenantA, ana, 'clientes', rec.id, c.id);
         expect(await commentsService.list(tenantA, ana, 'clientes', rec.id)).toHaveLength(0);
     });
@@ -214,6 +217,22 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         expect(feed[0]).toMatchObject({ user_id: ana.userId, record_id: rec.id });
         expect((feed[0]!.changes as { snippet: string }).snippet).toContain('mira esto');
         expect(await meService.mentions(tenantA, ana.userId, 20)).toHaveLength(0);
+    });
+
+    it('comentar te pone a seguir el registro EN EL MISMO tx (el botón «Seguir» lo ve al toque)', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'Seguido' } });
+        const follows = () =>
+            withTenant(pg.db, tenantA, (tx) =>
+                tx.select().from(recordFollows).where(and(eq(recordFollows.tenantId, tenantA), eq(recordFollows.recordId, rec.id))),
+            );
+        expect(await follows()).toHaveLength(0);
+        // Sin NotifyHub (el hub corre en segundo plano): igual queda siguiendo.
+        await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'Ojo con esto', kind: 'note' });
+        const rows = await follows();
+        expect(rows.map((r) => r.userId)).toEqual([beto.userId]);
+        // Un segundo comentario no duplica.
+        await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'Y esto', kind: 'note' });
+        expect(await follows()).toHaveLength(1);
     });
 
     it('comentar sobre un record inexistente/ajeno → 404', async () => {

@@ -15,7 +15,6 @@ import {
     filterOperatorSchema,
     parseFieldConfig,
     parseViewConfig,
-    publicListSettingsSchema,
     readPortalConfig,
     migrateCrmV2ToV3,
     migratePortalTemplateToV3,
@@ -103,6 +102,7 @@ import {
     type DesignFieldRef,
 } from './design-builders';
 import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
+import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
@@ -240,8 +240,8 @@ const widgetSpecInput = z.object({
     sort_dir: z.enum(['asc', 'desc']).optional(),
     columns: z.array(fieldSlugSchema).max(8).optional().describe('table: columnas visibles'),
     goal: z.number().optional().describe('kpi/gauge: meta'),
-    prefix: z.string().max(8).optional().describe('kpi: prefijo ($)'),
-    suffix: z.string().max(8).optional().describe('kpi: sufijo (%)'),
+    prefix: z.string().max(8).optional().describe('kpi: prefijo; no hace falta en monedas (ya muestran su símbolo)'),
+    suffix: z.string().max(8).optional().describe('kpi: sufijo (p. ej. " h"); no hace falta en porcentajes (ya muestran «%»)'),
     period_days: z.number().int().min(1).max(365).optional().describe('stat_delta: días de cada ventana (default 30)'),
     text: z.string().max(2000).optional().describe('heading: subtítulo; text: contenido'),
     width: z.union([z.literal(3), z.literal(4), z.literal(6), z.literal(8), z.literal(12)]).optional().describe('Ancho en columnas de 12 (default: kpi 3, charts 6, table 12)'),
@@ -803,7 +803,9 @@ export class StructureTools implements AiProposalApplier {
         const settings = (list.settings ?? {}) as Record<string, unknown>;
         const { portal, template } = readPortalConfig(settings);
         const layout = readRecordLayout(settings);
-        const pub = publicListSettingsSchema.safeParse(settings.public ?? {});
+        // La lista pública guarda sus campos por id (v0.1.286): se leen como slugs actuales.
+        const pubCfg = canonicalPublicSettings(settings.public ?? {}, fields);
+        const pub = { success: true as const, data: { ...pubCfg, visible_field_slugs: pubCfg.visible_field_ids.map((id) => fieldById.get(id)?.slug).filter((x): x is string => !!x) } };
         const related = await this.detectRelatedLists(ctx.tenantId, list);
         // v0.1.232 — listas vinculadas en los DOS sentidos (para `design`:
         // gráficos y tablas de vinculados en la ficha).

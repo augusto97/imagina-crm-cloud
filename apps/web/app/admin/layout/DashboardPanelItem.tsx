@@ -4,7 +4,7 @@ import { Copy, Link2, Pencil, Pin, PinOff, Settings2, Trash2 } from 'lucide-reac
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
-import { useDeleteDashboard, useDuplicateDashboard, useUpdateDashboard } from '@/hooks/useDashboards';
+import { useCanEditDashboard, useDeleteDashboard, useDuplicateDashboard, useUpdateDashboard } from '@/hooks/useDashboards';
 import { dashboardColor, dashboardIcon } from '@/lib/dashboardIcon';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
@@ -46,6 +46,9 @@ export function DashboardPanelItem({
     const duplicate = useDuplicateDashboard();
     const remove = useDeleteDashboard();
     const canManage = useCan(CAP.MANAGE_DASHBOARDS);
+    // v0.1.286 — renombrar, cambiar icono, configurar y borrar exigen ser el
+    // creador o admin (como el backend); duplicar crea una copia PROPIA.
+    const canEdit = useCanEditDashboard(dashboard);
     const [settingsOpen, setSettingsOpen] = useState(false);
 
     const base = `/dashboards/${dashboard.id}`;
@@ -113,7 +116,7 @@ export function DashboardPanelItem({
                 iconColor={dashboardColor(dashboard.settings)}
                 starred={starred}
                 onToggleStar={onToggleStar}
-                onRename={canManage ? (n) => void rename(n) : undefined}
+                onRename={canEdit ? (n) => void rename(n) : undefined}
                 held={settingsOpen}
                 menu={({ startRename }) => (
                     <>
@@ -121,7 +124,7 @@ export function DashboardPanelItem({
                             {starred ? <PinOff className="imcrm-h-3.5 imcrm-w-3.5" /> : <Pin className="imcrm-h-3.5 imcrm-w-3.5" />}
                             {starred ? __('Quitar de favoritos') : __('Anclar a favoritos')}
                         </DropdownMenuItem>
-                        {canManage && (
+                        {canEdit && (
                             <DropdownMenuItem onSelect={startRename} data-testid="menu-rename">
                                 <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Cambiar el nombre')}
@@ -131,18 +134,24 @@ export function DashboardPanelItem({
                             <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
                             {__('Copiar vínculo')}
                         </DropdownMenuItem>
+                        {canEdit && (
+                            <IconColorSubmenu
+                                icon={readKey(dashboard.settings, 'icon')}
+                                color={readKey(dashboard.settings, 'color')}
+                                onChange={(n) => void setIcon(n)}
+                            />
+                        )}
                         {canManage && (
                             <>
-                                <IconColorSubmenu
-                                    icon={readKey(dashboard.settings, 'icon')}
-                                    color={readKey(dashboard.settings, 'color')}
-                                    onChange={(n) => void setIcon(n)}
-                                />
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onSelect={() => void dup()} data-testid="menu-duplicate">
                                     <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Duplicar')}
                                 </DropdownMenuItem>
+                            </>
+                        )}
+                        {canEdit && (
+                            <>
                                 <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
                                     <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Configuración')}

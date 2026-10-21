@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
+import { UserPicker } from '@/components/ui/user-picker';
 import { useRecurrencesForRecord } from '@/hooks/useRecurrences';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
@@ -19,7 +20,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
-import { renderCellValue } from './renderCellValue';
+import { isCheckedValue, renderCellValue } from './renderCellValue';
 import { useRelationTitlesFor } from './relationTitlesContext';
 import { useWrapText } from './wrapText';
 
@@ -146,7 +147,7 @@ function EditableCellInner({
                     <input
                         type="checkbox"
                         className="imcrm-h-4 imcrm-w-4 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
-                        checked={Boolean(value)}
+                        checked={isCheckedValue(value)}
                         disabled={pending}
                         aria-label={field.label}
                         onClick={(e) => e.stopPropagation()}
@@ -191,6 +192,20 @@ function EditableCellInner({
                     knownTitles={relationTitles}
                     disabled={!canEditByUser}
                     onChange={(ids) => void commit(ids)}
+                />
+            );
+        }
+
+        // v0.1.286 — persona: se asigna desde la tabla con el mismo selector de
+        // la ficha (antes sólo se podía en la ficha). El selector se monta
+        // recién en el primer click (un popover por celda pesa, v0.1.259).
+        if (field.type === 'user' && canEditByUser) {
+            return (
+                <UserCellEditor
+                    field={field}
+                    value={value}
+                    pending={pending}
+                    onCommit={(id) => void commit(id)}
                 />
             );
         }
@@ -275,6 +290,54 @@ function EditableCellInner({
                     {error}
                 </div>
             )}
+        </div>
+    );
+}
+
+/** Celda de persona: lectura hasta el primer click; después, el selector. */
+function UserCellEditor({
+    field,
+    value,
+    pending,
+    onCommit,
+}: {
+    field: FieldEntity;
+    value: unknown;
+    pending: boolean;
+    onCommit: (id: number | null) => void;
+}): JSX.Element {
+    const [armed, setArmed] = useState(false);
+    const current = typeof value === 'number' ? value : typeof value === 'string' && value !== '' ? Number(value) : null;
+    if (!armed) {
+        return (
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setArmed(true);
+                }}
+                disabled={pending}
+                className="imcrm-block imcrm-min-h-[1.5rem] imcrm-w-full imcrm-truncate imcrm-rounded imcrm--mx-1 imcrm-px-1 imcrm-text-left hover:imcrm-bg-accent/40"
+                title={__('Click para asignar')}
+                data-testid={`imcrm-user-cell-${field.slug}`}
+            >
+                {renderCellValue(field, value)}
+            </button>
+        );
+    }
+    return (
+        // El popover vive en un portal, pero los eventos de React burbujean por
+        // el ÁRBOL: sin esto un click adentro abría la ficha del registro.
+        <div onClick={(e) => e.stopPropagation()} className="imcrm-min-w-0">
+            <UserPicker
+                value={Number.isFinite(current) ? current : null}
+                onChange={(id) => onCommit(id)}
+                flat
+                compact
+                showAssignMe
+                defaultOpen
+                disabled={pending}
+            />
         </div>
     );
 }
@@ -392,7 +455,7 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                 <input
                     ref={ref as React.RefObject<HTMLInputElement>}
                     type="checkbox"
-                    checked={Boolean(value)}
+                    checked={isCheckedValue(value)}
                     onChange={(e) => {
                         onChange(e.target.checked);
                         // Para checkbox, el commit es inmediato.

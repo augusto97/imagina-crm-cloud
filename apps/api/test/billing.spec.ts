@@ -1,7 +1,16 @@
 import { ForbiddenException } from '@nestjs/common';
 import { isReadOnly } from '@imagina-base/shared';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ActivityRepository } from '../src/activity/activity.repository';
+import { ActivityService } from '../src/activity/activity.service';
+import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { BillingService } from '../src/billing/billing.service';
+import { FieldsRepository } from '../src/fields/fields.repository';
+import { FieldsService } from '../src/fields/fields.service';
+import { RecordsRepository } from '../src/records/records.repository';
+import { RecordsService } from '../src/records/records.service';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { PlansService } from '../src/billing/plans.service';
 import { loadEnv } from '../src/config/env';
 import { EmailQuotaService } from '../src/mail/email-quota.service';
@@ -103,6 +112,38 @@ describe('BillingService (Postgres real)', () => {
         // Subir de plan libera el límite.
         await billing.setBilling(tenantId, { plan: 'starter' });
         await expect(billing.assertCanCreateRecord(tenantId)).resolves.toBeUndefined();
+    });
+
+    it('altas simultáneas a uno del tope: entra UNA, el resto rebota (sin pasarse del plan)', async () => {
+        const list = await listsService.create(tenantId, { name: 'Tope' });
+        const fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), listsService, rt);
+        const recs = new RecordsService(
+            tenantDb,
+            new RecordsRepository(),
+            listsService,
+            fieldsSvc,
+            rt,
+            new ActivityService(tenantDb, new ActivityRepository(), listsService),
+            new AutomationDispatcher(),
+            new RelationsRepository(),
+            undefined,
+            undefined,
+            billing,
+        );
+        // 499 de 500 (trial): queda lugar para UNO.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(records).values(Array.from({ length: 499 }, () => ({ tenantId, listId: list.id, createdBy: 0, data: {} }))),
+        );
+        const results = await Promise.allSettled(
+            Array.from({ length: 6 }, () => recs.create(tenantId, { userId: 1, role: 'admin' }, String(list.id), { data: {} })),
+        );
+        // Antes las 6 contaban 499 a la vez y entraban todas (505 > 500).
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        for (const r of results) if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(ForbiddenException);
+        const [n] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select({ n: sql<number>`count(*)::int` }).from(records).where(eq(records.tenantId, tenantId)),
+        );
+        expect(n!.n).toBe(500);
     });
 
     it('assertCanUpload: cuota de storage del plan (trial 100MB) y enterprise ilimitado', async () => {

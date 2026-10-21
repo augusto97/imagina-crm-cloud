@@ -17,7 +17,7 @@ export const activityKeys = {
 };
 
 /** Lo que devuelve el backend; el front lo consume como `changes`. */
-interface ActivityDtoWire {
+export interface ActivityDtoWire {
     id: number;
     list_id: number;
     record_id: number | null;
@@ -29,7 +29,7 @@ interface ActivityDtoWire {
     created_at: string;
 }
 
-function toEntity(row: ActivityDtoWire): ActivityEntity {
+export function toEntity(row: ActivityDtoWire): ActivityEntity {
     return {
         id: row.id,
         list_id: row.list_id,

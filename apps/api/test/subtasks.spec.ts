@@ -94,6 +94,16 @@ describe('Subtareas (v0.1.132)', () => {
         expect(conHijos.parent_id).toBeNull();
     });
 
+    it('la ficha (get) y la respuesta de una edición también cuentan las subtareas', async () => {
+        const padre = await create('Mudanza');
+        await create('Embalar', padre.id);
+        await create('Camión', padre.id);
+
+        expect((await recs.get(tenantId, admin, 'tareas', padre.id)).subtask_count).toBe(2);
+        const saved = await recs.update(tenantId, admin, 'tareas', padre.id, { data: { [titleKey]: 'Mudanza grande' } });
+        expect(saved.subtask_count).toBe(2);
+    });
+
     it('`parent` trae las subtareas de un registro', async () => {
         const padre = await create('Mudanza');
         const hija = await create('Embalar', padre.id);

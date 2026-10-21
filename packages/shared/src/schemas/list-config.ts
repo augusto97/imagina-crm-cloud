@@ -81,6 +81,21 @@ export const portalSettingsSchema = z
         default_template_id: idSchema.nullable().default(null),
         /** Ids de las listas relacionadas que el cliente ve además de su ficha (opt-in). */
         related_lists: z.array(idSchema).default([]),
+        /**
+         * Listas vinculadas donde el CLIENTE puede crear registros desde el
+         * portal (abrir un ticket, hacer un pedido). Opt-in: sólo los campos
+         * elegidos; la relación hacia su registro la pone el servidor.
+         */
+        creatable_lists: z
+            .array(
+                z.object({
+                    list_id: idSchema,
+                    field_ids: z.array(idSchema).max(30).default([]),
+                    label: z.string().max(80).default(''),
+                }),
+            )
+            .max(5)
+            .default([]),
     })
     .passthrough();
 export type PortalSettings = z.infer<typeof portalSettingsSchema>;

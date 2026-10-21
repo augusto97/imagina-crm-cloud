@@ -2,17 +2,17 @@ import { useMemo, useState } from 'react';
 import { Activity as ActivityIcon, Loader2, Mail, MessageSquare, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
 
 import { ActivityValue } from '@/admin/activity/ActivityPanel';
-import { actionText, actorOf, changeSentence, changesOf, type FieldChange } from '@/admin/activity/activityText';
+import { actionText, actorOf, changeSentence, changesOf, descriptionSentence, type FieldChange } from '@/admin/activity/activityText';
 import { CommentContent } from '@/admin/comments/CommentContent';
+import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useRecordActivity } from '@/hooks/useActivity';
-import { useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
+import { useCommentAuthors, useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
 import { useFields } from '@/hooks/useFields';
-import { useWpUser } from '@/hooks/useWpUsers';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr, formatTimeOfDay } from '@/lib/tenantFormat';
@@ -72,6 +72,10 @@ export function ActivityFeed({
     const comments = useComments(listId, recordId);
     const activity = useRecordActivity(listId, recordId);
     const fields = useFields(listId);
+    // Nombres de los autores: del DTO, y en LOTE lo que falte (antes era una
+    // request por autor con useWpUser).
+    const authorOf = useCommentAuthors(comments.data);
+    const portalEnabled = useListPortalEnabled(listId);
     const [filter, setFilter] = useState<FeedFilter>(initialFilter);
     const [visible, setVisible] = useState(PAGE);
 
@@ -85,7 +89,7 @@ export function ActivityFeed({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-activity-feed">
-            <Composer listId={listId} recordId={recordId} />
+            <Composer listId={listId} recordId={recordId} portalEnabled={portalEnabled} />
             <div className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs" role="tablist" aria-label={__('Filtrar actividad')}>
                 <FilterTab active={filter === 'all'} onClick={() => setFilter('all')}>{__('Todo')}</FilterTab>
                 <FilterTab active={filter === 'comments'} onClick={() => setFilter('comments')} count={counts.comments}>
@@ -123,6 +127,7 @@ export function ActivityFeed({
                                         fields={fields.data ?? []}
                                         listId={listId}
                                         recordId={recordId}
+                                        authorOf={authorOf}
                                         canEditComment={(c) => isAdmin || c.user_id === currentUserId}
                                     />
                                 ))}
@@ -164,19 +169,22 @@ function FilterTab({ active, onClick, count, children }: { active: boolean; onCl
 
 // ── Composer ─────────────────────────────────────────────────────────────
 
-function Composer({ listId, recordId }: { listId: number; recordId: number }): JSX.Element {
+function Composer({ listId, recordId, portalEnabled }: { listId: number; recordId: number; portalEnabled: boolean }): JSX.Element {
     const create = useCreateComment(listId, recordId);
     const toast = useToast();
     const [open, setOpen] = useState(false);
     const [mode, setMode] = useState<CommentKind>('note');
     const [draft, setDraft] = useState('');
     const [meta, setMeta] = useState<CommentMetadata>({});
+    // Todo comentario nace INTERNO: el cliente sólo ve lo que se marca a propósito.
+    const [forClient, setForClient] = useState(false);
     const me = getBootData().user.displayName;
 
     const reset = (): void => {
         setDraft('');
         setMeta({});
         setMode('note');
+        setForClient(false);
         setOpen(false);
     };
 
@@ -192,7 +200,7 @@ function Composer({ listId, recordId }: { listId: number; recordId: number }): J
             return out;
         })();
         try {
-            await create.mutateAsync({ content, metadata });
+            await create.mutateAsync({ content, metadata, visibility: portalEnabled && forClient ? 'client' : 'internal' });
             reset();
         } catch (err) {
             toast.error(__('No se pudo publicar'), err instanceof Error ? err.message : '');
@@ -253,6 +261,7 @@ function Composer({ listId, recordId }: { listId: number; recordId: number }): J
                     );
                 })}
                 <span className="imcrm-flex-1" />
+                {portalEnabled && <ClientVisibilityToggle checked={forClient} onChange={setForClient} disabled={create.isPending} />}
                 <Button type="button" variant="ghost" size="sm" className="imcrm-h-7" onClick={reset}>
                     {__('Cancelar')}
                 </Button>
@@ -319,16 +328,18 @@ function FeedRow({
     fields,
     listId,
     recordId,
+    authorOf,
     canEditComment,
 }: {
     item: FeedItem;
     fields: FieldEntity[];
     listId: number;
     recordId: number;
+    authorOf: (c: CommentEntity) => string;
     canEditComment: (c: CommentEntity) => boolean;
 }): JSX.Element {
     if (item.kind === 'comment') {
-        return <CommentRow comment={item.comment} canEdit={canEditComment(item.comment)} listId={listId} recordId={recordId} />;
+        return <CommentRow comment={item.comment} name={authorOf(item.comment)} canEdit={canEditComment(item.comment)} listId={listId} recordId={recordId} />;
     }
     return <ChangeRow entries={item.entries} fields={fields} />;
 }
@@ -358,8 +369,16 @@ function ChangeRow({ entries, fields }: { entries: ActivityEntity[]; fields: Fie
                 <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-gap-2">
                     <p className="imcrm-min-w-0 imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
                         <span className="imcrm-font-medium imcrm-text-foreground">{actor}</span>{' '}
-                        {created ? verb : shown.length === 0 ? verb : shown.length === 1 ? changeSentence(shown[0]!).verb : sprintf(__('editó %d campos'), shown.length)}
-                        {shown.length === 1 && (
+                        {created
+                            ? verb
+                            : shown.length === 0
+                              ? verb
+                              : shown.length === 1 && shown[0]!.description
+                                ? descriptionSentence(shown[0]!)
+                                : shown.length === 1
+                                  ? changeSentence(shown[0]!).verb
+                                  : sprintf(__('editó %d campos'), shown.length)}
+                        {shown.length === 1 && !shown[0]!.description && (
                             <>
                                 {' '}
                                 <span className="imcrm-font-medium imcrm-text-foreground">{shown[0]!.label}</span>
@@ -385,14 +404,29 @@ function dedupeChanges(changes: FieldChange[]): FieldChange[] {
     // `changes` viene de lo más nuevo a lo más viejo.
     const byLabel = new Map<string, FieldChange>();
     for (const c of changes) {
-        const prev = byLabel.get(c.label);
-        byLabel.set(c.label, prev ? { ...prev, from: c.from } : c);
+        // La descripción no se confunde con un campo que se llame igual.
+        const key = c.description ? '\u0000description' : c.label;
+        const prev = byLabel.get(key);
+        byLabel.set(key, prev ? { ...prev, from: c.from } : c);
     }
     return [...byLabel.values()];
 }
 
 function ChangeLine({ change, withLabel }: { change: FieldChange; withLabel: boolean }): JSX.Element {
     const { from, to } = changeSentence(change);
+    if (change.description) {
+        // Un adelanto del texto, nunca el documento entero.
+        return (
+            <li className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1 imcrm-text-[12.5px] imcrm-text-muted-foreground">
+                {withLabel && <span className="imcrm-mr-0.5 imcrm-shrink-0 imcrm-text-foreground/80">{change.label}:</span>}
+                {to !== null ? (
+                    <span className="imcrm-min-w-0 imcrm-truncate imcrm-italic">«{to}»</span>
+                ) : (
+                    <span className="imcrm-italic">{__('vacía')}</span>
+                )}
+            </li>
+        );
+    }
     return (
         <li className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-1 imcrm-text-[12.5px] imcrm-text-muted-foreground">
             {withLabel && <span className="imcrm-mr-0.5 imcrm-text-foreground/80">{change.label}:</span>}
@@ -407,9 +441,7 @@ function ChangeLine({ change, withLabel }: { change: FieldChange; withLabel: boo
     );
 }
 
-function CommentRow({ comment, canEdit, listId, recordId }: { comment: CommentEntity; canEdit: boolean; listId: number; recordId: number }): JSX.Element {
-    const author = useWpUser(comment.user_id);
-    const name = author.data?.display_name ?? sprintf(__('Usuario #%d'), comment.user_id);
+function CommentRow({ comment, name, canEdit, listId, recordId }: { comment: CommentEntity; name: string; canEdit: boolean; listId: number; recordId: number }): JSX.Element {
     const update = useUpdateComment(listId, recordId);
     const remove = useDeleteComment(listId, recordId);
     const confirm = useConfirm();
@@ -443,6 +475,7 @@ function CommentRow({ comment, canEdit, listId, recordId }: { comment: CommentEn
                 <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-gap-2">
                     <p className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-1.5 imcrm-text-[13px]">
                         <span className="imcrm-font-medium imcrm-text-foreground">{name}</span>
+                        <ClientVisibleBadge comment={comment} />
                         {meta.kind && meta.kind !== 'note' && (
                             <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground">
                                 <KindIcon className="imcrm-h-3 imcrm-w-3" />

@@ -31,6 +31,7 @@ export interface ItemMenuContext {
  */
 export function PanelListLink({
     to,
+    activeWhen,
     name,
     starred,
     icon: Icon,
@@ -41,6 +42,12 @@ export function PanelListLink({
     held = false,
 }: {
     to: string;
+    /**
+     * Prefijo de ruta que marca el item como activo (default: `to`). v0.1.286
+     * — una lista enlaza a `/lists/<slug>/records` pero también es "ella" en
+     * `/edit`, `/automations` y los editores de la ficha y del portal.
+     */
+    activeWhen?: string;
     name: string;
     starred: boolean;
     icon?: ListIconComponent;
@@ -55,7 +62,7 @@ export function PanelListLink({
     held?: boolean;
 }): JSX.Element {
     const [menuOpen, setMenuOpen] = useState(false);
-    const isActive = useIsPathActive(to);
+    const isActive = useIsPathActive(activeWhen ?? to);
     const [renaming, setRenaming] = useState(false);
     const [draft, setDraft] = useState(name);
     const peekHold = usePeekHold();

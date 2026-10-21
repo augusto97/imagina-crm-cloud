@@ -56,7 +56,7 @@ function keyLit(key: string): SQL {
  *
  * Whitelist estricta (regla de oro nº 4): cada condición referencia un
  * `field_id`; se resuelve al field de la lista y a una expresión JSONB tipada
- * (`(data->>'fN')::numeric`, `::date`, …). El valor JAMÁS se interpola —
+ * (`(data->>'fN')::numeric`, `::date`, …, con cast tolerante). El valor JAMÁS se interpola —
  * siempre viaja como parámetro. Condiciones sobre campos inexistentes o no
  * filtrables se descartan (igual que el plugin).
  */
@@ -142,6 +142,13 @@ function compileCondition(
     // el texto del array nunca matcheaban → se descartan.
     if (field.type === 'file') {
         return compileJsonArrayPresence(key, op, dataRef);
+    }
+
+    // v0.1.286 — fecha y hora: "es" abarca el minuto (o el día, si el valor
+    // es sólo una fecha) y un valor sin zona se lee en la zona de la empresa.
+    if (field.type === 'datetime') {
+        const ranged = compileDatetimeComparison(typedExpr(key, field.type, dataRef), op, cond.value, now.timeZone);
+        if (ranged !== null) return ranged;
     }
 
     // Expresión de texto base y expresión tipada según el tipo del campo.
@@ -308,6 +315,66 @@ function compileComparison(
     }
 }
 
+/**
+ * v0.1.286 — comparación sobre un campo FECHA Y HORA. El valor del filtro se
+ * lee como un intervalo:
+ *  - sólo fecha (`2026-10-21`): el día entero en el reloj de la empresa;
+ *  - fecha y hora SIN zona (`2026-10-21T14:30`, lo que mandaba el selector):
+ *    ese minuto en el reloj de la empresa — antes `::timestamptz` lo leía en
+ *    UTC y en Colombia el filtro quedaba corrido 5 horas;
+ *  - con zona (`…Z`, `…-05:00`): el minuto de ese instante.
+ * "es" = dentro del intervalo; "no es" = fuera; ">" = después; "≥" = desde
+ * el inicio; "<" = antes del inicio; "≤" = hasta el final. Un valor que no se
+ * puede leer devuelve null y cae a la comparación de siempre.
+ */
+function compileDatetimeComparison(expr: SQL, op: FilterOperator, value: unknown, timeZone: string): SQL | null {
+    if (op !== 'eq' && op !== 'neq' && op !== 'gt' && op !== 'gte' && op !== 'lt' && op !== 'lte') return null;
+    const range = datetimeFilterRange(value, timeZone);
+    if (range === null) return null;
+    const { from, to } = range;
+    switch (op) {
+        case 'eq':
+            return sql`(${expr} >= ${from} AND ${expr} < ${to})`;
+        case 'neq':
+            return sql`(${expr} IS NULL OR ${expr} < ${from} OR ${expr} >= ${to})`;
+        case 'gt':
+            return sql`${expr} >= ${to}`;
+        case 'gte':
+            return sql`${expr} >= ${from}`;
+        case 'lt':
+            return sql`${expr} < ${from}`;
+        case 'lte':
+            return sql`${expr} < ${to}`;
+    }
+}
+
+const DATE_ONLY_RE = /^(\d{4}-\d{2}-\d{2})$/;
+const NAIVE_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/;
+
+/** Intervalo `[from, to)` (instantes ISO) de un valor de filtro de fecha y hora. */
+export function datetimeFilterRange(value: unknown, timeZone: string): { from: string; to: string } | null {
+    if (typeof value !== 'string') return null;
+    const v = value.trim();
+    const day = DATE_ONLY_RE.exec(v);
+    if (day) {
+        return {
+            from: zonedInstant(day[1]!, timeZone).toISOString(),
+            to: zonedInstant(addDaysYmd(day[1]!, 1), timeZone).toISOString(),
+        };
+    }
+    let start: Date;
+    const naive = NAIVE_DATETIME_RE.exec(v);
+    if (naive) {
+        start = zonedInstant(naive[1]!, timeZone, { h: Number(naive[2]), m: Number(naive[3]) });
+    } else {
+        const t = Date.parse(v);
+        if (!Number.isFinite(t)) return null;
+        start = new Date(Math.floor(t / 60_000) * 60_000);
+    }
+    if (!Number.isFinite(start.getTime())) return null;
+    return { from: start.toISOString(), to: new Date(start.getTime() + 60_000).toISOString() };
+}
+
 /** Expresión de texto JSONB de un campo: `(data->>'fN')`. */
 export function fieldTextExpr(fieldId: number): SQL {
     return sql`(${records.data} ->> ${keyLit(jsonbKeyForField(fieldId))})`;
@@ -322,7 +389,16 @@ export function fieldTypedExpr(field: FilterableField, dataRef: DataRef = record
     return typedExpr(jsonbKeyForField(field.id), field.type, dataRef);
 }
 
-/** Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3). */
+/**
+ * Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3).
+ *
+ * El cast es TOLERANTE: un valor que no se puede convertir (una fecha
+ * «mañana» que escribió una automatización vieja, un número «150.000,5»
+ * importado a mano) da NULL en vez de tirar la consulta entera. Antes un
+ * solo valor basura en una fila hacía que ordenar, filtrar por fecha, los
+ * agregados y el escaneo de vencimientos de TODA la lista respondieran 500.
+ * `pg_input_is_valid` (Postgres 16) valida sin lanzar.
+ */
 function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
     const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
     switch (type) {
@@ -334,14 +410,20 @@ function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
             // v0.1.158 — rating/percent/duration guardan un número (estrellas,
             // 0-100 y minutos): comparan y ordenan con el motor numérico, no
             // como texto (donde '9' > '10').
-            return sql`${asText}::numeric`;
+            return safeCast(asText, 'numeric');
         case 'date':
-            return sql`${asText}::date`;
+            return safeCast(asText, 'date');
         case 'datetime':
-            return sql`${asText}::timestamptz`;
+            return safeCast(asText, 'timestamptz');
         default:
             return asText;
     }
+}
+
+/** `CASE WHEN pg_input_is_valid(x, 'tipo') THEN x::tipo END` — NULL si no convierte. */
+function safeCast(asText: SQL, type: 'numeric' | 'date' | 'timestamptz'): SQL {
+    // El tipo es un literal fijo de esta función (nunca input del usuario).
+    return sql`(CASE WHEN pg_input_is_valid(${asText}, ${sql.raw(`'${type}'`)}) THEN ${asText}::${sql.raw(type)} END)`;
 }
 
 const NUMERIC_FILTER_TYPES: readonly FieldType[] = [
@@ -444,7 +526,7 @@ function textArray(values: string[]): SQL {
 
 // --- Presets de rango relativo (se resuelven contra `now` en cada query) ---
 
-interface Range {
+export interface Range {
     from: string;
     to: string;
 }
@@ -507,11 +589,69 @@ function computePresetRange(preset: DateRangePreset, type: FieldType, clock: Que
             from = ymd(y - 1, 1, 1);
             to = ymd(y - 1, 12, 31);
             break;
+        // v0.1.286 — hacia adelante, 90 días y trimestres.
+        case 'next_7_days':
+            from = today;
+            to = addDaysYmd(today, 6);
+            break;
+        case 'next_30_days':
+            from = today;
+            to = addDaysYmd(today, 29);
+            break;
+        case 'last_90_days':
+            from = addDaysYmd(today, -89);
+            to = today;
+            break;
+        case 'this_quarter': {
+            const q = Math.floor((m - 1) / 3);
+            from = ymd(y, q * 3 + 1, 1);
+            to = ymd(y, q * 3 + 4, 0);
+            break;
+        }
+        case 'last_quarter': {
+            const q = Math.floor((m - 1) / 3) - 1;
+            from = ymd(y, q * 3 + 1, 1);
+            to = ymd(y, q * 3 + 4, 0);
+            break;
+        }
+        case 'from_today':
+            // "De hoy en adelante": un tope lejano pero representable (el
+            // instante de un datetime tiene que existir).
+            from = today;
+            to = '2999-12-31';
+            break;
     }
 
     // Un datetime cubre los días completos en el reloj de la empresa.
     if (type === 'datetime') return dayRangeInstants(from, to, clock.timeZone);
     return { from, to };
+}
+
+/**
+ * v0.1.286 — El rango de CALENDARIO (YYYY-MM-DD, inclusive) que representa el
+ * valor de un `between_relative` (preset o `{from, to}`), en el reloj de la
+ * empresa. Lo usa el widget de delta: su ventana actual ES el período. `null`
+ * si el valor no es un período válido.
+ */
+export function relativeDateRange(value: unknown, clock: QueryClock): { from: string; to: string } | null {
+    return relativeRangeFor(value, 'date', clock);
+}
+
+/**
+ * El rango de un `between_relative` (preset «este mes» o rango fijo
+ * `{from, to}`) en el reloj de la empresa: fechas YYYY-MM-DD para un campo
+ * fecha, instantes ISO para un fecha-hora. `null` si el valor no es válido.
+ * Lo comparten el SQL de los filtros y el evaluador de condiciones de las
+ * automatizaciones (que evalúa en memoria): así «este mes» es el mismo mes.
+ */
+export function relativeRangeFor(value: unknown, type: 'date' | 'datetime', clock: QueryClock): Range | null {
+    try {
+        const custom = asCustomRange(value);
+        if (custom !== null) return type === 'datetime' ? dayRangeInstants(custom.from, custom.to, clock.timeZone) : custom;
+        return computePresetRange(asPreset(value), type, clock);
+    } catch {
+        return null;
+    }
 }
 
 /** De las 00:00 de `from` a las 23:59:59.999 de `to`, en `tz`, como instantes ISO. */

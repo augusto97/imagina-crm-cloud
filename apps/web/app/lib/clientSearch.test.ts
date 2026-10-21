@@ -20,6 +20,19 @@ describe('clientSideSearch — búsqueda in-memory de listas chicas', () => {
         expect(clientSideSearch(rows, '3001', fields).map((r) => r.id)).toEqual([1]);
         expect(clientSideSearch(rows, '', fields)).toBe(rows);
     });
+
+    it('v0.1.286 — misma regla que el servidor: sin acentos y TODAS las palabras', () => {
+        const rows = [
+            rec(1, { nombre: 'Álvaro Pérez' }),
+            rec(2, { nombre: 'alvaro gómez' }),
+            rec(3, { nombre: 'Pedro', tel: '300 111 2233' }),
+        ];
+        expect(clientSideSearch(rows, 'ALVARO', fields).map((r) => r.id)).toEqual([1, 2]);
+        expect(clientSideSearch(rows, 'perez alvaro', fields).map((r) => r.id)).toEqual([1]);
+        expect(clientSideSearch(rows, 'alvaro medellin', fields).map((r) => r.id)).toEqual([]);
+        // Teléfono cargado con espacios: también por dígitos.
+        expect(clientSideSearch(rows, '3001112233', fields).map((r) => r.id)).toEqual([3]);
+    });
 });
 
 describe('canSearchClientSide — v0.1.188', () => {

@@ -58,6 +58,8 @@ export class RecordsAggregatesController {
             fieldIds,
             filter_tree,
             group_by_field_id: Number.isInteger(groupBy) && (groupBy as number) > 0 ? groupBy : undefined,
+            // v0.1.286 — el pie suma lo que la tabla MUESTRA: con la búsqueda activa.
+            search: typeof q.search === 'string' ? q.search : undefined,
             viewer: { role: req.tenant!.role, userId: req.authUserId! },
         });
     }

@@ -322,7 +322,7 @@ function MaxLengthEditor({ config, onChange }: SubProps): JSX.Element {
                 placeholder="255"
             />
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Si se deja vacío usa el default del tipo (255 para text, ilimitado para long text).')}
+                {__('Si se deja vacío usa el límite del tipo (255 para texto, ilimitado para texto largo).')}
             </p>
         </div>
     );

@@ -59,6 +59,11 @@ export interface WidgetLayout {
     y: number;
     w: number;
     h: number;
+    /**
+     * v0.1.286 — alto PROPIO en el celular (apilado a una columna). Antes el
+     * resize del celular persistía `h` y cambiaba el tablero de escritorio.
+     */
+    hm?: number;
 }
 
 /**
@@ -245,9 +250,26 @@ export interface UpdateDashboardInput {
     allowed_roles?: string[];
 }
 
+/**
+ * v0.1.286 — Filtros a nivel tablero (espejo de `dashboardFilterDefSchema` /
+ * `dashboardFilterValueSchema` en shared): el tablero declara en
+ * `settings.filters` qué campos se filtran; el valor lo elige quien mira.
+ */
+export interface DashboardFilterDef {
+    list_id: number;
+    field_id: number;
+}
+export interface DashboardFilterValue {
+    field_id: number;
+    value: string | number | boolean | string[];
+}
+
+/** Clave del grupo "Otros" (espejo de `AGGREGATE_OTHERS_KEY`). */
+export const OTHERS_GROUP_KEY = '__others__';
+
 export type WidgetData =
     | { value: number | string; metric: KpiMetric; spark?: number[] }
-    | { data: Array<{ label: string; value: number | string }> }
+    | { data: Array<{ label: string; value: number | string; others?: number }> }
     | {
           /** stat_delta — value/previous pueden ser string para min/max de fecha */
           value: number | string;

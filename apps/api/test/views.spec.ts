@@ -94,6 +94,16 @@ describe('ViewsService (Postgres real + RLS)', () => {
         expect((await service.get(tenantA, 'clientes', a.id)).is_default).toBe(false);
     });
 
+    it('doble envío: 3 altas simultáneas "por defecto" terminan bien con UN solo default', async () => {
+        const results = await Promise.allSettled(
+            ['A', 'B', 'C'].map((name) => service.create(tenantA, 'clientes', { name, type: 'table', is_default: true })),
+        );
+        // Antes: las que no veían el default de la otra chocaban con el índice único → 500.
+        expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+        const defaults = (await service.list(tenantA, 'clientes')).filter((v) => v.is_default);
+        expect(defaults).toHaveLength(1);
+    });
+
     it('update: marcar default desmarca el previo; cambiar config valida', async () => {
         const a = await service.create(tenantA, 'clientes', { name: 'A', type: 'table', is_default: true });
         const b = await service.create(tenantA, 'clientes', { name: 'B', type: 'calendar', config: { date_field_id: 5 } });

@@ -10,6 +10,12 @@ export interface PortalBootData {
     list_slug: string;
     user_id: number;
     record_id: number;
+    /** Cuenta que se mira (clave del cache de la conversación). */
+    account_id?: number | null;
+    /** Cómo se presenta la empresa al cliente (autor de lo que hizo el equipo). */
+    company_name?: string;
+    /** Los campos que el cliente ve (para leer la actividad en lenguaje humano). */
+    fields?: ReadonlyArray<{ id: number; slug: string; label: string; type: string; config: Record<string, unknown> }>;
 }
 
 export interface PortalRecord {

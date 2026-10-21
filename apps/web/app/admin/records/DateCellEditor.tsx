@@ -688,7 +688,7 @@ function RecurrencePanel({
                             onChange={(e) => setTriggerStatusValue(e.target.value)}
                             className="imcrm-h-8"
                         >
-                            <option value="">{__('— Valor target —')}</option>
+                            <option value="">{__('— Valor objetivo —')}</option>
                             {statusOptions(fields.data, triggerStatusFieldId).map((o) => (
                                 <option key={o.value} value={o.value}>
                                     {o.label}

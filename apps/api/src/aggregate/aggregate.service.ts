@@ -15,11 +15,15 @@ import {
     zonedInstant,
     zonedToday,
     FALLBACK_TIME_ZONE,
+    AGGREGATE_OTHERS_KEY,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import type { Tx } from '../db/client';
+import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { withComputedExprs } from '../records/computed-sql';
+import { compileSearch } from '../records/search-sql';
 import { effectivePermissions, resolvePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import {
@@ -93,6 +97,51 @@ export class AggregateService {
         return { ...acl, hidden, strip: <T>(m: Map<number, T>) => new Map([...m].filter(([id]) => !hidden.has(id))) };
     }
 
+    /**
+     * v0.1.286 — Lo que un agregado necesita saber de UNA lista: la lista, sus
+     * campos, el ACL de quien pregunta (scope + ocultos, incluidos los
+     * lookup/rollup restringidos de SEC-36), la whitelist filtrable con las
+     * expresiones de rollup/computed y el reloj de la empresa. Todo en UNA
+     * transacción (o en la que pasa el llamador). Antes `run` lo re-resolvía
+     * por pedido en 4-9 transacciones: un tablero de 21 widgets abría ~107.
+     */
+    async listContext(
+        tenantId: number,
+        listIdOrSlug: string,
+        viewer?: AggregateViewer,
+        tx?: Tx,
+    ): Promise<AggregateListContext> {
+        const build = async (t: Tx): Promise<AggregateListContext> => {
+            const list = await this.lists.getWithinTx(t, tenantId, listIdOrSlug);
+            const fields = await this.fields.listByListIdWithinTx(t, tenantId, list.id);
+            const plans = await this.fields.through.plans(t, tenantId, list.id, fields);
+            const base = aclFor(list.settings, fields, viewer);
+            let hidden = base.hidden;
+            if (viewer && viewer.role !== 'admin' && plans.length > 0) {
+                const restricted = await this.fields.through.restrictedFor(t, tenantId, plans, viewer);
+                if (restricted.size > 0) hidden = withDependentComputed(fields, new Set([...hidden, ...restricted]));
+            }
+            const filterable = new Map<number, FilterableField>(
+                [
+                    ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                    ...this.fields.through.filterableFor(plans, tenantId),
+                    descriptionSearchFilterable(),
+                ].filter(([id]) => !hidden.has(id)),
+            );
+            const timeZone = this.timeZones ? await this.timeZones.orUtc(tenantId, t) : FALLBACK_TIME_ZONE;
+            return {
+                list: { id: list.id, settings: list.settings },
+                fields,
+                byId: new Map(fields.filter((f) => !hidden.has(f.id)).map((f) => [f.id, f])),
+                fieldsById: withComputedExprs(filterable, fields),
+                hidden,
+                scope: base.scope,
+                clock: { now: new Date(), timeZone },
+            };
+        };
+        return tx ? build(tx) : this.tenantDb.withTenant(tenantId, build);
+    }
+
     async run(
         tenantId: number,
         listIdOrSlug: string,
@@ -101,32 +150,47 @@ export class AggregateService {
          * v0.1.213 — `rootsOnly`: contar sólo las filas de primer nivel, las
          * que muestra la tabla (los grupos de la vista agrupada). Sin eso, en
          * una lista con subtareas (las líneas de un pedido) el contador de un
-         * grupo sumaba filas que no se ven. Los tableros cuentan TODO y filtran
-         * por tipo cuando hace falta.
+         * grupo sumaba filas que no se ven.
          */
-        opts: { rootsOnly?: boolean; viewer?: AggregateViewer; related?: RelatedScope } = {},
+        opts: AggregateRunOptions & { viewer?: AggregateViewer } = {},
     ): Promise<AggregateResult> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const fields = await this.fields.list(tenantId, String(list.id));
-        const acl = await this.aclWithThrough(tenantId, list.id, list.settings, fields, opts.viewer);
-        const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
+        // v0.1.286 — contexto + consulta en UNA transacción.
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.listContext(tenantId, listIdOrSlug, opts.viewer, tx);
+            return this.runIn(tx, tenantId, ctx, req, opts);
+        });
+    }
 
+    /**
+     * El agregado sobre un contexto YA resuelto y dentro de una transacción
+     * abierta (v0.1.286): el bundle de un tablero resuelve cada lista una vez
+     * y evalúa todos sus widgets así.
+     */
+    async runIn(
+        tx: Tx,
+        tenantId: number,
+        ctx: AggregateListContext,
+        req: AggregateRequest,
+        opts: AggregateRunOptions = {},
+    ): Promise<AggregateResult> {
+        const { byId, fieldsById, clock } = ctx;
         const field = req.field_id !== undefined ? byId.get(req.field_id) : undefined;
         if (req.field_id !== undefined && !field) {
             throw badRequest('field_id no pertenece a la lista');
         }
-        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields);
         this.assertMetricCompat(req.metric, field, fieldsById);
-        const clock = await this.clock(tenantId);
 
         const filterWhere = compileFilterTree(fieldsById, req.filter_tree, clock);
         const baseWhere = and(
             eq(records.tenantId, tenantId),
-            eq(records.listId, list.id),
+            eq(records.listId, ctx.list.id),
             isNull(records.deletedAt),
             opts.rootsOnly ? isNull(records.parentId) : undefined,
-            acl.scope,
+            ctx.scope,
             filterWhere,
+            // v0.1.286 — la búsqueda de la tabla (vista agrupada), sólo sobre
+            // los campos que quien pregunta puede ver.
+            compileSearch(ctx.fields.filter((f) => !ctx.hidden.has(f.id)), opts.search),
             // v0.1.230 — sólo los vinculados a un registro (bloques de la ficha).
             opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
         );
@@ -163,18 +227,24 @@ export class AggregateService {
                         : isThroughField(groupField.type) || groupField.type === 'computed'
                             ? throughGroupExpr(groupField, fieldsById)
                             : fieldTextExpr(groupField.id);
-            const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-                tx
-                    .select({ grp: groupExpr, val: aggExpr })
-                    .from(records)
-                    .where(baseWhere)
-                    // Por ORDINAL: la clave del multi_select lleva la clave del
-                    // campo como parámetro bindeado, y Postgres no reconoce
-                    // como "la misma expresión" a dos copias con placeholders
-                    // distintos ($1 en el SELECT, $6 en el GROUP BY).
-                    .groupBy(sql`1`)
-                    .orderBy(sql`1`),
-            );
+            if (groupKeyHasSubquery(groupField.type)) await disableJitForTx(tx);
+            if (opts.top) {
+                return {
+                    metric: req.metric,
+                    value: null,
+                    groups: await this.topGroups(tx, baseWhere, groupExpr, aggExpr, opts.top),
+                };
+            }
+            const rows = await tx
+                .select({ grp: groupExpr, val: aggExpr })
+                .from(records)
+                .where(baseWhere)
+                // Por ORDINAL: la clave del multi_select lleva la clave del
+                // campo como parámetro bindeado, y Postgres no reconoce
+                // como "la misma expresión" a dos copias con placeholders
+                // distintos ($1 en el SELECT, $6 en el GROUP BY).
+                .groupBy(sql`1`)
+                .orderBy(sql`1`);
             const groups = rows.map((r) => ({
                 group: r.grp === null || r.grp === undefined ? null : String(r.grp),
                 value: normalize(r.val),
@@ -184,16 +254,56 @@ export class AggregateService {
             return { metric: req.metric, value: null, groups };
         }
 
-        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.select({ val: aggExpr }).from(records).where(baseWhere),
-        );
+        const [row] = await tx.select({ val: aggExpr }).from(records).where(baseWhere);
         return { metric: req.metric, value: normalize(row?.val) };
+    }
+
+    /**
+     * v0.1.286 — Agrupado con TOPE: los `limit` primeros grupos (por valor
+     * descendente o por clave) y el resto resumido en UN grupo "Otros"
+     * (`AGGREGATE_OTHERS_KEY`). Antes un gráfico agrupado por un campo casi
+     * único devolvía 100k grupos (7,5 MB). El valor de "Otros" se recalcula
+     * sobre los REGISTROS de esos grupos (no sumando los parciales): así vale
+     * también para promedio, mínimo/máximo y valores únicos.
+     */
+    private async topGroups(
+        tx: Tx,
+        baseWhere: SQL | undefined,
+        groupExpr: SQL,
+        aggExpr: SQL,
+        top: AggregateTop,
+    ): Promise<NonNullable<AggregateResult['groups']>> {
+        const limit = Math.max(1, Math.min(MAX_GROUPS, Math.floor(top.limit)));
+        const order = top.byValue ? sql`val desc nulls last, grp asc nulls last` : sql`grp asc nulls last`;
+        const where = baseWhere ?? sql`true`;
+        const grouped = sql`select ${groupExpr} as grp, ${aggExpr} as val from ${records} where ${where} group by 1`;
+        const res = await tx.execute(
+            sql`select grp, val, cnt from (select grp, val, row_number() over (order by ${order}) as rn, count(*) over () as cnt from (${grouped}) g) r where rn <= ${limit} order by rn`,
+        );
+        const rows = res.rows as Array<{ grp: unknown; val: unknown; cnt: unknown }>;
+        const groups: NonNullable<AggregateResult['groups']> = rows.map((r) => ({
+            group: r.grp === null || r.grp === undefined ? null : String(r.grp),
+            value: normalize(r.val),
+        }));
+        const total = Number(rows[0]?.cnt ?? 0);
+        if (total > limit) {
+            const others = await tx.execute(
+                sql`with g as (${grouped}), r as (select grp, row_number() over (order by ${order}) as rn from g)
+                    select ${aggExpr} as val from ${records} where ${where} and (
+                        (${groupExpr}) in (select grp from r where rn > ${limit} and grp is not null)
+                        or ((${groupExpr}) is null and exists (select 1 from r where rn > ${limit} and grp is null))
+                    )`,
+            );
+            const val = (others.rows as Array<{ val: unknown }>)[0]?.val;
+            groups.push({ group: AGGREGATE_OTHERS_KEY, value: normalize(val), others: total - limit });
+        }
+        return groups;
     }
 
     /**
      * v0.1.97 — Delta vs período anterior (widget `stat_delta`). Evalúa la
      * MISMA métrica sobre dos ventanas consecutivas de N días ancladas a hoy
-     * (naive-UTC, como se guardan los datos):
+     * (en el reloj de la empresa):
      *
      *   actual   = [hoy-(N-1) .. hoy]
      *   anterior = [hoy-(2N-1) .. hoy-N]
@@ -201,57 +311,79 @@ export class AggregateService {
      * Cada ventana se compone como condiciones gte/lte sobre el campo de
      * fecha, en AND con el filter_tree del widget. `delta_pct` es null si el
      * período anterior es 0 o la métrica no es numérica (min/max de fecha).
+     *
+     * v0.1.286 — con `window` ({from, to} en YYYY-MM-DD: el período del widget
+     * o el global del tablero) la ventana ACTUAL es ese rango y la anterior es
+     * otra del mismo largo justo antes. Antes el período se sumaba en AND al
+     * filtro y además se aplicaban las ventanas de N días: "este mes" contra
+     * "los últimos 30 días" daba cualquier cosa.
      */
     async runDelta(
         tenantId: number,
         listIdOrSlug: string,
         req: AggregateRequest,
-        opts: { dateFieldId: number; periodDays: number; viewer?: AggregateViewer; related?: RelatedScope },
-    ): Promise<{
-        value: number | string | null;
-        previous: number | string | null;
-        delta_pct: number | null;
-        period_days: number;
-    }> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const fields = await this.fields.list(tenantId, String(list.id));
-        const hidden = (await this.aclWithThrough(tenantId, list.id, list.settings, fields, opts.viewer)).hidden;
-        const dateField = fields.find((f) => f.id === opts.dateFieldId && !hidden.has(f.id));
+        opts: DeltaOptions & { viewer?: AggregateViewer },
+    ): Promise<DeltaResult> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.listContext(tenantId, listIdOrSlug, opts.viewer, tx);
+            return this.runDeltaIn(tx, tenantId, ctx, req, opts);
+        });
+    }
+
+    async runDeltaIn(
+        tx: Tx,
+        tenantId: number,
+        ctx: AggregateListContext,
+        req: AggregateRequest,
+        opts: DeltaOptions,
+    ): Promise<DeltaResult> {
+        const dateField = ctx.byId.get(opts.dateFieldId);
         if (!dateField || (dateField.type !== 'date' && dateField.type !== 'datetime')) {
             throw badRequest('date_field_id debe ser un campo date/datetime de la lista');
         }
-        const days = Math.max(1, Math.min(365, Math.floor(opts.periodDays) || 30));
-
         // v0.1.263 — las ventanas se cuentan en días del reloj de la empresa.
-        const { timeZone } = await this.clock(tenantId);
-        const today = zonedToday(timeZone);
-        const boundary = (daysAgo: number, edge: 'start' | 'end'): string => {
-            const ymd = addDaysYmd(today, -daysAgo);
+        const { timeZone } = ctx.clock;
+        const today = zonedToday(timeZone, ctx.clock.now);
+        let current: { from: string; to: string };
+        if (opts.window) {
+            current = opts.window.from <= opts.window.to ? opts.window : { from: opts.window.to, to: opts.window.from };
+        } else {
+            const days = Math.max(1, Math.min(365, Math.floor(opts.periodDays ?? 30) || 30));
+            current = { from: addDaysYmd(today, -(days - 1)), to: today };
+        }
+        const length = daysBetween(current.from, current.to) + 1;
+        const previous = { from: addDaysYmd(current.from, -length), to: addDaysYmd(current.from, -1) };
+
+        const boundary = (ymd: string, edge: 'start' | 'end'): string => {
             if (dateField.type === 'date') return ymd;
             return edge === 'start'
                 ? zonedInstant(ymd, timeZone).toISOString()
                 : new Date(zonedInstant(addDaysYmd(ymd, 1), timeZone).getTime() - 1000).toISOString();
         };
-        const windowTree = (fromDaysAgo: number, toDaysAgo: number): AggregateRequest['filter_tree'] => {
+        const windowTree = (w: { from: string; to: string }): AggregateRequest['filter_tree'] => {
             const children: FilterNode[] = [];
             if (req.filter_tree) children.push(req.filter_tree);
-            children.push({ type: 'condition', field_id: dateField.id, op: 'gte', value: boundary(fromDaysAgo, 'start') });
-            children.push({ type: 'condition', field_id: dateField.id, op: 'lte', value: boundary(toDaysAgo, 'end') });
+            children.push({ type: 'condition', field_id: dateField.id, op: 'gte', value: boundary(w.from, 'start') });
+            children.push({ type: 'condition', field_id: dateField.id, op: 'lte', value: boundary(w.to, 'end') });
             return { type: 'group', logic: 'and', children };
         };
 
-        const [cur, prev] = await Promise.all([
-            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(days - 1, 0) }, { viewer: opts.viewer, related: opts.related }),
-            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(2 * days - 1, days) }, { viewer: opts.viewer, related: opts.related }),
-        ]);
+        const run = (w: { from: string; to: string }) =>
+            this.runIn(tx, tenantId, ctx, { ...req, group_by_field_id: undefined, filter_tree: windowTree(w) }, {
+                rootsOnly: opts.rootsOnly,
+                related: opts.related,
+            });
+        // Secuenciales: comparten la conexión de la transacción.
+        const cur = await run(current);
+        const prev = await run(previous);
 
         const value = cur.value ?? 0;
-        const previous = prev.value ?? 0;
+        const prevValue = prev.value ?? 0;
         let deltaPct: number | null = null;
-        if (typeof value === 'number' && typeof previous === 'number' && previous !== 0) {
-            deltaPct = Math.round(((value - previous) / Math.abs(previous)) * 1000) / 10;
+        if (typeof value === 'number' && typeof prevValue === 'number' && prevValue !== 0) {
+            deltaPct = Math.round(((value - prevValue) / Math.abs(prevValue)) * 1000) / 10;
         }
-        return { value, previous, delta_pct: deltaPct, period_days: days };
+        return { value, previous: prevValue, delta_pct: deltaPct, period_days: length };
     }
 
     /**
@@ -267,6 +399,15 @@ export class AggregateService {
             filter_tree?: AggregateRequest['filter_tree'];
             group_by_field_id?: number;
             viewer?: AggregateViewer;
+            /** v0.1.286 — la búsqueda de la tabla: el pie suma lo que se ve. */
+            search?: string;
+            /**
+             * v0.1.286 — sólo el desglose por grupo (la vista agrupada), y sólo
+             * de estos grupos (`null` = «sin valor»): sumar 100k filas para
+             * mostrar 40 grupos costaba 400 ms.
+             */
+            groupsOnly?: boolean;
+            groupKeys?: Array<string | null>;
         },
     ): Promise<FooterAggregates> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -287,6 +428,8 @@ export class AggregateService {
             // total de un pedido (el pedido + sus líneas).
             isNull(records.parentId),
             filterWhere,
+            compileSearch(fields.filter((f) => !acl.hidden.has(f.id)), opts.search),
+            opts.groupsOnly ? groupKeysWhere(byId.get(opts.group_by_field_id ?? 0), fieldsById, opts.groupKeys) : undefined,
         );
 
         // v0.1.252 — un campo DERIVADO (rollup, lookup, computed) es una
@@ -329,10 +472,10 @@ export class AggregateService {
                 sql`, `,
             );
 
-        const totalsRes = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.execute(sql`select ${selectList()} from ${source}`),
-        );
-        const row = (totalsRes.rows as Record<string, unknown>[])[0];
+        const totalsRes = opts.groupsOnly
+            ? undefined
+            : await this.tenantDb.withTenant(tenantId, (tx) => tx.execute(sql`select ${selectList()} from ${source}`));
+        const row = (totalsRes?.rows as Record<string, unknown>[] | undefined)?.[0];
         const bagFrom = (r: Record<string, unknown> | undefined): Record<string, AggregateBag> => {
             const out: Record<string, AggregateBag> = {};
             for (const p of plan) {
@@ -346,10 +489,14 @@ export class AggregateService {
         if (opts.group_by_field_id !== undefined) {
             const gf = byId.get(opts.group_by_field_id);
             if (gf) {
-                const groupExpr = fieldTextExpr(gf.id);
-                const res = await this.tenantDb.withTenant(tenantId, (tx) =>
-                    tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`),
-                );
+                // v0.1.286 — la MISMA clave que los buckets (combinación de un
+                // multi_select, derivados por su expresión): antes un pie por
+                // grupo de multi_select nunca encontraba su grupo.
+                const groupExpr = groupKeyExpr(gf, fieldsById);
+                const res = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                    if (groupKeyHasSubquery(gf.type)) await disableJitForTx(tx);
+                    return tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`);
+                });
                 groups = (res.rows as Record<string, unknown>[]).map((rec) => {
                     const grp = rec.grp;
                     return {
@@ -436,6 +583,60 @@ export class AggregateService {
     }
 }
 
+/** v0.1.286 — Tope de grupos que puede pedir cualquiera (endpoint incluido). */
+export const MAX_GROUPS = 1000;
+
+/** v0.1.286 — Agrupado con tope + "Otros". */
+export interface AggregateTop {
+    limit: number;
+    /** true: los grupos de mayor valor primero; false: por clave (fechas, alfabético). */
+    byValue: boolean;
+}
+
+export interface AggregateRunOptions {
+    rootsOnly?: boolean;
+    related?: RelatedScope;
+    /** v0.1.286 — la búsqueda de la tabla (misma regla que el listado). */
+    search?: string;
+    /** v0.1.286 — con tope de grupos y "Otros" (gráficos y endpoint). */
+    top?: AggregateTop;
+}
+
+export interface DeltaOptions {
+    dateFieldId: number;
+    /** Ventana de N días anclada a hoy (sin `window`). */
+    periodDays?: number;
+    /** v0.1.286 — ventana ACTUAL explícita (YYYY-MM-DD, inclusive). */
+    window?: { from: string; to: string };
+    rootsOnly?: boolean;
+    related?: RelatedScope;
+}
+
+export interface DeltaResult {
+    value: number | string | null;
+    previous: number | string | null;
+    delta_pct: number | null;
+    period_days: number;
+}
+
+/** v0.1.286 — lo resuelto de una lista para agregar sobre ella (ver `listContext`). */
+export interface AggregateListContext {
+    list: { id: number; settings: Record<string, unknown> };
+    fields: Field[];
+    /** Campos VISIBLES para quien pregunta. */
+    byId: Map<number, Field>;
+    /** Whitelist filtrable (sin ocultos) con las expresiones de rollup/computed. */
+    fieldsById: Map<number, FilterableField>;
+    hidden: Set<number>;
+    scope: SQL | undefined;
+    clock: QueryClock;
+}
+
+/** Días entre dos fechas YYYY-MM-DD (b - a). */
+function daysBetween(a: string, b: string): number {
+    return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
 /** Bag de métricas de un campo (las claves presentes dependen del tipo). */
 export type AggregateBag = Partial<Record<AggregateMetric, number | string | null>>;
 
@@ -452,7 +653,49 @@ export interface FooterAggregates {
  */
 function multiSelectSetExpr(fieldId: number): SQL {
     const col = sql`(${records.data} -> ${jsonbKeyForField(fieldId)})`;
-    return sql`(CASE WHEN jsonb_typeof(${col}) = 'array' AND jsonb_array_length(${col}) > 0 THEN (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e) ELSE NULL END)`;
+    // Atajo para lo habitual (1-2 opciones de texto): la subconsulta con
+    // `jsonb_agg` se paga por FILA y era lo más caro de agrupar por un
+    // multi_select. Da EXACTAMENTE la misma clave que el camino general: la
+    // salida de texto de un array jsonb de strings es la misma que la de
+    // `jsonb_agg(text)`, y `<=` sobre `->>` usa la misma collation que el
+    // `ORDER BY e` (los repetidos se conservan, como en `jsonb_agg`). Un array
+    // con elementos que no son texto va por el camino general, que los pasa a
+    // texto. `IS DISTINCT FROM` deja un NULL (clave ausente) en NULL sin
+    // llamar a `jsonb_array_length`, que falla con lo que no es un array.
+    return sql`(CASE
+        WHEN jsonb_typeof(${col}) IS DISTINCT FROM 'array' THEN NULL
+        WHEN jsonb_array_length(${col}) = 0 THEN NULL
+        WHEN jsonb_array_length(${col}) = 1 AND jsonb_typeof(${col} -> 0) = 'string' THEN ${col}::text
+        WHEN jsonb_array_length(${col}) = 2 AND jsonb_typeof(${col} -> 0) = 'string' AND jsonb_typeof(${col} -> 1) = 'string'
+            THEN CASE WHEN (${col} ->> 0) <= (${col} ->> 1) THEN ${col}::text ELSE jsonb_build_array(${col} -> 1, ${col} -> 0)::text END
+        ELSE (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e)
+    END)`;
+}
+
+/**
+ * v0.1.286 — clave de grupo de una fila al agrupar por un campo (sin buckets
+ * temporales): la que usan los buckets de `run`, el pie por grupo y las filas
+ * de cada grupo de la vista agrupada — tiene que ser la misma en los tres.
+ */
+export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableField>): SQL {
+    if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
+    if (isThroughField(field.type) || field.type === 'computed') return throughGroupExpr(field, fieldsById);
+    return fieldTextExpr(field.id);
+}
+
+/** Filas de ciertos grupos (`groupKeys`) del campo agrupado; sin claves, todas. */
+function groupKeysWhere(
+    field: Field | undefined,
+    fieldsById: Map<number, FilterableField>,
+    keys: Array<string | null> | undefined,
+): SQL | undefined {
+    if (!field || !keys) return undefined;
+    const expr = groupKeyExpr(field, fieldsById);
+    const values = keys.filter((k): k is string => k !== null);
+    const parts: SQL[] = [];
+    if (values.length > 0) parts.push(sql`(${expr}) IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
+    if (keys.includes(null)) parts.push(sql`(${expr}) IS NULL`);
+    return parts.length > 0 ? sql`(${sql.join(parts, sql` OR `)})` : sql`false`;
 }
 
 /** Métricas base aplicables a cada tipo de campo (la UI deriva pct/range). */

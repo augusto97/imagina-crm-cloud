@@ -8040,6 +8040,71 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         recargar → Problemas → «Ir a arreglarlo» → índice con «Falló» → se
         cierra solo al arreglarla → «Ya lo arreglé» → celular).
 
+  - [x] **Auditoría integral II (v0.1.286, ADR-S45, pedido del usuario:
+        "audita profundamente toda la app… cada vez hay cosas con errores")**:
+        ocho relevamientos en paralelo (tabla y vistas, ficha, tableros,
+        portal/formularios/listas públicas, navegación, automatizaciones y
+        editores, servidor, recorrido real en el navegador en claro, oscuro y
+        celular) y siete equipos de corrección en copias aisladas, integrados
+        en la rama. Lo más grave, todo reproducido antes de tocarlo:
+        (a) **portal**: el cliente veía los comentarios internos del equipo y,
+        por la API, campos que el diseño ocultaba y listas no habilitadas →
+        `comments.visibility` (interno por defecto, «Visible para el
+        cliente»; migración 0073), `/portal/me` sólo con los campos del
+        diseño, fuera `/portal/lists/*`, registros borrados no se sirven, lo
+        que escribe el cliente avisa al equipo, y el cliente puede crear
+        registros en las listas habilitadas;
+        (b) **datos que se perdían**: dos ediciones simultáneas se pisaban (de
+        8 quedaban 3) → toda escritura bloquea la fila; «Actualizar un campo»
+        guardaba texto sin validar (una fecha «mañana» tumbaba con 500 el orden
+        y los filtros de la lista y el escaneo de vencimientos) y pisaba lo
+        que alguien editó mientras corría → valida, escribe sólo lo que cambia
+        y pasa por `RecordsService`; casts tolerantes con `pg_input_is_valid`;
+        el modal del registro revertía cambios ajenos y Escape descartaba lo
+        escrito;
+        (c) **automatizaciones**: «por vencimiento» se disparaba para fechas de
+        hace meses al crearla y no volvía a dispararse al cambiar la fecha;
+        «cuando cambia» ignoraba de/a; las condiciones de fecha relativa y de
+        multi_select nunca coincidían; un webhook con 500 quedaba como éxito;
+        los registros creados por una automatización no dejaban actividad ni
+        disparaban otras (ahora encadenan con tope 3); cron inválido guardado
+        activo; sin destinatario guardada activa; límite del plan sin aplicar;
+        cuerpos JSON sin escapar; nuevas variables `{{campo.email}}`,
+        `{{campo.nombre}}`, `|fecha`, `|moneda`; aviso al salir con cambios
+        sin guardar (`useUnsavedChangesGuard`);
+        (d) **ficha**: no se podía adjuntar un archivo desde ninguna ficha,
+        «Eliminar» fallaba en la ficha diseñada, comentarios con «Usuario #2»;
+        ahora el registro abierto vive en la URL (`?record=`), se arma con UN
+        pedido (`/records/:id/view`, antes 11 en cascada), tiene subtareas y
+        anterior/siguiente (↑/↓, J/K);
+        (e) **tabla y vistas**: pie de totales que no se actualizaba, búsqueda
+        distinta según el tamaño de la lista (ahora una sola regla sin acentos
+        y por palabras), filtros de fecha y hora leídos en UTC, calendario con
+        sólo los primeros 200, vista agrupada sin orden y en 1,3 s (ahora tres
+        consultas, ~0,25 s en 100k), filtro por relaciones, asignar persona en
+        la celda, navegación con teclado, kanban «Mover a…» táctil;
+        (f) **tableros**: no se refrescaban al editar, fallaban todos en una
+        empresa impaga, interruptores que no se apagaban, delta mal con
+        período, clic que abría otro conjunto de registros, valores crudos; más
+        filtros del tablero (incluido «Yo»), vista previa del widget, orden y
+        top-N con «Otros», períodos nuevos, bundle con ~4 transacciones por
+        lista;
+        (g) **navegación**: no había forma de cambiar de empresa, Ajustes en
+        blanco para no-admins; ahora selector de empresa y menú de usuario,
+        búsqueda global de registros (Ctrl+K, `GET /search` con el ACL de cada
+        lista), recientes, atajos («?», `g`+letra), títulos de pestaña, cajón
+        móvil accesible y contraste revisado;
+        (h) **servidor**: entradas con NUL o ids gigantes daban 500,
+        `statement_timeout`/`idle_in_transaction`, Redis con tope por comando,
+        JIT apagado (`DB_JIT`), colas con retención, conversión de tipo 93 s →
+        7 s en 100k, «Mi trabajo» 514 → 27 ms, carreras del límite de registros
+        y de la cuota de correo cerradas; formularios: subidas con sello, tipos
+        y tope de bytes, cupo atómico; listas públicas con formato, orden
+        numérico y campos por id.
+        Las carencias de más valor que no entraron quedan propuestas en
+        CONTINUIDAD (pasos de espera y bucles, prueba paso a paso, formularios
+        por páginas, captcha, enlace público de tableros, versiones por campo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

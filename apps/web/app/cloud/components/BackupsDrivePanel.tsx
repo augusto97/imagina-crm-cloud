@@ -171,7 +171,14 @@ export function BackupsDrivePanel(): JSX.Element | null {
     });
 
     if (statusQ.isError || !s) return null;
-    const badge = stateBadge(s);
+    // v0.1.286 — si listar el Drive falla (token revocado, cuenta sin acceso:
+    // 409 `drive_unavailable`), la cabecera no puede decir «Activa».
+    const filesError = filesQ.isError
+        ? filesQ.error instanceof CloudApiError && filesQ.error.message
+            ? filesQ.error.message
+            : 'No se pudo leer el Drive.'
+        : null;
+    const badge = filesError !== null && !s.broken ? { label: 'No se puede leer el Drive', variant: 'destructive' as const } : stateBadge(s);
     const showClientForm = !s.configured || editClient;
 
     return (
@@ -450,7 +457,10 @@ export function BackupsDrivePanel(): JSX.Element | null {
                     <RemoteList
                         files={filesQ.data ?? []}
                         loading={filesQ.isLoading}
-                        error={filesQ.error instanceof CloudApiError ? filesQ.error.message : filesQ.isError ? 'No se pudo leer el Drive.' : null}
+                        error={filesError}
+                        onRetry={() => void filesQ.refetch()}
+                        onReconnect={() => start.mutate()}
+                        reconnecting={start.isPending}
                         onDelete={(b) => {
                             void confirm({
                                 title: 'Borrar la copia del Drive',
@@ -485,12 +495,49 @@ function Step({ n, title, done, disabled, children }: { n: number; title: string
     );
 }
 
-function RemoteList({ files, loading, error, onDelete }: { files: RemoteBackup[]; loading: boolean; error: string | null; onDelete: (b: RemoteBackup) => void }): JSX.Element {
+function RemoteList({
+    files,
+    loading,
+    error,
+    onDelete,
+    onRetry,
+    onReconnect,
+    reconnecting = false,
+}: {
+    files: RemoteBackup[];
+    loading: boolean;
+    error: string | null;
+    onDelete: (b: RemoteBackup) => void;
+    onRetry?: () => void;
+    onReconnect?: () => void;
+    reconnecting?: boolean;
+}): JSX.Element {
     return (
         <div className="imcrm-space-y-2">
             <div className="imcrm-text-sm imcrm-font-medium">Copias en el Drive</div>
             {error ? (
-                <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>
+                // v0.1.286 — antes el error quedaba en una línea suelta y la
+                // cabecera seguía diciendo «Activa»: ahora se explica qué
+                // pasó y se ofrece reconectar (o reintentar).
+                <div className="imcrm-space-y-2 imcrm-rounded-md imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm" data-testid="drive-files-error">
+                    <p className="imcrm-font-medium imcrm-text-destructive">No se pudo leer tu Google Drive.</p>
+                    <p className="imcrm-text-foreground/90">{error}</p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        Mientras tanto las copias no se suben. Suele pasar cuando se quitó el acceso desde la cuenta de Google: vuelve a conectarla.
+                    </p>
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
+                        {onReconnect && (
+                            <Button size="sm" onClick={onReconnect} disabled={reconnecting} data-testid="drive-files-reconnect">
+                                {reconnecting ? 'Pidiendo el código…' : 'Volver a conectar'}
+                            </Button>
+                        )}
+                        {onRetry && (
+                            <Button size="sm" variant="outline" onClick={onRetry}>
+                                Reintentar
+                            </Button>
+                        )}
+                    </div>
+                </div>
             ) : loading ? (
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">Leyendo el Drive…</p>
             ) : files.length === 0 ? (

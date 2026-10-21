@@ -248,7 +248,7 @@ export function ActionButtonView({ block, record }: ActionButtonViewProps): JSX.
                 <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-text-muted-foreground">
                     {targetSource === 'field'
                         ? __('El campo no tiene valor en este registro.')
-                        : __('Configura el target en el bloque.')}
+                        : __('Configura el destino en el bloque.')}
                 </p>
             )}
         </section>

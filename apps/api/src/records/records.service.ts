@@ -32,8 +32,9 @@ import {
 import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
+import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
 import { memberships, mentions, records } from '../db/schema';
-import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
+import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
 import {
     andWhere,
     effectivePermissions,
@@ -55,7 +56,9 @@ import { RecordChangeHub } from './record-change-hub';
 import { NotifyHub } from '../notifications/notify-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { withComputedExprs } from './computed-sql';
+import type { ThroughPlan } from './through-fields';
 import { RelationsRepository } from './relations.repository';
+import { compileSearch } from './search-sql';
 import { relatedScopeSql, type RelatedScope } from './related-scope';
 import { BillingService } from '../billing/billing.service';
 
@@ -75,6 +78,17 @@ export interface RecordsPage {
         per_page?: number;
         total_pages?: number;
     };
+}
+
+/** Contexto de lectura de una lista para quien pide (ver `readContext`). */
+interface ReadContext {
+    list: List;
+    fields: Field[];
+    plans: ThroughPlan[];
+    hiddenIds: Set<number>;
+    fieldsById: Map<number, FilterableField>;
+    scopeW: SQL | undefined;
+    clock: QueryClock;
 }
 
 @Injectable()
@@ -117,8 +131,13 @@ export class RecordsService {
          * `planChecked`: quien llama YA verificó el límite del plan para el lote
          * entero (`assertCanCreateRecords(n)`). Sin esto, duplicar 5.000
          * registros contaba la tabla 5.000 veces (O(N²), auditoría v0.1.252).
+         *
+         * `automationChain`: el alta la hizo una automatización (dispara las de
+         * la lista destino con la cadena — tope y sin auto-disparo).
+         * `lenientRequired`: una automatización crea aunque falte un campo
+         * obligatorio (el motor lo avisa en su log); comportamiento histórico.
          */
-        opts: { planChecked?: boolean } = {},
+        opts: { planChecked?: boolean; automationChain?: AutomationChain; lenientRequired?: boolean } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -131,14 +150,17 @@ export class RecordsService {
                 data: { status: 403 },
             });
         }
-        if (!opts.planChecked) await this.billing?.assertCanCreateRecord(tenantId);
+        // El tope del plan se verifica DENTRO de la transacción del alta (ver
+        // assertRecordRoomInTx): aquí sólo se lee cuál es.
+        const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
         const fields = await this.fields.listByListId(tenantId, listId);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
         const rel = splitRelationValues(fields, input.data);
-        const data = this.validateData(fields, rel.data, { partial: false });
+        const data = this.validateData(fields, rel.data, { partial: opts.lenientRequired === true });
 
         const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
             // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
             // lista y ser de primer nivel — un solo nivel de anidado.
             const parentId = input.parent_id ?? null;
@@ -182,9 +204,10 @@ export class RecordsService {
             recordId: row.id,
             trigger: 'record_created',
             after: row.data,
+            ...(opts.automationChain ? { chain: opts.automationChain } : {}),
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list, fields });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
         return toRecord(withComputed(fields, enriched[0] ?? row), {
             ...byFieldToKeys(relFieldIds, undefined),
@@ -203,10 +226,15 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
-        const { row, fields, hiddenKeys, relMap, relFieldIds } = await run(async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
+            // Igual que el listado: la ficha sabe cuántas subtareas tiene (el
+            // aviso de borrado y la sección «Subtareas» lo leen de aquí).
+            const counts = r && (r.parentId ?? null) === null
+                ? await this.repo.subtaskCounts(tx, tenantId, [r.id])
+                : new Map<number, number>();
             const rels = r
                 ? await this.relationsRepo.batchTargets(
                       tx,
@@ -227,14 +255,33 @@ export class RecordsService {
                 hiddenKeys: hiddenKeysWithDerived(fields, list.settings, actor, restricted),
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
+                subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
             };
         });
         // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
         if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
         return stripHidden(
-            toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id))),
+            toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
             hiddenKeys,
         );
+    }
+
+    /**
+     * De estas personas, ¿quiénes pueden VER el registro? El mismo criterio que
+     * `get` (la fila existe y el alcance del rol la alcanza), pero leyendo la
+     * lista y la fila UNA vez para todos — los avisos antes hacían un `get`
+     * completo por destinatario.
+     */
+    async viewersOf(tenantId: number, listId: number, recordId: number, actors: readonly Actor[]): Promise<Set<number>> {
+        if (actors.length === 0) return new Set();
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, String(listId)).catch(() => null);
+            if (!list) return null;
+            const row = await this.repo.findById(tx, tenantId, list.id, recordId);
+            return row ? { list, row } : null;
+        });
+        if (!found) return new Set();
+        return new Set(actors.filter((a) => this.aclCanReach(found.list, a, 'view', found.row)).map((a) => a.userId));
     }
 
     async list(
@@ -260,53 +307,19 @@ export class RecordsService {
         const byPage = query.page !== undefined;
         const pageOffset = byPage ? (query.page! - 1) * query.limit : undefined;
         const wantTotal = byPage || query.with_total === true;
-        const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts, total } = await run(async (tx) => {
-            const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
-            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
-            // v0.1.170 — los rollups filtran y ordenan por su subconsulta
-            // correlacionada (el motor la arma; sin plan, se descartan).
-            const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
-            // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
-            const perms = effectivePermissions(list.settings, actor.role, actor.userId);
-            // SEC-25 (v0.1.226): un campo oculto para este rol tampoco se
-            // FILTRA, se BUSCA ni se ORDENA — cualquiera de las tres es un
-            // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
-            // con el valor), aunque después la respuesta lo quite de `data`.
-            const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
-            // SEC-36 (v0.1.239): lookup/rollup hacia una lista que esta persona
-            // no ve completa — ocultos igual que un campo oculto.
-            for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
-            for (const id of withDependentComputed(fields, hiddenIds)) hiddenIds.add(id);
-            const fieldsById = withComputedExprs(
-                new Map<number, FilterableField>(
-                    [
-                        ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
-                        ...this.fields.through.filterableFor(plans, tenantId),
-                        // v0.1.188 — la vista agrupada compone su búsqueda como
-                        // filter tree y necesita el pseudo-campo de la descripción.
-                        descriptionSearchFilterable(),
-                    ].filter(([id]) => !hiddenIds.has(id)),
-                ),
-                fields,
-            );
-            const filterWhere = compileFilterTree(fieldsById, query.filter_tree, await this.clock(tenantId, tx));
-            // Búsqueda de texto (paridad con el buscador del plugin): OR de
-            // ILIKE sobre los campos searchables, AND con filtros y scope.
-            const searchWhere = compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), query.search);
-            const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-            const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
-            const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
+        const { page, hasMore, lastId, total } = await run(async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
             // v0.1.209 — una selección de filas y los vinculados a un registro.
             const pickW = andWhere(
-                pickWhere(tenantId, fields, query),
+                pickWhere(tenantId, ctx.fields, query),
                 opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
             );
-            const where = andWhere(andWhere(andWhere(filterWhere, searchWhere), scopeW), pickW);
+            const where = andWhere(this.readWhere(ctx, query), pickW);
 
             // Orden por CAMPO (`sort=field_{id}:{dir},...`): expresiones
             // tipadas whitelisted (regla de oro nº 4) con NULLS LAST. Los
             // tipos sin orden útil (relation/file/computed) se descartan.
-            const orderBy = parseFieldSort(query.sort, fieldsById);
+            const orderBy = parseFieldSort(query.sort, ctx.fieldsById, ctx.fields);
             const sorted = orderBy.length > 0;
             // Subtareas: por defecto sólo primer nivel. `parent` trae las de
             // un registro; `include_subtasks` devuelve todo plano (export).
@@ -318,7 +331,7 @@ export class RecordsService {
                     : query.include_subtasks === true || query.ids !== undefined || query.related_to !== undefined || opts.related !== undefined
                         ? ('any' as const)
                         : ('roots' as const);
-            const listed = await this.repo.list(tx, tenantId, list.id, {
+            const listed = await this.repo.list(tx, tenantId, ctx.list.id, {
                 parent,
                 where,
                 // Con sort por campo el keyset por id no aplica: el cursor
@@ -329,42 +342,24 @@ export class RecordsService {
                 limit: query.limit,
                 dir: query.sort_dir,
             });
-            const total = wantTotal ? await this.repo.count(tx, tenantId, list.id, { parent, where }) : undefined;
-            // Lookups/rollups de la página entera en batch (regla de oro nº 8).
-            const result = await this.fields.through.attach(tx, tenantId, plans, listed, fields);
-            // Relations de la página entera en UNA query (regla de oro nº 8).
-            const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-            const rels = await this.relationsRepo.batchTargets(
-                tx,
-                tenantId,
-                result.map((r) => r.id),
-                relFieldIds,
-            );
-            const subtaskCounts = await this.repo.subtaskCounts(
-                tx,
-                tenantId,
-                result.map((r) => r.id),
-            );
+            const total = wantTotal ? await this.repo.count(tx, tenantId, ctx.list.id, { parent, where }) : undefined;
+            // Pedimos limit+1 para detectar página siguiente sin contar todo;
+            // la fila de más no se hidrata.
+            const pageRows = listed.slice(0, query.limit);
             return {
-                rows: result,
-                fields,
-                hiddenKeys: new Set([...hiddenIds].map((id) => jsonbKeyForField(id))),
-                rels,
-                relFieldIds,
-                subtaskCounts,
+                page: await this.hydrate(tx, tenantId, ctx, pageRows),
+                hasMore: listed.length > query.limit,
+                lastId: pageRows[pageRows.length - 1]?.id,
                 total,
             };
         });
 
-        // Pedimos limit+1 para detectar página siguiente sin contar todo.
-        const hasMore = rows.length > query.limit;
-        const page = hasMore ? rows.slice(0, query.limit) : rows;
         const nextCursor = hasMore
             ? byPage
                 ? String((pageOffset ?? 0) + page.length)
                 : query.sort !== undefined && query.sort !== ''
                     ? String((query.cursor ?? 0) + page.length)
-                    : String(page[page.length - 1]!.id)
+                    : String(lastId)
             : null;
         const pageMeta =
             total === undefined
@@ -375,19 +370,131 @@ export class RecordsService {
                       per_page: query.limit,
                       total_pages: Math.max(1, Math.ceil(total / query.limit)),
                   };
-        return {
-            data: page.map((r) =>
-                stripHidden(
-                    toRecord(
-                        withComputed(fields, r),
-                        byFieldToKeys(relFieldIds, rels.get(r.id)),
-                        subtaskCounts.get(r.id) ?? 0,
-                    ),
-                    hiddenKeys,
-                ),
+        return { data: page, meta: { next_cursor: nextCursor, ...pageMeta } };
+    }
+
+    /**
+     * v0.1.286 — filas de VARIOS grupos de la vista agrupada en UNA consulta
+     * (`row_number() over (partition by <grupo>)`), con el mismo filtro,
+     * búsqueda, ACL, orden y regla de subtareas (sólo primer nivel) que el
+     * listado plano. Antes la vista corría un listado completo POR GRUPO
+     * abierto (agrupar por fecha sobre 100k registros: ~950 sentencias, 1,3 s).
+     *
+     * `groupKeyExpr` arma la clave de grupo de una fila —la MISMA expresión con
+     * la que el motor de agregados arma los buckets— y `keys` son las claves
+     * pedidas (`null` = el grupo «(sin valor)»).
+     */
+    async listGroupRows(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        opts: {
+            groupFieldId: number;
+            groupKeyExpr: (field: Field, fieldsById: Map<number, FilterableField>) => SQL;
+            keys: Array<string | null>;
+            perGroup: number;
+            filter_tree?: ListRecordsQuery['filter_tree'];
+            search?: string;
+            sort?: string;
+        },
+    ): Promise<Map<string | null, RecordDto[]>> {
+        const out = new Map<string | null, RecordDto[]>();
+        if (opts.keys.length === 0) return out;
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            const groupField = ctx.fields.find((f) => f.id === opts.groupFieldId);
+            if (!groupField || ctx.hiddenIds.has(groupField.id)) return out;
+            if (groupKeyHasSubquery(groupField.type)) await disableJitForTx(tx);
+            const picked = await this.repo.listPerGroup(tx, tenantId, ctx.list.id, {
+                where: this.readWhere(ctx, { filter_tree: opts.filter_tree, search: opts.search }),
+                groupExpr: opts.groupKeyExpr(groupField, ctx.fieldsById),
+                keys: opts.keys,
+                orderBy: parseFieldSort(opts.sort, ctx.fieldsById, ctx.fields),
+                perGroup: opts.perGroup,
+            });
+            const dtos = await this.hydrate(tx, tenantId, ctx, picked.map((p) => p.row));
+            picked.forEach((p, i) => {
+                const list = out.get(p.group) ?? [];
+                list.push(dtos[i]!);
+                out.set(p.group, list);
+            });
+            return out;
+        });
+    }
+
+    /**
+     * Lo que necesita una LECTURA de la lista para quien pide (v0.1.286, antes
+     * vivía dentro de `list`): campos, ACL (scope + ocultos), campos filtrables
+     * con las expresiones de los derivados y el reloj de la empresa.
+     */
+    private async readContext(tx: Tx, tenantId: number, actor: Actor, listIdOrSlug: string): Promise<ReadContext> {
+        const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
+        const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+        // v0.1.170 — los rollups filtran y ordenan por su subconsulta
+        // correlacionada (el motor la arma; sin plan, se descartan).
+        const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
+        // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
+        const perms = effectivePermissions(list.settings, actor.role, actor.userId);
+        // SEC-25 (v0.1.226): un campo oculto para este rol tampoco se
+        // FILTRA, se BUSCA ni se ORDENA — cualquiera de las tres es un
+        // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
+        // con el valor), aunque después la respuesta lo quite de `data`.
+        const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+        // SEC-36 (v0.1.239): lookup/rollup hacia una lista que esta persona
+        // no ve completa — ocultos igual que un campo oculto.
+        for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
+        for (const id of withDependentComputed(fields, hiddenIds)) hiddenIds.add(id);
+        const fieldsById = withComputedExprs(
+            new Map<number, FilterableField>(
+                [
+                    ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                    ...this.fields.through.filterableFor(plans, tenantId),
+                    // v0.1.188 — búsquedas compuestas como filter tree pueden
+                    // apuntar al pseudo-campo de la descripción.
+                    descriptionSearchFilterable(),
+                ].filter(([id]) => !hiddenIds.has(id)),
             ),
-            meta: { next_cursor: nextCursor, ...pageMeta },
+            fields,
+        );
+        const assignmentId = resolvePermissions(list.settings).assignment_field_id;
+        const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
+        return {
+            list,
+            fields,
+            plans,
+            hiddenIds,
+            fieldsById,
+            scopeW: scopeWhere(perms.view, actor.userId, assignmentKey),
+            clock: await this.clock(tenantId, tx),
         };
+    }
+
+    /** Filtro + búsqueda (sólo sobre campos visibles) + scope de lectura. */
+    private readWhere(ctx: ReadContext, query: Pick<ListRecordsQuery, 'filter_tree' | 'search'>): SQL | undefined {
+        const filterWhere = compileFilterTree(ctx.fieldsById, query.filter_tree, ctx.clock);
+        // Búsqueda de texto: palabras en AND, sin acentos (ver search-sql.ts).
+        const searchWhere = compileSearch(ctx.fields.filter((f) => !ctx.hiddenIds.has(f.id)), query.search);
+        return andWhere(andWhere(filterWhere, searchWhere), ctx.scopeW);
+    }
+
+    /**
+     * Filas del listado → DTO: lookups/rollups, relaciones y conteo de
+     * subtareas de la tanda ENTERA en batch (regla de oro nº 8); computed
+     * evaluados y campos ocultos fuera.
+     */
+    private async hydrate(tx: Tx, tenantId: number, ctx: ReadContext, rows: RecordListRow[]): Promise<RecordDto[]> {
+        const result = await this.fields.through.attach(tx, tenantId, ctx.plans, rows, ctx.fields);
+        const relFieldIds = ctx.fields.filter((f) => f.type === 'relation').map((f) => f.id);
+        const ids = result.map((r) => r.id);
+        const rels = await this.relationsRepo.batchTargets(tx, tenantId, ids, relFieldIds);
+        const subtaskCounts = await this.repo.subtaskCounts(tx, tenantId, ids);
+        const hiddenKeys = new Set([...ctx.hiddenIds].map((id) => jsonbKeyForField(id)));
+        return result.map((r) =>
+            stripHidden(
+                toRecord(withComputed(ctx.fields, r), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
+                hiddenKeys,
+            ),
+        );
     }
 
     async update(
@@ -406,8 +513,11 @@ export class RecordsService {
          * (lo usa la edición masiva que corre DESDE una automatización: si no,
          * una regla «al actualizar → editar en lote» se re-dispararía por cada
          * fila que toca).
+         *
+         * `automationChain`: el cambio lo hizo una automatización (el evento
+         * lleva la cadena — tope de profundidad y sin auto-disparo).
          */
-        opts: { silent?: boolean; noAutomations?: boolean } = {},
+        opts: { silent?: boolean; noAutomations?: boolean; automationChain?: AutomationChain } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -417,7 +527,8 @@ export class RecordsService {
         // (semántica parcial: los ausentes no se tocan).
         const rel = splitRelationValues(fields, input.data);
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const current = await this.repo.findById(tx, tenantId, listId, id);
+            // Con lock: dos ediciones simultáneas se encolan en vez de pisarse.
+            const current = await this.repo.findByIdForUpdate(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
@@ -435,7 +546,8 @@ export class RecordsService {
                     tenantId,
                     listId,
                     recordId: id,
-                    userId: actor.userId,
+                    // El sistema (0: una automatización) no es una persona.
+                    userId: actor.userId > 0 ? actor.userId : null,
                     action: 'record_updated',
                     diff: computeDiff(current.data, merged),
                 });
@@ -447,7 +559,12 @@ export class RecordsService {
             const enriched = updated
                 ? (await this.withThrough(tx, tenantId, listId, fields, [updated]))[0] ?? updated
                 : null;
-            return { updated, enriched, before: current.data, rels };
+            // La respuesta reemplaza al registro en los caches del front: sin
+            // esto volvía con 0 subtareas aunque las tuviera.
+            const subtasks = updated && (updated.parentId ?? null) === null
+                ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
+                : 0;
+            return { updated, enriched, before: current.data, rels, subtasks };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -459,9 +576,10 @@ export class RecordsService {
             trigger: 'record_updated',
             after: row.data,
             before: result.before, // para changed_fields
+            ...(opts.automationChain ? { chain: opts.automationChain } : {}),
         });
         // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId, list, fields });
         // Recurrencias con trigger status_change: fire-and-forget (no bloquea
         // la respuesta del update; un fallo se loguea y no rompe la mutación).
         void this.recurrences
@@ -475,6 +593,7 @@ export class RecordsService {
                 fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 result.rels.get(row.id),
             ),
+            result.subtasks,
         );
     }
 
@@ -626,26 +745,20 @@ export class RecordsService {
 
         let newlyMentioned: number[] = [];
         const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const row = await this.repo.findById(tx, tenantId, list.id, id);
+            // Fila bloqueada (igual que `update`): dos autoguardados seguidos
+            // no leen el mismo "antes" ni juntan la actividad a la vez.
+            const row = await this.repo.findByIdForUpdate(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
+            const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
             newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
-            // La bitácora registra QUE cambió, no el documento entero: el
-            // activity se lee como una línea de tiempo, no como un historial
-            // de versiones (eso sería otra feature).
-            await this.activity.logInTx(tx, {
-                tenantId,
-                listId: list.id,
-                recordId: id,
-                userId: actor.userId,
-                action: 'record_updated',
-                diff: {
-                    description: {
-                        old: row.hasDescription ? '…' : '',
-                        new: clean === null ? '' : richDocToPlainText(clean, 120),
-                    },
-                },
-            });
+            // La bitácora registra QUE cambió (con un resumen corto, nunca el
+            // documento entero) y junta el autoguardado de una misma persona
+            // en una sola entrada — si no, cada segundo escribiendo era un
+            // "actualizó este registro" vacío.
+            const from = before === null ? '' : richDocToPlainText(before, 120);
+            const to = clean === null ? '' : richDocToPlainText(clean, 120);
+            await this.activity.logDescriptionEdit(tx, { tenantId, listId: list.id, recordId: id, userId: actor.userId, from, to });
             return true;
         });
         if (!ok) throw recordNotFound(id);
@@ -1221,28 +1334,6 @@ function recordNotFound(id: number): NotFoundException {
 }
 
 /**
- * WHERE de la búsqueda de texto server-side: OR de `data->>'fN' ILIKE
- * %needle%` sobre los campos "searchables" (los mismos que buscaba el
- * plugin: text, long_text, email, url) MÁS el texto plano de la
- * DESCRIPCIÓN del registro (v0.1.188, columna generada
- * `description_text`). El needle viaja SIEMPRE bindeado y con los
- * metacaracteres de LIKE escapados (regla de oro nº 4).
- */
-const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url', 'phone', 'ai']);
-
-function compileSearch(fields: Field[], search: string | undefined): SQL | undefined {
-    const needle = (search ?? '').trim();
-    if (needle === '') return undefined;
-    const targets = fields.filter((f) => SEARCHABLE_TYPES.has(f.type));
-    const escaped = `%${needle.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
-    const parts = targets.map(
-        (f) => sql`${records.data} ->> ${jsonbKeyForField(f.id)} ILIKE ${escaped}`,
-    );
-    parts.push(sql`${records.descriptionText} ILIKE ${escaped}`);
-    return sql`(${sql.join(parts, sql` OR `)})`;
-}
-
-/**
  * v0.1.209 — Restricciones de "filas concretas" del listado:
  *  - `ids`: sólo esos registros (una acción sobre una selección);
  *  - `related_to=<campo>:<registro>`: los que apuntan a ese registro por ese
@@ -1298,11 +1389,13 @@ const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup
 /** Tipos cuyo orden es alfabético (expresión de texto). */
 const TEXT_SORT_TYPES = new Set<string>(['text', 'long_text', 'email', 'url', 'phone', 'select', 'lookup', 'ai']);
 
-function parseFieldSort(
+export function parseFieldSort(
     raw: string | undefined,
     fieldsById: Map<number, FilterableField>,
+    fields: readonly Field[] = [],
 ): SQL[] {
     if (raw === undefined || raw === '') return [];
+    const byId = new Map(fields.map((f) => [f.id, f]));
     const out: SQL[] = [];
     for (const part of raw.split(',')) {
         const m = /^field_(\d+):(asc|desc)$/.exec(part.trim());
@@ -1316,13 +1409,45 @@ function parseFieldSort(
         if (NON_SORTABLE.includes(field.type) && !hasExpr) continue;
         // Un rollup sin subconsulta (config sin resolver) no ordena.
         if (field.type === 'rollup' && !hasExpr) continue;
+        const dir = m[2] === 'desc' ? sql`DESC` : sql`ASC`;
+        // v0.1.286 — una selección se ordena como su CATÁLOGO de opciones
+        // (Pendiente → En curso → Hecho, como el kanban), no por el valor
+        // interno; lo que no está en el catálogo va después, por texto.
+        const full = byId.get(field.id);
+        if (field.type === 'select' && !hasExpr && full) {
+            const values = selectOptionValues(full);
+            const text = fieldTypedExpr(field);
+            if (values.length > 0) {
+                out.push(sql`array_position(ARRAY[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::text[], ${text}) ${dir} NULLS LAST`);
+            }
+            out.push(sql`${text} COLLATE "und-x-icu" ${dir} NULLS LAST`);
+            continue;
+        }
+        // v0.1.286 — una persona se ordena por su NOMBRE (antes, como texto
+        // de su id: «10» antes que «9»). El id se lee sólo si es un número.
+        if (field.type === 'user' && !hasExpr) {
+            const raw = fieldTypedExpr(field);
+            out.push(
+                sql`(SELECT u.name FROM users u WHERE u.id = CASE WHEN ${raw} ~ '^[0-9]{1,18}$' THEN (${raw})::bigint END) COLLATE "und-x-icu" ${dir} NULLS LAST`,
+            );
+            continue;
+        }
         const typed = fieldTypedExpr(field);
         // v0.1.252 — el texto se ordena como lo lee una persona: sin
         // distinguir mayúsculas y con «Épsilon» junto a «epsilon». La imagen
         // de Postgres (Alpine/musl) ordena `en_US.utf8` como C — mayúsculas
         // primero y los acentos al final. ICU viene en la imagen oficial.
         const expr = TEXT_SORT_TYPES.has(field.type) ? sql`${typed} COLLATE "und-x-icu"` : typed;
-        out.push(m[2] === 'desc' ? sql`${expr} DESC NULLS LAST` : sql`${expr} ASC NULLS LAST`);
+        out.push(sql`${expr} ${dir} NULLS LAST`);
     }
     return out;
+}
+
+/** Valores de las opciones de un select/multi_select, en el orden del catálogo. */
+function selectOptionValues(field: Field): string[] {
+    const options = (field.config as { options?: unknown }).options;
+    if (!Array.isArray(options)) return [];
+    return options
+        .map((o) => (o && typeof o === 'object' ? (o as { value?: unknown }).value : undefined))
+        .filter((v): v is string => typeof v === 'string');
 }

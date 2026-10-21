@@ -10,7 +10,7 @@ import {
     type ColumnSizingState,
     type VisibilityState,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
+import { GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
@@ -21,7 +21,9 @@ import type { RowDensity, RowFontSize } from '../recordsState';
 import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
 import { useMainVirtualRows } from './useMainVirtualRows';
-import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
+import { SortIndicator } from './SortIndicator';
+import { isTypingTarget, moveActiveCell, type GridPos } from './gridKeyboard';
+import { FloatingAddColumn, tableMinWidth, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
@@ -38,10 +40,10 @@ import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
 import { storeAccessFor, useStoreRules } from '@/admin/records/storeRules';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
-import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
+import { FooterAggregateCell, footerIsAggregatable, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup } from './hscrollGroup';
-import { usePageStickyTop, useStuckSentinel } from './stickyTop';
+import { MAIN_SCROLLER_ID, usePageStickyTop, useStuckSentinel } from './stickyTop';
 import { isImageUrlField } from '@/lib/imageProxy';
 
 
@@ -78,6 +80,8 @@ interface TableViewProps {
      * footer respete el filtro visible.
      */
     filterTree?: FilterTree;
+    /** v0.1.286 — búsqueda activa: el pie suma lo que la tabla muestra. */
+    search?: string;
     /** Click en "+ Nueva tarea" al final de la tabla. Si no se pasa, no se renderea. */
     onAddRecord?: () => void;
     /** Click en "+ Agregar columna" al final del header. Si no se pasa, no se renderea. */
@@ -153,6 +157,7 @@ export function TableView({
     columnOrder,
     onColumnOrderChange,
     filterTree,
+    search,
     onAddRecord,
     onAddColumn,
     onEditField,
@@ -317,8 +322,9 @@ export function TableView({
     const aggregatableFieldIds = useMemo(
         () => fields
             // v0.1.170 — rollup SÍ (el backend lo suma por su subconsulta);
-            // lookup no (es una lista de valores).
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
+            // lookup no (es una lista de valores); v0.1.286 — computed
+            // numérico SÍ (se compila a SQL desde v0.1.229).
+            .filter(footerIsAggregatable)
             .filter((f) => columnVisibility[f.slug] !== false)
             .map((f) => f.id),
         [fields, columnVisibility],
@@ -327,6 +333,7 @@ export function TableView({
         listSlug,
         fieldIds: aggregatableFieldIds,
         filterTree,
+        search,
     });
 
     // Las filas de los padres abiertos llevan sus hijos como `subRows`, que
@@ -439,6 +446,78 @@ export function TableView({
     const virtualRows = windowed.items;
     const { paddingTop, paddingBottom } = windowed;
 
+    // v0.1.286 — celda activa + teclado (ver gridKeyboard.ts). La tabla es
+    // enfocable: las flechas mueven el recuadro, Enter edita (o abre el
+    // registro en la primera columna), Escape suelta. Funciona con la ventana
+    // virtual: si la fila no está dibujada, se la trae a la vista primero.
+    const [activeCell, setActiveCell] = useState<GridPos | null>(null);
+    const [gridFocused, setGridFocused] = useState(false);
+    const cellEl = (pos: GridPos): HTMLElement | null =>
+        tableContainerRef.current?.querySelector<HTMLElement>(`td[data-cell="${pos.row}:${pos.col}"]`) ?? null;
+    const revealCell = (pos: GridPos, attempt = 0): void => {
+        const td = cellEl(pos);
+        if (!td) {
+            if (attempt === 0) windowed.scrollToIndex(pos.row);
+            if (attempt < 3) requestAnimationFrame(() => revealCell(pos, attempt + 1));
+            return;
+        }
+        const main = document.getElementById(MAIN_SCROLLER_ID);
+        const body = tableContainerRef.current;
+        const r = td.getBoundingClientRect();
+        if (main) {
+            // Debajo de la cabecera fija (página + columnas), no detrás.
+            const headBottom = headScrollRef.current?.getBoundingClientRect().bottom ?? main.getBoundingClientRect().top;
+            const mainBottom = main.getBoundingClientRect().bottom;
+            if (r.top < headBottom) main.scrollTop -= headBottom - r.top;
+            else if (r.bottom > mainBottom) main.scrollTop += r.bottom - mainBottom;
+        }
+        if (body) {
+            const b = body.getBoundingClientRect();
+            const stickyCell = body.querySelector<HTMLElement>(`td[data-cell="${pos.row}:0"]`);
+            const leftEdge = pos.col === 0 ? b.left : Math.max(b.left, stickyCell?.getBoundingClientRect().right ?? b.left);
+            if (r.left < leftEdge) body.scrollLeft -= leftEdge - r.left;
+            else if (r.right > b.right) body.scrollLeft += r.right - b.right;
+        }
+    };
+    const onGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+        const container = e.currentTarget;
+        const onContainer = e.target === container;
+        // Al terminar de editar (Enter/Escape/Tab dentro del editor) el editor
+        // se desmonta y el foco quedaba en el <body>: vuelve a la tabla.
+        if (!onContainer && (e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab')) {
+            requestAnimationFrame(() => {
+                const a = document.activeElement;
+                if (!a || a === document.body) container.focus({ preventScroll: true });
+            });
+        }
+        // Dentro de un editor las teclas escriben; en un botón de celda
+        // Enter/Espacio los maneja el propio botón.
+        if (isTypingTarget(e.target)) return;
+        if (!onContainer && (e.key === 'Enter' || e.key === ' ')) return;
+        const colCount = table.getVisibleLeafColumns().length;
+        if (onContainer && (e.key === 'Enter' || e.key === 'F2') && activeCell) {
+            e.preventDefault();
+            const row = rows[activeCell.row];
+            if (activeCell.col === 0 && onRowClick && row) {
+                onRowClick(row.original);
+                return;
+            }
+            const trigger = cellEl(activeCell)?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), [role="button"]');
+            trigger?.click();
+            return;
+        }
+        if (onContainer && e.key === 'Escape') {
+            setActiveCell(null);
+            return;
+        }
+        const next = moveActiveCell(activeCell, e.key, e.shiftKey, rows.length, colCount);
+        if (next === undefined) return;
+        e.preventDefault();
+        if (!onContainer) container.focus({ preventScroll: true });
+        setActiveCell(next);
+        requestAnimationFrame(() => revealCell(next));
+    };
+
     /**
      * Reordena `columnOrder` insertando `dragged` justo antes de
      * `target`. Si el `columnOrder` está vacío, lo derivamos del
@@ -524,7 +603,12 @@ export function TableView({
     // (las columnas estiran proporcionalmente, sin vacío a la derecha) y
     // conserva el scroll horizontal cuando la suma de anchos supera el
     // viewport.
-    const tableStyle: React.CSSProperties = { tableLayout: 'fixed', width: '100%', minWidth: table.getCenterTotalSize() };
+    const tableStyle: React.CSSProperties = {
+        tableLayout: 'fixed',
+        width: '100%',
+        // 28 = la columna de la casilla (va en el colgroup, no en TanStack).
+        minWidth: tableMinWidth(28 + table.getCenterTotalSize(), table.getVisibleLeafColumns().length + 1, Boolean(onAddColumn)),
+    };
     // v0.1.142 — `table-layout: fixed` + `width: 100%` reparte el espacio
     // sobrante ENTRE TODAS las columnas, así que la de la casilla se
     // estiraba a ~44px por más que se le pidieran 32 (reporte del usuario,
@@ -812,7 +896,19 @@ export function TableView({
                 // Sin card chrome (border/rounded/shadow/bg-card): la tabla
                 // va plana sobre el canvas, estilo ClickUp — solo hairlines.
                 ref={tableContainerRef}
-                className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden"
+                className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden focus-visible:imcrm-outline-none"
+                tabIndex={0}
+                aria-label={__('Registros: usa las flechas para moverte entre celdas y Enter para editar')}
+                onKeyDown={onGridKeyDown}
+                onFocus={(e) => {
+                    if (e.target === e.currentTarget) {
+                        setGridFocused(true);
+                        if (activeCell === null && rows.length > 0) setActiveCell({ row: 0, col: 0 });
+                    }
+                }}
+                onBlur={(e) => {
+                    if (e.target === e.currentTarget) setGridFocused(false);
+                }}
             >
             <table className={tableClassName} style={tableStyle} aria-label={__('Registros de la lista')}>
                 {colGroup}
@@ -843,6 +939,7 @@ export function TableView({
                                 : rows
                             ).map((row, visualIndex) => {
                             const isSelected = selectedSet.has(row.original.id);
+                            const rowIndex = virtualActive ? (virtualRows[visualIndex]?.index ?? visualIndex) : visualIndex;
                             // Numeración continua entre páginas; con
                             // virtualización el índice real es el de la fila.
                             const rowNumber = rowNumberOffset
@@ -920,13 +1017,21 @@ export function TableView({
                                         // click ahí abre el drawer.
                                         const isOpenerCell = cellIndex === 0;
                                         const cellSticky = stickyStyleFor(cell.column.id);
+                                        const isActive = gridFocused
+                                            && activeCell !== null
+                                            && activeCell.row === rowIndex
+                                            && activeCell.col === cellIndex;
                                         return (
                                             <td
                                                 key={cell.id}
+                                                data-cell={`${rowIndex}:${cellIndex}`}
+                                                data-active={isActive ? 'true' : undefined}
+                                                onMouseDown={() => setActiveCell({ row: rowIndex, col: cellIndex })}
                                                 style={{
                                                     width: cell.column.getSize(),
                                                     maxWidth: cell.column.getSize(),
                                                     ...(cellSticky ?? {}),
+                                                    ...(isActive ? { boxShadow: 'inset 0 0 0 2px hsl(var(--imcrm-primary))' } : {}),
                                                 }}
                                                 className={cn(
                                                     // `overflow-hidden` + `width/maxWidth` cortan el
@@ -1139,34 +1244,6 @@ function defaultSizeForType(type: string): number {
         default:
             return 180;
     }
-}
-
-function SortIndicator({
-    dir,
-    index,
-    multiCount,
-}: {
-    dir: 'asc' | 'desc' | null;
-    index: number;
-    multiCount: number;
-}): JSX.Element | null {
-    // El estado de sort ya está expuesto al SR vía aria-sort en el <th>;
-    // los iconos solo son decorativos.
-    if (dir === null) {
-        return <ArrowUpDown className="imcrm-h-3 imcrm-w-3 imcrm-opacity-30" aria-hidden="true" />;
-    }
-    return (
-        <span className="imcrm-flex imcrm-items-center imcrm-gap-0.5" aria-hidden="true">
-            {dir === 'asc' ? (
-                <ArrowUp className="imcrm-h-3 imcrm-w-3 imcrm-text-primary" />
-            ) : (
-                <ArrowDown className="imcrm-h-3 imcrm-w-3 imcrm-text-primary" />
-            )}
-            {multiCount > 1 && (
-                <span className="imcrm-font-mono imcrm-text-[9px] imcrm-text-primary">{index + 1}</span>
-            )}
-        </span>
-    );
 }
 
 export { renderCellValue };

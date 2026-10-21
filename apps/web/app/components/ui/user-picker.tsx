@@ -28,6 +28,11 @@ interface UserPickerProps {
      * esté disponible — si no, oculta el botón.
      */
     showAssignMe?: boolean;
+    /**
+     * v0.1.286 — arrancar ABIERTO: la celda de la tabla monta el selector
+     * recién en el primer click (no un popover por celda) y lo abre en el acto.
+     */
+    defaultOpen?: boolean;
 }
 
 /**
@@ -50,8 +55,9 @@ export function UserPicker({
     flat = false,
     disabled,
     showAssignMe,
+    defaultOpen = false,
 }: UserPickerProps): JSX.Element {
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(defaultOpen);
     const [query, setQuery] = useState('');
     const [debounced, setDebounced] = useState('');
     const [highlight, setHighlight] = useState(0);

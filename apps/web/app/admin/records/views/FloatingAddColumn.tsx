@@ -15,7 +15,12 @@ export function FloatingAddColumn({ onClick }: { onClick: () => void }): JSX.Ele
     return (
         <div
             data-testid="floating-add-column"
-            className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-right-0 imcrm-z-30 imcrm-flex imcrm-items-center imcrm-bg-gradient-to-l imcrm-from-background imcrm-from-40% imcrm-to-transparent imcrm-pl-8 imcrm-pr-1.5"
+            // v0.1.286 — mide EXACTAMENTE el hueco que la tabla reserva al final
+            // (ADD_COLUMN_GUTTER): con 58 px de ancho (pl-8) sobre un hueco de
+            // 44, su degradado pisaba la etiqueta de la última columna aun con
+            // el scroll horizontal al final («Avance» cortado).
+            style={{ width: ADD_COLUMN_GUTTER }}
+            className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-right-0 imcrm-z-30 imcrm-flex imcrm-items-center imcrm-justify-end imcrm-bg-gradient-to-l imcrm-from-background imcrm-from-60% imcrm-to-transparent imcrm-pr-1.5"
         >
             <button
                 type="button"
@@ -28,6 +33,24 @@ export function FloatingAddColumn({ onClick }: { onClick: () => void }): JSX.Ele
             </button>
         </div>
     );
+}
+
+/**
+ * v0.1.286 — ancho que la tabla le RESERVA al "+" flotante al final (la
+ * columna de relleno nunca baja de esto): sin eso, al llegar al final del
+ * scroll el botón tapaba la etiqueta de la última columna («Avance» cortado).
+ */
+export const ADD_COLUMN_GUTTER = 44;
+
+/**
+ * Ancho mínimo de la tabla para que la columna de relleno (sin ancho propio)
+ * reciba el hueco del "+": suma de columnas + el hueco + la separación entre
+ * celdas (`border-spacing` del navegador, 2 px, con `border-collapse:
+ * separate` — ver globals.css v0.1.137), que también ocupa ancho.
+ */
+export function tableMinWidth(columnsWidth: number, columnCount: number, withGutter: boolean): number {
+    if (!withGutter) return columnsWidth;
+    return columnsWidth + ADD_COLUMN_GUTTER + 2 * (columnCount + 2);
 }
 
 /** ¿Quedan columnas por ver a la derecha? (scroll horizontal no al final) */

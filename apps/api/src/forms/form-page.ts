@@ -112,6 +112,8 @@ export function renderFormPage(opts: PageOpts): string {
     width: 100%; font: inherit; color: var(--fg); background: #fff; border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 12px; min-height: 42px; }
   textarea { min-height: 110px; resize: vertical; }
+  /* iOS agranda la página al tocar un campo de menos de 16px. */
+  @media (max-width: 768px) { input, select, textarea { font-size: 16px; } }
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
   .affix { display: flex; align-items: stretch; }
   .affix span { display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--border); background: #f8f9fb;
@@ -383,8 +385,10 @@ const CLIENT_JS = String.raw`
       case 'file': {
         var maxFiles = Math.max(1, Math.min(10, cfg.max_files || 10));
         uploads[key] = [];
-        var picker = el('input', { type: 'file', id: id, multiple: maxFiles > 1, hidden: true });
+        var picker = el('input', { type: 'file', id: id, multiple: maxFiles > 1, hidden: true, accept: cfg.accept || null });
         var drop = el('div', { cls: 'drop', role: 'button', tabindex: '0', text: 'Elige ' + (maxFiles > 1 ? 'archivos' : 'un archivo') + ' para subir' });
+        var mb = Math.max(1, Math.round((meta.max_upload_bytes || 0) / (1024 * 1024)));
+        var limits = el('p', { cls: 'help', text: (maxFiles > 1 ? 'Hasta ' + maxFiles + ' archivos' : 'Un archivo') + ' de hasta ' + mb + ' MB' + (cfg.accept_label ? ' · ' + cfg.accept_label : '') + '.' });
         var ul = el('ul');
         function render() {
           ul.textContent = '';
@@ -406,7 +410,7 @@ const CLIENT_JS = String.raw`
             var u = { name: file.name, pending: true };
             uploads[key].push(u); render();
             var fd = new FormData(); fd.append('file', file, file.name);
-            fetch(API + '/files', { method: 'POST', body: fd, credentials: 'omit' })
+            fetch(API + '/files?field=' + encodeURIComponent(key), { method: 'POST', body: fd, credentials: 'omit', headers: { 'X-Form-Stamp': meta.stamp } })
               .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
               .then(function (res) {
                 if (!res.ok) throw new Error((res.b && res.b.message) || 'No se pudo subir el archivo.');
@@ -418,7 +422,7 @@ const CLIENT_JS = String.raw`
               });
           });
         });
-        return el('div', { cls: 'files' }, [drop, picker, ul]);
+        return el('div', { cls: 'files' }, [drop, limits, picker, ul]);
       }
       default:
         return bindText(el('input', { type: 'text', id: id, placeholder: ph, maxlength: cfg.max_length }));
@@ -562,7 +566,7 @@ const CLIENT_JS = String.raw`
         .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }, function () { return { ok: r.ok, b: {} }; }); })
         .then(function (res) {
           if (res.ok) {
-            if (res.b.redirect_url) { location.href = res.b.redirect_url; return; }
+            if (res.b.redirect_url) { goTo(res.b.redirect_url); return; }
             done(); return;
           }
           var errs = res.b && res.b.data && res.b.data.errors;
@@ -577,6 +581,22 @@ const CLIENT_JS = String.raw`
           btn.disabled = false; btn.textContent = meta.submit_label || 'Enviar';
         });
     });
+  }
+  // Insertado en otro sitio, la redirección lleva a TODA la página (no al
+  // marco): el script de inserción la hace; sin él, se intenta igual.
+  function goTo(url) {
+    if (!embedded) { location.href = url; return; }
+    try { parent.postMessage({ type: 'imb-form-redirect', url: url }, '*'); } catch (e) {}
+    setTimeout(function () { try { window.open(url, '_top'); } catch (e) { location.href = url; } }, 200);
+  }
+  // Insertado: avisa su alto al sitio para que el marco no corte ni sobre.
+  function reportHeight() {
+    if (!embedded || BOOT.preview) return;
+    try { parent.postMessage({ type: 'imb-form-height', height: Math.ceil(document.documentElement.scrollHeight) }, '*'); } catch (e) {}
+  }
+  if (embedded && !BOOT.preview) {
+    if (window.ResizeObserver) new ResizeObserver(function () { reportHeight(); }).observe(document.body);
+    window.addEventListener('load', reportHeight);
   }
   function focusFirstError() {
     var first = root.querySelector('.item.invalid');
@@ -610,5 +630,38 @@ const CLIENT_JS = String.raw`
     parent.postMessage({ type: 'imb-form-ready' }, location.origin);
   }
   render();
+})();
+`;
+
+/**
+ * Script de inserción (`/api/v1/public/f/embed.js`): el sitio de la empresa
+ * lo carga junto al `<iframe data-imagina-form>`. Ajusta el alto del marco al
+ * del formulario y sigue la redirección al enviar en la página entera. Sólo
+ * atiende mensajes del marco y de su origen.
+ */
+export const FORM_EMBED_JS = String.raw`(function () {
+  if (window.__imbFormsEmbed) return;
+  window.__imbFormsEmbed = true;
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
+    var frames = document.querySelectorAll('iframe[data-imagina-form]');
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      if (f.contentWindow !== e.source) continue;
+      var origin;
+      try { origin = new URL(f.src, location.href).origin; } catch (x) { return; }
+      if (e.origin !== origin) return;
+      if (d.type === 'imb-form-height' && typeof d.height === 'number' && d.height > 0 && d.height < 20000) {
+        f.style.height = Math.ceil(d.height) + 'px';
+      } else if (d.type === 'imb-form-redirect' && typeof d.url === 'string' && /^https:\/\//i.test(d.url)) {
+        window.location.href = d.url;
+      } else if (d.type === 'imb-form-submitted') {
+        var r = f.getBoundingClientRect();
+        if (r.top < 0) window.scrollBy(0, r.top - 16);
+      }
+      return;
+    }
+  });
 })();
 `;

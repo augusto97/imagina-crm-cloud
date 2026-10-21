@@ -363,7 +363,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         await automationsService.create(tenantA, String(src.id), {
             name: 'A',
             trigger_type: 'record_created',
-            actions: [{ type: 'update_field', config: { values: {} } }],
+            actions: [{ type: 'update_field', config: { values: { nota: 'x' } } }],
         });
         const { lists: created } = await templates.duplicate(tenantA, actor, String(src.id), {
             include: { views: false, automations: false, settings: false, records: false },
@@ -479,11 +479,16 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
 
         const full = await templates.apply(tenantB, actor, 'sys:proyectos-tareas', { include_records: true });
         const rows = await withTenant(pg.db, tenantB, (tx) => tx.select().from(records).where(eq(records.listId, full.lists[0]!.id)));
-        expect(rows).toHaveLength(4);
+        expect(rows).toHaveLength(6);
         const children = rows.filter((r) => r.parentId !== null);
         expect(children).toHaveLength(2);
         const parent = rows.find((r) => r.id === children[0]!.parentId)!;
         expect(Object.values(parent.data)).toContain('Lanzamiento del sitio');
+        // v0.1.286 — fechas RELATIVAS a hoy y responsable = quien la aplica.
+        const values = rows.flatMap((r) => Object.values(r.data as Record<string, unknown>));
+        const in10 = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+        expect(values).toContain(in10);
+        expect(values).toContain(actor);
     });
 
     // ── v0.1.167 ─────────────────────────────────────────────────────────
@@ -565,7 +570,10 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         expect(tpl.lists).toHaveLength(1);
         expect(tpl.lists[0]!.key).toBe(src.slug);
         expect(tpl.lists[0]!.fields.map((f) => f.key).sort()).toEqual(['etapa', 'monto']);
-        expect(tpl.lists[0]!.fields.find((f) => f.key === 'monto')!.types).toEqual(['currency']);
+        // v0.1.286 — la FAMILIA del tipo: moneda, número, porcentaje… sirven.
+        expect(tpl.lists[0]!.fields.find((f) => f.key === 'monto')!.types).toEqual(
+            expect.arrayContaining(['currency', 'number', 'rollup']),
+        );
 
         // Aplicar sobre OTRA lista con slugs distintos.
         const dst = await listsService.create(tenantA, { name: 'Ventas B' });

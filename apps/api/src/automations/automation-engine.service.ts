@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import {
     bulkOperationSchema,
     filterTreeSchema,
@@ -6,19 +7,19 @@ import {
     readStoreListMarker,
     storeCellAccess,
     storeValueError,
-    validateFieldValue,
+    tenantFormatSchema,
     zonedToday,
     FALLBACK_TIME_ZONE,
     type ActionLogEntry,
     type ActionSpec,
     type AutomationRunStatus,
     type ConditionData,
-    type FieldValueSpec,
     type StoreListMarker,
+    type TenantFormat,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
-import type { ConnectionParts } from '../connectors/connection-parts';
+import { redactValues, type ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
     buildIntegrationRequest,
@@ -26,11 +27,11 @@ import {
     compileIntegrationValues,
 } from '../connectors/integration-calls';
 import { ConnectorsService } from '../connectors/connectors.service';
-import { buildWebhookRequest } from './webhook-request';
+import { buildWebhookRequest, type MergeFn } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
-import { automationRuns, lists, records } from '../db/schema';
+import { lists, memberships, records, tenants, users } from '../db/schema';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
@@ -39,18 +40,40 @@ import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { RecordsRepository } from '../records/records.repository';
 import { RecordChangeHub } from '../records/record-change-hub';
+import { RecordsService, type Actor } from '../records/records.service';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
-import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
-import { evaluateCondition } from './condition-evaluator';
+import {
+    AutomationDispatcher,
+    MAX_AUTOMATION_CHAIN_DEPTH,
+    nextChain,
+    type AutomationChain,
+    type TriggerEvent,
+} from './automation-dispatcher.service';
+import { evaluateCondition, type ConditionOptions } from './condition-evaluator';
 import { EmailComposer } from './email-composer';
-import { applyMergeTags, escapeHtml, labelResolverFor, type LabelFieldLike } from './merge-tags';
+import { coerceFieldValue, READ_ONLY_TYPES, type CoercibleField } from './field-coercion';
+import {
+    applyMergeTags,
+    escapeHtml,
+    labelResolverFor,
+    regionalFormatterFor,
+    singleTagToken,
+    type LabelFieldLike,
+} from './merge-tags';
 
 const SYSTEM_USER = 0;
+/** Lo que escribe una automatización lo escribe el sistema, con permisos de admin. */
+const SYSTEM_ACTOR: Actor = { userId: SYSTEM_USER, role: 'admin' };
 const MAX_IF_ELSE_DEPTH = 5;
+const DEFAULT_FORMAT: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'> = {
+    number_format: 'comma_dot',
+    date_format: 'ymd',
+    time_format: 'h24',
+};
 
 /** Qué trigger_types reaccionan a cada evento de record. */
 const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
@@ -61,6 +84,11 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     // v0.1.275 — alguien completó un formulario público de la lista.
     form_submitted: ['form_submitted'],
 };
+
+interface PersonInfo {
+    name: string;
+    email: string;
+}
 
 interface RunContext {
     tenantId: number;
@@ -89,6 +117,8 @@ interface RunContext {
     form?: { id: number; name: string };
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
+    /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
+    format?: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'>;
     /**
      * v0.1.266 — el último PDF generado en este run (`{{pdf.link}}`,
      * `{{pdf.nombre}}`) y los PDF ya armados por plantilla: un «Enviar email»
@@ -96,12 +126,27 @@ interface RunContext {
      */
     pdf?: Record<string, unknown>;
     pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null }>;
+    /** La cadena de automatizaciones de la que viene este evento (tope y anti-loop). */
+    chain?: AutomationChain;
+    /** Personas de los campos «Persona» (`{{responsable.email}}`), por id. */
+    people?: Map<number, PersonInfo | null>;
+    /** Marca de tienda por lista, leída una vez por corrida. */
+    storeMarkers?: Map<number, StoreListMarker | null>;
 }
 
 /**
  * Motor de automatizaciones (paridad plugin). Ejecuta el modelo flexible:
  * trigger_config (field_filters + changed_fields) + actions[] con condición por
  * acción + `if_else` recursivo + merge tags. Corre en el worker BullMQ.
+ *
+ * Transacciones: cada ACCIÓN corre y se confirma por su cuenta (y la corrida
+ * se abre en `running` antes y se cierra después). Antes toda la corrida era
+ * UNA transacción: un vencimiento de 25.000 registros con correos y webhooks
+ * adentro retenía locks durante minutos, y un reinicio a mitad deshacía las
+ * corridas registradas DESPUÉS de que los correos ya habían salido (se
+ * reenviaban). Lo que escriben `update_field`/`create_record` pasa por
+ * RecordsService: actividad, tiempo real, avisos y las automatizaciones de la
+ * lista destino, igual que si lo hubiera escrito una persona.
  */
 /** v0.1.285 — intentos por registro de una automatización por vencimiento que falla. */
 export const DUE_DATE_MAX_ATTEMPTS = 3;
@@ -119,11 +164,15 @@ const ACTION_NAMES: Record<string, string> = {
     engine: 'Motor de automatizaciones',
 };
 
+/** Cuánto de la respuesta de un webhook fallido se muestra en el historial. */
+const RESPONSE_SNIPPET = 200;
+
 @Injectable()
 export class AutomationEngine {
     private readonly logger = new Logger(AutomationEngine.name);
     /** v0.1.265 — arma el correo (diseño / texto / HTML + firma). Sin dependencias. */
     private readonly composer = new EmailComposer();
+    private recordsSvc: RecordsService | null | undefined;
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -147,59 +196,91 @@ export class AutomationEngine {
         @Optional() private readonly documents?: DocumentsService,
         // v0.1.285 (ADR-S44) — una corrida fallida abre un problema y avisa.
         @Optional() private readonly incidents?: IncidentHub,
+        // RecordsService vive en RecordsModule, que ya depende de este módulo
+        // (el dispatcher es global): se resuelve al usarlo, sin ciclo de DI.
+        @Optional() private readonly moduleRef?: ModuleRef,
     ) {}
 
-    /** Marca de lista de tienda (v0.1.213), o null. */
-    private async storeMarkerOf(tx: Tx, tenantId: number, listId: number): Promise<StoreListMarker | null> {
-        const [row] = await tx
-            .select({ settings: lists.settings })
-            .from(lists)
-            .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)))
-            .limit(1);
-        return readStoreListMarker(row?.settings);
+    /**
+     * El servicio de registros para escribir con todos sus efectos (actividad,
+     * tiempo real, avisos, automatizaciones de la lista destino). Sin él (specs
+     * que arman el motor a mano) se escribe por el camino mínimo.
+     */
+    private records(): RecordsService | null {
+        if (this.recordsSvc === undefined) {
+            try {
+                this.recordsSvc = this.moduleRef?.get(RecordsService, { strict: false }) ?? null;
+            } catch {
+                this.recordsSvc = null;
+            }
+        }
+        return this.recordsSvc;
+    }
+
+    /** Marca de lista de tienda (v0.1.213), o null. Una lectura por lista y por corrida. */
+    private async storeMarkerOf(ctx: RunContext, listId: number): Promise<StoreListMarker | null> {
+        ctx.storeMarkers ??= new Map();
+        if (ctx.storeMarkers.has(listId)) return ctx.storeMarkers.get(listId) ?? null;
+        const [row] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, listId)))
+                .limit(1),
+        );
+        const marker = readStoreListMarker(row?.settings);
+        ctx.storeMarkers.set(listId, marker);
+        return marker;
     }
 
     /** Trigger de record (record_created / record_updated). */
     async process(event: TriggerEvent): Promise<void> {
-        await this.tenantDb.withTenant(event.tenantId, async (tx) => {
+        const chain = event.chain;
+        // Una cadena de automatizaciones que se pasó del tope no sigue
+        // (un A → B → A → … no termina nunca).
+        if (chain && chain.depth > MAX_AUTOMATION_CHAIN_DEPTH) {
+            this.logger.warn(`Cadena de automatizaciones cortada en la profundidad ${chain.depth} (lista ${event.listId}).`);
+            return;
+        }
+        const prep = await this.tenantDb.withTenant(event.tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, event.tenantId)) return;
+            if (await tenantIsReadOnly(tx, event.tenantId)) return null;
             const triggerTypes = TRIGGERS_FOR_EVENT[event.trigger];
-            const autos = await this.automations.activeByTriggers(
-                tx,
-                event.tenantId,
-                event.listId,
-                triggerTypes,
-            );
-            if (autos.length === 0) return;
-            const maps = await this.fieldMaps(tx, event.tenantId, event.listId);
-            for (const auto of autos) {
-                const ctx: RunContext = {
-                    tenantId: event.tenantId,
-                    listId: event.listId,
-                    recordId: event.recordId,
-                    data: event.after,
-                    before: event.before,
-                    ...maps,
-                    ...(event.payment ? { pago: event.payment } : {}),
-                    ...(event.form ? { form: event.form } : {}),
-                };
-                if (!this.triggerMatches(auto, ctx)) continue;
-                await this.runOne(tx, ctx, auto);
-            }
+            const autos = (
+                await this.automations.activeByTriggers(tx, event.tenantId, event.listId, triggerTypes)
+            ).filter((a) => !chain || !chain.automation_ids.includes(a.id)); // nunca se re-dispara a sí misma
+            if (autos.length === 0) return null;
+            return { autos, maps: await this.fieldMaps(tx, event.tenantId, event.listId) };
         });
+        if (!prep) return;
+        for (const auto of prep.autos) {
+            const ctx: RunContext = {
+                tenantId: event.tenantId,
+                listId: event.listId,
+                recordId: event.recordId,
+                data: event.after,
+                before: event.before,
+                ...prep.maps,
+                ...(event.payment ? { pago: event.payment } : {}),
+                ...(event.form ? { form: event.form } : {}),
+                ...(chain ? { chain } : {}),
+            };
+            if (!this.triggerMatches(auto, ctx)) continue;
+            await this.runOne(ctx, auto);
+        }
     }
 
     /** Trigger `scheduled` (cron): corre una automatización sin record. */
     async runScheduled(tenantId: number, automationId: number): Promise<void> {
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return;
+            if (await tenantIsReadOnly(tx, tenantId)) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
-            if (!auto || !auto.isActive) return;
-            const maps = await this.fieldMaps(tx, tenantId, auto.listId);
-            await this.runOne(tx, { tenantId, listId: auto.listId, recordId: null, data: {}, ...maps }, auto);
+            if (!auto || !auto.isActive) return null;
+            return { auto, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
         });
+        if (!prep) return;
+        await this.runOne({ tenantId, listId: prep.auto.listId, recordId: null, data: {}, ...prep.maps }, prep.auto);
     }
 
     /**
@@ -214,74 +295,98 @@ export class AutomationEngine {
         automationId: number,
         payload: Record<string, unknown>,
     ): Promise<void> {
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return;
+            if (await tenantIsReadOnly(tx, tenantId)) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
-            if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return;
-            const maps = await this.fieldMaps(tx, tenantId, auto.listId);
-            const data: Record<string, unknown> = {};
-            for (const [k, v] of Object.entries(payload)) {
-                const key = maps.slugToKey.get(k);
-                if (key !== undefined) data[key] = v;
-            }
-            const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data, ...maps, payload };
-            if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
-                return;
-            }
-            await this.runOne(tx, ctx, auto);
+            if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return null;
+            return { auto, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
         });
+        if (!prep) return;
+        const { auto, maps } = prep;
+        const data: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(payload)) {
+            const key = maps.slugToKey.get(k);
+            if (key !== undefined) data[key] = v;
+        }
+        const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data, ...maps, payload };
+        if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx), this.condOpts(ctx))) {
+            return;
+        }
+        await this.runOne(ctx, auto);
     }
 
     /**
      * Trigger `due_date_reached`: por cada record cuyo campo fecha venció
-     * (valor + offset ≤ now) y que la automatización aún no corrió, ejecuta.
+     * (valor + offset ≤ now) y que la automatización todavía no corrió PARA
+     * ESA FECHA, ejecuta. Cada registro se confirma por su cuenta.
+     *
+     * - Una fecha que se corre (reprogramada, o la recurrencia que la rueda
+     *   al mes siguiente) vuelve a disparar: cuenta como corrida sólo la que
+     *   se registró DESPUÉS del momento de disparo actual.
+     * - Una automatización nueva NO dispara por fechas viejas (meses de
+     *   facturas vencidas = cientos de correos de golpe): sólo cuentan los
+     *   momentos desde que se creó (para una fecha sin hora, desde el inicio
+     *   de ese día). `trigger_config.include_past: true` las incluye a
+     *   propósito.
      */
     async runDueDate(tenantId: number, automationId: number): Promise<void> {
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return;
+            if (await tenantIsReadOnly(tx, tenantId)) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
-            if (!auto || !auto.isActive || auto.triggerType !== 'due_date_reached') return;
-
+            if (!auto || !auto.isActive || auto.triggerType !== 'due_date_reached') return null;
             const fieldRows = await this.fields.listByList(tx, tenantId, auto.listId);
-            const slugToKey = new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)]));
-            const fieldsBySlug = new Map<string, LabelFieldLike>(
-                fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }]),
-            );
-            const fieldId = resolveDateFieldId(auto.triggerConfig, fieldRows);
-            if (fieldId === null) return;
-            const offset = Number(auto.triggerConfig.offset_minutes ?? 0) || 0;
-            const field = fieldRows.find((f) => f.id === fieldId);
-            if (!field) return;
+            return { auto, fieldRows, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
+        });
+        if (!prep) return;
+        const { auto, fieldRows, maps } = prep;
+        const fieldId = resolveDateFieldId(auto.triggerConfig, fieldRows);
+        if (fieldId === null) return;
+        const offset = Number(auto.triggerConfig.offset_minutes ?? 0) || 0;
+        const field = fieldRows.find((f) => f.id === fieldId);
+        if (!field || (field.type !== 'date' && field.type !== 'datetime')) return;
 
-            // v0.1.263 — una fecha SIN hora («vence el 7») vence a la medianoche
-            // del reloj de la empresa, no a la de UTC (que en Colombia es el 6 a
-            // las 7 pm). Un datetime ya es un instante y se compara tal cual.
-            const typed = fieldTypedExpr({ id: field.id, type: field.type as FilterableField['type'] });
-            const tz = await this.tenantTimeZone(tx, tenantId);
-            const dueExpr = field.type === 'date' ? sql`((${typed})::timestamp AT TIME ZONE ${tz})` : typed;
-            const threshold = sql`now() - make_interval(mins => ${offset})`;
-            // v0.1.285 — una corrida fallida se reintenta, pero con tope: antes
-            // una automatización rota corría (y fallaba, y volvía a mandar los
-            // pasos que sí salían) cada 5 minutos por registro, para siempre.
-            const alreadyRan = sql`(exists (select 1 from ${automationRuns} ar
+        // v0.1.263 — una fecha SIN hora («vence el 7») vence a la medianoche
+        // del reloj de la empresa, no a la de UTC (que en Colombia es el 6 a
+        // las 7 pm). Un datetime ya es un instante y se compara tal cual.
+        const tz = maps.timeZone ?? FALLBACK_TIME_ZONE;
+        const typed = fieldTypedExpr({ id: field.id, type: field.type as FilterableField['type'] });
+        const dueExpr = field.type === 'date' ? sql`((${typed})::timestamp AT TIME ZONE ${tz})` : typed;
+        // El momento de disparo de ESTE valor de la fecha.
+        const fireAt = sql`(${dueExpr} + make_interval(mins => ${offset}))`;
+        const createdAt = auto.createdAt.toISOString();
+        const floor =
+            auto.triggerConfig.include_past === true
+                ? undefined
+                : field.type === 'date'
+                  ? sql`${fireAt} >= (date_trunc('day', ${createdAt}::timestamptz AT TIME ZONE ${tz}) AT TIME ZONE ${tz})`
+                  : sql`${fireAt} >= ${createdAt}::timestamptz`;
+        // Ya corrió para este valor si hay una corrida (no fallida) registrada
+        // desde su momento de disparo. v0.1.285 — una corrida fallida se
+        // reintenta, con tope: antes una automatización rota corría (y
+        // fallaba, y volvía a mandar los pasos que sí salían) cada 5 minutos
+        // por registro, para siempre.
+        const alreadyRan = sql`(exists (select 1 from automation_runs ar
                 where ar.tenant_id = ${tenantId} and ar.automation_id = ${auto.id}
-                  and ar.record_id = ${records.id} and ar.status <> 'failed')
-                or (select count(*) from ${automationRuns} ar
+                  and ar.record_id = ${records.id} and ar.status <> 'failed'
+                  and ar.created_at >= ${fireAt})
+                or (select count(*) from automation_runs ar
                 where ar.tenant_id = ${tenantId} and ar.automation_id = ${auto.id}
-                  and ar.record_id = ${records.id} and ar.status = 'failed') >= ${DUE_DATE_MAX_ATTEMPTS})`;
+                  and ar.record_id = ${records.id} and ar.status = 'failed'
+                  and ar.created_at >= ${fireAt}) >= ${DUE_DATE_MAX_ATTEMPTS})`;
 
-            // v0.1.252 — keyset por id en tandas de 500. Antes era UN `limit 500`
-            // sin orden: los vencidos que no pasan los field_filters no
-            // registran run (a propósito: si vuelven a cumplir, disparan), así
-            // que con más de 500 de esos la consulta devolvía SIEMPRE los
-            // mismos y el resto de los vencidos no se procesaba nunca.
-            const BATCH = 500;
-            const MAX_BATCHES = 50;
-            let afterId = 0;
-            for (let batch = 0; batch < MAX_BATCHES; batch++) {
-                const due = await tx
+        // v0.1.252 — keyset por id en tandas de 500. Antes era UN `limit 500`
+        // sin orden: los vencidos que no pasan los field_filters no
+        // registran run (a propósito: si vuelven a cumplir, disparan), así
+        // que con más de 500 de esos la consulta devolvía SIEMPRE los
+        // mismos y el resto de los vencidos no se procesaba nunca.
+        const BATCH = 500;
+        const MAX_BATCHES = 50;
+        let afterId = 0;
+        for (let batch = 0; batch < MAX_BATCHES; batch++) {
+            const due = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx
                     .select({ id: records.id, data: records.data })
                     .from(records)
                     .where(
@@ -290,49 +395,46 @@ export class AutomationEngine {
                             eq(records.listId, auto.listId),
                             isNull(records.deletedAt),
                             gt(records.id, afterId),
-                            lte(dueExpr, threshold),
+                            lte(fireAt, sql`now()`),
+                            floor,
                             sql`not ${alreadyRan}`,
                         ),
                     )
                     .orderBy(asc(records.id))
-                    .limit(BATCH);
+                    .limit(BATCH),
+            );
 
-                for (const rec of due) {
-                    const ctx: RunContext = {
-                        tenantId,
-                        listId: auto.listId,
-                        recordId: rec.id,
-                        data: rec.data,
-                        slugToKey,
-                        fieldsBySlug,
-                        timeZone: tz,
-                    };
-                    // Los field_filters del trigger se evalúan AL DISPARAR (no
-                    // solo en process()): "recordar a los 20 días SI la factura
-                    // sigue pendiente" depende de esto. Un record filtrado no
-                    // registra run → si más adelante vuelve a cumplir, dispara.
-                    if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
-                        continue;
-                    }
-                    await this.runOne(tx, ctx, auto);
+            for (const rec of due) {
+                const ctx: RunContext = { tenantId, listId: auto.listId, recordId: rec.id, data: rec.data, ...maps };
+                // Los field_filters del trigger se evalúan AL DISPARAR (no
+                // solo en process()): "recordar a los 20 días SI la factura
+                // sigue pendiente" depende de esto. Un record filtrado no
+                // registra run → si más adelante vuelve a cumplir, dispara.
+                if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx), this.condOpts(ctx))) {
+                    continue;
                 }
-                if (due.length < BATCH) break;
-                afterId = due[due.length - 1]!.id;
+                // Cada registro se confirma por su cuenta (ver la nota de la clase).
+                await this.runOne(ctx, auto);
             }
-        });
+            if (due.length < BATCH) break;
+            afterId = due[due.length - 1]!.id;
+        }
     }
 
-    /** slug → f{id} y slug → {type, config} de la lista, en UNA query. */
+    /** slug → f{id}, slug → {type, config}, zona y formato regional de la empresa. */
     private async fieldMaps(
         tx: Tx,
         tenantId: number,
         listId: number,
-    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone'>> {
+    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone' | 'format'>> {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
+        const [tenant] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const parsed = tenantFormatSchema.safeParse((tenant?.settings as Record<string, unknown> | null | undefined)?.format ?? {});
         return {
             slugToKey: new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)])),
             fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config, label: f.label }])),
             timeZone: await this.tenantTimeZone(tx, tenantId),
+            format: parsed.success ? parsed.data : DEFAULT_FORMAT,
         };
     }
 
@@ -341,7 +443,11 @@ export class AutomationEngine {
         return this.timeZones ? this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE;
     }
 
-    /** ¿La automatización matchea el trigger? (field_filters + changed_fields). */
+    private condOpts(ctx: RunContext): ConditionOptions {
+        return { timeZone: ctx.timeZone ?? FALLBACK_TIME_ZONE };
+    }
+
+    /** ¿La automatización matchea el trigger? (field_filters + changed_fields + de/a). */
     private triggerMatches(auto: AutomationRow, ctx: RunContext): boolean {
         const cfg = auto.triggerConfig ?? {};
         // v0.1.275 — «Cuando se envía un formulario»: sin `form_id` vale
@@ -351,7 +457,7 @@ export class AutomationEngine {
             if (Number.isInteger(wanted) && wanted > 0 && ctx.form?.id !== wanted) return false;
         }
         const fv = this.accessor(ctx);
-        if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv)) return false;
+        if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
 
         const changed = normalizeChangedFields(cfg);
         if (changed.length > 0) {
@@ -363,10 +469,19 @@ export class AutomationEngine {
             });
             if (!someChanged) return false;
         }
+        // «Cuando cambia un campo» DE un valor A otro (los dos opcionales; vacío
+        // = cualquiera). La UI los guardaba y el motor los ignoraba: disparaba
+        // con cualquier cambio del campo.
+        if (auto.triggerType === 'field_changed' && typeof cfg.field === 'string' && cfg.field !== '') {
+            const key = ctx.slugToKey.get(cfg.field);
+            const field = ctx.fieldsBySlug.get(cfg.field);
+            if (!key || !ctx.before) return false;
+            if (!changeEndMatches(field, ctx.before[key], cfg.from_value)) return false;
+            if (!changeEndMatches(field, ctx.data[key], cfg.to_value)) return false;
+        }
         return true;
     }
 
-    /** Accessor slug → valor del record (desde `data` keyed por f{id}). */
     /**
      * Accessor de merge tags / condiciones. Además de `{{slug}}` (valor
      * actual) resuelve:
@@ -374,14 +489,29 @@ export class AutomationEngine {
      *   ej. la fecha de cobro que acaba de vencer ANTES de que la
      *   recurrencia la ruede al mes siguiente = el período facturado).
      * - `{{date.now}}` / `{{date.today}}`: timestamp/fecha del disparo.
-     *   `date.now` es el instante (naive UTC, como guardan los datetime) y
-     *   `date.today` la fecha de HOY en el reloj de la empresa (v0.1.263:
-     *   antes era la de UTC, y de 7 pm a medianoche en Colombia daba mañana).
+     *   `date.now` es el instante (naive UTC en un texto, ISO con zona al
+     *   escribir un campo fecha-hora) y `date.today` la fecha de HOY en el
+     *   reloj de la empresa (v0.1.263).
+     * - `{{responsable.email}}` / `{{responsable.nombre}}` de un campo Persona.
      */
-    private accessor(ctx: RunContext): (slug: string) => unknown {
+    private accessor(ctx: RunContext, opts: { isoNow?: boolean } = {}): (slug: string) => unknown {
         return (token: string) => {
-            if (token === 'date.now') return new Date().toISOString().slice(0, 19).replace('T', ' ');
+            if (token === 'date.now') {
+                const now = new Date().toISOString();
+                return opts.isoNow ? now : now.slice(0, 19).replace('T', ' ');
+            }
             if (token === 'date.today') return zonedToday(ctx.timeZone ?? FALLBACK_TIME_ZONE);
+            // Un campo Persona guarda el id: `.email` y `.nombre` lo hacen útil
+            // en un correo («Para: {{responsable.email}}»).
+            const person = /^(before\.)?([a-zA-Z0-9_]+)\.(email|nombre)$/.exec(token);
+            if (person && ctx.fieldsBySlug.get(person[2]!)?.type === 'user') {
+                const key = ctx.slugToKey.get(person[2]!);
+                const source = person[1] ? ctx.before : ctx.data;
+                const id = Number(key !== undefined ? source?.[key] : undefined);
+                const info = Number.isInteger(id) && id > 0 ? ctx.people?.get(id) : undefined;
+                if (!info) return '';
+                return person[3] === 'email' ? info.email : info.name;
+            }
             if (token.startsWith('before.')) {
                 const key = ctx.slugToKey.get(token.slice('before.'.length));
                 return key !== undefined && ctx.before ? ctx.before[key] : undefined;
@@ -413,36 +543,101 @@ export class AutomationEngine {
         };
     }
 
-    private async runOne(tx: Tx, ctx: RunContext, auto: AutomationRow): Promise<void> {
+    /** `merge` (valores crudos) y `mergeHtml` (valores escapados) con etiquetas y formato regional. */
+    private mergers(ctx: RunContext, fv = this.accessor(ctx)): { merge: MergeFn; mergeHtml: (s: unknown) => string } {
+        // v0.1.178 — `{{campo|label}}` traduce el value a la etiqueta de la opción.
+        const labels = labelResolverFor(ctx.fieldsBySlug);
+        const formatter = regionalFormatterFor(ctx.fieldsBySlug, ctx.format ?? DEFAULT_FORMAT, ctx.timeZone ?? FALLBACK_TIME_ZONE);
+        const merge: MergeFn = (s, escapeValue) =>
+            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, escapeValue, labels, formatter);
+        // SEC-08: variante que escapa los valores interpolados para contexto HTML.
+        const mergeHtml = (s: unknown): string => merge(s, escapeHtml);
+        return { merge, mergeHtml };
+    }
+
+    /**
+     * Carga (una vez por corrida y por persona) nombre y email de las personas
+     * de los campos «Persona» del registro: `{{responsable.email}}` y el «Para»
+     * que apunta a un campo Persona. Sólo miembros del equipo y activos.
+     */
+    private async ensurePeople(ctx: RunContext): Promise<void> {
+        const keys: string[] = [];
+        for (const [slug, f] of ctx.fieldsBySlug) {
+            if (f.type !== 'user') continue;
+            const key = ctx.slugToKey.get(slug);
+            if (key) keys.push(key);
+        }
+        if (keys.length === 0) return;
+        ctx.people ??= new Map();
+        const ids = new Set<number>();
+        for (const source of [ctx.data, ctx.before ?? {}]) {
+            for (const key of keys) {
+                const id = Number(source[key]);
+                if (Number.isInteger(id) && id > 0 && !ctx.people.has(id)) ids.add(id);
+            }
+        }
+        if (ids.size === 0) return;
+        const rows = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ id: users.id, name: users.name, email: users.email })
+                .from(users)
+                .innerJoin(memberships, eq(memberships.userId, users.id))
+                .where(
+                    and(
+                        eq(memberships.tenantId, ctx.tenantId),
+                        ne(memberships.role, 'client'),
+                        inArray(users.id, [...ids]),
+                        isNull(users.disabledAt),
+                    ),
+                ),
+        );
+        for (const id of ids) ctx.people.set(id, null);
+        for (const r of rows) ctx.people.set(r.id, { name: r.name ?? '', email: r.email });
+    }
+
+    private async runOne(ctx: RunContext, auto: AutomationRow): Promise<void> {
         ctx.automation = { id: auto.id, name: auto.name };
         const startedAt = new Date();
+        let runId: number | null = null;
+        try {
+            runId = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                this.automations.startRun(tx, { tenantId: ctx.tenantId, automationId: auto.id, recordId: ctx.recordId, startedAt }),
+            );
+        } catch (err) {
+            // La automatización se borró mientras se encolaba el evento.
+            this.logger.warn(`No se pudo abrir la corrida de la automatización ${auto.id}: ${errorText(err)}`);
+            return;
+        }
+        if (runId === null) return;
+
         const log: ActionLogEntry[] = [];
         let hadFail = false;
-
         try {
             for (const spec of auto.actions) {
-                for (const result of await this.executeStep(tx, ctx, spec, 0)) {
+                for (const result of await this.executeStep(ctx, spec, 0)) {
                     log.push(result);
                     if (result.status === 'failed') hadFail = true;
                 }
             }
         } catch (err) {
             hadFail = true;
-            log.push({ action: 'engine', status: 'failed', message: err instanceof Error ? err.message : String(err), details: {} });
+            log.push({ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} });
             this.logger.error(`Automatización ${auto.id} falló: ${String(err)}`);
         }
 
         const status: AutomationRunStatus = hadFail ? 'failed' : 'success';
-        await this.automations.logRun(tx, {
-            tenantId: ctx.tenantId,
-            automationId: auto.id,
-            recordId: ctx.recordId,
-            status,
-            actionsLog: log,
-            error: hadFail ? (log.find((l) => l.status === 'failed')?.message ?? 'Falló una acción') : null,
-            startedAt,
-            finishedAt: new Date(),
-        });
+        try {
+            await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                this.automations.finishRun(tx, ctx.tenantId, runId!, {
+                    status,
+                    actionsLog: log,
+                    error: hadFail ? (log.find((l) => l.status === 'failed')?.message ?? 'Falló una acción') : null,
+                    finishedAt: new Date(),
+                }),
+            );
+        } catch (err) {
+            this.logger.error(`No se pudo cerrar la corrida ${runId} de la automatización ${auto.id}: ${errorText(err)}`);
+        }
         this.reportRun(ctx, auto, hadFail ? log : null);
     }
 
@@ -475,29 +670,37 @@ export class AutomationEngine {
      * acción concreta. Devuelve uno o más ActionLogEntry (if_else emite el
      * summary + los de la rama ejecutada).
      */
-    private async executeStep(
-        tx: Tx,
-        ctx: RunContext,
-        spec: ActionSpec,
-        depth: number,
-    ): Promise<ActionLogEntry[]> {
+    private async executeStep(ctx: RunContext, spec: ActionSpec, depth: number): Promise<ActionLogEntry[]> {
+        await this.ensurePeople(ctx);
         const fv = this.accessor(ctx);
-        if (spec.condition && !evaluateCondition(spec.condition, fv)) {
+        if (spec.condition && !evaluateCondition(spec.condition, fv, this.condOpts(ctx))) {
             return [{ action: spec.type, status: 'skipped', message: 'Condición de ejecución no cumplida.', details: {} }];
         }
 
         if (spec.type === 'if_else') {
-            return this.executeIfElse(tx, ctx, spec.config ?? {}, depth);
+            return this.executeIfElse(ctx, spec.config ?? {}, depth);
         }
 
-        // v0.1.285 — cada acción en su SAVEPOINT. Antes compartían la
-        // transacción de la corrida: un error de base de datos en una acción
-        // abortaba todo y la corrida no quedaba registrada (ni se avisaba),
-        // aunque los correos o webhooks anteriores ya hubieran salido.
+        // Escribir registros: por RecordsService (abre y confirma su propia
+        // transacción, con actividad, tiempo real y automatizaciones).
+        if (spec.type === 'update_field' || spec.type === 'create_record') {
+            try {
+                return [
+                    spec.type === 'update_field'
+                        ? await this.updateField(ctx, spec.config ?? {})
+                        : await this.createRecord(ctx, spec.config ?? {}),
+                ];
+            } catch (err) {
+                return [{ action: spec.type, status: 'failed', message: explainError(err), details: {} }];
+            }
+        }
+
+        // v0.1.285 — cada acción en su propia transacción: un error de base de
+        // datos en una acción no arrastra a las demás ni a la corrida.
         let out: ActionLogEntry | null = null;
         try {
-            await tx.transaction(async (sp) => {
-                out = await this.execAction(sp as Tx, ctx, spec);
+            await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+                out = await this.execAction(tx, ctx, spec);
             });
             return [out!];
         } catch (err) {
@@ -508,14 +711,9 @@ export class AutomationEngine {
         }
     }
 
-    private async executeIfElse(
-        tx: Tx,
-        ctx: RunContext,
-        config: Record<string, unknown>,
-        depth: number,
-    ): Promise<ActionLogEntry[]> {
+    private async executeIfElse(ctx: RunContext, config: Record<string, unknown>, depth: number): Promise<ActionLogEntry[]> {
         const fv = this.accessor(ctx);
-        const matched = evaluateCondition(config.condition as ConditionData | undefined, fv);
+        const matched = evaluateCondition(config.condition as ConditionData | undefined, fv, this.condOpts(ctx));
         const branch = matched ? config.then_actions : config.else_actions;
         const list: ActionSpec[] = Array.isArray(branch) ? (branch as ActionSpec[]) : [];
 
@@ -523,7 +721,7 @@ export class AutomationEngine {
             {
                 action: 'if_else',
                 status: 'success',
-                message: matched ? 'Condición matcheó → then' : 'Condición no matcheó → else',
+                message: matched ? 'Se cumplió la condición → rama «Sí»' : 'No se cumplió la condición → rama «No»',
                 details: { branch: matched ? 'then' : 'else', count: list.length },
             },
         ];
@@ -535,76 +733,335 @@ export class AutomationEngine {
                 config: (nested.config as Record<string, unknown>) ?? {},
                 condition: nested.condition ?? null,
             };
-            out.push(...(await this.executeStep(tx, ctx, step, depth + 1)));
+            out.push(...(await this.executeStep(ctx, step, depth + 1)));
         }
         return out;
     }
 
+    /**
+     * El valor que una acción va a escribir en un campo. Una variable SOLA
+     * (`{{monto}}`) pasa con su valor CRUDO —número, lista de opciones,
+     * booleano— en vez de convertirse en texto; si no, se resuelve la
+     * plantilla. Para un campo fecha/fecha-hora, `{{date.now}}` es el
+     * instante con zona (no el texto UTC sin zona de los correos).
+     */
+    private fieldInput(ctx: RunContext, raw: unknown, field: CoercibleField): { value: unknown; fromVariable: boolean } {
+        if (typeof raw !== 'string') return { value: raw, fromVariable: false };
+        const fv = this.accessor(ctx, { isoNow: field.type === 'date' || field.type === 'datetime' });
+        const token = singleTagToken(raw);
+        if (token !== null) {
+            const v = token === 'record.id' ? ctx.recordId : fv(token);
+            return { value: v === undefined ? null : v, fromVariable: true };
+        }
+        return { value: this.mergers(ctx, fv).merge(raw), fromVariable: false };
+    }
+
+    /** Convierte y valida un valor para un campo (ver `field-coercion.ts`). */
+    private coerce(ctx: RunContext, field: CoercibleField, raw: unknown) {
+        const input = this.fieldInput(ctx, raw, field);
+        return coerceFieldValue(field, input.value, {
+            timeZone: ctx.timeZone,
+            format: ctx.format ?? DEFAULT_FORMAT,
+            fromVariable: input.fromVariable,
+        });
+    }
+
+    /**
+     * «Actualizar campo». Escribe SÓLO las claves que cambia (antes armaba el
+     * `data` completo desde la foto del evento y pisaba lo que otra persona
+     * hubiera cambiado mientras tanto) y cada valor pasa por el validador del
+     * campo: lo que no se puede convertir se saltea con el motivo en el log.
+     */
+    private async updateField(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        if (ctx.recordId === null) return skip('update_field', 'Sin registro en contexto.');
+        const values = (cfg.values as Record<string, unknown>) ?? {};
+        const patch: Record<string, unknown> = {};
+        const applied: Record<string, unknown> = {};
+        const invalid: string[] = [];
+        for (const [slug, raw] of Object.entries(values)) {
+            const key = ctx.slugToKey.get(slug);
+            const field = ctx.fieldsBySlug.get(slug);
+            if (!key || !field) {
+                invalid.push(`${slug} (el campo ya no existe)`);
+                continue;
+            }
+            if (READ_ONLY_TYPES.includes(field.type)) {
+                invalid.push(`${slug} (se calcula solo)`);
+                continue;
+            }
+            if (field.type === 'relation') {
+                const input = this.fieldInput(ctx, raw, field);
+                const ids = parseRelationIds(input.value);
+                if (ids.length === 0 && !isBlank(input.value)) {
+                    invalid.push(`${slug} («${String(input.value)}» no son ids de registros)`);
+                    continue;
+                }
+                patch[key] = ids;
+                applied[slug] = ids;
+                continue;
+            }
+            const res = this.coerce(ctx, field, raw);
+            if (!res.ok) {
+                invalid.push(`«${field.label ?? slug}» (${res.error})`);
+                continue;
+            }
+            patch[key] = res.value;
+            applied[slug] = res.value;
+        }
+
+        const current = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, ctx.recordId!),
+        );
+        if (!current) return skip('update_field', 'El registro ya no existe.');
+
+        // v0.1.213 — en una lista de tienda, una automatización respeta
+        // las MISMAS reglas que una persona: lo que la tienda no
+        // aceptaría (o sólo se edita en WooCommerce) se saltea con el
+        // motivo en el log, en vez de escribir un valor que la próxima
+        // sincronización pisaría en silencio.
+        const storeSkipped: string[] = [];
+        const marker = await this.storeMarkerOf(ctx, ctx.listId);
+        if (marker) {
+            const merged = { ...current.data, ...patch };
+            const row = (packSlug: string): unknown => {
+                const id = marker.fields[packSlug];
+                return id ? merged[`f${id}`] : undefined;
+            };
+            for (const slug of Object.keys(applied)) {
+                const key = ctx.slugToKey.get(slug)!;
+                const fieldId = Number(key.slice(1));
+                const access = storeCellAccess(marker, fieldId, row);
+                const err =
+                    access.access === 'locked'
+                        ? access.reason
+                        : access.access === 'editable'
+                          ? storeValueError(marker, fieldId, merged[key], row)
+                          : null;
+                if (!err) continue;
+                delete patch[key];
+                delete applied[slug];
+                storeSkipped.push(`${slug} (${err})`);
+            }
+        }
+
+        // Lo que ya tenía ese valor no se re-escribe (ni dispara nada).
+        for (const [slug, value] of Object.entries(applied)) {
+            const key = ctx.slugToKey.get(slug)!;
+            if (ctx.fieldsBySlug.get(slug)?.type === 'relation') continue;
+            if (sameValue(current.data[key], value)) {
+                delete patch[key];
+                delete applied[slug];
+            }
+        }
+
+        const notes = [...storeSkipped, ...invalid];
+        if (Object.keys(patch).length === 0) {
+            // Nada válido que escribir por valores que no convierten: la
+            // automatización está mal configurada y se tiene que ver.
+            if (invalid.length > 0 && storeSkipped.length === 0) {
+                return fail('update_field', `No se pudo escribir ningún valor: ${invalid.join('; ')}.`);
+            }
+            if (notes.length > 0) return skip('update_field', `Nada que cambiar: ${notes.join('; ')}`);
+            return skip('update_field', 'Los campos ya tenían esos valores.');
+        }
+
+        const after = await this.writeUpdate(ctx, patch, current.data);
+        ctx.data = after; // acciones posteriores ven el valor actualizado.
+        const count = Object.keys(applied).length;
+        const note = notes.length > 0 ? ` Omitidos: ${notes.join('; ')}.` : '';
+        return ok('update_field', `Actualizó ${count} campo(s).${note}`, {
+            values: applied,
+            ...(notes.length > 0 ? { warnings: notes } : {}),
+        });
+    }
+
+    /**
+     * «Crear registro». Los slugs de `values` se resuelven contra la lista
+     * DESTINO (no la del trigger — pueden ser listas distintas), cada valor
+     * pasa por el validador compartido del campo (los inválidos se saltan
+     * con nota y quedan como avisos de la corrida), y los campos relation se
+     * vinculan con targets verificados vivos en su lista destino.
+     */
+    private async createRecord(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const targetList = Number(cfg.target_list ?? cfg.list_id ?? ctx.listId) || ctx.listId;
+        // SEC-31 (v0.1.228): la lista destino tiene que ser DE ESTA
+        // empresa. El id viene de la config (editable a mano o por la
+        // API) y `records.list_id` referencia la tabla compartida sin
+        // mirar el tenant: con el id de una lista ajena se creaba una
+        // fila huérfana colgando de ella.
+        const pre = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const [target] = await tx
+                .select({ settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, targetList)))
+                .limit(1);
+            if (!target) return null;
+            return { settings: target.settings, fields: await this.fields.listByList(tx, ctx.tenantId, targetList) };
+        });
+        if (!pre) return fail('create_record', `La lista destino (#${targetList}) no existe en esta empresa.`);
+        // Una lista de tienda no admite altas: sus registros nacen en WooCommerce.
+        if (readStoreListMarker(pre.settings)) {
+            return skip('create_record', 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.');
+        }
+        // El límite de registros del plan vale también para lo que crea
+        // una automatización (si no, sería la forma de saltearlo). Con
+        // RecordsService lo verifica el alta DENTRO de su transacción (sin
+        // carrera entre altas simultáneas); sin él, aquí.
+        if (this.billing && !this.records()) {
+            try {
+                await this.billing.assertCanCreateRecords(ctx.tenantId, 1);
+            } catch (err) {
+                return fail('create_record', explainError(err) || 'Límite de registros del plan alcanzado.');
+            }
+        }
+
+        const rawValues = (cfg.values as Record<string, unknown>) ?? {};
+        const byKey = new Map(pre.fields.map((f) => [jsonbKeyForField(f.id), f]));
+        const bySlug = new Map(pre.fields.map((f) => [f.slug, f]));
+        const data: Record<string, unknown> = {};
+        const relations: Array<{ fieldId: number; label: string; targetListId: number; ids: number[] }> = [];
+        const skipped: string[] = [];
+        for (const [k, v] of Object.entries(rawValues)) {
+            const field = /^f\d+$/.test(k) ? byKey.get(k) : bySlug.get(k);
+            if (!field) {
+                skipped.push(`${k} (campo inexistente en la lista destino)`);
+                continue;
+            }
+            if (READ_ONLY_TYPES.includes(field.type)) {
+                skipped.push(`${k} (${field.type} es solo lectura)`);
+                continue;
+            }
+            if (field.type === 'relation') {
+                const targetListId = Number((field.config as { target_list_id?: unknown }).target_list_id ?? 0);
+                const ids = parseRelationIds(this.fieldInput(ctx, v, field).value);
+                if (targetListId <= 0 || ids.length === 0) {
+                    skipped.push(`${k} (relación sin destino o sin IDs)`);
+                    continue;
+                }
+                relations.push({ fieldId: field.id, label: field.label, targetListId, ids });
+                continue;
+            }
+            const res = this.coerce(ctx, field, v);
+            if (!res.ok) {
+                skipped.push(`«${field.label}» (${res.error})`);
+                continue;
+            }
+            if (res.value !== null) data[jsonbKeyForField(field.id)] = res.value;
+        }
+
+        // Vínculos: sólo a registros vivos de la lista destino del campo.
+        if (relations.length > 0) {
+            await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+                for (const rel of relations) {
+                    const alive = await this.relationsRepo.existingInList(tx, ctx.tenantId, rel.targetListId, rel.ids);
+                    const missing = rel.ids.filter((id) => !alive.has(id));
+                    if (missing.length > 0) skipped.push(`«${rel.label}» (registros inexistentes: ${missing.join(', ')})`);
+                    rel.ids = rel.ids.filter((id) => alive.has(id));
+                }
+            });
+        }
+        // Obligatorios que quedaron vacíos: el registro se crea igual (como
+        // siempre), pero se avisa.
+        for (const f of pre.fields) {
+            if (!f.isRequired || READ_ONLY_TYPES.includes(f.type) || f.type === 'checkbox') continue;
+            const filled = f.type === 'relation'
+                ? relations.some((r) => r.fieldId === f.id && r.ids.length > 0)
+                : !isBlank(data[jsonbKeyForField(f.id)]);
+            if (!filled) skipped.push(`«${f.label}» quedó vacío y es obligatorio`);
+        }
+
+        const created = await this.writeCreate(ctx, targetList, data, relations.filter((r) => r.ids.length > 0));
+        const note = skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : '';
+        return ok('create_record', `Creó registro #${created.id} en lista ${targetList}.${note}`, {
+            record_id: created.id,
+            ...(skipped.length > 0 ? { warnings: skipped } : {}),
+        });
+    }
+
+    /**
+     * Escribe `patch` en el registro del run. Con RecordsService (la app real):
+     * validación, actividad, tiempo real, avisos y las automatizaciones de la
+     * lista, con la cadena para cortar loops. Sin él: escritura atómica
+     * (`data || patch`) y el aviso de cambio.
+     */
+    private async writeUpdate(ctx: RunContext, patch: Record<string, unknown>, before: Record<string, unknown>): Promise<Record<string, unknown>> {
+        const chain = nextChain(ctx.chain, ctx.automation?.id ?? 0);
+        const dispatchOpts = chain.depth > MAX_AUTOMATION_CHAIN_DEPTH ? { noAutomations: true } : { automationChain: chain };
+        const svc = this.records();
+        if (svc) {
+            const dto = await svc.update(ctx.tenantId, SYSTEM_ACTOR, String(ctx.listId), ctx.recordId!, { data: patch }, dispatchOpts);
+            return dto.data;
+        }
+        const relationKeys = Object.keys(patch).filter((k) => ctx.fieldsBySlug.get(slugOf(ctx, k) ?? '')?.type === 'relation');
+        const dataPatch = Object.fromEntries(Object.entries(patch).filter(([k]) => !relationKeys.includes(k)));
+        const after = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const row = await patchRecordData(tx, ctx.tenantId, ctx.listId, ctx.recordId!, dataPatch);
+            for (const key of relationKeys) {
+                await this.relationsRepo.sync(tx, ctx.tenantId, Number(key.slice(1)), ctx.recordId!, patch[key] as number[]);
+            }
+            return row;
+        });
+        if (!after) throw new Error('El registro ya no existe.');
+        this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId!, before, after, actorId: SYSTEM_USER });
+        if (!('noAutomations' in dispatchOpts)) {
+            this.dispatcher?.dispatch({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId!, trigger: 'record_updated', after, before, chain });
+        }
+        return after;
+    }
+
+    /** Crea un registro en `listId` (mismo camino que `writeUpdate`). */
+    private async writeCreate(
+        ctx: RunContext,
+        listId: number,
+        data: Record<string, unknown>,
+        relations: Array<{ fieldId: number; ids: number[] }>,
+    ): Promise<{ id: number; data: Record<string, unknown> }> {
+        const chain = nextChain(ctx.chain, ctx.automation?.id ?? 0);
+        const svc = this.records();
+        if (svc) {
+            const input = { data: { ...data } as Record<string, unknown> };
+            for (const r of relations) input.data[jsonbKeyForField(r.fieldId)] = r.ids;
+            const dto = await svc.create(ctx.tenantId, SYSTEM_ACTOR, String(listId), input, {
+                lenientRequired: true,
+                ...(chain.depth > MAX_AUTOMATION_CHAIN_DEPTH ? {} : { automationChain: chain }),
+            });
+            return { id: dto.id, data: dto.data };
+        }
+        const row = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const inserted = await this.recordsRepo.insert(tx, { tenantId: ctx.tenantId, listId, data, createdBy: SYSTEM_USER });
+            for (const r of relations) await this.relationsRepo.sync(tx, ctx.tenantId, r.fieldId, inserted.id, r.ids);
+            return inserted;
+        });
+        this.changes?.emit({ tenantId: ctx.tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: SYSTEM_USER });
+        if (chain.depth <= MAX_AUTOMATION_CHAIN_DEPTH) {
+            this.dispatcher?.dispatch({ tenantId: ctx.tenantId, listId, recordId: row.id, trigger: 'record_created', after: row.data, chain });
+        }
+        return { id: row.id, data: row.data };
+    }
+
+    /**
+     * «Para», «Cc» y «Cco» de un correo: un campo Persona (`responsable` o
+     * `{{responsable}}`) se resuelve al EMAIL de esa persona, no a su id.
+     */
+    private recipients(ctx: RunContext, raw: unknown, merge: MergeFn): string {
+        const template = typeof raw === 'string' ? raw : '';
+        const isPerson = (slug: string): boolean => ctx.fieldsBySlug.get(slug)?.type === 'user';
+        const withPeople = template
+            .split(',')
+            .map((part) => (isPerson(part.trim()) ? `{{${part.trim()}.email}}` : part))
+            .join(',')
+            .replace(/\{\{\s*(before\.)?([a-zA-Z0-9_]+)\s*\}\}/g, (m, before: string | undefined, slug: string) =>
+                isPerson(slug) ? `{{${before ?? ''}${slug}.email}}` : m,
+            );
+        return limitRecipients(merge(withPeople));
+    }
+
     private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec): Promise<ActionLogEntry> {
         const fv = this.accessor(ctx);
-        // v0.1.178 — `{{campo|label}}` traduce el value a la etiqueta de la opción.
-        const labels = labelResolverFor(ctx.fieldsBySlug);
-        const merge = (s: unknown): string =>
-            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, undefined, labels);
-        // SEC-08: variante que escapa los valores interpolados para contexto HTML.
-        const mergeHtml = (s: unknown): string =>
-            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, escapeHtml, labels);
+        const { merge, mergeHtml } = this.mergers(ctx, fv);
         const cfg = spec.config ?? {};
 
         switch (spec.type) {
-            case 'update_field': {
-                if (ctx.recordId === null) return skip('update_field', 'Sin record en contexto.');
-                const values = (cfg.values as Record<string, unknown>) ?? {};
-                const merged = { ...ctx.data };
-                const applied: Record<string, unknown> = {};
-                for (const [slug, value] of Object.entries(values)) {
-                    const key = ctx.slugToKey.get(slug);
-                    if (!key) continue;
-                    const resolved = typeof value === 'string' ? merge(value) : value;
-                    merged[key] = resolved;
-                    applied[slug] = resolved;
-                }
-                // v0.1.213 — en una lista de tienda, una automatización respeta
-                // las MISMAS reglas que una persona: lo que la tienda no
-                // aceptaría (o sólo se edita en WooCommerce) se saltea con el
-                // motivo en el log, en vez de escribir un valor que la próxima
-                // sincronización pisaría en silencio.
-                const storeSkipped: string[] = [];
-                const marker = await this.storeMarkerOf(tx, ctx.tenantId, ctx.listId);
-                if (marker) {
-                    const row = (packSlug: string): unknown => {
-                        const id = marker.fields[packSlug];
-                        return id ? merged[`f${id}`] : undefined;
-                    };
-                    for (const slug of Object.keys(applied)) {
-                        const key = ctx.slugToKey.get(slug)!;
-                        const fieldId = Number(key.slice(1));
-                        const access = storeCellAccess(marker, fieldId, row);
-                        const err =
-                            access.access === 'locked'
-                                ? access.reason
-                                : access.access === 'editable'
-                                  ? storeValueError(marker, fieldId, merged[key], row)
-                                  : null;
-                        if (!err) continue;
-                        if (key in ctx.data) merged[key] = ctx.data[key];
-                        else delete merged[key];
-                        delete applied[slug];
-                        storeSkipped.push(`${slug} (${err})`);
-                    }
-                    if (Object.keys(applied).length === 0) {
-                        return skip('update_field', `Nada que cambiar: ${storeSkipped.join('; ')}`);
-                    }
-                }
-                await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
-                // Una automatización que cambia un producto sincronizado también
-                // lo cambia en la tienda. Si la corrida revierte, el envío lee el
-                // valor vigente y manda lo que la tienda ya tenía (inocuo).
-                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged, actorId: 0 });
-                ctx.data = merged; // acciones posteriores ven el valor actualizado.
-                const storeNote = storeSkipped.length > 0 ? ` Omitidos: ${storeSkipped.join('; ')}.` : '';
-                return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).${storeNote}`, { values: applied });
-            }
             case 'bulk_edit': {
                 // v0.1.221 — Editar en lote TODO lo que coincide con el filtro de
                 // la acción, en la lista de la automatización. Se encola y corre
@@ -638,103 +1095,6 @@ export class AutomationEngine {
                     {},
                 );
             }
-            case 'create_record': {
-                // Los slugs de `values` se resuelven contra la lista DESTINO
-                // (no la del trigger — pueden ser listas distintas), cada valor
-                // pasa por el validador compartido del campo (coerción de
-                // números/fechas/selects; los inválidos se saltan con nota), y
-                // los campos relation se sincronizan en la tabla `relations`
-                // con targets verificados vivos en su lista destino.
-                const targetList = Number(cfg.target_list ?? cfg.list_id ?? ctx.listId) || ctx.listId;
-                // SEC-31 (v0.1.228): la lista destino tiene que ser DE ESTA
-                // empresa. El id viene de la config (editable a mano o por la
-                // API) y `records.list_id` referencia la tabla compartida sin
-                // mirar el tenant: con el id de una lista ajena se creaba una
-                // fila huérfana colgando de ella.
-                const [target] = await tx
-                    .select({ settings: lists.settings })
-                    .from(lists)
-                    .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, targetList)))
-                    .limit(1);
-                if (!target) {
-                    return fail('create_record', `La lista destino (#${targetList}) no existe en esta empresa.`);
-                }
-                // Una lista de tienda no admite altas: sus registros nacen en WooCommerce.
-                if (readStoreListMarker(target.settings)) {
-                    return skip('create_record', 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.');
-                }
-                // El límite de registros del plan vale también para lo que crea
-                // una automatización (si no, sería la forma de saltearlo).
-                if (this.billing) {
-                    try {
-                        await this.billing.assertCanCreateRecords(ctx.tenantId, 1);
-                    } catch (err) {
-                        return fail('create_record', err instanceof Error ? err.message : 'Límite de registros del plan alcanzado.');
-                    }
-                }
-                const rawValues = (cfg.values as Record<string, unknown>) ?? {};
-                const targetFields = await this.fields.listByList(tx, ctx.tenantId, targetList);
-                const byKey = new Map(targetFields.map((f) => [jsonbKeyForField(f.id), f]));
-                const bySlug = new Map(targetFields.map((f) => [f.slug, f]));
-
-                const data: Record<string, unknown> = {};
-                const relationValues: Array<{ fieldId: number; targetListId: number; ids: number[] }> = [];
-                const skipped: string[] = [];
-                for (const [k, v] of Object.entries(rawValues)) {
-                    const field = /^f\d+$/.test(k) ? byKey.get(k) : bySlug.get(k);
-                    if (!field) {
-                        skipped.push(`${k} (campo inexistente en la lista destino)`);
-                        continue;
-                    }
-                    if (field.type === 'computed' || field.type === 'lookup' || field.type === 'rollup' || field.type === 'ai') {
-                        skipped.push(`${k} (${field.type} es solo lectura)`);
-                        continue;
-                    }
-                    const resolved = typeof v === 'string' ? merge(v) : v;
-                    if (field.type === 'relation') {
-                        const targetListId = Number(
-                            (field.config as { target_list_id?: unknown }).target_list_id ?? 0,
-                        );
-                        const ids = parseRelationIds(resolved);
-                        if (targetListId <= 0 || ids.length === 0) {
-                            skipped.push(`${k} (relación sin destino o sin IDs)`);
-                            continue;
-                        }
-                        relationValues.push({ fieldId: field.id, targetListId, ids });
-                        continue;
-                    }
-                    const result = validateFieldValue(
-                        { type: field.type as FieldValueSpec['type'], config: field.config as Record<string, unknown>, is_required: false },
-                        resolved,
-                    );
-                    if (!result.ok) {
-                        skipped.push(`${k} (${result.error})`);
-                        continue;
-                    }
-                    if (result.value !== null) data[jsonbKeyForField(field.id)] = result.value;
-                }
-
-                const row = await this.recordsRepo.insert(tx, {
-                    tenantId: ctx.tenantId,
-                    listId: targetList,
-                    data,
-                    createdBy: SYSTEM_USER,
-                });
-                for (const rel of relationValues) {
-                    const alive = await this.relationsRepo.existingInList(
-                        tx,
-                        ctx.tenantId,
-                        rel.targetListId,
-                        rel.ids,
-                    );
-                    const valid = rel.ids.filter((id) => alive.has(id));
-                    if (valid.length > 0) {
-                        await this.relationsRepo.sync(tx, ctx.tenantId, rel.fieldId, row.id, valid);
-                    }
-                }
-                const note = skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : '';
-                return ok('create_record', `Creó registro #${row.id} en lista ${targetList}.${note}`, { record_id: row.id });
-            }
             case 'call_webhook': {
                 // v0.1.196 — si la acción apunta a una CONEXIÓN, la credencial
                 // sale de ahí (cifrada) en vez de estar escrita en el config.
@@ -767,8 +1127,16 @@ export class AutomationEngine {
                     method: req.method,
                     headers: req.headers,
                     body: req.body,
+                    captureBody: true,
+                    maxCaptureBytes: 2048,
                 });
-                return ok('call_webhook', `${req.method} ${req.url} → ${res.status}`, {
+                const shownUrl = redactValues(req.url, connection?.redact ?? []);
+                // Un 4xx/5xx NO es éxito: antes quedaba «→ 500» como corrida
+                // exitosa y nadie se enteraba de que el destino rechazaba todo.
+                if (res.status < 200 || res.status >= 300) {
+                    return httpFail('call_webhook', `${req.method} ${shownUrl}`, res.status, res.body);
+                }
+                return ok('call_webhook', `${req.method} ${shownUrl} → ${res.status}`, {
                     status: res.status,
                 });
             }
@@ -890,7 +1258,18 @@ export class AutomationEngine {
                     method: req.method,
                     headers: req.headers,
                     body: req.body,
+                    captureBody: true,
+                    maxCaptureBytes: 2048,
                 });
+                // Un 4xx/5xx es una falla (abre el problema de la automatización).
+                if (res.status < 200 || res.status >= 300) {
+                    return httpFail(
+                        'connector_action',
+                        `${resolved.name} → ${resolved.action.label}`,
+                        res.status,
+                        redactValues(res.body ?? '', resolved.parts.redact),
+                    );
+                }
                 return ok(
                     'connector_action',
                     `${resolved.name} → ${resolved.action.label}: ${res.status}`,
@@ -929,13 +1308,16 @@ export class AutomationEngine {
                 const saved = await this.documents.storePdf(ctx.tenantId, SYSTEM_USER, doc.filename, doc.buffer).catch((err: unknown) => {
                     throw new Error(`No se pudo guardar el PDF: ${err instanceof Error ? err.message : String(err)}`);
                 });
-                const prev = ctx.data[key];
+                // Sólo la clave del archivo, sobre lo que el registro tiene AHORA
+                // (no sobre la foto del evento: no pisa cambios concurrentes).
+                const current = await this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, ctx.recordId);
+                const prev = current ? current.data[key] : ctx.data[key];
                 const prevIds = (Array.isArray(prev) ? prev : prev === null || prev === undefined ? [] : [prev])
                     .map(Number)
                     .filter((n) => Number.isInteger(n) && n > 0);
-                const merged = { ...ctx.data, [key]: cfg.save_mode === 'replace' ? [saved.id] : [...prevIds, saved.id] };
-                await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
-                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged, actorId: 0 });
+                const nextIds = cfg.save_mode === 'replace' ? [saved.id] : [...prevIds, saved.id];
+                const merged = (await patchRecordData(tx, ctx.tenantId, ctx.listId, ctx.recordId, { [key]: nextIds })) ?? { ...ctx.data, [key]: nextIds };
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: current?.data ?? ctx.data, after: merged, actorId: 0 });
                 ctx.data = merged;
                 ctx.pdf = { nombre: doc.filename, link: this.documents.fileLink(ctx.tenantId, saved.id), kb, numero: doc.number ?? '' };
                 return ok(
@@ -948,10 +1330,18 @@ export class AutomationEngine {
                 // SEC-08: destinatarios saneados y CAPADOS (to/cc/bcc son
                 // merge-tag → una lista con comas podría convertir el SMTP en
                 // relay / mail-bomb). El `to` debe resolver a ≥1 email válido.
-                const to = limitRecipients(merge(cfg.to));
-                if (!to) return skip('send_email', 'Destinatario vacío o inválido.');
-                const cc = cfg.cc ? limitRecipients(merge(cfg.cc)) : undefined;
-                const bcc = cfg.bcc ? limitRecipients(merge(cfg.bcc)) : undefined;
+                // Un campo Persona en el «Para» (`responsable` o `{{responsable}}`)
+                // es el EMAIL de esa persona, no su id.
+                const to = this.recipients(ctx, cfg.to, merge);
+                if (!to) {
+                    // Sin destinatario la acción no puede hacer su trabajo: es
+                    // una falla visible (un «Para» vacío o un campo sin email).
+                    return fail('send_email', typeof cfg.to === 'string' && cfg.to.trim() !== ''
+                        ? `El destinatario «${cfg.to.trim()}» no resolvió a ningún email válido en este registro.`
+                        : 'La acción no tiene destinatario («Para» vacío).');
+                }
+                const cc = cfg.cc ? this.recipients(ctx, cfg.cc, merge) : undefined;
+                const bcc = cfg.bcc ? this.recipients(ctx, cfg.bcc, merge) : undefined;
                 // v0.1.265 — diseño por bloques / texto / HTML propio + firma
                 // (ADR-S34). Un diseño inválido FALLA la acción con el motivo.
                 const composed = await this.composer.compose(tx, {
@@ -1085,12 +1475,40 @@ function limitRecipients(raw: string): string {
 function ok(action: string, message: string, details: Record<string, unknown> = {}): ActionLogEntry {
     return { action, status: 'success', message, details };
 }
-function fail(action: string, message: string): ActionLogEntry {
-    return { action, status: 'failed', message, details: {} };
+function fail(action: string, message: string, details: Record<string, unknown> = {}): ActionLogEntry {
+    return { action, status: 'failed', message, details };
 }
 
 function skip(action: string, message: string): ActionLogEntry {
     return { action, status: 'skipped', message, details: {} };
+}
+
+/** Respuesta HTTP no exitosa: falla con el código y un pedacito de lo que contestaron. */
+function httpFail(action: string, what: string, status: number, body: string | undefined): ActionLogEntry {
+    const snippet = (body ?? '').replace(/\s+/g, ' ').trim();
+    const shown = snippet.length > RESPONSE_SNIPPET ? `${snippet.slice(0, RESPONSE_SNIPPET - 1)}…` : snippet;
+    return fail(action, `${what} → respondió ${status}${shown ? `: ${shown}` : ''}`, { status });
+}
+
+/**
+ * Mensaje legible de un error al escribir un registro: los 400 de validación
+ * traen el motivo por campo; un 403/404 trae su `message`.
+ */
+function explainError(err: unknown): string {
+    if (err && typeof err === 'object' && 'getResponse' in err && typeof (err as { getResponse: unknown }).getResponse === 'function') {
+        const body = (err as { getResponse: () => unknown }).getResponse() as {
+            message?: unknown;
+            data?: { errors?: Record<string, unknown> };
+        };
+        const errors = body?.data?.errors;
+        if (errors && typeof errors === 'object' && Object.keys(errors).length > 0) {
+            return `Datos inválidos: ${Object.entries(errors)
+                .map(([k, v]) => `${k} (${String(v)})`)
+                .join('; ')}`;
+        }
+        if (typeof body?.message === 'string') return body.message;
+    }
+    return errorText(err, 2000);
 }
 
 /** changed_fields puede venir como array de slugs o (field_changed) como `field`. */
@@ -1101,10 +1519,97 @@ function normalizeChangedFields(cfg: Record<string, unknown>): string[] {
     return [];
 }
 
+const fold = (s: string): string =>
+    s
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .trim()
+        .toLowerCase();
+
 /**
- * Normaliza el valor de un campo relation en create_record a IDs de record:
- * acepta número, string numérico (típico de un merge tag `{{record.id}}`),
- * lista separada por comas y arrays mixtos. IDs inválidos se descartan.
+ * ¿El valor de un extremo del cambio («de» / «a») es el esperado? Vacío =
+ * cualquiera. Opciones por value o por etiqueta; en un multi_select, «incluye»;
+ * en una casilla, sí/no.
+ */
+function changeEndMatches(field: LabelFieldLike | undefined, actual: unknown, expected: unknown): boolean {
+    if (expected === null || expected === undefined || expected === '' || (Array.isArray(expected) && expected.length === 0)) {
+        return true;
+    }
+    const wanted = (Array.isArray(expected) ? expected : [expected]).map((e) => String(e));
+    if (field?.type === 'checkbox') {
+        const want = ['1', 'true', 'sí', 'si', 'yes'].includes(fold(wanted[0] ?? ''));
+        const has = actual === true || actual === 1 || actual === '1' || actual === 'true';
+        return want === has;
+    }
+    const options = Array.isArray((field?.config as { options?: unknown } | undefined)?.options)
+        ? ((field!.config as { options: Array<{ value?: unknown; label?: unknown }> }).options)
+        : [];
+    const toValue = (s: string): string => {
+        const f = fold(s);
+        const opt = options.find((o) => fold(String(o.value ?? '')) === f) ?? options.find((o) => fold(String(o.label ?? '')) === f);
+        return opt && typeof opt.value === 'string' ? opt.value : s.trim();
+    };
+    const targets = wanted.map(toValue);
+    const values = (Array.isArray(actual) ? actual : [actual]).filter((v) => v !== null && v !== undefined).map((v) => String(v));
+    return targets.some((t) => values.some((v) => v === t || fold(v) === fold(t) || (isNumericString(v) && isNumericString(t) && Number(v) === Number(t))));
+}
+
+function isNumericString(s: string): boolean {
+    return s.trim() !== '' && Number.isFinite(Number(s));
+}
+
+function isBlank(v: unknown): boolean {
+    return v === null || v === undefined || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0);
+}
+
+/** ¿Mismo valor guardado? (null/ausente iguales; listas sin importar el orden). */
+function sameValue(a: unknown, b: unknown): boolean {
+    if (isBlank(a) && isBlank(b)) return true;
+    if (Array.isArray(a) && Array.isArray(b)) {
+        return a.length === b.length && [...a].map(String).sort().join('\u0000') === [...b].map(String).sort().join('\u0000');
+    }
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** El slug de una clave `f{id}` en el contexto del run. */
+function slugOf(ctx: RunContext, key: string): string | undefined {
+    for (const [slug, k] of ctx.slugToKey) if (k === key) return slug;
+    return undefined;
+}
+
+/**
+ * Escritura ATÓMICA de sólo las claves que cambian: `data || patch` (y las
+ * que se vacían, fuera). Lo que otra persona cambió entre el evento y esta
+ * acción no se pisa.
+ */
+async function patchRecordData(
+    tx: Tx,
+    tenantId: number,
+    listId: number,
+    recordId: number,
+    patch: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+    const set: Record<string, unknown> = {};
+    const remove: string[] = [];
+    for (const [k, v] of Object.entries(patch)) {
+        if (!/^f\d+$/.test(k)) continue;
+        if (v === null || v === undefined) remove.push(k);
+        else set[k] = v;
+    }
+    let expr = sql`(${records.data} || ${JSON.stringify(set)}::jsonb)`;
+    if (remove.length > 0) expr = sql`(${expr} - ARRAY[${sql.join(remove.map((k) => sql`${k}`), sql`, `)}]::text[])`;
+    const [row] = await tx
+        .update(records)
+        .set({ data: expr as unknown as Record<string, unknown>, updatedAt: sql`now()` as unknown as Date })
+        .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), eq(records.id, recordId), isNull(records.deletedAt)))
+        .returning({ data: records.data });
+    return row?.data ?? null;
+}
+
+/**
+ * Normaliza el valor de un campo relation a IDs de record: acepta número,
+ * string numérico (típico de un merge tag `{{record.id}}`), lista separada
+ * por comas y arrays mixtos. IDs inválidos se descartan.
  */
 function parseRelationIds(raw: unknown): number[] {
     const candidates: unknown[] = Array.isArray(raw)
@@ -1120,12 +1625,6 @@ function parseRelationIds(raw: unknown): number[] {
     return out;
 }
 
-/**
- * Resuelve el field_id del campo fecha del due_date_reached (por id o slug).
- * Acepta `due_field` — la clave que escribe el DueDateConfig de la UI; sin
- * este alias, una automatización configurada desde la interfaz jamás
- * resolvía el campo y el trigger no disparaba nunca.
- */
 /** Path anidado por punto sobre un objeto (`payload.cliente.email`). */
 function getPath(obj: Record<string, unknown> | undefined, path: string): unknown {
     if (!obj) return undefined;
@@ -1137,6 +1636,12 @@ function getPath(obj: Record<string, unknown> | undefined, path: string): unknow
     return cur;
 }
 
+/**
+ * Resuelve el field_id del campo fecha del due_date_reached (por id o slug).
+ * Acepta `due_field` — la clave que escribe el DueDateConfig de la UI; sin
+ * este alias, una automatización configurada desde la interfaz jamás
+ * resolvía el campo y el trigger no disparaba nunca.
+ */
 function resolveDateFieldId(
     cfg: Record<string, unknown>,
     fieldRows: Array<{ id: number; slug: string }>,

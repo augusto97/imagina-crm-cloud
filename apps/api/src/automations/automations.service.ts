@@ -13,6 +13,7 @@ import type {
     EmailTestResult,
 } from '@imagina-base/shared';
 import {
+    automationConfigIssues,
     emailDesignSchema,
     FALLBACK_TIME_ZONE,
     isEffectivelyReadOnly,
@@ -30,6 +31,7 @@ import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { EmailComposer, type ComposedEmail } from './email-composer';
 import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
@@ -44,6 +46,7 @@ import {
 } from '../connectors/integration-calls';
 import { buildWebhookRequest } from './webhook-request';
 import { IncidentHub } from '../incidents/incident-hub';
+import { BillingService } from '../billing/billing.service';
 import {
     AutomationsRepository,
     type AutomationRow,
@@ -82,6 +85,10 @@ export class AutomationsService {
         // v0.1.266 — los PDF adjuntos de la prueba.
         @Optional() private readonly documents?: DocumentsService,
         @Optional() private readonly incidents?: IncidentHub,
+        // El dispatcher cachea qué disparadores tiene cada lista: guardar los invalida.
+        @Optional() private readonly dispatcher?: AutomationDispatcher,
+        // Límite de automatizaciones activas del plan (`max_automations`).
+        @Optional() private readonly billing?: BillingService,
     ) {}
 
     /**
@@ -212,6 +219,38 @@ export class AutomationsService {
         return { queued: true };
     }
 
+    /**
+     * Mantenimiento del historial de corridas (cross-tenant, por la conexión
+     * base; lo llama el tick periódico de la cola):
+     * - una corrida que quedó en `running` más de una hora es de un proceso
+     *   que se cayó a mitad: se marca interrumpida (el escaneo de
+     *   vencimientos la reintenta con su tope);
+     * - las corridas de más de `RUNS_RETENTION_DAYS` días se borran por tandas
+     *   (la tabla crecía sin tope: una automatización por vencimiento sobre
+     *   miles de registros suma miles de filas por día).
+     */
+    async maintainRuns(): Promise<{ interrupted: number; pruned: number }> {
+        const stale = await this.db.execute(sql`
+            update automation_runs
+               set status = 'failed',
+                   error = 'La ejecución se interrumpió (el servidor se reinició o se cayó a mitad).',
+                   finished_at = now()
+             where status = 'running' and created_at < now() - interval '1 hour'`);
+        let pruned = 0;
+        for (let i = 0; i < 20; i++) {
+            const res = await this.db.execute(sql`
+                delete from automation_runs
+                 where id in (
+                    select id from automation_runs
+                     where created_at < now() - make_interval(days => ${RUNS_RETENTION_DAYS})
+                     limit 5000)`);
+            const n = res.rowCount ?? 0;
+            pruned += n;
+            if (n < 5000) break;
+        }
+        return { interrupted: stale.rowCount ?? 0, pruned };
+    }
+
     /** v0.1.265 — email de una cuenta (la prueba del correo sale a su casilla). */
     async userEmail(userId: number): Promise<string> {
         const [row] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
@@ -226,6 +265,12 @@ export class AutomationsService {
     ): Promise<Automation> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         normalizeEmailDesigns(input.actions);
+        // Una automatización ACTIVA tiene que poder correr; pausada se guarda
+        // como borrador aunque le falte algo.
+        if (input.is_active !== false) {
+            assertRunnable({ trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions });
+            await this.billing?.assertCanActivateAutomation(tenantId);
+        }
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.insert(tx, {
                 tenantId,
@@ -238,6 +283,7 @@ export class AutomationsService {
                 isActive: input.is_active ?? true,
             }),
         );
+        await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
     }
@@ -253,6 +299,18 @@ export class AutomationsService {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.listId !== list.id) throw notFound(id);
+            // Lo imprescindible para correr, sobre el resultado del cambio, si
+            // va a quedar ACTIVA (pausar o renombrar una rota siempre se puede).
+            const activating = patch.is_active === true && !current.isActive;
+            const touchesConfig = patch.trigger_type !== undefined || patch.trigger_config !== undefined || patch.actions !== undefined;
+            if ((patch.is_active ?? current.isActive) && (activating || touchesConfig)) {
+                assertRunnable({
+                    trigger_type: patch.trigger_type ?? current.triggerType,
+                    trigger_config: (patch.trigger_config ?? current.triggerConfig ?? {}) as Record<string, unknown>,
+                    actions: patch.actions ?? current.actions,
+                });
+            }
+            if (activating) await this.billing?.assertCanActivateAutomation(tenantId);
             const changes: Partial<typeof import('../db/schema').automations.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;
             if (patch.description !== undefined) changes.description = patch.description ?? null;
@@ -264,6 +322,7 @@ export class AutomationsService {
             if (!updated) throw notFound(id);
             return updated;
         });
+        await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
     }
@@ -276,6 +335,7 @@ export class AutomationsService {
             return this.repo.remove(tx, tenantId, id);
         });
         if (!deleted) throw notFound(id);
+        await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.remove(id);
         // v0.1.285 — lo que ya no existe no puede seguir "fallando".
         this.incidents?.resolve(tenantId, `automation:${id}`);
@@ -772,6 +832,26 @@ function toRun(row: AutomationRunRow, listId: number): AutomationRun {
 
 function hookCapturesKey(tenantId: number, automationId: number): string {
     return `hookcap:${tenantId}:${automationId}`;
+}
+
+/** Cuántos días de historial de corridas se conservan. */
+export const RUNS_RETENTION_DAYS = 90;
+
+/**
+ * Rechaza (400) una automatización a la que le falta lo imprescindible para
+ * correr: un «Enviar email» sin «Para», un webhook sin URL, un horario
+ * personalizado (cron) inválido… (la lista vive en `automationConfigIssues`,
+ * la misma que avisa en el editor). Antes se guardaba ACTIVA y fallaba —o no
+ * hacía nada— en silencio.
+ */
+function assertRunnable(input: Parameters<typeof automationConfigIssues>[0]): void {
+    const issues = automationConfigIssues(input);
+    if (issues.length === 0) return;
+    throw new BadRequestException({
+        code: 'automation_incomplete',
+        message: issues.length === 1 ? issues[0]!.message : 'A la automatización le falta configurar algunas cosas.',
+        data: { status: 400, errors: Object.fromEntries(issues.map((i) => [i.path, i.message])) },
+    });
 }
 
 function notFound(id: number): NotFoundException {

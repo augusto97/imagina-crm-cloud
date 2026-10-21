@@ -9,10 +9,7 @@ import type { FieldEntity } from '@/types/field';
 import type { FilterOperator } from '@/types/record';
 
 import { DateRangePresetButtons } from '@/admin/records/DateRangePresetButtons';
-import {
-    computePresetRange,
-    type DateRangePresetId,
-} from '@/admin/records/dateRangePresets';
+import { type DateRangePresetId } from '@/admin/records/dateRangePresets';
 import { FilterValueInput } from '@/admin/records/FilterValueInput';
 import { valueForOperator } from '@/admin/records/filterValue';
 import { isNullaryOperator, operatorsForType } from '@/admin/records/operators';
@@ -80,7 +77,7 @@ interface ConditionEditorProps {
  * Editor unificado de condiciones para automatizaciones (triggers,
  * actions, if_else). Cada fila tiene Campo / Operador / Valor y, para
  * campos de fecha, los chips de rangos rápidos (hoy, esta semana, etc.)
- * que generan un par `gte`+`lte`.
+ * que generan un `between_relative` (se evalúa cada vez que corre).
  *
  * Buffer local: filas con slug vacío persisten visualmente durante la
  * edición — sin esto "Añadir" parecía no hacer nada porque la fila
@@ -118,30 +115,16 @@ export function ConditionEditor({
     };
 
     /**
-     * Inserta gte+lte (fechas fijas) para un preset, reemplazando el
-     * row idx. Las automatizaciones evalúan condiciones contra un
-     * snapshot del registro en el momento del trigger, así que tener
-     * un rango "este mes" dinámico no aplica aquí — el momento de la
-     * evaluación ES el momento del trigger.
+     * Un rango rápido («Este mes», «Hoy») queda como `between_relative` con
+     * el PRESET, no como dos fechas fijas: la automatización evalúa «este
+     * mes» cada vez que corre, en el reloj de la empresa. Antes el botón
+     * congelaba las fechas del día en que se configuró y en un mes la
+     * condición ya no se cumplía nunca.
      */
-    const applyDateRange = (
-        idx: number,
-        slug: string,
-        fieldType: 'date' | 'datetime',
-        preset: DateRangePresetId,
-    ): void => {
-        const range = computePresetRange(preset, fieldType, new Date());
-        if (range === null) return;
+    const applyDateRange = (idx: number, slug: string, preset: DateRangePresetId): void => {
+        if (preset === 'custom') return;
         const next = [...rows];
-        next.splice(idx, 1, {
-            slug,
-            op: 'gte',
-            value: range.from,
-        }, {
-            slug,
-            op: 'lte',
-            value: range.to,
-        });
+        next.splice(idx, 1, { slug, op: 'between_relative', value: preset });
         commit(next);
     };
 
@@ -239,16 +222,7 @@ export function ConditionEditor({
                         </div>
 
                         {isDate && field && (
-                            <DateRangePresetButtons
-                                onPick={(preset) =>
-                                    applyDateRange(
-                                        i,
-                                        field.slug,
-                                        field.type as 'date' | 'datetime',
-                                        preset,
-                                    )
-                                }
-                            />
+                            <DateRangePresetButtons onPick={(preset) => applyDateRange(i, field.slug, preset)} />
                         )}
                     </div>
                 );

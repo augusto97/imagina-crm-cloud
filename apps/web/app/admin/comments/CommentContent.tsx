@@ -1,13 +1,11 @@
 /**
  * Renderer del contenido de un comentario con menciones `@usuario`
- * resaltadas como chips. La regex coincide con la del backend
- * (MentionParser.php) — un cambio en una requiere el cambio en la otra.
- *
- * No resolvemos el login a un display_name aquí; el chip muestra
- * `@login` literal. La resolución requeriría un endpoint extra y la
- * UX gana muy poco con eso a este nivel.
+ * resaltadas como chips. El backend extrae las menciones como `@email`
+ * (`comments.service.ts → storeMentions`), así que el chip acepta el email
+ * COMPLETO (`@beto@test.local`); antes cortaba en `@beto` y dejaba
+ * `@test.local` suelto. Se conserva el `@login` corto para los viejos.
  */
-const MENTION_RE = /(^|\s)@([A-Za-z0-9._-]{1,60})/g;
+export const MENTION_RE = /(^|\s)@([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[A-Za-z0-9._-]{1,60})/g;
 
 export function CommentContent({ content: rawContent }: { content: string }): JSX.Element {
     // Blindaje: comentarios legados/sistémicos pueden venir sin body —

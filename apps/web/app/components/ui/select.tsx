@@ -14,7 +14,9 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         <select
             ref={ref}
             className={cn(
-                'imcrm-flex imcrm-h-9 imcrm-w-full imcrm-rounded-lg imcrm-border imcrm-border-input imcrm-bg-card imcrm-px-3 imcrm-text-sm imcrm-text-foreground',
+                // pr-8: la flecha la pinta globals.css a la derecha; con px-3 el texto
+                // más largo quedaba DEBAJO de la flecha (se veía cortado).
+                'imcrm-flex imcrm-h-9 imcrm-w-full imcrm-rounded-lg imcrm-border imcrm-border-input imcrm-bg-card imcrm-pl-3 imcrm-pr-8 imcrm-text-sm imcrm-text-foreground',
                 'imcrm-shadow-imcrm-inset',
                 'imcrm-transition-[border-color,box-shadow] imcrm-duration-150',
                 'focus-visible:imcrm-outline-none focus-visible:imcrm-border-primary focus-visible:imcrm-ring-4 focus-visible:imcrm-ring-primary/15',

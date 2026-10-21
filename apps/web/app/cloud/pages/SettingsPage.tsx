@@ -28,7 +28,7 @@ import { TenantStoragePanel } from '@/cloud/components/TenantStoragePanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
-import { formatNumber } from '@/lib/tenantFormat';
+import { formatDate, formatNumber } from '@/lib/tenantFormat';
 const STATUS_LABEL: Record<BillingSummary['status'], string> = {
     trialing: 'En prueba',
     active: 'Activa',
@@ -53,15 +53,19 @@ export function SettingsPage(): JSX.Element {
     );
     const [params, setParams] = useSearchParams();
     const checkout = params.get('checkout');
+    // `GET /billing` es sólo para admins (v0.1.286: antes se pedía igual y a
+    // cualquier otro rol le devolvía 403 en cada visita a Ajustes).
     const billing = useQuery({
         queryKey: ['billing', tenantId],
         queryFn: () => api.billing(),
+        enabled: isAdmin,
     });
 
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const groups = settingsSectionGroups({ isAdmin, canManageAutomations });
     const visible = groups.flatMap((g) => g.items);
-    // Fallback a "plan" si el param no existe o apunta a una sección gateada.
+    // Fallback a "plan" (admin) o "seguridad" si el param no existe o apunta a
+    // una sección que este rol no ve.
     const active: SettingsSectionId = resolveSettingsSection(groups, params.get('s'));
     const activeItem = visible.find((i) => i.id === active) ?? visible[0];
 
@@ -89,7 +93,9 @@ export function SettingsPage(): JSX.Element {
                 <div>
                     <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        Plan y facturación, miembros del workspace y configuración del sistema.
+                        {isAdmin
+                            ? 'Plan y facturación, miembros del workspace y configuración del sistema.'
+                            : 'Tu cuenta: seguridad, avisos, firma y apariencia.'}
                     </p>
                 </div>
             </header>
@@ -138,7 +144,7 @@ export function SettingsPage(): JSX.Element {
                         {activeItem.label}
                     </h2>
                 )}
-                {active === 'plan' && (
+                {active === 'plan' && isAdmin && (
                     <>
                         {billingSkeleton}
                         {billing.data && <BillingCard summary={billing.data} />}
@@ -221,7 +227,7 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                     <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="billing-paid-until">
                         Pagado hasta el{' '}
                         <span className="imcrm-font-medium imcrm-text-foreground">
-                            {new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(summary.paid_until))}
+                            {formatDate(new Date(summary.paid_until))}
                         </span>
                         . Los pagos y la renovación están en Suscripción.
                     </p>

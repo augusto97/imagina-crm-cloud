@@ -27,6 +27,9 @@ const buttonVariants = cva(
                 default: [
                     'imcrm-bg-primary imcrm-text-primary-foreground',
                     'hover:imcrm-bg-primary/90',
+                    // v0.1.286 — en oscuro el cian al 50% seguía pareciendo
+                    // activo: deshabilitado pasa a gris apagado.
+                    'dark:disabled:imcrm-bg-muted dark:disabled:imcrm-text-muted-foreground dark:disabled:imcrm-opacity-100',
                 ].join(' '),
 
                 /* Outline: el botón "default" estilo Vercel — white +

@@ -431,12 +431,19 @@ function UserWorkspacesSection({ user }: { user: PlatformUser }): JSX.Element {
                 <h3 className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                     <Building2 className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Empresas')} ({ws.data?.length ?? 0})
                 </h3>
-                {!adding && (
+                {/* v0.1.286 — un superadmin de plataforma no se suma a empresas
+                    (el backend lo rechaza siempre: email_reserved). */}
+                {!adding && !user.is_superadmin && (
                     <Button variant="outline" size="sm" className="imcrm-h-7 imcrm-gap-1 imcrm-text-xs" onClick={() => setAdding(true)}>
                         <Plus className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Agregar a una empresa')}
                     </Button>
                 )}
             </div>
+            {user.is_superadmin && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Es superadmin de la plataforma: no se suma a empresas. Para ver una empresa por dentro, usa «Impersonar» desde su detalle.')}
+                </p>
+            )}
 
             {ws.isLoading && <p className="imcrm-text-sm imcrm-text-muted-foreground">{__('Cargando…')}</p>}
             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">

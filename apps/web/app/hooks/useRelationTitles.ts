@@ -11,6 +11,18 @@ import { fieldsKeys } from './useFields';
 /** id del registro vinculado → su título (vacío si no tiene nombre). */
 export type RelationTitles = Record<number, string>;
 
+/**
+ * v0.1.286 — marca de "la tabla está trayendo los títulos de esta columna":
+ * mientras tanto las celdas NO piden los suyos (antes, con el lote en vuelo,
+ * cada celda disparaba su propia request: 50 filas → 50 requests).
+ */
+export const PENDING_RELATION_TITLES: RelationTitles = Object.freeze({}) as RelationTitles;
+
+/** ¿Estos títulos son el lote todavía en vuelo? */
+export function isPendingRelationTitles(t: RelationTitles | undefined): boolean {
+    return t === PENDING_RELATION_TITLES;
+}
+
 const CHUNK = 200;
 
 /** Lista destino de un campo relation (null si todavía no se configuró). */
@@ -101,7 +113,10 @@ export function useRelationTitlesForRows(fields: FieldEntity[], rows: RecordEnti
     const sig = results.map((r) => r.dataUpdatedAt).join(',');
     return useMemo(() => {
         const m = new Map<number, RelationTitles>();
-        specs.forEach((s, i) => m.set(s.fieldId, results[i]?.data ?? {}));
+        specs.forEach((s, i) => {
+            const r = results[i];
+            m.set(s.fieldId, r?.data ?? (s.ids.length > 0 && r?.isPending ? PENDING_RELATION_TITLES : {}));
+        });
         return m;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [specs, sig]);

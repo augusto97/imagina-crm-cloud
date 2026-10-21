@@ -1,4 +1,5 @@
 import { Global, Injectable, Logger, Module } from '@nestjs/common';
+import type { Field, List } from '@imagina-base/shared';
 
 /**
  * v0.1.207 — Aviso en proceso de "una PERSONA (o una automatización) cambió
@@ -27,6 +28,15 @@ export interface RecordChange {
      * los avisos: no se le avisa a alguien de lo que hizo él mismo.
      */
     actorId?: number;
+    /** El cambio lo hizo el CLIENTE desde su portal (`actorId` es su usuario). */
+    viaPortal?: boolean;
+    /**
+     * La lista y sus campos, cuando quien emite ya los tenía cargados (la
+     * edición de una persona). Los oyentes los usan en vez de volver a leerlos:
+     * antes cada edición repetía esas lecturas una vez por oyente.
+     */
+    list?: List;
+    fields?: readonly Field[];
 }
 
 type Listener = (change: RecordChange) => void | Promise<void>;

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
@@ -212,6 +213,10 @@ export function RecordsPage(): JSX.Element {
         && activeViewType !== 'cards'
         && state.groupByFieldId !== null
         && !state.spreadsheet;
+    // v0.1.286 — el calendario pide los registros de SU rango (el mes visible):
+    // el listado plano no se usa ahí.
+    const calendarMode = activeViewType === 'calendar'
+        && Boolean(views.data?.find((x) => x.id === activeViewId)?.config.date_field_id);
     const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
         total: null,
         fetching: false,
@@ -238,7 +243,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied && !groupedMode ? listSlug : undefined,
+        viewApplied && !groupedMode && !calendarMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -266,7 +271,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch && !groupedMode ? listSlug : undefined,
+        useServerSearch && !groupedMode && !calendarMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -367,7 +372,53 @@ export function RecordsPage(): JSX.Element {
             : null;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const [drawerRecordId, setDrawerRecordId] = useState<number | null>(null);
+    // El registro abierto en el modal vive en la URL (`?record=<id>`): la
+    // lista queda debajo, atrás (o el gesto de Android) cierra el modal,
+    // recargar lo vuelve a abrir y el enlace se puede compartir.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const location = useLocation();
+    const recordParam = Number(searchParams.get('record'));
+    const urlRecordId = Number.isInteger(recordParam) && recordParam > 0 ? recordParam : null;
+    // El cambio de URL es una transición (react-router) y puede tardar en
+    // pintarse: el modal se cierra AL INSTANTE con este estado local, así
+    // nada de la ficha (ni el registro de respaldo) se sigue pidiendo — tras
+    // borrarlo, eso eran 404.
+    const [closingRecordId, setClosingRecordId] = useState<number | null>(null);
+    useEffect(() => {
+        if (closingRecordId !== null && urlRecordId !== closingRecordId) setClosingRecordId(null);
+    }, [urlRecordId, closingRecordId]);
+    const drawerRecordId = urlRecordId !== null && urlRecordId !== closingRecordId ? urlRecordId : null;
+    const openedByUsRef = useRef(false);
+    const setDrawerRecordId = useEventCallback((id: number | null): void => {
+        const pushedHere = (location.state as { imcrmRecordModal?: boolean } | null)?.imcrmRecordModal === true;
+        if (id === null) {
+            if (drawerRecordId === null) return;
+            setClosingRecordId(drawerRecordId);
+            // Lo abrimos nosotros con un paso en el historial: cerrar = atrás
+            // (así el botón atrás después no vuelve a abrirlo).
+            if (pushedHere && openedByUsRef.current) {
+                openedByUsRef.current = false;
+                navigate(-1);
+                return;
+            }
+            const next = new URLSearchParams(searchParams);
+            next.delete('record');
+            setSearchParams(next, { replace: true });
+            return;
+        }
+        if (id === drawerRecordId) return;
+        setClosingRecordId(null);
+        const next = new URLSearchParams(searchParams);
+        next.set('record', String(id));
+        if (drawerRecordId === null) {
+            openedByUsRef.current = true;
+            setSearchParams(next, { state: { imcrmRecordModal: true } });
+        } else {
+            // Otro registro dentro del modal (anterior/siguiente, subtarea):
+            // reemplaza, no apila un paso por cada uno.
+            setSearchParams(next, { replace: true, state: location.state });
+        }
+    });
 
     // Modal de campos (v0.1.74): crear una columna nueva o editar una
     // existente SIN salir de la tabla. `editingField === null` = modo
@@ -411,16 +462,19 @@ export function RecordsPage(): JSX.Element {
         setCreateDefaults(prefillForGroup(groupField, bucketValue));
         setCreateOpen(true);
     });
+    const onGroupedSortChange = useEventCallback((fieldId: number, multi: boolean) => handleSortChange(fieldId, multi));
+    const onGroupedSortSet = useEventCallback((fieldId: number, dir: 'asc' | 'desc') => handleSortSet(fieldId, dir));
     const onGroupedCreateSubtask = useEventCallback((record: RecordEntity) => {
         setCreateDefaults(undefined);
         setCreateParentId(record.id);
         setCreateOpen(true);
     });
 
-    // Reset al cambiar de lista.
+    // Reset al cambiar de lista. (El modal no: vive en la URL, que cambia
+    // sola al ir a otra lista — y al recargar con `?record=` tiene que
+    // quedar abierto.)
     useEffect(() => {
         setSelectedIds([]);
-        setDrawerRecordId(null);
         setActiveViewId(null);
         setState(INITIAL_STATE);
         initialViewAppliedRef.current = null;
@@ -466,9 +520,26 @@ const applyView = (view: SavedViewEntity | null): void => {
     // `?gf=<field_id>&gv=<valor>` aplica un filtro eq (gv vacío → is_null)
     // POR ENCIMA de la vista default, y limpia los params para no
     // re-aplicarse al navegar dentro de la página.
-    const [searchParams, setSearchParams] = useSearchParams();
     useEffect(() => {
         if (! viewApplied || ! list.data) return;
+        // v0.1.286 — `?ft=<filter_tree JSON>`: el segmento de un gráfico con
+        // TODO lo que contó (filtro del widget, período, filtros del tablero
+        // y el valor del segmento). Un JSON roto se ignora.
+        const ftRaw = searchParams.get('ft');
+        if (ftRaw !== null) {
+            try {
+                const parsed = JSON.parse(ftRaw) as import('@/types/record').FilterTree;
+                if (parsed && parsed.type === 'group' && Array.isArray(parsed.children)) {
+                    setState((s2) => ({ ...s2, filterTree: parsed, page: 1 }));
+                }
+            } catch {
+                // parámetro inválido: se descarta
+            }
+            const next = new URLSearchParams(searchParams);
+            next.delete('ft');
+            setSearchParams(next, { replace: true });
+            return;
+        }
         const gf = Number(searchParams.get('gf'));
         if (! Number.isInteger(gf) || gf <= 0) return;
         const gv = searchParams.get('gv') ?? '';
@@ -556,6 +627,18 @@ const applyView = (view: SavedViewEntity | null): void => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [list.data?.id, searchParams]);
 
+    // v0.1.286 — la selección es de lo que se VE: al cambiar el filtro, la
+    // búsqueda, la vista o la agrupación se vacía. Antes sobrevivía y una
+    // acción masiva («Eliminar», «Editar en lote») caía sobre registros que
+    // ya no estaban en pantalla.
+    const selectionScope = `${activeViewId ?? ''}|${JSON.stringify(state.filterTree)}|${debouncedSearch.trim()}|${state.groupByFieldId ?? ''}`;
+    const selectionScopeRef = useRef(selectionScope);
+    useEffect(() => {
+        if (selectionScopeRef.current === selectionScope) return;
+        selectionScopeRef.current = selectionScope;
+        setSelectedIds((prev) => (prev.length === 0 ? prev : []));
+    }, [selectionScope]);
+
     const setFilterTree = (filterTree: import('@/types/record').FilterTree): void => {
         setState((s) => ({ ...s, filterTree, page: 1 }));
     };
@@ -607,6 +690,19 @@ const applyView = (view: SavedViewEntity | null): void => {
     const isTableGrouped = !isAlternativeView
         && state.groupByFieldId !== null
         && !state.spreadsheet;
+    // Anterior / siguiente del modal: el orden de la tabla plana (o de las
+    // tarjetas, el kanban y el calendario, que leen la misma página). En la
+    // vista agrupada cada grupo pagina aparte: ahí no hay un orden único.
+    const navIds = isTableGrouped ? [] : (records.data?.data ?? []).map((r) => r.id);
+    const navIndex = drawerRecordId !== null ? navIds.indexOf(drawerRecordId) : -1;
+    const drawerNav = {
+        prev: navIndex > 0 ? navIds[navIndex - 1]! : null,
+        next: navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1]! : null,
+        go: navIndex < 0 ? undefined : (dir: -1 | 1): void => {
+            const target = dir === -1 ? (navIndex > 0 ? navIds[navIndex - 1] : undefined) : navIds[navIndex + 1];
+            if (target !== undefined) setDrawerRecordId(target);
+        },
+    };
     const tableGroupByField =
         isTableGrouped && fields.data
             ? fields.data.find((f) => f.id === state.groupByFieldId)
@@ -751,9 +847,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                     >
                         {__('Listas')}
                     </Link>
-                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
+                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground">
                         /
                     </span>
+                    <ListFolderCrumb groupId={list.data.group_id} />
                     <h1 className="imcrm-truncate imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight">
                         {list.data.name}
                     </h1>
@@ -986,6 +1083,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                     listId={list.data.id}
                     listSlug={list.data.slug}
                     filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    sort={state.sort.map((x) => `field_${x.field_id}:${x.dir}`).join(',')}
                     open={exportOpen}
                     onOpenChange={setExportOpen}
                     hideTrigger
@@ -1217,12 +1316,16 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
                                     titleFieldId={activeView?.config.kanban_title_field_id ?? null}
                                     metaFieldIds={activeView?.config.kanban_meta_field_ids ?? null}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                 />
                             ) : isCalendar && dateField ? (
                                 <CalendarView
+                                    listId={list.data.id}
                                     fields={fields.data}
-                                    records={records.data?.data ?? []}
                                     dateField={dateField}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
                                 />
                             ) : isCards ? (
@@ -1262,6 +1365,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={onGroupedFooterAggregates}
                                     onStatusChange={setGroupedStatus}
+                                    sort={state.sort}
+                                    onSortChange={onGroupedSortChange}
+                                    onSortSet={onGroupedSortSet}
                                 />
                             ) : (
                                 <TableView
@@ -1288,6 +1394,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, columnOrder: next }))
                                     }
                                     filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                     onAddRecord={!canCreateRecords ? undefined : () => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);
@@ -1390,6 +1497,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                         record={drawerRecord}
                         open={drawerRecordId !== null}
                         onOpenChange={(open) => !open && setDrawerRecordId(null)}
+                        onNavigate={drawerNav.go}
+                        canPrev={drawerNav.prev !== null}
+                        canNext={drawerNav.next !== null}
+                        onOpenRecord={setDrawerRecordId}
                     />
 
                     <SaveViewDialog

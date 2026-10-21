@@ -58,7 +58,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(AUTOMATIONS_QUEUE, { connection: conn() });
+            this.queue = new Queue(AUTOMATIONS_QUEUE, { connection: conn(), defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 } });
             this.queue.on('error', (err) => this.logger.warn(`Cola de automatizaciones con error: ${err.message}`));
             this.worker = new Worker(
                 AUTOMATIONS_QUEUE,
@@ -77,6 +77,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                         await this.bulkRunner.run(job.data as BulkEditJob);
                     } else if (job.name === RECURRENCES_TICK_JOB) {
                         await this.recurrences.tick();
+                        await this.maintainRuns();
                     } else {
                         await this.engine.process(job.data as TriggerEvent);
                     }
@@ -121,6 +122,25 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
             this.logger.log('Cola de automatizaciones lista');
         } catch (err) {
             this.logger.warn(`Automatizaciones deshabilitadas (sin Redis): ${String(err)}`);
+        }
+    }
+
+    /**
+     * Mantenimiento del historial de corridas, colgado del tick periódico
+     * (cada 5 min) pero a lo sumo una vez por hora por proceso: retención de
+     * 90 días y corridas que quedaron «en curso» por un reinicio.
+     */
+    private lastMaintenance = 0;
+    private async maintainRuns(): Promise<void> {
+        if (Date.now() - this.lastMaintenance < 60 * 60 * 1000) return;
+        this.lastMaintenance = Date.now();
+        try {
+            const out = await this.automations.maintainRuns();
+            if (out.pruned > 0 || out.interrupted > 0) {
+                this.logger.log(`Historial de automatizaciones: ${out.pruned} corridas viejas borradas, ${out.interrupted} interrumpidas.`);
+            }
+        } catch (err) {
+            this.logger.warn(`No se pudo mantener el historial de automatizaciones: ${String(err)}`);
         }
     }
 

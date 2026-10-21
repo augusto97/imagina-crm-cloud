@@ -1,8 +1,12 @@
 import { useMemo } from 'react';
 
-import { colorVar } from '@/components/ui/color-picker';
+import { chipSoftStyle, colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
 import { useMemberNames } from '@/hooks/useWpUsers';
+import { __ } from '@/lib/i18n';
+import { OTHERS_GROUP_KEY } from '@/types/dashboard';
+
+import { groupDisplayLabels } from './widgetFormat';
 
 /**
  * Paleta de fallback para categorías sin color definido (campos que
@@ -104,14 +108,20 @@ export function useGroupLabelMap(
 ): Map<string, string> {
     const options = useGroupOptions(listId, groupByFieldId);
     const fields = useFields(listId && listId > 0 ? listId : undefined);
-    const isUser = fields.data?.find((f) => f.id === groupByFieldId)?.type === 'user';
-    const names = useMemberNames(isUser ? keys.map((k) => Number(k)) : []);
+    const groupField = fields.data?.find((f) => f.id === groupByFieldId);
+    const isUser = groupField?.type === 'user';
+    const names = useMemberNames(isUser ? keys.filter((k) => /^\d+$/.test(k)).map((k) => Number(k)) : []);
+    const keysSig = keys.join('\u0000');
     return useMemo(() => {
         const map = new Map<string, string>();
         for (const [key, o] of options) map.set(key, o.label);
         for (const [id, name] of names.data ?? []) map.set(String(id), name);
+        // v0.1.286 — buckets de fecha legibles ("oct 2026", "Sem 43 · 2026",
+        // "T3 2026") y la casilla como «Sí» / «No» (antes "true"/"false").
+        for (const [key, label] of groupDisplayLabels(keysSig === '' ? [] : keysSig.split('\u0000'), groupField)) map.set(key, label);
         return map;
-    }, [options, names.data]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [options, names.data, keysSig, groupField?.type]);
 }
 
 /**
@@ -125,7 +135,35 @@ export function categoryColor(
     label: string,
     index: number,
 ): string {
+    // v0.1.286 — "Otros" (el resto de los grupos) en un gris neutro.
+    if (label === OTHERS_GROUP_KEY) return 'hsl(var(--imcrm-muted-foreground) / 0.55)';
     return map.get(label) ?? map.get(prettyGroupLabel(label)) ?? paletteColor(index);
+}
+
+/**
+ * v0.1.286 — Tinta legible SOBRE un color de categoría (la cifra dentro de
+ * una etapa del embudo): la de mayor contraste WCAG, la misma regla de los
+ * chips de opción. Antes era siempre blanca (2,1:1 sobre ámbar o verde).
+ */
+export function inkOn(color: string): string {
+    const preset = /^hsl\(var\(--imcrm-opt-([a-z]+)\)\)$/.exec(color);
+    const raw = preset ? preset[1] : /^#[0-9a-f]{3,6}$/i.test(color) ? color : null;
+    if (raw === null || raw === undefined) return 'hsl(var(--imcrm-foreground))';
+    const style = chipSoftStyle(raw as OptionColor);
+    return typeof style?.color === 'string' ? style.color : '#ffffff';
+}
+
+/** v0.1.286 — Nombre de un grupo; "Otros" dice cuántos grupos junta. */
+export function othersAwareLabel(row: { label: string; others?: number }, labels: Map<string, string> | undefined): string {
+    if (row.label === OTHERS_GROUP_KEY && typeof row.others === 'number') {
+        return `${__('Otros')} (${row.others})`;
+    }
+    return displayGroupLabel(row.label, labels);
+}
+
+/** v0.1.286 — ¿Es el grupo "Otros" (no navegable, sin opción)? */
+export function isOthersGroup(label: string): boolean {
+    return label === OTHERS_GROUP_KEY;
 }
 
 /**
@@ -147,6 +185,7 @@ export function prettyGroupLabel(label: string): string {
  * es select (buckets de fecha, textos). `[]` / vacío → "(sin valor)".
  */
 export function displayGroupLabel(label: string, labels: Map<string, string> | undefined): string {
+    if (label === OTHERS_GROUP_KEY) return __('Otros');
     const one = (v: string): string => labels?.get(v) ?? v;
     if (label.startsWith('[') && label.endsWith(']')) {
         try {
@@ -187,14 +226,58 @@ export function useGroupOptionOrder(
  * condición sobre el RESULTADO del chart. Los grupos cuya métrica dio 0
  * no se dibujan ni aparecen en la leyenda.
  */
-export function applyHideZero(
-    rows: Array<{ label: string; value: number }>,
+export function applyHideZero<T extends { label: string; value: number }>(
+    rows: T[],
     enabled: boolean,
-): Array<{ label: string; value: number }> {
+): T[] {
     if (! enabled) return rows;
     const filtered = rows.filter((r) => r.value !== 0);
     // Si TODO es 0, mejor mostrar los datos que un chart vacío confuso.
     return filtered.length > 0 ? filtered : rows;
+}
+
+/**
+ * v0.1.286 — Orden de las categorías de un chart (`config.sort`): por valor
+ * (mayor o menor primero), alfabético por la etiqueta, o por el ORDEN DE LAS
+ * OPCIONES del campo (el de un pipeline). Sin elegir: las opciones si el campo
+ * las tiene, si no por valor. "Otros" siempre al final.
+ */
+export type ChartSort = 'value_desc' | 'value_asc' | 'label' | 'options';
+
+export function sortChartRows<T extends { label: string; value: number }>(
+    rows: T[],
+    sort: ChartSort | undefined,
+    optionOrder: Map<string, number>,
+    labelOf: (label: string) => string,
+): T[] {
+    const others = rows.filter((r) => r.label === OTHERS_GROUP_KEY);
+    const rest = rows.filter((r) => r.label !== OTHERS_GROUP_KEY);
+    const mode: ChartSort = sort ?? (optionOrder.size > 0 ? 'options' : 'value_desc');
+    const byOption = (r: T): number | undefined => {
+        const direct = optionOrder.get(r.label);
+        if (direct !== undefined) return direct;
+        // multi_select: el combo se ordena por su primera opción.
+        if (r.label.startsWith('[')) {
+            try {
+                const arr: unknown = JSON.parse(r.label);
+                if (Array.isArray(arr) && arr.length > 0) return optionOrder.get(String(arr[0]));
+            } catch { /* no era JSON */ }
+        }
+        return undefined;
+    };
+    const sorted = [...rest].sort((a, b) => {
+        if (mode === 'value_asc') return a.value - b.value;
+        if (mode === 'label') return labelOf(a.label).localeCompare(labelOf(b.label), 'es');
+        if (mode === 'options') {
+            const ia = byOption(a);
+            const ib = byOption(b);
+            if (ia !== undefined && ib !== undefined && ia !== ib) return ia - ib;
+            if (ia !== undefined && ib === undefined) return -1;
+            if (ia === undefined && ib !== undefined) return 1;
+        }
+        return b.value - a.value;
+    });
+    return [...sorted, ...others];
 }
 
 /** v0.1.252 — Claves de grupo de la respuesta de un widget (para `useGroupLabelMap`). */

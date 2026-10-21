@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, BarChart3, CalendarRange, Copy, LayoutTemplate, Loader2, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarRange, Copy, Filter, LayoutTemplate, Loader2, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
@@ -27,12 +27,16 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { Select } from '@/components/ui/select';
 import {
-    DashboardGlobalPeriodContext,
+    DashboardBundleContext,
     dashboardsKeys,
+    useCanEditDashboard,
     useDashboard,
     useDeleteDashboard,
     useUpdateDashboard,
+    type DashboardBundleScope,
 } from '@/hooks/useDashboards';
+import { CAP, useCan } from '@/lib/permissions';
+import { formatDateStr } from '@/lib/tenantFormat';
 import { ApiError } from '@/lib/api';
 import {
     blockStyleClass,
@@ -47,8 +51,11 @@ import {
 import { useTheme } from '@/lib/theme';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { isContentWidget, type WidgetSpec } from '@/types/dashboard';
+import { isContentWidget, type DashboardFilterValue, type WidgetSpec } from '@/types/dashboard';
 
+import type { GridLayoutChange } from './DashboardGrid';
+import { activeFilterValues, DashboardFiltersBar, readDashboardFilterDefs } from './DashboardFiltersBar';
+import { DashboardFiltersDialog } from './DashboardFiltersDialog';
 import { DashboardSettingsDialog } from './DashboardSettingsDialog';
 import { SaveDashboardTemplateDialog } from './SaveDashboardTemplateDialog';
 import { WidgetFormDialog } from './WidgetFormDialog';
@@ -65,6 +72,37 @@ import { WidgetFormDialog } from './WidgetFormDialog';
 export function DashboardPage(): JSX.Element {
     const { dashboardId } = useParams<{ dashboardId: string }>();
     const id = Number(dashboardId);
+    // v0.1.286 — una instancia POR tablero: la ruta no se remonta al pasar de
+    // un tablero a otro, y el período global (estado local) del anterior se
+    // filtraba al siguiente.
+    return <DashboardView key={id} id={id} />;
+}
+
+function readStored<T>(key: string, fallback: T): T {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw === null ? fallback : (JSON.parse(raw) as T);
+    } catch {
+        return fallback;
+    }
+}
+
+/** Texto del período global ("Este mes", "01/07/2026 → 31/07/2026"). */
+function periodLabel(preset: string): string {
+    const custom = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(preset);
+    if (custom) return `${formatDateStr(custom[1]!)} → ${formatDateStr(custom[2]!)}`;
+    return DATE_RANGE_PRESETS.find((p) => p.id === preset)?.label ?? preset;
+}
+
+/** ¿El período global aplica a este widget? (necesita un campo de fecha). */
+function periodApplies(widget: WidgetSpec): boolean {
+    if (isContentWidget(widget.type)) return false;
+    const period = widget.config.period;
+    if (period && typeof period === 'object' && typeof period.field_id === 'number' && period.field_id > 0) return true;
+    return typeof widget.config.date_field_id === 'number' && widget.config.date_field_id > 0;
+}
+
+function DashboardView({ id }: { id: number }): JSX.Element {
     const navigate = useNavigate();
 
     const dashboard = useDashboard(id);
@@ -88,6 +126,33 @@ export function DashboardPage(): JSX.Element {
             return '';
         }
     });
+    // v0.1.286 — filtros del TABLERO: el valor elegido por campo (se
+    // recuerda en este navegador, por tablero).
+    const [filterValues, setFilterValues] = useState<Record<string, DashboardFilterValue['value']>>(
+        () => readStored(`imcrm-dash-filters-${id}`, {}),
+    );
+    const changeFilter = (fieldId: number, value: DashboardFilterValue['value'] | null): void => {
+        setFilterValues((cur) => {
+            const next = { ...cur };
+            if (value === null) delete next[String(fieldId)];
+            else next[String(fieldId)] = value;
+            try {
+                localStorage.setItem(`imcrm-dash-filters-${id}`, JSON.stringify(next));
+            } catch { /* storage lleno/privado — sólo pierde persistencia */ }
+            return next;
+        });
+    };
+    const [filtersDialogOpen, setFiltersDialogOpen] = useState(false);
+    const canEdit = useCanEditDashboard(dashboard.data);
+    const canManage = useCan(CAP.MANAGE_DASHBOARDS);
+    const filterDefs = useMemo(
+        () => readDashboardFilterDefs(dashboard.data?.settings),
+        [dashboard.data?.settings],
+    );
+    const scope = useMemo<DashboardBundleScope>(
+        () => ({ period: globalPeriod, filters: activeFilterValues(filterDefs, filterValues) }),
+        [globalPeriod, filterDefs, filterValues],
+    );
     // v0.1.105 — período PERSONALIZADO (rango fijo): el valor viaja como
     // `custom:YYYY-MM-DD:YYYY-MM-DD` en el mismo string del período global.
     const customInit = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(
@@ -127,10 +192,10 @@ export function DashboardPage(): JSX.Element {
     useEffect(() => {
         if (! tvMode) return;
         const t = window.setInterval(() => {
-            void qc.invalidateQueries({ queryKey: dashboardsKeys.widgetsData(id, globalPeriod) });
+            void qc.invalidateQueries({ queryKey: dashboardsKeys.widgetsDataOf(id) });
         }, 60_000);
         return () => window.clearInterval(t);
-    }, [tvMode, id, globalPeriod, qc]);
+    }, [tvMode, id, qc]);
     const enterTv = (): void => {
         void rootRef.current?.requestFullscreen?.().catch(() => undefined);
     };
@@ -171,21 +236,22 @@ export function DashboardPage(): JSX.Element {
      * comparamos contra los layouts actuales y solo guardamos si hay
      * cambio real — evita un PATCH al abrir cada dashboard.
      */
-    const handleLayoutChange = async (
-        layouts: Array<{ id: string; x: number; y: number; w: number; h: number }>,
-    ): Promise<void> => {
-        if (!dashboard.data) return;
+    const handleLayoutChange = async (layouts: GridLayoutChange[]): Promise<void> => {
+        if (!dashboard.data || !canEdit) return;
         const map = new Map(layouts.map((l) => [l.id, l]));
         let changed = false;
         const widgets = dashboard.data.widgets.map((w) => {
             const next = map.get(w.id);
             if (!next) return w;
             const cur = w.layout ?? { x: 0, y: 0, w: 4, h: 3 };
-            if (cur.x === next.x && cur.y === next.y && cur.w === next.w && cur.h === next.h) {
+            if (cur.x === next.x && cur.y === next.y && cur.w === next.w && cur.h === next.h && cur.hm === next.hm) {
                 return w;
             }
             changed = true;
-            return { ...w, layout: { x: next.x, y: next.y, w: next.w, h: next.h } };
+            return {
+                ...w,
+                layout: { x: next.x, y: next.y, w: next.w, h: next.h, ...(next.hm !== undefined ? { hm: next.hm } : {}) },
+            };
         });
         if (!changed) return;
         try {
@@ -315,9 +381,14 @@ export function DashboardPage(): JSX.Element {
     // blanco con un fondo de página oscuro).
     const canvasStyle: React.CSSProperties =
         page.bg !== undefined ? { backgroundColor: page.bg, borderRadius: 12, padding: 16 } : {};
+    // v0.1.286 — sin permiso (o presentando) nada se edita: ni botones, ni
+    // arrastre, ni el cursor de "agarrar".
+    const editing = canEdit && !tvMode;
+    const dataWidgets = d.widgets.filter((w) => !isContentWidget(w.type));
+    const unaffected = globalPeriod !== '' ? dataWidgets.filter((w) => !periodApplies(w)) : [];
 
     return (
-        <DashboardGlobalPeriodContext.Provider value={globalPeriod}>
+        <DashboardBundleContext.Provider value={scope}>
         <div
             ref={rootRef}
             className={cn(
@@ -325,11 +396,12 @@ export function DashboardPage(): JSX.Element {
                 // En fullscreen el elemento ES la pantalla: fondo del tema +
                 // scroll propio + aire.
                 tvMode && 'imcrm-overflow-y-auto imcrm-bg-background imcrm-p-6',
+                !editing && '[&_.imcrm-drag-handle]:imcrm-cursor-auto',
             )}
             style={chromeStyle}
         >
-            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-flex-wrap sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-x-4">
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1 sm:imcrm-min-w-[12rem] sm:imcrm-flex-1 sm:imcrm-basis-0">
                     <Button
                         asChild
                         variant="ghost"
@@ -346,7 +418,7 @@ export function DashboardPage(): JSX.Element {
                         {d.user_id === null && (
                             <Badge variant="outline">{__('Compartido')}</Badge>
                         )}
-                        {! tvMode && (
+                        {editing && (
                         <button
                             type="button"
                             onClick={() => setSettingsDialogOpen(true)}
@@ -362,7 +434,12 @@ export function DashboardPage(): JSX.Element {
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">{d.description}</p>
                     )}
                 </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                {/* v0.1.286 — barra COMPACTA (h-8, 13 px) que no se parte: a
+                    1440 px «Añadir widget» caía a un segundo renglón y el
+                    selector de período se cortaba. Si no entra junto al
+                    título, la barra entera baja a su propio renglón (el
+                    título nunca queda aplastado en una columna angosta). */}
+                <div className="imcrm-flex imcrm-max-w-full imcrm-flex-wrap imcrm-items-center imcrm-gap-2 sm:imcrm-flex-none">
                     {/* v0.1.105 — en modo presentación se OCULTA el chrome de
                       * edición: queda el período y un botón para SALIR. */}
                     {/* v0.1.100 — período global: pisa el período de los
@@ -379,11 +456,11 @@ export function DashboardPage(): JSX.Element {
                                 changeGlobalPeriod(v);
                             }
                         }}
-                        className="imcrm-h-9 imcrm-w-auto"
+                        className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
                         aria-label={__('Período global')}
-                        title={__('Período global del tablero')}
+                        title={__('Período para todo el tablero: pisa el período de cada widget con campo de fecha')}
                     >
-                        <option value="">{__('Período: todos')}</option>
+                        <option value="">{__('Cada widget con su período')}</option>
                         {DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom').map((p) => (
                             <option key={p.id} value={p.id}>{p.label}</option>
                         ))}
@@ -396,7 +473,7 @@ export function DashboardPage(): JSX.Element {
                                 value={customFrom}
                                 onChange={(e) => applyCustom(e.target.value, customTo)}
                                 aria-label={__('Desde')}
-                                className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                                className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-[13px]"
                             />
                             <span className="imcrm-text-xs imcrm-text-muted-foreground">→</span>
                             <input
@@ -404,14 +481,27 @@ export function DashboardPage(): JSX.Element {
                                 value={customTo}
                                 onChange={(e) => applyCustom(customFrom, e.target.value)}
                                 aria-label={__('Hasta')}
-                                className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                                className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-[13px]"
                             />
                         </span>
                     )}
+                    {unaffected.length > 0 && (
+                        <span
+                            className="imcrm-max-w-[16rem] imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground"
+                            title={unaffected.map((w) => w.title || __('Sin título')).join(', ')}
+                            data-testid="imcrm-period-unaffected"
+                        >
+                            {unaffected.length === 1
+                                ? sprintf(__('No aplica a «%s» (sin campo de fecha)'), unaffected[0]!.title || __('Sin título'))
+                                : sprintf(__('No aplica a %d widgets sin campo de fecha'), unaffected.length)}
+                        </span>
+                    )}
+                    <DashboardFiltersBar defs={filterDefs} values={filterValues} onChange={changeFilter} />
                     {tvMode ? (
                         <Button
                             variant="outline"
-                            className="imcrm-gap-2"
+                            size="sm"
+                            className="imcrm-gap-1.5"
                             onClick={exitTv}
                             title={__('Salir del modo presentación')}
                         >
@@ -421,7 +511,8 @@ export function DashboardPage(): JSX.Element {
                     ) : (
                         <Button
                             variant="outline"
-                            className="imcrm-gap-2"
+                            size="sm"
+                            className="imcrm-gap-1.5"
                             onClick={enterTv}
                             title={__('Modo presentación (pantalla completa + refresco automático)')}
                         >
@@ -429,9 +520,9 @@ export function DashboardPage(): JSX.Element {
                             {__('Presentar')}
                         </Button>
                     )}
-                    {! tvMode && (
+                    {! tvMode && (canEdit || canManage) && (
                         <>
-                            <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
+                            {canEdit && <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />}
                             {/* v0.1.252 — las acciones ocasionales van a un menú: el
                                 header tenía siete botones en fila. */}
                             <DropdownMenu>
@@ -439,6 +530,7 @@ export function DashboardPage(): JSX.Element {
                                     <Button
                                         variant="outline"
                                         size="icon"
+                                        className="imcrm-h-8 imcrm-w-8"
                                         aria-label={__('Más acciones')}
                                         title={__('Más acciones')}
                                         data-testid="imcrm-dashboard-more"
@@ -447,28 +539,44 @@ export function DashboardPage(): JSX.Element {
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="imcrm-w-56">
-                                    <DropdownMenuItem onSelect={() => setSettingsDialogOpen(true)}>
-                                        <Settings className="imcrm-h-4 imcrm-w-4" />
-                                        {__('Configuración')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => setSaveTemplateOpen(true)}>
-                                        <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
-                                        {__('Guardar como plantilla')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        onSelect={() => void handleDeleteDashboard()}
-                                        className="imcrm-text-destructive focus:imcrm-text-destructive"
-                                    >
-                                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                        {__('Eliminar dashboard')}
-                                    </DropdownMenuItem>
+                                    {canEdit && (
+                                        <DropdownMenuItem onSelect={() => setSettingsDialogOpen(true)}>
+                                            <Settings className="imcrm-h-4 imcrm-w-4" />
+                                            {__('Configuración')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canEdit && (
+                                        <DropdownMenuItem onSelect={() => setFiltersDialogOpen(true)}>
+                                            <Filter className="imcrm-h-4 imcrm-w-4" />
+                                            {__('Filtros del tablero')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canManage && (
+                                        <DropdownMenuItem onSelect={() => setSaveTemplateOpen(true)}>
+                                            <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
+                                            {__('Guardar como plantilla')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canEdit && (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                onSelect={() => void handleDeleteDashboard()}
+                                                className="imcrm-text-destructive focus:imcrm-text-destructive"
+                                            >
+                                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                                {__('Eliminar dashboard')}
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
                                 </DropdownMenuContent>
                             </DropdownMenu>
-                            <Button onClick={handleAddWidget} className="imcrm-gap-2">
-                                <Plus className="imcrm-h-4 imcrm-w-4" />
-                                {__('Añadir widget')}
-                            </Button>
+                            {canEdit && (
+                                <Button size="sm" onClick={handleAddWidget} className="imcrm-gap-1.5 imcrm-whitespace-nowrap">
+                                    <Plus className="imcrm-h-4 imcrm-w-4" />
+                                    {__('Añadir widget')}
+                                </Button>
+                            )}
                         </>
                     )}
                 </div>
@@ -480,10 +588,13 @@ export function DashboardPage(): JSX.Element {
                 onOpenChange={setSettingsDialogOpen}
             />
             <SaveDashboardTemplateDialog dashboard={d} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
+            {filtersDialogOpen && (
+                <DashboardFiltersDialog dashboard={d} open onOpenChange={setFiltersDialogOpen} />
+            )}
 
             <div style={canvasStyle}>
             {d.widgets.length === 0 ? (
-                <EmptyState onAdd={handleAddWidget} />
+                <EmptyState onAdd={canEdit ? handleAddWidget : undefined} />
             ) : (
                 <Suspense
                     fallback={
@@ -495,6 +606,7 @@ export function DashboardPage(): JSX.Element {
                 >
                     <DashboardGrid
                         widgets={d.widgets}
+                        editable={editing}
                         onLayoutChange={(layouts) => void handleLayoutChange(layouts)}
                     >
                         {(widget) => {
@@ -541,8 +653,8 @@ export function DashboardPage(): JSX.Element {
                                 )}
                                 style={styleCss}
                             >
-                                <PeriodBadge widget={widget} />
-                                {! tvMode && (
+                                <PeriodBadge widget={widget} globalPeriod={globalPeriod} />
+                                {editing && (
                                 <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100">
                                     <button
                                         type="button"
@@ -571,7 +683,15 @@ export function DashboardPage(): JSX.Element {
                                     </button>
                                 </div>
                                 )}
-                                <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+                                {/* v0.1.286 — un bloque de CONTENIDO (imagen, texto
+                                    sin título) no tiene encabezado del que tomarlo:
+                                    al editar, la tarjeta ENTERA es el asa. */}
+                                <div
+                                    className={cn(
+                                        'imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col',
+                                        editing && isContentWidget(widget.type) && 'imcrm-drag-handle imcrm-cursor-grab active:imcrm-cursor-grabbing',
+                                    )}
+                                >
                                     <WidgetRenderer dashboardId={id} widget={widget} />
                                 </div>
                             </article>
@@ -582,38 +702,53 @@ export function DashboardPage(): JSX.Element {
             )}
             </div>
 
-            <WidgetFormDialog
-                initial={editingWidget}
-                open={widgetDialogOpen}
-                onOpenChange={setWidgetDialogOpen}
-                onSave={(w) => void handleSaveWidget(w)}
-            />
+            {canEdit && (
+                <WidgetFormDialog
+                    initial={editingWidget}
+                    open={widgetDialogOpen}
+                    onOpenChange={setWidgetDialogOpen}
+                    onSave={(w) => void handleSaveWidget(w)}
+                    dashboardId={id}
+                    scope={scope}
+                />
+            )}
         </div>
-        </DashboardGlobalPeriodContext.Provider>
+        </DashboardBundleContext.Provider>
     );
 }
 
 /**
- * Badge con el período relativo del widget (si lo configuró). Visible
- * en reposo en la esquina del card; al hover se desvanece para dejar
- * lugar a los botones de editar/eliminar.
+ * Badge con el período del widget. Visible en reposo en la esquina del card;
+ * al hover se desvanece para dejar lugar a los botones de editar/eliminar.
+ * v0.1.286 — con un período GLOBAL activo muestra el que de verdad aplica
+ * (el global, resaltado) en los widgets con campo de fecha.
  */
-function PeriodBadge({ widget }: { widget: WidgetSpec }): JSX.Element | null {
+function PeriodBadge({ widget, globalPeriod }: { widget: WidgetSpec; globalPeriod: string }): JSX.Element | null {
     const period = widget.config.period;
-    const preset = period?.preset;
+    const overridden = globalPeriod !== '' && periodApplies(widget);
+    const preset = overridden ? globalPeriod : period?.preset;
     if (! preset) return null;
-    const label = preset === 'custom' && period?.from !== undefined && period?.to !== undefined
-        ? `${period.from} → ${period.to}`
-        : DATE_RANGE_PRESETS.find((p) => p.id === preset)?.label ?? preset;
+    const label = overridden
+        ? periodLabel(globalPeriod)
+        : preset === 'custom' && period?.from !== undefined && period?.to !== undefined
+            ? `${formatDateStr(period.from)} → ${formatDateStr(period.to)}`
+            : DATE_RANGE_PRESETS.find((p) => p.id === preset)?.label ?? preset;
     return (
-        <span className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-bg-muted/60 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-opacity group-hover:imcrm-opacity-0">
+        <span
+            className={cn(
+                'imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-transition-opacity group-hover:imcrm-opacity-0',
+                overridden ? 'imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-bg-muted/60 imcrm-text-muted-foreground',
+            )}
+            title={overridden ? __('Período del tablero') : __('Período del widget')}
+            data-testid="imcrm-period-badge"
+        >
             <CalendarRange className="imcrm-h-3 imcrm-w-3" />
             {label}
         </span>
     );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }): JSX.Element {
+function EmptyState({ onAdd }: { onAdd?: () => void }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-12 imcrm-text-center">
             <span className="imcrm-flex imcrm-h-12 imcrm-w-12 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
@@ -621,12 +756,16 @@ function EmptyState({ onAdd }: { onAdd: () => void }): JSX.Element {
             </span>
             <h2 className="imcrm-text-base imcrm-font-medium">{__('Dashboard vacío')}</h2>
             <p className="imcrm-max-w-md imcrm-text-sm imcrm-text-muted-foreground">
-                {__('Agrega tu primer widget: un indicador, un gráfico de barras o de tendencia.')}
+                {onAdd
+                    ? __('Agrega tu primer widget: un indicador, un gráfico de barras o de tendencia.')
+                    : __('Este tablero todavía no tiene widgets.')}
             </p>
-            <Button onClick={onAdd} className="imcrm-mt-2 imcrm-gap-2">
-                <Plus className="imcrm-h-4 imcrm-w-4" />
-                {__('Añadir widget')}
-            </Button>
+            {onAdd && (
+                <Button onClick={onAdd} className="imcrm-mt-2 imcrm-gap-2">
+                    <Plus className="imcrm-h-4 imcrm-w-4" />
+                    {__('Añadir widget')}
+                </Button>
+            )}
         </div>
     );
 }

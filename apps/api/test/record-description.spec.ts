@@ -1,6 +1,6 @@
 import { sanitizeRichDoc, type RichDoc } from '@imagina-base/shared';
 import { memberships, mentions, users } from '../src/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
@@ -34,6 +34,7 @@ describe('Descripción del registro (v0.1.133)', () => {
     let recs: RecordsService;
     let lists_: ListsService;
     let fields_: FieldsService;
+    let activity_: ActivityService;
     let tenantId: number;
     let titleKey: string;
 
@@ -42,13 +43,14 @@ describe('Descripción del registro (v0.1.133)', () => {
         const tenantDb = new TenantDb(pg.db);
         lists_ = new ListsService(tenantDb, new ListsRepository(), rt);
         fields_ = new FieldsService(tenantDb, new FieldsRepository(), lists_, rt);
+        activity_ = new ActivityService(tenantDb, new ActivityRepository(), lists_);
         recs = new RecordsService(
             tenantDb,
             new RecordsRepository(),
             lists_,
             fields_,
             rt,
-            new ActivityService(tenantDb, new ActivityRepository(), lists_),
+            activity_,
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
@@ -76,6 +78,38 @@ describe('Descripción del registro (v0.1.133)', () => {
     });
 
     const create = () => recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Mudanza' } });
+
+    it('actividad: la descripción deja UNA entrada legible {from,to} y el autoguardado se junta', async () => {
+        const rec = await create();
+        const descEntries = async () =>
+            (await activity_.list(tenantId, 'tareas', { recordId: rec.id })).data.filter((a) => 'description' in a.diff);
+
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, { description: doc('Hola') });
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, { description: doc('Hola mundo') });
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, { description: doc('Hola mundo, plan') });
+        let entries = await descEntries();
+        // Tres autoguardados de la misma persona = una sola entrada.
+        expect(entries).toHaveLength(1);
+        expect(entries[0]!.diff.description).toEqual({ from: '', to: 'Hola mundo, plan' });
+
+        // Otra persona: entrada propia, con lo que había antes.
+        await recs.updateDescription(tenantId, { userId: 3, role: 'admin' }, 'tareas', rec.id, { description: doc('Otro texto') });
+        entries = await descEntries();
+        expect(entries).toHaveLength(2);
+        expect(entries[0]!.diff.description).toEqual({ from: 'Hola mundo, plan', to: 'Otro texto' });
+
+        // Pasada la ventana (o si otra cosa quedó en el medio), se suma otra.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.execute(sql`update activity set created_at = now() - interval '11 minutes' where record_id = ${rec.id}`),
+        );
+        await recs.updateDescription(tenantId, { userId: 3, role: 'admin' }, 'tareas', rec.id, { description: doc('Otro texto final') });
+        entries = await descEntries();
+        expect(entries).toHaveLength(3);
+        // El documento entero nunca va a la bitácora: sólo un resumen corto.
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, { description: doc('x'.repeat(400)) });
+        const last = (await descEntries())[0]!.diff.description as { to: string };
+        expect(last.to.length).toBeLessThanOrEqual(121);
+    });
 
     it('round-trip: se guarda, se lee, y el listado sólo dice que existe', async () => {
         const rec = await create();
@@ -187,9 +221,11 @@ describe('Descripción del registro (v0.1.133)', () => {
             expanded: Record<string, { records: { data: Array<{ id: number }>; meta: { total: number } } }>;
         };
         // Un grupo por combinación EXACTA, clave normalizada (set ordenado).
+        // v0.1.286 — en el orden del CATÁLOGO (vip es la 1ª opción, promo la
+        // 2ª): primero «VIP», después «VIP + Promo»; «(sin valor)» al final.
         expect(bundle.buckets).toEqual([
-            { value: '["promo", "vip"]', count: 2 },
             { value: '["vip"]', count: 1 },
+            { value: '["promo", "vip"]', count: 2 },
             { value: null, count: 1 },
         ]);
         // Las filas del grupo son las que tienen exactamente ese conjunto —

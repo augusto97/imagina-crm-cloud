@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AiFieldValue } from '../AiFieldValue';
-import { Lock, Pencil } from 'lucide-react';
+import { ExternalLink, Lock, Mail, Pencil, Phone } from 'lucide-react';
+import { formatPhone } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
@@ -8,8 +9,10 @@ import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
 import { DateCellEditor } from '@/admin/records/DateCellEditor';
-import { FileFieldControl } from '@/admin/records/RecordFieldsForm';
+import { FileFieldControl } from '@/admin/records/FileFieldControl';
+import { maxFilesOf } from '@/admin/records/fileIds';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { isImageUrlField } from '@/lib/imageProxy';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -21,6 +24,7 @@ import { RatingControl, type RatingIcon } from '@/components/fields/RatingContro
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 
 import { FieldValueDisplay } from './FieldValueDisplay';
+import { isCheckedValue } from '../renderCellValue';
 
 interface CompactFieldRowProps {
     field: FieldEntity;
@@ -102,7 +106,9 @@ export function CompactFieldRow({
         // v0.1.158 — la calificación se pone clickeando la estrella.
         field.type === 'rating' ||
         // v0.1.209 — relación: selector de registros con buscador.
-        field.type === 'relation';
+        field.type === 'relation' ||
+        // Archivos: la lista con sus nombres + subir/arrastrar, siempre a la vista.
+        field.type === 'file';
 
     // Tipos read-only (computed / lookup / rollup): nunca editables. Y en
     // una lista de tienda, lo que se edita en WooCommerce (v0.1.213).
@@ -131,31 +137,7 @@ export function CompactFieldRow({
             onBlur={() => setEditing(false)}
         />
     ) : (
-        <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className={cn(
-                'imcrm-inline-flex imcrm-min-h-[24px] imcrm-w-full imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded imcrm-py-0.5 imcrm-text-left imcrm-text-sm',
-                'imcrm-text-foreground',
-            )}
-        >
-            <span
-                className={cn(
-                    'imcrm-min-w-0 imcrm-flex-1',
-                    // Un texto largo se lee entero en la ficha; el resto, en una línea.
-                    property && field.type === 'long_text' ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
-                )}
-            >
-                <FieldValueDisplay field={field} value={value} />
-            </span>
-            <Pencil
-                className={cn(
-                    'imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground',
-                    'imcrm-opacity-0 group-hover:imcrm-opacity-60 imcrm-transition-opacity',
-                )}
-                aria-hidden
-            />
-        </button>
+        <ReadButton field={field} value={value} property={property} onEdit={() => setEditing(true)} />
     );
 
     if (property) {
@@ -355,9 +337,6 @@ function EditingControl({
                     className="imcrm-h-8 imcrm-text-sm"
                 />
             );
-        case 'file':
-            // Upload real (ADR-S16) — mismo control que el form completo.
-            return <FileFieldControl id={id} value={value} onChange={onChange} />;
         default:
             return (
                 <Input
@@ -433,6 +412,10 @@ function InlineControl({
         );
     }
 
+    if (field.type === 'file') {
+        return <FileFieldControl id={id} value={value} onChange={onChange} maxFiles={maxFilesOf(field.config)} compact />;
+    }
+
     if (field.type === 'relation') {
         return <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} variant={flat ? 'cell' : 'default'} wrap={flat} />;
     }
@@ -459,7 +442,7 @@ function InlineControl({
                 <input
                     id={id}
                     type="checkbox"
-                    checked={Boolean(value)}
+                    checked={isCheckedValue(value)}
                     onChange={(e) => onChange(e.target.checked)}
                     className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                 />
@@ -503,4 +486,99 @@ function InlineControl({
     }
 
     return <span>{String(value)}</span>;
+}
+
+// ─── Lectura con click para editar ──────────────────────────────────────
+
+function isEmptyValue(value: unknown): boolean {
+    return value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
+}
+
+/**
+ * El destino de un valor "enlazable" (correo, web, teléfono). Va en un icono
+ * APARTE del botón de editar: con el enlace adentro del botón, tocar un correo
+ * en el teléfono abría la app de mail en vez de dejar corregirlo.
+ */
+function linkOf(field: FieldEntity, value: unknown): { href: string; text: string; icon: typeof Mail; label: string; external: boolean } | null {
+    if (typeof value !== 'string' || value.trim() === '') return null;
+    const v = value.trim();
+    if (field.type === 'email') return { href: `mailto:${v}`, text: v, icon: Mail, label: __('Escribir un correo'), external: false };
+    // Una URL que se muestra como imagen (miniatura de producto) sigue igual.
+    if (field.type === 'url' && !isImageUrlField(field.config)) {
+        const href = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+        return { href, text: v.replace(/^https?:\/\//i, '').replace(/\/$/, ''), icon: ExternalLink, label: __('Abrir el enlace'), external: true };
+    }
+    if (field.type === 'phone') {
+        const text = formatPhone(v);
+        return { href: `tel:${v.replace(/[^+\d]/g, '')}`, text: text === '' ? v : text, icon: Phone, label: __('Llamar'), external: false };
+    }
+    return null;
+}
+
+function ReadButton({
+    field,
+    value,
+    property,
+    onEdit,
+}: {
+    field: FieldEntity;
+    value: unknown;
+    property: boolean;
+    onEdit: () => void;
+}): JSX.Element {
+    const empty = isEmptyValue(value);
+    const link = empty ? null : linkOf(field, value);
+    return (
+        <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1">
+            <button
+                type="button"
+                onClick={onEdit}
+                aria-label={empty ? `${__('Agregar')} ${field.label}` : undefined}
+                title={empty ? undefined : `${__('Editar')} ${field.label}`}
+                className={cn(
+                    'imcrm-inline-flex imcrm-min-h-[24px] imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded imcrm-py-0.5 imcrm-text-left imcrm-text-sm',
+                    'imcrm-text-foreground',
+                    // Vacío: que se note que ahí se escribe (antes era un «—» mudo).
+                    empty && 'imcrm-border imcrm-border-dashed imcrm-border-input imcrm-px-2 hover:imcrm-border-primary/50',
+                )}
+            >
+                <span
+                    className={cn(
+                        'imcrm-min-w-0 imcrm-flex-1',
+                        // Un texto largo se lee entero en la ficha; el resto, en una línea.
+                        property && field.type === 'long_text' ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
+                    )}
+                >
+                    {empty ? (
+                        <span className="imcrm-text-muted-foreground/70">{__('Agregar…')}</span>
+                    ) : link ? (
+                        <span className="imcrm-truncate">{link.text}</span>
+                    ) : (
+                        <FieldValueDisplay field={field} value={value} />
+                    )}
+                </span>
+                <Pencil
+                    className={cn(
+                        'imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground',
+                        // En táctil no hay hover: el lápiz se ve siempre (tenue).
+                        'imcrm-opacity-0 group-hover:imcrm-opacity-60 [@media(hover:none)]:imcrm-opacity-50 imcrm-transition-opacity',
+                    )}
+                    aria-hidden
+                />
+            </button>
+            {link && (
+                <a
+                    href={link.href}
+                    target={link.external ? '_blank' : undefined}
+                    rel={link.external ? 'noreferrer' : undefined}
+                    title={link.label}
+                    aria-label={link.label}
+                    onClick={(e) => e.stopPropagation()}
+                    className="imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-primary hover:imcrm-bg-accent"
+                >
+                    <link.icon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                </a>
+            )}
+        </span>
+    );
 }

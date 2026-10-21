@@ -15,6 +15,7 @@ import {
     actorOf,
     changeSentence,
     changesOf,
+    descriptionSentence,
     formatActivityValue,
     relativeTime,
     type FieldChange,
@@ -134,6 +135,23 @@ function ChangeLine({
     exact: string;
 }): JSX.Element {
     const { verb, from, to } = changeSentence(change);
+    if (change.description) {
+        // La descripción: "editó la descripción" + un adelanto del texto.
+        return (
+            <p className="imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
+                {descriptionSentence(change)}
+                {time !== null && (
+                    <time dateTime={time} title={exact} className="imcrm-whitespace-nowrap imcrm-text-muted-foreground/80">
+                        {' · '}
+                        {relativeTime(time)}
+                    </time>
+                )}
+                {to !== null && (
+                    <span className="imcrm-mt-0.5 imcrm-block imcrm-truncate imcrm-italic imcrm-text-muted-foreground/80">«{to}»</span>
+                )}
+            </p>
+        );
+    }
     return (
         <p className="imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
             {verb}{' '}

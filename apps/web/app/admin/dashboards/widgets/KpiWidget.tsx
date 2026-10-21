@@ -1,25 +1,50 @@
 import {
     AlertCircle,
     Briefcase,
+    Bug,
     Calendar,
     CheckCircle2,
+    CheckSquare,
+    ClipboardList,
+    Clock,
+    Database,
     DollarSign,
+    FileText,
+    Flag,
     Heart,
+    Home,
+    Layers,
+    LifeBuoy,
+    Link,
+    List,
     Loader2,
+    Megaphone,
+    Package,
+    PieChart,
+    Receipt,
+    Rocket,
     ShoppingCart,
     Star,
+    Tag,
     Target,
     TrendingUp,
+    Truck,
     Users,
+    Wallet,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
+import { useFields } from '@/hooks/useFields';
+import { withAffixes } from '@/lib/affixes';
 import { __ } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
+import type { FieldEntity } from '@/types/field';
+
+import { formatMetricValue } from './widgetFormat';
 
 import { WidgetError } from './WidgetError';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -47,6 +72,29 @@ export const KPI_ICONS: Record<string, LucideIcon> = {
     alert: AlertCircle,
     briefcase: Briefcase,
     heart: Heart,
+    // v0.1.286 — los que usan las plantillas del sistema (antes el KPI
+    // salía SIN icono: el nombre no estaba en el set).
+    wallet: Wallet,
+    flag: Flag,
+    receipt: Receipt,
+    layers: Layers,
+    package: Package,
+    clipboard: ClipboardList,
+    check_square: CheckSquare,
+    tag: Tag,
+    shopping_cart: ShoppingCart,
+    rocket: Rocket,
+    lifebuoy: LifeBuoy,
+    home: Home,
+    file_text: FileText,
+    clock: Clock,
+    bug: Bug,
+    truck: Truck,
+    pie_chart: PieChart,
+    megaphone: Megaphone,
+    list: List,
+    link: Link,
+    database: Database,
 };
 
 export const KPI_ICON_OPTIONS: Array<{ value: string; label: string }> = [
@@ -63,6 +111,16 @@ export const KPI_ICON_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'alert', label: __('Alerta') },
     { value: 'briefcase', label: __('Negocio') },
     { value: 'heart', label: __('Corazón') },
+    { value: 'wallet', label: __('Billetera') },
+    { value: 'receipt', label: __('Factura') },
+    { value: 'package', label: __('Paquete') },
+    { value: 'layers', label: __('Capas') },
+    { value: 'tag', label: __('Etiqueta') },
+    { value: 'flag', label: __('Bandera') },
+    { value: 'clipboard', label: __('Tareas') },
+    { value: 'clock', label: __('Reloj') },
+    { value: 'truck', label: __('Envío') },
+    { value: 'list', label: __('Lista') },
 ];
 
 /**
@@ -75,6 +133,10 @@ export const KPI_ICON_OPTIONS: Array<{ value: string; label: string }> = [
 export function KpiWidget({ dashboardId, widget }: KpiWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
     const subtitle = useWidgetSubtitle(widget);
+    // v0.1.286 — el valor se formatea según el CAMPO medido (duración,
+    // porcentaje, moneda con su símbolo, fecha en el formato de la empresa).
+    const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
 
     const iconName = typeof widget.config.icon === 'string' ? widget.config.icon : '';
     const Icon = KPI_ICONS[iconName];
@@ -109,6 +171,7 @@ export function KpiWidget({ dashboardId, widget }: KpiWidgetProps): JSX.Element 
                         prefix={prefix}
                         suffix={suffix}
                         goal={goal}
+                        field={metricField}
                     />
                 ) : null}
             </div>
@@ -123,6 +186,7 @@ function Body({
     prefix,
     suffix,
     goal,
+    field,
 }: {
     value: number | string;
     metric: string;
@@ -130,7 +194,9 @@ function Body({
     prefix: string;
     suffix: string;
     goal: number | undefined;
+    field: FieldEntity | undefined;
 }): JSX.Element {
+    const formatted = formatMetricValue(value, metric, field, { withSymbol: prefix === '' });
     const numeric = typeof value === 'number' ? value : null;
     const reached = goal !== undefined && numeric !== null && numeric >= goal;
     const pct = goal !== undefined && numeric !== null
@@ -152,7 +218,7 @@ function Body({
                             : 'imcrm-text-amber-600 dark:imcrm-text-amber-400',
                 )}
             >
-                {prefix}{formatValue(value, metric)}{suffix}
+                {withAffixes(formatted, prefix, suffix)}
             </span>
 
             {goal !== undefined && pct !== null && (
@@ -167,7 +233,7 @@ function Body({
                         />
                     </div>
                     <span className="imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">
-                        {pct.toFixed(0)}% {__('de la meta')} ({prefix}{formatNumber(goal)}{suffix})
+                        {pct.toFixed(0)}% {__('de la meta')} ({withAffixes(field ? formatMetricValue(goal, metric, field, { withSymbol: prefix === '' }) : formatNumber(goal), prefix, suffix)})
                     </span>
                 </div>
             )}
@@ -205,16 +271,4 @@ function Sparkline({ values }: { values: number[] }): JSX.Element {
             />
         </svg>
     );
-}
-
-function formatValue(value: number | string, metric: string): string {
-    // 0.36.9: min/max sobre fechas devuelve string ISO; el resto numérico.
-    if (typeof value === 'string') return value;
-    if (metric === 'avg') {
-        return formatNumber(value, { minFrac: 2, maxFrac: 2 });
-    }
-    if (Number.isInteger(value)) {
-        return formatNumber(value, { maxFrac: 0 });
-    }
-    return formatNumber(value, { maxFrac: 2 });
 }

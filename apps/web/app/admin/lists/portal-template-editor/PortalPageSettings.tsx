@@ -108,7 +108,7 @@ export function PortalPageSettingsButton({
                                 min={480}
                                 max={2400}
                                 value={value.max_width ?? ''}
-                                placeholder={__('896 (default)')}
+                                placeholder={__('896 (por defecto)')}
                                 onChange={(e) => {
                                     const n = Number(e.target.value);
                                     set({
@@ -137,7 +137,7 @@ export function PortalPageSettingsButton({
                                 }
                                 aria-label={__('Tipografía')}
                             >
-                                <option value="sans">{__('Moderna (default)')}</option>
+                                <option value="sans">{__('Moderna (por defecto)')}</option>
                                 <option value="serif">{__('Serif (editorial)')}</option>
                                 <option value="rounded">{__('Redondeada (amigable)')}</option>
                                 <option value="mono">{__('Monoespaciada (técnica)')}</option>

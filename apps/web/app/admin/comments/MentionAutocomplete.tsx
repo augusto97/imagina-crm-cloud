@@ -102,6 +102,8 @@ export function MentionAutocomplete({
         <div
             role="listbox"
             aria-label={__('Sugerencias de menciones')}
+            // Menú propio abierto: Esc lo cierra a él, no a la ficha.
+            data-imcrm-floating-menu=""
             className={cn(
                 'imcrm-absolute imcrm-z-50 imcrm-w-64 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-md',
             )}

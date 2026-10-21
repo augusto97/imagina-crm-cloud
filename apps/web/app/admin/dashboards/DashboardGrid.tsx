@@ -21,10 +21,25 @@ import { useContainerWidth } from './widgets/useContainerWidth';
 // así que un grid no-responsive de 12 columnas fijas es lo correcto.
 const SizedGrid = WidthProvider(GridLayout);
 
+/** Layout que se persiste al soltar (`hm` = alto propio en el celular). */
+export interface GridLayoutChange {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    hm?: number;
+}
+
 interface DashboardGridProps {
     widgets: WidgetSpec[];
-    onLayoutChange: (layouts: Array<{ id: string; x: number; y: number; w: number; h: number }>) => void;
+    onLayoutChange: (layouts: GridLayoutChange[]) => void;
     children: (widget: WidgetSpec) => React.ReactNode;
+    /**
+     * v0.1.286 — sin permiso para editar el tablero no se arrastra ni se
+     * redimensiona (antes se podía y el guardado terminaba en 403).
+     */
+    editable?: boolean;
 }
 
 /**
@@ -40,6 +55,7 @@ export function DashboardGrid({
     widgets,
     onLayoutChange,
     children,
+    editable = true,
 }: DashboardGridProps): JSX.Element {
     // v0.1.101 — en contenedores ANGOSTOS (celular) el grid de 12
     // columnas produce widgets-astilla ilegibles. Bajo 640px apilamos
@@ -56,18 +72,20 @@ export function DashboardGrid({
             return (a.layout?.x ?? 0) - (b.layout?.x ?? 0);
         });
         // v0.1.102 — el apilado conserva el RESIZE de ALTO (handle
-        // inferior, táctil): grid RGL de UNA columna, sin drag, y al
-        // soltar se persiste SOLO `h` — x/y/w del layout desktop quedan
-        // intactos (nunca se persiste el acomodo mobile).
+        // inferior, táctil): grid RGL de UNA columna, sin drag.
+        // v0.1.286 — y guarda un alto PROPIO del celular (`hm`): antes
+        // persistía `h` y achicar un widget en el teléfono lo achicaba
+        // también en el escritorio.
         const layout: LayoutItem[] = ordered.map((w, idx) => {
             const def = defaultLayoutForType(w.type);
             const min = minLayoutForType(w.type);
+            const desktopH = typeof w.layout?.h === 'number' && w.layout.h > 0 ? w.layout.h : def.h;
             return {
                 i: w.id,
                 x: 0,
                 y: idx,
                 w: 1,
-                h: typeof w.layout?.h === 'number' && w.layout.h > 0 ? w.layout.h : def.h,
+                h: typeof w.layout?.hm === 'number' && w.layout.hm > 0 ? w.layout.hm : desktopH,
                 minW: 1,
                 maxW: 1,
                 minH: min.minH,
@@ -78,7 +96,15 @@ export function DashboardGrid({
                 widgets.map((w) => {
                     const l = next.find((n) => n.i === w.id);
                     const cur = w.layout ?? defaultLayoutForType(w.type);
-                    return { id: w.id, x: cur.x, y: cur.y, w: cur.w, h: l !== undefined ? l.h : cur.h };
+                    const changed = l !== undefined && l.h !== (cur.hm ?? cur.h);
+                    return {
+                        id: w.id,
+                        x: cur.x,
+                        y: cur.y,
+                        w: cur.w,
+                        h: cur.h,
+                        ...(changed ? { hm: l.h } : cur.hm !== undefined ? { hm: cur.hm } : {}),
+                    };
                 }),
             );
         };
@@ -92,7 +118,7 @@ export function DashboardGrid({
                     margin={[12, 12]}
                     containerPadding={[0, 0]}
                     isDraggable={false}
-                    isResizable
+                    isResizable={editable}
                     resizeHandles={['s']}
                     compactType="vertical"
                     onResizeStop={handleMobileResize}
@@ -107,7 +133,7 @@ export function DashboardGrid({
 
     return (
         <div ref={wrapRef}>
-            <DesktopGrid widgets={widgets} onLayoutChange={onLayoutChange}>
+            <DesktopGrid widgets={widgets} onLayoutChange={onLayoutChange} editable={editable}>
                 {children}
             </DesktopGrid>
         </div>
@@ -118,6 +144,7 @@ function DesktopGrid({
     widgets,
     onLayoutChange,
     children,
+    editable = true,
 }: DashboardGridProps): JSX.Element {
     const layout: LayoutItem[] = widgets.map((w, i) => {
         // 0.57.42 — defaults por TIPO si nunca se persistió un layout:
@@ -137,8 +164,12 @@ function DesktopGrid({
     });
 
     const handleStop = (next: Layout): void => {
+        const hmById = new Map(widgets.map((w) => [w.id, w.layout?.hm]));
         onLayoutChange(
-            next.map((l) => ({ id: l.i, x: l.x, y: l.y, w: l.w, h: l.h })),
+            next.map((l) => {
+                const hm = hmById.get(l.i);
+                return { id: l.i, x: l.x, y: l.y, w: l.w, h: l.h, ...(hm !== undefined ? { hm } : {}) };
+            }),
         );
     };
 
@@ -153,8 +184,8 @@ function DesktopGrid({
             rowHeight={64}
             margin={[12, 12]}
             containerPadding={[0, 0]}
-            isDraggable
-            isResizable
+            isDraggable={editable}
+            isResizable={editable}
             // `compactType="vertical"` deja que RGL apile widgets cuando
             // hay huecos verticales, pero NO los reordena horizontalmente
             // como `Responsive` con cols pequeños hacía. La posición x

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fromApiComment, toApiComment } from './useComments';
+import { followAfterComment, fromApiComment, toApiComment } from './useComments';
 
 describe('comentarios: traducción con el API de la nube', () => {
     it('lee `body` y `kind` del API como `content` y `metadata.kind`', () => {
@@ -16,5 +16,17 @@ describe('comentarios: traducción con el API de la nube', () => {
             kind: 'call',
             metadata: { kind: 'call', outcome: 'connected' },
         });
+    });
+});
+
+describe('«Seguir» después de comentar', () => {
+    it('quien comenta queda siguiendo (y suma un seguidor)', () => {
+        expect(followAfterComment({ following: false, followers: 2 })).toEqual({ following: true, followers: 3 });
+    });
+
+    it('si ya seguía, o no hay estado en cache, no cambia nada', () => {
+        const same = { following: true, followers: 1 };
+        expect(followAfterComment(same)).toBe(same);
+        expect(followAfterComment(undefined)).toBeUndefined();
     });
 });

@@ -1417,39 +1417,14 @@ export class CloudClient {
     portalUpdateMe(fields: Record<string, unknown>): Promise<unknown> {
         return this.request('PATCH', '/portal/me', { body: { fields } });
     }
-    /** Registros de OTRA lista que le pertenecen al cliente (scope del portal). */
-    portalRelatedRecords(
-        listSlug: string,
-        params: { page?: number; per_page?: number } = {},
-    ): Promise<{
-        data: Array<{ id: number; fields: Record<string, unknown> }>;
-        fields: Array<{ slug: string; label: string; type: string; config: Record<string, unknown> }>;
-        meta: { page: number; per_page: number; total: number; total_pages: number };
-    }> {
-        const q = new URLSearchParams();
-        q.set('page', String(params.page ?? 1));
-        q.set('per_page', String(params.per_page ?? 20));
-        return this.request('GET', `/portal/lists/${encodeURIComponent(listSlug)}/records?${q.toString()}`, {
-            schema: z.object({
-                data: z.array(z.object({ id: z.number(), fields: z.record(z.unknown()) })),
-                fields: z
-                    .array(
-                        z.object({
-                            slug: z.string(),
-                            label: z.string(),
-                            type: z.string(),
-                            config: z.record(z.unknown()).default({}),
-                        }),
-                    )
-                    .default([]),
-                meta: z.object({
-                    page: z.number(),
-                    per_page: z.number(),
-                    total: z.number(),
-                    total_pages: z.number(),
-                }),
-            }),
-        });
+    /** El cliente crea un registro en una lista habilitada (campos por id). */
+    async portalCreateRecord(listId: number, fields: Record<string, unknown>): Promise<{ id: number }> {
+        const res = (await this.request('POST', `/portal/lists/${listId}/records`, { body: { fields } })) as unknown as { data: { id: number } };
+        return res.data;
+    }
+    /** El cliente decide si recibe un correo cuando el equipo le responde. */
+    portalSetPreferences(notifyEmail: boolean): Promise<unknown> {
+        return this.request('PATCH', '/portal/me/preferences', { body: { notify_email: notifyEmail } });
     }
     // --- acceso al portal desde el admin (v0.1.153) ---
     portalAccess(list: string | number, recordId: number): Promise<PortalAccessList> {

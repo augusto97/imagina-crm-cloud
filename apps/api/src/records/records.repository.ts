@@ -79,6 +79,38 @@ export class RecordsRepository {
     }
 
     /**
+     * Igual que `findById` pero BLOQUEA la fila hasta el final de la
+     * transacción (`FOR NO KEY UPDATE`, el mismo lock que toma un UPDATE).
+     *
+     * Quien lee → mezcla en JS → reescribe el `data` entero tiene que leer con
+     * esto: sin lock, dos ediciones simultáneas de campos DISTINTOS leían el
+     * mismo `data`, y la que terminaba última pisaba a la otra (auditoría:
+     * 8 PATCH en paralelo → sobrevivían 3). Con el lock la segunda espera a que
+     * la primera haga commit y relee la fila ya cambiada, así el diff de la
+     * actividad y el antes/después de los avisos siguen siendo exactos.
+     *
+     * `NO KEY UPDATE` y no `UPDATE`: no choca con el `KEY SHARE` que toman las
+     * FK (relaciones, actividad) que apuntan a la fila — dos ediciones que se
+     * vinculan entre sí no se trancan.
+     */
+    async findByIdForUpdate(tx: Tx, tenantId: number, listId: number, id: number): Promise<RecordListRow | null> {
+        const [row] = await tx
+            .select(LIST_COLUMNS)
+            .from(records)
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    eq(records.id, id),
+                    isNull(records.deletedAt),
+                ),
+            )
+            .limit(1)
+            .for('no key update');
+        return row ?? null;
+    }
+
+    /**
      * Listado con cursor pagination keyset por `id` (STANDALONE §3.5).
      * Pide `limit + 1` para saber si hay página siguiente sin contar todo.
      */
@@ -124,6 +156,67 @@ export class RecordsRepository {
             )
             .limit(opts.limit + 1);
         return byOffset ? base.offset(opts.offset ?? 0) : base;
+    }
+
+    /**
+     * v0.1.286 — las primeras `perGroup` filas de PRIMER NIVEL de cada grupo
+     * (vista agrupada) en dos consultas: una ventana `row_number()` particionada
+     * por la clave del grupo elige los ids, y después se leen esas filas con las
+     * columnas del listado. Devuelve las filas en orden (grupo, posición).
+     */
+    async listPerGroup(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        opts: { where?: SQL; groupExpr: SQL; keys: Array<string | null>; orderBy: SQL[]; perGroup: number },
+    ): Promise<Array<{ group: string | null; row: RecordListRow }>> {
+        if (opts.keys.length === 0) return [];
+        const base = and(
+            eq(records.tenantId, tenantId),
+            eq(records.listId, listId),
+            isNull(records.deletedAt),
+            isNull(records.parentId),
+            opts.where,
+        );
+        // La clave del grupo se calcula UNA vez por fila: la subconsulta va con
+        // `OFFSET 0` (no se aplana) y se llama "records", así el orden por campo
+        // —que apunta a `"records"."data"`— sigue valiendo sin tocarlo. Sin eso
+        // la expresión (cara en un multi_select) se repetía en el filtro, en la
+        // partición y en el SELECT.
+        const grp = sql`${sql.identifier('records')}.${sql.identifier('grp')}`;
+        const values = opts.keys.filter((k): k is string => k !== null);
+        const keyParts: SQL[] = [];
+        if (values.length > 0) keyParts.push(sql`${grp} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
+        if (opts.keys.includes(null)) keyParts.push(sql`${grp} IS NULL`);
+        const order = sql.join([...opts.orderBy, sql`${records.id} ASC`], sql`, `);
+        const picked = await tx.execute(sql`
+            SELECT t.id, t.grp FROM (
+                SELECT ${records.id} AS id, ${grp} AS grp,
+                       row_number() OVER (PARTITION BY ${grp} ORDER BY ${order}) AS rn
+                FROM (
+                    SELECT ${records}.*, (${opts.groupExpr})::text AS grp
+                    FROM ${records}
+                    WHERE ${base}
+                    OFFSET 0
+                ) AS ${sql.identifier('records')}
+                WHERE ${sql.join(keyParts, sql` OR `)}
+            ) t
+            WHERE t.rn <= ${opts.perGroup}
+            ORDER BY t.grp, t.rn`);
+        const picks = (picked.rows as Array<{ id: string | number; grp: string | null }>).map((r) => ({
+            id: Number(r.id),
+            group: r.grp === null || r.grp === undefined ? null : String(r.grp),
+        }));
+        if (picks.length === 0) return [];
+        const rows = await tx
+            .select(LIST_COLUMNS)
+            .from(records)
+            .where(and(eq(records.tenantId, tenantId), inArray(records.id, picks.map((o) => o.id))));
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        return picks.flatMap((o) => {
+            const row = byId.get(o.id);
+            return row ? [{ group: o.group, row }] : [];
+        });
     }
 
     /**

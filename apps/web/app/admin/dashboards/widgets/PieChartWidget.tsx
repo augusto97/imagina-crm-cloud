@@ -2,13 +2,26 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
+import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
-import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
-import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, groupKeysOf } from './useChartColors';
+import {
+    applyHideZero,
+    categoryColor,
+    displayGroupLabel,
+    groupKeysOf,
+    isOthersGroup,
+    othersAwareLabel,
+    sortChartRows,
+    useGroupColorMap,
+    useGroupLabelMap,
+    useGroupOptionOrder,
+    type ChartSort,
+} from './useChartColors';
+import { formatMetricValue } from './widgetFormat';
 import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -53,6 +66,11 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en un sector → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
+    const optionOrder = useGroupOptionOrder(widget.list_id, widget.config.group_by_field_id);
+    const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
+    const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
+    const fmt = (n: number): string => formatMetricValue(n, metric, metricField);
 
     return (
         <div ref={measureRef} className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
@@ -65,10 +83,17 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                     <WidgetError error={data.error} />
                 ) : data.data && 'data' in data.data && data.data.data.length > 0 ? (
                     <Donut
-                        rows={applyHideZero(
-                            data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 })),
-                            widget.config.hide_zero_groups === true,
+                        rows={sortChartRows(
+                            applyHideZero(
+                                data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0, others: r.others })),
+                                widget.config.hide_zero_groups === true,
+                            ),
+                            // El aro arranca por el mayor salvo que el widget pida otro orden.
+                            (widget.config.sort as ChartSort | undefined) ?? 'value_desc',
+                            optionOrder,
+                            (l) => displayGroupLabel(l, labelMap),
                         )}
+                        format={fmt}
                         showLabels={showLabels}
                         showLegend={showLegend}
                         narrow={narrow}
@@ -92,7 +117,8 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
 }
 
 interface DonutProps {
-    rows: Array<{ label: string; value: number }>;
+    rows: Array<{ label: string; value: number; others?: number }>;
+    format: (n: number) => string;
     showLabels: boolean;
     showLegend: boolean;
     /** Card angosto: aro arriba (chico) + leyenda debajo a lo ancho. */
@@ -107,7 +133,7 @@ interface DonutProps {
     centerLabel: string;
 }
 
-function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelMap, onSegment, centerLabel }: DonutProps): JSX.Element {
+function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap, labelMap, onSegment, centerLabel }: DonutProps): JSX.Element {
     // 0.57.40 — leyenda clicable: el usuario puede ocultar/mostrar
     // categorías. El donut y el total se recalculan con las visibles.
     const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -182,6 +208,8 @@ function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelM
                         // Índice ORIGINAL — el color de cada categoría no
                         // cambia al ocultar otras desde la leyenda.
                         const color = categoryColor(colorMap, row.label, rows.findIndex((r) => r.label === row.label));
+                        // "Otros" junta varios grupos: no se abre como lista.
+                        const navigable = onSegment !== null && !isOthersGroup(row.label);
                         const seg = (
                             <circle
                                 key={`seg-${row.label}`}
@@ -194,10 +222,10 @@ function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelM
                                 strokeDasharray={dasharray}
                                 strokeDashoffset={-offset}
                                 transform={`rotate(-90 ${cx} ${cy})`}
-                                onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
-                                style={onSegment !== null ? { cursor: 'pointer' } : undefined}
+                                onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
+                                style={navigable ? { cursor: 'pointer' } : undefined}
                             >
-                                <title>{`${displayGroupLabel(row.label, labelMap)}: ${formatNumber(row.value)} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
+                                <title>{`${othersAwareLabel(row, labelMap)}: ${format(row.value)} (${(pct * 100).toFixed(1)}%)${navigable ? ` — ${__('click para ver los registros')}` : ''}`}</title>
                             </circle>
                         );
                         offset += len;
@@ -236,7 +264,7 @@ function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelM
                         // agujero del donut: con 6+ dígitos ("9.510.000") el
                         // tamaño fijo se montaba sobre el aro. Ancho útil del
                         // agujero ≈ 2*(radius - stroke/2) - aire.
-                        const totalText = formatNumber(total);
+                        const totalText = format(total);
                         const hole = 2 * (radius - stroke / 2) - 8;
                         const base = showLabels ? 13 : 15;
                         const fitted = Math.min(base, hole / (0.62 * Math.max(totalText.length, 1)));
@@ -271,7 +299,8 @@ function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelM
                 // que importan primero (antes: orden alfabético del backend →
                 // en listas largas las primeras 8 podían ser todas 0 y el
                 // segmento grande quedaba escondido en "+N más").
-                const legendRows = [...rows].sort((a, b) => b.value - a.value);
+                // v0.1.286 — en el orden del aro (que ya respeta `sort`).
+                const legendRows = rows;
                 return (
                 <ul
                     className={cn(
@@ -313,14 +342,14 @@ function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelM
                                         )}
                                         // Un combo largo de multi_select puede truncar: el
                                         // nombre completo queda en el tooltip.
-                                        title={displayGroupLabel(row.label, labelMap)}
+                                        title={othersAwareLabel(row, labelMap)}
                                     >
-                                        {displayGroupLabel(row.label, labelMap)}
+                                        {othersAwareLabel(row, labelMap)}
                                     </span>
                                     <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-font-semibold imcrm-text-foreground">
-                                        {formatNumber(row.value)}
+                                        {format(row.value)}
                                     </span>
-                                    <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground/80">
+                                    <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground">
                                         {isHidden ? '—' : `${pct.toFixed(0)}%`}
                                     </span>
                                 </button>

@@ -1,4 +1,4 @@
-import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import type { AggregatesResponse } from '@/hooks/useAggregates';
@@ -82,6 +82,45 @@ export function canonicalListId(qc: QueryClient, idOrSlug: string | number): str
 }
 
 /**
+ * v0.1.286 — `placeholderData` que conserva lo anterior SÓLO dentro de la
+ * MISMA lista (paginar, filtrar, buscar). Con `keepPreviousData` a secas, al
+ * pasar de una lista a otra la tabla mostraba un instante las filas de la
+ * anterior con el id de la nueva, y las recurrencias se pedían como
+ * `/lists/30/recurrences?ids=144,147` (ids de la lista de antes). El
+ * identificador de la lista va en el índice 1 de la key (slug o id: se
+ * comparan por el par id↔slug del índice de listas).
+ */
+export function keepPreviousForList<T>(qc: QueryClient, listKey: string | number) {
+    return (prev: T | undefined, prevQuery: { queryKey: readonly unknown[] } | undefined): T | undefined => {
+        if (prev === undefined || !prevQuery) return undefined;
+        const prevList = prevQuery.queryKey[1];
+        if (prevList === undefined) return undefined;
+        return listIdentifiersFor(qc, listKey).has(String(prevList)) ? prev : undefined;
+    };
+}
+
+/**
+ * v0.1.286 — Regla de oro nº 7 en el arranque en frío: mientras el índice de
+ * listas no llegó, la key se arma con el slug; cuando llega, pasa al id. Si la
+ * query del slug seguía EN VUELO, la del id salía a pedir lo mismo otra vez
+ * (2× `GET /lists/<slug>/fields`). Aquí la query canónica se ENGANCHA a la que
+ * ya está en vuelo con el identificador crudo en vez de duplicarla.
+ */
+export function joinInflight<T>(
+    qc: QueryClient,
+    canonicalKey: readonly unknown[],
+    rawKey: readonly unknown[],
+    fetcher: () => Promise<T>,
+): Promise<T> {
+    const same = canonicalKey.length === rawKey.length && canonicalKey.every((k, i) => k === rawKey[i]);
+    if (!same && qc.getQueryState(rawKey)?.fetchStatus === 'fetching') {
+        // fetchQuery sobre una query en vuelo devuelve SU promesa (sin request nueva).
+        return qc.fetchQuery({ queryKey: rawKey, queryFn: fetcher });
+    }
+    return fetcher();
+}
+
+/**
  * Predicate para invalidar SÓLO las queries de records/fields/views
  * de la lista indicada. Antes invalidábamos `keys.all` por miedo a
  * no matchear el slug — ahora mapeamos id↔slug vía el cache de lists.
@@ -96,14 +135,57 @@ export function invalidateForList(
     listKey: string | number,
 ): void {
     const ids = listIdentifiersFor(qc, listKey);
+    // v0.1.286 — los totales del pie (`['aggregates', id, …]`) dependen de los
+    // registros: cualquier cambio de registros los refresca también. Antes no
+    // se invalidaban nunca (alta, edición, borrado, import, realtime) y el pie
+    // quedaba viejo hasta 30 s.
+    const namespaces = namespace[0] === 'records' ? new Set<unknown>(['records', AGGREGATES_NS]) : new Set([namespace[0]]);
     void qc.invalidateQueries({
         predicate: (q) => {
             const k = q.queryKey;
             if (! Array.isArray(k) || k.length < 2) return false;
-            if (k[0] !== namespace[0]) return false;
+            if (! namespaces.has(k[0])) return false;
             return typeof k[1] === 'string' && ids.has(k[1]);
         },
     });
+}
+
+/** Primer segmento de las keys del pie de la tabla (ver `useAggregates`). */
+export const AGGREGATES_NS = 'aggregates';
+
+/**
+ * v0.1.286 — aplica `patch` a un registro en TODAS las formas de cache de una
+ * lista: el listado plano (`{data: [...]}`) y el bundle agrupado
+ * (`{expanded: {k: {records: {data}}}}`). Devuelve el dato nuevo o `undefined`
+ * si el registro no estaba ahí.
+ */
+export function patchRecordInCache(
+    data: unknown,
+    id: number,
+    patch: (rec: RecordEntity) => RecordEntity,
+): unknown {
+    if (! data || typeof data !== 'object') return undefined;
+    const list = data as RecordListResponse;
+    if (Array.isArray(list.data)) {
+        if (! list.data.some((r) => r.id === id)) return undefined;
+        return { ...list, data: list.data.map((r) => (r.id === id ? patch(r) : r)) };
+    }
+    const bundle = data as Partial<GroupedBundleResponse>;
+    if (bundle.expanded && typeof bundle.expanded === 'object') {
+        let touched = false;
+        const expanded: GroupedBundleResponse['expanded'] = {};
+        for (const [k, entry] of Object.entries(bundle.expanded)) {
+            const rows = entry.records?.data;
+            if (Array.isArray(rows) && rows.some((r) => r.id === id)) {
+                touched = true;
+                expanded[k] = { ...entry, records: { ...entry.records, data: rows.map((r) => (r.id === id ? patch(r) : r)) } };
+            } else {
+                expanded[k] = entry;
+            }
+        }
+        return touched ? { ...bundle, expanded } : undefined;
+    }
+    return undefined;
 }
 
 interface GroupsKeyParams {
@@ -165,6 +247,8 @@ interface UseGroupedBundleArgs {
     collapsed?: string[];
     filterTree?: unknown;
     search?: string;
+    /** v0.1.286 — orden de las filas dentro de cada grupo (`field_{id}:{dir},…`). */
+    sort?: string;
     perPage?: number;
     aggregateFieldIds?: number[];
 }
@@ -176,9 +260,11 @@ export function useRecordsGroupedBundle({
     collapsed,
     filterTree,
     search,
+    sort,
     perPage = 50,
     aggregateFieldIds = [],
 }: UseGroupedBundleArgs) {
+    const qc = useQueryClient();
     const params: Record<string, unknown> = {
         group_by: groupBy,
         per_page: perPage,
@@ -200,6 +286,7 @@ export function useRecordsGroupedBundle({
     if (search && search.trim() !== '') {
         params.search = search.trim();
     }
+    if (sort) params.sort = sort;
     if (aggregateFieldIds.length > 0) {
         params.aggregate_fields = aggregateFieldIds.join(',');
     }
@@ -214,7 +301,7 @@ export function useRecordsGroupedBundle({
             return res.data;
         },
         enabled: listId !== undefined && listId !== '' && groupBy !== undefined && groupBy > 0,
-        placeholderData: keepPreviousData,
+        placeholderData: keepPreviousForList<GroupedBundleResponse>(qc, listId ?? ''),
     });
 }
 
@@ -233,7 +320,7 @@ export function useRecords(listId: string | number | undefined, query: RecordsQu
             return { data: res.data, meta: res.meta } as unknown as RecordListResponse;
         },
         enabled: listId !== undefined && listId !== '',
-        placeholderData: keepPreviousData,
+        placeholderData: keepPreviousForList<RecordListResponse>(qc, keyId),
     });
 
     // v0.1.253 — se quitó la precarga automática de la página siguiente: se
@@ -260,6 +347,7 @@ export function useRecordGroups(
         search?: string;
     },
 ) {
+    const qc = useQueryClient();
     const enabled =
         listId !== undefined && listId !== '' && params.groupBy !== null && params.groupBy > 0;
 
@@ -281,7 +369,7 @@ export function useRecordGroups(
             return res as unknown as RecordGroupsResponse;
         },
         enabled,
-        placeholderData: keepPreviousData,
+        placeholderData: keepPreviousForList<RecordGroupsResponse>(qc, listId ?? ''),
     });
 }
 
@@ -340,7 +428,11 @@ export function useCreateRecord(listId: string | number) {
             const res = await api.post<RecordEntity>(`/lists/${listId}/records`, body);
             return res.data;
         },
+        // v0.1.286 — se marca ANTES de mandar: el eco del realtime puede
+        // llegar antes que la respuesta y disparaba un segundo refetch.
+        onMutate: () => markLocalRecordsChange(qc, listId),
         onSuccess: () => {
+            markLocalRecordsChange(qc, listId);
             // 0.57.41 — invalidamos sólo las queries de la lista
             // actual (id Y slug se resuelven vía el cache de
             // `useLists()`), no `recordsKeys.all`. Antes una mutación
@@ -377,6 +469,10 @@ export function useUpdateRecord(listId: string | number) {
             return res.data;
         },
         onMutate: async ({ id, values }) => {
+            // v0.1.286 — marcar ANTES: el eco del realtime de ESTE cambio llega
+            // a veces antes que la respuesta (y que `onSettled`), y refrescaba
+            // la lista una vez más.
+            markLocalRecordsChange(qc, listId);
             // 0.57.41 — scope al id+slug de la lista actual (vía el
             // cache de useLists) en vez de `recordsKeys.all`. Sigue
             // soportando que las queries activas usen el slug aunque
@@ -388,28 +484,18 @@ export function useUpdateRecord(listId: string | number) {
 
             await qc.cancelQueries({ predicate: (q) => matchesList(q.queryKey) });
 
-            const queries = qc.getQueriesData<RecordListResponse>({
+            const queries = qc.getQueriesData<unknown>({
                 predicate: (q) => matchesList(q.queryKey),
             });
             const snapshots: Array<[readonly unknown[], unknown]> = [];
 
+            // Solo se tocan las queries que CONTIENEN el record (listado plano
+            // y, desde v0.1.286, también el bundle de la vista AGRUPADA: antes
+            // la celda editada volvía a su valor viejo hasta el refetch).
             for (const [key, data] of queries) {
-                if (! data || ! Array.isArray(data.data)) continue;
-                // Solo touch queries que CONTIENEN el record. Evita
-                // mutar caches de otras listas que tengan ids colisionantes
-                // (raro pero posible).
-                const hasRecord = data.data.some((r) => r.id === id);
-                if (! hasRecord) continue;
+                const next = patchRecordInCache(data, id, (rec) => ({ ...rec, fields: { ...rec.fields, ...values } }));
+                if (next === undefined) continue;
                 snapshots.push([key, data]);
-
-                const next: RecordListResponse = {
-                    ...data,
-                    data: data.data.map((rec) =>
-                        rec.id === id
-                            ? { ...rec, fields: { ...rec.fields, ...values } }
-                            : rec,
-                    ),
-                };
                 qc.setQueryData(key, next);
             }
 
@@ -439,7 +525,9 @@ export function useDeleteRecord(listId: string | number) {
                 query: { purge: purge ?? false },
             });
         },
+        onMutate: () => markLocalRecordsChange(qc, listId),
         onSuccess: () => {
+            markLocalRecordsChange(qc, listId);
             invalidateForList(qc, recordsKeys.all, listId);
         },
     });
@@ -467,7 +555,9 @@ export function useBulkRecords(listId: string | number) {
             });
             return res.data;
         },
+        onMutate: () => markLocalRecordsChange(qc, listId),
         onSuccess: () => {
+            markLocalRecordsChange(qc, listId);
             invalidateForList(qc, recordsKeys.all, listId);
         },
     });

@@ -3104,4 +3104,68 @@ problemas y el historial de errores por registro (sigue en cada corrida).
 
 ---
 
-**Versión del documento:** 1.83.0 (problemas a la vista — ADR-S44)
+### ADR-S45 — Auditoría integral II: reglas de robustez (v0.1.286)
+
+**Contexto.** Pedido del usuario: «audita profundamente toda la app… creía que
+ya tenía todo bien pero cada vez hay cosas con errores». Ocho relevamientos en
+paralelo (tabla y vistas, ficha, tableros, portal/formularios/listas públicas,
+navegación, automatizaciones y editores, servidor, recorrido real en el
+navegador) reprodujeron decenas de fallas reales. Las más graves no eran de una
+pantalla sino de reglas que faltaban: el cliente del portal veía comentarios
+internos y campos que el diseño ocultaba; dos ediciones simultáneas del mismo
+registro se pisaban; una automatización guardaba valores sin validar y un solo
+valor basura tumbaba con 500 el orden y los filtros de toda la lista; y las
+automatizaciones por vencimiento se disparaban para fechas de hace meses.
+
+**Decisión.**
+1. **Comentarios con visibilidad** (`comments.visibility`: `internal` |
+   `client`). Lo que escribe el equipo es interno por defecto; «Visible para el
+   cliente» lo publica en el portal. El portal sólo lee y escribe los de
+   cliente.
+2. **El portal recibe sólo lo que el diseño muestra**: `/portal/me` manda los
+   campos del diseño vigente (+ título y editables), la actividad se filtra a
+   esos campos y lo vinculado viaja por `layout_data` con las columnas de cada
+   bloque (sin columnas elegidas: nunca las que suenan internas). Se eliminaron
+   `/portal/lists/*`. Registros borrados no se sirven. El cliente puede crear
+   registros SÓLO en las listas que la empresa habilita, con la relación
+   puesta por el servidor.
+3. **Toda escritura de un registro bloquea la fila** (`FOR NO KEY UPDATE`)
+   antes de mezclar — edición, recurrencias, cobros, portal, descripción — y
+   las automatizaciones escriben sólo las claves que cambian, por
+   `RecordsService` (validación, actividad, tiempo real, reglas de la tienda).
+4. **Encadenar automatizaciones, con tope**: un registro creado o cambiado por
+   una automatización ahora sí dispara las de su lista (la receta de
+   facturación lo necesitaba), con profundidad máxima 3 y sin volver a disparar
+   la misma automatización en su cadena. La edición en lote sigue sin disparar.
+5. **Vencimientos**: se deduplica por el momento de vencimiento (cambiar la
+   fecha vuelve a disparar) y sólo cuentan fechas posteriores a la creación de
+   la automatización salvo `include_past`. Cada corrida en su propia
+   transacción; las corridas colgadas se cierran y se podan a los 90 días.
+6. **Un webhook o conector que responde fuera de 2xx es una falla** (abre un
+   problema, ADR-S44). Los cuerpos JSON/XML escapan los valores del registro.
+7. **La base se defiende sola**: casts tolerantes (`pg_input_is_valid`: un
+   valor basura es NULL, no un 500), `statement_timeout` 30 s e
+   `idle_in_transaction` 120 s (las tareas largas los apagan con
+   `withoutTimeouts`), JIT apagado (`DB_JIT=on` lo prende), errores de Postgres
+   de entrada → 400 y unicidad → 409, ids imposibles → 404/400, entrada con NUL
+   o sustitutos sueltos saneada. Redis con tope por comando (2 s) y colas con
+   retención por defecto.
+8. **Una sola regla de búsqueda** (`field-types/search` en shared): sin
+   acentos, sin mayúsculas, todas las palabras, teléfonos por dígitos — igual
+   en el navegador, en el servidor y en la vista agrupada.
+9. **Navegación**: cambio de empresa (el árbol se remonta por empresa), búsqueda
+   global de registros con el ACL de cada lista (`GET /search`), el registro
+   abierto vive en la URL (`?record=`) y la ficha se arma con un solo pedido
+   (`GET /lists/:l/records/:id/view`).
+
+**Consecuencias.** Varias conductas cambian a propósito: los tableros cuentan
+el primer nivel salvo «Incluir subtareas», una automatización incompleta o por
+encima del plan nace pausada, el límite de automatizaciones del plan se aplica,
+y las de vencimiento existentes no disparan por fechas anteriores a su
+creación. Quedan como carencias propuestas (no hechas): pasos de espera y
+bucles en automatizaciones, prueba paso a paso con un registro, formularios de
+varias páginas, captcha, enlace público de tableros y versiones por campo.
+
+---
+
+**Versión del documento:** 1.84.0 (auditoría integral II — ADR-S45)

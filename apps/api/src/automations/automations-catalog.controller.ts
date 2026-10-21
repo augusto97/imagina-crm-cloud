@@ -18,7 +18,7 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'record_updated', label: 'Cuando se actualiza un registro', event: 'imagina_crm/record_updated', config_schema: {} },
     { slug: 'field_changed', label: 'Cuando cambia un campo', event: 'imagina_crm/record_updated', config_schema: {} },
     { slug: 'due_date_reached', label: 'Cuando se alcanza una fecha', event: 'imagina_crm/scheduled_tick', config_schema: {} },
-    { slug: 'scheduled', label: 'En un horario (cron)', event: 'imagina_crm/scheduled_tick', config_schema: {} },
+    { slug: 'scheduled', label: 'En un horario', event: 'imagina_crm/scheduled_tick', config_schema: {} },
     { slug: 'incoming_webhook', label: 'Webhook entrante (URL pública)', event: 'imagina_crm/incoming_webhook', config_schema: {} },
     // v0.1.251 — un cliente pagó un link de Mercado Pago o Wompi del registro.
     { slug: 'payment_received', label: 'Cuando se recibe un pago', event: 'imagina_crm/payment_received', config_schema: {} },

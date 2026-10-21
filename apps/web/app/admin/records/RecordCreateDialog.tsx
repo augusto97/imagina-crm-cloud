@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
     Sheet,
     SheetCloseButton,
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/sheet';
 import { useCreateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
+import { escapeIntent, leaveField } from '@/lib/escapeGuard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -83,6 +85,27 @@ export function RecordCreateDialog({
         }
     }, [open, resetCreate, initialValues]);
 
+    const contentRef = useRef<HTMLDivElement>(null);
+    const confirm = useConfirm();
+    /** ¿La persona escribió algo (más allá del prefill del grupo)? */
+    const typed = Object.entries(values).some(
+        ([k, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+            && JSON.stringify(v) !== JSON.stringify(initialValues?.[k]),
+    );
+    const requestClose = async (): Promise<void> => {
+        if (typed && !create.isPending) {
+            const ok = await confirm({
+                title: __('¿Descartar el registro nuevo?'),
+                description: __('Lo que escribiste todavía no se guardó.'),
+                confirmLabel: __('Descartar'),
+                cancelLabel: __('Seguir editando'),
+                destructive: true,
+            });
+            if (!ok) return;
+        }
+        onOpenChange(false);
+    };
+
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
         setError(null);
@@ -101,13 +124,29 @@ export function RecordCreateDialog({
     };
 
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
+        <Sheet
+            open={open}
+            onOpenChange={(next) => {
+                if (next) onOpenChange(true);
+                else void requestClose();
+            }}
+        >
             <DialogPrimitive.Portal>
                 <DialogPrimitive.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-40 imcrm-bg-black/40 imcrm-backdrop-blur-sm imcrm-animate-imcrm-fade-in" />
                 {/* Centrado por flex (mismo patrón que RecordDetailDrawer):
                  * el transform del scale-in no pelea con el de centrado. */}
                 <div className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-flex imcrm-items-center imcrm-justify-center">
                     <DialogPrimitive.Content
+                        ref={contentRef}
+                        // Esc con el foco en un campo sale del campo; con algo
+                        // escrito, pregunta antes de descartar el alta.
+                        onEscapeKeyDown={(e) => {
+                            const active = document.activeElement;
+                            const intent = escapeIntent(active, contentRef.current);
+                            e.preventDefault();
+                            if (intent === 'field') leaveField(active);
+                            else if (intent === 'close') void requestClose();
+                        }}
                         className={cn(
                             // v0.1.258 — celular: pantalla completa (antes flotaba con
                             // márgenes y el formulario quedaba angosto).
@@ -123,7 +162,7 @@ export function RecordCreateDialog({
                                 {listName !== undefined && (
                                     <>
                                         {listName}
-                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/50">/</span>
+                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/80">/</span>
                                     </>
                                 )}
                                 {__('Nuevo registro')}
@@ -156,6 +195,9 @@ export function RecordCreateDialog({
                                             autoFocus
                                             className="imcrm--ml-1.5"
                                         />
+                                        {titleField && fieldErrors[titleField.slug] !== undefined && (
+                                            <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-destructive">{fieldErrors[titleField.slug]}</p>
+                                        )}
                                     </div>
                                 </SheetTitle>
 
@@ -171,6 +213,8 @@ export function RecordCreateDialog({
                                         fieldErrors={fieldErrors}
                                         density="compact"
                                         showTypeIcon
+                                        // El título grande de arriba YA es ese campo: no se repite.
+                                        hiddenSlugs={titleField ? [titleField.slug] : undefined}
                                     />
                                 </div>
 
@@ -182,11 +226,9 @@ export function RecordCreateDialog({
                             </div>
 
                             <SheetFooter>
-                                <DialogPrimitive.Close asChild>
-                                    <Button type="button" variant="outline">
-                                        {__('Cancelar')}
-                                    </Button>
-                                </DialogPrimitive.Close>
+                                <Button type="button" variant="outline" onClick={() => void requestClose()}>
+                                    {__('Cancelar')}
+                                </Button>
                                 <Button type="submit" disabled={create.isPending}>
                                     {create.isPending ? __('Creando…') : __('Crear registro')}
                                 </Button>

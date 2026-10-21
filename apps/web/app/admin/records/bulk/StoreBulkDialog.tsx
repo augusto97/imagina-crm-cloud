@@ -1008,7 +1008,7 @@ function StoreResultPanel({ result }: { result: StoreBulkResult }): JSX.Element 
             )}
             {result.skipped.length > 0 && (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-amber-300/60 imcrm-bg-amber-50 imcrm-p-3 dark:imcrm-border-amber-500/30 dark:imcrm-bg-amber-500/10">
-                    <p className="imcrm-text-sm imcrm-font-medium">{sprintf(__('%d no aplican:'), result.skipped.length)}</p>
+                    <p className="imcrm-text-sm imcrm-font-medium">{sprintf(_n('%d no aplica:', '%d no aplican:', result.skipped.length), result.skipped.length)}</p>
                     <ul className="imcrm-mt-1 imcrm-max-h-32 imcrm-space-y-0.5 imcrm-overflow-y-auto imcrm-text-xs">
                         {result.skipped.slice(0, 100).map((s, i) => (
                             <li key={i}>

@@ -4,7 +4,7 @@ import {
     addDaysYmd,
     dueBucket,
     isDoneOptionLabel,
-    listRecordsQuerySchema,
+    jsonbKeyForField,
     pickDueField,
     pickStatusField,
     readNotificationPrefs,
@@ -14,7 +14,6 @@ import {
     zonedToday,
     type CreateReminderInput,
     type Field,
-    type FilterGroup,
     type FollowStateDto,
     type List,
     type ListNotificationsQuery,
@@ -30,7 +29,7 @@ import {
     type UpdateNotificationPrefsInput,
     type UpdateReminderInput,
 } from '@imagina-base/shared';
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
@@ -41,6 +40,8 @@ import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
+import { effectivePermissions, resolvePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
+import { compileFilterTree, type FilterableField } from '../records/query-builder';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -62,7 +63,7 @@ const COALESCE_MS = 30 * 60 * 1000;
 /** Destinatarios por evento (un registro con cientos de seguidores es un caso raro; se corta). */
 const MAX_RECIPIENTS = 100;
 /** «Mi trabajo»: listas que se recorren y registros por grupo. */
-const MAX_WORK_LISTS = 40;
+const MAX_WORK_LISTS = 200;
 const MAX_ITEMS = 200;
 
 interface RecordCtx {
@@ -115,11 +116,28 @@ export class NotificationsService implements OnModuleInit {
     // ─────────────────────────── Eventos ───────────────────────────
 
     async onNotify(e: NotifyEvent): Promise<void> {
+        if (e.type === 'portal_record_created') {
+            // Lo que el cliente abre desde su portal le llega a quien sigue SU
+            // registro (no hay seguidores en uno recién creado).
+            const followers = await this.followerIds(e.tenantId, e.parentRecordId);
+            await this.follow(e.tenantId, e.listId, e.recordId, followers);
+            await this.deliver(e.tenantId, 'update', followers, {
+                listId: e.listId,
+                recordId: e.recordId,
+                actorId: e.actorId,
+                title: `${clientLabel(e.clientName)} creó «${(e.title || 'Sin título').slice(0, 80)}» en «${e.listName}»`,
+                body: 'Lo abrió desde su portal.',
+            });
+            return;
+        }
         const ctx = await this.recordCtx(e.tenantId, e.listId, e.recordId);
         if (!ctx) return;
-        const actorName = await this.userName(e.actorId);
+        // Lo que hace el CLIENTE desde su portal se nombra como tal: el equipo
+        // tiene que distinguir de un vistazo «el cliente comentó».
+        const actorName = e.type === 'comment' && e.fromClient ? clientLabel(e.clientName) : await this.userName(e.actorId);
         if (e.type === 'comment') {
-            await this.follow(e.tenantId, e.listId, e.recordId, [e.actorId]);
+            // Al cliente no se lo pone a seguir: no es del equipo, no recibe avisos.
+            if (!e.fromClient) await this.follow(e.tenantId, e.listId, e.recordId, [e.actorId]);
             const snippet = e.body.replace(/\s+/g, ' ').trim().slice(0, 240);
             await this.deliver(e.tenantId, 'mention', e.mentioned, {
                 listId: e.listId,
@@ -154,13 +172,14 @@ export class NotificationsService implements OnModuleInit {
 
     async onRecordChange(c: RecordChange): Promise<void> {
         const actorId = c.actorId ?? 0;
-        const ctx = await this.recordCtx(c.tenantId, c.listId, c.recordId);
+        // Con la lista y los campos que trae el aviso no hace falta releer nada.
+        const ctx = c.list && c.fields ? ctxFrom(c.list, [...c.fields], c.recordId, c.after) : await this.recordCtx(c.tenantId, c.listId, c.recordId);
         if (!ctx) return;
         const userFieldIds = ctx.fields.filter((f) => f.type === 'user').map((f) => f.id);
         const assigned = newlyAssigned(userFieldIds, c.before, c.after).filter((u) => u !== actorId);
-        const actorName = actorId > 0 ? await this.userName(actorId) : null;
+        const actorName = c.viaPortal ? clientLabel(actorId > 0 ? await this.userName(actorId) : null) : actorId > 0 ? await this.userName(actorId) : null;
 
-        if (c.kind === 'created' && actorId > 0) await this.follow(c.tenantId, c.listId, c.recordId, [actorId]);
+        if (c.kind === 'created' && actorId > 0 && !c.viaPortal) await this.follow(c.tenantId, c.listId, c.recordId, [actorId]);
         if (assigned.length > 0) {
             await this.follow(c.tenantId, c.listId, c.recordId, assigned);
             await this.deliver(c.tenantId, 'assigned', assigned, {
@@ -211,17 +230,18 @@ export class NotificationsService implements OnModuleInit {
         const ids = [...new Set(rawRecipients)].filter((u) => Number.isInteger(u) && u > 0 && u !== n.actorId).slice(0, MAX_RECIPIENTS);
         if (ids.length === 0) return 0;
         const recipients = await this.recipients(tenantId, ids);
-        const allowed: Recipient[] = [];
-        for (const r of recipients) {
-            if (n.listId !== null && n.recordId !== null) {
-                const sees = await this.records
-                    .get(tenantId, { userId: r.userId, role: r.role }, String(n.listId), n.recordId)
-                    .then(() => true)
-                    .catch(() => false);
-                if (!sees) continue;
-            }
-            allowed.push(r);
-        }
+        // El ACL del registro para TODOS los destinatarios en una sola lectura
+        // (antes un `records.get` completo por persona).
+        const viewers =
+            n.listId !== null && n.recordId !== null
+                ? await this.records.viewersOf(
+                      tenantId,
+                      n.listId,
+                      n.recordId,
+                      recipients.map((r) => ({ userId: r.userId, role: r.role })),
+                  )
+                : null;
+        const allowed: Recipient[] = recipients.filter((r) => viewers === null || viewers.has(r.userId));
         if (allowed.length === 0) return 0;
 
         const body = n.body.slice(0, 2000);
@@ -570,6 +590,7 @@ export class NotificationsService implements OnModuleInit {
         tenantId: number,
         actor: { userId: number; role: Role },
         opts: { includeDone?: boolean; recordId?: number } = {},
+        schema?: WorkSchema,
     ): Promise<ReminderDto[]> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
@@ -598,11 +619,8 @@ export class NotificationsService implements OnModuleInit {
                 .orderBy(asc(reminders.remindAt))
                 .limit(MAX_ITEMS),
         );
-        const titles = await this.titlesFor(
-            tenantId,
-            actor,
-            rows.flatMap((r) => (r.listId !== null && r.recordId !== null ? [{ listId: r.listId, recordId: r.recordId }] : [])),
-        );
+        const refs = rows.flatMap((r) => (r.listId !== null && r.recordId !== null ? [{ listId: r.listId, recordId: r.recordId }] : []));
+        const titles = await this.titlesFor(tenantId, actor, refs, schema);
         return rows.map((r) => ({
             id: r.id,
             list_id: r.listId,
@@ -663,41 +681,49 @@ export class NotificationsService implements OnModuleInit {
     // ─────────────────────────── Mi trabajo ───────────────────────────
 
     async myWork(tenantId: number, actor: { userId: number; role: Role }): Promise<MyWorkDto> {
-        const all = (await this.lists.list(tenantId)).slice(0, 500);
-        const assigned: MyWorkItem[] = [];
+        const schema = await this.workSchema(tenantId, actor);
         let withAssignee = 0;
         let truncated = false;
-        const fieldsByList = new Map<number, Field[]>();
-        for (const list of all) {
-            const fields = await this.fields.listByListId(tenantId, list.id);
-            fieldsByList.set(list.id, fields);
-            const userFields = fields.filter((f) => f.type === 'user');
-            if (userFields.length === 0) continue;
+        // Por cada lista con un campo persona: «asignado a mí» por alguno que la
+        // persona pueda ver, dentro de su alcance de lectura y sin lo terminado.
+        // Todas las listas en UNA consulta (antes, un listado completo por lista
+        // —cientos de sentencias— y sólo los primeros 100 por id de cada una:
+        // el vencido más viejo podía quedar afuera).
+        const parts: SQL[] = [];
+        const dueCases: SQL[] = [];
+        for (const list of schema.lists) {
+            const fields = schema.fieldsByList.get(list.id) ?? [];
+            if (!fields.some((f) => f.type === 'user')) continue;
             withAssignee++;
             if (withAssignee > MAX_WORK_LISTS) {
                 truncated = true;
                 continue;
             }
-            const filter: FilterGroup = {
-                type: 'group',
-                logic: 'or',
-                children: userFields.map((f) => ({ type: 'condition' as const, field_id: f.id, op: 'eq' as const, value: actor.userId })),
-            };
-            const page = await this.records
-                .list(tenantId, actor, String(list.id), listRecordsQuerySchema.parse({ limit: 100, filter_tree: filter, include_subtasks: true }))
-                .catch(() => null);
-            if (!page) continue;
-            if (page.meta.next_cursor) truncated = true;
-            const status = pickStatusField(fields);
-            for (const r of page.data) {
-                const item = this.toWorkItem(list, fields, r.id, r.data as Record<string, unknown>);
-                if (status && item.status_label && isDoneOptionLabel(item.status_label)) continue;
-                assigned.push(item);
-            }
+            const view = schema.views.get(list.id);
+            if (!view?.mine) continue;
+            parts.push(and(eq(records.listId, list.id), view.mine, view.scope, view.notDone)!);
+            if (view.due) dueCases.push(sql`WHEN ${list.id} THEN ${view.due}`);
         }
-        assigned.sort(byDue);
+        const assigned: MyWorkItem[] = [];
+        if (parts.length > 0) {
+            const dueSort = dueCases.length > 0 ? sql`(CASE ${records.listId} ${sql.join(dueCases, sql` `)} END) COLLATE "C"` : null;
+            const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx
+                    .select({ id: records.id, listId: records.listId, data: records.data })
+                    .from(records)
+                    .where(and(eq(records.tenantId, tenantId), isNull(records.deletedAt), or(...parts)))
+                    .orderBy(...(dueSort ? [sql`${dueSort} ASC NULLS LAST`] : []), asc(records.id))
+                    .limit(MAX_ITEMS + 1),
+            );
+            if (rows.length > MAX_ITEMS) truncated = true;
+            for (const r of rows.slice(0, MAX_ITEMS)) {
+                const view = schema.views.get(r.listId);
+                if (view) assigned.push(this.workItemFor(view, r.id, r.data));
+            }
+            assigned.sort(byDue);
+        }
 
-        // Lo que sigue (los más recientes primero), resuelto por lista con el ACL.
+        // Lo que sigue (los más recientes primero), con el ACL de cada lista.
         const follows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select({ listId: recordFollows.listId, recordId: recordFollows.recordId })
@@ -707,27 +733,78 @@ export class NotificationsService implements OnModuleInit {
                 .limit(MAX_ITEMS),
         );
         const following: MyWorkItem[] = [];
-        const byList = groupBy(follows, (f) => f.listId);
-        for (const [listId, items] of byList) {
-            const list = all.find((l) => l.id === listId);
-            if (!list) continue;
-            const fields = fieldsByList.get(listId) ?? (await this.fields.listByListId(tenantId, listId));
-            const page = await this.records
-                .list(tenantId, actor, String(listId), listRecordsQuerySchema.parse({ limit: 200, ids: items.map((i) => i.recordId).join(','), include_subtasks: true }))
-                .catch(() => null);
-            for (const r of page?.data ?? []) following.push(this.toWorkItem(list, fields, r.id, r.data as Record<string, unknown>));
+        for (const { view, id, data } of await this.readableByIds(tenantId, schema, follows)) {
+            following.push(this.workItemFor(view, id, data));
         }
         const order = new Map(follows.map((f, i) => [f.recordId, i]));
         following.sort((a, b) => (order.get(a.record_id) ?? 0) - (order.get(b.record_id) ?? 0));
 
-        const reminderList = await this.listReminders(tenantId, actor);
+        const reminderList = await this.listReminders(tenantId, actor, {}, schema);
         return {
-            assigned: assigned.slice(0, MAX_ITEMS),
+            assigned,
             following,
             reminders: reminderList,
             lists_with_assignee: withAssignee,
-            truncated: truncated || assigned.length > MAX_ITEMS,
+            truncated,
         };
+    }
+
+    /**
+     * Las listas y sus campos (dos consultas para toda la empresa) con lo que
+     * la persona puede leer de cada una — el MISMO ACL que el listado de
+     * registros: alcance por rol (`scopeWhere`) y campos ocultos.
+     */
+    private async workSchema(tenantId: number, actor: { userId: number; role: Role }): Promise<WorkSchema> {
+        const lists = (await this.lists.list(tenantId)).slice(0, 500);
+        const fieldsByList = await this.fields.listByTenantGrouped(tenantId);
+        const views = new Map<number, WorkListView>();
+        for (const list of lists) {
+            try {
+                const view = workListView(list, fieldsByList.get(list.id) ?? [], actor);
+                if (view) views.set(list.id, view);
+            } catch (err) {
+                // Una lista con ajustes rotos no tumba «Mi trabajo» de las demás.
+                this.logger.warn(`Mi trabajo: se omite la lista ${list.id}: ${String(err)}`);
+            }
+        }
+        return { lists, fieldsByList, views };
+    }
+
+    /** Registros puntuales (por lista e id) que la persona puede ver, en UNA consulta. */
+    private async readableByIds(
+        tenantId: number,
+        schema: WorkSchema,
+        refs: ReadonlyArray<{ listId: number; recordId: number }>,
+    ): Promise<Array<{ view: WorkListView; id: number; data: Record<string, unknown> }>> {
+        const parts: SQL[] = [];
+        for (const [listId, items] of groupBy(refs, (r) => r.listId)) {
+            const view = schema.views.get(listId);
+            if (!view) continue;
+            const ids = [...new Set(items.map((i) => i.recordId))].slice(0, MAX_ITEMS);
+            parts.push(and(eq(records.listId, listId), inArray(records.id, ids), view.scope)!);
+        }
+        if (parts.length === 0) return [];
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: records.id, listId: records.listId, data: records.data })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), isNull(records.deletedAt), or(...parts))),
+        );
+        const out: Array<{ view: WorkListView; id: number; data: Record<string, unknown> }> = [];
+        for (const r of rows) {
+            const view = schema.views.get(r.listId);
+            if (view) out.push({ view, id: r.id, data: r.data as Record<string, unknown> });
+        }
+        return out;
+    }
+
+    /** Ítem de «Mi trabajo» con los datos que la persona puede ver (sin campos ocultos). */
+    private workItemFor(view: WorkListView, recordId: number, raw: unknown): MyWorkItem {
+        const data: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries((raw ?? {}) as Record<string, unknown>)) {
+            if (!view.hiddenKeys.has(k)) data[k] = v;
+        }
+        return this.toWorkItem(view.list, view.fields, recordId, data);
     }
 
     private toWorkItem(list: List, fields: Field[], recordId: number, data: Record<string, unknown>): MyWorkItem {
@@ -749,7 +826,7 @@ export class NotificationsService implements OnModuleInit {
             list_icon: list.icon ?? null,
             list_color: list.color ?? null,
             record_id: recordId,
-            title: typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : `Registro #${recordId}`,
+            title: typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : fallbackWorkTitle(fields, data, recordId),
             due: typeof dueVal === 'string' && dueVal ? dueVal : null,
             due_label: due?.label ?? null,
             due_is_datetime: due?.type === 'datetime',
@@ -790,7 +867,12 @@ export class NotificationsService implements OnModuleInit {
                 if (prefs.digest !== 'daily' || prefs.digest_hour !== hour || !prefs.digest_days.includes(weekday)) continue;
                 const fresh = await this.redis.set(`digest:${t.id}:${m.userId}:${ymd}`, '1', 'EX', 2 * 86_400, 'NX').catch(() => 'OK');
                 if (fresh !== 'OK') continue;
-                if (await this.sendDigest(t.id, t.name, { userId: m.userId, role: m.role as Role, email: m.email }, tz, now)) sent++;
+                try {
+                    if (await this.sendDigest(t.id, t.name, { userId: m.userId, role: m.role as Role, email: m.email }, tz, now)) sent++;
+                } catch (err) {
+                    // Una persona con un problema no deja sin resumen al resto.
+                    this.logger.error(`Resumen diario de ${m.userId} (empresa ${t.id}): ${String(err)}`);
+                }
             }
         }
         return sent;
@@ -841,27 +923,21 @@ export class NotificationsService implements OnModuleInit {
                 .limit(1),
         );
         if (!row) return null;
-        const data = (row.data ?? {}) as Record<string, unknown>;
-        const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
-        const raw = titleId !== null ? data[`f${titleId}`] : null;
-        return { list, fields, data, title: typeof raw === 'string' && raw.trim() ? raw.trim() : `Registro #${recordId}` };
+        return ctxFrom(list, fields, recordId, (row.data ?? {}) as Record<string, unknown>);
     }
 
-    /** Títulos de varios registros, por lista y con el ACL de la persona. */
+    /** Títulos de varios registros, con el ACL de la persona (una consulta para todas las listas). */
     private async titlesFor(
         tenantId: number,
         actor: { userId: number; role: Role },
         refs: Array<{ listId: number; recordId: number }>,
+        schema?: WorkSchema,
     ): Promise<Map<number, string>> {
         const out = new Map<number, string>();
-        for (const [listId, items] of groupBy(refs, (r) => r.listId)) {
-            const list = await this.lists.get(tenantId, String(listId)).catch(() => null);
-            if (!list) continue;
-            const fields = await this.fields.listByListId(tenantId, listId);
-            const page = await this.records
-                .list(tenantId, actor, String(listId), listRecordsQuerySchema.parse({ limit: 200, ids: [...new Set(items.map((i) => i.recordId))].slice(0, 200).join(','), include_subtasks: true }))
-                .catch(() => null);
-            for (const r of page?.data ?? []) out.set(r.id, this.toWorkItem(list, fields, r.id, r.data as Record<string, unknown>).title);
+        if (refs.length === 0) return out;
+        const s = schema ?? (await this.workSchema(tenantId, actor));
+        for (const { view, id, data } of await this.readableByIds(tenantId, s, refs)) {
+            out.set(id, this.workItemFor(view, id, data).title);
         }
         return out;
     }
@@ -900,6 +976,117 @@ export class NotificationsService implements OnModuleInit {
     }
 }
 
+/**
+ * v0.1.286 — una lista SIN campo de texto (p. ej. «Comisiones»: relación +
+ * moneda) no tiene título: «Mi trabajo» mostraba «Registro #133». Ahora se
+ * usa el primer dato legible del registro («Comisión: 777»); sólo si no hay
+ * ninguno queda el número.
+ */
+export function fallbackWorkTitle(fields: readonly Field[], data: Record<string, unknown>, recordId: number): string {
+    for (const f of fields) {
+        const v = data[`f${f.id}`];
+        if (v === null || v === undefined || v === '') continue;
+        if (['text', 'long_text', 'email', 'url', 'phone'].includes(f.type) && typeof v === 'string' && v.trim() !== '') {
+            return v.trim().slice(0, 120);
+        }
+        if (['number', 'currency', 'percent', 'rating', 'duration'].includes(f.type) && typeof v === 'number') {
+            return `${f.label}: ${v}`;
+        }
+        if (f.type === 'select' && typeof v === 'string') {
+            const opts = (f.config as { options?: Array<{ value: string; label?: string }> } | undefined)?.options ?? [];
+            const opt = opts.find((o) => o.value === v);
+            return `${f.label}: ${opt?.label || v}`;
+        }
+        if ((f.type === 'date' || f.type === 'datetime') && typeof v === 'string') {
+            return `${f.label}: ${v.slice(0, 10)}`;
+        }
+    }
+    return `Registro #${recordId}`;
+}
+
+/** Lo que «Mi trabajo» necesita saber de una lista, ya resuelto con el ACL de la persona. */
+interface WorkListView {
+    list: List;
+    fields: Field[];
+    /** Claves `f{id}` que la persona no ve (no viajan en el ítem). */
+    hiddenKeys: Set<string>;
+    /** Alcance de lectura del rol (undefined = todos los registros). */
+    scope: SQL | undefined;
+    /** «Asignado a mí» por algún campo persona VISIBLE (undefined = no hay). */
+    mine: SQL | undefined;
+    /** Texto ordenable del vencimiento (campo visible), o null. */
+    due: SQL | null;
+    /** Excluye los estados terminados (campo de estado visible). */
+    notDone: SQL | undefined;
+}
+
+interface WorkSchema {
+    lists: List[];
+    fieldsByList: Map<number, Field[]>;
+    views: Map<number, WorkListView>;
+}
+
+/** null si la persona no puede leer ningún registro de la lista. */
+function workListView(list: List, fields: Field[], actor: { userId: number; role: Role }): WorkListView | null {
+    const settings = list.settings as Record<string, unknown>;
+    const perms = effectivePermissions(settings, actor.role, actor.userId);
+    if (perms.view === 'none') return null;
+    const assignmentId = resolvePermissions(settings).assignment_field_id;
+    const scope = scopeWhere(perms.view, actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+    const hiddenIds = withDependentComputed(
+        fields,
+        new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id)),
+    );
+    const visible = (f: Field | null): f is Field => f !== null && !hiddenIds.has(f.id);
+
+    // Un campo persona oculto no cuenta: si no, filtrar por él sería un oráculo
+    // (y antes, con todos ocultos, el filtro se descartaba y salía TODA la lista).
+    const userFields = fields.filter((f) => f.type === 'user' && !hiddenIds.has(f.id));
+    const mine =
+        userFields.length === 0
+            ? undefined
+            : compileFilterTree(
+                  new Map(userFields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }])),
+                  {
+                      type: 'group',
+                      logic: 'or',
+                      children: userFields.map((f) => ({ type: 'condition' as const, field_id: f.id, op: 'eq' as const, value: actor.userId })),
+                  },
+                  new Date(),
+              );
+
+    const dueField = pickDueField(fields);
+    const due = visible(dueField)
+        ? sql`(CASE WHEN jsonb_typeof(${records.data} -> ${jsonbKeyForField(dueField.id)}) = 'string' THEN NULLIF(${records.data} ->> ${jsonbKeyForField(dueField.id)}, '') END)`
+        : null;
+
+    const status = pickStatusField(fields);
+    let notDone: SQL | undefined;
+    if (visible(status)) {
+        const options = ((status.config as { options?: Array<{ value: string; label?: string }> } | undefined)?.options ?? []);
+        const doneValues = options.filter((o) => isDoneOptionLabel(o.label || o.value)).map((o) => String(o.value));
+        if (doneValues.length > 0) {
+            const val = sql`(${records.data} ->> ${jsonbKeyForField(status.id)})`;
+            notDone = sql`(${val} IS NULL OR ${val} NOT IN (${sql.join(doneValues.map((v) => sql`${v}`), sql`, `)}))`;
+        }
+    }
+    return {
+        list,
+        fields,
+        hiddenKeys: new Set([...hiddenIds].map((id) => jsonbKeyForField(id))),
+        scope,
+        mine,
+        due,
+        notDone,
+    };
+}
+
+function ctxFrom(list: List, fields: Field[], recordId: number, data: Record<string, unknown>): RecordCtx {
+    const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
+    const raw = titleId !== null ? data[`f${titleId}`] : null;
+    return { list, fields, data, title: typeof raw === 'string' && raw.trim() ? raw.trim() : `Registro #${recordId}` };
+}
+
 function groupBy<T, K>(items: readonly T[], key: (t: T) => K): Map<K, T[]> {
     const out = new Map<K, T[]>();
     for (const i of items) {
@@ -916,4 +1103,10 @@ function byDue(a: MyWorkItem, b: MyWorkItem): number {
     if (a.due === null) return 1;
     if (b.due === null) return -1;
     return a.due < b.due ? -1 : 1;
+}
+
+/** «El cliente Ana» / «El cliente»: quien escribió o cambió algo desde su portal. */
+function clientLabel(name: string | null | undefined): string {
+    const n = (name ?? '').trim();
+    return n === '' ? 'El cliente' : `El cliente ${n}`;
 }

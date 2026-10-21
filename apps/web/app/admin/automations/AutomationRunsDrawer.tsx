@@ -1,4 +1,4 @@
-import { CheckCircle2, MinusCircle, RotateCw, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MinusCircle, RotateCw, XCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { useAutomationRuns } from '@/hooks/useAutomations';
-import { __, sprintf } from '@/lib/i18n';
+import { __, _n, sprintf } from '@/lib/i18n';
 import type {
     ActionLogEntry,
     ActionLogStatus,
@@ -72,7 +72,7 @@ export function AutomationRunsDrawer({
                         </Button>
                     </div>
 
-                    {runs.isLoading ? (
+                    {runs.isPending ? (
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
                             {[0, 1, 2].map((i) => (
                                 <div
@@ -86,11 +86,26 @@ export function AutomationRunsDrawer({
                             {(runs.error as Error).message}
                         </div>
                     ) : runs.data && runs.data.length > 0 ? (
-                        <ul className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                            {runs.data.map((run) => (
-                                <RunCard key={run.id} run={run} />
-                            ))}
-                        </ul>
+                        <>
+                            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                                {runs.data.map((run) => (
+                                    <RunCard key={run.id} run={run} />
+                                ))}
+                            </ul>
+                            {runs.hasNextPage && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="imcrm-mt-3 imcrm-w-full imcrm-gap-2"
+                                    onClick={() => void runs.fetchNextPage()}
+                                    disabled={runs.isFetchingNextPage}
+                                    data-testid="imcrm-runs-load-more"
+                                >
+                                    {runs.isFetchingNextPage && <RotateCw className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" />}
+                                    {__('Cargar más')}
+                                </Button>
+                            )}
+                        </>
                     ) : (
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">
                             {__('Aún no hay ejecuciones registradas para esta automatización.')}
@@ -144,21 +159,46 @@ function RunStatusBadge({ status }: { status: AutomationRunStatus }): JSX.Elemen
     return <Badge variant="outline">{__('Pendiente')}</Badge>;
 }
 
+/** Nombre legible de cada paso del log (antes se veía `update_field`). */
+const ACTION_LABELS: Record<string, string> = {
+    send_email: __('Enviar email'),
+    call_webhook: __('Llamar webhook'),
+    connector_action: __('Acción de una app conectada'),
+    update_field: __('Actualizar campo'),
+    create_record: __('Crear registro'),
+    generate_pdf: __('Generar PDF'),
+    bulk_edit: __('Editar en lote'),
+    if_else: __('Condición'),
+    engine: __('Motor de automatizaciones'),
+};
+
 function ActionLogRow({ entry }: { entry: ActionLogEntry }): JSX.Element {
+    // Valores que no se pudieron escribir (la acción corrió igual): se ven.
+    const warnings = Array.isArray((entry.details as { warnings?: unknown } | undefined)?.warnings)
+        ? ((entry.details as { warnings: unknown[] }).warnings.map(String))
+        : [];
     return (
         <li className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs">
-            <ActionStatusIcon status={entry.status} />
+            <ActionStatusIcon status={entry.status} warned={warnings.length > 0} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                <span className="imcrm-font-mono imcrm-text-foreground">{entry.action}</span>
+                <span className="imcrm-font-medium imcrm-text-foreground">{ACTION_LABELS[entry.action] ?? entry.action}</span>
                 {entry.message && (
                     <span className="imcrm-text-muted-foreground">{entry.message}</span>
+                )}
+                {warnings.length > 0 && (
+                    <span className="imcrm-mt-0.5 imcrm-rounded imcrm-bg-warning/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-warning" data-testid="imcrm-run-warnings">
+                        {sprintf(_n('%d valor no se escribió', '%d valores no se escribieron', warnings.length), warnings.length)}
+                    </span>
                 )}
             </div>
         </li>
     );
 }
 
-function ActionStatusIcon({ status }: { status: ActionLogStatus }): JSX.Element {
+function ActionStatusIcon({ status, warned = false }: { status: ActionLogStatus; warned?: boolean }): JSX.Element {
+    if (status === 'success' && warned) {
+        return <AlertTriangle className="imcrm-h-3.5 imcrm-w-3.5 imcrm-mt-0.5 imcrm-text-warning" />;
+    }
     if (status === 'success') {
         return <CheckCircle2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-mt-0.5 imcrm-text-success" />;
     }

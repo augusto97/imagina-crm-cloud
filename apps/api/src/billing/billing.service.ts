@@ -81,6 +81,37 @@ export class BillingService {
     }
 
     /**
+     * Tope de registros del plan (null = ilimitado). Se lee FUERA de la
+     * transacción de alta — ver `assertRecordRoomInTx`.
+     */
+    async recordLimit(tenantId: number): Promise<{ limit: number; plan: Plan } | null> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_records;
+        return limit === null ? null : { limit, plan };
+    }
+
+    /**
+     * El chequeo del tope DENTRO de la transacción que va a insertar, con las
+     * altas de la empresa en fila (lock de transacción por empresa): sin eso,
+     * N altas simultáneas con la empresa a uno del tope pasaban todas el conteo
+     * (cada una veía el mismo número) y el plan quedaba superado en N-1. El
+     * lock se suelta con el commit, así la siguiente ya cuenta la fila nueva.
+     * El tope se pide antes con `recordLimit`: leerlo aquí abriría una segunda
+     * conexión con ésta ocupada (y con el pool lleno, se trancarían).
+     */
+    async assertRecordRoomInTx(tx: Tx, tenantId: number, cap: { limit: number; plan: Plan }): Promise<void> {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`records-limit:${tenantId}`}, 0))`);
+        const count = await this.countRecords(tx, tenantId);
+        if (count >= cap.limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `Alcanzaste el límite de ${cap.limit} registros del plan ${cap.plan}`,
+                data: { status: 403, errors: { plan: 'límite de registros' } },
+            });
+        }
+    }
+
+    /**
      * Igual que `assertCanCreateRecord` pero para un LOTE (SEC-09): verifica que
      * crear `additional` registros no supere el tope del plan. El import antes
      * solo comprobaba que "cabía uno más" y luego insertaba hasta 10 000 →
@@ -119,6 +150,35 @@ export class BillingService {
                 data: { status: 403, errors: { plan: 'límite de usuarios' } },
             });
         }
+    }
+
+    /**
+     * Límite de AUTOMATIZACIONES del plan (`max_automations`): existía en la
+     * tabla de planes y nada lo aplicaba (Ajustes mostraba 12/3 y se podían
+     * seguir creando). Cuenta las ACTIVAS — una pausada no corre — y lo
+     * llaman crear (activa) y activar. Las que ya estaban por encima del
+     * límite siguen corriendo: no se apaga nada que funcione.
+     */
+    async assertCanActivateAutomation(tenantId: number): Promise<void> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_automations;
+        if (limit === null) return;
+        const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countActiveAutomations(tx, tenantId));
+        if (count >= limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `Tu plan ${plan} permite ${limit} automatizaciones activas y ya tienes ${count}. Pausa otra, guárdala pausada o pasa a un plan mayor.`,
+                data: { status: 403, errors: { plan: 'límite de automatizaciones' } },
+            });
+        }
+    }
+
+    private async countActiveAutomations(tx: Tx, tenantId: number): Promise<number> {
+        const [a] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(automations)
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true)));
+        return a?.n ?? 0;
     }
 
     private async countStaff(tx: Tx, tenantId: number): Promise<number> {
@@ -173,16 +233,21 @@ export class BillingService {
     private async usage(tx: Tx, tenantId: number): Promise<Usage> {
         const recordCount = await this.countRecords(tx, tenantId);
         const staff = await this.countStaff(tx, tenantId);
-        const [a] = await tx
-            .select({ n: sql<number>`count(*)::int` })
-            .from(automations)
-            .where(eq(automations.tenantId, tenantId));
+        // Cuentan las ACTIVAS: es lo que limita el plan (una pausada no corre).
+        const a = { n: await this.countActiveAutomations(tx, tenantId) };
         // v0.1.268 (ADR-S36) — sólo lo guardado en el servidor de la
         // plataforma: lo del almacenamiento propio de la empresa no cuenta.
         const [st] = await tx
             .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
             .from(attachments)
-            .where(and(eq(attachments.tenantId, tenantId), isNull(attachments.storageConnectionId)));
+            .where(
+                and(
+                    eq(attachments.tenantId, tenantId),
+                    isNull(attachments.storageConnectionId),
+                    // Lo subido a un formulario que todavía no se envió no cuenta.
+                    isNull(attachments.pendingFormId),
+                ),
+            );
         return {
             records: recordCount,
             users: staff,
@@ -231,7 +296,14 @@ export class BillingService {
             const [st] = await tx
                 .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), isNull(attachments.storageConnectionId)));
+                .where(
+                and(
+                    eq(attachments.tenantId, tenantId),
+                    isNull(attachments.storageConnectionId),
+                    // Lo subido a un formulario que todavía no se envió no cuenta.
+                    isNull(attachments.pendingFormId),
+                ),
+            );
             return Number(st?.n ?? 0);
         });
         return limit * 1024 * 1024 - used;

@@ -34,7 +34,7 @@ import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import * as argon2 from 'argon2';
 import { isEncrypted } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
-import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { DRIZZLE, type Db, type Tx, withoutTimeouts } from '../db/client';
 import {
     activity,
     aiUsage,
@@ -387,9 +387,11 @@ export class TenantTransferService {
                 // TODA la importación en una transacción: si algo falla a
                 // mitad, no queda una empresa a medio armar que el operador
                 // tenga que limpiar a mano.
-                return await this.db.transaction((tx) =>
-                    this.runImport(tx, work, manifest, input, writtenKeys),
-                );
+                return await this.db.transaction(async (tx) => {
+                    // Una empresa grande tarda: sin los topes de tiempo de la conexión.
+                    await withoutTimeouts(tx);
+                    return this.runImport(tx, work, manifest, input, writtenKeys);
+                });
             } catch (err) {
                 // Los bytes de los adjuntos viven fuera de la transacción: si
                 // ésta revierte hay que borrarlos o quedan huérfanos ocupando
@@ -806,6 +808,8 @@ export class TenantTransferService {
                     kind: String(c.kind ?? 'note'),
                     parentId: null,
                     metadata: (c.metadata as Row | null) ?? {},
+                    // Lo interno sigue interno al migrar (default del archivo viejo).
+                    visibility: c.visibility === 'client' ? 'client' : 'internal',
                     createdAt: this.date(c.createdAt) ?? new Date(),
                     updatedAt: this.date(c.updatedAt) ?? new Date(),
                     deletedAt: this.date(c.deletedAt),
