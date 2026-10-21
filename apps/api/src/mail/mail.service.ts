@@ -214,10 +214,18 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         // v0.1.245 — con SMTP propio, el remitente que la empresa configuró ahí
         // gana sobre el nombre sugerido (la marca en los correos del portal).
         if (own && outgoing.fromNameSoft) outgoing = { ...outgoing, fromName: undefined };
+        // Con tope, la cuota se RESERVA antes de enviar (atómico: dos envíos
+        // simultáneos no pasan los dos con un lugar) y se devuelve si falla.
+        let reserved = false;
         try {
-            if (metered) await this.quota!.assertWithinQuota(message.tenantId!, recipients);
+            if (metered) reserved = await this.quota!.reserve(message.tenantId!, recipients);
             await transport.send(outgoing);
         } catch (err) {
+            if (reserved) {
+                await this.quota!.release(message.tenantId!, recipients).catch((e: unknown) =>
+                    this.logger.warn(`No se pudo devolver la cuota del tenant ${message.tenantId}: ${String(e)}`),
+                );
+            }
             recordMail({ ...base, via, status: 'failed', error: errorText(err) });
             if (final || err instanceof EmailQuotaExceededError || err instanceof MailAccountLimitError) {
                 this.reportMail(message.tenantId, via, err);
@@ -236,9 +244,10 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             this.incidents?.resolve(message.tenantId, 'mail');
             this.incidents?.resolve(message.tenantId, 'mail:quota');
         }
-        if (metered) {
-            // Best-effort: si falla el contador, el correo YA salió — no tiene
-            // sentido reintentarlo ni romperle la operación al cliente.
+        if (metered && !reserved) {
+            // Plan sin tope: igual se cuenta (uso visible). Best-effort: si
+            // falla el contador, el correo YA salió — no tiene sentido
+            // reintentarlo ni romperle la operación al cliente.
             await this.quota!.record(message.tenantId!, recipients).catch((err: unknown) =>
                 this.logger.warn(`No se pudo contabilizar el correo del tenant ${message.tenantId}: ${String(err)}`),
             );
