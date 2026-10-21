@@ -1,57 +1,26 @@
 import { CalendarPlus, Clock, type LucideIcon } from 'lucide-react';
 
-import { FieldValueDisplay } from '@/admin/records/crm/FieldValueDisplay';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 
 interface RecordMetaGridProps {
     record: RecordEntity;
-    /** Campos visibles de la lista (ya filtrados por ACL en el server). */
-    fields?: FieldEntity[];
-    /**
-     * Valores vivos del form (para que la grilla refleje ediciones sin
-     * guardar). Si no se pasa, cae a `record.fields`.
-     */
-    values?: Record<string, unknown>;
     /** 2 columnas en anchos sm+ (página). false = 1 columna (drawer). */
     twoCols?: boolean;
     className?: string;
 }
 
 /**
- * Grilla de metadatos estilo ClickUp bajo el título del record:
- * pares icono+label → valor. Muestra SOLO datos ya presentes en el
- * record — timestamps (creado/actualizado) + los campos "clave" que
- * ClickUp promociona al header cuando existen en la lista: el primer
- * select (estado, como pill), el primer user (asignado), el primer
- * multi_select (etiquetas) y la primera fecha. Render read-only vía
- * `FieldValueDisplay`; la edición sigue viviendo en la sección
- * "Campos" de abajo.
+ * Metadatos del registro bajo el título: cuándo se creó y cuándo cambió por
+ * última vez — lo que NO es un campo editable.
+ *
+ * Antes la grilla repetía también el estado, el responsable, las etiquetas y
+ * la primera fecha… que ya están en «Campos» justo debajo (ahí, además, se
+ * editan). Se veía cada dato dos veces y sólo uno respondía al click.
  */
-export function RecordMetaGrid({
-    record,
-    fields,
-    values,
-    twoCols = true,
-    className,
-}: RecordMetaGridProps): JSX.Element {
-    const vals = values ?? record.fields;
-    const sorted = [...(fields ?? [])].sort((a, b) => a.position - b.position);
-
-    const firstOfType = (...types: string[]): FieldEntity | undefined =>
-        sorted.find((f) => types.includes(f.type));
-
-    const promoted = [
-        firstOfType('select'),
-        firstOfType('user'),
-        firstOfType('multi_select'),
-        firstOfType('date', 'datetime'),
-    ].filter((f): f is FieldEntity => f !== undefined);
-
+export function RecordMetaGrid({ record, twoCols = true, className }: RecordMetaGridProps): JSX.Element {
     return (
         <div
             className={cn(
@@ -66,11 +35,6 @@ export function RecordMetaGrid({
             <MetaCell icon={Clock} label={__('Actualizado')}>
                 <span className="imcrm-tabular-nums">{formatTimestamp(record.updated_at)}</span>
             </MetaCell>
-            {promoted.map((field) => (
-                <MetaCell key={field.id} icon={fieldTypeIcon(field.type)} label={field.label}>
-                    <FieldValueDisplay field={field} value={vals[field.slug]} />
-                </MetaCell>
-            ))}
         </div>
     );
 }

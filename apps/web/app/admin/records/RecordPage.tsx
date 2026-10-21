@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     Activity as ActivityIcon,
     ArrowLeft,
     ChevronDown,
     ChevronRight,
-    ExternalLink,
     Loader2,
     MessageSquare,
     Save,
@@ -22,8 +22,10 @@ import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsP
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
+import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { readStoreListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
+import { useRecordDraft } from '@/admin/records/recordDraft';
 import { lockedReasonsFor, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
@@ -32,7 +34,9 @@ import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
+import { notificationKeys } from '@/hooks/useNotifications';
 import { useDeleteRecord, useRecord, useUpdateRecord } from '@/hooks/useRecords';
+import { useRecordView } from '@/hooks/useRecordView';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
@@ -41,14 +45,16 @@ import { cn } from '@/lib/utils';
 
 /**
  * Vista "Card" — página completa de un record con:
- * - Header: breadcrumb + nombre/id + acciones.
+ * - Header: breadcrumb + acciones; abajo, el título (campo primario) + id.
  * - Columna principal (2/3): RecordFieldsForm completo, editable.
  * - Aside (1/3): tabs Comentarios / Actividad.
  *
  * Es el "primo grande" del RecordDetailDrawer: misma data, misma
- * lógica de save/delete; cambia el layout. Útil cuando el operador
- * necesita más espacio para editar campos largos o navegar
- * comentarios extensos sin sentirse encajonado en el drawer.
+ * lógica de save/delete; cambia el layout.
+ *
+ * Todo lo que la página necesita llega en UN request (`useRecordView`): antes
+ * la ficha diseñada era una cascada de 4-5 pasos (lista → campos + registro →
+ * relaciones → campos del otro lado → datos de los bloques).
  *
  * URL: `/lists/:listSlug/records/:recordId` — bookmarkable y
  * compartible.
@@ -56,22 +62,24 @@ import { cn } from '@/lib/utils';
 export function RecordPage(): JSX.Element {
     const { listSlug, recordId } = useParams<{ listSlug: string; recordId: string }>();
     const navigate = useNavigate();
+    const qc = useQueryClient();
 
     const id = Number(recordId);
-    const list = useList(listSlug);
-    const fields = useFields(list.data?.id);
-    const record = useRecord(list.data?.id, id);
+    const view = useRecordView(listSlug, id);
+    // Hasta que el bundle sembró los caches, nada sale a pedir lo suyo.
+    const list = useList(view.ready ? listSlug : undefined);
+    const fields = useFields(view.ready ? list.data?.id : undefined);
+    const record = useRecord(view.ready ? list.data?.id : undefined, id);
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const update = useUpdateRecord(list.data?.id ?? 0);
     const remove = useDeleteRecord(list.data?.id ?? 0);
     const confirm = useConfirm();
 
-    const initialValues = useMemo<Record<string, unknown>>(() => {
-        if (!record.data) return {};
-        return { ...record.data.fields, ...record.data.relations };
-    }, [record.data]);
-
-    const [values, setValues] = useState<Record<string, unknown>>(initialValues);
+    // Sólo lo que la persona tocó: un cambio de otra persona (o el
+    // autoguardado de la descripción, que vuelve a pedir el registro) ya no
+    // borra lo que se está escribiendo ni se revierte al guardar.
+    const draft = useRecordDraft(record.data);
+    const { values, setValues, dirty } = draft;
     // v0.1.213 — lista de una tienda: sin borrar y con los campos de WooCommerce de lectura.
     const storeMarker = readStoreListMarker(list.data?.settings);
     const storeRules = useMemo<StoreRules | null>(
@@ -86,13 +94,33 @@ export function RecordPage(): JSX.Element {
     const [fieldsOpen, setFieldsOpen] = useState(true);
     const boot = getBootData();
 
-    useEffect(() => {
-        setValues(initialValues);
-        setError(null);
-        setFieldErrors({});
-    }, [initialValues]);
+    // Declarado ANTES de los retornos tempranos: la ficha diseñada lo usa y,
+    // declarado después, el botón «Eliminar» tiraba ReferenceError.
+    const handleDelete = async (): Promise<void> => {
+        if (!record.data || !list.data) return;
+        const ok = await confirm({
+            title: sprintf(
+                /* translators: %d: record id */
+                __('¿Eliminar el registro #%d?'),
+                record.data.id,
+            ),
+            description: record.data.subtask_count > 0
+                ? __('Se elimina junto con sus subtareas. Esta acción no se puede deshacer.')
+                : __('Esta acción no se puede deshacer.'),
+            destructive: true,
+            confirmLabel: __('Eliminar'),
+        });
+        if (!ok) return;
+        try {
+            await remove.mutateAsync({ id: record.data.id, purge: false });
+            draft.reset();
+            navigate(`/lists/${list.data.slug}/records`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : __('Error al eliminar'));
+        }
+    };
 
-    if (list.isLoading || fields.isLoading || record.isLoading) {
+    if (!view.ready || list.isLoading || fields.isLoading || record.isLoading) {
         return (
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-12 imcrm-text-sm imcrm-text-muted-foreground">
                 <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
@@ -141,10 +169,6 @@ export function RecordPage(): JSX.Element {
     if (useCrmLayout && fields.data) {
         return (
             <StoreRulesContext.Provider value={storeRules}>
-                {/* v0.1.276 — seguir y recordarme también en la ficha diseñada. */}
-                <div className="imcrm-mb-2 imcrm-flex imcrm-justify-end">
-                    <RecordFollowControls listId={list.data.id} recordId={record.data.id} />
-                </div>
                 <RecordLayoutView
                     key={record.data.id}
                     list={list.data}
@@ -154,37 +178,48 @@ export function RecordPage(): JSX.Element {
                     isAdmin={boot.user.capabilities.workspace_admin === true}
                     onDelete={() => void handleDelete()}
                     deleting={remove.isPending}
+                    actions={
+                        <>
+                            {/* Seguir / recordarme y el PDF, en la barra de la ficha. */}
+                            <RecordFollowControls listId={list.data.id} recordId={record.data.id} compact />
+                            <GeneratePdfButton
+                                listId={list.data.id}
+                                listSlug={list.data.slug}
+                                recordId={record.data.id}
+                                fields={fields.data}
+                                compact
+                            />
+                        </>
+                    }
                 />
             </StoreRulesContext.Provider>
         );
     }
 
-    const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
+    const listInfo = list.data;
+    const rec = record.data;
     const titleField = titleFieldOf(fields.data);
-    const titleValue = titleField ? record.data.fields[titleField.slug] : undefined;
+    const liveTitle = titleField ? values[titleField.slug] : undefined;
     const title =
-        typeof titleValue === 'string' && titleValue !== ''
-            ? titleValue
+        typeof liveTitle === 'string' && liveTitle.trim() !== ''
+            ? liveTitle
             : sprintf(
                   /* translators: %d: record id */
                   __('Registro #%d'),
-                  record.data.id,
+                  rec.id,
               );
 
     const handleSave = async (): Promise<void> => {
         setError(null);
         setFieldErrors({});
 
-        const patch: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(values)) {
-            if (JSON.stringify(v) !== JSON.stringify(initialValues[k])) {
-                patch[k] = v;
-            }
-        }
+        const patch = draft.patch();
         if (Object.keys(patch).length === 0) return;
 
         try {
-            await update.mutateAsync({ id: record.data!.id, values: patch });
+            const saved = await update.mutateAsync({ id: rec.id, values: patch });
+            draft.markSaved(patch, saved ?? null);
+            void qc.invalidateQueries({ queryKey: notificationKeys.follow(rec.id) });
         } catch (err) {
             if (err instanceof ApiError) {
                 setError(err.message);
@@ -195,90 +230,79 @@ export function RecordPage(): JSX.Element {
         }
     };
 
-    const handleDelete = async (): Promise<void> => {
-        if (!record.data) return;
-        const ok = await confirm({
-            title: sprintf(
-                /* translators: %d: record id */
-                __('¿Eliminar el registro #%d?'),
-                record.data.id,
-            ),
-            description: __('Esta acción no se puede deshacer.'),
-            destructive: true,
-            confirmLabel: __('Eliminar'),
-        });
-        if (!ok) return;
-        try {
-            await remove.mutateAsync({ id: record.data.id, purge: false });
-            navigate(`/lists/${list.data!.slug}/records`);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : __('Error al eliminar'));
-        }
-    };
-
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            {/* Dos filas: navegación + acciones arriba y el título abajo, a todo
+                el ancho. En una sola fila, a 1440px «Guardar cambios» se caía
+                a un segundo renglón y el #id quedaba flotando. */}
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="imcrm-record-page-header">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                     <Button
                         asChild
                         variant="ghost"
                         size="sm"
-                        className="imcrm-gap-2 imcrm-self-start imcrm-text-muted-foreground"
+                        className="imcrm-gap-2 imcrm-text-muted-foreground"
                     >
-                        <Link to={`/lists/${list.data.slug}/records`}>
+                        <Link to={`/lists/${listInfo.slug}/records`}>
                             <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
-                            {list.data.name}
+                            {listInfo.name}
                         </Link>
                     </Button>
-                    {/* El título ES el campo primario y se edita aquí (v0.1.136). */}
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                        <RecordTitleInput
-                            field={titleField}
-                            value={titleField ? values[titleField.slug] : undefined}
-                            onChange={(next) =>
-                                titleField && setValues((v) => ({ ...v, [titleField.slug]: next }))
-                            }
-                            fallback={title}
-                            editable={canEditRecords && !(titleField && lockedReasons[titleField.slug])}
-                            className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
-                        />
-                        <Badge variant="outline" className="imcrm-shrink-0 imcrm-font-mono imcrm-text-xs">
-                            #{record.data.id}
-                        </Badge>
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-1.5">
+                        <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />
+                        <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
+                        {!storeRules && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
+                                onClick={() => void handleDelete()}
+                                disabled={remove.isPending}
+                            >
+                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
+                            </Button>
+                        )}
+                        <Button size="sm" onClick={() => void handleSave()} disabled={!dirty || update.isPending} className="imcrm-gap-2 imcrm-whitespace-nowrap">
+                            <Save className="imcrm-h-4 imcrm-w-4" />
+                            {update.isPending ? __('Guardando…') : __('Guardar cambios')}
+                        </Button>
                     </div>
                 </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
-                    <RecordFollowControls listId={list.data.id} recordId={record.data.id} />
-                    <GeneratePdfButton listId={list.data.id} listSlug={list.data.slug} recordId={record.data.id} fields={fields.data ?? []} />
-                    {!storeRules && (
-                        <Button
-                            variant="ghost"
-                            className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
-                            onClick={handleDelete}
-                            disabled={remove.isPending}
-                        >
-                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                            {__('Eliminar')}
-                        </Button>
-                    )}
-                    <Button onClick={handleSave} disabled={!dirty || update.isPending} className="imcrm-gap-2">
-                        <Save className="imcrm-h-4 imcrm-w-4" />
-                        {update.isPending ? __('Guardando…') : __('Guardar cambios')}
-                    </Button>
+                {/* El título ES el campo primario y se edita aquí (v0.1.136). */}
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
+                    <RecordTitleInput
+                        field={titleField}
+                        value={titleField ? values[titleField.slug] : undefined}
+                        onChange={(next) =>
+                            titleField && setValues((v) => ({ ...v, [titleField.slug]: next }))
+                        }
+                        fallback={title}
+                        editable={canEditRecords && !(titleField && lockedReasons[titleField.slug])}
+                        className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
+                    />
+                    <Badge variant="outline" className="imcrm-shrink-0 imcrm-font-mono imcrm-text-xs">
+                        #{rec.id}
+                    </Badge>
                 </div>
+                {titleField && fieldErrors[titleField.slug] !== undefined && (
+                    <p className="imcrm-text-xs imcrm-text-destructive">{fieldErrors[titleField.slug]}</p>
+                )}
             </header>
 
             <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-6 lg:imcrm-grid-cols-3">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
-                    {/* Grilla de metadatos estilo ClickUp: icono+label → valor. */}
-                    <RecordMetaGrid record={record.data} fields={fields.data} values={values} />
+                    {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
+                    <RecordMetaGrid record={rec} />
+                    {rec.parent_id && (
+                        <RecordSubtasks listId={listInfo.id} listSlug={listInfo.slug} record={rec} fields={fields.data ?? []} />
+                    )}
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el
                         modal del registro. */}
                     <RecordDescription
-                        listKey={listSlug ?? list.data.id}
-                        recordId={record.data.id}
+                        listKey={listSlug ?? listInfo.id}
+                        recordId={rec.id}
                         editable={canEditRecords}
                     />
 
@@ -301,13 +325,13 @@ export function RecordPage(): JSX.Element {
                             {__('Campos')}
                             {fields.data && (
                                 <span className="imcrm-font-normal imcrm-normal-case imcrm-text-muted-foreground/70">
-                                    {fields.data.length}
+                                    {fields.data.length - (titleField ? 1 : 0)}
                                 </span>
                             )}
                         </button>
                         {fieldsOpen && fields.data && (
                             <RecordFieldsForm
-                                listId={list.data.id}
+                                listId={listInfo.id}
                                 recordId={id}
                                 fields={fields.data}
                                 values={values}
@@ -316,6 +340,17 @@ export function RecordPage(): JSX.Element {
                                 density="compact"
                                 showTypeIcon
                                 lockedReasons={lockedReasons}
+                                hiddenSlugs={titleField ? [titleField.slug] : undefined}
+                            />
+                        )}
+
+                        {!rec.parent_id && (
+                            <RecordSubtasks
+                                listId={listInfo.id}
+                                listSlug={listInfo.slug}
+                                record={rec}
+                                fields={fields.data ?? []}
+                                className="imcrm-mt-4"
                             />
                         )}
 
@@ -323,12 +358,12 @@ export function RecordPage(): JSX.Element {
                             plantilla CRM (se auto-oculta si el portal de
                             la lista no está habilitado). */}
                         <div className="imcrm-mt-4">
-                            <PortalAccessButton list={list.data} record={record.data} />
+                            <PortalAccessButton list={listInfo} record={rec} />
                         </div>
                         <div className="imcrm-mt-4">
-                            <RecordPaymentsPanel listId={list.data.id} recordId={id} />
+                            <RecordPaymentsPanel listId={listInfo.id} recordId={id} />
                         </div>
-                        <RecordBacklinks listId={list.data.id} recordId={id} />
+                        <RecordBacklinks listId={listInfo.id} recordId={id} />
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
                                 {error}
@@ -366,13 +401,13 @@ export function RecordPage(): JSX.Element {
                     <div className="imcrm-flex imcrm-min-h-[60vh] imcrm-flex-col imcrm-overflow-hidden imcrm-p-4 lg:imcrm-px-0">
                         {tab === 'comments' ? (
                             <CommentsPanel
-                                listId={list.data.id}
-                                recordId={record.data.id}
+                                listId={listInfo.id}
+                                recordId={rec.id}
                                 currentUserId={boot.user.id}
                                 isAdmin={boot.user.capabilities.workspace_admin === true}
                             />
                         ) : (
-                            <ActivityPanel listId={list.data.id} recordId={record.data.id} />
+                            <ActivityPanel listId={listInfo.id} recordId={rec.id} />
                         )}
                     </div>
                 </aside>
@@ -405,6 +440,3 @@ function TabButton({ active, onClick, children }: TabButtonProps): JSX.Element {
         </button>
     );
 }
-
-// Reservado para usar luego cuando el drawer enlace aquí.
-void ExternalLink;
