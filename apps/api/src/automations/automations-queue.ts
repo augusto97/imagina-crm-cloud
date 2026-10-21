@@ -8,6 +8,7 @@ import { AutomationBulkRunner } from './automation-bulk-runner.service';
 import { AutomationDispatcher, type BulkEditJob, type TriggerEvent } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { AutomationWaitsService } from './automation-waits.service';
 import { AutomationsService } from './automations.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -22,6 +23,9 @@ export const AUTOMATIONS_QUEUE = 'automations';
 /** Tick GLOBAL de recurrencias (barrido de las trigger=schedule) cada 5 min. */
 const RECURRENCES_TICK_JOB = 'recurrences-tick';
 const RECURRENCES_TICK_PATTERN = '*/5 * * * *';
+
+/** v0.1.288 — reloj de las esperas («Esperar»): cada minuto, uno por disparo. */
+const WAITS_TICK_JOB = 'waits-tick';
 
 /**
  * Cablea la cola BullMQ y el worker (STANDALONE §8). El worker procesa los
@@ -43,6 +47,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
         private readonly recurrences: RecurrencesService,
         private readonly bulkRunner: AutomationBulkRunner,
         private readonly automations: AutomationsService,
+        private readonly waits: AutomationWaitsService,
         @Optional() private readonly timeZones?: TenantTimeZones,
         @Optional() private readonly incidents?: IncidentHub,
     ) {}
@@ -75,6 +80,14 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                         await this.engine.runWebhook(d.tenantId, d.automationId, d.payload);
                     } else if (job.name === 'bulk-edit') {
                         await this.bulkRunner.run(job.data as BulkEditJob);
+                    } else if (job.name === WAITS_TICK_JOB) {
+                        await this.waits.tick();
+                    } else if (job.name === 'resume') {
+                        const d = job.data as { tenantId: number; runId: number };
+                        await this.waits.resume(d.tenantId, d.runId);
+                    } else if (job.name === 'scheduled-batch') {
+                        const d = job.data as SchedulerJobData & { recordIds: number[] };
+                        await this.engine.runScheduledBatch(d.tenantId, d.automationId, d.recordIds);
                     } else if (job.name === RECURRENCES_TICK_JOB) {
                         await this.recurrences.tick();
                         await this.maintainRuns();
@@ -89,7 +102,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 // v0.1.285 (ADR-S44) — el trabajo se cayó ANTES de poder
                 // registrar la corrida: sin esto, sólo quedaba en el log.
                 const d = (job?.data ?? {}) as Partial<SchedulerJobData & TriggerEvent>;
-                if (!job || job.name === RECURRENCES_TICK_JOB || typeof d.tenantId !== 'number') return;
+                if (!job || job.name === RECURRENCES_TICK_JOB || job.name === WAITS_TICK_JOB || typeof d.tenantId !== 'number') return;
                 const automationId = typeof d.automationId === 'number' ? d.automationId : null;
                 this.incidents?.report({
                     tenantId: d.tenantId,
@@ -110,6 +123,8 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 { pattern: RECURRENCES_TICK_PATTERN },
                 { name: RECURRENCES_TICK_JOB, data: {} },
             );
+            // v0.1.288 — el reloj de las esperas (corridas en un «Esperar»).
+            await this.queue.upsertJobScheduler(WAITS_TICK_JOB, { every: 60_000 }, { name: WAITS_TICK_JOB, data: {} });
             // v0.1.221 — Re-registra los horarios en segundo plano (no demora el arranque).
             void this.automations
                 .resyncSchedules()

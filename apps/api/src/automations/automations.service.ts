@@ -4,8 +4,13 @@ import type {
     Automation,
     AutomationRun,
     AutomationRunStatus,
+    AutomationTestRunInput,
+    AutomationTestRunResult,
+    AutomationTestStep,
+    AutomationVersion,
     CreateAutomationInput,
     HookCapture,
+    TestStepStatus,
     UpdateAutomationInput,
     WebhookTestInput,
     WebhookTestResult,
@@ -13,20 +18,23 @@ import type {
     EmailTestResult,
 } from '@imagina-base/shared';
 import {
+    AUTOMATION_VERSIONS_KEPT,
     automationConfigIssues,
     emailDesignSchema,
     FALLBACK_TIME_ZONE,
+    formatEmailFieldValue,
     isEffectivelyReadOnly,
     parseEmailDesign,
+    tenantFormatSchema,
     zonedToday,
     type BillingStatus,
 } from '@imagina-base/shared';
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
-import { DRIZZLE, type Db } from '../db/client';
-import { automationHooks, automations, fields, records, tenants, users } from '../db/schema';
+import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { automationHooks, automationRuns, automations, automationVersions, fields, records, tenants, users } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -47,6 +55,8 @@ import {
 import { buildWebhookRequest } from './webhook-request';
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
+import { AutomationEngine } from './automation-engine.service';
+import { redactAutomationSecrets, restoreRedactedSecrets } from './automation-secrets';
 import {
     AutomationsRepository,
     type AutomationRow,
@@ -89,6 +99,8 @@ export class AutomationsService {
         @Optional() private readonly dispatcher?: AutomationDispatcher,
         // Límite de automatizaciones activas del plan (`max_automations`).
         @Optional() private readonly billing?: BillingService,
+        // v0.1.288 — «Probar» paso a paso (simulación con el mismo motor).
+        @Optional() private readonly engine?: AutomationEngine,
     ) {}
 
     /**
@@ -142,11 +154,25 @@ export class AutomationsService {
                     order by id desc limit 1
                 ) r on true`);
             const byId = new Map(last.rows.map((r) => [Number(r.automation_id), r]));
+            // v0.1.288 — cuántas corridas esperan en un «Esperar» (índice parcial).
+            const waiting = await tx
+                .select({ id: automationRuns.automationId, n: sql<number>`count(*)::int` })
+                .from(automationRuns)
+                .where(
+                    and(
+                        eq(automationRuns.tenantId, tenantId),
+                        eq(automationRuns.status, 'waiting'),
+                        inArray(automationRuns.automationId, rows.map((r) => r.id)),
+                    ),
+                )
+                .groupBy(automationRuns.automationId);
+            const waitingBy = new Map(waiting.map((w) => [Number(w.id), Number(w.n)]));
             return rows.map((row) => {
                 const r = byId.get(row.id);
                 return {
                     ...toAutomation(row),
                     last_run: r ? { status: r.status, error: r.error, at: new Date(r.created_at).toISOString() } : null,
+                    waiting_runs: waitingBy.get(row.id) ?? 0,
                 };
             });
         });
@@ -235,7 +261,7 @@ export class AutomationsService {
                set status = 'failed',
                    error = 'La ejecución se interrumpió (el servidor se reinició o se cayó a mitad).',
                    finished_at = now()
-             where status = 'running' and created_at < now() - interval '1 hour'`);
+             where status = 'running' and coalesce(resumed_at, created_at) < now() - interval '1 hour'`);
         let pruned = 0;
         for (let i = 0; i < 20; i++) {
             const res = await this.db.execute(sql`
@@ -243,6 +269,8 @@ export class AutomationsService {
                  where id in (
                     select id from automation_runs
                      where created_at < now() - make_interval(days => ${RUNS_RETENTION_DAYS})
+                       -- v0.1.288 — una corrida que espera (hasta un año) no se poda.
+                       and status <> 'waiting'
                      limit 5000)`);
             const n = res.rowCount ?? 0;
             pruned += n;
@@ -262,6 +290,7 @@ export class AutomationsService {
         tenantId: number,
         listIdOrSlug: string,
         input: CreateAutomationInput,
+        opts: VersionOpts = {},
     ): Promise<Automation> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         normalizeEmailDesigns(input.actions);
@@ -271,8 +300,8 @@ export class AutomationsService {
             assertRunnable({ trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions });
             await this.billing?.assertCanActivateAutomation(tenantId);
         }
-        const row = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.insert(tx, {
+        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const inserted = await this.repo.insert(tx, {
                 tenantId,
                 listId: list.id,
                 name: input.name,
@@ -281,24 +310,220 @@ export class AutomationsService {
                 triggerConfig: input.trigger_config ?? {},
                 actions: input.actions,
                 isActive: input.is_active ?? true,
-            }),
-        );
+            });
+            await this.recordVersion(tx, tenantId, inserted, opts.actorId ?? null, opts.note ?? 'Creó la automatización');
+            return inserted;
+        });
         await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
+    }
+
+    /**
+     * v0.1.288 — Duplicar: una copia «Nombre (copia)» PAUSADA en la misma
+     * lista (pausada para que no empiece a correr dos veces lo mismo). El token
+     * del webhook entrante NO se copia: la copia recibe su propia URL.
+     */
+    async duplicate(tenantId: number, listIdOrSlug: string, id: number, actorId: number | null): Promise<Automation> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const src = await this.repo.findById(tx, tenantId, id);
+            if (!src || src.listId !== list.id) throw notFound(id);
+            const triggerConfig = { ...(src.triggerConfig ?? {}) } as Record<string, unknown>;
+            delete triggerConfig.webhook_token;
+            const suffix = ' (copia)';
+            const inserted = await this.repo.insert(tx, {
+                tenantId,
+                listId: list.id,
+                name: `${src.name.slice(0, 190 - suffix.length)}${suffix}`,
+                description: src.description,
+                triggerType: src.triggerType,
+                triggerConfig: triggerConfig as AutomationRow['triggerConfig'],
+                actions: JSON.parse(JSON.stringify(src.actions)) as AutomationRow['actions'],
+                isActive: false,
+            });
+            await this.recordVersion(tx, tenantId, inserted, actorId, `Duplicada de «${src.name}»`.slice(0, 300));
+            return inserted;
+        });
+        await this.scheduler.sync(tenantId, row);
+        return toAutomation(await this.syncHook(tenantId, row));
+    }
+
+    /**
+     * v0.1.288 — Una versión nueva en el historial (sin secretos). No se
+     * repite una foto idéntica a la última; se conservan las últimas 50.
+     */
+    private async recordVersion(
+        tx: Tx,
+        tenantId: number,
+        row: AutomationRow,
+        authorId: number | null,
+        note: string | null,
+    ): Promise<void> {
+        const snapshot = {
+            name: row.name,
+            description: row.description ?? null,
+            triggerType: row.triggerType,
+            triggerConfig: redactAutomationSecrets(row.triggerConfig ?? {}) as Record<string, unknown>,
+            actions: redactAutomationSecrets(row.actions ?? []),
+            isActive: row.isActive,
+        };
+        const [last] = await tx
+            .select()
+            .from(automationVersions)
+            .where(and(eq(automationVersions.tenantId, tenantId), eq(automationVersions.automationId, row.id)))
+            .orderBy(desc(automationVersions.id))
+            .limit(1);
+        if (
+            last &&
+            note === null &&
+            JSON.stringify([last.name, last.description, last.triggerType, last.triggerConfig, last.actions, last.isActive]) ===
+                JSON.stringify([snapshot.name, snapshot.description, snapshot.triggerType, snapshot.triggerConfig, snapshot.actions, snapshot.isActive])
+        ) {
+            return;
+        }
+        await tx.insert(automationVersions).values({ tenantId, automationId: row.id, authorId, note, ...snapshot });
+        const keep = tx
+            .select({ id: automationVersions.id })
+            .from(automationVersions)
+            .where(and(eq(automationVersions.tenantId, tenantId), eq(automationVersions.automationId, row.id)))
+            .orderBy(desc(automationVersions.id))
+            .limit(AUTOMATION_VERSIONS_KEPT);
+        await tx
+            .delete(automationVersions)
+            .where(and(eq(automationVersions.tenantId, tenantId), eq(automationVersions.automationId, row.id), notInArray(automationVersions.id, keep)));
+    }
+
+    /** v0.1.288 — Historial de versiones (más nueva primero, hasta 50). */
+    async versions(tenantId: number, listIdOrSlug: string, id: number): Promise<AutomationVersion[]> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const auto = await this.repo.findById(tx, tenantId, id);
+            if (!auto || auto.listId !== list.id) throw notFound(id);
+            const rows = await tx
+                .select({ v: automationVersions, authorName: users.name, authorEmail: users.email })
+                .from(automationVersions)
+                .leftJoin(users, eq(users.id, automationVersions.authorId))
+                .where(and(eq(automationVersions.tenantId, tenantId), eq(automationVersions.automationId, id)))
+                .orderBy(desc(automationVersions.id))
+                .limit(AUTOMATION_VERSIONS_KEPT);
+            return rows.map(({ v, authorName, authorEmail }) => ({
+                id: v.id,
+                automation_id: v.automationId,
+                name: v.name,
+                description: v.description ?? null,
+                trigger_type: v.triggerType,
+                trigger_config: v.triggerConfig ?? {},
+                actions: v.actions ?? [],
+                is_active: v.isActive,
+                author: v.authorId !== null ? { id: v.authorId, name: authorName || authorEmail || `#${v.authorId}` } : null,
+                note: v.note ?? null,
+                created_at: v.createdAt.toISOString(),
+            }));
+        });
+    }
+
+    /**
+     * v0.1.288 — «Cancelar espera» de una corrida desde el historial. Sólo
+     * corridas en `waiting` de esa automatización.
+     */
+    async cancelWaitingRun(tenantId: number, automationId: number, runId: number, actorId: number): Promise<{ cancelled: boolean }> {
+        const name = await this.db
+            .select({ name: users.name, email: users.email })
+            .from(users)
+            .where(eq(users.id, actorId))
+            .limit(1)
+            .then((r) => r[0]?.name || r[0]?.email || null);
+        const n = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const auto = await this.repo.findById(tx, tenantId, automationId);
+            if (!auto) throw notFound(automationId);
+            return this.repo.cancelWaiting(tx, tenantId, automationId, name ? `Cancelada a mano por ${name}.` : 'Cancelada a mano.', runId);
+        });
+        return { cancelled: n > 0 };
+    }
+
+    /**
+     * v0.1.288 — «Probar» paso a paso: simula la automatización (con los
+     * cambios SIN guardar) contra un registro real, con el mismo motor que la
+     * ejecuta de verdad. No escribe, no envía, no llama ni emite números de
+     * documento (salvo los webhooks/conectores marcados para ejecutar).
+     */
+    async testRun(tenantId: number, listIdOrSlug: string, input: AutomationTestRunInput): Promise<AutomationTestRunResult> {
+        if (!this.engine) {
+            throw new ServiceUnavailableException({ code: 'engine_unavailable', message: 'El motor de automatizaciones no está disponible.', data: { status: 503 } });
+        }
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        normalizeEmailDesigns(input.actions);
+        let payload: Record<string, unknown> | null = null;
+        if (input.trigger_type === 'incoming_webhook' && input.automation_id) {
+            const caps = await this.hookCaptures(tenantId, input.automation_id).catch(() => []);
+            payload = caps[0]?.payload ?? null;
+        }
+        const out = await this.engine.simulate({
+            tenantId,
+            auto: {
+                id: input.automation_id ?? 0,
+                listId: list.id,
+                name: 'Prueba',
+                triggerType: input.trigger_type,
+                triggerConfig: (input.trigger_config ?? {}) as AutomationRow['triggerConfig'],
+                actions: input.actions,
+                isActive: true,
+                createdAt: new Date(),
+            },
+            ...(input.record_id ? { recordId: input.record_id } : {}),
+            realSteps: input.real_steps,
+            payload,
+        });
+        const steps: AutomationTestStep[] = out.log.map((entry) => {
+            const { path, _sim, ...details } = (entry.details ?? {}) as Record<string, unknown> & { path?: unknown; _sim?: unknown };
+            const pathKey = typeof path === 'string' ? path : '';
+            const status: TestStepStatus =
+                entry.status === 'failed'
+                    ? 'failed'
+                    : entry.status === 'skipped'
+                      ? 'skipped'
+                      : _sim === 'ran' || _sim === 'info' || _sim === 'would_run'
+                        ? (_sim as TestStepStatus)
+                        : 'info';
+            return {
+                path: pathKey,
+                depth: pathKey === '' ? 0 : pathKey.split('.').filter((p) => p === 'then' || p === 'else' || p === 'each').length,
+                action: entry.action,
+                status,
+                message: entry.message ?? '',
+                details,
+            };
+        });
+        return { record: out.record, trigger: out.trigger, steps, responses: out.responses };
     }
 
     async update(
         tenantId: number,
         listIdOrSlug: string,
         id: number,
-        patch: UpdateAutomationInput,
+        input: UpdateAutomationInput,
+        opts: VersionOpts = {},
     ): Promise<Automation> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        const { restored_from: restoredFrom, ...rest } = input;
+        let patch: Omit<UpdateAutomationInput, 'restored_from'> = rest;
         if (patch.actions !== undefined) normalizeEmailDesigns(patch.actions);
+        const restoredNote = restoredFrom !== undefined ? await this.restoredNote(tenantId, id, restoredFrom) : null;
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.listId !== list.id) throw notFound(id);
+            // v0.1.288 — una versión restaurada (o una config leída por el MCP)
+            // trae los secretos tapados: se completan con los actuales.
+            patch = { ...patch, ...restoreRedactedSecrets({ actions: patch.actions, trigger_config: patch.trigger_config }, current) } as typeof patch;
+            // El historial arranca con el estado de ANTES del primer cambio
+            // registrado (las automatizaciones anteriores a v0.1.288 no tenían).
+            const [hasVersion] = await tx
+                .select({ id: automationVersions.id })
+                .from(automationVersions)
+                .where(and(eq(automationVersions.tenantId, tenantId), eq(automationVersions.automationId, id)))
+                .limit(1);
+            if (!hasVersion) await this.recordVersion(tx, tenantId, current, null, 'Estado antes del historial de versiones');
             // Lo imprescindible para correr, sobre el resultado del cambio, si
             // va a quedar ACTIVA (pausar o renombrar una rota siempre se puede).
             const activating = patch.is_active === true && !current.isActive;
@@ -320,6 +545,12 @@ export class AutomationsService {
             if (patch.is_active !== undefined) changes.isActive = patch.is_active;
             const updated = await this.repo.update(tx, tenantId, id, changes);
             if (!updated) throw notFound(id);
+            // v0.1.288 — pausarla cancela sus esperas (al reactivarla no
+            // vuelven: correrían días después con algo que ya no aplica).
+            if (patch.is_active === false && current.isActive) {
+                await this.repo.cancelWaiting(tx, tenantId, id, 'Se pausó la automatización: la espera no siguió.');
+            }
+            await this.recordVersion(tx, tenantId, updated, opts.actorId ?? null, restoredNote ?? opts.note ?? null);
             return updated;
         });
         await this.dispatcher?.invalidate(tenantId, list.id);
@@ -697,6 +928,27 @@ export class AutomationsService {
         }
     }
 
+    /** «Restauró la versión del 21/10/2026 14:30» (en el formato de la empresa). */
+    private async restoredNote(tenantId: number, automationId: number, versionId: number): Promise<string> {
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [v] = await tx
+                .select({ createdAt: automationVersions.createdAt })
+                .from(automationVersions)
+                .where(and(eq(automationVersions.tenantId, tenantId), eq(automationVersions.automationId, automationId), eq(automationVersions.id, versionId)))
+                .limit(1);
+            const [t] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            return { at: v?.createdAt ?? null, settings: (t?.settings ?? {}) as Record<string, unknown> };
+        });
+        if (!found.at) return 'Restauró una versión anterior';
+        const parsed = tenantFormatSchema.safeParse(found.settings.format ?? {});
+        const tz = this.timeZones ? await this.timeZones.orUtc(tenantId) : FALLBACK_TIME_ZONE;
+        const when = formatEmailFieldValue({ type: 'datetime', config: {} }, found.at.toISOString(), {
+            ...(parsed.success ? parsed.data : { number_format: 'comma_dot', date_format: 'ymd', time_format: 'h24' }),
+            timezone: tz,
+        });
+        return `Restauró la versión del ${when}`;
+    }
+
     /**
      * v0.1.110 — resuelve un token de webhook entrante (endpoint público).
      * Devuelve tenant/automation o null (el caller responde 404 opaco).
@@ -827,7 +1079,14 @@ function toRun(row: AutomationRunRow, listId: number): AutomationRun {
         started_at: row.startedAt ? row.startedAt.toISOString() : null,
         finished_at: row.finishedAt ? row.finishedAt.toISOString() : null,
         created_at: row.createdAt.toISOString(),
+        resume_at: row.status === 'waiting' && row.resumeAt ? row.resumeAt.toISOString() : null,
     };
+}
+
+/** v0.1.288 — quién hizo el cambio (para el historial de versiones). */
+export interface VersionOpts {
+    actorId?: number | null;
+    note?: string | null;
 }
 
 function hookCapturesKey(tenantId: number, automationId: number): string {

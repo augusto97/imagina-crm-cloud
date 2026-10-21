@@ -4,23 +4,37 @@ import {
     AlertCircle,
     ArrowLeft,
     ArrowRight,
+    CopyPlus,
     History,
+    Hourglass,
     LayoutTemplate,
+    MoreHorizontal,
     Plus,
     Trash2,
     Zap,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
 import {
+    automationsKeys,
     useAutomations,
     useDeleteAutomation,
+    useDuplicateAutomation,
     useUpdateAutomation,
 } from '@/hooks/useAutomations';
+import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
@@ -63,8 +77,26 @@ export function AutomationsPage(): JSX.Element {
     const [saveTemplateFor, setSaveTemplateFor] = useState<AutomationEntity | null>(null);
 
     const deleteMutation = useDeleteAutomation(list.data?.id ?? 0);
+    const duplicateMutation = useDuplicateAutomation(list.data?.id ?? 0);
+    const relationPaths = useRelationPaths(list.data?.id);
+    const qc = useQueryClient();
     const toast = useToast();
     const confirm = useConfirm();
+
+    // v0.1.288 — Duplicar: una copia pausada que se abre en el editor.
+    const handleDuplicate = async (a: AutomationEntity): Promise<void> => {
+        if (!list.data) return;
+        try {
+            const copy = await duplicateMutation.mutateAsync(a.id);
+            qc.setQueryData<AutomationEntity[]>(automationsKeys.forList(list.data.id), (old) =>
+                old ? [...old.filter((x) => x.id !== copy.id), copy] : [copy],
+            );
+            toast.success(__('Copia creada. Quedó pausada: actívala cuando esté lista.'));
+            navigate(`/lists/${list.data.slug}/automations/${copy.id}`);
+        } catch (err) {
+            toast.error(__('No se pudo duplicar'), err instanceof Error ? err.message : undefined);
+        }
+    };
 
     const handleDelete = async (id: number): Promise<void> => {
         if (!list.data) return;
@@ -169,6 +201,8 @@ export function AutomationsPage(): JSX.Element {
                             onDelete={handleDelete}
                             onShowRuns={setRunsFor}
                             onSaveTemplate={setSaveTemplateFor}
+                            onDuplicate={(x) => void handleDuplicate(x)}
+                            relationPaths={relationPaths.data}
                         />
                     ))}
                 </ul>
@@ -228,6 +262,8 @@ interface AutomationCardProps {
     onDelete: (id: number) => void;
     onShowRuns: (a: AutomationEntity) => void;
     onSaveTemplate: (a: AutomationEntity) => void;
+    onDuplicate: (a: AutomationEntity) => void;
+    relationPaths?: Array<{ relation_field_id: number; relation_label: string; other_list_name: string }>;
 }
 
 function AutomationCard({
@@ -239,6 +275,8 @@ function AutomationCard({
     onDelete,
     onShowRuns,
     onSaveTemplate,
+    onDuplicate,
+    relationPaths,
 }: AutomationCardProps): JSX.Element {
     const update = useUpdateAutomation(list.id);
     const toast = useToast();
@@ -309,26 +347,35 @@ function AutomationCard({
                     >
                         <History className="imcrm-h-4 imcrm-w-4" />
                     </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground hover:imcrm-text-foreground"
-                        onClick={() => onSaveTemplate(automation)}
-                        aria-label={__('Guardar como plantilla')}
-                        title={__('Guardar como plantilla')}
-                    >
-                        <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground hover:imcrm-text-foreground"
-                        onClick={() => onDelete(automation.id)}
-                        aria-label={__('Eliminar')}
-                        title={__('Eliminar')}
-                    >
-                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                                aria-label={__('Más acciones')}
+                                title={__('Más acciones')}
+                                data-testid="imcrm-automation-card-menu"
+                            >
+                                <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="imcrm-w-56">
+                            <DropdownMenuItem onSelect={() => onDuplicate(automation)} className="imcrm-gap-2" data-testid="imcrm-automation-duplicate-item">
+                                <CopyPlus className="imcrm-h-4 imcrm-w-4" />
+                                {__('Duplicar')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => onSaveTemplate(automation)} className="imcrm-gap-2">
+                                <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
+                                {__('Guardar como plantilla')}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => onDelete(automation.id)} className="imcrm-gap-2 imcrm-text-destructive">
+                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                {__('Eliminar')}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </div>
 
@@ -345,7 +392,7 @@ function AutomationCard({
                             <FlowChip>
                                 <meta.icon className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
                                 <span className="imcrm-max-w-[260px] imcrm-truncate">
-                                    {summarizeAction(spec, fields, lists)}
+                                    {summarizeAction(spec, fields, lists, undefined, relationPaths)}
                                 </span>
                             </FlowChip>
                         </span>
@@ -361,6 +408,25 @@ function AutomationCard({
                     </Badge>
                 )}
             </div>
+
+            {/* v0.1.288 — corridas en pausa en un «Esperar». */}
+            {(automation.waiting_runs ?? 0) > 0 && (
+                <button
+                    type="button"
+                    className="imcrm-ml-12 imcrm-flex imcrm-w-fit imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-border-info/30 imcrm-bg-info/5 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-text-[hsl(var(--imcrm-info-ink))] hover:imcrm-bg-info/10"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onShowRuns(automation);
+                    }}
+                    data-testid="automation-waiting-runs"
+                >
+                    <Hourglass className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {sprintf(
+                        (automation.waiting_runs ?? 0) === 1 ? __('%d corrida en espera') : __('%d corridas en espera'),
+                        automation.waiting_runs ?? 0,
+                    )}
+                </button>
+            )}
 
             {/* v0.1.285 — si la última corrida falló, se ve aquí sin abrir el historial. */}
             {automation.last_run?.status === 'failed' && (

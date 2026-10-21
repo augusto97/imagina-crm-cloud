@@ -38,6 +38,7 @@ import {
     attachments,
     automationRuns,
     automations,
+    automationVersions,
     comments,
     dashboards,
     emailUsage,
@@ -360,6 +361,8 @@ export class PlatformService {
             await tx.delete(sqlSyncs).where(eq(sqlSyncs.tenantId, id));
             await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
+            // v0.1.288 — historial de versiones (antes que las automatizaciones).
+            await tx.delete(automationVersions).where(eq(automationVersions.tenantId, id));
             await tx.delete(automations).where(eq(automations.tenantId, id));
             await tx.delete(comments).where(eq(comments.tenantId, id));
             await tx.delete(activity).where(eq(activity.tenantId, id));
