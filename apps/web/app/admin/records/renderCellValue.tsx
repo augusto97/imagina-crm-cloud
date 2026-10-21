@@ -83,7 +83,9 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     }
 
     if (field.type === 'checkbox') {
-        return value ? '✓' : '—';
+        // Defensivo: una automatización vieja guardaba «0» / «false» como
+        // TEXTO (verdadero en JS) y la celda mostraba ✓ en una casilla vacía.
+        return isCheckedValue(value) ? '✓' : '—';
     }
 
     if (field.type === 'multi_select' && Array.isArray(value)) {
@@ -295,4 +297,10 @@ export function FileCell({ id, more }: { id: number; more: number }): JSX.Elemen
             {more > 0 && <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">+{more}</span>}
         </span>
     );
+}
+
+/** ¿Casilla marcada? Tolera los textos «0»/«false»/«no» que escribían automatizaciones viejas. */
+export function isCheckedValue(value: unknown): boolean {
+    if (typeof value === 'string') return !['', '0', 'false', 'no'].includes(value.trim().toLowerCase());
+    return Boolean(value);
 }

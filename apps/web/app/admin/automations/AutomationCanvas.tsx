@@ -642,7 +642,7 @@ export function AutomationCanvas({
                         <>
                             <SheetHeader>
                                 <div>
-                                    <SheetTitle>{__('Trigger — Cuando')}</SheetTitle>
+                                    <SheetTitle>{__('Disparador — Cuando')}</SheetTitle>
                                     <SheetDescription>
                                         {__('Define qué evento dispara la automatización.')}
                                     </SheetDescription>
@@ -653,7 +653,7 @@ export function AutomationCanvas({
                                 <Select
                                     value={triggerType}
                                     onChange={(e) => onTriggerTypeChange(e.target.value)}
-                                    aria-label={__('Trigger')}
+                                    aria-label={__('Disparador')}
                                 >
                                     {triggers.map((t) => (
                                         <option key={t.slug} value={t.slug}>

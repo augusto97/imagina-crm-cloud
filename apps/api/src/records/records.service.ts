@@ -33,7 +33,7 @@ import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
 import { memberships, mentions, records } from '../db/schema';
-import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
+import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
 import {
     andWhere,
     effectivePermissions,
@@ -130,8 +130,13 @@ export class RecordsService {
          * `planChecked`: quien llama YA verificó el límite del plan para el lote
          * entero (`assertCanCreateRecords(n)`). Sin esto, duplicar 5.000
          * registros contaba la tabla 5.000 veces (O(N²), auditoría v0.1.252).
+         *
+         * `automationChain`: el alta la hizo una automatización (dispara las de
+         * la lista destino con la cadena — tope y sin auto-disparo).
+         * `lenientRequired`: una automatización crea aunque falte un campo
+         * obligatorio (el motor lo avisa en su log); comportamiento histórico.
          */
-        opts: { planChecked?: boolean } = {},
+        opts: { planChecked?: boolean; automationChain?: AutomationChain; lenientRequired?: boolean } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -151,7 +156,7 @@ export class RecordsService {
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
         const rel = splitRelationValues(fields, input.data);
-        const data = this.validateData(fields, rel.data, { partial: false });
+        const data = this.validateData(fields, rel.data, { partial: opts.lenientRequired === true });
 
         const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
@@ -198,6 +203,7 @@ export class RecordsService {
             recordId: row.id,
             trigger: 'record_created',
             after: row.data,
+            ...(opts.automationChain ? { chain: opts.automationChain } : {}),
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
         this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list, fields });
@@ -499,8 +505,11 @@ export class RecordsService {
          * (lo usa la edición masiva que corre DESDE una automatización: si no,
          * una regla «al actualizar → editar en lote» se re-dispararía por cada
          * fila que toca).
+         *
+         * `automationChain`: el cambio lo hizo una automatización (el evento
+         * lleva la cadena — tope de profundidad y sin auto-disparo).
          */
-        opts: { silent?: boolean; noAutomations?: boolean } = {},
+        opts: { silent?: boolean; noAutomations?: boolean; automationChain?: AutomationChain } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -529,7 +538,8 @@ export class RecordsService {
                     tenantId,
                     listId,
                     recordId: id,
-                    userId: actor.userId,
+                    // El sistema (0: una automatización) no es una persona.
+                    userId: actor.userId > 0 ? actor.userId : null,
                     action: 'record_updated',
                     diff: computeDiff(current.data, merged),
                 });
@@ -553,6 +563,7 @@ export class RecordsService {
             trigger: 'record_updated',
             after: row.data,
             before: result.before, // para changed_fields
+            ...(opts.automationChain ? { chain: opts.automationChain } : {}),
         });
         // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
         this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId, list, fields });

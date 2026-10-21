@@ -19,7 +19,7 @@ import {
 
 import { scheduleParts } from '@imagina-base/shared';
 
-import { __, sprintf } from '@/lib/i18n';
+import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
@@ -342,10 +342,10 @@ export function summarizeAction(
             const thenN = Array.isArray(cfg.then_actions) ? cfg.then_actions.length : 0;
             const elseN = Array.isArray(cfg.else_actions) ? cfg.else_actions.length : 0;
             return sprintf(
-                /* translators: 1: then-branch action count, 2: else-branch action count */
-                __('Divide el flujo: %1$d acciones si se cumple, %2$d si no'),
-                thenN,
-                elseN,
+                /* translators: 1: «N acción/acciones» si se cumple, 2: «N» si no */
+                __('Divide el flujo: %1$s si se cumple, %2$s si no'),
+                sprintf(_n('%d acción', '%d acciones', thenN), thenN),
+                sprintf(_n('%d acción', '%d acciones', elseN), elseN),
             );
         }
         default:

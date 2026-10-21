@@ -343,3 +343,180 @@ export function scheduleCron(cfg: Record<string, unknown>): string {
             return `${p.minute} ${p.hour} * * *`;
     }
 }
+
+// --- Validación de un cron escrito a mano (auditoría de automatizaciones) ---
+// Un cron inválido (`99 99 * * *`) se guardaba ACTIVO y el servidor nunca lo
+// registraba (sólo lo anotaba en el log): la automatización no corría jamás y
+// nadie se enteraba. Esta validación corre al guardar (servidor) y mientras
+// se escribe (editor). Acepta lo que entiende el planificador: 5 campos (o 6
+// con segundos), listas, rangos, pasos, nombres de meses y días, `?`, `L` y `#`.
+
+const CRON_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const CRON_DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
+interface CronFieldSpec {
+    name: string;
+    min: number;
+    max: number;
+    names?: string[];
+    namesBase?: number;
+    kind: 'sec' | 'min' | 'hour' | 'dom' | 'month' | 'dow';
+}
+
+const CRON_FIELDS_5: CronFieldSpec[] = [
+    { name: 'los minutos', min: 0, max: 59, kind: 'min' },
+    { name: 'la hora', min: 0, max: 23, kind: 'hour' },
+    { name: 'el día del mes', min: 1, max: 31, kind: 'dom' },
+    { name: 'el mes', min: 1, max: 12, names: CRON_MONTHS, namesBase: 1, kind: 'month' },
+    { name: 'el día de la semana', min: 0, max: 7, names: CRON_DAYS, namesBase: 0, kind: 'dow' },
+];
+
+function cronNumber(raw: string, spec: CronFieldSpec): number | null {
+    if (/^\d+$/.test(raw)) return Number(raw);
+    const idx = spec.names?.indexOf(raw.toLowerCase()) ?? -1;
+    return idx >= 0 ? idx + (spec.namesBase ?? 0) : null;
+}
+
+function cronFieldError(field: string, spec: CronFieldSpec): string | null {
+    if (field === '') return `falta ${spec.name}`;
+    for (const item of field.split(',')) {
+        if (item === '') return `${spec.name}: hay una coma de más`;
+        if (item === '?' && (spec.kind === 'dom' || spec.kind === 'dow')) continue;
+        if (item === 'L' && spec.kind === 'dom') continue;
+        // `5L` (último viernes) y `5#2` (segundo viernes) en el día de la semana.
+        if (spec.kind === 'dow') {
+            const special = /^(\w+?)(L|#([1-5]))$/i.exec(item);
+            if (special) {
+                const n = cronNumber(special[1]!, spec);
+                if (n === null || n < spec.min || n > spec.max) return `«${item}» no es un día de la semana válido`;
+                continue;
+            }
+        }
+        const [rangePart, stepPart, extra] = item.split('/');
+        if (extra !== undefined) return `«${item}» tiene más de un paso (/)`;
+        if (stepPart !== undefined && !/^[1-9]\d*$/.test(stepPart)) return `«${item}»: el paso debe ser un número mayor que 0`;
+        if (rangePart === '*') continue;
+        const bounds = (rangePart ?? '').split('-');
+        if (bounds.length > 2) return `«${item}» no es un rango válido`;
+        const nums = bounds.map((b) => cronNumber(b, spec));
+        if (nums.some((n) => n === null)) return `«${item}» no es válido para ${spec.name}`;
+        for (const n of nums as number[]) {
+            if (n < spec.min || n > spec.max) return `«${n}» está fuera de rango para ${spec.name} (${spec.min}-${spec.max})`;
+        }
+        if (nums.length === 2 && (nums[0] as number) > (nums[1] as number)) return `«${item}»: el rango va al revés`;
+    }
+    return null;
+}
+
+/**
+ * Motivo (en español) por el que un cron no es válido, o null si lo es.
+ * Ejemplo: «99 99 * * *» → ««99» está fuera de rango para los minutos (0-59)».
+ */
+export function cronError(expr: string): string | null {
+    const parts = expr.trim().split(/\s+/).filter(Boolean);
+    if (parts.length !== 5 && parts.length !== 6) {
+        return 'un horario personalizado lleva 5 partes: minuto, hora, día del mes, mes y día de la semana (por ejemplo «30 8 * * 1-5»)';
+    }
+    const specs: CronFieldSpec[] =
+        parts.length === 6 ? [{ name: 'los segundos', min: 0, max: 59, kind: 'sec' }, ...CRON_FIELDS_5] : CRON_FIELDS_5;
+    for (let i = 0; i < parts.length; i++) {
+        const err = cronFieldError(parts[i]!, specs[i]!);
+        if (err) return err;
+    }
+    return null;
+}
+
+// --- Configuración mínima de cada acción (auditoría de automatizaciones) ---
+// Una automatización creada desde una plantilla se guardaba ACTIVA con un
+// «Enviar email» sin destinatario: corría, no mandaba nada y nadie lo veía.
+// Lo imprescindible de cada acción se valida al guardar (servidor → 400) y en
+// el editor (aviso en la tarjeta), con la MISMA función.
+
+export interface AutomationConfigIssue {
+    /** Ruta tipo Zod: `actions.0.config.to`, `trigger_config.cron`. */
+    path: string;
+    message: string;
+}
+
+const isBlankConfig = (v: unknown): boolean =>
+    v === null || v === undefined || (typeof v === 'string' && v.trim() === '') || (Array.isArray(v) && v.length === 0);
+
+function actionIssues(actions: unknown, base: string, depth: number, out: AutomationConfigIssue[]): void {
+    if (!Array.isArray(actions) || depth > 6) return;
+    actions.forEach((a, i) => {
+        if (!a || typeof a !== 'object') return;
+        const spec = a as { type?: unknown; config?: unknown };
+        const cfg = (spec.config && typeof spec.config === 'object' ? spec.config : {}) as Record<string, unknown>;
+        const at = `${base}.${i}`;
+        switch (spec.type) {
+            case 'send_email':
+                if (isBlankConfig(cfg.to)) out.push({ path: `${at}.config.to`, message: 'El correo necesita un destinatario («Para»).' });
+                break;
+            case 'call_webhook':
+                if (isBlankConfig(cfg.url) && isBlankConfig(cfg.connection_id)) {
+                    out.push({ path: `${at}.config.url`, message: 'El webhook necesita una URL.' });
+                }
+                break;
+            case 'update_field': {
+                const values = cfg.values;
+                if (!values || typeof values !== 'object' || Object.keys(values as object).length === 0) {
+                    out.push({ path: `${at}.config.values`, message: 'Elige al menos un campo para actualizar.' });
+                }
+                break;
+            }
+            case 'generate_pdf':
+                if (isBlankConfig(cfg.document_template_id)) {
+                    out.push({ path: `${at}.config.document_template_id`, message: 'Elige la plantilla del documento PDF.' });
+                }
+                break;
+            case 'connector_action':
+                if (isBlankConfig(cfg.connection_id) || isBlankConfig(cfg.action_key)) {
+                    out.push({ path: `${at}.config.connection_id`, message: 'Elige la app conectada y la acción.' });
+                }
+                break;
+            case 'bulk_edit':
+                if (!Array.isArray(cfg.operations) || cfg.operations.length === 0) {
+                    out.push({ path: `${at}.config.operations`, message: 'Agrega al menos un cambio para la edición en lote.' });
+                }
+                break;
+            case 'if_else':
+                actionIssues(cfg.then_actions, `${at}.config.then_actions`, depth + 1, out);
+                actionIssues(cfg.else_actions, `${at}.config.else_actions`, depth + 1, out);
+                break;
+            default:
+                break;
+        }
+    });
+}
+
+/**
+ * Lo que le falta a una automatización para poder correr (vacío = lista).
+ * Sólo lo imprescindible: un «Para» vacío, una URL vacía, un cron inválido,
+ * un vencimiento sin campo de fecha, un «cuando cambia» sin campo.
+ */
+export function automationConfigIssues(input: {
+    trigger_type?: string;
+    trigger_config?: Record<string, unknown> | null;
+    actions?: unknown;
+}): AutomationConfigIssue[] {
+    const out: AutomationConfigIssue[] = [];
+    const cfg = input.trigger_config ?? {};
+    if (input.trigger_type === 'scheduled' && typeof cfg.cron === 'string' && cfg.cron.trim() !== '') {
+        const err = cronError(cfg.cron);
+        if (err) out.push({ path: 'trigger_config.cron', message: `El horario personalizado (cron) no es válido: ${err}.` });
+    }
+    if (
+        input.trigger_type === 'due_date_reached' &&
+        isBlankConfig(cfg.due_field) &&
+        isBlankConfig(cfg.field_id) &&
+        isBlankConfig(cfg.field) &&
+        isBlankConfig(cfg.date_field)
+    ) {
+        out.push({ path: 'trigger_config.due_field', message: 'Elige el campo de fecha que dispara la automatización.' });
+    }
+    if (input.trigger_type === 'field_changed' && isBlankConfig(cfg.field)) {
+        out.push({ path: 'trigger_config.field', message: 'Elige el campo a observar.' });
+    }
+    if (input.actions !== undefined) actionIssues(input.actions, 'actions', 0, out);
+    return out;
+}

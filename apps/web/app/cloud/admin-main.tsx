@@ -13,6 +13,7 @@ import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
 import { initTheme } from '@/lib/theme';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
+import { installUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import '@fontsource-variable/inter';
 import '@/styles/globals.css';
 
@@ -46,6 +47,11 @@ window.addEventListener('load', () => {
 // White-label por dominio (ADR-S17): en paralelo del check de sesión — si el
 // Host pertenece a una empresa, su marca se aplica DESDE el login.
 initDomainBoot();
+
+// «Cambios sin guardar» ante «Atrás» del navegador: el listener de popstate
+// tiene que quedar registrado ANTES que el del router (Chrome los corre en
+// orden de registro).
+installUnsavedChangesGuard();
 
 /**
  * Entry standalone de Imagina Base: monta la UI REAL del admin (fork pulido

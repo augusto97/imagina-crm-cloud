@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
     AlertCircle,
@@ -31,6 +31,8 @@ import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
 import { api, ApiError } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { automationConfigIssues, type AutomationConfigIssue } from '@imagina-base/shared';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { automationsKeys } from '@/hooks/useAutomations';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -273,15 +275,25 @@ function EditorBody({
     const initialJson = useRef(JSON.stringify(editing ? fromAutomation(editing) : EMPTY_AUTOMATION_STATE));
     const dirty = JSON.stringify(state) !== initialJson.current;
 
-    // Aviso nativo al cerrar la pestaña con cambios sin guardar.
-    useEffect(() => {
-        if (!dirty) return;
-        const handler = (e: BeforeUnloadEvent): void => {
-            e.preventDefault();
-        };
-        window.addEventListener('beforeunload', handler);
-        return () => window.removeEventListener('beforeunload', handler);
-    }, [dirty]);
+    // Cambios sin guardar: cerrar la pestaña, un enlace de la app (la flecha
+    // de volver, el menú) o «Atrás» del navegador piden confirmación.
+    useUnsavedChangesGuard(dirty, __('Tienes cambios sin guardar en esta automatización. Si sales ahora, se pierden.'));
+
+    // Lo que le falta para poder correr (la MISMA validación que el servidor
+    // al guardar). Se muestra en cada tarjeta después de intentar guardar.
+    const [showIssues, setShowIssues] = useState(false);
+    const issues = useMemo(
+        () =>
+            automationConfigIssues({
+                trigger_type: state.triggerType,
+                trigger_config: cleanTriggerConfig(state.triggerConfig),
+                actions: state.actions,
+            }),
+        [state.triggerType, state.triggerConfig, state.actions],
+    );
+    const visibleIssues = showIssues && state.isActive ? issues : [];
+    const issuesFor = (prefix: string): string[] =>
+        visibleIssues.filter((i) => i.path.startsWith(prefix)).map((i) => describeIssue(i, prefix));
 
     const toggleCard = (id: string): void => {
         setExpanded((prev) => {
@@ -373,6 +385,27 @@ function EditorBody({
             return;
         }
 
+        if (state.isActive && issues.length > 0) {
+            setShowIssues(true);
+            setError(
+                issues.length === 1
+                    ? sprintf(__('%s Complétalo o guárdala pausada.'), describeIssue(issues[0]!, ''))
+                    : __('A la automatización le faltan algunas cosas para poder correr (están marcadas en cada paso). Complétalas o guárdala pausada.'),
+            );
+            // Abrir las tarjetas que tienen algo que completar.
+            setExpanded((prev) => {
+                const next = new Set(prev);
+                for (const i of issues) {
+                    if (i.path.startsWith('trigger_config')) next.add('trigger');
+                    const m = /^actions\.(\d+)\./.exec(i.path);
+                    if (m) next.add(`action-${m[1]}`);
+                }
+                return next;
+            });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+
         const payload: CreateAutomationInput = {
             name: state.name.trim(),
             description: state.description.trim() === '' ? null : state.description.trim(),
@@ -407,10 +440,13 @@ function EditorBody({
             }
         } catch (err) {
             if (err instanceof ApiError) {
-                const detail = Object.entries(err.errors)
-                    .map(([path, msg]) => `${path}: ${msg}`)
+                const entries = Object.entries(err.errors);
+                // Lo que falta por paso se marca en las tarjetas; el resto, en el aviso.
+                if (entries.some(([path]) => path.startsWith('actions.') || path.startsWith('trigger_config'))) setShowIssues(true);
+                const detail = entries
+                    .map(([path, msg]) => `${describeIssue({ path, message: String(msg) }, '')}`)
                     .join(' · ');
-                setError(detail !== '' ? `${err.message} — ${detail}` : err.message);
+                setError(detail !== '' && detail !== err.message ? `${err.message} — ${detail}` : err.message);
             } else if (err instanceof Error) {
                 setError(err.message);
             }
@@ -444,7 +480,9 @@ function EditorBody({
                     </div>
 
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5">
+                        {/* En el celular el nombre ocupa su propia fila (antes quedaba
+                            aplastado a ~45px al lado de los botones). */}
+                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-basis-full imcrm-flex-col imcrm-gap-0.5 sm:imcrm-basis-0">
                             <input
                                 value={state.name}
                                 onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
@@ -510,9 +548,22 @@ function EditorBody({
                 </header>
 
                 {error && (
-                    <div className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-automation-error">
                         <AlertCircle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
-                        <span>{error}</span>
+                        <span className="imcrm-min-w-0 imcrm-flex-1">{error}</span>
+                        {visibleIssues.length > 0 && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="imcrm-shrink-0"
+                                onClick={() => {
+                                    setState((s) => ({ ...s, isActive: false }));
+                                    setError(null);
+                                }}
+                            >
+                                {__('Dejarla pausada')}
+                            </Button>
+                        )}
                     </div>
                 )}
 
@@ -569,6 +620,7 @@ function EditorBody({
                         }
                         expanded={expanded.has('trigger')}
                         onToggle={() => toggleCard('trigger')}
+                        issues={issuesFor('trigger_config')}
                     >
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                             <Select
@@ -580,7 +632,7 @@ function EditorBody({
                                         triggerConfig: {},
                                     }))
                                 }
-                                aria-label={__('Trigger')}
+                                aria-label={__('Disparador')}
                             >
                                 {triggers.map((t) => (
                                     <option key={t.slug} value={t.slug}>
@@ -634,6 +686,7 @@ function EditorBody({
                                     }
                                     expanded={expanded.has(`action-${i}`)}
                                     onToggle={() => toggleCard(`action-${i}`)}
+                                    issues={issuesFor(`actions.${i}.`)}
                                     toolbar={
                                         <>
                                             <IconGhost
@@ -723,8 +776,11 @@ function FlowCard({
     toolbar,
     expanded,
     onToggle,
+    issues = [],
     children,
 }: {
+    /** Lo que le falta a este paso para poder correr (se ve aunque esté plegado). */
+    issues?: string[];
     tone: 'primary' | 'neutral';
     overline: string;
     icon: React.ReactNode;
@@ -790,6 +846,16 @@ function FlowCard({
                     aria-hidden
                 />
             </header>
+            {issues.length > 0 && (
+                <ul className="imcrm-mx-4 imcrm-mb-3 imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-rounded-md imcrm-bg-destructive/10 imcrm-px-3 imcrm-py-2 imcrm-text-[12px] imcrm-text-destructive" data-testid="imcrm-step-issues">
+                    {issues.map((m) => (
+                        <li key={m} className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
+                            <AlertCircle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                            <span>{m}</span>
+                        </li>
+                    ))}
+                </ul>
+            )}
             {expanded && (
                 <div className="imcrm-border-t imcrm-border-border imcrm-px-4 imcrm-py-4">
                     {children}
@@ -997,4 +1063,22 @@ function ActiveTogglePill({
             {active ? __('Activa') : __('Pausada')}
         </button>
     );
+}
+
+/**
+ * Un faltante con su ubicación legible: «Paso 2: …», «Paso 1 › Sí › paso 1: …».
+ * `prefix` es lo que ya ubica la tarjeta donde se muestra (no se repite).
+ */
+function describeIssue(issue: AutomationConfigIssue, prefix: string): string {
+    const rest = issue.path.startsWith(prefix) ? issue.path.slice(prefix.length) : issue.path;
+    const parts: string[] = [];
+    const re = /(?:^|\.)(actions|then_actions|else_actions)\.(\d+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(rest)) !== null) {
+        const n = Number(m[2]) + 1;
+        if (m[1] === 'actions') parts.push(sprintf(__('Paso %d'), n));
+        else parts.push(sprintf(m[1] === 'then_actions' ? __('rama «Sí», paso %d') : __('rama «No», paso %d'), n));
+    }
+    if (parts.length === 0 && rest.startsWith('trigger_config') && prefix === '') parts.push(__('Disparador'));
+    return parts.length > 0 ? `${parts.join(' › ')}: ${issue.message}` : issue.message;
 }

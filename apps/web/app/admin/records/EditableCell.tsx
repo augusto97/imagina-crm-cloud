@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
-import { renderCellValue } from './renderCellValue';
+import { isCheckedValue, renderCellValue } from './renderCellValue';
 import { useRelationTitlesFor } from './relationTitlesContext';
 import { useWrapText } from './wrapText';
 
@@ -147,7 +147,7 @@ function EditableCellInner({
                     <input
                         type="checkbox"
                         className="imcrm-h-4 imcrm-w-4 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
-                        checked={Boolean(value)}
+                        checked={isCheckedValue(value)}
                         disabled={pending}
                         aria-label={field.label}
                         onClick={(e) => e.stopPropagation()}
@@ -455,7 +455,7 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                 <input
                     ref={ref as React.RefObject<HTMLInputElement>}
                     type="checkbox"
-                    checked={Boolean(value)}
+                    checked={isCheckedValue(value)}
                     onChange={(e) => {
                         onChange(e.target.checked);
                         // Para checkbox, el commit es inmediato.

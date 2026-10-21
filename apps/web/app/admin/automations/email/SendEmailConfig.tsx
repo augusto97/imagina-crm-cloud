@@ -107,7 +107,7 @@ export function SendEmailConfig({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                 <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Para (acepta variables y varios correos separados por coma)')}
+                    {__('Para (acepta variables, un campo Persona y varios correos separados por coma)')}
                 </Label>
                 <MergeTagInput placeholder="{{email}} o user@example.com" value={str('to')} onChange={(v) => set({ to: v })} fields={fields} />
             </div>

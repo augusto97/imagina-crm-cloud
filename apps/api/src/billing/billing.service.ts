@@ -152,6 +152,35 @@ export class BillingService {
         }
     }
 
+    /**
+     * Límite de AUTOMATIZACIONES del plan (`max_automations`): existía en la
+     * tabla de planes y nada lo aplicaba (Ajustes mostraba 12/3 y se podían
+     * seguir creando). Cuenta las ACTIVAS — una pausada no corre — y lo
+     * llaman crear (activa) y activar. Las que ya estaban por encima del
+     * límite siguen corriendo: no se apaga nada que funcione.
+     */
+    async assertCanActivateAutomation(tenantId: number): Promise<void> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_automations;
+        if (limit === null) return;
+        const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countActiveAutomations(tx, tenantId));
+        if (count >= limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `Tu plan ${plan} permite ${limit} automatizaciones activas y ya tienes ${count}. Pausa otra, guárdala pausada o pasa a un plan mayor.`,
+                data: { status: 403, errors: { plan: 'límite de automatizaciones' } },
+            });
+        }
+    }
+
+    private async countActiveAutomations(tx: Tx, tenantId: number): Promise<number> {
+        const [a] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(automations)
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true)));
+        return a?.n ?? 0;
+    }
+
     private async countStaff(tx: Tx, tenantId: number): Promise<number> {
         const [u] = await tx
             .select({ n: sql<number>`count(*)::int` })
@@ -204,10 +233,8 @@ export class BillingService {
     private async usage(tx: Tx, tenantId: number): Promise<Usage> {
         const recordCount = await this.countRecords(tx, tenantId);
         const staff = await this.countStaff(tx, tenantId);
-        const [a] = await tx
-            .select({ n: sql<number>`count(*)::int` })
-            .from(automations)
-            .where(eq(automations.tenantId, tenantId));
+        // Cuentan las ACTIVAS: es lo que limita el plan (una pausada no corre).
+        const a = { n: await this.countActiveAutomations(tx, tenantId) };
         // v0.1.268 (ADR-S36) — sólo lo guardado en el servidor de la
         // plataforma: lo del almacenamiento propio de la empresa no cuenta.
         const [st] = await tx
