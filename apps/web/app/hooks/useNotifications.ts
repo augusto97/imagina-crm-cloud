@@ -66,7 +66,10 @@ export function useMarkNotifications() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (input: MarkNotificationsInput) => (await api.post<{ unread: number }>('/me/notifications/read', input)).data,
-        onSuccess: () => void qc.invalidateQueries({ queryKey: notificationKeys.all }),
+        // v0.1.286 — sólo la bandeja: marcar un aviso como leído no cambia
+        // «Mi trabajo», los problemas, las preferencias ni los recordatorios
+        // (antes `notificationKeys.all` los volvía a pedir todos).
+        onSuccess: () => void qc.invalidateQueries({ queryKey: ['notifications', 'page'] }),
     });
 }
 

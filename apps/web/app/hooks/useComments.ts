@@ -18,9 +18,15 @@ export function fromApiComment(c: ApiComment): CommentEntity {
     return { ...c, content: c.content ?? c.body ?? '', metadata };
 }
 
-export function toApiComment(input: { content: string; metadata?: CommentMetadata; parent_id?: number | null }): Record<string, unknown> {
+export function toApiComment(input: {
+    content: string;
+    metadata?: CommentMetadata;
+    parent_id?: number | null;
+    visibility?: 'internal' | 'client';
+}): Record<string, unknown> {
     return {
         body: input.content,
+        ...(input.visibility === 'client' ? { visibility: 'client' } : {}),
         ...(input.metadata?.kind ? { kind: input.metadata.kind } : {}),
         ...(input.parent_id ? { parent_id: input.parent_id } : {}),
         ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),

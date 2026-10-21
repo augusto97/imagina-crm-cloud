@@ -1,29 +1,50 @@
-import { ForbiddenException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
+    AGGREGATE_OTHERS_KEY,
     CONTENT_WIDGET_TYPES,
+    DASHBOARD_FILTER_ME,
     dateRangePresetSchema,
+    readStoreListMarker,
+    resolveTitleFieldId,
     timeBucketSchema,
+    zonedToday,
+    addDaysYmd,
     type AggregateMetric,
     type AggregateRequest,
     type CreateDashboardInput,
     type Dashboard,
+    type DashboardBundleRequest,
+    type DashboardFilterValue,
+    type Field,
     type FilterNode,
     type Role,
+    type TimeBucket,
     type UpdateDashboardInput,
     type WidgetSpec,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
-import { AggregateService } from '../aggregate/aggregate.service';
-import { dashboards, lists } from '../db/schema';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import { AggregateService, MAX_GROUPS, type AggregateListContext } from '../aggregate/aggregate.service';
+import type { Tx } from '../db/client';
+import { dashboards } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { hiddenFieldsFor } from '../lists/list-acl';
 import type { RelatedScope } from '../records/related-scope';
+import { relativeDateRange } from '../records/query-builder';
 import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { mapLimit } from '../common/map-limit';
+import { fillTimeBuckets, zeroFillable } from './time-buckets';
 
-/** Widgets de un tablero evaluados a la vez (cada uno abre varias transacciones). */
-const WIDGET_CONCURRENCY = 4;
+/**
+ * v0.1.286 — El bundle agrupa los widgets por LISTA: cada lista resuelve su
+ * contexto (lista, campos, ACL, reloj) UNA vez y evalúa sus widgets en a lo
+ * sumo `CHUNKS_PER_LIST` transacciones en paralelo; de a `LIST_CONCURRENCY`
+ * listas. Ninguna transacción espera a otra (sin riesgo de agotar el pool).
+ */
+const LIST_CONCURRENCY = 2;
+const CHUNKS_PER_LIST = 2;
+
+/** Tope de grupos de un gráfico por categoría (el resto va a "Otros"). */
+const DEFAULT_TOP_N = 50;
 
 type Row = typeof dashboards.$inferSelect;
 
@@ -45,9 +66,6 @@ function canSee(row: Row, viewer: DashboardViewer): boolean {
     return false; // private de otro usuario
 }
 
-/** Métricas que operan sobre un campo (sin field_id caen a `count`). */
-const FIELD_METRICS = new Set(['count_unique', 'count_empty', 'sum', 'avg', 'min', 'max', 'count_true', 'count_false']);
-
 /**
  * Dashboards del workspace + evaluación de widgets sobre el motor de agregados
  * (AggregateService). CRUD con RLS por tenant; los widgets se guardan como jsonb
@@ -64,7 +82,9 @@ export class DashboardsService {
 
     async list(tenantId: number, viewer: DashboardViewer): Promise<Dashboard[]> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.select().from(dashboards).where(eq(dashboards.tenantId, tenantId)).orderBy(dashboards.position),
+            // v0.1.286 — desempate por id: con todas las posiciones en 0 el
+            // orden cambiaba después de editar un tablero.
+            tx.select().from(dashboards).where(eq(dashboards.tenantId, tenantId)).orderBy(asc(dashboards.position), asc(dashboards.id)),
         );
         return rows.filter((r) => canSee(r, viewer)).map(toDashboard);
     }
@@ -137,6 +157,35 @@ export class DashboardsService {
     }
 
     /**
+     * v0.1.286 — Reordenar los tableros del menú (arrastrar en el panel): la
+     * posición es el índice en `ids`. Los ids tienen que ser tableros del
+     * tenant y VISIBLES para quien reordena (un tablero privado ajeno ni
+     * existe para él). Es orden compartido del workspace, como el de listas.
+     */
+    async reorder(tenantId: number, viewer: DashboardViewer, ids: number[]): Promise<Dashboard[]> {
+        const unique = [...new Set(ids)];
+        if (unique.length !== ids.length) {
+            throw new BadRequestException({ code: 'dashboard_reorder_invalid', message: 'Ids repetidos', data: { status: 400 } });
+        }
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx
+                .select()
+                .from(dashboards)
+                .where(and(eq(dashboards.tenantId, tenantId), inArray(dashboards.id, unique)));
+            const visible = new Set(rows.filter((r) => canSee(r, viewer)).map((r) => r.id));
+            const missing = unique.find((id) => !visible.has(id));
+            if (missing !== undefined) throw notFound(missing);
+            for (let i = 0; i < unique.length; i++) {
+                await tx
+                    .update(dashboards)
+                    .set({ position: i })
+                    .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, unique[i]!)));
+            }
+        });
+        return this.list(tenantId, viewer);
+    }
+
+    /**
      * Mutar un dashboard exige (además de `manage_dashboards`, que valida el
      * guard) ser el CREADOR o admin — un manager no edita/borra tableros
      * ajenos que ni siquiera puede ver.
@@ -169,7 +218,9 @@ export class DashboardsService {
         const dash = await this.get(tenantId, dashboardId, viewer);
         const widget = dash.widgets.find((w) => w.id === widgetId);
         if (!widget) throw new NotFoundException({ code: 'widget_not_found', message: 'Widget no encontrado', data: { status: 404 } });
-        return this.computeWidget(tenantId, viewer, widget);
+        const out = await this.evaluate(tenantId, viewer, [widget], {});
+        const one = out[widget.id] as { __error?: string } | undefined;
+        return one ?? {};
     }
 
     /**
@@ -177,34 +228,37 @@ export class DashboardsService {
      * el dashboard una sola vez (antes cada widget lo re-resolvía: N GETs × varias
      * queries). Devuelve `{ [widgetId]: data }`. El front lo comparte entre los
      * widgets vía un único queryKey → una sola llamada HTTP para todo el tablero.
+     *
+     * v0.1.100 — `period_preset`: período GLOBAL (pisa el del widget).
+     * v0.1.286 — `filters`: filtros del TABLERO (Responsable, Estado, "Yo").
      */
     async widgetsData(
         tenantId: number,
         dashboardId: number,
         viewer: DashboardViewer,
-        periodPreset?: string,
+        body: DashboardBundleRequest | string | undefined = {},
     ): Promise<Record<string, unknown>> {
         const dash = await this.get(tenantId, dashboardId, viewer);
-        // v0.1.100 — filtro global de período: preset válido, rango custom
-        // (`custom:from:to`, v0.1.105) o nada.
-        const override = parsePeriodOverride(typeof periodPreset === 'string' ? periodPreset : undefined) !== undefined
-            ? periodPreset
-            : undefined;
-        // v0.1.229 — cada widget se evalúa AISLADO: uno mal configurado (una
-        // métrica que no aplica, un campo borrado) devuelve su propio error y
-        // el resto del tablero se dibuja. Antes el Promise.all rechazaba el
-        // bundle entero y TODOS los widgets salían en rojo.
-        // v0.1.252 — de a WIDGET_CONCURRENCY: en paralelo sin tope un tablero
-        // de 11 widgets abría ~90 transacciones a la vez y con unos pocos
-        // tableros abiertos el pool se agotaba para el resto de la app.
-        const entries = await mapLimit(dash.widgets, WIDGET_CONCURRENCY, async (w) => {
-            try {
-                return [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const;
-            } catch (err) {
-                return [w.id, { __error: widgetErrorMessage(err) }] as const;
-            }
-        });
-        return Object.fromEntries(entries);
+        // Compat: los llamadores viejos pasaban el preset suelto.
+        const req: DashboardBundleRequest = typeof body === 'string' ? { period_preset: body } : (body ?? {});
+        return this.evaluate(tenantId, viewer, dash.widgets, bundleOptions(req));
+    }
+
+    /**
+     * v0.1.286 — Vista previa de un widget SIN guardar (el diálogo de edición
+     * lo dibuja con datos reales mientras se configura). Mismo motor, mismo
+     * ACL y los mismos período/filtros del tablero que se está mirando.
+     */
+    async previewWidget(
+        tenantId: number,
+        dashboardId: number,
+        viewer: DashboardViewer,
+        widget: WidgetSpec,
+        body: DashboardBundleRequest = {},
+    ): Promise<unknown> {
+        await this.get(tenantId, dashboardId, viewer);
+        const out = await this.evaluate(tenantId, viewer, [widget], bundleOptions(body));
+        return out[widget.id] ?? {};
     }
 
     /**
@@ -213,99 +267,221 @@ export class DashboardsService {
      * a ese registro. Mismo motor, mismo ACL, mismo shape de respuesta — así
      * la ficha reusa los componentes de los tableros tal cual.
      */
-    computeLooseWidget(
+    async computeLooseWidget(
         tenantId: number,
         viewer: DashboardViewer,
         widget: WidgetSpec,
         related?: RelatedScope,
     ): Promise<unknown> {
-        return this.computeWidget(tenantId, viewer, widget, undefined, related);
+        if (CONTENT_WIDGET_TYPES.includes(widget.type)) return {};
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.aggregate.listContext(tenantId, String(widget.list_id), aggViewer(viewer), tx);
+            // En la ficha se cuenta TODO lo vinculado (las líneas de un pedido
+            // son subtareas: contar sólo el primer nivel las perdería).
+            return this.computeWidget({ tx, tenantId, viewer, ctx, related, rootsDefault: false }, widget);
+        });
     }
 
-    private async computeWidget(
+    /**
+     * Evalúa una lista de widgets: agrupa por lista, resuelve cada contexto
+     * una vez y aísla los errores POR widget (v0.1.229: uno mal configurado
+     * devuelve `{ __error }` y el resto se dibuja).
+     */
+    private async evaluate(
         tenantId: number,
         viewer: DashboardViewer,
-        widget: WidgetSpec,
-        periodOverride?: string,
-        related?: RelatedScope,
-    ): Promise<unknown> {
+        widgets: WidgetSpec[],
+        opts: BundleOptions,
+    ): Promise<Record<string, unknown>> {
+        const out: Record<string, unknown> = {};
+        const byList = new Map<number, WidgetSpec[]>();
+        for (const w of widgets) {
+            if (CONTENT_WIDGET_TYPES.includes(w.type)) {
+                out[w.id] = {};
+                continue;
+            }
+            const group = byList.get(w.list_id) ?? [];
+            group.push(w);
+            byList.set(w.list_id, group);
+        }
+        await mapLimit([...byList.entries()], LIST_CONCURRENCY, async ([listId, ws]) => {
+            let ctx: AggregateListContext;
+            try {
+                ctx = await this.aggregate.listContext(tenantId, String(listId), aggViewer(viewer));
+            } catch (err) {
+                // Lista borrada / inaccesible: todos sus widgets con el motivo.
+                const message = widgetErrorMessage(err);
+                for (const w of ws) out[w.id] = { __error: message };
+                return;
+            }
+            const chunks: WidgetSpec[][] = Array.from({ length: Math.min(CHUNKS_PER_LIST, ws.length) }, () => []);
+            ws.forEach((w, i) => chunks[i % chunks.length]!.push(w));
+            await Promise.all(chunks.map((queue) => this.drain(tenantId, viewer, ctx, queue, opts, out)));
+        });
+        // Mismo orden que los widgets del tablero.
+        return Object.fromEntries(widgets.map((w) => [w.id, out[w.id] ?? { __error: 'No se pudo calcular este widget.' }]));
+    }
+
+    /**
+     * Evalúa una cola de widgets en UNA transacción. Un error de dominio (400:
+     * "sum sólo aplica a campos numéricos") se lanza ANTES de tocar la base y
+     * la transacción sigue sirviendo; cualquier otro error pudo dejarla
+     * abortada → el resto de la cola sigue en una transacción nueva.
+     */
+    private async drain(
+        tenantId: number,
+        viewer: DashboardViewer,
+        ctx: AggregateListContext,
+        queue: WidgetSpec[],
+        opts: BundleOptions,
+        out: Record<string, unknown>,
+    ): Promise<void> {
+        const work = async (tx: Tx): Promise<void> => {
+            while (queue.length > 0) {
+                const w = queue.shift()!;
+                try {
+                    out[w.id] = await this.computeWidget(
+                        { tx, tenantId, viewer, ctx, periodOverride: opts.periodOverride, filters: opts.filters, rootsDefault: true },
+                        w,
+                    );
+                } catch (err) {
+                    out[w.id] = { __error: widgetErrorMessage(err) };
+                    if (!(err instanceof HttpException)) return;
+                }
+            }
+        };
+        while (queue.length > 0) {
+            const before = queue.length;
+            try {
+                await this.tenantDb.withTenant(tenantId, work);
+            } catch {
+                // El COMMIT de una transacción abortada no tira; si algo más
+                // falla, la vuelta siguiente lo detecta (sin progreso).
+            }
+            if (queue.length === before) {
+                for (const w of queue.splice(0)) out[w.id] = { __error: 'No se pudo calcular este widget.' };
+            }
+        }
+    }
+
+    private async computeWidget(env: WidgetEnv, widget: WidgetSpec): Promise<unknown> {
         // v0.1.98 — los widgets de CONTENIDO (título/texto/imagen/separador/
         // espaciador) no evalúan datos: el front renderiza desde su config.
         if (CONTENT_WIDGET_TYPES.includes(widget.type)) return {};
+        const { tx, tenantId, ctx, related } = env;
         // SEC-25 (v0.1.226): cada widget agrega lo que QUIEN MIRA puede ver
         // (scope de su rol en la lista + sin campos ocultos), igual que la
-        // tabla. Antes un tablero compartido sumaba la lista entera.
-        const acl = { viewer: { role: viewer.role as Role, userId: viewer.userId }, related };
+        // tabla — ya resuelto en `ctx`.
         const cfg = widget.config as Record<string, unknown>;
-        const list = String(widget.list_id);
         const metricFieldId = numOrUndef(cfg.metric_field_id);
         let metric: AggregateMetric = (typeof cfg.metric === 'string' ? cfg.metric : 'count') as AggregateMetric;
         // Métricas que necesitan campo pero no lo tienen → caen a count.
         if (FIELD_METRICS.has(metric) && metricFieldId === undefined) metric = 'count';
+        // v0.1.286 — los tableros cuentan lo que muestra la tabla: el PRIMER
+        // nivel (las subtareas no son "tareas" del KPI), salvo que el widget
+        // pida incluirlas. Las listas de una tienda cuentan todo (sus packs
+        // filtran por `tipo`: producto/variación, pedido/línea).
+        const rootsOnly = env.rootsDefault
+            && cfg.include_subtasks !== true
+            && (cfg.include_subtasks === false || readStoreListMarker(ctx.list.settings) === null);
+        const runOpts = { rootsOnly, related };
+
+        // Filtro del widget (normalizado a grupo) + filtros del tablero.
+        const baseTree = combineTrees(
+            normalizeTree(cfg.filter_tree),
+            dashboardFilterNodes(env.filters ?? [], ctx, env.viewer),
+        );
         // v0.1.97 — el "Período" del widget POR FIN filtra: se inyecta como
         // condición `between_relative` en AND con el filter_tree (se resuelve
         // contra now() en cada evaluación — "este mes" es siempre el actual).
-        const filterTree = withPeriod(cfg, periodOverride);
+        const period = effectivePeriod(cfg, env.periodOverride);
+        const periodTree = period
+            ? combineTrees(baseTree, [{ type: 'condition', field_id: period.fieldId, op: 'between_relative', value: period.value }])
+            : baseTree;
+        const metricField = metricFieldId !== undefined ? ctx.byId.get(metricFieldId) : undefined;
 
         if (widget.type === 'kpi' || widget.type === 'gauge') {
-            const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree }, acl);
+            const r = await this.aggregate.runIn(tx, tenantId, ctx, { metric, field_id: metricFieldId, filter_tree: periodTree }, runOpts);
+            const value = displayValue(r.value ?? 0, metric, metricField);
             // v0.1.99 — mini-tendencia del KPI: si el widget configura
             // `spark_field_id` (campo fecha), se agrega la MISMA métrica
-            // agrupada por día sobre los últimos 30 días → spark[] (ordenado
-            // cronológicamente por el label del bucket).
+            // agrupada por día sobre los últimos 30 días → spark[].
+            // v0.1.286 — con los 30 días COMPLETOS (los días sin registros
+            // valen 0 en las métricas que lo permiten).
             const sparkFieldId = numOrUndef(cfg.spark_field_id);
             if (widget.type === 'kpi' && sparkFieldId !== undefined) {
                 try {
-                    const sparkTree: AggregateRequest['filter_tree'] = {
-                        type: 'group',
-                        logic: 'and',
-                        children: [
-                            ...(filterTree ? [filterTree] : []),
-                            { type: 'condition', field_id: sparkFieldId, op: 'between_relative', value: 'last_30_days' },
-                        ],
-                    };
-                    const sp = await this.aggregate.run(tenantId, list, {
-                        metric,
-                        field_id: metricFieldId,
-                        group_by_field_id: sparkFieldId,
-                        filter_tree: sparkTree,
-                        time_bucket: 'day',
-                    }, acl);
-                    const spark = (sp.groups ?? [])
+                    const sparkTree = combineTrees(periodTree, [
+                        { type: 'condition', field_id: sparkFieldId, op: 'between_relative', value: 'last_30_days' },
+                    ]);
+                    // Savepoint: un spark inválido no puede abortar la
+                    // transacción del resto de los widgets.
+                    const sp = await tx.transaction((stx) =>
+                        this.aggregate.runIn(stx as unknown as Tx, tenantId, ctx, {
+                            metric,
+                            field_id: metricFieldId,
+                            group_by_field_id: sparkFieldId,
+                            filter_tree: sparkTree,
+                            time_bucket: 'day',
+                        }, runOpts),
+                    );
+                    let points = (sp.groups ?? [])
                         .filter((g) => g.group !== null)
-                        .map((g) => (typeof g.value === 'number' ? g.value : 0));
-                    return { value: r.value ?? 0, metric, spark };
+                        .map((g) => ({ label: g.group as string, value: typeof g.value === 'number' ? g.value : 0 }));
+                    if (zeroFillable(metric)) {
+                        const today = zonedToday(ctx.clock.timeZone, ctx.clock.now);
+                        points = fillTimeBuckets(points, 'day', { from: addDaysYmd(today, -29), to: today }) as typeof points;
+                    }
+                    return { value, metric, spark: points.map((p) => (typeof p.value === 'number' ? p.value : 0)) };
                 } catch {
                     // Un spark inválido (campo borrado / tipo cambiado) no
                     // rompe el KPI — se devuelve sin tendencia.
-                    return { value: r.value ?? 0, metric };
+                    return { value, metric };
                 }
             }
-            return { value: r.value ?? 0, metric };
+            return { value, metric };
         }
 
         if (widget.type === 'stat_delta') {
             // v0.1.97 — delta REAL: misma métrica sobre dos ventanas
             // consecutivas de `period_days` días sobre el campo de fecha.
-            const dateFieldId = numOrUndef(cfg.date_field_id);
+            const dateFieldId = numOrUndef(cfg.date_field_id) ?? period?.fieldId;
             if (dateFieldId === undefined) {
-                const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree }, acl);
-                return { value: r.value ?? 0, previous: r.value ?? 0, delta_pct: null, period_days: 0, metric };
+                const r = await this.aggregate.runIn(tx, tenantId, ctx, { metric, field_id: metricFieldId, filter_tree: periodTree }, runOpts);
+                const v = displayValue(r.value ?? 0, metric, metricField);
+                return { value: v, previous: v, delta_pct: null, period_days: 0, metric };
             }
-            const d = await this.aggregate.runDelta(
+            // v0.1.286 — con período (del widget o el global), la ventana
+            // ACTUAL es el período y la anterior la del mismo largo justo
+            // antes. Un período abierto ("de hoy en adelante") no es una
+            // ventana: ahí manda `period_days` y el período filtra.
+            const window = period ? relativeDateRange(period.value, ctx.clock) : null;
+            const usable = window !== null && daysSpan(window) <= 3660;
+            const d = await this.aggregate.runDeltaIn(
+                tx,
                 tenantId,
-                list,
-                { metric, field_id: metricFieldId, filter_tree: filterTree },
-                { dateFieldId, periodDays: Number(cfg.period_days) || 30, viewer: acl.viewer, related },
+                ctx,
+                { metric, field_id: metricFieldId, filter_tree: usable ? baseTree : periodTree },
+                {
+                    dateFieldId,
+                    periodDays: Number(cfg.period_days) || 30,
+                    window: usable ? window : undefined,
+                    rootsOnly,
+                    related,
+                },
             );
-            return { ...d, metric };
+            return {
+                ...d,
+                value: displayValue(d.value ?? 0, metric, metricField),
+                previous: displayValue(d.previous ?? 0, metric, metricField),
+                metric,
+            };
         }
 
         if (widget.type === 'table') {
             // v0.1.97 — tabla REAL: reusa RecordsService.list (ACL del viewer:
-            // scope por rol + campos ocultos ya stripped) y traduce data
-            // f{id}→slug al shape {columns, rows} que consume la UI.
-            return this.computeTable(tenantId, viewer, widget, filterTree, related);
+            // scope por rol + campos ocultos ya stripped).
+            return this.computeTable(env, widget, periodTree, rootsOnly);
         }
 
         // charts (bar/pie/line/area/funnel): agrupado. Si el campo agrupado es
@@ -316,55 +492,62 @@ export class DashboardsService {
         const timeBucket = bucketParsed.success
             ? bucketParsed.data
             : (widget.type === 'chart_line' || widget.type === 'chart_area' ? 'month' as const : undefined);
-        const r = await this.aggregate.run(tenantId, list, {
+        const groupField = groupBy !== undefined ? ctx.byId.get(groupBy) : undefined;
+        const bucketed: TimeBucket | undefined =
+            timeBucket !== undefined && (groupField?.type === 'date' || groupField?.type === 'datetime') ? timeBucket : undefined;
+        // v0.1.286 — tope de grupos con "Otros": los de mayor valor primero
+        // en un gráfico por categoría; una serie temporal va completa y en
+        // orden cronológico.
+        const topN = Math.max(1, Math.min(200, Math.floor(Number(cfg.top_n)) || DEFAULT_TOP_N));
+        const r = await this.aggregate.runIn(tx, tenantId, ctx, {
             metric,
             field_id: metricFieldId,
             group_by_field_id: groupBy,
-            filter_tree: filterTree,
+            filter_tree: periodTree,
             time_bucket: timeBucket,
-        }, acl);
-        const data = (r.groups ?? []).map((g) => ({
+        }, { ...runOpts, top: bucketed ? { limit: MAX_GROUPS, byValue: false } : { limit: topN, byValue: true } });
+        let data: Array<{ label: string; value: number | string; others?: number }> = (r.groups ?? []).map((g) => ({
             label: g.group ?? '(sin valor)',
-            value: g.value ?? 0,
+            value: displayValue(g.value ?? 0, metric, metricField),
+            ...(g.group === AGGREGATE_OTHERS_KEY && g.others !== undefined ? { others: g.others } : {}),
         }));
+        // v0.1.286 — los buckets vacíos valen 0 entre el primero y el último
+        // (antes la línea unía meses no contiguos y la pendiente mentía).
+        if (bucketed && zeroFillable(metric)) data = fillTimeBuckets(data, bucketed);
         return { data };
     }
 
     /** Widget de tabla: Top N registros con columnas visibles y orden. */
     private async computeTable(
-        tenantId: number,
-        viewer: DashboardViewer,
+        env: WidgetEnv,
         widget: WidgetSpec,
         filterTree: AggregateRequest['filter_tree'],
-        related?: RelatedScope,
-    ): Promise<{ columns: Array<{ label: string; slug: string; type: string }>; rows: Array<{ id: number; fields: Record<string, unknown> }> }> {
+        rootsOnly: boolean,
+    ): Promise<{ columns: Array<{ label: string; slug: string; type: string; id: number }>; rows: Array<{ id: number; fields: Record<string, unknown> }> }> {
+        const { ctx } = env;
         const cfg = widget.config as Record<string, unknown>;
         // SEC-25: las columnas ocultas para el rol de quien mira no se listan
         // (antes salían con nombre y valor vacío — el nombre ya es un dato).
-        const [listRow] = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, widget.list_id)).limit(1),
-        );
-        const hidden = hiddenFieldsFor((listRow?.settings ?? {}) as Record<string, unknown>, viewer.role as Role, viewer.userId);
-        const fields = (await this.fields.list(tenantId, String(widget.list_id))).filter((f) => !hidden.has(f.slug));
+        const fields = ctx.fields.filter((f) => !ctx.hidden.has(f.id));
 
-        // Columnas: las visibles configuradas (en su orden) o todas (orden de
-        // la lista) capadas a 8 para que el card no explote.
+        // Columnas: las visibles configuradas (en su orden) o, sin elegir,
+        // v0.1.286 — el campo TÍTULO primero y los 7 siguientes (antes las 8
+        // primeras por posición: el nombre del registro podía quedar afuera).
         const visibleIds = Array.isArray(cfg.visible_field_ids)
             ? (cfg.visible_field_ids as unknown[]).map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0)
             : [];
         const byId = new Map(fields.map((f) => [f.id, f]));
-        const columns = (visibleIds.length > 0
-            ? visibleIds.map((id) => byId.get(id)).filter((f): f is NonNullable<typeof f> => f !== undefined)
-            : fields.slice(0, 8)
-        ).map((f) => ({ label: f.label, slug: f.slug, type: f.type, id: f.id }));
+        const chosen = visibleIds.map((id) => byId.get(id)).filter((f): f is Field => f !== undefined);
+        const columns = (chosen.length > 0 ? chosen : defaultTableColumns(fields, ctx.list.settings))
+            .map((f) => ({ label: f.label, slug: f.slug, type: f.type, id: f.id }));
 
         const sortFieldId = numOrUndef(cfg.sort_field_id);
         const sortDir: 'asc' | 'desc' = cfg.sort_dir === 'asc' ? 'asc' : 'desc';
         const limit = Math.max(1, Math.min(50, Number(cfg.limit) || 10));
 
         const page = await this.records.list(
-            tenantId,
-            { userId: viewer.userId, role: viewer.role as Role },
+            env.tenantId,
+            { userId: env.viewer.userId, role: env.viewer.role as Role },
             String(widget.list_id),
             {
                 limit,
@@ -372,19 +555,148 @@ export class DashboardsService {
                 sort_dir: sortFieldId === undefined ? 'desc' : 'asc',
                 sort: sortFieldId !== undefined ? `field_${sortFieldId}:${sortDir}` : undefined,
                 filter_tree: filterTree,
+                ...(rootsOnly || env.related ? {} : { include_subtasks: true }),
             },
-            { related },
+            { related: env.related, tx: env.tx },
         );
 
         const rows = page.data.map((rec) => {
             const out: Record<string, unknown> = {};
             for (const col of columns) {
-                out[col.slug] = (rec.data as Record<string, unknown>)[`f${col.id}`] ?? null;
+                out[col.slug] = col.type === 'relation'
+                    ? ((rec as { relations?: Record<string, unknown> }).relations?.[`f${col.id}`] ?? [])
+                    : (rec.data as Record<string, unknown>)[`f${col.id}`] ?? null;
             }
             return { id: rec.id, fields: out };
         });
-        return { columns: columns.map(({ label, slug, type }) => ({ label, slug, type })), rows };
+        return { columns, rows };
     }
+}
+
+/** Métricas que operan sobre un campo (sin field_id caen a `count`). */
+const FIELD_METRICS = new Set(['count_unique', 'count_empty', 'sum', 'avg', 'min', 'max', 'count_true', 'count_false']);
+
+interface BundleOptions {
+    periodOverride?: string;
+    filters?: DashboardFilterValue[];
+}
+
+interface WidgetEnv {
+    tx: Tx;
+    tenantId: number;
+    viewer: DashboardViewer;
+    ctx: AggregateListContext;
+    periodOverride?: string;
+    filters?: DashboardFilterValue[];
+    related?: RelatedScope;
+    /** Bundle de un tablero: el primer nivel por defecto (ver `rootsOnly`). */
+    rootsDefault: boolean;
+}
+
+function aggViewer(viewer: DashboardViewer): { role: Role; userId: number } {
+    return { role: viewer.role as Role, userId: viewer.userId };
+}
+
+function bundleOptions(req: DashboardBundleRequest): BundleOptions {
+    // v0.1.100 — filtro global de período: preset válido, rango custom
+    // (`custom:from:to`, v0.1.105) o nada.
+    const preset = typeof req.period_preset === 'string' && parsePeriodOverride(req.period_preset) !== undefined
+        ? req.period_preset
+        : undefined;
+    return { periodOverride: preset, filters: Array.isArray(req.filters) ? req.filters : undefined };
+}
+
+/** Columnas por defecto de la tabla: el título y los 7 siguientes (sin relaciones). */
+function defaultTableColumns(fields: Field[], settings: Record<string, unknown>): Field[] {
+    const usable = fields.filter((f) => f.type !== 'relation');
+    const titleId = resolveTitleFieldId(usable, settings);
+    const title = usable.find((f) => f.id === titleId);
+    return [...(title ? [title] : []), ...usable.filter((f) => f.id !== titleId)].slice(0, 8);
+}
+
+/** Días que abarca una ventana inclusive. */
+function daysSpan(w: { from: string; to: string }): number {
+    return Math.round((Date.parse(`${w.to}T00:00:00Z`) - Date.parse(`${w.from}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/**
+ * v0.1.286 — Un min/max de fecha-hora llega como el texto de Postgres
+ * (`2026-10-22 04:30:00+00`) y el KPI lo mostraba tal cual. Se devuelve como
+ * instante ISO (la UI lo pinta en la zona y el formato de la empresa); una
+ * fecha sola queda `YYYY-MM-DD`.
+ */
+function displayValue(
+    value: number | string,
+    metric: AggregateMetric,
+    field: Field | undefined,
+): number | string {
+    if (typeof value !== 'string' || (metric !== 'min' && metric !== 'max')) return value;
+    if (field?.type === 'date' || /^\d{4}-\d{2}-\d{2}$/.test(value)) return value.slice(0, 10);
+    const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([+-]\d{2}(?::?\d{2})?|Z)?$/.exec(value.trim());
+    if (!m) return value;
+    const zone = m[3] === undefined ? 'Z' : m[3] === 'Z' ? 'Z' : m[3].length === 3 ? `${m[3]}:00` : m[3];
+    const d = new Date(`${m[1]}T${m[2]}${zone}`);
+    return Number.isNaN(d.getTime()) ? value : d.toISOString();
+}
+
+/** El filter_tree guardado como GRUPO (una plantilla vieja lo guardaba como condición suelta). */
+function normalizeTree(raw: unknown): FilterNode | undefined {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const node = raw as FilterNode;
+    if (node.type === 'group') return node.children.length > 0 ? node : undefined;
+    if (node.type === 'condition') return { type: 'group', logic: 'and', children: [node] };
+    return undefined;
+}
+
+/** AND de un árbol con condiciones extra (sin anidar grupos de más). */
+function combineTrees(base: FilterNode | undefined, extra: FilterNode[]): AggregateRequest['filter_tree'] {
+    if (extra.length === 0) return base as AggregateRequest['filter_tree'];
+    const children: FilterNode[] = base ? [base, ...extra] : [...extra];
+    return { type: 'group', logic: 'and', children };
+}
+
+/**
+ * v0.1.286 — Condiciones de los filtros del TABLERO que aplican a esta lista
+ * (el campo es de ella y quien mira lo puede ver). "Yo" en un campo persona
+ * es quien mira; una opción de multi_select se busca como "contiene".
+ */
+function dashboardFilterNodes(filters: DashboardFilterValue[], ctx: AggregateListContext, viewer: DashboardViewer): FilterNode[] {
+    const out: FilterNode[] = [];
+    for (const f of filters) {
+        const field = ctx.byId.get(f.field_id);
+        if (!field) continue;
+        let value: unknown = f.value;
+        if (value === '' || (Array.isArray(value) && value.length === 0)) continue;
+        if (field.type === 'user') {
+            const ids = (Array.isArray(value) ? value : [value])
+                .map((v) => (v === DASHBOARD_FILTER_ME ? viewer.userId : Number(v)))
+                .filter((n) => Number.isInteger(n) && n > 0);
+            if (ids.length === 0) continue;
+            out.push(ids.length === 1
+                ? { type: 'condition', field_id: field.id, op: 'eq', value: ids[0] }
+                : { type: 'condition', field_id: field.id, op: 'in', value: ids });
+            continue;
+        }
+        if (field.type === 'checkbox') {
+            value = value === true || value === 'true' || value === '1';
+            out.push({ type: 'condition', field_id: field.id, op: 'eq', value });
+            continue;
+        }
+        if (field.type === 'multi_select') {
+            const vals = (Array.isArray(value) ? value : [value]).map(String);
+            out.push(vals.length === 1
+                ? { type: 'condition', field_id: field.id, op: 'contains', value: vals[0] }
+                : { type: 'group', logic: 'or', children: vals.map((v) => ({ type: 'condition' as const, field_id: field.id, op: 'contains' as const, value: v })) });
+            continue;
+        }
+        if (Array.isArray(value)) {
+            out.push({ type: 'condition', field_id: field.id, op: 'in', value });
+            continue;
+        }
+        const textual = field.type === 'text' || field.type === 'long_text' || field.type === 'email' || field.type === 'url' || field.type === 'phone';
+        out.push({ type: 'condition', field_id: field.id, op: textual ? 'contains' : 'eq', value });
+    }
+    return out;
 }
 
 /**
@@ -423,20 +735,23 @@ function widgetPeriodValue(
     return parsed.success ? parsed.data : undefined;
 }
 
-function withPeriod(cfg: Record<string, unknown>, override?: string): AggregateRequest['filter_tree'] {
-    const base = cfg.filter_tree as AggregateRequest['filter_tree'];
+/**
+ * El período que aplica al widget: el override GLOBAL pisa el preset del
+ * widget (v0.1.100) y aplica sobre el campo del período del widget o, si no
+ * tiene, sobre su campo de fecha (date_field_id de tendencias/delta). Sin
+ * campo de fecha, no aplica. Un preset desconocido se ignora.
+ */
+function effectivePeriod(
+    cfg: Record<string, unknown>,
+    override?: string,
+): { fieldId: number; value: string | { from: string; to: string } } | undefined {
     const period = cfg.period as { field_id?: unknown; preset?: unknown; from?: unknown; to?: unknown } | null | undefined;
-    // v0.1.100 — el override GLOBAL pisa el preset del widget. Aplica sobre el
-    // campo del período del widget o, si no tiene, sobre su campo de fecha
-    // (date_field_id de tendencias/delta). Sin campo de fecha, no aplica.
     const overrideValue = parsePeriodOverride(override);
     const fieldId = numOrUndef(period?.field_id)
         ?? (overrideValue !== undefined ? numOrUndef(cfg.date_field_id) : undefined);
     const value = overrideValue ?? widgetPeriodValue(period);
-    if (fieldId === undefined || value === undefined) return base;
-    const cond: FilterNode = { type: 'condition', field_id: fieldId, op: 'between_relative', value };
-    const children: FilterNode[] = base ? [base, cond] : [cond];
-    return { type: 'group', logic: 'and', children };
+    if (fieldId === undefined || value === undefined) return undefined;
+    return { fieldId, value };
 }
 
 function toDashboard(row: Row): Dashboard {

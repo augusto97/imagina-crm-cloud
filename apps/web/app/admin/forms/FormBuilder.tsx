@@ -25,6 +25,9 @@ import {
 import {
     buildPublicFormItems,
     FORM_CONDITION_OPS,
+    FORM_FILE_ACCEPT_INFO,
+    FORM_FILE_ACCEPTS,
+    type FormFileAccept,
     type FormCondition,
     type FormConditionOp,
     type FormConfig,
@@ -762,6 +765,25 @@ function ItemInspector({
                     {!['checkbox', 'select', 'multi_select', 'rating', 'file', 'date', 'datetime'].includes(field.type) && (
                         <Field label={__('Texto de ejemplo')}>
                             <Input value={item.placeholder} onChange={(e) => set({ placeholder: e.target.value })} />
+                        </Field>
+                    )}
+                    {field.type === 'file' && (
+                        <Field
+                            label={__('Tipos de archivo')}
+                            hint={__('Los programas y las páginas web nunca se aceptan. Cada archivo puede pesar hasta 20 MB.')}
+                        >
+                            <select
+                                className="imcrm-h-9 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                                value={item.accept}
+                                onChange={(e) => set({ accept: e.target.value as FormFileAccept })}
+                                data-testid="form-item-accept"
+                            >
+                                {FORM_FILE_ACCEPTS.map((a) => (
+                                    <option key={a} value={a}>
+                                        {__(FORM_FILE_ACCEPT_INFO[a].label)}
+                                    </option>
+                                ))}
+                            </select>
                         </Field>
                     )}
                     {field.type === 'select' && (

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { idSchema, isoDateTimeSchema } from './common';
 import { dashboardVisibilitySchema } from './dashboard';
-import { fieldTypeSchema } from './field';
+import { fieldTypeSchema, type FieldType } from './field';
 import { BLUEPRINT_VERSION, blueprintWidgetSchema, templateCategorySchema } from './list-template';
 
 /**
@@ -32,6 +32,32 @@ export const templateRoleFieldSchema = z.object({
     required: z.boolean().default(true),
 });
 export type TemplateRoleField = z.infer<typeof templateRoleFieldSchema>;
+
+/**
+ * v0.1.286 — Familias de tipos INTERCAMBIABLES para un rol de plantilla de
+ * dashboard: un widget que suma "el monto" funciona igual sobre una moneda,
+ * un número o un rollup; una tendencia por "la fecha", sobre date o datetime.
+ * Una plantilla guardada desde un tablero declaraba sólo el tipo EXACTO del
+ * campo original y no se podía aplicar a otra lista con un tipo vecino.
+ */
+const ROLE_TYPE_FAMILIES: ReadonlyArray<ReadonlyArray<FieldType>> = [
+    ['number', 'currency', 'percent', 'rating', 'duration', 'rollup'],
+    ['date', 'datetime'],
+    ['text', 'long_text', 'email', 'url', 'phone'],
+    ['select', 'multi_select'],
+];
+
+/** Los tipos aceptables para un rol cuyo campo original era de `type`. */
+export function compatibleRoleTypes(type: FieldType): FieldType[] {
+    const family = ROLE_TYPE_FAMILIES.find((f) => f.includes(type));
+    return family ? [...family] : [type];
+}
+
+/** ¿Un campo de tipo `fieldType` sirve para un rol que declara `types`? */
+export function roleAcceptsType(types: readonly FieldType[], fieldType: FieldType): boolean {
+    if (types.length === 0 || types.includes(fieldType)) return true;
+    return types.some((t) => compatibleRoleTypes(t).includes(fieldType));
+}
 
 export const templateRoleListSchema = z.object({
     key: z.string().min(1).max(63),

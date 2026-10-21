@@ -66,12 +66,27 @@ export type AggregateRequest = z.infer<typeof aggregateRequestSchema>;
 /** Un valor puede ser numérico (sum/avg/count) o string ISO (min/max de fecha). */
 export const aggregateValueSchema = z.union([z.number(), z.string(), z.null()]);
 
+/**
+ * v0.1.286 — Clave del grupo "Otros": cuando un agrupado tiene más grupos que
+ * el tope (los gráficos piden 50; el endpoint, 1000) el resto se resume en UN
+ * grupo con esta clave y `others` = cuántos grupos junta. No es un valor real
+ * del campo: no se navega ni se filtra por él.
+ */
+export const AGGREGATE_OTHERS_KEY = '__others__';
+
 /** Resultado: valor total y, si hubo group_by, el desglose por grupo. */
 export const aggregateResultSchema = z.object({
     metric: aggregateMetricSchema,
     value: aggregateValueSchema,
     groups: z
-        .array(z.object({ group: z.string().nullable(), value: aggregateValueSchema }))
+        .array(
+            z.object({
+                group: z.string().nullable(),
+                value: aggregateValueSchema,
+                /** Sólo en el grupo "Otros": cuántos grupos resume. */
+                others: z.number().int().nonnegative().optional(),
+            }),
+        )
         .optional(),
 });
 export type AggregateResult = z.infer<typeof aggregateResultSchema>;

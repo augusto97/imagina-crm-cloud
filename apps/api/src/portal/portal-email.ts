@@ -109,3 +109,48 @@ export function portalAccessEmail(
 </body></html>`;
     return { subject, text, html };
 }
+
+/**
+ * El equipo respondió en la conversación del portal: aviso al cliente con un
+ * extracto y el botón para entrar. Con la marca de la empresa, y diciendo
+ * cómo dejar de recibirlos (desde el menú de su cuenta en el portal).
+ */
+export function portalReplyEmail(
+    brand: PortalEmailBrand,
+    url: string,
+    reply: { author: string; snippet: string; recordTitle: string },
+): PortalEmail {
+    const name = brand.name.trim() !== '' ? brand.name.trim() : 'tu portal';
+    const color = safeColor(brand.color);
+    const ink = inkOn(color);
+    const snippet = reply.snippet.replace(/\s+/g, ' ').trim().slice(0, 400);
+    const record = reply.recordTitle.trim();
+    const subject = record ? `${name} te respondió sobre «${record.slice(0, 80)}»` : `${name} te respondió en tu portal`;
+    const who = reply.author.trim() || name;
+    const footer = `Recibes este aviso porque tienes acceso al portal de ${name}. Puedes dejar de recibirlos desde el menú de tu cuenta en el portal.`;
+    const text = ['Hola,', '', `${who} te escribió en tu portal:`, '', `“${snippet}”`, '', 'Entra para verlo y responder:', url, '', footer].join('\n');
+    const e = escapeHtml;
+    const logo = brand.logoUrl
+        ? `<img src="${e(brand.logoUrl)}" alt="${e(name)}" style="max-height:48px;max-width:200px;display:block;margin:0 auto 12px;border:0">`
+        : '';
+    const html = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${e(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:32px 12px">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
+<tr><td style="height:6px;background:${color};font-size:0;line-height:0">&nbsp;</td></tr>
+<tr><td style="padding:28px 28px 8px;text-align:center">${logo}<div style="font-size:18px;font-weight:600">${e(name)}</div></td></tr>
+<tr><td style="padding:8px 28px 4px;font-size:15px;line-height:1.55">
+<p style="margin:0 0 12px">Hola,</p>
+<p style="margin:0 0 12px">${e(who)} te escribió en tu portal${record ? ` sobre «${e(record)}»` : ''}:</p>
+<blockquote style="margin:0 0 20px;padding:10px 14px;border-left:3px solid ${color};background:#f8f9fb;color:#374151">${e(snippet)}</blockquote>
+<p style="margin:0 0 20px;text-align:center"><a href="${e(url)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px">Ver y responder</a></p>
+</td></tr>
+<tr><td style="padding:16px 28px 24px;border-top:1px solid #f0f1f3;font-size:12px;color:#9ca3af">${e(footer)}</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+    return { subject, text, html };
+}

@@ -22,6 +22,12 @@ export type DateRangePresetId =
     | 'last_30_days'
     | 'this_year'
     | 'last_year'
+    | 'next_7_days'
+    | 'next_30_days'
+    | 'last_90_days'
+    | 'this_quarter'
+    | 'last_quarter'
+    | 'from_today'
     | 'custom';
 
 export interface DateRangePreset {
@@ -39,6 +45,12 @@ export const DATE_RANGE_PRESETS: DateRangePreset[] = [
     { id: 'last_7_days', label: __('Últimos 7 días') },
     { id: 'last_15_days', label: __('Últimos 15 días') },
     { id: 'last_30_days', label: __('Últimos 30 días') },
+    { id: 'last_90_days', label: __('Últimos 90 días') },
+    { id: 'next_7_days', label: __('Próximos 7 días') },
+    { id: 'next_30_days', label: __('Próximos 30 días') },
+    { id: 'from_today', label: __('De hoy en adelante') },
+    { id: 'this_quarter', label: __('Este trimestre') },
+    { id: 'last_quarter', label: __('Trimestre pasado') },
     { id: 'this_year', label: __('Este año') },
     { id: 'last_year', label: __('Año pasado') },
     { id: 'custom', label: __('Personalizado') },
@@ -118,6 +130,34 @@ export function computePresetRange(
         case 'last_year':
             from = new Date(today.getFullYear() - 1, 0, 1);
             to = new Date(today.getFullYear() - 1, 11, 31);
+            break;
+        case 'next_7_days':
+            from = today;
+            to = addDays(today, 6);
+            break;
+        case 'next_30_days':
+            from = today;
+            to = addDays(today, 29);
+            break;
+        case 'last_90_days':
+            from = addDays(today, -89);
+            to = today;
+            break;
+        case 'this_quarter': {
+            const q = Math.floor(today.getMonth() / 3);
+            from = new Date(today.getFullYear(), q * 3, 1);
+            to = new Date(today.getFullYear(), q * 3 + 3, 0);
+            break;
+        }
+        case 'last_quarter': {
+            const q = Math.floor(today.getMonth() / 3) - 1;
+            from = new Date(today.getFullYear(), q * 3, 1);
+            to = new Date(today.getFullYear(), q * 3 + 3, 0);
+            break;
+        }
+        case 'from_today':
+            from = today;
+            to = new Date(2999, 11, 31);
             break;
     }
 

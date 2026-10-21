@@ -1,5 +1,5 @@
 import { FALLBACK_TIME_ZONE, type ConditionData } from '@imagina-base/shared';
-import { relativeDateRange } from '../records/query-builder';
+import { relativeRangeFor } from '../records/query-builder';
 
 /**
  * Evalúa una condición de automatización (trigger filter / condición por acción /
@@ -199,11 +199,11 @@ function betweenRelative(actual: unknown, expected: unknown, opts: ConditionOpti
     const clock = { now: opts.now ?? new Date(), timeZone: opts.timeZone ?? FALLBACK_TIME_ZONE };
     const value = actual.trim();
     if (YMD.test(value)) {
-        const range = relativeDateRange(expected, 'date', clock);
+        const range = relativeRangeFor(expected, 'date', clock);
         return range !== null && value >= range.from && value <= range.to;
     }
     const at = Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value.replace(' ', 'T')}Z`);
     if (Number.isNaN(at)) return false;
-    const range = relativeDateRange(expected, 'datetime', clock);
+    const range = relativeRangeFor(expected, 'datetime', clock);
     return range !== null && at >= Date.parse(range.from) && at <= Date.parse(range.to);
 }

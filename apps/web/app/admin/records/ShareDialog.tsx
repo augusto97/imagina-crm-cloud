@@ -16,6 +16,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { UpdatePublicListInput } from '@imagina-base/shared';
 
+import { publicFieldIds } from '@/admin/lists/publicListFields';
 import { ListPeopleAccess } from '@/admin/lists/ListPeopleAccess';
 
 interface ShareDialogProps {
@@ -110,7 +111,7 @@ export function ShareDialog({
 
     const currentInput = (): UpdatePublicListInput => ({
         enabled,
-        visible_field_slugs: visible,
+        visible_field_ids: publicFieldIds(visible, allFields),
         view_id: viewId,
         expires_at: expiresAt === '' ? null : expiresAt,
         allowed_domains: domains
@@ -127,7 +128,7 @@ export function ShareDialog({
         const nextVisible =
             next && visible.length === 0 ? allFields.map((f) => f.slug) : visible;
         setVisible(nextVisible);
-        await save({ ...currentInput(), enabled: next, visible_field_slugs: nextVisible });
+        await save({ ...currentInput(), enabled: next, visible_field_ids: publicFieldIds(nextVisible, allFields) });
         toast.success(next ? __('Lista publicada') : __('Lista despublicada'));
     };
 

@@ -1,12 +1,13 @@
 import { Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
+import { useFields } from '@/hooks/useFields';
 import { __, sprintf } from '@/lib/i18n';
-import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
+import { formatMetricValue } from './widgetFormat';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface StatDeltaWidgetProps {
@@ -23,6 +24,10 @@ interface StatDeltaWidgetProps {
 export function StatDeltaWidget({ dashboardId, widget }: StatDeltaWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
     const subtitle = useWidgetSubtitle(widget);
+    const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
+    const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
+    const fmt = (v: number | string): string => formatMetricValue(v, metric, metricField, { withSymbol: true });
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-1.5">
@@ -39,6 +44,7 @@ export function StatDeltaWidget({ dashboardId, widget }: StatDeltaWidgetProps): 
                         previous={data.data.previous}
                         deltaPct={data.data.delta_pct as number | null}
                         periodDays={data.data.period_days as number}
+                        format={fmt}
                     />
                 ) : null}
             </div>
@@ -51,11 +57,13 @@ function Body({
     previous,
     deltaPct,
     periodDays,
+    format,
 }: {
     value: number | string;
     previous: number | string;
     deltaPct: number | null;
     periodDays: number;
+    format: (v: number | string) => string;
 }): JSX.Element {
     const isUp   = deltaPct !== null && deltaPct >= 0;
     const isDown = deltaPct !== null && deltaPct < 0;
@@ -98,10 +106,4 @@ function Body({
             </span>
         </>
     );
-}
-
-function format(v: number | string): string {
-    if (typeof v === 'string') return v;
-    if (Number.isInteger(v)) return formatNumber(v, { maxFrac: 0 });
-    return formatNumber(v, { maxFrac: 2 });
 }

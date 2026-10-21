@@ -51,13 +51,34 @@ export function useDeleteForm(listId: number) {
     });
 }
 
-/** Dirección absoluta del formulario (la que se comparte o se inserta). */
-export function formPublicUrl(form: Pick<FormDto, 'public_path'>): string {
-    return `${window.location.origin}${form.public_path}`;
+/**
+ * Dirección absoluta del formulario (la que se comparte o se inserta). La
+ * arma el servidor con el dominio propio de la empresa cuando lo tiene y
+ * responde; si no, el origen desde donde se mira.
+ */
+export function formPublicUrl(form: Pick<FormDto, 'public_path' | 'public_url'>): string {
+    return form.public_url ?? `${window.location.origin}${form.public_path}`;
 }
 
-/** Código para insertarlo en un sitio. */
-export function formEmbedCode(form: Pick<FormDto, 'public_path' | 'name'>): string {
-    const title = form.name.replace(/"/g, '&quot;');
-    return `<iframe src="${formPublicUrl(form)}" title="${title}" style="width:100%;min-height:720px;border:0" loading="lazy"></iframe>`;
+/** El origen de esa dirección (de ahí se carga el script de inserción). */
+export function formPublicOrigin(form: Pick<FormDto, 'public_path' | 'public_url' | 'public_origin'>): string {
+    if (form.public_origin) return form.public_origin;
+    try {
+        return new URL(formPublicUrl(form)).origin;
+    } catch {
+        return window.location.origin;
+    }
+}
+
+/**
+ * Código para insertarlo en un sitio: el marco y un script chico que ajusta
+ * su alto al del formulario (sin barras ni hueco) y, si al enviar redirige,
+ * lleva a toda la página y no sólo al marco.
+ */
+export function formEmbedCode(form: Pick<FormDto, 'public_path' | 'public_url' | 'public_origin' | 'name'>): string {
+    const title = form.name.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c] ?? c);
+    return (
+        `<iframe src="${formPublicUrl(form)}" title="${title}" data-imagina-form style="width:100%;height:640px;border:0" loading="lazy"></iframe>\n` +
+        `<script src="${formPublicOrigin(form)}/api/v1/public/f/embed.js" async></script>`
+    );
 }

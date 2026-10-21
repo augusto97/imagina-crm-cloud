@@ -522,11 +522,52 @@ function computePresetRange(preset: DateRangePreset, type: FieldType, clock: Que
             from = ymd(y - 1, 1, 1);
             to = ymd(y - 1, 12, 31);
             break;
+        // v0.1.286 — hacia adelante, 90 días y trimestres.
+        case 'next_7_days':
+            from = today;
+            to = addDaysYmd(today, 6);
+            break;
+        case 'next_30_days':
+            from = today;
+            to = addDaysYmd(today, 29);
+            break;
+        case 'last_90_days':
+            from = addDaysYmd(today, -89);
+            to = today;
+            break;
+        case 'this_quarter': {
+            const q = Math.floor((m - 1) / 3);
+            from = ymd(y, q * 3 + 1, 1);
+            to = ymd(y, q * 3 + 4, 0);
+            break;
+        }
+        case 'last_quarter': {
+            const q = Math.floor((m - 1) / 3) - 1;
+            from = ymd(y, q * 3 + 1, 1);
+            to = ymd(y, q * 3 + 4, 0);
+            break;
+        }
+        case 'from_today':
+            // "De hoy en adelante": un tope lejano pero representable (el
+            // instante de un datetime tiene que existir).
+            from = today;
+            to = '2999-12-31';
+            break;
     }
 
     // Un datetime cubre los días completos en el reloj de la empresa.
     if (type === 'datetime') return dayRangeInstants(from, to, clock.timeZone);
     return { from, to };
+}
+
+/**
+ * v0.1.286 — El rango de CALENDARIO (YYYY-MM-DD, inclusive) que representa el
+ * valor de un `between_relative` (preset o `{from, to}`), en el reloj de la
+ * empresa. Lo usa el widget de delta: su ventana actual ES el período. `null`
+ * si el valor no es un período válido.
+ */
+export function relativeDateRange(value: unknown, clock: QueryClock): { from: string; to: string } | null {
+    return relativeRangeFor(value, 'date', clock);
 }
 
 /**
@@ -536,7 +577,7 @@ function computePresetRange(preset: DateRangePreset, type: FieldType, clock: Que
  * Lo comparten el SQL de los filtros y el evaluador de condiciones de las
  * automatizaciones (que evalúa en memoria): así «este mes» es el mismo mes.
  */
-export function relativeDateRange(value: unknown, type: 'date' | 'datetime', clock: QueryClock): Range | null {
+export function relativeRangeFor(value: unknown, type: 'date' | 'datetime', clock: QueryClock): Range | null {
     try {
         const custom = asCustomRange(value);
         if (custom !== null) return type === 'datetime' ? dayRangeInstants(custom.from, custom.to, clock.timeZone) : custom;

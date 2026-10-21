@@ -19,6 +19,7 @@ import { usePublicList, useUpdatePublicList, publicListUrl } from '@/hooks/usePu
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { publicDefaultSort, publicFieldIds } from '@/admin/lists/publicListFields';
 import type { UpdatePublicListInput } from '@imagina-base/shared';
 
 interface Props {
@@ -114,9 +115,9 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
             .filter(Boolean);
         const input: UpdatePublicListInput = {
             enabled,
-            visible_field_slugs: visible,
-            sort_allowed_slugs: sortAllowed.filter((s) => visible.includes(s)),
-            default_sort: defaultSort || null,
+            visible_field_ids: publicFieldIds(visible, allFields),
+            sort_allowed_field_ids: publicFieldIds(sortAllowed.filter((s) => visible.includes(s)), allFields),
+            ...publicDefaultSort(defaultSort, allFields),
             per_page: perPage,
             search_enabled: searchEnabled,
             allowed_domains,

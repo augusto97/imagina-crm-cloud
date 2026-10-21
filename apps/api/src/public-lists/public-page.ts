@@ -36,8 +36,37 @@ export function frameAncestors(domains: string[]): string {
     return sources.length === 0 ? 'frame-ancestors *' : `frame-ancestors 'self' ${sources.join(' ')}`;
 }
 
+/**
+ * CSP completa de la página: el script inline sólo corre con su nonce (antes
+ * la página no declaraba `script-src` y cualquier script inyectado corría).
+ */
+export function publicListPageCsp(nonce: string, domains: string[]): string {
+    return [
+        "default-src 'none'",
+        `script-src 'nonce-${nonce}'`,
+        "style-src 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "connect-src 'self'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        frameAncestors(domains),
+    ].join('; ');
+}
+
+/**
+ * La página cuando el enlace no existe, se despublicó o venció: HTML amable
+ * (antes, dentro del marco de un sitio ajeno se veía el JSON crudo del 404).
+ * No dice CUÁL de los tres pasó: a quien prueba direcciones no se le confirma
+ * nada.
+ */
+export function publicListUnavailablePage(): string {
+    return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Lista no disponible</title>
+<style>body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f4f5f7;color:#1d2330;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}div{max-width:420px;text-align:center}h1{font-size:20px;margin:0 0 6px}p{color:#667085;margin:0}@media (prefers-color-scheme: dark){body{background:#0f1420;color:#e6e9ef}p{color:#9aa3b2}}</style></head>
+<body><div><h1>Esta lista no está disponible</h1><p>Puede que la dirección esté mal escrita, que ya no se publique o que el enlace haya vencido.</p></div></body></html>`;
+}
+
 /** HTML de la página pública. `name` se inyecta server-side; el resto lo pide el JS. */
-export function renderPublicListPage(token: string, name: string): string {
+export function renderPublicListPage(token: string, name: string, nonce = ''): string {
     const safeName = escapeHtml(name);
     const bootstrap = JSON.stringify({ token, apiBase: '/api/v1/public' }).replace(/</g, '\\u003c');
 
@@ -73,6 +102,12 @@ export function renderPublicListPage(token: string, name: string): string {
     border: 1px solid var(--border); background: var(--bg); color: var(--fg);
     border-radius: 8px; padding: 8px 12px; font-size: 14px; min-width: 200px;
   }
+  /* iOS agranda la página al tocar un campo de menos de 16px. */
+  @media (max-width: 768px) { .plw-search { font-size: 16px; min-width: 0; width: 100%; } }
+  .plw-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; margin: 1px 4px 1px 0;
+    background: var(--row-hover); color: var(--fg); white-space: nowrap; }
+  .plw-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .plw-long { white-space: pre-wrap; max-width: 420px; }
   .plw-search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .plw-tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
   table { border-collapse: collapse; width: 100%; }
@@ -122,7 +157,7 @@ export function renderPublicListPage(token: string, name: string): string {
     <button class="plw-btn" id="plw-next" disabled>Siguiente →</button>
   </div>
 
-<script>
+<script nonce="${escapeHtml(nonce)}">
 (function () {
   var BOOT = ${bootstrap};
   var base = BOOT.apiBase + '/lists/' + encodeURIComponent(BOOT.token);
@@ -151,6 +186,95 @@ export function renderPublicListPage(token: string, name: string): string {
     var d = document.createElement('div');
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  // ── Formato: el MISMO que la app (separadores, fechas y horas de la empresa).
+  var FMT = { number_format: 'comma_dot', date_format: 'ymd', time_format: 'h24', timezone: null };
+  function fmtNumber(n, minFrac, maxFrac) {
+    var base = new Intl.NumberFormat('en-US', { minimumFractionDigits: minFrac, maximumFractionDigits: Math.max(minFrac, maxFrac) }).format(n);
+    if (FMT.number_format === 'dot_comma') return base.replace(/[.,]/g, function (c) { return c === ',' ? '.' : ','; });
+    if (FMT.number_format === 'space_comma') return base.replace(/[.,]/g, function (c) { return c === ',' ? '\u00a0' : ','; });
+    return base;
+  }
+  function fmtYmd(y, m, d) {
+    if (FMT.date_format === 'dmy') return d + '/' + m + '/' + y;
+    if (FMT.date_format === 'mdy') return m + '/' + d + '/' + y;
+    return y + '-' + m + '-' + d;
+  }
+  function fmtDate(v) {
+    var m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(String(v));
+    return m ? fmtYmd(m[1], m[2], m[3]) : String(v);
+  }
+  function fmtDateTime(v) {
+    var d = new Date(String(v));
+    if (isNaN(d.getTime())) return String(v);
+    var opts = { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+    if (FMT.timezone) opts.timeZone = FMT.timezone;
+    var parts = {};
+    try { new Intl.DateTimeFormat('en-US', opts).formatToParts(d).forEach(function (p) { parts[p.type] = p.value; }); }
+    catch (e) { return d.toISOString(); }
+    var h = Number(parts.hour) % 24, mm = parts.minute;
+    var clock = FMT.time_format === 'h12' ? ((h % 12 === 0 ? 12 : h % 12) + ':' + mm + (h < 12 ? ' a. m.' : ' p. m.')) : (String(h).padStart(2, '0') + ':' + mm);
+    return fmtYmd(parts.year, parts.month, parts.day) + ' ' + clock;
+  }
+  function fmtDuration(min) {
+    var n = Math.round(Number(min));
+    if (!isFinite(n)) return String(min);
+    var h = Math.floor(Math.abs(n) / 60), m = Math.abs(n) % 60;
+    return (n < 0 ? '-' : '') + (h ? h + 'h' + (m ? ' ' + m + 'm' : '') : m + 'm');
+  }
+  function optionOf(f, v) {
+    var opts = f.options || [];
+    for (var i = 0; i < opts.length; i++) if (opts[i].value === v) return opts[i];
+    return { value: v, label: String(v), color: null };
+  }
+  function chip(o) {
+    var s = document.createElement('span');
+    s.className = 'plw-chip';
+    s.textContent = o.label;
+    if (o.color && /^#[0-9a-fA-F]{6}$/.test(o.color)) {
+      s.style.background = o.color;
+      var r = parseInt(o.color.slice(1, 3), 16), g = parseInt(o.color.slice(3, 5), 16), b = parseInt(o.color.slice(5, 7), 16);
+      s.style.color = (0.299 * r + 0.587 * g + 0.114 * b) > 160 ? '#1f2430' : '#ffffff';
+    }
+    return s;
+  }
+  function link(href, text) {
+    var a = document.createElement('a');
+    a.href = href; a.textContent = text; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    return a;
+  }
+  /** La celda de un valor, armada con nodos (nunca HTML del dato). */
+  function cell(f, v) {
+    var td = document.createElement('td');
+    if (v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) { td.textContent = '—'; return td; }
+    switch (f.type) {
+      case 'select': td.appendChild(chip(optionOf(f, v))); break;
+      case 'multi_select': (Array.isArray(v) ? v : [v]).forEach(function (x) { td.appendChild(chip(optionOf(f, x))); }); break;
+      case 'checkbox': td.textContent = v === true || v === 'true' ? 'Sí' : 'No'; break;
+      case 'number': td.className = 'plw-num'; td.textContent = typeof v === 'number' ? fmtNumber(v, 0, typeof f.precision === 'number' ? f.precision : 0) : String(v); break;
+      case 'currency': { td.className = 'plw-num'; var p = typeof f.precision === 'number' ? f.precision : 2; td.textContent = typeof v === 'number' ? fmtNumber(v, p, p) : String(v); break; }
+      case 'percent': td.className = 'plw-num'; td.textContent = typeof v === 'number' ? fmtNumber(v, 0, 2) + ' %' : String(v); break;
+      case 'rating': td.textContent = typeof v === 'number' ? v + ' de ' + (f.max || 5) : String(v); break;
+      case 'duration': td.textContent = fmtDuration(v); break;
+      case 'date': td.textContent = fmtDate(v); break;
+      case 'datetime': td.textContent = fmtDateTime(v); break;
+      case 'url': if (/^https?:\\/\\//i.test(String(v))) td.appendChild(link(String(v), String(v))); else td.textContent = String(v); break;
+      case 'email': td.appendChild(link('mailto:' + String(v), String(v))); break;
+      case 'file':
+        (Array.isArray(v) ? v : []).forEach(function (fi, i) {
+          if (!fi || typeof fi !== 'object' || typeof fi.url !== 'string' || fi.url.indexOf('/api/v1/files/') !== 0) return;
+          if (i > 0) td.appendChild(document.createTextNode(', '));
+          td.appendChild(link(fi.url, String(fi.name || 'archivo')));
+        });
+        break;
+      case 'long_text': td.className = 'plw-long'; td.textContent = String(v); break;
+      default:
+        if (Array.isArray(v)) td.textContent = v.join(', ');
+        else if (typeof v === 'object') td.textContent = '';
+        else td.textContent = String(v);
+    }
+    return td;
   }
 
   function renderHead() {
@@ -185,18 +309,12 @@ export function renderPublicListPage(token: string, name: string): string {
       els.tbody.innerHTML = '<tr><td class="plw-empty" colspan="' + meta.fields.length + '">Sin resultados</td></tr>';
       return;
     }
-    var html = '';
+    els.tbody.textContent = '';
     rows.forEach(function (r) {
-      html += '<tr>';
-      meta.fields.forEach(function (f) {
-        var v = r.data[f.slug];
-        if (Array.isArray(v)) v = v.join(', ');
-        else if (v && typeof v === 'object') v = JSON.stringify(v);
-        html += '<td>' + esc(v) + '</td>';
-      });
-      html += '</tr>';
+      var tr = document.createElement('tr');
+      meta.fields.forEach(function (f) { tr.appendChild(cell(f, r.data[f.slug])); });
+      els.tbody.appendChild(tr);
     });
-    els.tbody.innerHTML = html;
   }
 
   function load() {
@@ -244,6 +362,12 @@ export function renderPublicListPage(token: string, name: string): string {
     .then(function (res) { if (!res.ok) throw new Error('http'); return res.json(); })
     .then(function (m) {
       meta = m;
+      if (m.format) {
+        FMT.number_format = m.format.number_format || FMT.number_format;
+        FMT.date_format = m.format.date_format || FMT.date_format;
+        FMT.time_format = m.format.time_format || FMT.time_format;
+        FMT.timezone = m.format.timezone || null;
+      }
       els.title.textContent = m.name || els.title.textContent;
       if (m.description) { els.desc.textContent = m.description; els.desc.hidden = false; }
       // White-label del workspace dueño: acento + logo (URL firmada).

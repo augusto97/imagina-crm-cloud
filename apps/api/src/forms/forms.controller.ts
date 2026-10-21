@@ -9,6 +9,7 @@ import {
     ParseIntPipe,
     Patch,
     Post,
+    Query,
     Req,
     Res,
     UseGuards,
@@ -33,7 +34,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ListsService } from '../lists/lists.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { formFrameAncestors, formPageCsp, newNonce, renderFormPage } from './form-page';
+import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, newNonce, renderFormPage } from './form-page';
 import { FormsService } from './forms.service';
 
 /**
@@ -138,14 +139,30 @@ export class PublicFormsController {
         return this.forms.submit(token, req.ip, input);
     }
 
+    /**
+     * Sube un archivo a una pregunta (`?field=<id del campo>`). Exige el sello
+     * de la página en `X-Form-Stamp`: sin haber cargado el formulario no se
+     * sube nada.
+     */
     @Post(':token/files')
     @HttpCode(201)
-    async upload(@Req() req: FastifyRequest, @Param('token') token: string): Promise<FormUploadResult> {
+    async upload(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Query('field') field?: string,
+    ): Promise<FormUploadResult> {
+        const rawStamp = req.headers['x-form-stamp'];
+        const stamp = String(Array.isArray(rawStamp) ? rawStamp[0] : (rawStamp ?? ''));
         const part = await req.file();
         if (!part) {
             throw new BadRequestException({ code: 'missing_file', message: 'Falta el archivo', data: { status: 400 } });
         }
-        return this.forms.upload(token, req.ip, { filename: part.filename, mimetype: part.mimetype, file: part.file });
+        return this.forms.upload(
+            token,
+            req.ip,
+            { stamp, field: String(field ?? '') },
+            { filename: part.filename, mimetype: part.mimetype, file: part.file },
+        );
     }
 }
 
@@ -167,6 +184,22 @@ export class PublicFormPageController {
             .header('Cache-Control', 'no-store')
             .type('text/html; charset=utf-8')
             .send(renderFormPage({ nonce, title: 'Vista previa', meta: null, token: 'preview' }));
+    }
+
+    /**
+     * Script para insertar el formulario en un sitio: ajusta el alto del marco
+     * a su contenido y, si el formulario redirige al enviar, lleva a toda la
+     * página. Sólo escucha a los marcos `data-imagina-form` y sólo mensajes
+     * que vienen de SU origen.
+     */
+    @Get('embed.js')
+    embedScript(@Res() reply: FastifyReply): void {
+        reply
+            .header('Cache-Control', 'public, max-age=3600')
+            .header('Cross-Origin-Resource-Policy', 'cross-origin')
+            .header('X-Content-Type-Options', 'nosniff')
+            .type('application/javascript; charset=utf-8')
+            .send(FORM_EMBED_JS);
     }
 
     @Get(':token')

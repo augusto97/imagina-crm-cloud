@@ -17,6 +17,33 @@ export type NotifyEvent =
           body: string;
           /** Ya mencionados en ESE comentario (reciben `mention`, no `comment`). */
           mentioned: number[];
+          commentId?: number;
+          /** `client` = el cliente del portal también lo ve. */
+          visibility?: 'internal' | 'client';
+          /**
+           * Lo escribió el CLIENTE desde su portal (no un miembro del equipo):
+           * el aviso dice «El cliente comentó…» y a él no se lo pone a seguir.
+           */
+          fromClient?: boolean;
+          /** Nombre del cliente que comentó (si `fromClient`). */
+          clientName?: string;
+      }
+    | {
+          /**
+           * El CLIENTE creó un registro desde su portal (abrió un ticket): se
+           * avisa a quienes siguen SU registro (el del portal).
+           */
+          type: 'portal_record_created';
+          tenantId: number;
+          /** El registro nuevo. */
+          listId: number;
+          recordId: number;
+          actorId: number;
+          clientName: string;
+          /** El registro del cliente (el de su portal). */
+          parentRecordId: number;
+          title: string;
+          listName: string;
       }
     | {
           type: 'description_mention';

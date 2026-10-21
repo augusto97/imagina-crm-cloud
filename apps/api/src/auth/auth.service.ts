@@ -1167,7 +1167,16 @@ export class AuthService implements OnModuleInit {
         return { revoked_sessions: revoked };
     }
 
-    async me(userId: number, impersonatedBy?: number): Promise<AuthSession> {
+    async me(
+        userId: number,
+        impersonatedBy?: number,
+        /**
+         * Cómo se abrió la sesión (`req.sessionVia`). Sólo `GET /auth/me` lo
+         * pasa: con él se calcula `is_superadmin` con el MISMO criterio del
+         * `SuperadminGuard` (email en la lista + sin impersonar + contraseña).
+         */
+        sessionVia?: 'password' | 'portal' | null,
+    ): Promise<AuthSession> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) {
             throw new UnauthorizedException('Usuario inexistente');
@@ -1176,6 +1185,14 @@ export class AuthService implements OnModuleInit {
             user: this.toSessionUser(user),
             memberships: await this.membershipsOf(user.id),
         };
+        if (sessionVia !== undefined) {
+            const operator =
+                impersonatedBy === undefined &&
+                sessionVia !== 'portal' &&
+                this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase());
+            session.is_superadmin = operator && sessionVia === 'password';
+            session.platform_reauth = operator && sessionVia !== 'password';
+        }
         if (impersonatedBy) {
             const [op] = await this.db
                 .select({ id: users.id, name: users.name })

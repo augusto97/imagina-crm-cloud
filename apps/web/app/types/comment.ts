@@ -29,6 +29,12 @@ export interface CommentEntity {
     parent_id: number | null;
     content: string;
     metadata: CommentMetadata;
+    /** `client` = el cliente también lo ve en su portal. */
+    visibility?: 'internal' | 'client';
+    /** Lo escribió el cliente desde su portal (no un miembro del equipo). */
+    from_client?: boolean;
+    /** Nombre del autor cuando es un cliente (el directorio del equipo no lo tiene). */
+    author_name?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -37,4 +43,5 @@ export interface CreateCommentInput {
     content: string;
     parent_id?: number | null;
     metadata?: CommentMetadata;
+    visibility?: 'internal' | 'client';
 }
