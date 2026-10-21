@@ -2,6 +2,8 @@ import { Injectable, Optional } from '@nestjs/common';
 import {
     AUTOMATION_ACTIONS,
     AGGREGATE_METRICS,
+    BREAKDOWN_WIDGET_TYPES,
+    STACKABLE_METRICS,
     BLUEPRINT_VERSION,
     COLOR_PRESETS,
     FIELD_METRICS,
@@ -262,7 +264,7 @@ const listSpec = z.object({
 });
 type ListSpec = z.infer<typeof listSpec>;
 
-const AI_WIDGET_TYPES = ['kpi', 'gauge', 'stat_delta', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'heading', 'text'] as const;
+const AI_WIDGET_TYPES = ['kpi', 'gauge', 'stat_delta', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'heading', 'text'] as const;
 
 const widgetSpecInput = z.object({
     type: z.enum(AI_WIDGET_TYPES),
@@ -270,7 +272,21 @@ const widgetSpecInput = z.object({
     list: z.string().max(63).optional().describe('Slug de la lista (obligatorio salvo heading/text)'),
     metric: aggregateMetricSchema.optional().describe(`Default count. ${AGGREGATE_METRICS.join(' | ')}`),
     metric_field: fieldSlugSchema.optional().describe('Campo de la métrica (obligatorio para sum/avg/min/max/count_unique/count_empty/count_true/count_false)'),
-    group_by: fieldSlugSchema.optional().describe('chart_bar/chart_pie/funnel: campo por el que se agrupa (select, user, checkbox…)'),
+    group_by: fieldSlugSchema.optional().describe('chart_bar/chart_pie/funnel: campo por el que se agrupa (select, user, checkbox…); pivot: el campo de las FILAS'),
+    breakdown_by: fieldSlugSchema
+        .optional()
+        .describe('chart_bar/chart_area/chart_line: segundo campo para DESGLOSAR cada barra/punto en series (p. ej. el estado por responsable); pivot (obligatorio): el campo de las COLUMNAS. Distinto de group_by/date_field'),
+    breakdown_time_bucket: timeBucketSchema.optional().describe('Si breakdown_by es una fecha: granularidad (default month)'),
+    stack: z
+        .enum(['stacked', 'grouped'])
+        .optional()
+        .describe('Con breakdown_by: stacked = series apiladas (sólo métricas que suman: count, sum, count_empty, count_true, count_false); grouped = lado a lado (barras) o superpuestas (área/línea). Default stacked si la métrica suma'),
+    percent: z.boolean().optional().describe('Con breakdown_by y stack=stacked: cada barra al 100 % (muestra el reparto)'),
+    series_limit: z.number().int().min(1).max(20).optional().describe('Con breakdown_by: cuántas series mostrar (las mayores); el resto va a «Otros». Default 8'),
+    orientation: z.enum(['horizontal', 'vertical']).optional().describe('chart_bar: barras horizontales (default) o columnas verticales'),
+    rows_limit: z.number().int().min(1).max(200).optional().describe('pivot: filas a mostrar (las mayores; el resto en «Otros»). Default 20'),
+    columns_limit: z.number().int().min(1).max(50).optional().describe('pivot: columnas a mostrar (las mayores; el resto en «Otros»). Default 12'),
+    heatmap: z.boolean().optional().describe('pivot: mapa de calor (más intenso = mayor valor)'),
     date_field: fieldSlugSchema.optional().describe('chart_line/chart_area/stat_delta: campo de fecha del eje temporal'),
     time_bucket: timeBucketSchema.optional().describe(`Granularidad temporal: ${TIME_BUCKETS.join(' | ')} (default month)`),
     filters: z.array(filterRuleSpec).max(20).optional(),
@@ -531,7 +547,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_create_dashboard',
             label: 'Armando el tablero',
             description:
-                'Propone un tablero (dashboard) con widgets sobre una o varias listas existentes: KPIs, medidores, gráficos por categoría o en el tiempo, embudos y tablas. El layout se arma solo.',
+                'Propone un tablero (dashboard) con widgets sobre una o varias listas existentes: KPIs, medidores, gráficos por categoría o en el tiempo, embudos, tablas y tablas dinámicas (pivot: filas = group_by, columnas = breakdown_by, la métrica en cada cruce con totales). Las barras, áreas y líneas se pueden DESGLOSAR por un segundo campo (breakdown_by) en series apiladas o lado a lado. El layout se arma solo.',
             capability: 'manage_dashboards',
             input: z.object({
                 name: z.string().min(1).max(190),
@@ -791,7 +807,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'list_dashboards',
             label: 'Leyendo los tableros',
-            description: 'Lista los tableros (dashboards) del workspace con sus widgets (tipo, título y lista). Sirve para saber qué ya existe antes de proponer uno nuevo.',
+            description: 'Lista los tableros (dashboards) del workspace con sus widgets (tipo, título, lista, métrica y por qué campos agrupan o se desglosan). Sirve para saber qué ya existe antes de proponer uno nuevo.',
             capability: null,
             input: z.object({}),
             run: (ctx) => this.listDashboards(ctx),
@@ -1353,11 +1369,12 @@ export class StructureTools implements AiProposalApplier {
             if (metricField) config.metric_field_id = metricField.id;
             const detail: string[] = [metricLabel(metric, metricField?.label)];
 
-            if (w.type === 'chart_bar' || w.type === 'chart_pie' || w.type === 'funnel') {
-                const g = need(w.group_by, 'el campo de agrupación');
+            if (w.type === 'chart_bar' || w.type === 'chart_pie' || w.type === 'funnel' || w.type === 'pivot') {
+                const g = need(w.group_by, w.type === 'pivot' ? 'el campo de las filas' : 'el campo de agrupación');
                 if (!g) throw new AiToolError(`${where}: ${w.type} necesita group_by.`);
+                assertGroupable(where, g);
                 config.group_by_field_id = g.id;
-                detail.push(`por ${g.label}`);
+                detail.push(w.type === 'pivot' ? `filas: ${g.label}` : `por ${g.label}`);
                 if (g.type === 'date' || g.type === 'datetime') config.time_bucket = w.time_bucket ?? 'month';
             }
             if (w.type === 'chart_line' || w.type === 'chart_area') {
@@ -1367,6 +1384,41 @@ export class StructureTools implements AiProposalApplier {
                 config.date_field_id = d.id;
                 config.time_bucket = w.time_bucket ?? 'month';
                 detail.push(`por ${timeBucketLabel(config.time_bucket as string)} de ${d.label}`);
+            }
+            if (w.type === 'chart_bar' && w.orientation === 'vertical') config.bar_orientation = 'vertical';
+            // v0.1.291 — desglose en series (barras/área/línea) y columnas de la tabla dinámica.
+            if (w.type === 'pivot' && !w.breakdown_by) {
+                throw new AiToolError(`${where}: pivot necesita breakdown_by (el campo de las columnas).`);
+            }
+            if (w.breakdown_by) {
+                if (!BREAKDOWN_WIDGET_TYPES.includes(w.type) && w.type !== 'pivot') {
+                    throw new AiToolError(`${where}: breakdown_by sólo aplica a chart_bar, chart_area, chart_line y pivot.`);
+                }
+                const b = need(w.breakdown_by, w.type === 'pivot' ? 'el campo de las columnas' : 'el campo del desglose')!;
+                assertGroupable(where, b);
+                const main = config.group_by_field_id ?? config.date_field_id;
+                if (b.id === main || b.slug === w.group_by || b.slug === w.date_field) {
+                    throw new AiToolError(`${where}: breakdown_by tiene que ser un campo distinto del eje principal.`);
+                }
+                config.sub_group_by_field_id = b.id;
+                if (b.type === 'date' || b.type === 'datetime') config.sub_time_bucket = w.breakdown_time_bucket ?? 'month';
+                if (w.type === 'pivot') {
+                    detail.push(`columnas: ${b.label}`);
+                    if (w.rows_limit) config.top_n = w.rows_limit;
+                    if (w.columns_limit) config.col_top_n = w.columns_limit;
+                    if (w.heatmap) config.heatmap = true;
+                } else {
+                    const stackable = STACKABLE_METRICS.includes(metric);
+                    const mode = w.stack ?? (stackable ? 'stacked' : 'grouped');
+                    if (mode === 'stacked' && !stackable) {
+                        throw new AiToolError(`${where}: con la métrica ${metric} las series no se apilan (apilar promedios o máximos no significa nada): usa stack="grouped".`);
+                    }
+                    config.stack_mode = mode;
+                    if (w.percent && mode === 'stacked') config.stack_percent = true;
+                    if (w.series_limit) config.series_top_n = w.series_limit;
+                    config.show_legend = true;
+                    detail.push(`desglosado por ${b.label}${mode === 'stacked' ? (w.percent ? ' (al 100 %)' : ' (apiladas)') : ''}`);
+                }
             }
             if (w.type === 'stat_delta') {
                 const d = need(w.date_field, 'el campo de fecha', DATE_TYPES);
@@ -2083,6 +2135,12 @@ export class StructureTools implements AiProposalApplier {
     private async listDashboards(ctx: AiToolContext): Promise<AiToolResult> {
         const [dashboards, lists] = await Promise.all([this.dashboards.list(ctx.tenantId, { userId: ctx.userId, role: ctx.role }), this.lists.list(ctx.tenantId)]);
         const listById = new Map(lists.map((l) => [l.id, l.slug]));
+        // v0.1.291 — también qué agrupa cada gráfico y por qué se desglosa
+        // (slugs): el modelo puede describir o copiar un tablero sin adivinar.
+        const usedLists = [...new Set(dashboards.flatMap((d) => d.widgets.map((w) => w.list_id)).filter((id) => id > 0 && listById.has(id)))];
+        const slugOf = new Map<number, string>();
+        for (const id of usedLists) for (const f of await this.fields.listByListId(ctx.tenantId, id)) slugOf.set(f.id, f.slug);
+        const slug = (v: unknown): string | null => (typeof v === 'number' ? (slugOf.get(v) ?? null) : null);
         return {
             content: {
                 dashboards: dashboards.map((d) => ({
@@ -2091,7 +2149,20 @@ export class StructureTools implements AiProposalApplier {
                     description: d.description,
                     visibility: d.visibility,
                     is_default: d.is_default,
-                    widgets: d.widgets.map((w) => ({ type: w.type, title: w.title, list: w.list_id ? (listById.get(w.list_id) ?? null) : null })),
+                    widgets: d.widgets.map((w) => {
+                        const c = w.config as Record<string, unknown>;
+                        return {
+                            type: w.type,
+                            title: w.title,
+                            list: w.list_id ? (listById.get(w.list_id) ?? null) : null,
+                            ...(typeof c.metric === 'string' ? { metric: c.metric } : {}),
+                            ...(slug(c.metric_field_id) ? { metric_field: slug(c.metric_field_id) } : {}),
+                            ...(slug(c.group_by_field_id) ? { group_by: slug(c.group_by_field_id) } : {}),
+                            ...(slug(c.date_field_id) ? { date_field: slug(c.date_field_id) } : {}),
+                            ...(slug(c.sub_group_by_field_id) ? { breakdown_by: slug(c.sub_group_by_field_id) } : {}),
+                            ...(typeof c.stack_mode === 'string' ? { stack: c.stack_mode } : {}),
+                        };
+                    }),
                 })),
             },
         };
@@ -3095,11 +3166,26 @@ interface UpdateViewSpec {
 const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'computed', 'time_tracked'];
 const DATE_TYPES: readonly FieldType[] = ['date', 'datetime'];
 
+/**
+ * v0.1.291 — ¿Se puede agrupar (o desglosar) por este campo? Relación y
+ * archivo no forman grupos; un calculado, sólo si es aritmético.
+ */
+function assertGroupable(where: string, f: Field): void {
+    if (f.type === 'relation' || f.type === 'file') {
+        throw new AiToolError(`${where}: no se puede agrupar por «${f.slug}» (${f.type}).`);
+    }
+    if (f.type === 'computed' && !isNumericComputed(f)) {
+        throw new AiToolError(`${where}: «${f.slug}» es un cálculo de fecha o texto; no se puede agrupar por él.`);
+    }
+}
+
 const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
     kpi: { w: 3, h: 2 },
     gauge: { w: 3, h: 3 },
     stat_delta: { w: 3, h: 2 },
     chart_bar: { w: 6, h: 4 },
+    // v0.1.291 — tabla dinámica: ancha (filas × columnas).
+    pivot: { w: 8, h: 5 },
     chart_pie: { w: 6, h: 4 },
     chart_line: { w: 6, h: 4 },
     chart_area: { w: 6, h: 4 },

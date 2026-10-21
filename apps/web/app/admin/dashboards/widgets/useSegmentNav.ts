@@ -20,7 +20,14 @@ import type { FilterNode, FilterTree } from '@/types/record';
  * período). Viaja como `?ft=<filter_tree JSON>` (RecordsPage lo aplica
  * encima de la vista y limpia el parámetro).
  */
-export function useSegmentNav(widget: WidgetSpec): ((label: string) => void) | null {
+/**
+ * v0.1.291 — Con un segundo campo (barras apiladas, una celda de la tabla
+ * dinámica) el click abre la lista filtrada por los DOS valores: el grupo y
+ * la serie / la fila y la columna. `subLabel` es la clave de la serie.
+ */
+export type SegmentNav = (label: string, subLabel?: string) => void;
+
+export function useSegmentNav(widget: WidgetSpec): SegmentNav | null {
     // v0.1.230 — en la ficha (datos inyectados, acotados a los vinculados) el
     // click-through abriría la lista ENTERA filtrada por el valor: engañoso.
     const injected = useContext(WidgetDataOverrideContext) !== null;
@@ -38,8 +45,11 @@ export function useSegmentNav(widget: WidgetSpec): ((label: string) => void) | n
     if (!field) return null;
     const slug = lists.data?.find((l) => l.id === widget.list_id)?.slug;
     if (slug === undefined) return null;
+    const subFieldId = typeof widget.config.sub_group_by_field_id === 'number' ? widget.config.sub_group_by_field_id : undefined;
+    const subField = subFieldId !== undefined ? fields.data.find((f) => f.id === subFieldId) : undefined;
 
-    return (label: string): void => {
+    return (label: string, subLabel?: string): void => {
+        if (subLabel !== undefined && subField === undefined) return;
         const tree = segmentFilterTree({
             widget,
             field,
@@ -48,6 +58,7 @@ export function useSegmentNav(widget: WidgetSpec): ((label: string) => void) | n
             period: scope.period,
             filters: scope.filters,
             userId: getBootData().user.id,
+            ...(subLabel !== undefined && subField ? { sub: { field: subField, label: subLabel } } : {}),
         });
         if (tree === null) return;
         navigate(`/lists/${slug}/records?ft=${encodeURIComponent(JSON.stringify(tree))}`);
@@ -94,9 +105,12 @@ export function segmentFilterTree(args: {
     period: string;
     filters: DashboardFilterValue[];
     userId: number;
+    /** v0.1.291 — el segundo valor (serie de un desglose, columna de una tabla dinámica). */
+    sub?: { field: Pick<FieldEntity, 'id' | 'type'>; label: string };
 }): FilterTree | null {
     const { widget, field, label } = args;
     if (label === OTHERS_GROUP_KEY) return null;
+    if (args.sub !== undefined && args.sub.label === OTHERS_GROUP_KEY) return null;
     const cfg = widget.config as Record<string, unknown>;
     const children: FilterNode[] = [];
 
@@ -138,6 +152,13 @@ export function segmentFilterTree(args: {
     const seg = segmentCondition(field, label, typeof cfg.time_bucket === 'string');
     if (seg === null) return null;
     children.push(seg);
+    // 5. v0.1.291 — y la de la serie (o la columna). Un segundo campo de
+    // fecha siempre va por bucket (sin elegir, por mes).
+    if (args.sub !== undefined) {
+        const subSeg = segmentCondition(args.sub.field, args.sub.label, true);
+        if (subSeg === null) return null;
+        children.push(subSeg);
+    }
     return { type: 'group', logic: 'and', children };
 }
 

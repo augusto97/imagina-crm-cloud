@@ -597,6 +597,36 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         await expect(dashboardTemplates.remove(tenantA, actor, 'sys:inventario')).rejects.toThrow();
     });
 
+    it('v0.1.291 — plantilla de un tablero con barras desglosadas y tabla dinámica: el segundo campo es un rol más', async () => {
+        const src = await listsService.create(tenantA, { name: 'Pedidos A' });
+        const etapa = await fieldsService.create(tenantA, String(src.id), { label: 'Etapa', slug: 'etapa', type: 'select', config: { options: [] } });
+        const zona = await fieldsService.create(tenantA, String(src.id), { label: 'Zona', slug: 'zona', type: 'select', config: { options: [] } });
+        const monto = await fieldsService.create(tenantA, String(src.id), { label: 'Monto', slug: 'monto', type: 'currency' });
+        const dash = await dashboardsService.create(tenantA, actor, {
+            name: 'Desglose',
+            widgets: [
+                { id: 'b1', type: 'chart_bar', list_id: src.id, title: 'Apiladas', config: { metric: 'count', group_by_field_id: etapa.id, sub_group_by_field_id: zona.id, stack_mode: 'stacked' }, layout: { x: 0, y: 0, w: 6, h: 4 } },
+                { id: 'p1', type: 'pivot', list_id: src.id, title: 'Dinámica', config: { metric: 'sum', metric_field_id: monto.id, group_by_field_id: zona.id, sub_group_by_field_id: etapa.id, heatmap: true }, layout: { x: 6, y: 0, w: 6, h: 5 } },
+            ],
+        });
+        const tpl = await dashboardTemplates.create(tenantA, viewerA(), { dashboard_id: dash.id, name: 'Desglose', category: 'ventas' });
+        expect(tpl.lists[0]!.fields.map((f) => f.key).sort()).toEqual(['etapa', 'monto', 'zona']);
+        const dst = await listsService.create(tenantA, { name: 'Pedidos B' });
+        const fase = await fieldsService.create(tenantA, String(dst.id), { label: 'Fase', slug: 'fase', type: 'select', config: { options: [] } });
+        const region = await fieldsService.create(tenantA, String(dst.id), { label: 'Región', slug: 'region', type: 'select', config: { options: [] } });
+        const valor = await fieldsService.create(tenantA, String(dst.id), { label: 'Valor', slug: 'valor', type: 'currency' });
+        const applied = await dashboardTemplates.apply(tenantA, actor, tpl.id, {
+            name: 'Desglose B',
+            lists: { [src.slug]: { list_id: dst.id, fields: { etapa: fase.id, zona: region.id, monto: valor.id } } },
+        });
+        expect(applied.warnings).toEqual([]);
+        const bar = applied.dashboard.widgets.find((w) => w.type === 'chart_bar')!;
+        expect(bar.config).toMatchObject({ group_by_field_id: fase.id, sub_group_by_field_id: region.id, stack_mode: 'stacked' });
+        const pivot = applied.dashboard.widgets.find((w) => w.type === 'pivot')!;
+        expect(pivot.config).toMatchObject({ group_by_field_id: region.id, sub_group_by_field_id: fase.id, metric_field_id: valor.id, heatmap: true });
+        await dashboardTemplates.remove(tenantA, actor, tpl.id);
+    });
+
     it('guardar una automatización como plantilla: roles = campos referenciados, sin el token del webhook; la galería trae las del sistema', async () => {
         const src = await listsService.create(tenantA, { name: 'Leads T' });
         await fieldsService.create(tenantA, String(src.id), { label: 'Estado', slug: 'estado', type: 'select', config: { options: [] } });

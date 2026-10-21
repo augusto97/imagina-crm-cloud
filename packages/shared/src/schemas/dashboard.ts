@@ -20,6 +20,9 @@ export const widgetTypeSchema = z.enum([
     // v0.1.99 — medidor semicircular (progreso vs meta). Se evalúa igual
     // que un KPI (la meta vive en config y la aplica el front).
     'gauge',
+    // v0.1.291 — tabla dinámica: filas = un campo, columnas = otro, la
+    // métrica en cada cruce, con totales por fila, por columna y general.
+    'pivot',
     // v0.1.98 — bloques de CONTENIDO (no evalúan datos; el backend devuelve
     // {} y el front los renderiza desde su config): título, texto, imagen,
     // separador y espaciador. Convierten al dashboard en una página armable.
@@ -30,6 +33,33 @@ export const widgetTypeSchema = z.enum([
     'spacer',
 ]);
 export type WidgetType = z.infer<typeof widgetTypeSchema>;
+
+/**
+ * v0.1.291 — Gráficos que aceptan "Desglosar por" un segundo campo
+ * (`sub_group_by_field_id`): series apiladas o lado a lado.
+ */
+export const BREAKDOWN_WIDGET_TYPES: readonly WidgetType[] = ['chart_bar', 'chart_area', 'chart_line'];
+
+/** Cómo se dibujan las series de un desglose: una encima de otra o lado a lado (superpuestas en área/línea). */
+export const STACK_MODES = ['stacked', 'grouped'] as const;
+export type StackMode = (typeof STACK_MODES)[number];
+
+/** v0.1.291 — Orientación de las barras: horizontales (filas) o verticales (columnas). */
+export const BAR_ORIENTATIONS = ['horizontal', 'vertical'] as const;
+export type BarOrientation = (typeof BAR_ORIENTATIONS)[number];
+
+/**
+ * Métricas que se pueden APILAR (y llevar al 100 %): las que suman. Un
+ * promedio, un mínimo o un máximo apilados no significan nada — ésos sólo
+ * se dibujan lado a lado.
+ */
+export const STACKABLE_METRICS: readonly string[] = ['count', 'count_empty', 'count_true', 'count_false', 'sum'];
+
+/** Series de un desglose (sin elegir): las 8 mayores y el resto en "Otros". */
+export const DEFAULT_SERIES_TOP_N = 8;
+/** Tabla dinámica (sin elegir): 20 filas y 12 columnas; el resto en "Otros". */
+export const DEFAULT_PIVOT_ROWS = 20;
+export const DEFAULT_PIVOT_COLS = 12;
 
 /** Tipos de widget que NO consumen datos (list_id 0, sin evaluación). */
 export const CONTENT_WIDGET_TYPES: readonly WidgetType[] = [

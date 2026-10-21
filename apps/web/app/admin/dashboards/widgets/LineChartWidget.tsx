@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
@@ -9,6 +9,11 @@ import { OTHERS_GROUP_KEY, type WidgetSpec } from '@/types/dashboard';
 import { WidgetError } from './WidgetError';
 import { formatBucketLabel, formatMetricValue } from './widgetFormat';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
+import { useBreakdownModel } from './BreakdownChart';
+import { BreakdownLines } from './BreakdownLines';
+import type { BreakdownPayload } from './breakdownModel';
+import { useSegmentNav } from './useSegmentNav';
+import { useElementSize } from './useElementSize';
 
 interface LineChartWidgetProps {
     dashboardId: number;
@@ -58,6 +63,39 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
                   .map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))
             : [];
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
+    // v0.1.291 — con "Desglosar por": una serie por valor del segundo campo,
+    // apiladas (también al 100 %) o superpuestas.
+    const payload = data.data && 'data' in data.data && Array.isArray(data.data.series)
+        ? ({ ...data.data, data: data.data.data.filter((r) => r.label !== OTHERS_GROUP_KEY) } as BreakdownPayload)
+        : null;
+    const breakdown = useBreakdownModel(widget, payload);
+    const onSegment = useSegmentNav(widget);
+
+    if (payload !== null) {
+        const stacked = widget.config.stack_mode !== 'grouped';
+        // Los registros sin fecha no son un punto del tiempo.
+        const model = { ...breakdown, groups: breakdown.groups.filter((g) => g.key !== '(sin valor)') };
+        return (
+            <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
+                <WidgetHeader title={widget.title || __('Tendencia mensual')} subtitle={subtitle} />
+                {data.isError ? (
+                    <WidgetError error={data.error} />
+                ) : model.groups.length > 0 ? (
+                    <BreakdownLines
+                        model={model}
+                        area={area ?? false}
+                        mode={stacked ? 'stacked' : 'grouped'}
+                        percent={stacked && widget.config.stack_percent === true}
+                        format={fmt}
+                        onSegment={onSegment}
+                        showLegend={widget.config.show_legend !== false}
+                    />
+                ) : (
+                    <p className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-text-xs imcrm-text-muted-foreground">{__('Sin datos.')}</p>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
@@ -88,39 +126,6 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
             </div>
         </div>
     );
-}
-
-/**
- * Mide el tamaño real del contenedor con ResizeObserver. Permite que
- * el SVG use coordenadas 1:1 con los píxeles del layout — círculos
- * redondos y texto sin deformar, a cualquier tamaño de widget.
- */
-function useElementSize(): {
-    ref: React.RefObject<HTMLDivElement>;
-    width: number;
-    height: number;
-} {
-    const ref = useRef<HTMLDivElement>(null);
-    const [size, setSize] = useState({ width: 0, height: 0 });
-
-    useEffect(() => {
-        const el = ref.current;
-        if (! el) return;
-        const measure = (): void => {
-            const rect = el.getBoundingClientRect();
-            setSize((prev) =>
-                Math.abs(prev.width - rect.width) < 1 && Math.abs(prev.height - rect.height) < 1
-                    ? prev
-                    : { width: rect.width, height: rect.height },
-            );
-        };
-        measure();
-        const ro = new ResizeObserver(measure);
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    return { ref, width: size.width, height: size.height };
 }
 
 const PAD_X = 10;

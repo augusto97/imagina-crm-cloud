@@ -137,6 +137,18 @@ export function WidgetFormDialog({
     const [includeSubtasks, setIncludeSubtasks] = useState(false);
     const [chartSort, setChartSort] = useState<string>('');
     const [topN, setTopN] = useState<number>(0);
+    // v0.1.291 — "Desglosar por" un segundo campo (barras/área/línea) y
+    // tabla dinámica (filas × columnas).
+    const [subGroupByFieldId, setSubGroupByFieldId] = useState<number>(0);
+    const [subTimeBucket, setSubTimeBucket] = useState<ChartTimeBucket>('month');
+    const [stackMode, setStackMode] = useState<'stacked' | 'grouped'>('stacked');
+    const [stackPercent, setStackPercent] = useState(false);
+    const [seriesTopN, setSeriesTopN] = useState<number>(0);
+    const [barOrientation, setBarOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
+    const [colTopN, setColTopN] = useState<number>(0);
+    const [colSort, setColSort] = useState<string>('');
+    const [heatmap, setHeatmap] = useState(false);
+    const [showTotals, setShowTotals] = useState(true);
     const [filterTree, setFilterTree] = useState<FilterTree>({
         type: 'group',
         logic: 'and',
@@ -220,6 +232,16 @@ export function WidgetFormDialog({
             setIncludeSubtasks(initial.config.include_subtasks === true);
             setChartSort(typeof initial.config.sort === 'string' ? initial.config.sort : '');
             setTopN(typeof initial.config.top_n === 'number' ? initial.config.top_n : 0);
+            setSubGroupByFieldId(typeof initial.config.sub_group_by_field_id === 'number' ? initial.config.sub_group_by_field_id : 0);
+            setSubTimeBucket(isTimeBucket(initial.config.sub_time_bucket) ? initial.config.sub_time_bucket : 'month');
+            setStackMode(initial.config.stack_mode === 'grouped' ? 'grouped' : 'stacked');
+            setStackPercent(initial.config.stack_percent === true);
+            setSeriesTopN(typeof initial.config.series_top_n === 'number' ? initial.config.series_top_n : 0);
+            setBarOrientation(initial.config.bar_orientation === 'vertical' ? 'vertical' : 'horizontal');
+            setColTopN(typeof initial.config.col_top_n === 'number' ? initial.config.col_top_n : 0);
+            setColSort(typeof initial.config.col_sort === 'string' ? initial.config.col_sort : '');
+            setHeatmap(initial.config.heatmap === true);
+            setShowTotals(initial.config.show_totals !== false);
             setTimeBucket(
                 isTimeBucket(initial.config.time_bucket)
                     ? initial.config.time_bucket
@@ -270,6 +292,16 @@ export function WidgetFormDialog({
             setIncludeSubtasks(false);
             setChartSort('');
             setTopN(0);
+            setSubGroupByFieldId(0);
+            setSubTimeBucket('month');
+            setStackMode('stacked');
+            setStackPercent(false);
+            setSeriesTopN(0);
+            setBarOrientation('horizontal');
+            setColTopN(0);
+            setColSort('');
+            setHeatmap(false);
+            setShowTotals(true);
             setTimeBucket('month');
             setPeriodFieldId(0);
             setPeriodPreset('');
@@ -291,6 +323,13 @@ export function WidgetFormDialog({
         setShowAverageLine(defs.average);
         setShowDataLabels(defs.labels);
         setShowLegend(defs.legend);
+    };
+
+    // v0.1.291 — al elegir un desglose, la leyenda de las series se enciende
+    // (sin ella no se sabe qué color es cada serie).
+    const changeBreakdown = (id: number): void => {
+        if (id > 0 && subGroupByFieldId === 0) setShowLegend(true);
+        setSubGroupByFieldId(id);
     };
 
     /** El widget tal como quedaría guardado (también alimenta la vista previa). */
@@ -348,11 +387,34 @@ export function WidgetFormDialog({
             delete config.include_subtasks;
             if (includeSubtasks) config.include_subtasks = true;
         }
-        if (type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') {
+        if (type === 'chart_bar' || type === 'chart_pie' || type === 'funnel' || type === 'pivot') {
             delete config.sort;
             delete config.top_n;
             if (chartSort !== '') config.sort = chartSort;
             if (topN > 0) config.top_n = topN;
+        }
+        // v0.1.291 — desglose por un segundo campo (barras, área, línea).
+        for (const k of ['sub_group_by_field_id', 'sub_time_bucket', 'stack_mode', 'stack_percent', 'series_top_n', 'bar_orientation', 'col_top_n', 'col_sort', 'heatmap', 'show_totals']) {
+            delete config[k];
+        }
+        if (type === 'chart_bar' && barOrientation === 'vertical') config.bar_orientation = 'vertical';
+        const mainGroup = type === 'chart_line' || type === 'chart_area' ? dateFieldId : groupByFieldId;
+        if (isBreakdownType(type) && subGroupByFieldId > 0 && subGroupByFieldId !== mainGroup) {
+            config.sub_group_by_field_id = subGroupByFieldId;
+            if (isDateField(fields.data ?? [], subGroupByFieldId)) config.sub_time_bucket = subTimeBucket;
+            config.stack_mode = stackMode;
+            if (stackMode === 'stacked' && stackPercent && isStackableMetric(metric)) config.stack_percent = true;
+            if (seriesTopN > 0) config.series_top_n = seriesTopN;
+            config.show_legend = showLegend;
+        }
+        // v0.1.291 — tabla dinámica.
+        if (type === 'pivot') {
+            if (subGroupByFieldId > 0) config.sub_group_by_field_id = subGroupByFieldId;
+            if (isDateField(fields.data ?? [], subGroupByFieldId)) config.sub_time_bucket = subTimeBucket;
+            if (colTopN > 0) config.col_top_n = colTopN;
+            if (colSort !== '') config.col_sort = colSort;
+            if (heatmap) config.heatmap = true;
+            if (!showTotals) config.show_totals = false;
         }
         return {
             id: initial?.id ?? draftId.current,
@@ -401,8 +463,12 @@ export function WidgetFormDialog({
             return metricNeedsField;
         }
         if (type === 'table') return true;
+        if (type === 'pivot') {
+            if (groupByFieldId <= 0 || subGroupByFieldId <= 0 || groupByFieldId === subGroupByFieldId) return false;
+            return metricNeedsField;
+        }
         return false;
-    }, [type, listId, metricNeedsField, groupByFieldId, dateFieldId]);
+    }, [type, listId, metricNeedsField, groupByFieldId, dateFieldId, subGroupByFieldId]);
 
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -459,6 +525,7 @@ export function WidgetFormDialog({
                                     <option value="chart_line">{__('Línea (tendencia mensual)')}</option>
                                     <option value="chart_area">{__('Área (tendencia mensual)')}</option>
                                     <option value="table">{__('Tabla · Top N')}</option>
+                                    <option value="pivot">{__('Tabla dinámica · Filas × columnas')}</option>
                                     <option value="heading">{__('Contenido · Título de sección')}</option>
                                     <option value="text">{__('Contenido · Texto')}</option>
                                     <option value="image">{__('Contenido · Imagen')}</option>
@@ -479,6 +546,7 @@ export function WidgetFormDialog({
                                         setDateFieldId(0);
                                         setSortFieldId(0);
                                         setVisibleFieldIds([]);
+                                        setSubGroupByFieldId(0);
                                     }}
                                 >
                                     <option value={0}>{__('Elige…')}</option>
@@ -584,7 +652,70 @@ export function WidgetFormDialog({
                                         onChange={setTimeBucket}
                                     />
                                 )}
+                                {type === 'chart_bar' && (
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <Label htmlFor="w-orientation">{__('Orientación')}</Label>
+                                        <Select
+                                            id="w-orientation"
+                                            value={barOrientation}
+                                            onChange={(e) => setBarOrientation(e.target.value === 'vertical' ? 'vertical' : 'horizontal')}
+                                        >
+                                            <option value="horizontal">{__('Barras horizontales')}</option>
+                                            <option value="vertical">{__('Columnas (verticales)')}</option>
+                                        </Select>
+                                    </div>
+                                )}
+                                {type === 'chart_bar' && (
+                                    <BreakdownConfig
+                                        type={type}
+                                        fields={groupableFields.filter((f) => f.id !== groupByFieldId)}
+                                        allFields={fields.data ?? []}
+                                        metric={metric}
+                                        subGroupByFieldId={subGroupByFieldId}
+                                        subTimeBucket={subTimeBucket}
+                                        stackMode={stackMode}
+                                        stackPercent={stackPercent}
+                                        seriesTopN={seriesTopN}
+                                        onSubGroupChange={changeBreakdown}
+                                        onSubTimeBucketChange={setSubTimeBucket}
+                                        onStackModeChange={setStackMode}
+                                        onStackPercentChange={setStackPercent}
+                                        onSeriesTopNChange={setSeriesTopN}
+                                    />
+                                )}
                             </>
+                        )}
+
+                        {type === 'pivot' && (
+                            <PivotConfig
+                                metric={metric}
+                                metricFieldId={metricFieldId}
+                                aggregatableFields={aggregatableFields}
+                                onMetricChange={setMetric}
+                                onMetricFieldChange={setMetricFieldId}
+                                groupableFields={groupableFields}
+                                allFields={fields.data ?? []}
+                                rowFieldId={groupByFieldId}
+                                colFieldId={subGroupByFieldId}
+                                rowBucket={timeBucket}
+                                colBucket={subTimeBucket}
+                                rowsTop={topN}
+                                colsTop={colTopN}
+                                rowSort={chartSort}
+                                colSort={colSort}
+                                heatmap={heatmap}
+                                totals={showTotals}
+                                onRowFieldChange={setGroupByFieldId}
+                                onColFieldChange={setSubGroupByFieldId}
+                                onRowBucketChange={setTimeBucket}
+                                onColBucketChange={setSubTimeBucket}
+                                onRowsTopChange={setTopN}
+                                onColsTopChange={setColTopN}
+                                onRowSortChange={setChartSort}
+                                onColSortChange={setColSort}
+                                onHeatmapChange={setHeatmap}
+                                onTotalsChange={setShowTotals}
+                            />
                         )}
 
                         {(type === 'chart_line' || type === 'chart_area') && (
@@ -607,6 +738,22 @@ export function WidgetFormDialog({
                                     value={timeBucket}
                                     onChange={setTimeBucket}
                                 />
+                                <BreakdownConfig
+                                    type={type}
+                                    fields={groupableFields.filter((f) => f.id !== dateFieldId)}
+                                    allFields={fields.data ?? []}
+                                    metric={metric}
+                                    subGroupByFieldId={subGroupByFieldId}
+                                    subTimeBucket={subTimeBucket}
+                                    stackMode={stackMode}
+                                    stackPercent={stackPercent}
+                                    seriesTopN={seriesTopN}
+                                    onSubGroupChange={changeBreakdown}
+                                    onSubTimeBucketChange={setSubTimeBucket}
+                                    onStackModeChange={setStackMode}
+                                    onStackPercentChange={setStackPercent}
+                                    onSeriesTopNChange={setSeriesTopN}
+                                />
                             </>
                         )}
 
@@ -614,6 +761,7 @@ export function WidgetFormDialog({
                             || type === 'chart_line' || type === 'chart_area') && (
                             <PresentationToggles
                                 type={type}
+                                breakdown={isBreakdownType(type) && subGroupByFieldId > 0}
                                 showAverageLine={showAverageLine}
                                 showDataLabels={showDataLabels}
                                 showLegend={showLegend}
@@ -1347,6 +1495,8 @@ function TimeBucketPicker({ value, onChange }: TimeBucketPickerProps): JSX.Eleme
 
 interface PresentationTogglesProps {
     type: WidgetType;
+    /** v0.1.291 — con desglose: la leyenda de las series. */
+    breakdown?: boolean;
     showAverageLine: boolean;
     showDataLabels: boolean;
     showLegend: boolean;
@@ -1359,6 +1509,7 @@ interface PresentationTogglesProps {
 
 function PresentationToggles({
     type,
+    breakdown = false,
     showAverageLine,
     showDataLabels,
     showLegend,
@@ -1372,9 +1523,9 @@ function PresentationToggles({
     // en barras y tendencias; las etiquetas (los valores sobre el gráfico) en
     // el donut y las tendencias — las barras y el embudo ya muestran su
     // número siempre —, y la leyenda sólo en el donut.
-    const supportsAverage = type === 'chart_bar' || type === 'chart_line' || type === 'chart_area';
-    const supportsLabels = type === 'chart_pie' || type === 'chart_line' || type === 'chart_area';
-    const supportsLegend = type === 'chart_pie';
+    const supportsAverage = !breakdown && (type === 'chart_bar' || type === 'chart_line' || type === 'chart_area');
+    const supportsLabels = !breakdown && (type === 'chart_pie' || type === 'chart_line' || type === 'chart_area');
+    const supportsLegend = type === 'chart_pie' || breakdown;
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3">
             <Label className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -1660,7 +1811,232 @@ export function widgetPreviewHint(widget: Pick<WidgetSpec, 'type' | 'config'>): 
     if (widget.type === 'chart_line' || widget.type === 'chart_area' || widget.type === 'stat_delta') {
         return id(widget.config.date_field_id) > 0 ? null : __('Elige el campo de fecha para ver el gráfico.');
     }
+    if (widget.type === 'pivot') {
+        return id(widget.config.group_by_field_id) > 0 && id(widget.config.sub_group_by_field_id) > 0
+            ? null
+            : __('Elige el campo de las filas y el de las columnas para ver la tabla.');
+    }
     return null;
+}
+
+/** v0.1.291 — Gráficos que aceptan "Desglosar por" (espejo de `BREAKDOWN_WIDGET_TYPES`). */
+export function isBreakdownType(type: WidgetType): boolean {
+    return type === 'chart_bar' || type === 'chart_area' || type === 'chart_line';
+}
+
+/** v0.1.291 — Métricas que suman (se apilan y van al 100 %; espejo de `STACKABLE_METRICS`). */
+export function isStackableMetric(metric: string): boolean {
+    return metric === 'count' || metric === 'count_empty' || metric === 'count_true' || metric === 'count_false' || metric === 'sum';
+}
+
+interface BreakdownConfigProps {
+    type: WidgetType;
+    /** Campos por los que se puede desglosar (sin el del eje principal). */
+    fields: ReadonlyArray<{ id: number; label: string; type: string }>;
+    allFields: ReadonlyArray<{ id: number; type: string }>;
+    metric: KpiMetric;
+    subGroupByFieldId: number;
+    subTimeBucket: ChartTimeBucket;
+    stackMode: 'stacked' | 'grouped';
+    stackPercent: boolean;
+    seriesTopN: number;
+    onSubGroupChange: (id: number) => void;
+    onSubTimeBucketChange: (b: ChartTimeBucket) => void;
+    onStackModeChange: (m: 'stacked' | 'grouped') => void;
+    onStackPercentChange: (v: boolean) => void;
+    onSeriesTopNChange: (n: number) => void;
+}
+
+/**
+ * v0.1.291 — "Desglosar por" un segundo campo: cada barra (o cada punto del
+ * área) se parte en series con el color real de cada opción. Apiladas (y al
+ * 100 %) sólo con métricas que suman: un promedio apilado no significa nada,
+ * así que ahí van lado a lado.
+ */
+function BreakdownConfig({
+    type,
+    fields,
+    allFields,
+    metric,
+    subGroupByFieldId,
+    subTimeBucket,
+    stackMode,
+    stackPercent,
+    seriesTopN,
+    onSubGroupChange,
+    onSubTimeBucketChange,
+    onStackModeChange,
+    onStackPercentChange,
+    onSeriesTopNChange,
+}: BreakdownConfigProps): JSX.Element {
+    const stackable = isStackableMetric(metric);
+    const mode = stackable ? stackMode : 'grouped';
+    const sideLabel = type === 'chart_bar' ? __('Lado a lado') : __('Superpuestas');
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3" data-testid="imcrm-breakdown-config">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label htmlFor="w-breakdown">{__('Desglosar por (opcional)')}</Label>
+                <Select id="w-breakdown" value={subGroupByFieldId} onChange={(e) => onSubGroupChange(Number(e.target.value))}>
+                    <option value={0}>{__('— Sin desglose —')}</option>
+                    {fields.map((f) => (
+                        <option key={f.id} value={f.id}>{f.label}</option>
+                    ))}
+                </Select>
+                <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
+                    {__('Parte cada barra en series según otro campo (por ejemplo, el estado por responsable), con el color de cada opción.')}
+                </p>
+            </div>
+            {subGroupByFieldId > 0 && (
+                <>
+                    {isDateField(allFields, subGroupByFieldId) && (
+                        <TimeBucketPicker value={subTimeBucket} onChange={onSubTimeBucketChange} />
+                    )}
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3">
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                            <Label htmlFor="w-stack">{__('Series')}</Label>
+                            <Select
+                                id="w-stack"
+                                value={mode}
+                                onChange={(e) => onStackModeChange(e.target.value === 'grouped' ? 'grouped' : 'stacked')}
+                            >
+                                {stackable && <option value="stacked">{__('Apiladas')}</option>}
+                                <option value="grouped">{sideLabel}</option>
+                            </Select>
+                        </div>
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                            <Label htmlFor="w-series-top">{__('Series a mostrar')}</Label>
+                            <Select id="w-series-top" value={seriesTopN} onChange={(e) => onSeriesTopNChange(Number(e.target.value))}>
+                                <option value={0}>{__('Las 8 mayores (el resto en «Otros»)')}</option>
+                                <option value={3}>{__('Las 3 mayores')}</option>
+                                <option value={5}>{__('Las 5 mayores')}</option>
+                                <option value={12}>{__('Las 12 mayores')}</option>
+                                <option value={20}>{__('Las 20 mayores')}</option>
+                            </Select>
+                        </div>
+                    </div>
+                    {mode === 'stacked' && (
+                        <ToggleRow label={__('Al 100 % (cada barra muestra el reparto)')} checked={stackPercent} onChange={onStackPercentChange} />
+                    )}
+                    {!stackable && (
+                        <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
+                            {__('Con esta métrica las series van una al lado de la otra: apilar promedios, mínimos o máximos no tiene sentido.')}
+                        </p>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+interface PivotConfigProps {
+    metric: KpiMetric;
+    metricFieldId: number;
+    aggregatableFields: FieldOpt[];
+    onMetricChange: (m: KpiMetric) => void;
+    onMetricFieldChange: (id: number) => void;
+    groupableFields: ReadonlyArray<{ id: number; label: string; type: string }>;
+    allFields: ReadonlyArray<{ id: number; type: string }>;
+    rowFieldId: number;
+    colFieldId: number;
+    rowBucket: ChartTimeBucket;
+    colBucket: ChartTimeBucket;
+    rowsTop: number;
+    colsTop: number;
+    rowSort: string;
+    colSort: string;
+    heatmap: boolean;
+    totals: boolean;
+    onRowFieldChange: (id: number) => void;
+    onColFieldChange: (id: number) => void;
+    onRowBucketChange: (b: ChartTimeBucket) => void;
+    onColBucketChange: (b: ChartTimeBucket) => void;
+    onRowsTopChange: (n: number) => void;
+    onColsTopChange: (n: number) => void;
+    onRowSortChange: (s: string) => void;
+    onColSortChange: (s: string) => void;
+    onHeatmapChange: (v: boolean) => void;
+    onTotalsChange: (v: boolean) => void;
+}
+
+/** v0.1.291 — Configuración de la tabla dinámica: métrica, filas, columnas y presentación. */
+function PivotConfig(p: PivotConfigProps): JSX.Element {
+    const sortOptions = (
+        <>
+            <option value="">{__('Automático')}</option>
+            <option value="value_desc">{__('Mayor total primero')}</option>
+            <option value="value_asc">{__('Menor total primero')}</option>
+            <option value="label">{__('Alfabético')}</option>
+            <option value="options">{__('Orden de las opciones del campo')}</option>
+        </>
+    );
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-pivot-config">
+            <ChartMetricConfig
+                metric={p.metric}
+                metricFieldId={p.metricFieldId}
+                aggregatableFields={p.aggregatableFields}
+                onMetricChange={p.onMetricChange}
+                onMetricFieldChange={p.onMetricFieldChange}
+            />
+            <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    <FieldPicker
+                        label={__('Filas')}
+                        value={p.rowFieldId}
+                        fields={p.groupableFields.filter((f) => f.id !== p.colFieldId)}
+                        onChange={p.onRowFieldChange}
+                        emptyHint={__('La lista no tiene campos agrupables.')}
+                    />
+                    {isDateField(p.allFields, p.rowFieldId) && <TimeBucketPicker value={p.rowBucket} onChange={p.onRowBucketChange} />}
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <Label htmlFor="w-pivot-rows-top">{__('Filas a mostrar')}</Label>
+                        <Select id="w-pivot-rows-top" value={p.rowsTop} onChange={(e) => p.onRowsTopChange(Number(e.target.value))}>
+                            <option value={0}>{__('Las 20 mayores (el resto en «Otros»)')}</option>
+                            <option value={10}>{__('Las 10 mayores')}</option>
+                            <option value={50}>{__('Las 50 mayores')}</option>
+                            <option value={100}>{__('Las 100 mayores')}</option>
+                        </Select>
+                    </div>
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <Label htmlFor="w-pivot-rows-sort">{__('Orden de las filas')}</Label>
+                        <Select id="w-pivot-rows-sort" value={p.rowSort} onChange={(e) => p.onRowSortChange(e.target.value)}>
+                            {sortOptions}
+                        </Select>
+                    </div>
+                </div>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    <FieldPicker
+                        label={__('Columnas')}
+                        value={p.colFieldId}
+                        fields={p.groupableFields.filter((f) => f.id !== p.rowFieldId)}
+                        onChange={p.onColFieldChange}
+                        emptyHint={__('La lista no tiene campos agrupables.')}
+                    />
+                    {isDateField(p.allFields, p.colFieldId) && <TimeBucketPicker value={p.colBucket} onChange={p.onColBucketChange} />}
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <Label htmlFor="w-pivot-cols-top">{__('Columnas a mostrar')}</Label>
+                        <Select id="w-pivot-cols-top" value={p.colsTop} onChange={(e) => p.onColsTopChange(Number(e.target.value))}>
+                            <option value={0}>{__('Las 12 mayores (el resto en «Otros»)')}</option>
+                            <option value={6}>{__('Las 6 mayores')}</option>
+                            <option value={24}>{__('Las 24 mayores')}</option>
+                            <option value={50}>{__('Las 50 mayores')}</option>
+                        </Select>
+                    </div>
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <Label htmlFor="w-pivot-cols-sort">{__('Orden de las columnas')}</Label>
+                        <Select id="w-pivot-cols-sort" value={p.colSort} onChange={(e) => p.onColSortChange(e.target.value)}>
+                            {sortOptions}
+                        </Select>
+                    </div>
+                </div>
+            </div>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3">
+                <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Mostrar')}</Label>
+                <ToggleRow label={__('Totales por fila, por columna y general')} checked={p.totals} onChange={p.onTotalsChange} />
+                <ToggleRow label={__('Mapa de calor (más intenso = mayor valor)')} checked={p.heatmap} onChange={p.onHeatmapChange} />
+            </div>
+        </div>
+    );
 }
 
 /**

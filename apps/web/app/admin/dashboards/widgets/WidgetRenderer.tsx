@@ -13,6 +13,7 @@ import { GaugeWidget } from './GaugeWidget';
 import { KpiWidget } from './KpiWidget';
 import { LineChartWidget } from './LineChartWidget';
 import { PieChartWidget } from './PieChartWidget';
+import { PivotWidget } from './PivotWidget';
 import { StatDeltaWidget } from './StatDeltaWidget';
 import { TableWidget } from './TableWidget';
 
@@ -55,6 +56,8 @@ export function WidgetRenderer({
             return <TableWidget dashboardId={dashboardId} widget={widget} />;
         case 'funnel':
             return <FunnelWidget dashboardId={dashboardId} widget={widget} />;
+        case 'pivot':
+            return <PivotWidget dashboardId={dashboardId} widget={widget} />;
         case 'chart_line':
         default:
             return <LineChartWidget dashboardId={dashboardId} widget={widget} />;

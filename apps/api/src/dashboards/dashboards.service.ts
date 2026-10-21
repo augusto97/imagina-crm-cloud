@@ -1,7 +1,11 @@
 import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
     AGGREGATE_OTHERS_KEY,
+    BREAKDOWN_WIDGET_TYPES,
     CONTENT_WIDGET_TYPES,
+    DEFAULT_PIVOT_COLS,
+    DEFAULT_PIVOT_ROWS,
+    DEFAULT_SERIES_TOP_N,
     DASHBOARD_FILTER_ME,
     dateRangePresetSchema,
     readStoreListMarker,
@@ -484,6 +488,10 @@ export class DashboardsService {
             return this.computeTable(env, widget, periodTree, rootsOnly);
         }
 
+        if (widget.type === 'pivot') {
+            return this.computePivot(env, cfg, { metric, metricFieldId, metricField, filterTree: periodTree, runOpts });
+        }
+
         // charts (bar/pie/line/area/funnel): agrupado. Si el campo agrupado es
         // date/datetime, `time_bucket` define la granularidad (default month
         // para los charts de tendencia, que agrupan por date_field_id).
@@ -499,13 +507,51 @@ export class DashboardsService {
         // en un gráfico por categoría; una serie temporal va completa y en
         // orden cronológico.
         const topN = Math.max(1, Math.min(200, Math.floor(Number(cfg.top_n)) || DEFAULT_TOP_N));
+        const top = bucketed ? { limit: MAX_GROUPS, byValue: false } : { limit: topN, byValue: true };
+
+        // v0.1.291 — "Desglosar por" un segundo campo: barras apiladas (o lado
+        // a lado) y áreas/líneas por serie. El motor agrupa en dos niveles, con
+        // las N series principales y el resto en "Otros".
+        const subId = numOrUndef(cfg.sub_group_by_field_id);
+        if (subId !== undefined && subId !== groupBy && BREAKDOWN_WIDGET_TYPES.includes(widget.type)) {
+            const subField = ctx.byId.get(subId);
+            const subBucket = subBucketFor(cfg, subField);
+            const seriesN = Math.max(1, Math.min(20, Math.floor(Number(cfg.series_top_n)) || DEFAULT_SERIES_TOP_N));
+            const rr = await this.aggregate.runIn(tx, tenantId, ctx, {
+                metric,
+                field_id: metricFieldId,
+                group_by_field_id: groupBy,
+                sub_group_by_field_id: subId,
+                filter_tree: periodTree,
+                time_bucket: timeBucket,
+                sub_time_bucket: subBucket,
+            }, { ...runOpts, top, subTop: subBucket ? { limit: MAX_GROUPS, byValue: false } : { limit: seriesN, byValue: true }, withTotals: true });
+            const label = (k: string | null): string => k ?? '(sin valor)';
+            let rows: Array<{ label: string; value: number | string; others?: number; segments?: Array<{ series: string; value: number | string }> }> = (rr.groups ?? []).map((g) => ({
+                label: label(g.group),
+                value: displayValue(g.value ?? 0, metric, metricField),
+                ...(g.group === AGGREGATE_OTHERS_KEY && g.others !== undefined ? { others: g.others } : {}),
+                segments: (g.sub_groups ?? []).map((sg) => ({ series: label(sg.group), value: displayValue(sg.value ?? 0, metric, metricField) })),
+            }));
+            if (bucketed && zeroFillable(metric)) rows = fillTimeBuckets(rows, bucketed);
+            return {
+                data: rows,
+                series: (rr.sub_totals ?? []).map((st) => ({
+                    key: label(st.group),
+                    value: displayValue(st.value ?? 0, metric, metricField),
+                    ...(st.others !== undefined ? { others: st.others } : {}),
+                })),
+                ...(rr.hidden_sub_groups ? { hidden_pairs: rr.hidden_sub_groups } : {}),
+            };
+        }
+
         const r = await this.aggregate.runIn(tx, tenantId, ctx, {
             metric,
             field_id: metricFieldId,
             group_by_field_id: groupBy,
             filter_tree: periodTree,
             time_bucket: timeBucket,
-        }, { ...runOpts, top: bucketed ? { limit: MAX_GROUPS, byValue: false } : { limit: topN, byValue: true } });
+        }, { ...runOpts, top });
         let data: Array<{ label: string; value: number | string; others?: number }> = (r.groups ?? []).map((g) => ({
             label: g.group ?? '(sin valor)',
             value: displayValue(g.value ?? 0, metric, metricField),
@@ -515,6 +561,72 @@ export class DashboardsService {
         // (antes la línea unía meses no contiguos y la pendiente mentía).
         if (bucketed && zeroFillable(metric)) data = fillTimeBuckets(data, bucketed);
         return { data };
+    }
+
+    /**
+     * v0.1.291 — Tabla dinámica: filas = un campo, columnas = otro, la
+     * métrica en cada cruce. Una sola consulta del motor en dos niveles con
+     * totales: el de cada fila y cada columna sale calculado sobre SUS
+     * registros (bien también para promedio, mín/máx o únicos), igual que el
+     * total general. Las N filas y columnas principales; el resto en "Otros".
+     * Un eje de fecha va completo y en orden cronológico.
+     */
+    private async computePivot(
+        env: WidgetEnv,
+        cfg: Record<string, unknown>,
+        m: {
+            metric: AggregateMetric;
+            metricFieldId: number | undefined;
+            metricField: Field | undefined;
+            filterTree: AggregateRequest['filter_tree'];
+            runOpts: { rootsOnly: boolean; related?: RelatedScope };
+        },
+    ): Promise<unknown> {
+        const { tx, tenantId, ctx } = env;
+        const rowId = numOrUndef(cfg.group_by_field_id);
+        const colId = numOrUndef(cfg.sub_group_by_field_id);
+        if (rowId === undefined || colId === undefined || rowId === colId) {
+            throw new BadRequestException({
+                code: 'invalid_pivot',
+                message: 'La tabla dinámica necesita un campo para las filas y otro distinto para las columnas.',
+                data: { status: 400 },
+            });
+        }
+        const rowBucket = subBucketFor({ sub_time_bucket: cfg.time_bucket }, ctx.byId.get(rowId));
+        const colBucket = subBucketFor(cfg, ctx.byId.get(colId));
+        const rowsN = Math.max(1, Math.min(200, Math.floor(Number(cfg.top_n)) || DEFAULT_PIVOT_ROWS));
+        const colsN = Math.max(1, Math.min(50, Math.floor(Number(cfg.col_top_n)) || DEFAULT_PIVOT_COLS));
+        const r = await this.aggregate.runIn(tx, tenantId, ctx, {
+            metric: m.metric,
+            field_id: m.metricFieldId,
+            group_by_field_id: rowId,
+            sub_group_by_field_id: colId,
+            filter_tree: m.filterTree,
+            time_bucket: rowBucket,
+            sub_time_bucket: colBucket,
+        }, {
+            ...m.runOpts,
+            // Un eje de fecha va COMPLETO y en orden (con un tope por clave se
+            // perderían los períodos más recientes): el período lo acota.
+            top: rowBucket ? { limit: MAX_GROUPS, byValue: false } : { limit: rowsN, byValue: true },
+            subTop: colBucket ? { limit: MAX_GROUPS, byValue: false } : { limit: colsN, byValue: true },
+            withTotals: true,
+        });
+        const label = (k: string | null): string => k ?? '(sin valor)';
+        const show = (v: number | string | null): number | string | null => (v === null ? null : displayValue(v, m.metric, m.metricField));
+        const cells: Array<{ row: string; col: string; value: number | string | null }> = [];
+        for (const g of r.groups ?? []) {
+            for (const sg of g.sub_groups ?? []) cells.push({ row: label(g.group), col: label(sg.group), value: show(sg.value) });
+        }
+        return {
+            pivot: {
+                rows: (r.groups ?? []).map((g) => ({ key: label(g.group), value: show(g.value), ...(g.others !== undefined ? { others: g.others } : {}) })),
+                cols: (r.sub_totals ?? []).map((st) => ({ key: label(st.group), value: show(st.value), ...(st.others !== undefined ? { others: st.others } : {}) })),
+                cells,
+                total: show(r.value),
+                ...(r.hidden_sub_groups ? { hidden_cells: r.hidden_sub_groups } : {}),
+            },
+        };
     }
 
     /** Widget de tabla: Top N registros con columnas visibles y orden. */
@@ -774,6 +886,16 @@ function toDashboard(row: Row): Dashboard {
 
 async function clearDefault(tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0], tenantId: number): Promise<void> {
     await tx.update(dashboards).set({ isDefault: false }).where(eq(dashboards.tenantId, tenantId));
+}
+
+/**
+ * v0.1.291 — Bucket temporal del SEGUNDO campo (desglose / columnas de una
+ * tabla dinámica): sólo si es una fecha; sin elegir, por mes.
+ */
+function subBucketFor(cfg: Record<string, unknown>, field: Field | undefined): TimeBucket | undefined {
+    if (field?.type !== 'date' && field?.type !== 'datetime') return undefined;
+    const parsed = timeBucketSchema.safeParse(cfg.sub_time_bucket);
+    return parsed.success ? parsed.data : 'month';
 }
 
 function numOrUndef(v: unknown): number | undefined {
