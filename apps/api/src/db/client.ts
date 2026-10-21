@@ -85,6 +85,16 @@ export function createPool(connectionString: string, timeouts: PoolTimeouts = {}
         // corren en 200. Para una app de muchas consultas cortas no paga nunca.
         ...(process.env.DB_JIT === 'on' ? {} : { options: '-c jit=off' }),
     });
+    // Una conexión PRESTADA (dentro de una transacción) que Postgres corta —
+    // `idle_in_transaction_session_timeout`, reinicio de la base — emite
+    // `error` en el cliente, no en el pool: sin este listener es una excepción
+    // no capturada que tumba el proceso. La consulta siguiente de esa
+    // transacción falla igual con su error, que es lo que corresponde.
+    pool.on('connect', (client) => {
+        client.on('error', (err) => {
+            logger.warn(`Postgres cortó una conexión en uso: ${err.message}`);
+        });
+    });
     pool.on('error', (err) => {
         logger.warn(`Conexión a Postgres cerrada (se abre otra en la próxima consulta): ${err.message}`);
         recordServerError({ source: 'database', message: `Conexión a Postgres cerrada: ${err.message}` });
