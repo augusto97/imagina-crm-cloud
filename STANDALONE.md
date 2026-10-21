@@ -3312,6 +3312,39 @@ viajan al migrar una empresa. El formulario público sigue sin modo oscuro (es
 una superficie que diseña la empresa) y el link de pago que queda obsoleto por
 un cambio de saldo vence solo (7 días); el botón crea uno nuevo.
 
+
+### ADR-S49 — Visor servido por el servidor, tiempo como derivado e hilos de un nivel (v0.1.291)
+
+**Contexto.** Quinta entrega del «hazlo todo» (carencias de ADR-S45): historial
+por campo con restaurar, reacciones e hilos en comentarios, vista previa de
+adjuntos y registro de tiempo. Dos de ellas chocaban con decisiones previas: la
+CSP del SPA (`default-src 'self'`) no deja que pdf.js ni un `<video>` lean un
+archivo del bucket de la empresa (ADR-S36, otro origen), y el tiempo no es un
+valor que alguien escriba en `data`.
+
+**Decisión.**
+1. **El visor pide `preview=1` y el API sirve los bytes** —también los que
+   están en el bucket de la empresa— con rangos (206/416). Así `connect-src` y
+   `media-src 'self'` alcanzan y la CSP no se abre a otros orígenes; `dl=1`
+   fuerza `attachment`. Inline sólo lo que no ejecuta (imágenes, PDF, video,
+   audio, y texto como `text/plain`), siempre con nosniff + CSP sandbox; HTML,
+   SVG y XML nunca. El SVG se dibuja desde un Blob en un `<img>`.
+2. **«Tiempo registrado» es un derivado** (`time_tracked`): una subconsulta SQL
+   sobre `time_entries` (minutos de entradas cerradas) inyectada como la de
+   lookup/rollup, así filtra, ordena y suma sin vivir en `data`. Un cronómetro
+   en curso no suma hasta detenerse, y hay UNO por persona (índice único
+   parcial).
+3. **Hilos de un nivel; la visibilidad la decide el raíz**: responder a una
+   respuesta cuelga del mismo raíz, y una respuesta jamás puede ser más
+   visible que su raíz (el portal nunca ve una respuesta a algo interno).
+4. **Restaurar es una edición más**: pasa por el PATCH normal (validación, ACL,
+   actividad, automatizaciones) y lo que ya no es válido se explica en vez de
+   intentarse.
+
+**Consecuencias.** Migración 0077. Un raíz borrado con respuestas queda como
+«Comentario eliminado» (borrar lo que otros respondieron no es decisión de quien
+escribió el primer mensaje). Los comentarios siguen sin adjuntos propios.
+
 ---
 
-**Versión del documento:** 1.87.0 (portal con contraseña, pagos del cliente y formularios verificados — ADR-S48)
+**Versión del documento:** 1.88.0 (visor, tiempo e hilos en la ficha — ADR-S49)

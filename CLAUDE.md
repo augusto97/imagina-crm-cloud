@@ -8307,6 +8307,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         dos fichas, emitir COT-0001 congelado, anular y reemitir COT-0002,
         factura sin IVA FAC-0001, oscuro y celular).
 
+  - [x] **Ficha del registro: historial por campo, reacciones e hilos, visor de
+        adjuntos y registro de tiempo (v0.1.291, ADR-S49, quinta entrega del
+        «hazlo todo»)**: (a) **historial de UN campo** —botón «Ver historial»
+        al pasar el mouse (en táctil, tenue) en el modal, la página y la ficha
+        v3 (bloque de campo, propiedades y chips de la cabecera)— con quién,
+        cuándo y de qué a qué en lenguaje claro; `GET
+        /lists/:l/records/:id/fields/:fieldId/history` filtra el diff por
+        `f{id}` y pagina por cursor (campo oculto, registro fuera de alcance o
+        campo de otra lista → 404). «Restaurar este valor» va por el PATCH
+        normal y `checkRestoreValue` (shared) explica cuándo no se puede (opción
+        borrada, tipo cambiado); el feed de Actividad también ofrece
+        «Restaurar». (b) **Reacciones** con 8 emojis curados
+        (`comment_reactions`, RLS, única por comentario+persona+emoji; toggle
+        optimista, quién reaccionó, en vivo) e **hilos de un nivel**: la
+        respuesta HEREDA la visibilidad del comentario raíz (cambiarla en una
+        respuesta → 400; en el raíz, cambia todo el hilo), @menciones en
+        respuestas y aviso nuevo «respondió» al autor del raíz y a quienes ya
+        respondieron; un raíz borrado con respuestas queda como «Comentario
+        eliminado». El portal ve hilos y reacciones sólo de lo visible para el
+        cliente (sin nombres de quién reaccionó) y el cliente responde y
+        reacciona donde puede comentar. (c) **Visor de adjuntos** a pantalla
+        completa y a pedido —imagen con zoom, PDF con pdf.js, video y audio,
+        texto/CSV/JSON (200 KB por Range), SVG desde un Blob (su script no
+        corre), el resto con «Descargar»— desde la tabla, la ficha y la
+        descripción, con ←/→ y Escape; Ctrl/⌘+clic sigue abriendo otra pestaña.
+        La CSP del SPA queda intacta: el visor pide `preview=1` y el API sirve
+        los bytes —también desde el bucket de la empresa— con rangos
+        (206/416); `safe-content-type` suma video y audio inline y texto como
+        `text/plain`, siempre con nosniff + CSP sandbox; HTML, SVG y XML nunca
+        inline. (d) **Registro de tiempo** (`time_entries`, RLS, UN cronómetro
+        en curso por persona en toda la empresa por índice único parcial;
+        iniciar otro detiene y guarda el anterior): cargas a mano con el parser
+        de Duración, cada uno edita lo suyo y admin/manager lo de todos, panel
+        en el modal y la página, bloque `time_tracking` en la ficha v3, chip
+        del cronómetro en la barra superior (el estado vive en el servidor y
+        otra pestaña se entera por realtime) y exportar las entradas a CSV con
+        el ACL. Campo derivado nuevo **«Tiempo registrado»** (`time_tracked`,
+        minutos de entradas cerradas por subconsulta SQL) que filtra, ordena y
+        suma en el pie y los tableros; el pie de los campos de minutos se lee
+        «1h 50m» (también el de Duración, que mostraba el número crudo). La
+        ficha trae el tiempo en el mismo bundle. Migración 0077 (tablas
+        nuevas, índice de hilos y `activity(tenant_id, record_id, id DESC)`).
+        Asistente/MCP, migración y borrado de empresa al día. De paso: la celda
+        de archivo no editable era un `<button disabled>` que se tragaba el clic
+        del enlace, y la tarjeta de acceso al portal se oculta sin
+        `manage_lists` (pedía y fallaba con 403). Tests: `time-tracking` (7) y
+        los de comentarios, avisos, portal, archivos, almacenamiento propio,
+        migración/borrado de empresa, ficha y asistente extendidos; front y
+        shared en verde + E2E en navegador (historial 16/16, comentarios 20/20,
+        visor 29/29, tiempo 19/19) en claro, oscuro, celular y contra el build
+        de producción con su CSP.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
