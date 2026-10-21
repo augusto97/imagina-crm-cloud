@@ -1,16 +1,9 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
-import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
-import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
 import { CloudApiError } from '@/lib/cloud/client';
-import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
-import { PortalAccountMenu } from '@/cloud-portal/PortalAccountMenu';
-import { PortalDocuments } from '@/cloud-portal/PortalDocuments';
-import { PortalLayout } from '@/cloud-portal/PortalLayout';
 import { setPortalAccount } from '@/portal/portalAccount';
-import { setTenantFormat } from '@/lib/tenantFormat';
 import {
     HostBrandContext,
     PortalBrandSetterContext,
@@ -18,6 +11,10 @@ import {
     useHostBrand,
     type PortalBrand,
 } from '@/cloud-portal/portalBrand';
+
+/** El portal con sesión (diseño, gráficos, documentos) en su propio chunk. */
+const loadPortalHome = () => import('@/cloud-portal/PortalHome');
+const PortalHome = lazy(loadPortalHome);
 
 /**
  * SPA del portal del cliente (ADR-S: F3 / CONTRACT §9). Dos rutas:
@@ -119,6 +116,10 @@ function PortalPage(): JSX.Element {
         retry: false,
         enabled: !loggedOut,
     });
+    // El chunk del portal se baja EN PARALELO con /portal/me (no después).
+    useEffect(() => {
+        void loadPortalHome();
+    }, []);
 
     // Una cuenta que ya no está (le quitaron ese acceso): se vuelve a la de
     // siempre en vez de mostrar un error.
@@ -134,120 +135,20 @@ function PortalPage(): JSX.Element {
     if (!boot.data) return <Centered>Cargando tu portal…</Centered>;
 
     return (
-        <PortalContent
-            key={boot.data.account_id ?? 0}
-            boot={boot.data}
-            onSelectAccount={(id) => setParams({ cuenta: String(id) })}
-            onLogout={() => {
-                setPortalAccount(null);
-                qc.clear();
-                setLoggedOut(true);
-            }}
-        />
+        <Suspense fallback={<Centered>Cargando tu portal…</Centered>}>
+            <PortalHome
+                key={boot.data.account_id ?? 0}
+                boot={boot.data}
+                onSelectAccount={(id) => setParams({ cuenta: String(id) })}
+                onLogout={() => {
+                    setPortalAccount(null);
+                    qc.clear();
+                    setLoggedOut(true);
+                }}
+            />
+        </Suspense>
     );
 }
-
-function PortalContent({
-    boot,
-    onSelectAccount,
-    onLogout,
-}: {
-    boot: PortalBoot;
-    onSelectAccount: (id: number) => void;
-    onLogout: () => void;
-}): JSX.Element {
-    const dataFields = boot.fields.filter((f) => isDataField(f.type));
-
-    // White-label: el portal sale con la marca de la empresa (mismo mecanismo
-    // que el admin — re-pintamos los tokens del tema con el color del tenant).
-    // Defensivo ante un boot sin branding (respuesta cacheada de una versión previa).
-    const branding = boot.branding ?? { primary_color: null, app_name: null, logo_url: null };
-    // v0.1.104 — el cliente ve montos/fechas con el formato regional de la
-    // empresa (misma capa que el admin; tolerante a boots viejos sin format).
-    useEffect(() => {
-        setTenantFormat(boot.format ?? null);
-    }, [boot.format]);
-    // White-label (v0.1.245): la marca de la cuenta que se mira (color, logo,
-    // título y favicon) la pinta la raíz del portal — aquí sólo se avisa. El
-    // nombre que se muestra es el que eligió la empresa o, si no eligió, el de
-    // la empresa (antes caía al nombre de la LISTA, que es interno).
-    const displayName = branding.app_name ?? (boot.tenant_name || null);
-    const setBrand = useContext(PortalBrandSetterContext);
-    useEffect(() => {
-        setBrand({ name: displayName, logoUrl: branding.logo_url ?? null, primaryColor: branding.primary_color ?? null });
-        return () => setBrand(null);
-    }, [setBrand, displayName, branding.logo_url, branding.primary_color]);
-    // v0.1.233 — el diseño v3 (guardado, convertido o automático) manda;
-    // el servidor lo resuelve siempre. Sin diseño (respuesta de una versión
-    // anterior durante un deploy) se cae a la lista simple de datos.
-    const layout = boot.layout ?? null;
-
-    // v0.1.94 — ajustes de página del portal diseñados en el editor:
-    // fondo de página, ancho máximo del contenido y tipografía global.
-    const page = readPageSettings(layout ? (layout as { page?: unknown }).page : undefined);
-    const pageStyle: React.CSSProperties = {};
-    if (page.bg !== undefined) pageStyle.backgroundColor = page.bg;
-    if (page.font !== undefined) pageStyle.fontFamily = PAGE_FONT_STACKS[page.font];
-    const contentStyle: React.CSSProperties =
-        page.max_width !== undefined ? { maxWidth: `${page.max_width}px` } : layout ? { maxWidth: '1100px' } : {};
-
-    return (
-        <div className="imcrm-min-h-screen imcrm-bg-background imcrm-text-foreground" style={pageStyle}>
-            <header className="imcrm-border-b imcrm-border-border imcrm-px-6 imcrm-py-4">
-                <div className="imcrm-mx-auto imcrm-flex imcrm-max-w-4xl imcrm-items-center imcrm-gap-3" style={contentStyle}>
-                    {branding.logo_url && (
-                        <img
-                            src={branding.logo_url}
-                            alt=""
-                            className="imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-rounded-md imcrm-object-contain"
-                        />
-                    )}
-                    <div>
-                        {displayName && (
-                            <p className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                                {displayName}
-                            </p>
-                        )}
-                        <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Tu portal</h1>
-                    </div>
-                    <PortalAccountMenu accountId={boot.account_id ?? null} onSelect={onSelectAccount} onLogout={onLogout} />
-                </div>
-            </header>
-
-            <main className="imcrm-mx-auto imcrm-max-w-4xl imcrm-space-y-4 imcrm-p-6" style={contentStyle}>
-                {layout ? (
-                    <PortalLayout boot={boot} layout={layout} />
-                ) : (
-                    // Sin template: fallback con los datos del record.
-                    <section className="imcrm-space-y-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-                        <dl className="imcrm-space-y-3">
-                            {dataFields.map((f) => (
-                                <FieldRow key={f.id} field={f} value={boot.record.data[jsonbKeyForField(f.id)]} />
-                            ))}
-                        </dl>
-                    </section>
-                )}
-
-                <PortalDocuments documents={boot.documents ?? []} />
-
-            </main>
-        </div>
-    );
-}
-
-function FieldRow({ field, value }: { field: Field; value: unknown }): JSX.Element {
-    const text = formatValue(field, value);
-    return (
-        <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-3 imcrm-border-b imcrm-border-border/60 imcrm-pb-2 last:imcrm-border-0">
-            <dt className="imcrm-text-sm imcrm-font-medium imcrm-text-muted-foreground">{field.label}</dt>
-            <dd className="imcrm-col-span-2 imcrm-text-sm">
-                {text === '' ? <span className="imcrm-text-muted-foreground">—</span> : text}
-            </dd>
-        </div>
-    );
-}
-
-
 
 /**
  * Sin sesión (o vencida): el cliente se manda solo un enlace nuevo. La

@@ -1417,6 +1417,15 @@ export class CloudClient {
     portalUpdateMe(fields: Record<string, unknown>): Promise<unknown> {
         return this.request('PATCH', '/portal/me', { body: { fields } });
     }
+    /** El cliente crea un registro en una lista habilitada (campos por id). */
+    async portalCreateRecord(listId: number, fields: Record<string, unknown>): Promise<{ id: number }> {
+        const res = (await this.request('POST', `/portal/lists/${listId}/records`, { body: { fields } })) as unknown as { data: { id: number } };
+        return res.data;
+    }
+    /** El cliente decide si recibe un correo cuando el equipo le responde. */
+    portalSetPreferences(notifyEmail: boolean): Promise<unknown> {
+        return this.request('PATCH', '/portal/me/preferences', { body: { notify_email: notifyEmail } });
+    }
     // --- acceso al portal desde el admin (v0.1.153) ---
     portalAccess(list: string | number, recordId: number): Promise<PortalAccessList> {
         return this.request('GET', `/lists/${list}/portal/access?record_id=${recordId}`, {

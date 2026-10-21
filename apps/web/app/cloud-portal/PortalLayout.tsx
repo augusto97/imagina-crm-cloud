@@ -92,7 +92,15 @@ export function PortalLayout({ boot, layout }: { boot: PortalBoot; layout: Recor
         dataLoading: false,
         mode: 'portal',
         canEditField: (f) => editable.has(f.id),
-        portalBoot: { rest_root: '/api/v1', list_slug: boot.list_slug, user_id: boot.user_id, record_id: boot.record.id },
+        portalBoot: {
+            rest_root: '/api/v1',
+            list_slug: boot.list_slug,
+            user_id: boot.user_id,
+            record_id: boot.record.id,
+            account_id: boot.account_id ?? null,
+            company_name: boot.branding?.app_name ?? (boot.tenant_name || ''),
+            fields: boot.fields,
+        },
         blockLists: boot.layout_data?.block_lists,
     };
 

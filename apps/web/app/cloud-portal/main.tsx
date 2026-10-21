@@ -33,6 +33,9 @@ const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
 
+// Reglas propias del portal (campos a 16px en el teléfono: sin zoom de iOS).
+document.documentElement.classList.add('imcrm-portal-app');
+
 const container = document.getElementById('root');
 // v0.1.227 — encuadrada por otro sitio (clickjacking) la app no se monta.
 if (container && !blockCrossOriginFraming(container)) {
