@@ -254,6 +254,23 @@ function EditableCellInner({
         // visualmente sobre las celdas vecinas. El user usa el drawer
         // de detalle para ver/editar el contenido completo, o activa
         // "Ajustar texto" en el panel de la vista (`wrapText`).
+        // v0.1.288 — sin edición en línea (archivos, persona, calculados…) la
+        // celda es un div, no un <button disabled>: un botón deshabilitado se
+        // traga los clicks de lo que tiene adentro (el enlace del archivo que
+        // abre el visor) y además un enlace dentro de un botón es HTML inválido.
+        if (!canEdit) {
+            return (
+                <div
+                    className={cn(
+                        'imcrm-block imcrm-w-full imcrm-text-left imcrm-min-h-[1.5rem] imcrm-cursor-default',
+                        wrapText ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
+                    )}
+                    title={lockedReason ?? __('No editable inline')}
+                >
+                    {renderCellValue(field, value)}
+                </div>
+            );
+        }
         return (
             <button
                 type="button"

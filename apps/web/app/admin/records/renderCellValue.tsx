@@ -5,6 +5,7 @@ import { PhoneDisplay } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { isPlainClick, openAttachmentsPreview } from '@/components/files/openAttachments';
 import { useAttachment } from '@/hooks/useAttachments';
 import { __ } from '@/lib/i18n';
 import { Paperclip } from 'lucide-react';
@@ -193,7 +194,7 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         const ids = (Array.isArray(value) ? value : [value])
             .map((v) => (typeof v === 'number' ? v : Number(v)))
             .filter((n) => Number.isInteger(n) && n > 0);
-        if (ids.length > 0) return <FileCell id={ids[0]!} more={ids.length - 1} />;
+        if (ids.length > 0) return <FileCell ids={ids} />;
         if (typeof value === 'string' && /^https?:\/\//i.test(value.trim())) {
             return (
                 <a href={value.trim()} target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline" onClick={(e) => e.stopPropagation()}>
@@ -284,7 +285,9 @@ function UserCell({ id }: { id: number }): JSX.Element {
     );
 }
 
-export function FileCell({ id, more }: { id: number; more: number }): JSX.Element {
+export function FileCell({ ids }: { ids: number[] }): JSX.Element {
+    const id = ids[0]!;
+    const more = ids.length - 1;
     const { data, isLoading } = useAttachment(id);
     if (isLoading) return <span className="imcrm-text-muted-foreground">…</span>;
     if (!data) return <span className="imcrm-text-muted-foreground">{__('Archivo no disponible')}</span>;
@@ -297,7 +300,15 @@ export function FileCell({ id, more }: { id: number; more: number }): JSX.Elemen
                 rel="noreferrer"
                 className="imcrm-truncate imcrm-text-primary hover:imcrm-underline"
                 title={data.title}
-                onClick={(e) => e.stopPropagation()}
+                data-testid="imcrm-file-link"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    // v0.1.288 — un click abre el visor (con los demás del
+                    // campo para pasar con ←/→); Ctrl/⌘+click, otra pestaña.
+                    if (!isPlainClick(e)) return;
+                    e.preventDefault();
+                    void openAttachmentsPreview(ids, id);
+                }}
             >
                 {data.title}
             </a>

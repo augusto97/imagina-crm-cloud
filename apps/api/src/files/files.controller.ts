@@ -70,7 +70,7 @@ export class SignedFilesController {
  * respuesta (bytes corruptos/perdidos), se DESTRUYE la conexión — sin esto
  * la request quedaba colgada hasta el timeout del proxy (504).
  */
-async function streamFile(
+export async function streamFile(
     file: OpenedFile,
     reply: FastifyReply,
     cacheControl?: string,

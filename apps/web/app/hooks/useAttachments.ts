@@ -26,6 +26,8 @@ export interface ResolvedAttachment {
     thumbUrl?: string;
     title: string;
     mimeType: string;
+    /** v0.1.288 — tamaño (lo muestra el visor de adjuntos). */
+    sizeBytes?: number;
 }
 
 function toResolved(dto: AttachmentDto): ResolvedAttachment {
@@ -35,6 +37,7 @@ function toResolved(dto: AttachmentDto): ResolvedAttachment {
         thumbUrl: dto.mime_type.startsWith('image/') ? dto.url : undefined,
         title: dto.title,
         mimeType: dto.mime_type,
+        sizeBytes: dto.size_bytes,
     };
 }
 
@@ -74,6 +77,15 @@ async function flushAttachments(): Promise<void> {
     }
 }
 
+/**
+ * v0.1.288 — Varios archivos por id (para abrir el visor con todos los de un
+ * campo); viajan en UN pedido con lo que se pida en el mismo tick.
+ */
+export async function resolveAttachments(ids: readonly number[]): Promise<ResolvedAttachment[]> {
+    const found = await Promise.all(ids.filter((id) => id > 0).map((id) => loadAttachment(id)));
+    return found.filter((a): a is ResolvedAttachment => a !== null);
+}
+
 /** Un archivo por id; las llamadas del mismo tick viajan juntas. */
 export function useAttachment(id: number | null) {
     return useQuery({
@@ -105,6 +117,7 @@ export function useAttachments(ids: number[]) {
                     thumbUrl: dto.mime_type.startsWith('image/') ? dto.url : undefined,
                     title: dto.title,
                     mimeType: dto.mime_type,
+                    sizeBytes: dto.size_bytes,
                 });
             }
             return map;

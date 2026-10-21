@@ -8,6 +8,7 @@ import { getOauthRequestId, OauthConsentPage } from '@/cloud/pages/OauthConsentP
 import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPage';
 import { getVerifyToken, VerifyEmailPage } from '@/cloud/pages/VerifyEmailPage';
 import { isRecoveryPath, RecoveryPage } from '@/cloud/pages/RecoveryPage';
+import { FilePreviewHost } from '@/components/files/FilePreviewHost';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
@@ -81,6 +82,8 @@ if (container && !blockCrossOriginFraming(container)) {
                         ) : (
                             <AdminCloudApp />
                         )}
+                        {/* v0.1.288 — visor de adjuntos (se carga a pedido). */}
+                        <FilePreviewHost />
                     </ConfirmProvider>
                 </ToastProvider>
             </QueryClientProvider>

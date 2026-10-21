@@ -299,7 +299,7 @@ function FileDisplay({ value }: { value: unknown }): JSX.Element {
     const ids = items
         .map((v) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN))
         .filter((n) => Number.isInteger(n) && n > 0);
-    if (ids.length > 0) return <FileCell id={ids[0]!} more={ids.length - 1} />;
+    if (ids.length > 0) return <FileCell ids={ids} />;
     const urls = items.filter((v): v is string => typeof v === 'string' && /^(https?:\/\/|\/api\/)/i.test(v.trim()));
     if (urls.length === 0) return <span className="imcrm-text-muted-foreground">—</span>;
     return (

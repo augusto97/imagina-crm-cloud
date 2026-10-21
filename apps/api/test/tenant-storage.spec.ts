@@ -168,6 +168,11 @@ describe('almacenamiento propio de la empresa', () => {
         const q = new URL(ext.url, 'http://x').searchParams;
         const signed = await files.openSigned(ext.id, tenantId, Number(q.get('exp')), q.get('sig')!);
         expect(await drain(signed)).toBe('%PDF-EN-EL-BUCKET');
+        // v0.1.288 — la vista previa (`preview=1`) lo sirve el servidor: pdf.js
+        // lee con fetch (connect-src 'self') y redirigir al bucket lo rompería.
+        const preview = await files.openSigned(ext.id, tenantId, Number(q.get('exp')), q.get('sig')!, { proxy: true });
+        expect(preview.kind).toBe('stream');
+        expect(await drain(preview)).toBe('%PDF-EN-EL-BUCKET');
         // Lecturas internas (imágenes de un PDF, exportar la empresa).
         const stream = await files.readStream(tenantId, { storageKey: row!.storageKey, storageConnectionId: connId });
         const chunks: Buffer[] = [];

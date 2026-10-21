@@ -5,6 +5,8 @@ import { Link } from 'react-router';
 import { AtSign, Download, FileText, Hash, ImageOff, Link as LinkIcon, ListTree } from 'lucide-react';
 import { EMBED_PROVIDER_LABELS, resolveEmbed } from '@imagina-base/shared';
 
+import { openFilePreview } from '@/components/files/filePreview';
+import { isPlainClick, toPreviewFile } from '@/components/files/openAttachments';
 import { useAttachments } from '@/hooks/useAttachments';
 import { sanitizeHref } from '@/lib/sanitize';
 import { __ } from '@/lib/i18n';
@@ -143,7 +145,7 @@ export const ImageBlock = Node.create({
     },
 });
 
-function ImageBlockView({ node }: NodeViewProps): JSX.Element {
+function ImageBlockView({ node, editor }: NodeViewProps): JSX.Element {
     const fileId = Number(node.attrs.fileId) || 0;
     const external = node.attrs.src === null ? '' : String(node.attrs.src);
     const alt = String(node.attrs.alt ?? '');
@@ -151,6 +153,8 @@ function ImageBlockView({ node }: NodeViewProps): JSX.Element {
     const { data } = useAttachments(fileId > 0 ? [fileId] : []);
     const resolved = fileId > 0 ? data?.get(fileId) : undefined;
     const src = external !== '' ? external : (resolved?.url ?? '');
+    const openImage = (): void =>
+        openFilePreview([resolved && external === '' ? toPreviewFile(resolved) : { url: src, title: alt || __('Imagen'), mimeType: 'image/*' }]);
 
     return (
         <NodeViewWrapper className="imcrm-my-3" data-imcrm-image-block="" data-drag-handle>
@@ -164,7 +168,14 @@ function ImageBlockView({ node }: NodeViewProps): JSX.Element {
                     src={src}
                     alt={alt}
                     style={width === undefined ? undefined : { width: `${width}px` }}
-                    className="imcrm-max-w-full imcrm-rounded-md imcrm-border imcrm-border-border"
+                    className="imcrm-max-w-full imcrm-cursor-zoom-in imcrm-rounded-md imcrm-border imcrm-border-border"
+                    data-testid="imcrm-description-image"
+                    // v0.1.288 — abre el visor: con un click si sólo se lee; editando,
+                    // con doble click (el primero elige el bloque para moverlo).
+                    onClick={() => {
+                        if (!editor.isEditable) openImage();
+                    }}
+                    onDoubleClick={openImage}
                 />
             )}
         </NodeViewWrapper>
@@ -211,6 +222,13 @@ function FileBlockView({ node }: NodeViewProps): JSX.Element {
                 target="_blank"
                 rel="noopener noreferrer"
                 contentEditable={false}
+                data-testid="imcrm-description-file"
+                onClick={(e) => {
+                    // v0.1.288 — un click abre el visor; Ctrl/⌘+click, otra pestaña.
+                    if (!resolved || !isPlainClick(e)) return;
+                    e.preventDefault();
+                    openFilePreview([toPreviewFile(resolved)]);
+                }}
                 className={cn(
                     'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3 imcrm-py-2 imcrm-no-underline',
                     'hover:imcrm-bg-accent/50',
