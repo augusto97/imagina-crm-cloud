@@ -426,6 +426,54 @@ export class RecordsService {
     }
 
     /**
+     * v0.1.287 — Filas de VARIOS subgrupos (pares grupo/subgrupo) de la vista
+     * agrupada en dos niveles, en UNA consulta, con el mismo filtro, búsqueda,
+     * ACL, orden y regla de subtareas que el listado. Las claves de los dos
+     * niveles las arma `groupKeyExpr` (las mismas del motor de agregados).
+     */
+    async listSubGroupRows(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        opts: {
+            groupFieldId: number;
+            subGroupFieldId: number;
+            groupKeyExpr: (field: Field, fieldsById: Map<number, FilterableField>) => SQL;
+            pairs: Array<[string | null, string | null]>;
+            perGroup: number;
+            filter_tree?: ListRecordsQuery['filter_tree'];
+            search?: string;
+            sort?: string;
+        },
+    ): Promise<Map<string, RecordDto[]>> {
+        const out = new Map<string, RecordDto[]>();
+        if (opts.pairs.length === 0) return out;
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            const groupField = ctx.fields.find((f) => f.id === opts.groupFieldId);
+            const subField = ctx.fields.find((f) => f.id === opts.subGroupFieldId);
+            if (!groupField || !subField || ctx.hiddenIds.has(groupField.id) || ctx.hiddenIds.has(subField.id)) return out;
+            if (groupKeyHasSubquery(groupField.type) || groupKeyHasSubquery(subField.type)) await disableJitForTx(tx);
+            const picked = await this.repo.listPerGroupPair(tx, tenantId, ctx.list.id, {
+                where: this.readWhere(ctx, { filter_tree: opts.filter_tree, search: opts.search }),
+                groupExpr: opts.groupKeyExpr(groupField, ctx.fieldsById),
+                subExpr: opts.groupKeyExpr(subField, ctx.fieldsById),
+                pairs: opts.pairs,
+                orderBy: parseFieldSort(opts.sort, ctx.fieldsById, ctx.fields),
+                perGroup: opts.perGroup,
+            });
+            const dtos = await this.hydrate(tx, tenantId, ctx, picked.map((p) => p.row));
+            picked.forEach((p, i) => {
+                const k = subGroupPairKey(p.group, p.sub);
+                const list = out.get(k) ?? [];
+                list.push(dtos[i]!);
+                out.set(k, list);
+            });
+            return out;
+        });
+    }
+
+    /**
      * Lo que necesita una LECTURA de la lista para quien pide (v0.1.286, antes
      * vivía dentro de `list`): campos, ACL (scope + ocultos), campos filtrables
      * con las expresiones de los derivados y el reloj de la empresa.
@@ -1620,4 +1668,13 @@ function describeError(err: unknown): {
     }
     const changed = Array.isArray(data.changed) ? (data.changed as unknown[]).map(String) : undefined;
     return { code, message, ...(fieldErrors ? { fieldErrors } : {}), ...(changed ? { changed } : {}) };
+}
+
+/**
+ * v0.1.287 — Clave de un par (grupo, subgrupo) de la vista agrupada en dos
+ * niveles: el JSON de las dos claves crudas («(sin valor)» = `__null__`). El
+ * front la arma igual para buscar las filas de cada subgrupo en el bundle.
+ */
+export function subGroupPairKey(group: string | null, sub: string | null): string {
+    return JSON.stringify([group ?? '__null__', sub ?? '__null__']);
 }

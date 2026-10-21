@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { Field, FilterGroup } from '@imagina-base/shared';
+import type { Field, FilterGroup, RecordDto } from '@imagina-base/shared';
 import { AggregateService, groupKeyExpr } from '../aggregate/aggregate.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
-import { RecordsService, type Actor } from './records.service';
+import { RecordsService, subGroupPairKey, type Actor } from './records.service';
 
 const NULL_KEY = '__null__';
 /** Tope de grupos que se abren solos (el resto se pide al abrirlo). */
@@ -14,6 +14,8 @@ const MAX_BUCKETS = 300;
 export interface GroupBucket {
     value: string | null;
     count: number;
+    /** v0.1.287 — con segundo nivel: los subgrupos del grupo, en el orden del campo. */
+    sub_buckets?: GroupBucket[];
 }
 interface GroupsMeta {
     group_by_field_id: number;
@@ -23,6 +25,12 @@ interface GroupsMeta {
     total_records: number;
     /** v0.1.252 — grupos que existen pero NO viajan (tope MAX_BUCKETS). */
     hidden_groups?: number;
+    /** v0.1.287 — segundo nivel de agrupado (si se pidió). */
+    sub_group_by_field_id?: number;
+    sub_group_by_slug?: string;
+    sub_group_by_type?: string;
+    /** v0.1.287 — pares (grupo, subgrupo) que existen pero no viajan (tope del motor). */
+    hidden_sub_groups?: number;
 }
 
 /**
@@ -94,8 +102,16 @@ export class RecordsGroupedService {
             sort?: string;
             perPage: number;
             aggregateFieldIds: number[];
+            /**
+             * v0.1.287 — SEGUNDO nivel («y luego por…»): subgrupos dentro de
+             * cada grupo, en la MISMA request. `collapsedSub` son los pares
+             * (grupo, subgrupo) cerrados, con las claves crudas (`__null__`).
+             */
+            subGroupBy?: number;
+            collapsedSub?: Array<[string, string]>;
         },
     ): Promise<unknown> {
+        if (opts.subGroupBy !== undefined) return this.subGroupedBundle(tenantId, actor, listKey, { ...opts, subGroupBy: opts.subGroupBy });
         const { meta, groupField, fields } = await this.groupMeta(tenantId, listKey, opts.groupBy);
         // v0.1.252 — tope de grupos: agrupar por un campo casi único (email,
         // monto) devolvía un grupo por registro — 20k grupos, ~1 MB por
@@ -144,19 +160,7 @@ export class RecordsGroupedService {
 
         const expanded: Record<string, unknown> = {};
         for (const key of keys) {
-            const rows = (rowsByGroup.get(key === NULL_KEY ? null : key) ?? []).map((r) => ({
-                id: r.id,
-                fields: mapKeys(r.data as Record<string, unknown>, toSlug),
-                // v0.1.137 — sale lo mismo que en el listado plano: relaciones,
-                // subtareas y el icono de descripción.
-                relations: mapKeys((r.relations ?? {}) as Record<string, unknown>, toSlug),
-                parent_id: r.parent_id ?? null,
-                subtask_count: r.subtask_count ?? 0,
-                has_description: r.has_description ?? false,
-                created_by: r.created_by,
-                created_at: stripZ(r.created_at),
-                updated_at: stripZ(r.updated_at),
-            }));
+            const rows = (rowsByGroup.get(key === NULL_KEY ? null : key) ?? []).map((r) => toBundleRow(r, toSlug));
             const bucketCount = countByKey.get(key) ?? rows.length;
             const entry: { records: unknown; aggregates?: unknown } = {
                 records: {
@@ -180,6 +184,142 @@ export class RecordsGroupedService {
                 total_groups: allBuckets.length,
                 total_records: totalRecords,
                 hidden_groups: allBuckets.length - buckets.length,
+            },
+            expanded,
+        };
+    }
+
+    /**
+     * v0.1.287 — Bundle de la vista agrupada en DOS niveles. Igual que el de
+     * un nivel —tres consultas en total— pero las claves son PARES: los
+     * buckets salen del agrupado en dos niveles del motor (cada grupo con sus
+     * subgrupos y conteos), las filas de todos los subgrupos abiertos en UNA
+     * consulta particionada por (grupo, subgrupo) y el pie de cada subgrupo en
+     * otro GROUP BY. Las entradas de `expanded` van por la clave del par
+     * (`subGroupPairKey`).
+     */
+    private async subGroupedBundle(
+        tenantId: number,
+        actor: Actor,
+        listKey: string,
+        opts: {
+            groupBy: number;
+            subGroupBy: number;
+            expanded: string[];
+            expandAll?: boolean;
+            collapsed?: string[];
+            collapsedSub?: Array<[string, string]>;
+            filterTree?: FilterGroup;
+            search?: string;
+            sort?: string;
+            perPage: number;
+            aggregateFieldIds: number[];
+        },
+    ): Promise<unknown> {
+        const { meta, groupField, fields } = await this.groupMeta(tenantId, listKey, opts.groupBy);
+        const subField = fields.find((f) => f.id === opts.subGroupBy);
+        if (!subField || subField.id === groupField.id) {
+            throw new BadRequestException({
+                code: 'invalid_sub_group_by',
+                message: 'El segundo agrupado tiene que ser otro campo de la lista',
+                data: { status: 400 },
+            });
+        }
+        const agg = await this.aggregate.run(
+            tenantId,
+            listKey,
+            { metric: 'count', group_by_field_id: groupField.id, sub_group_by_field_id: subField.id, filter_tree: opts.filterTree },
+            { rootsOnly: true, viewer: actor, search: opts.search },
+        );
+        const allBuckets = orderBuckets(
+            groupField,
+            (agg.groups ?? []).map((g) => ({
+                value: g.group,
+                count: Number(g.value ?? 0),
+                sub_buckets: orderBuckets(
+                    subField,
+                    (g.sub_groups ?? []).map((sg) => ({ value: sg.group, count: Number(sg.value ?? 0) })),
+                ),
+            })),
+        );
+        const buckets = allBuckets.slice(0, MAX_BUCKETS);
+        const totalRecords = allBuckets.reduce((sum, b) => sum + b.count, 0);
+        const toSlug = new Map(fields.map((f) => [`f${f.id}`, f.slug]));
+
+        const collapsed = new Set(opts.collapsed ?? []);
+        const collapsedSub = new Set((opts.collapsedSub ?? []).map(([g, sb]) => JSON.stringify([g, sb])));
+        const wanted = new Set(opts.expanded);
+        const pairs: Array<[string, string]> = [];
+        outer: for (const b of buckets) {
+            const g = b.value ?? NULL_KEY;
+            if (opts.expandAll ? collapsed.has(g) : !wanted.has(g)) continue;
+            for (const sb of b.sub_buckets ?? []) {
+                const sk = sb.value ?? NULL_KEY;
+                if (collapsedSub.has(JSON.stringify([g, sk]))) continue;
+                pairs.push([g, sk]);
+                if (pairs.length >= MAX_AUTO_EXPANDED) break outer;
+            }
+        }
+        const raw = (k: string): string | null => (k === NULL_KEY ? null : k);
+        const openGroups = [...new Set(pairs.map(([g]) => g))];
+
+        const [rowsByPair, footer] = await Promise.all([
+            this.records.listSubGroupRows(tenantId, actor, listKey, {
+                groupFieldId: groupField.id,
+                subGroupFieldId: subField.id,
+                groupKeyExpr,
+                pairs: pairs.map(([g, sb]) => [raw(g), raw(sb)]),
+                perGroup: opts.perPage,
+                filter_tree: opts.filterTree,
+                search: opts.search,
+                sort: opts.sort,
+            }),
+            pairs.length > 0 && opts.aggregateFieldIds.length > 0
+                ? this.aggregate.footer(tenantId, listKey, {
+                      fieldIds: opts.aggregateFieldIds,
+                      filter_tree: opts.filterTree,
+                      search: opts.search,
+                      group_by_field_id: groupField.id,
+                      sub_group_by_field_id: subField.id,
+                      viewer: actor,
+                      groupsOnly: true,
+                      groupKeys: openGroups.length < allBuckets.length ? openGroups.map(raw) : undefined,
+                  })
+                : Promise.resolve(undefined),
+        ]);
+        const footerByPair = new Map(
+            (footer?.groups ?? []).map((g) => [subGroupPairKey(g.value, g.sub_value ?? null), g.aggregates]),
+        );
+        const countByPair = new Map(
+            buckets.flatMap((b) => (b.sub_buckets ?? []).map((sb) => [subGroupPairKey(b.value, sb.value), sb.count] as const)),
+        );
+
+        const expanded: Record<string, unknown> = {};
+        for (const [g, sb] of pairs) {
+            const key = subGroupPairKey(raw(g), raw(sb));
+            const rows = (rowsByPair.get(key) ?? []).map((r) => toBundleRow(r, toSlug));
+            const count = countByPair.get(key) ?? rows.length;
+            const entry: { records: unknown; aggregates?: unknown } = {
+                records: {
+                    data: rows,
+                    meta: { page: 1, per_page: opts.perPage, total: count, total_pages: Math.max(1, Math.ceil(count / opts.perPage)) },
+                },
+            };
+            if (footer) entry.aggregates = { totals: footerByPair.get(key) ?? {}, groups: [] };
+            expanded[key] = entry;
+        }
+
+        return {
+            buckets,
+            meta: {
+                ...meta,
+                total_groups: allBuckets.length,
+                total_records: totalRecords,
+                hidden_groups: allBuckets.length - buckets.length,
+                sub_group_by_field_id: subField.id,
+                sub_group_by_slug: subField.slug,
+                sub_group_by_type: subField.type,
+                ...(agg.hidden_sub_groups ? { hidden_sub_groups: agg.hidden_sub_groups } : {}),
             },
             expanded,
         };
@@ -239,7 +379,7 @@ export class RecordsGroupedService {
  * («hecho» antes que «pendiente», «10» antes que «9») y el tope de 300 cortaba
  * alfabéticamente.
  */
-export function orderBuckets(field: Pick<Field, 'type' | 'config'>, buckets: GroupBucket[]): GroupBucket[] {
+export function orderBuckets<T extends GroupBucket>(field: Pick<Field, 'type' | 'config'>, buckets: T[]): T[] {
     const options = Array.isArray((field.config as { options?: unknown }).options)
         ? ((field.config as { options: unknown[] }).options
               .map((o) => (o && typeof o === 'object' ? (o as { value?: unknown }).value : undefined))
@@ -287,6 +427,23 @@ function parseSetKey(key: string): string[] | null {
     } catch {
         return null;
     }
+}
+
+/** Un registro del bundle con `fields` por slug (el adaptador del front no alcanza los anidados). */
+function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<string, unknown> {
+    return {
+        id: r.id,
+        fields: mapKeys(r.data as Record<string, unknown>, toSlug),
+        // v0.1.137 — sale lo mismo que en el listado plano: relaciones,
+        // subtareas y el icono de descripción.
+        relations: mapKeys((r.relations ?? {}) as Record<string, unknown>, toSlug),
+        parent_id: r.parent_id ?? null,
+        subtask_count: r.subtask_count ?? 0,
+        has_description: r.has_description ?? false,
+        created_by: r.created_by,
+        created_at: stripZ(r.created_at),
+        updated_at: stripZ(r.updated_at),
+    };
 }
 
 function mapKeys(data: Record<string, unknown>, toSlug: Map<string, string>): Record<string, unknown> {
