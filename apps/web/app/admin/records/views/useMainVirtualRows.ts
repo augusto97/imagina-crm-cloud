@@ -25,6 +25,8 @@ export interface MainVirtualRows {
     paddingBottom: number;
     /** Ref para cada `<tr>` (sólo mide de verdad cuando `measure` está activo). */
     measureElement: (el: Element | null) => void;
+    /** v0.1.286 — lleva una fila a la vista (navegación con teclado). */
+    scrollToIndex: (index: number) => void;
 }
 
 const noop = (): void => undefined;
@@ -105,7 +107,7 @@ export function useMainVirtualRows(
     }, [rowHeight, measureEach, virtualizer]);
 
     if (!wanted || scrollEl === null) {
-        return { active: false, items: [], paddingTop: 0, paddingBottom: 0, measureElement: noop };
+        return { active: false, items: [], paddingTop: 0, paddingBottom: 0, measureElement: noop, scrollToIndex: noop };
     }
     if (scrollEl === undefined) {
         // Primer render: una ventana fija desde arriba, sin medir nada.
@@ -116,6 +118,7 @@ export function useMainVirtualRows(
             paddingTop: 0,
             paddingBottom: (count - n) * rowHeight,
             measureElement: noop,
+            scrollToIndex: noop,
         };
     }
     const items = virtualizer.getVirtualItems();
@@ -128,5 +131,6 @@ export function useMainVirtualRows(
         paddingTop: first ? Math.max(0, first.start - scrollMargin) : 0,
         paddingBottom: last ? Math.max(0, total - (last.end - scrollMargin)) : 0,
         measureElement: measureEach ? virtualizer.measureElement : noop,
+        scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: 'auto' }),
     };
 }
