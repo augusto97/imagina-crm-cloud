@@ -131,9 +131,12 @@
          * del MISMO tono → ≥4.9:1 sin cambiar el look. */
         --imcrm-success-ink: 152 65% 28%;
         --imcrm-warning-ink: 28 90% 32%;
-        --imcrm-primary-ink: 191 85% 27%;
         --imcrm-info-ink: 217 91% 42%;
         --imcrm-destructive-ink: 0 74% 44%;
+        /* El primario puede ser el color de la MARCA (white-label pisa
+         * `--imcrm-primary` en <html>): su tinta se deriva mezclándolo, así
+         * sigue a cualquier color de empresa. */
+        --imcrm-primary-ink-color: color-mix(in srgb, hsl(var(--imcrm-primary)) 82%, black);
 
         /* Border hairline visible pero liviano — el edge definido con
          * 1px nítido es lo que da el look "crisp" tipo Cloudflare
@@ -240,9 +243,9 @@
          * son claros; sólo el rojo necesita subir (4.1-4.3:1 como texto). */
         --imcrm-success-ink: 152 55% 50%;
         --imcrm-warning-ink: 38 92% 60%;
-        --imcrm-primary-ink: 190 80% 58%;
         --imcrm-info-ink: 217 91% 68%;
         --imcrm-destructive-ink: 0 85% 66%;
+        --imcrm-primary-ink-color: color-mix(in srgb, hsl(var(--imcrm-primary)) 88%, white);
 
         /* Tones de los StatTiles: mismos hues, un punto más claros para que
          * no se hundan contra las superficies oscuras. */
@@ -1361,6 +1364,21 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
  */
 :root .imcrm-text-destructive {
     color: hsl(var(--imcrm-destructive-ink));
+}
+/* Verde y ámbar como TEXTO (avisos «verificado», «pendiente»): el tono base es
+ * para fondos sólidos; como texto chico quedaba en 2.8-3.9:1. */
+:root .imcrm-text-success {
+    color: hsl(var(--imcrm-success-ink));
+}
+:root .imcrm-text-warning {
+    color: hsl(var(--imcrm-warning-ink));
+}
+:root .imcrm-text-info {
+    color: hsl(var(--imcrm-info-ink));
+}
+/* Primario sobre su propio tinte (pastillas tipo «este dispositivo»). */
+:root .imcrm-bg-primary\/10.imcrm-text-primary {
+    color: var(--imcrm-primary-ink-color);
 }
 :root .imcrm-text-muted-foreground\/60,
 :root .imcrm-text-muted-foreground\/70 {

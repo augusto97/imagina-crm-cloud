@@ -21,7 +21,7 @@ const badgeVariants = cva(
         variants: {
             variant: {
                 default:
-                    'imcrm-border imcrm-border-primary/20 imcrm-bg-primary/10 imcrm-text-[hsl(var(--imcrm-primary-ink))]',
+                    'imcrm-border imcrm-border-primary/20 imcrm-bg-primary/10 imcrm-text-[color:var(--imcrm-primary-ink-color)]',
                 secondary:
                     'imcrm-border imcrm-border-border imcrm-bg-muted imcrm-text-foreground',
                 outline:
