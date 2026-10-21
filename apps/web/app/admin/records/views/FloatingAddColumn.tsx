@@ -15,7 +15,12 @@ export function FloatingAddColumn({ onClick }: { onClick: () => void }): JSX.Ele
     return (
         <div
             data-testid="floating-add-column"
-            className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-right-0 imcrm-z-30 imcrm-flex imcrm-items-center imcrm-bg-gradient-to-l imcrm-from-background imcrm-from-40% imcrm-to-transparent imcrm-pl-8 imcrm-pr-1.5"
+            // v0.1.287 — mide EXACTAMENTE el hueco que la tabla reserva al final
+            // (ADD_COLUMN_GUTTER): con 58 px de ancho (pl-8) sobre un hueco de
+            // 44, su degradado pisaba la etiqueta de la última columna aun con
+            // el scroll horizontal al final («Avance» cortado).
+            style={{ width: ADD_COLUMN_GUTTER }}
+            className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-right-0 imcrm-z-30 imcrm-flex imcrm-items-center imcrm-justify-end imcrm-bg-gradient-to-l imcrm-from-background imcrm-from-60% imcrm-to-transparent imcrm-pr-1.5"
         >
             <button
                 type="button"

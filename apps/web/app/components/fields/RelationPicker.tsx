@@ -105,7 +105,7 @@ export function RelationPicker({
                         )}
                         data-testid={`imcrm-relation-cell-${field.slug}`}
                     >
-                        {ids.length === 0 ? <span className="imcrm-text-muted-foreground/50">—</span> : chips}
+                        {ids.length === 0 ? <span className="imcrm-text-muted-foreground">—</span> : chips}
                     </button>
                 ) : (
                     <div

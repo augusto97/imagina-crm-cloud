@@ -1,4 +1,4 @@
-import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import type { AggregatesResponse } from '@/hooks/useAggregates';
@@ -79,6 +79,45 @@ export function canonicalListId(qc: QueryClient, idOrSlug: string | number): str
         if (match) return String(match.id);
     }
     return asStr;
+}
+
+/**
+ * v0.1.287 — `placeholderData` que conserva lo anterior SÓLO dentro de la
+ * MISMA lista (paginar, filtrar, buscar). Con `keepPreviousData` a secas, al
+ * pasar de una lista a otra la tabla mostraba un instante las filas de la
+ * anterior con el id de la nueva, y las recurrencias se pedían como
+ * `/lists/30/recurrences?ids=144,147` (ids de la lista de antes). El
+ * identificador de la lista va en el índice 1 de la key (slug o id: se
+ * comparan por el par id↔slug del índice de listas).
+ */
+export function keepPreviousForList<T>(qc: QueryClient, listKey: string | number) {
+    return (prev: T | undefined, prevQuery: { queryKey: readonly unknown[] } | undefined): T | undefined => {
+        if (prev === undefined || !prevQuery) return undefined;
+        const prevList = prevQuery.queryKey[1];
+        if (prevList === undefined) return undefined;
+        return listIdentifiersFor(qc, listKey).has(String(prevList)) ? prev : undefined;
+    };
+}
+
+/**
+ * v0.1.287 — Regla de oro nº 7 en el arranque en frío: mientras el índice de
+ * listas no llegó, la key se arma con el slug; cuando llega, pasa al id. Si la
+ * query del slug seguía EN VUELO, la del id salía a pedir lo mismo otra vez
+ * (2× `GET /lists/<slug>/fields`). Aquí la query canónica se ENGANCHA a la que
+ * ya está en vuelo con el identificador crudo en vez de duplicarla.
+ */
+export function joinInflight<T>(
+    qc: QueryClient,
+    canonicalKey: readonly unknown[],
+    rawKey: readonly unknown[],
+    fetcher: () => Promise<T>,
+): Promise<T> {
+    const same = canonicalKey.length === rawKey.length && canonicalKey.every((k, i) => k === rawKey[i]);
+    if (!same && qc.getQueryState(rawKey)?.fetchStatus === 'fetching') {
+        // fetchQuery sobre una query en vuelo devuelve SU promesa (sin request nueva).
+        return qc.fetchQuery({ queryKey: rawKey, queryFn: fetcher });
+    }
+    return fetcher();
 }
 
 /**
@@ -225,6 +264,7 @@ export function useRecordsGroupedBundle({
     perPage = 50,
     aggregateFieldIds = [],
 }: UseGroupedBundleArgs) {
+    const qc = useQueryClient();
     const params: Record<string, unknown> = {
         group_by: groupBy,
         per_page: perPage,
@@ -261,7 +301,7 @@ export function useRecordsGroupedBundle({
             return res.data;
         },
         enabled: listId !== undefined && listId !== '' && groupBy !== undefined && groupBy > 0,
-        placeholderData: keepPreviousData,
+        placeholderData: keepPreviousForList<GroupedBundleResponse>(qc, listId ?? ''),
     });
 }
 
@@ -280,7 +320,7 @@ export function useRecords(listId: string | number | undefined, query: RecordsQu
             return { data: res.data, meta: res.meta } as unknown as RecordListResponse;
         },
         enabled: listId !== undefined && listId !== '',
-        placeholderData: keepPreviousData,
+        placeholderData: keepPreviousForList<RecordListResponse>(qc, keyId),
     });
 
     // v0.1.253 — se quitó la precarga automática de la página siguiente: se
@@ -307,6 +347,7 @@ export function useRecordGroups(
         search?: string;
     },
 ) {
+    const qc = useQueryClient();
     const enabled =
         listId !== undefined && listId !== '' && params.groupBy !== null && params.groupBy > 0;
 
@@ -328,7 +369,7 @@ export function useRecordGroups(
             return res as unknown as RecordGroupsResponse;
         },
         enabled,
-        placeholderData: keepPreviousData,
+        placeholderData: keepPreviousForList<RecordGroupsResponse>(qc, listId ?? ''),
     });
 }
 

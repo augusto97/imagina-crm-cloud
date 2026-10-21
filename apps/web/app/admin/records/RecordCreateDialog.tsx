@@ -162,7 +162,7 @@ export function RecordCreateDialog({
                                 {listName !== undefined && (
                                     <>
                                         {listName}
-                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/50">/</span>
+                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/80">/</span>
                                     </>
                                 )}
                                 {__('Nuevo registro')}

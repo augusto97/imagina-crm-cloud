@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import { canonicalListId, invalidateForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
+import { canonicalListId, invalidateForList, joinInflight, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import type { CreateFieldInput, FieldEntity, UpdateFieldInput } from '@/types/field';
 
@@ -21,13 +21,16 @@ export function useFields(listId: string | number | undefined) {
     const key = listId === undefined || listId === '' ? '' : canonicalListId(qc, listId);
     return useQuery({
         queryKey: fieldsKeys.forList(key),
-        queryFn: async () => {
-            const res = await api.get<FieldEntity[]>(`/lists/${listId}/fields`);
-            // v0.1.286 — mismos campos bajo el otro identificador (id↔slug):
-            // la página los pide por slug y sus hijos por id → dos requests.
-            seedFieldsForList(qc, listId, res.data);
-            return res.data;
-        },
+        // v0.1.287 — si la key pasó de slug a id con el pedido del slug aún en
+        // vuelo (arranque en frío), se reusa ese pedido: antes salían dos.
+        queryFn: () =>
+            joinInflight(qc, fieldsKeys.forList(key), fieldsKeys.forList(String(listId)), async () => {
+                const res = await api.get<FieldEntity[]>(`/lists/${listId}/fields`);
+                // v0.1.286 — mismos campos bajo el otro identificador (id↔slug):
+                // la página los pide por slug y sus hijos por id → dos requests.
+                seedFieldsForList(qc, listId, res.data);
+                return res.data;
+            }),
         enabled: listId !== undefined && listId !== '',
         // Schema changes son raros dentro de una sesión; evitamos
         // refetch en cada mount de RecordsPage/ListBuilder. (Fase 16.D)

@@ -18,7 +18,7 @@ import { fieldsKeys } from './useFields';
 import { listsKeys } from './useLists';
 import { notificationKeys } from './useNotifications';
 import { descriptionKeys } from './useRecordDescription';
-import { canonicalListId, listIdentifiersFor, recordsKeys } from './useRecords';
+import { canonicalListId, joinInflight, listIdentifiersFor, recordsKeys } from './useRecords';
 
 /**
  * Ficha del registro en UN request (regla de oro nº 8).
@@ -142,11 +142,14 @@ export function useRecordView(
     const keyList = on ? canonicalListId(qc, listKey) : '';
     const query = useQuery({
         queryKey: recordViewKeys.forRecord(keyList, recordId ?? 0),
-        queryFn: async () => {
-            const res = await api.get<RecordViewBundle>(`/lists/${listKey}/records/${recordId}/view`);
-            seedRecordView(qc, res.data);
-            return res.data;
-        },
+        // v0.1.287 — si la key pasó de slug a id con el pedido en vuelo, se
+        // reusa (sin segundo `/view`).
+        queryFn: () =>
+            joinInflight(qc, recordViewKeys.forRecord(keyList, recordId ?? 0), recordViewKeys.forRecord(String(listKey ?? ''), recordId ?? 0), async () => {
+                const res = await api.get<RecordViewBundle>(`/lists/${listKey}/records/${recordId}/view`);
+                seedRecordView(qc, res.data);
+                return res.data;
+            }),
         enabled: on,
         // Los paneles tienen sus propias queries (y el realtime las refresca):
         // el bundle sólo hace falta al ABRIR la ficha.

@@ -36,7 +36,7 @@ import { notificationKeys } from '@/hooks/useNotifications';
 import { forgetRecord, useRecordView } from '@/hooks/useRecordView';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
-import { escapeIntent, FLOATING_MENU_ATTR, isEditableTarget, isInsideFloatingUi, leaveField } from '@/lib/escapeGuard';
+import { escapeIntent, FLOATING_MENU_ATTR, isInsideFloatingUi, leaveField, recordNavDirection } from '@/lib/escapeGuard';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -228,20 +228,20 @@ export function RecordDetailDrawer({
         void confirmDiscard().then((ok) => ok && onNavigate(dir));
     };
 
-    // J / K: registro siguiente / anterior (como en Gmail o Linear), sólo si
-    // el foco no está en un campo y no hay otra capa encima (un menú, el
-    // diálogo de confirmación).
+    // J / K (y ↓ / ↑, v0.1.287): registro siguiente / anterior (como en Gmail
+    // o Linear), sólo si el foco no está en un campo ni en un control que ya
+    // usa las flechas, y no hay otra capa encima (un menú, la confirmación).
     useEffect(() => {
         if (!open || !onNavigate) return;
         const onKey = (e: KeyboardEvent): void => {
-            if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
-            if (e.key !== 'j' && e.key !== 'k' && e.key !== 'J' && e.key !== 'K') return;
-            if (isEditableTarget(e.target as Element | null)) return;
+            if (e.defaultPrevented) return;
+            const dir = recordNavDirection(e, e.target as Element | null);
+            if (dir === null) return;
             const content = contentRef.current;
             if (!content || !content.contains(document.activeElement ?? null) && document.activeElement !== document.body) return;
             if (document.querySelector(`[${FLOATING_MENU_ATTR}], [role="menu"], [role="listbox"], [role="alertdialog"]`)) return;
             e.preventDefault();
-            navRef.current.go(e.key.toLowerCase() === 'j' ? 1 : -1);
+            navRef.current.go(dir);
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
@@ -392,8 +392,8 @@ export function RecordDetailDrawer({
                                         className="imcrm-h-8 imcrm-w-8"
                                         disabled={!canPrev}
                                         onClick={() => navRef.current.go(-1)}
-                                        aria-label={__('Registro anterior (K)')}
-                                        title={__('Registro anterior (K)')}
+                                        aria-label={__('Registro anterior (K o ↑)')}
+                                        title={__('Registro anterior (K o ↑)')}
                                         data-testid="imcrm-record-prev"
                                     >
                                         <ChevronUp className="imcrm-h-4 imcrm-w-4" />
@@ -404,8 +404,8 @@ export function RecordDetailDrawer({
                                         className="imcrm-h-8 imcrm-w-8"
                                         disabled={!canNext}
                                         onClick={() => navRef.current.go(1)}
-                                        aria-label={__('Registro siguiente (J)')}
-                                        title={__('Registro siguiente (J)')}
+                                        aria-label={__('Registro siguiente (J o ↓)')}
+                                        title={__('Registro siguiente (J o ↓)')}
                                         data-testid="imcrm-record-next"
                                     >
                                         <ChevronDown className="imcrm-h-4 imcrm-w-4" />
@@ -416,7 +416,7 @@ export function RecordDetailDrawer({
                                 {(listName ?? listSlug) !== undefined && (
                                     <>
                                         {listName ?? listSlug}
-                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/50">/</span>
+                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/80">/</span>
                                     </>
                                 )}
                                 {/* El NOMBRE del registro, no su id (el id va aparte). */}

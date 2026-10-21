@@ -5,7 +5,7 @@ import { activityKeys } from '@/hooks/useActivity';
 import { automationsKeys } from '@/hooks/useAutomations';
 import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
-import { canonicalListId, invalidateForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
+import { canonicalListId, invalidateForList, joinInflight, keepPreviousForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { descriptionKeys, setHasDescription } from '@/hooks/useRecordDescription';
 
@@ -179,5 +179,38 @@ describe('descripción del registro', () => {
         qc.setQueryData(descriptionKeys.forRecord('42', 7), null);
         invalidateForList(qc, recordsKeys.all, 'clientes');
         expect(qc.getQueryState(descriptionKeys.forRecord('42', 7))?.isInvalidated).toBe(false);
+    });
+});
+
+describe('v0.1.287 — cambio de lista y arranque en frío', () => {
+    it('la data previa SÓLO se conserva dentro de la misma lista', () => {
+        const qc = clientWithLists();
+        const keep = keepPreviousForList<string>(qc, '42');
+        // Misma lista (por id o por slug): se conserva al paginar/filtrar.
+        expect(keep('filas', { queryKey: recordsKeys.list('42', { page: 1 }) })).toBe('filas');
+        expect(keep('filas', { queryKey: recordsKeys.list('clientes', { page: 1 }) })).toBe('filas');
+        // Otra lista: nada (antes se veían sus filas con el id de la nueva).
+        expect(keep('filas', { queryKey: recordsKeys.list('7', { page: 1 }) })).toBeUndefined();
+        expect(keep(undefined, undefined)).toBeUndefined();
+    });
+
+    it('la query por id se engancha al pedido del slug que sigue en vuelo (un solo GET)', async () => {
+        const qc = clientWithLists();
+        let calls = 0;
+        let release: (v: string[]) => void = () => undefined;
+        const fetcher = (): Promise<string[]> => {
+            calls += 1;
+            return new Promise((r) => { release = r; });
+        };
+        // Primer render en frío: key por slug, pedido en vuelo.
+        const bySlug = qc.fetchQuery({ queryKey: fieldsKeys.forList('clientes'), queryFn: fetcher });
+        // Llega el índice de listas → la key pasa al id.
+        const byId = joinInflight(qc, fieldsKeys.forList('42'), fieldsKeys.forList('clientes'), fetcher);
+        release(['nombre']);
+        expect(await byId).toEqual(['nombre']);
+        expect(await bySlug).toEqual(['nombre']);
+        expect(calls).toBe(1);
+        // Sin pedido en vuelo, pide normalmente.
+        expect(await joinInflight(qc, fieldsKeys.forList('42'), fieldsKeys.forList('clientes'), async () => ['x'])).toEqual(['x']);
     });
 });

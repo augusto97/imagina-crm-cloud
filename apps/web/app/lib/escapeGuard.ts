@@ -67,3 +67,32 @@ export function leaveField(active: Element | null): void {
         if (document.activeElement === active) active.blur();
     }, 0);
 }
+
+/**
+ * Controles que ya usan las flechas para lo suyo: un grupo de pestañas, un
+ * radio, un deslizador, un menú, una grilla, un combo. Ahí ↑/↓ no navegan.
+ */
+const ARROW_OWNERS = '[role="tablist"], [role="radiogroup"], [role="radio"], [role="slider"], [role="menu"], [role="menubar"], [role="listbox"], [role="grid"], [role="tree"], [role="combobox"], [role="spinbutton"], input[type="range"]';
+
+/**
+ * Atajo de teclado del modal del registro: J o ↓ → siguiente, K o ↑ →
+ * anterior (v0.1.287 suma las flechas). Nunca con un modificador, ni con el
+ * foco en un campo, ni dentro de un control que ya usa las flechas.
+ */
+export function recordNavDirection(
+    e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
+    target: Element | null,
+): -1 | 1 | null {
+    if (e.metaKey || e.ctrlKey || e.altKey) return null;
+    let dir: -1 | 1 | null = null;
+    if (e.key === 'j' || e.key === 'J') dir = 1;
+    else if (e.key === 'k' || e.key === 'K') dir = -1;
+    else if (e.key === 'ArrowDown' && !e.shiftKey) dir = 1;
+    else if (e.key === 'ArrowUp' && !e.shiftKey) dir = -1;
+    if (dir === null) return null;
+    if (isEditableTarget(target)) return null;
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && target instanceof Element && target.closest(ARROW_OWNERS) !== null) {
+        return null;
+    }
+    return dir;
+}
