@@ -2,11 +2,12 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
+import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
-import { formatNumber } from '@/lib/tenantFormat';
-import type { WidgetSpec } from '@/types/dashboard';
+import { OTHERS_GROUP_KEY, type WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
+import { formatBucketLabel, formatMetricValue } from './widgetFormat';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface LineChartWidgetProps {
@@ -41,13 +42,19 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
     const showAvg = widget.config.show_average_line !== false;
     const showLabels = Boolean(widget.config.show_data_labels);
     const subtitle = useWidgetSubtitle(widget);
+    // v0.1.286 — valores según el campo medido y buckets legibles
+    // ("oct 2026", "Sem 43 · 2026", "T3 2026") en vez de "2026-10".
+    const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
+    const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
+    const fmt = (n: number): string => formatMetricValue(n, metric, metricField);
 
     const rows =
         data.data && 'data' in data.data
             ? data.data.data
                   // v0.1.252 — los registros SIN fecha no son un punto del
                   // tiempo: dibujarlos al final deformaba la tendencia.
-                  .filter((r) => r.label !== '(sin valor)')
+                  .filter((r) => r.label !== '(sin valor)' && r.label !== OTHERS_GROUP_KEY)
                   .map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))
             : [];
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
@@ -57,7 +64,7 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
             <WidgetHeader
                 title={widget.title || __('Tendencia mensual')}
                 subtitle={subtitle}
-                right={showAvg && avg !== null ? <AverageBadge value={avg} /> : null}
+                right={showAvg && avg !== null ? <AverageBadge value={avg} format={fmt} /> : null}
             />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-items-stretch imcrm-justify-center imcrm-min-h-0">
@@ -73,6 +80,7 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
                         area={area ?? false}
                         showAvg={showAvg}
                         showLabels={showLabels}
+                        format={fmt}
                     />
                 ) : (
                     <p className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-text-xs imcrm-text-muted-foreground">{__('Sin datos.')}</p>
@@ -124,11 +132,13 @@ function SparkLine({
     area,
     showAvg,
     showLabels,
+    format,
 }: {
     rows: Array<{ label: string; value: number }>;
     area: boolean;
     showAvg: boolean;
     showLabels: boolean;
+    format: (n: number) => string;
 }): JSX.Element {
     const { ref, width, height } = useElementSize();
     // Id único por instancia — dos area charts en el mismo dashboard no
@@ -206,7 +216,7 @@ function SparkLine({
                             className="imcrm-fill-muted-foreground"
                             style={{ fontSize: 9 }}
                         >
-                            {formatNumber(max)}
+                            {format(max)}
                         </text>
 
                         {area && areaPath !== '' && <path d={areaPath} fill={`url(#imcrm-area-${gradId})`} />}
@@ -243,7 +253,7 @@ function SparkLine({
                                 stroke="hsl(var(--imcrm-card))"
                                 strokeWidth="1.5"
                             >
-                                <title>{`${p.label}: ${formatNumber(p.value)}`}</title>
+                                <title>{`${formatBucketLabel(p.label)}: ${format(p.value)}`}</title>
                             </circle>
                         ))}
                         {showLabels && points.map((p) => (
@@ -255,15 +265,15 @@ function SparkLine({
                                 className="imcrm-fill-foreground"
                                 style={{ fontSize: 10, fontWeight: 600 }}
                             >
-                                {formatNumber(p.value)}
+                                {format(p.value)}
                             </text>
                         ))}
                     </svg>
                 )}
             </div>
             <div className="imcrm-flex imcrm-shrink-0 imcrm-justify-between imcrm-text-[10px] imcrm-text-muted-foreground">
-                <span>{points[0]?.label}</span>
-                {points.length > 1 && <span>{points[points.length - 1]?.label}</span>}
+                <span>{points[0] ? formatBucketLabel(points[0].label) : null}</span>
+                {points.length > 1 && <span>{formatBucketLabel(points[points.length - 1]!.label)}</span>}
             </div>
         </div>
     );

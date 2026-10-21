@@ -247,9 +247,10 @@ describe('DashboardsService — evaluación de widgets (Postgres real)', () => {
         expect((data.g1 as { value: number }).value).toBe(6600);
         const k = data.k1 as { value: number; spark?: number[] };
         expect(k.value).toBe(5);
-        // spark: solo los registros de los últimos 30 días (3), un bucket por día
+        // spark: los 30 días COMPLETOS (v0.1.286: los días sin registros valen
+        // 0) y sólo los registros de la ventana (3).
         expect(Array.isArray(k.spark)).toBe(true);
-        expect(k.spark!.length).toBe(3);
+        expect(k.spark!.length).toBe(30);
         expect(k.spark!.reduce((s, v) => s + v, 0)).toBe(3);
     });
 

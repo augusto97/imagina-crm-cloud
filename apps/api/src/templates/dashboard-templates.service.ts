@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
     collectFieldTokens,
+    compatibleRoleTypes,
     dashboardTemplateSchema,
+    roleAcceptsType,
     resolveFieldRefs,
     tokenizeFieldRefs,
     widgetTypeSchema,
@@ -65,7 +67,7 @@ export class DashboardTemplatesService {
                 category: r.category as TemplateCategory,
                 icon: r.icon,
                 color: r.color,
-                template: dashboardTemplateSchema.parse(r.blueprint),
+                template: widenRoles(dashboardTemplateSchema.parse(r.blueprint)),
                 created_at: r.createdAt.toISOString(),
             }),
         );
@@ -115,7 +117,11 @@ export class DashboardTemplatesService {
             for (const [fid, meta] of ctx.fields) {
                 const slug = ctx.idToSlug.get(fid)!;
                 if (collectFieldTokens(config).includes(slug) && !roles.fields.some((f) => f.key === slug)) {
-                    roles.fields.push({ key: slug, label: meta.label, types: [meta.type as TemplateRoleList['fields'][number]['types'][number]], required: true });
+                    // v0.1.286 — la FAMILIA del tipo (moneda ↔ número ↔ rollup,
+                    // date ↔ datetime…): con el tipo exacto, una plantilla
+                    // guardada sobre "Monto" (moneda) no se aplicaba a una
+                    // lista cuyo monto es un número.
+                    roles.fields.push({ key: slug, label: meta.label, types: compatibleRoleTypes(meta.type as TemplateRoleList['fields'][number]['types'][number]), required: true });
                 }
             }
             return { type: wd.type, list: { $list: ctx.key }, title: wd.title, config, layout: wd.layout };
@@ -223,7 +229,7 @@ export class DashboardTemplatesService {
                     warnings.push(`«${roleField.label}»: el campo elegido no pertenece a «${list.name}»`);
                     continue;
                 }
-                if (roleField.types.length > 0 && !roleField.types.includes(field.type)) {
+                if (!roleAcceptsType(roleField.types, field.type)) {
                     warnings.push(`«${roleField.label}»: «${field.label}» no es de un tipo válido para ese rol`);
                     continue;
                 }
@@ -318,10 +324,28 @@ export class DashboardTemplatesService {
             category: row.category as TemplateCategory,
             icon: row.icon,
             color: row.color,
-            template: dashboardTemplateSchema.parse(row.blueprint),
+            template: widenRoles(dashboardTemplateSchema.parse(row.blueprint)),
             created_at: row.createdAt.toISOString(),
         };
     }
+}
+
+/**
+ * v0.1.286 — Las plantillas guardadas ANTES declaraban el tipo exacto del
+ * campo original: al leerlas se amplían a su familia (la galería ofrece los
+ * campos compatibles y el apply los acepta).
+ */
+function widenRoles(t: DashboardTemplate): DashboardTemplate {
+    return {
+        ...t,
+        lists: t.lists.map((l) => ({
+            ...l,
+            fields: l.fields.map((f) => ({
+                ...f,
+                types: f.types.length === 0 ? f.types : [...new Set(f.types.flatMap((x) => compatibleRoleTypes(x)))],
+            })),
+        })),
+    };
 }
 
 interface Resolved {

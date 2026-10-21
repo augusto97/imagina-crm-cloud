@@ -1,12 +1,26 @@
 import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
+import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
-import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
-import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, useGroupOptionOrder, groupKeysOf } from './useChartColors';
+import {
+    applyHideZero,
+    categoryColor,
+    displayGroupLabel,
+    groupKeysOf,
+    inkOn,
+    isOthersGroup,
+    othersAwareLabel,
+    sortChartRows,
+    useGroupColorMap,
+    useGroupLabelMap,
+    useGroupOptionOrder,
+    type ChartSort,
+} from './useChartColors';
+import { formatMetricValue } from './widgetFormat';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -39,6 +53,10 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en una etapa → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
+    const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
+    const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
+    const fmt = (n: number): string => formatMetricValue(n, metric, metricField);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
@@ -55,16 +73,21 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
                     <WidgetError error={data.error} />
                 ) : data.data && 'data' in data.data && data.data.data.length > 0 ? (
                     <FunnelRows
-                        rows={sortByPipeline(
+                        rows={sortChartRows(
                             applyHideZero(
                                 data.data.data.map((r) => ({
                                     label: r.label,
                                     value: typeof r.value === 'number' ? r.value : 0,
+                                    others: r.others,
                                 })),
                                 widget.config.hide_zero_groups === true,
                             ),
+                            // El embudo va en el orden del pipeline (las opciones).
+                            (widget.config.sort as ChartSort | undefined) ?? 'options',
                             orderMap,
+                            (l) => displayGroupLabel(l, labelMap),
                         )}
+                        format={fmt}
                         colorMap={colorMap}
                         labelMap={labelMap}
                         onSegment={onSegment}
@@ -79,39 +102,19 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     );
 }
 
-/**
- * Ordena las etapas por el orden de las opciones del select (el orden
- * del pipeline). Las labels que no están en las options (datos
- * legacy, "Sin valor") van al final, ordenadas por valor descendente.
- */
-function sortByPipeline(
-    rows: Array<{ label: string; value: number }>,
-    orderMap: Map<string, number>,
-): Array<{ label: string; value: number }> {
-    if (orderMap.size === 0) {
-        return [...rows].sort((a, b) => b.value - a.value);
-    }
-    return [...rows].sort((a, b) => {
-        const ia = orderMap.get(a.label);
-        const ib = orderMap.get(b.label);
-        if (ia !== undefined && ib !== undefined) return ia - ib;
-        if (ia !== undefined) return -1;
-        if (ib !== undefined) return 1;
-        return b.value - a.value;
-    });
-}
-
 function FunnelRows({
     rows,
     colorMap,
     labelMap,
     onSegment,
+    format,
 }: {
-    rows: Array<{ label: string; value: number }>;
+    rows: Array<{ label: string; value: number; others?: number }>;
     colorMap: Map<string, string>;
     /** v0.1.178 — value → etiqueta de la opción (sólo display). */
     labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
+    format: (n: number) => string;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => r.value), 1);
     const first = rows[0]?.value ?? 0;
@@ -124,24 +127,29 @@ function FunnelRows({
                 // clásica de un embudo. Para la primera etapa es 100%.
                 const convPct = first > 0 ? (row.value / first) * 100 : 0;
                 const color = categoryColor(colorMap, row.label, i);
+                const navigable = onSegment !== null && !isOthersGroup(row.label);
+                const name = othersAwareLabel(row, labelMap);
                 return (
                     <div
                         key={row.label}
-                        className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
-                        title={`${displayGroupLabel(row.label, labelMap)}: ${formatNumber(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
-                        onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
+                        className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${navigable ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
+                        title={`${name}: ${format(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${navigable ? ` — ${__('click para ver los registros')}` : ''}`}
+                        onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
-                            {displayGroupLabel(row.label, labelMap)}
+                            {name}
                         </span>
                         <div className="imcrm-relative imcrm-flex imcrm-h-7 imcrm-flex-1 imcrm-items-center imcrm-justify-center">
                             {/* Barra centrada — la forma del embudo emerge del
                               * estrechamiento progresivo de las etapas. */}
+                            {/* v0.1.286 — la cifra con la tinta de mayor
+                                contraste sobre el color de la etapa (blanco
+                                sobre ámbar o verde daba 2,1:1). */}
                             <div
-                                className="imcrm-flex imcrm-h-full imcrm-min-w-[2.25rem] imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-[11px] imcrm-font-semibold imcrm-text-white imcrm-opacity-85 imcrm-transition-opacity group-hover/stage:imcrm-opacity-100"
-                                style={{ width: `${widthPct}%`, backgroundColor: color }}
+                                className="imcrm-flex imcrm-h-full imcrm-min-w-[2.25rem] imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-[11px] imcrm-font-semibold imcrm-opacity-90 imcrm-transition-opacity group-hover/stage:imcrm-opacity-100"
+                                style={{ width: `${widthPct}%`, backgroundColor: color, color: inkOn(color) }}
                             >
-                                {formatNumber(row.value)}
+                                {format(row.value)}
                             </div>
                         </div>
                         <span className="imcrm-w-10 imcrm-shrink-0 imcrm-text-right imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">

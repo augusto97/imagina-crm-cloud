@@ -14,6 +14,7 @@ import { invalidateForList, isRecentLocalRecordsChange, recordsKeys } from '@/ho
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { notificationKeys } from '@/hooks/useNotifications';
+import { invalidateDashboardsForList } from '@/hooks/useDashboards';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -79,6 +80,8 @@ export function useRealtime(): void {
                 case 'fields':
                     if (ev.listId !== undefined) invalidateForList(qc, fieldsKeys.all, ev.listId);
                     else void qc.invalidateQueries({ queryKey: fieldsKeys.all });
+                    // Un campo convertido o borrado cambia lo que calculan.
+                    invalidateDashboardsForList(qc, ev.listId);
                     break;
                 case 'records':
                     // El eco de una edición hecha en ESTA pestaña: la mutación
@@ -89,6 +92,10 @@ export function useRealtime(): void {
                     // v0.1.230 — los gráficos y vinculados de una ficha abierta
                     // leen OTRAS listas: un cambio en cualquiera puede moverlos.
                     void qc.invalidateQueries({ queryKey: layoutDataKeys.all });
+                    // v0.1.286 — los tableros con algún widget sobre esa lista
+                    // (antes quedaban viejos hasta recargar). También el eco
+                    // local: la mutación de la tabla no toca los tableros.
+                    invalidateDashboardsForList(qc, ev.listId);
                     break;
                 case 'views':
                     if (ev.listId !== undefined) invalidateForList(qc, viewsKeys.all, ev.listId);
