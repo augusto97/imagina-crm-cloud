@@ -71,6 +71,13 @@ export function RecordDescription({
     const { mutate } = save;
 
     const [dirty, setDirty] = useState(false);
+    /**
+     * La verdad de "hay algo sin guardar" vive en un ref: al cerrar con Esc el
+     * blur del editor y el desmontaje llaman a `flush` en el MISMO tick, y con
+     * el estado de React los dos veían `dirty=true` → la descripción se
+     * guardaba dos veces.
+     */
+    const dirtyRef = useRef(false);
     const pending = useRef<JSONContent | null>(null);
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -101,10 +108,11 @@ export function RecordDescription({
             clearTimeout(timer.current);
             timer.current = null;
         }
-        if (!dirty) return;
+        if (!dirtyRef.current) return;
+        dirtyRef.current = false;
         setDirty(false);
         send(pending.current);
-    }, [dirty, send]);
+    }, [send]);
 
     const handleChange = useCallback(
         (doc: JSONContent | null, fromUser: boolean) => {
@@ -117,10 +125,13 @@ export function RecordDescription({
             // Mismo contenido (ruido de foco/selección) → tampoco se guarda.
             if (docKey(doc) === lastSent.current) return;
             pending.current = doc;
+            dirtyRef.current = true;
             setDirty(true);
             if (timer.current !== null) clearTimeout(timer.current);
             timer.current = setTimeout(() => {
                 timer.current = null;
+                if (!dirtyRef.current) return;
+                dirtyRef.current = false;
                 setDirty(false);
                 send(pending.current);
             }, AUTOSAVE_MS);

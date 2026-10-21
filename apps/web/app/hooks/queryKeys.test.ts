@@ -7,6 +7,7 @@ import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
 import { canonicalListId, invalidateForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { viewsKeys } from '@/hooks/useSavedViews';
+import { descriptionKeys, setHasDescription } from '@/hooks/useRecordDescription';
 
 /**
  * v0.1.114 — Regresión de la clase de bug MÁS CARA del proyecto.
@@ -51,6 +52,9 @@ describe('contrato de las queryKeys por lista', () => {
             // no se refrescaba al editar.
             activityKeys.forList(42),
             activityKeys.forRecord(42, 7),
+            // La descripción salió del namespace de records (cada autoguardado
+            // invalidaba la lista entera) pero respeta el mismo contrato.
+            descriptionKeys.forRecord(42, 7),
         ]) {
             expect(key[1]).toBe('42');
         }
@@ -149,5 +153,31 @@ describe('invalidateForList', () => {
         qc.setQueryData(recordsKeys.item('clientes', 7), { id: 7 });
         invalidateForList(qc, recordsKeys.all, 42);
         expect(qc.getQueryState(recordsKeys.item('clientes', 7))!.isInvalidated).toBe(true);
+    });
+});
+
+describe('descripción del registro', () => {
+    it('guardarla actualiza has_description en los caches de la lista SIN invalidar nada', () => {
+        const qc = clientWithLists();
+        const listKey = recordsKeys.list('42', { page: 1, per_page: 50 });
+        qc.setQueryData(listKey, { data: [{ id: 7, has_description: false }, { id: 8, has_description: false }], meta: {} });
+        qc.setQueryData(recordsKeys.item('42', 7), { id: 7, has_description: false });
+        // Otra lista con el mismo id de registro: no se toca.
+        qc.setQueryData(recordsKeys.item('77', 7), { id: 7, has_description: false });
+
+        setHasDescription(qc, 'clientes', 7, true);
+
+        const list = qc.getQueryData<{ data: Array<{ id: number; has_description: boolean }> }>(listKey)!;
+        expect(list.data.map((r) => r.has_description)).toEqual([true, false]);
+        expect(qc.getQueryData<{ has_description: boolean }>(recordsKeys.item('42', 7))!.has_description).toBe(true);
+        expect(qc.getQueryData<{ has_description: boolean }>(recordsKeys.item('77', 7))!.has_description).toBe(false);
+        expect(qc.getQueryState(listKey)?.isInvalidated).toBe(false);
+    });
+
+    it('la key de la descripción NO cuelga de records: invalidar la lista no la vuelve a pedir', () => {
+        const qc = clientWithLists();
+        qc.setQueryData(descriptionKeys.forRecord('42', 7), null);
+        invalidateForList(qc, recordsKeys.all, 'clientes');
+        expect(qc.getQueryState(descriptionKeys.forRecord('42', 7))?.isInvalidated).toBe(false);
     });
 });

@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { notificationKeys } from '@/hooks/useNotifications';
+import { markLocalRecordsChange } from '@/hooks/useRecords';
 import { useMemberNames } from '@/hooks/useWpUsers';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
@@ -71,6 +72,8 @@ export function useCreateComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
             // Comentar te suscribe al registro (ADR-S40): «Seguir» tiene que
             // reflejarlo sin recargar.
             void qc.invalidateQueries({ queryKey: notificationKeys.follow(recordId) });
@@ -103,6 +106,8 @@ export function useUpdateComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
         },
     });
 }
@@ -136,6 +141,8 @@ export function useDeleteComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
         },
     });
 }
