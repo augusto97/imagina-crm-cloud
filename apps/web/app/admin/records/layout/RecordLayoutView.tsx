@@ -13,6 +13,7 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
 
+import { RecordSubtasks } from '../RecordSubtasks';
 import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
@@ -31,6 +32,12 @@ interface Props {
     isAdmin: boolean;
     onDelete: () => void;
     deleting: boolean;
+    /**
+     * Acciones del registro en la barra de la ficha (seguir, recordarme,
+     * generar PDF). Antes vivían sueltas en una fila aparte y el PDF ni
+     * siquiera aparecía en la ficha diseñada.
+     */
+    actions?: ReactNode;
 }
 
 /**
@@ -40,7 +47,7 @@ interface Props {
  * corresponde, gráficos y tablas de los registros vinculados. Se guarda
  * sola, campo por campo.
  */
-export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin, onDelete, deleting }: Props): JSX.Element {
+export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin, onDelete, deleting, actions }: Props): JSX.Element {
     const { layout, origin } = useRecordLayout(list, fields);
     const canEdit = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const canDesign = useCanAny(CAP.MANAGE_LISTS);
@@ -79,18 +86,37 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                         deleting={deleting}
                         canDesign={canDesign}
                         origin={origin}
+                        actions={actions}
                     />
                     {layout === null ? (
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-10 imcrm-text-sm imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> {__('Preparando la ficha…')}
                         </div>
                     ) : (
-                        <LayoutBody layout={layout} />
+                        <LayoutBody layout={layout} footer={<ImplicitSubtasks layout={layout} />} />
                     )}
                 </div>
             </WidgetDataOverrideContext.Provider>
         </LayoutContext.Provider>
     );
+}
+
+/**
+ * Un diseño que no incluye el bloque «Subtareas» no esconde las que existen:
+ * si el registro tiene subtareas (o es una), se muestran al final de la
+ * primera pestaña. Quien quiera ubicarlas en otro lado agrega el bloque.
+ */
+function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const [params] = useSearchParams();
+    const tab = params.get('tab');
+    const first = layout.pages[0]!;
+    const onFirst = tab === null || tab === first.id || !layout.pages.some((p) => p.id === tab);
+    const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'subtasks'))));
+    const r = ctx.record;
+    const has = (r.subtask_count ?? 0) > 0 || (r.parent_id !== null && r.parent_id !== undefined);
+    if (!onFirst || placed || !has) return null;
+    return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} />;
 }
 
 export interface LayoutBodyProps {
@@ -221,6 +247,7 @@ function Toolbar({
     deleting,
     canDesign,
     origin,
+    actions,
 }: {
     list: ListSummary;
     saving: boolean;
@@ -228,16 +255,17 @@ function Toolbar({
     deleting: boolean;
     canDesign: boolean;
     origin: LayoutOrigin;
+    actions?: ReactNode;
 }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3">
+        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-x-3 imcrm-gap-y-1" data-testid="imcrm-record-layout-toolbar">
             <Button asChild variant="ghost" size="sm" className="imcrm-gap-2 imcrm-text-muted-foreground">
                 <Link to={`/lists/${list.slug}/records`}>
                     <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
                     {list.name}
                 </Link>
             </Button>
-            <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-1">
                 <span className="imcrm-mr-2 imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground" aria-live="polite">
                     {saving ? (
                         <>
@@ -251,6 +279,7 @@ function Toolbar({
                         </>
                     )}
                 </span>
+                {actions}
                 {canDesign && (
                     <Button asChild variant="ghost" size="sm" className="imcrm-gap-2" title={origin === 'auto' ? __('Diseño automático: personalízalo') : undefined}>
                         <Link to={`/lists/${list.slug}/template-editor`}>

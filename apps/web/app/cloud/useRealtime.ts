@@ -10,7 +10,10 @@ import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
 import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
-import { invalidateForList, isRecentLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
+import { activityKeys } from '@/hooks/useActivity';
+import { commentsKeys } from '@/hooks/useComments';
+import { descriptionKeys } from '@/hooks/useRecordDescription';
+import { invalidateForList, isRecentLocalRecordsChange, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { notificationKeys } from '@/hooks/useNotifications';
@@ -87,7 +90,21 @@ export function useRealtime(): void {
                     // El eco de una edición hecha en ESTA pestaña: la mutación
                     // ya refrescó la lista (v0.1.253).
                     if (ev.listId !== undefined) {
-                        if (!isRecentLocalRecordsChange(ev.listId)) invalidateForList(qc, recordsKeys.all, ev.listId);
+                        if (!isRecentLocalRecordsChange(ev.listId)) {
+                            invalidateForList(qc, recordsKeys.all, ev.listId);
+                            // La ficha abierta: descripción, actividad y
+                            // comentarios viven fuera de `records` (sólo se
+                            // refrescan las queries montadas).
+                            invalidateForList(qc, descriptionKeys.all, ev.listId);
+                            invalidateForList(qc, activityKeys.all, ev.listId);
+                            const ids = listIdentifiersFor(qc, ev.listId);
+                            void qc.invalidateQueries({
+                                predicate: (q) =>
+                                    q.queryKey[0] === commentsKeys.all[0]
+                                    && typeof q.queryKey[2] === 'string'
+                                    && ids.has(q.queryKey[2]),
+                            });
+                        }
                     } else void qc.invalidateQueries({ queryKey: recordsKeys.all });
                     // v0.1.230 — los gráficos y vinculados de una ficha abierta
                     // leen OTRAS listas: un cambio en cualquiera puede moverlos.

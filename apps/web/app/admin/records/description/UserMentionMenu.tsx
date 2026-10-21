@@ -85,6 +85,8 @@ export function UserMentionMenu({
         <div
             role="listbox"
             aria-label={__('Mencionar persona')}
+            // Menú propio abierto: Esc lo cierra a él, no a la ficha.
+            data-imcrm-floating-menu=""
             className="imcrm-absolute imcrm-z-50 imcrm-max-h-64 imcrm-w-64 imcrm-overflow-y-auto imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
             style={{ top, left }}
         >

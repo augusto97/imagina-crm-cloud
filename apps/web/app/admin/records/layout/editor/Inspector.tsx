@@ -195,6 +195,8 @@ function BlockForm(props: FormProps): JSX.Element | null {
             return <InfoForm text={__('Sólo la conversación del registro, con la caja para comentar.')} />;
         case 'portal_access':
             return <InfoForm text={__('Botón para invitar al cliente a su portal. Sólo aparece si la lista tiene el portal activado.')} />;
+        case 'subtasks':
+            return <InfoForm text={__('Las subtareas del registro con su estado y una fila para agregar otra. Si el registro es una subtarea, muestra el vínculo a su padre.')} />;
         case 'payments':
             return <InfoForm text={__('Los links de pago del registro (Mercado Pago o Wompi), si ya pagó, y el botón «Cobrar». Necesita una conexión de cobro en Integraciones.')} />;
         default:

@@ -19,6 +19,7 @@ import {
     LayoutGrid,
     Link2,
     List,
+    ListChecks,
     ListTree,
     MessageSquare,
     Minus,
@@ -176,6 +177,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Días en el sistema, cambios y comentarios.'),
         icon: Sigma,
         create: () => block('record_stats', { mode: 'auto' }),
+    },
+    {
+        key: 'subtasks',
+        type: 'subtasks',
+        category: 'record',
+        label: __('Subtareas'),
+        description: __('Las subtareas del registro, con alta en línea.'),
+        icon: ListChecks,
+        create: () => block('subtasks'),
     },
     // Vinculados
     related('related_table', 'table', __('Tabla de vinculados'), __('Los registros de otra lista vinculados a éste.'), Table2),

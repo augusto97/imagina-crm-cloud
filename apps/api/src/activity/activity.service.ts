@@ -10,6 +10,18 @@ import { ActivityRepository, type ActivityRow } from './activity.repository';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+/** Ventana en la que las ediciones de la descripción de una persona se juntan. */
+export const DESCRIPTION_MERGE_MS = 10 * 60 * 1000;
+
+/** `{ description: { from, to } }` y nada más → el par; si no, null. */
+function descriptionOnlyChange(diff: unknown): { from: unknown; to: unknown } | null {
+    if (!diff || typeof diff !== 'object') return null;
+    const keys = Object.keys(diff as Record<string, unknown>);
+    if (keys.length !== 1 || keys[0] !== 'description') return null;
+    const pair = (diff as { description?: unknown }).description;
+    if (!pair || typeof pair !== 'object' || !('to' in pair)) return null;
+    return pair as { from: unknown; to: unknown };
+}
 
 /** Diff por campo entre dos `data` de record: `{ fN: { from, to } }`. */
 export function computeDiff(
@@ -54,6 +66,43 @@ export class ActivityService {
             userId: params.userId,
             action: params.action,
             diff: params.diff ?? {},
+        });
+    }
+
+    /**
+     * Edición de la DESCRIPCIÓN de un registro.
+     *
+     * La descripción se guarda sola mientras la persona escribe (cada ~1 s):
+     * con una entrada por guardado, la actividad se llenaba de "actualizó
+     * este registro" vacíos. Ahora el diff es `{ description: { from, to } }`
+     * con un RESUMEN de texto (no el documento entero) y las ediciones
+     * seguidas de la misma persona dentro de `DESCRIPTION_MERGE_MS` reescriben
+     * su última entrada en vez de sumar otra — siempre que sea la última del
+     * registro (si en el medio pasó otra cosa, la línea de tiempo la respeta).
+     */
+    async logDescriptionEdit(
+        tx: Tx,
+        params: { tenantId: number; listId: number; recordId: number; userId: number | null; from: string; to: string },
+    ): Promise<void> {
+        const last = await this.repo.latestForRecord(tx, params.tenantId, params.recordId);
+        const prev = last ? descriptionOnlyChange(last.diff) : null;
+        if (
+            last
+            && prev
+            && last.action === 'record_updated'
+            && (last.userId ?? null) === (params.userId ?? null)
+            && Date.now() - last.createdAt.getTime() <= DESCRIPTION_MERGE_MS
+        ) {
+            await this.repo.rewrite(tx, params.tenantId, last.id, { description: { from: prev.from, to: params.to } });
+            return;
+        }
+        await this.repo.log(tx, {
+            tenantId: params.tenantId,
+            listId: params.listId,
+            recordId: params.recordId,
+            userId: params.userId,
+            action: 'record_updated',
+            diff: { description: { from: params.from, to: params.to } },
         });
     }
 

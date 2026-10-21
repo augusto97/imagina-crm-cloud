@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNull, ne, or } from 'drizzle-orm';
 import type { Db, Tx } from '../db/client';
 import { memberships, users } from '../db/schema';
 
@@ -24,7 +24,9 @@ function escapeLike(needle: string): string {
 export class MeRepository {
     /**
      * Miembros del tenant cuyo nombre O email contiene `q` (case-insensitive,
-     * parámetro bindeado — jamás interpolado). Excluye cuentas desactivadas.
+     * parámetro bindeado — jamás interpolado). Excluye cuentas desactivadas
+     * y los clientes del portal (rol `client`): no son del equipo, no se les
+     * asigna un registro ni se los menciona desde la app.
      */
     searchMembers(tx: Tx, tenantId: number, q: string, limit: number): Promise<MeUserRow[]> {
         const pattern = `%${escapeLike(q)}%`;
@@ -35,6 +37,7 @@ export class MeRepository {
             .where(
                 and(
                     eq(memberships.tenantId, tenantId),
+                    ne(memberships.role, 'client'),
                     isNull(users.disabledAt),
                     or(ilike(users.name, pattern), ilike(users.email, pattern)),
                 ),

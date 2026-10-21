@@ -38,9 +38,9 @@ describe('MeService (Postgres real, RLS)', () => {
         return { id: u!.id, email };
     }
 
-    async function addMember(userId: number, toTenant: number): Promise<void> {
+    async function addMember(userId: number, toTenant: number, role: 'agent' | 'client' = 'agent'): Promise<void> {
         await withTenant(pg.db, toTenant, (tx) =>
-            tx.insert(memberships).values({ userId, tenantId: toTenant, role: 'agent' }),
+            tx.insert(memberships).values({ userId, tenantId: toTenant, role }),
         );
     }
 
@@ -108,6 +108,16 @@ describe('MeService (Postgres real, RLS)', () => {
 
             const results = await me.searchUsers(tenantId, 'carlos');
             expect(results.map((u) => u.id)).toEqual([on.id]);
+        });
+
+        it('excluye a los clientes del portal (rol client): no son del equipo', async () => {
+            const client = await makeUser('Diana Aa Cliente');
+            await addMember(client.id, tenantId, 'client');
+            const staff = await makeUser('Diana Zz Equipo');
+            await addMember(staff.id, tenantId);
+
+            const results = await me.searchUsers(tenantId, 'diana');
+            expect(results.map((u) => u.id)).toEqual([staff.id]);
         });
 
         it('clampea el límite (mín 1) y ordena por nombre asc', async () => {
