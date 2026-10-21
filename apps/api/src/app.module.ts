@@ -13,6 +13,7 @@ import { ImportModule } from './import/import.module';
 import { AuthzModule } from './authz/authz.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { CommentsModule } from './comments/comments.module';
+import { RecordViewModule } from './record-view/record-view.module';
 import { ConfigModule } from './config/config.module';
 import { DbModule } from './db/db.module';
 import { FieldsModule } from './fields/fields.module';
@@ -89,6 +90,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         SavedFiltersModule,
         ActivityModule,
         CommentsModule,
+        RecordViewModule,
         AggregateModule,
         AutomationsModule,
         DashboardsModule,
