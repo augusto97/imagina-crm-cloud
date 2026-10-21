@@ -525,7 +525,11 @@ export function Sidebar({
                         to="/dashboards"
                         active={section === 'dashboards'}
                         icon={BarChart3}
-                        label={__('Dashboards')}
+                        // v0.1.286 — en el riel (68px) «Dashboards» no entra
+                        // ni en dos renglones: «Tableros», con el nombre
+                        // completo en el tooltip.
+                        label={__('Tableros')}
+                        hint={__('Dashboards')}
                         onPeek={() => peek('dashboards')}
                         onUnpeek={unpeek}
                         onSelect={(e) => handleRailSelect(e, 'dashboards')}
@@ -739,6 +743,7 @@ function RailItem({
     to,
     icon: Icon,
     label,
+    hint,
     active,
     onPeek,
     onUnpeek,
@@ -747,6 +752,8 @@ function RailItem({
     to: string;
     icon: LucideIcon;
     label: string;
+    /** Tooltip / nombre accesible cuando la etiqueta del riel es abreviada. */
+    hint?: string;
     active: boolean;
     /** Hover: abre el panel flotante de esta sección (v0.1.145). */
     onPeek?: () => void;
@@ -757,7 +764,8 @@ function RailItem({
     return (
         <Link
             to={to}
-            title={label}
+            title={hint ?? label}
+            aria-label={hint}
             onMouseEnter={onPeek}
             onMouseLeave={onUnpeek}
             onClick={onSelect}
@@ -765,7 +773,7 @@ function RailItem({
             className={cn(
                 // Mobile: objetivo táctil más alto y etiqueta legible; lg:
                 // las medidas compactas del escritorio.
-                'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-0.5 imcrm-py-3 imcrm-transition-colors imcrm-duration-100 lg:imcrm-px-1 lg:imcrm-py-2',
+                'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-0.5 imcrm-py-3 imcrm-transition-colors imcrm-duration-100 lg:imcrm-px-0 lg:imcrm-py-2',
                 // v0.1.176 — velo y tinta salen de los tokens del riel (no de
                 // blanco fijo): un riel CLARO elegido en Marca lleva tinta
                 // oscura y velo oscuro; el default oscuro se ve igual que antes.
@@ -777,7 +785,7 @@ function RailItem({
             <Icon className="imcrm-h-5 imcrm-w-5 imcrm-shrink-0" />
             {/* v0.1.286 — la etiqueta entra entera: hasta dos renglones
                 centrados (antes "Mi trab…", "Dashb…" truncadas). */}
-            <span className="imcrm-line-clamp-2 imcrm-max-w-full imcrm-break-words imcrm-text-center imcrm-text-[11px] imcrm-font-medium imcrm-leading-[1.15] lg:imcrm-text-[10px] lg:imcrm-tracking-[-0.01em]">
+            <span className="imcrm-line-clamp-2 imcrm-max-w-full imcrm-text-center imcrm-text-[11px] imcrm-font-medium imcrm-leading-[1.15] lg:imcrm-text-[10px] lg:imcrm-tracking-[-0.01em]">
                 {label}
             </span>
         </Link>

@@ -9,7 +9,7 @@ import {
 import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
-import { listsKeys } from '@/hooks/useLists';
+import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
 import { invalidateForList, isRecentLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
@@ -69,9 +69,12 @@ export function useRealtime(): void {
             // refrescaban la lista abierta hasta recargar.
             switch (ev.topic) {
                 case 'lists':
-                    // `cancelRefetch: false`: si la mutación de ESTA pestaña ya
-                    // está trayendo las listas, no se corta para pedirlas otra vez.
-                    void qc.invalidateQueries({ queryKey: listsKeys.all }, { cancelRefetch: false });
+                    // El eco de un cambio hecho en ESTA pestaña: la mutación ya
+                    // refrescó las listas (v0.1.286). `cancelRefetch: false`: si
+                    // ya se están trayendo, no se corta para pedirlas otra vez.
+                    if (!isRecentLocalListsChange()) {
+                        void qc.invalidateQueries({ queryKey: listsKeys.all }, { cancelRefetch: false });
+                    }
                     break;
                 case 'fields':
                     if (ev.listId !== undefined) invalidateForList(qc, fieldsKeys.all, ev.listId);
