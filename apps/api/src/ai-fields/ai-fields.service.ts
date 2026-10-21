@@ -33,7 +33,7 @@ import { IncidentHub } from '../incidents/incident-hub';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import {
     AI_FIELD_MAX_TOKENS,
@@ -130,7 +130,7 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(QUEUE, { connection: conn() });
+            this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de campos con IA con error: ${err.message}`));
             this.worker = new Worker(
                 QUEUE,

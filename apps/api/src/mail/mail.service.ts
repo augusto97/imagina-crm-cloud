@@ -14,7 +14,7 @@ import { resolvePublicHost } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { recordMail } from '../observability/diagnostics';
 import { IncidentHub } from '../incidents/incident-hub';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { EmailQuotaExceededError, EmailQuotaService } from './email-quota.service';
 import {
     MAIL_ACCOUNT_SENDER,
@@ -284,7 +284,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue<MailMessage>(MAIL_QUEUE, { connection: conn() });
+            this.queue = new Queue<MailMessage>(MAIL_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de correo con error: ${err.message}`));
             this.worker = new Worker<MailMessage>(
                 MAIL_QUEUE,

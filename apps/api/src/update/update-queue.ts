@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleIn
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { BackupsService } from './backups.service';
 import { CheckUpdatesService } from './check-updates.service';
 import { UpdateManager } from './update-manager.service';
@@ -39,7 +39,7 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(UPDATE_QUEUE, { connection: conn() });
+            this.queue = new Queue(UPDATE_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de actualización con error: ${err.message}`));
             this.worker = new Worker(
                 UPDATE_QUEUE,
