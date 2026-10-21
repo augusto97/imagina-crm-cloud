@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, BarChart3, CalendarRange, Copy, Filter, LayoutTemplate, Loader2, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
+import { WidgetExportMenu } from '@/admin/dashboards/widgets/WidgetExportMenu';
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
 import { PortalPageSettingsButton } from '@/admin/lists/portal-template-editor/PortalPageSettings';
@@ -652,10 +653,14 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                     blockStyleClass(style),
                                 )}
                                 style={styleCss}
+                                data-widget-card={widget.id}
                             >
                                 <PeriodBadge widget={widget} globalPeriod={globalPeriod} />
-                                {editing && (
-                                <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100">
+                                {(editing || (!tvMode && !isContentWidget(widget.type))) && (
+                                <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100 focus-within:imcrm-opacity-100 [@media(hover:none)]:imcrm-opacity-100">
+                                    {!tvMode && <WidgetExportMenu dashboardId={id} widget={widget} />}
+                                    {editing && (
+                                    <>
                                     <button
                                         type="button"
                                         onClick={() => handleEditWidget(widget)}
@@ -681,6 +686,8 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                     >
                                         <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                     </button>
+                                    </>
+                                    )}
                                 </div>
                                 )}
                                 {/* v0.1.286 — un bloque de CONTENIDO (imagen, texto
@@ -736,7 +743,10 @@ function PeriodBadge({ widget, globalPeriod }: { widget: WidgetSpec; globalPerio
     return (
         <span
             className={cn(
-                'imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-transition-opacity group-hover:imcrm-opacity-0',
+                // v0.1.291 — en pantallas táctiles (sin hover) los botones del
+                // widget quedan siempre visibles arriba: el período baja a la
+                // esquina inferior para no taparlos.
+                'imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-transition-opacity group-hover:imcrm-opacity-0 [@media(hover:none)]:imcrm-top-auto [@media(hover:none)]:imcrm-bottom-2 [@media(hover:none)]:group-hover:imcrm-opacity-100',
                 overridden ? 'imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-bg-muted/60 imcrm-text-muted-foreground',
             )}
             title={overridden ? __('Período del tablero') : __('Período del widget')}
