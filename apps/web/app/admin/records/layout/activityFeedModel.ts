@@ -36,7 +36,12 @@ export function buildFeed(
 ): FeedItem[] {
     const raw: FeedItem[] = [];
     if (filter !== 'changes') {
-        for (const c of comments ?? []) raw.push({ kind: 'comment', key: `c-${c.id}`, ts: tsOf(c.created_at), comment: c });
+        // v0.1.288 — una respuesta va dentro de su raíz (no como entrada suelta).
+        const ids = new Set((comments ?? []).map((c) => c.id));
+        for (const c of comments ?? []) {
+            if (c.parent_id !== null && c.parent_id !== undefined && ids.has(c.parent_id)) continue;
+            raw.push({ kind: 'comment', key: `c-${c.id}`, ts: tsOf(c.created_at), comment: c });
+        }
     }
     if (filter !== 'comments') {
         for (const a of activity ?? []) {

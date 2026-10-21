@@ -195,6 +195,29 @@ export class CommentsRepository {
             .where(and(eq(comments.tenantId, tenantId), eq(comments.parentId, rootId)));
     }
 
+    /**
+     * v0.1.288 — Un comentario aunque esté borrado (para continuar un hilo cuyo
+     * raíz quedó como «Comentario eliminado»).
+     */
+    async findAnyById(tx: Tx, tenantId: number, id: number): Promise<CommentRow | null> {
+        const [row] = await tx
+            .select()
+            .from(comments)
+            .where(and(eq(comments.tenantId, tenantId), eq(comments.id, id)))
+            .limit(1);
+        return row ?? null;
+    }
+
+    /** ¿Tiene respuestas vivas? (un raíz borrado sigue siendo un hilo). */
+    async hasLiveReplies(tx: Tx, tenantId: number, id: number): Promise<boolean> {
+        const [row] = await tx
+            .select({ id: comments.id })
+            .from(comments)
+            .where(and(eq(comments.tenantId, tenantId), eq(comments.parentId, id), isNull(comments.deletedAt)))
+            .limit(1);
+        return row !== undefined;
+    }
+
     async findById(tx: Tx, tenantId: number, id: number): Promise<CommentRow | null> {
         const [row] = await tx
             .select()

@@ -1247,14 +1247,33 @@ export class PortalService implements OnModuleInit {
      * cliente, vivo, y si es una respuesta, con su raíz también visible). Si
      * no, 404 opaco: el cliente no distingue «no existe» de «es interno».
      */
-    private async clientVisibleComment(tx: Tx, tenantId: number, recordId: number, commentId: number) {
+    private async clientVisibleComment(
+        tx: Tx,
+        tenantId: number,
+        recordId: number,
+        commentId: number,
+        opts: { forReply?: boolean } = {},
+    ) {
         const notFound = (): NotFoundException =>
             new NotFoundException({ code: 'comment_not_found', message: 'Comentario no encontrado', data: { status: 404 } });
-        const row = await this.commentsRepo.findById(tx, tenantId, commentId);
+        // Para RESPONDER vale también un hilo cuyo raíz se borró pero sigue
+        // vivo («Comentario eliminado» con respuestas); para reaccionar, no.
+        const live = async (id: number) => {
+            const row = await this.commentsRepo.findAnyById(tx, tenantId, id);
+            if (!row) return null;
+            if (row.deletedAt === null) return row;
+            if (!opts.forReply) return null;
+            const threadAlive = row.parentId === null
+                ? await this.commentsRepo.hasLiveReplies(tx, tenantId, row.id)
+                : true; // una respuesta borrada: se continúa su hilo (se valida el raíz abajo)
+            return threadAlive ? row : null;
+        };
+        const row = await live(commentId);
         if (!row || row.recordId !== recordId || row.visibility !== 'client') throw notFound();
         if (row.parentId !== null) {
-            const root = await this.commentsRepo.findById(tx, tenantId, row.parentId);
+            const root = await live(row.parentId);
             if (!root || root.visibility !== 'client') throw notFound();
+            if (root.deletedAt !== null && !(await this.commentsRepo.hasLiveReplies(tx, tenantId, root.id))) throw notFound();
         }
         return row;
     }
@@ -1291,7 +1310,7 @@ export class PortalService implements OnModuleInit {
             // del raíz del hilo (un solo nivel).
             let parentId: number | null = null;
             if (input.parent_id !== undefined) {
-                const parent = await this.clientVisibleComment(tx, link.tenantId, link.recordId, input.parent_id);
+                const parent = await this.clientVisibleComment(tx, link.tenantId, link.recordId, input.parent_id, { forReply: true });
                 parentId = parent.parentId ?? parent.id;
             }
             const inserted = await this.commentsRepo.insert(tx, {

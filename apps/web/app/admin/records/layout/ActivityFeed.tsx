@@ -5,6 +5,8 @@ import { ActivityValue } from '@/admin/activity/ActivityPanel';
 import { RestorePreviousButton } from '@/admin/records/history/FieldHistory';
 import { actionText, actorOf, changeSentence, changesOf, descriptionSentence, type FieldChange } from '@/admin/activity/activityText';
 import { CommentContent } from '@/admin/comments/CommentContent';
+import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments/CommentThread';
+import { repliesByRoot } from '@/admin/comments/commentThreads';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -81,10 +83,12 @@ export function ActivityFeed({
     const [visible, setVisible] = useState(PAGE);
 
     const items = useMemo(() => buildFeed(comments.data, activity.data, filter), [comments.data, activity.data, filter]);
+    // v0.1.288 — las respuestas se dibujan dentro de su raíz, no sueltas.
+    const replies = useMemo(() => repliesByRoot(comments.data), [comments.data]);
     const days = useMemo(() => groupByDay(items.slice(0, visible)), [items, visible]);
     const loading = comments.isLoading || activity.isLoading;
     const counts = {
-        comments: comments.data?.length ?? 0,
+        comments: (comments.data ?? []).filter((c) => !c.deleted).length,
         changes: (activity.data ?? []).filter((a) => !a.action.startsWith('comment.')).length,
     };
 
@@ -130,6 +134,7 @@ export function ActivityFeed({
                                         recordId={recordId}
                                         authorOf={authorOf}
                                         canEditComment={(c) => isAdmin || c.user_id === currentUserId}
+                                        replies={item.kind === 'comment' ? replies.get(item.comment.id) ?? [] : []}
                                     />
                                 ))}
                             </ol>
@@ -331,6 +336,7 @@ function FeedRow({
     recordId,
     authorOf,
     canEditComment,
+    replies,
 }: {
     item: FeedItem;
     fields: FieldEntity[];
@@ -338,9 +344,21 @@ function FeedRow({
     recordId: number;
     authorOf: (c: CommentEntity) => string;
     canEditComment: (c: CommentEntity) => boolean;
+    replies: readonly CommentEntity[];
 }): JSX.Element {
     if (item.kind === 'comment') {
-        return <CommentRow comment={item.comment} name={authorOf(item.comment)} canEdit={canEditComment(item.comment)} listId={listId} recordId={recordId} />;
+        return (
+            <CommentRow
+                comment={item.comment}
+                name={authorOf(item.comment)}
+                canEdit={canEditComment(item.comment)}
+                listId={listId}
+                recordId={recordId}
+                replies={replies}
+                authorOf={authorOf}
+                canEditComment={canEditComment}
+            />
+        );
     }
     return <ChangeRow entries={item.entries} fields={fields} listId={listId} recordId={recordId} />;
 }
@@ -466,7 +484,25 @@ function ChangeLine({
     );
 }
 
-function CommentRow({ comment, name, canEdit, listId, recordId }: { comment: CommentEntity; name: string; canEdit: boolean; listId: number; recordId: number }): JSX.Element {
+function CommentRow({
+    comment,
+    name,
+    canEdit,
+    listId,
+    recordId,
+    replies,
+    authorOf,
+    canEditComment,
+}: {
+    comment: CommentEntity;
+    name: string;
+    canEdit: boolean;
+    listId: number;
+    recordId: number;
+    replies: readonly CommentEntity[];
+    authorOf: (c: CommentEntity) => string;
+    canEditComment: (c: CommentEntity) => boolean;
+}): JSX.Element {
     const update = useUpdateComment(listId, recordId);
     const remove = useDeleteComment(listId, recordId);
     const confirm = useConfirm();
@@ -487,7 +523,15 @@ function CommentRow({ comment, name, canEdit, listId, recordId }: { comment: Com
         }
     };
     const del = async (): Promise<void> => {
-        const ok = await confirm({ title: __('Eliminar comentario'), description: __('Esta acción no se puede deshacer.'), destructive: true, confirmLabel: __('Eliminar') });
+        const ok = await confirm({
+            title: __('Eliminar comentario'),
+            description:
+                replies.length > 0
+                    ? __('Sus respuestas se conservan: en su lugar quedará «Comentario eliminado».')
+                    : __('Esta acción no se puede deshacer.'),
+            destructive: true,
+            confirmLabel: __('Eliminar'),
+        });
         if (ok) remove.mutate(comment.id);
     };
 
@@ -518,16 +562,28 @@ function CommentRow({ comment, name, canEdit, listId, recordId }: { comment: Com
                             <Button size="sm" variant="ghost" className="imcrm-h-7" onClick={() => setEditing(false)}>{__('Cancelar')}</Button>
                         </div>
                     </div>
+                ) : comment.deleted ? (
+                    <DeletedCommentPlaceholder />
                 ) : (
                     <div className="imcrm-rounded-lg imcrm-rounded-tl-sm imcrm-bg-muted/60 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-text-foreground">
                         <CommentContent content={comment.content} />
                     </div>
                 )}
-                {canEdit && !editing && (
+                {canEdit && !editing && !comment.deleted && (
                     <div className="imcrm-flex imcrm-gap-3 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 imcrm-transition-opacity focus-within:imcrm-opacity-100 group-hover:imcrm-opacity-100">
                         <button type="button" onClick={() => setEditing(true)} className="hover:imcrm-text-foreground">{__('Editar')}</button>
                         <button type="button" onClick={() => void del()} className="hover:imcrm-text-destructive">{__('Eliminar')}</button>
                     </div>
+                )}
+                {!editing && (
+                    <CommentThreadFooter
+                        listId={listId}
+                        recordId={recordId}
+                        root={comment}
+                        replies={replies}
+                        authorOf={authorOf}
+                        canEdit={canEditComment}
+                    />
                 )}
             </div>
         </li>

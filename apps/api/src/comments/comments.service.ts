@@ -134,8 +134,8 @@ export class CommentsService {
 
     /**
      * El raíz del hilo al que se responde. Si el padre ya es una respuesta, el
-     * raíz es SU padre (un solo nivel). Tiene que ser de este registro y estar
-     * vivo: a un comentario eliminado no se le responde.
+     * raíz es SU padre (un solo nivel). Tiene que ser de este registro; un raíz
+     * eliminado sólo acepta respuestas mientras su hilo siga vivo.
      */
     private async threadRoot(tx: Tx, tenantId: number, recordId: number, parentId: number): Promise<CommentRow> {
         const invalid = (): BadRequestException =>
@@ -144,11 +144,15 @@ export class CommentsService {
                 message: 'No se puede responder a ese comentario: no es de este registro o se eliminó.',
                 data: { status: 400, errors: { parent_id: 'Inválido' } },
             });
-        const parent = await this.repo.findById(tx, tenantId, parentId);
+        const parent = await this.repo.findAnyById(tx, tenantId, parentId);
         if (!parent || parent.recordId !== recordId) throw invalid();
-        if (parent.parentId === null) return parent;
-        const root = await this.repo.findById(tx, tenantId, parent.parentId);
+        // Se responde a una respuesta (aunque se haya borrado) → cuelga del
+        // mismo raíz: los hilos son de un solo nivel.
+        const root = parent.parentId === null ? parent : await this.repo.findAnyById(tx, tenantId, parent.parentId);
         if (!root || root.recordId !== recordId) throw invalid();
+        // Un raíz borrado sigue aceptando respuestas SÓLO si su hilo está vivo
+        // (se ve como «Comentario eliminado» con sus respuestas debajo).
+        if (root.deletedAt !== null && !(await this.repo.hasLiveReplies(tx, tenantId, root.id))) throw invalid();
         return root;
     }
 

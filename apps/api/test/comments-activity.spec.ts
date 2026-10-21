@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, comments, fields, lists, memberships, mentions, recordFollows, records, tenants, users } from '../src/db/schema';
+import { activity, commentReactions, comments, fields, lists, memberships, mentions, recordFollows, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
@@ -233,6 +233,119 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         // Un segundo comentario no duplica.
         await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'Y esto', kind: 'note' });
         expect(await follows()).toHaveLength(1);
+    });
+
+    // --- v0.1.288: historial por campo ---------------------------------------
+
+    it('historial de UN campo: más nuevo primero, paginado por cursor', async () => {
+        const otro = await fieldsService.create(tenantA, 'clientes', { label: 'Ciudad', type: 'text', slug: 'ciudad' });
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'A', [`f${otro.id}`]: 'Bogotá' } });
+        await recordsService.update(tenantA, beto, 'clientes', rec.id, { data: { [key()]: 'B' } });
+        // Un cambio de OTRO campo no aparece en el historial de éste.
+        await recordsService.update(tenantA, beto, 'clientes', rec.id, { data: { [`f${otro.id}`]: 'Cali' } });
+        await recordsService.update(tenantA, ana, 'clientes', rec.id, { data: { [key()]: 'C' } });
+        const viewer = { role: 'admin' as const, userId: ana.userId };
+        const p1 = await activityService.fieldHistory(tenantA, 'clientes', rec.id, fieldId, { limit: 2, viewer });
+        expect(p1.data.map((e) => [e.from, e.to])).toEqual([['B', 'C'], ['A', 'B']]);
+        expect(p1.data[1]).toMatchObject({ user_id: beto.userId, user_name: 'Beto', action: 'record_updated' });
+        expect(p1.meta.next_cursor).not.toBeNull();
+        const p2 = await activityService.fieldHistory(tenantA, 'clientes', rec.id, fieldId, { limit: 2, cursor: Number(p1.meta.next_cursor), viewer });
+        expect(p2.data.map((e) => [e.action, e.from, e.to])).toEqual([['record_created', null, 'A']]);
+        expect(p2.meta.next_cursor).toBeNull();
+    });
+
+    it('historial: campo oculto para el rol, registro fuera de su alcance o campo de otra lista → 404', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'A' } });
+        // El agente sólo ve lo suyo (por defecto): el registro de Ana no.
+        await expect(
+            activityService.fieldHistory(tenantA, 'clientes', rec.id, fieldId, { viewer: { role: 'agent', userId: beto.userId } }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        // Campo oculto para el manager → 404 aunque vea el registro.
+        const l = await listsService.get(tenantA, 'clientes');
+        await listsService.update(tenantA, 'clientes', {
+            settings: { ...l.settings, permissions: { permissions: { manager: { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: ['nombre'] } } } },
+        });
+        await expect(
+            activityService.fieldHistory(tenantA, 'clientes', rec.id, fieldId, { viewer: { role: 'manager', userId: beto.userId } }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        await listsService.create(tenantA, { name: 'Otra' });
+        const ajeno = await fieldsService.create(tenantA, 'otra', { label: 'X', type: 'text', slug: 'x' });
+        await expect(
+            activityService.fieldHistory(tenantA, 'clientes', rec.id, ajeno.id, { viewer: { role: 'admin', userId: ana.userId } }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // --- v0.1.288: reacciones e hilos ---------------------------------------
+
+    it('reacciones: toggle por persona, contador y quiénes; RLS por empresa', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'X' } });
+        const c = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'Listo', kind: 'note' });
+        await commentsService.toggleReaction(tenantA, ana, 'clientes', rec.id, c.id, '🎉');
+        await commentsService.toggleReaction(tenantA, beto, 'clientes', rec.id, c.id, '👍');
+        const r = await commentsService.toggleReaction(tenantA, ana, 'clientes', rec.id, c.id, '👍');
+        // En el orden del set curado (👍 antes que 🎉), con quiénes.
+        expect(r.reactions.map((x) => [x.emoji, x.count, x.user_names])).toEqual([
+            ['👍', 2, ['Beto', 'Ana']],
+            ['🎉', 1, ['Ana']],
+        ]);
+        // Poner otra vez la misma la quita.
+        const r2 = await commentsService.toggleReaction(tenantA, beto, 'clientes', rec.id, c.id, '👍');
+        expect(r2.reactions.find((x) => x.emoji === '👍')).toMatchObject({ count: 1, user_ids: [ana.userId] });
+        const listed = await commentsService.list(tenantA, ana, 'clientes', rec.id);
+        expect(listed[0]!.reactions.map((x) => x.emoji)).toEqual(['👍', '🎉']);
+        // RLS: otra empresa no ve ninguna fila.
+        const fromB = await withTenant(pg.db, tenantB, (tx) => tx.select().from(commentReactions));
+        expect(fromB).toHaveLength(0);
+        const fromA = await withTenant(pg.db, tenantA, (tx) => tx.select().from(commentReactions));
+        expect(fromA).toHaveLength(2);
+        // Un comentario borrado no recibe reacciones.
+        await commentsService.remove(tenantA, ana, 'clientes', rec.id, c.id);
+        await expect(commentsService.toggleReaction(tenantA, ana, 'clientes', rec.id, c.id, '🔥')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('hilos: un nivel, la respuesta hereda la visibilidad del raíz y la cambia con él', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'X' } });
+        const root = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'Interno', kind: 'note' });
+        // Pedir «client» en una respuesta a un raíz interno no lo hace visible.
+        const r1 = await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'R1', kind: 'note', parent_id: root.id, visibility: 'client' });
+        expect(r1).toMatchObject({ parent_id: root.id, visibility: 'internal' });
+        // Responder a una respuesta cuelga del MISMO raíz.
+        const r2 = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'R2', kind: 'note', parent_id: r1.id });
+        expect(r2.parent_id).toBe(root.id);
+        // Cambiar la visibilidad de una respuesta → 400; la del raíz arrastra a las respuestas.
+        await expect(
+            commentsService.update(tenantA, beto, 'clientes', rec.id, r1.id, { visibility: 'client' }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await commentsService.update(tenantA, ana, 'clientes', rec.id, root.id, { visibility: 'client' });
+        const all = await commentsService.list(tenantA, ana, 'clientes', rec.id);
+        expect(all.map((c) => c.visibility)).toEqual(['client', 'client', 'client']);
+    });
+
+    it('borrar un raíz con respuestas deja «Comentario eliminado»; sin respuestas, desaparece', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'X' } });
+        const root = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'Raíz', kind: 'note', metadata: { kind: 'call', duration_minutes: 5 } });
+        const reply = await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'Respuesta', kind: 'note', parent_id: root.id });
+        await commentsService.toggleReaction(tenantA, beto, 'clientes', rec.id, root.id, '👍');
+        await commentsService.remove(tenantA, ana, 'clientes', rec.id, root.id);
+        let all = await commentsService.list(tenantA, ana, 'clientes', rec.id);
+        expect(all.map((c) => [c.id, c.deleted, c.body])).toEqual([
+            [root.id, true, ''],
+            [reply.id, false, 'Respuesta'],
+        ]);
+        // El marcador no filtra lo que decía ni sus reacciones.
+        expect(all[0]!.metadata).toEqual({});
+        expect(all[0]!.reactions).toEqual([]);
+        // El hilo sigue vivo: se le puede responder.
+        const more = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'Sigo', kind: 'note', parent_id: root.id });
+        expect(more.parent_id).toBe(root.id);
+        // Sin respuestas vivas el raíz desaparece (y ya no se le responde).
+        await commentsService.remove(tenantA, beto, 'clientes', rec.id, reply.id);
+        await commentsService.remove(tenantA, ana, 'clientes', rec.id, more.id);
+        all = await commentsService.list(tenantA, ana, 'clientes', rec.id);
+        expect(all).toHaveLength(0);
+        await expect(
+            commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'x', kind: 'note', parent_id: root.id }),
+        ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('comentar sobre un record inexistente/ajeno → 404', async () => {
