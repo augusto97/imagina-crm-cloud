@@ -1,6 +1,4 @@
-import { useRef, useState } from 'react';
 import { AiFieldValue } from './AiFieldValue';
-import { FileText, Loader2 } from 'lucide-react';
 
 import { DurationControl } from '@/components/fields/DurationControl';
 import { PhoneControl } from '@/components/fields/PhoneControl';
@@ -10,8 +8,6 @@ import { Label } from '@/components/ui/label';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
-import { useAttachments, type AttachmentDto } from '@/hooks/useAttachments';
-import { getBootData } from '@/lib/boot';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
@@ -21,6 +17,8 @@ import { DateCellEditor } from './DateCellEditor';
 import { RelationPicker } from '@/components/fields/RelationPicker';
 
 import { CompactFieldRow } from './crm/CompactFieldRow';
+import { FileFieldControl } from './FileFieldControl';
+import { maxFilesOf } from './fileIds';
 import { FieldValueDisplay } from './crm/FieldValueDisplay';
 
 interface RecordFieldsFormProps {
@@ -63,6 +61,12 @@ interface RecordFieldsFormProps {
      * tienda). Se muestra de sólo lectura con el motivo.
      */
     lockedReasons?: Record<string, string>;
+    /**
+     * Campos que ya se editan en otro lugar de la ficha (el TÍTULO grande):
+     * no se repiten como fila — se veían dos veces ("Tarea" arriba y la fila
+     * "Tarea *" abajo).
+     */
+    hiddenSlugs?: readonly string[];
 }
 
 const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
@@ -83,9 +87,11 @@ export function RecordFieldsForm({
     density = 'comfortable',
     showTypeIcon = false,
     lockedReasons,
+    hiddenSlugs,
 }: RecordFieldsFormProps): JSX.Element {
     const visible = fields
         .filter((f) => (onlyNonInline ? NON_INLINE_TYPES.includes(f.type) : true))
+        .filter((f) => !hiddenSlugs?.includes(f.slug))
         // v0.1.170 — los derivados (computed/lookup/rollup) no tienen nada que
         // cargar en el alta: aparecen sólo al editar, como lectura.
         .filter((f) => !(recordId === undefined && isDerivedFieldType(f.type)))
@@ -320,7 +326,7 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
         case 'file':
             // Subcomponente dedicado: llama useAttachments incondicionalmente
             // (rules-of-hooks — aquí estamos dentro de un switch).
-            control = <FileFieldControl id={id} value={value} onChange={onChange} />;
+            control = <FileFieldControl id={id} value={value} onChange={onChange} maxFiles={maxFilesOf(field.config)} />;
             break;
         case 'relation':
             control = <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} />;
@@ -377,126 +383,6 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             )}
             {error !== undefined && (
                 <span className="imcrm-text-xs imcrm-text-destructive">{error}</span>
-            )}
-        </div>
-    );
-}
-
-/** Límite de upload del backend (ADR-S16) — espejo para cortar antes del POST. */
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-
-/**
- * Control del field type `file`: upload multipart contra `POST /files`
- * (ADR-S16) + preview del attachment resuelto vía `useAttachments`.
- *
- * El multipart no pasa por el adapter `api` (que fuerza JSON) — fetch crudo
- * con cookie de sesión + `X-Tenant-Id`, mismo patrón que ExportButton.
- */
-export function FileFieldControl({
-    id,
-    value,
-    onChange,
-}: {
-    id: string;
-    value: unknown;
-    onChange: (value: unknown) => void;
-}): JSX.Element {
-    const [busy, setBusy] = useState(false);
-    const [uploadError, setUploadError] = useState<string | null>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    // Valor numérico = id de attachment del módulo de archivos propio.
-    const attachmentId = typeof value === 'number' && value > 0 ? value : null;
-    const attachments = useAttachments(attachmentId !== null ? [attachmentId] : []);
-    const resolved = attachmentId !== null ? attachments.data?.get(attachmentId) ?? null : null;
-
-    const upload = async (file: File): Promise<void> => {
-        setUploadError(null);
-        if (file.size > MAX_UPLOAD_BYTES) {
-            setUploadError(__('El archivo supera el tamaño máximo (20 MB).'));
-            return;
-        }
-        setBusy(true);
-        try {
-            const boot = getBootData();
-            // Auth: cookie de sesión + workspace activo por header (sin
-            // Content-Type manual: el browser arma el boundary del multipart).
-            const headers: Record<string, string> = {};
-            if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
-            const form = new FormData();
-            form.append('file', file);
-            const res = await fetch(`${boot.restRoot.replace(/\/$/, '')}/files`, {
-                method: 'POST',
-                headers,
-                credentials: 'include',
-                body: form,
-            });
-            const payload = (await res.json().catch(() => null)) as
-                | (Partial<AttachmentDto> & { code?: string; message?: string })
-                | null;
-            if (!res.ok || typeof payload?.id !== 'number') {
-                const message =
-                    payload?.code === 'file_too_large'
-                        ? __('El archivo supera el tamaño máximo (20 MB).')
-                        : payload?.message ?? `HTTP ${res.status}`;
-                throw new Error(message);
-            }
-            onChange(payload.id);
-        } catch (e) {
-            setUploadError(e instanceof Error ? e.message : __('No se pudo subir el archivo.'));
-        } finally {
-            setBusy(false);
-            // Reset para que elegir el mismo archivo dos veces re-dispare onChange.
-            if (inputRef.current) inputRef.current.value = '';
-        }
-    };
-
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-            {attachmentId !== null && (
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-py-2 imcrm-text-sm">
-                    <FileText className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                    {resolved !== null ? (
-                        <a
-                            href={resolved.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="imcrm-truncate imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
-                        >
-                            {resolved.title}
-                        </a>
-                    ) : (
-                        <span className="imcrm-truncate imcrm-text-muted-foreground">
-                            {__('Archivo #%d').replace('%d', String(attachmentId))}
-                        </span>
-                    )}
-                    <button
-                        type="button"
-                        onClick={() => onChange(null)}
-                        className="imcrm-ml-auto imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-destructive"
-                    >
-                        {__('Quitar')}
-                    </button>
-                </div>
-            )}
-            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                <input
-                    id={id}
-                    ref={inputRef}
-                    type="file"
-                    disabled={busy}
-                    onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) void upload(file);
-                    }}
-                    className="imcrm-w-full imcrm-text-sm imcrm-text-muted-foreground file:imcrm-mr-2 file:imcrm-rounded-md file:imcrm-border file:imcrm-border-input file:imcrm-bg-background file:imcrm-px-3 file:imcrm-py-1.5 file:imcrm-text-xs file:imcrm-font-medium file:imcrm-text-foreground"
-                />
-                {busy && (
-                    <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-animate-spin imcrm-text-muted-foreground" aria-hidden />
-                )}
-            </div>
-            {uploadError !== null && (
-                <span className="imcrm-text-xs imcrm-text-destructive">{uploadError}</span>
             )}
         </div>
     );

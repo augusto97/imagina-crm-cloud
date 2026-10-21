@@ -147,7 +147,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
             body: 'Primer contacto',
             kind: 'call',
         });
-        expect(c1).toMatchObject({ kind: 'call', parent_id: null, user_id: ana.userId });
+        expect(c1).toMatchObject({ kind: 'call', parent_id: null, user_id: ana.userId, user_name: 'Ana' });
 
         const reply = await commentsService.create(tenantA, beto, 'clientes', rec.id, {
             body: 'Respuesta',
@@ -158,6 +158,8 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
 
         const all = await commentsService.list(tenantA, ana, 'clientes', rec.id);
         expect(all).toHaveLength(2);
+        // El nombre del autor viaja en el DTO: la ficha no dice "Usuario #2".
+        expect(all.map((c) => c.user_name)).toEqual(['Ana', 'Beto']);
 
         // parent de otro record → 400.
         const rec2 = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'Y' } });
@@ -183,6 +185,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
 
         const updated = await commentsService.update(tenantA, ana, 'clientes', rec.id, c.id, { body: 'editado' });
         expect(updated.body).toBe('editado');
+        expect(updated.user_name).toBe('Ana');
         await commentsService.remove(tenantA, ana, 'clientes', rec.id, c.id);
         expect(await commentsService.list(tenantA, ana, 'clientes', rec.id)).toHaveLength(0);
     });

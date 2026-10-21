@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
@@ -372,7 +372,53 @@ export function RecordsPage(): JSX.Element {
             : null;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const [drawerRecordId, setDrawerRecordId] = useState<number | null>(null);
+    // El registro abierto en el modal vive en la URL (`?record=<id>`): la
+    // lista queda debajo, atrás (o el gesto de Android) cierra el modal,
+    // recargar lo vuelve a abrir y el enlace se puede compartir.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const location = useLocation();
+    const recordParam = Number(searchParams.get('record'));
+    const urlRecordId = Number.isInteger(recordParam) && recordParam > 0 ? recordParam : null;
+    // El cambio de URL es una transición (react-router) y puede tardar en
+    // pintarse: el modal se cierra AL INSTANTE con este estado local, así
+    // nada de la ficha (ni el registro de respaldo) se sigue pidiendo — tras
+    // borrarlo, eso eran 404.
+    const [closingRecordId, setClosingRecordId] = useState<number | null>(null);
+    useEffect(() => {
+        if (closingRecordId !== null && urlRecordId !== closingRecordId) setClosingRecordId(null);
+    }, [urlRecordId, closingRecordId]);
+    const drawerRecordId = urlRecordId !== null && urlRecordId !== closingRecordId ? urlRecordId : null;
+    const openedByUsRef = useRef(false);
+    const setDrawerRecordId = useEventCallback((id: number | null): void => {
+        const pushedHere = (location.state as { imcrmRecordModal?: boolean } | null)?.imcrmRecordModal === true;
+        if (id === null) {
+            if (drawerRecordId === null) return;
+            setClosingRecordId(drawerRecordId);
+            // Lo abrimos nosotros con un paso en el historial: cerrar = atrás
+            // (así el botón atrás después no vuelve a abrirlo).
+            if (pushedHere && openedByUsRef.current) {
+                openedByUsRef.current = false;
+                navigate(-1);
+                return;
+            }
+            const next = new URLSearchParams(searchParams);
+            next.delete('record');
+            setSearchParams(next, { replace: true });
+            return;
+        }
+        if (id === drawerRecordId) return;
+        setClosingRecordId(null);
+        const next = new URLSearchParams(searchParams);
+        next.set('record', String(id));
+        if (drawerRecordId === null) {
+            openedByUsRef.current = true;
+            setSearchParams(next, { state: { imcrmRecordModal: true } });
+        } else {
+            // Otro registro dentro del modal (anterior/siguiente, subtarea):
+            // reemplaza, no apila un paso por cada uno.
+            setSearchParams(next, { replace: true, state: location.state });
+        }
+    });
 
     // Modal de campos (v0.1.74): crear una columna nueva o editar una
     // existente SIN salir de la tabla. `editingField === null` = modo
@@ -424,10 +470,11 @@ export function RecordsPage(): JSX.Element {
         setCreateOpen(true);
     });
 
-    // Reset al cambiar de lista.
+    // Reset al cambiar de lista. (El modal no: vive en la URL, que cambia
+    // sola al ir a otra lista — y al recargar con `?record=` tiene que
+    // quedar abierto.)
     useEffect(() => {
         setSelectedIds([]);
-        setDrawerRecordId(null);
         setActiveViewId(null);
         setState(INITIAL_STATE);
         initialViewAppliedRef.current = null;
@@ -473,7 +520,6 @@ const applyView = (view: SavedViewEntity | null): void => {
     // `?gf=<field_id>&gv=<valor>` aplica un filtro eq (gv vacío → is_null)
     // POR ENCIMA de la vista default, y limpia los params para no
     // re-aplicarse al navegar dentro de la página.
-    const [searchParams, setSearchParams] = useSearchParams();
     useEffect(() => {
         if (! viewApplied || ! list.data) return;
         // v0.1.286 — `?ft=<filter_tree JSON>`: el segmento de un gráfico con
@@ -644,6 +690,19 @@ const applyView = (view: SavedViewEntity | null): void => {
     const isTableGrouped = !isAlternativeView
         && state.groupByFieldId !== null
         && !state.spreadsheet;
+    // Anterior / siguiente del modal: el orden de la tabla plana (o de las
+    // tarjetas, el kanban y el calendario, que leen la misma página). En la
+    // vista agrupada cada grupo pagina aparte: ahí no hay un orden único.
+    const navIds = isTableGrouped ? [] : (records.data?.data ?? []).map((r) => r.id);
+    const navIndex = drawerRecordId !== null ? navIds.indexOf(drawerRecordId) : -1;
+    const drawerNav = {
+        prev: navIndex > 0 ? navIds[navIndex - 1]! : null,
+        next: navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1]! : null,
+        go: navIndex < 0 ? undefined : (dir: -1 | 1): void => {
+            const target = dir === -1 ? (navIndex > 0 ? navIds[navIndex - 1] : undefined) : navIds[navIndex + 1];
+            if (target !== undefined) setDrawerRecordId(target);
+        },
+    };
     const tableGroupByField =
         isTableGrouped && fields.data
             ? fields.data.find((f) => f.id === state.groupByFieldId)
@@ -1438,6 +1497,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                         record={drawerRecord}
                         open={drawerRecordId !== null}
                         onOpenChange={(open) => !open && setDrawerRecordId(null)}
+                        onNavigate={drawerNav.go}
+                        canPrev={drawerNav.prev !== null}
+                        canNext={drawerNav.next !== null}
+                        onOpenRecord={setDrawerRecordId}
                     />
 
                     <SaveViewDialog

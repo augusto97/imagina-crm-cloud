@@ -61,6 +61,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'description',
     'files',
     'record_stats',
+    // Las subtareas del registro (o el vínculo a su padre), con alta en línea.
+    'subtasks',
     // Datos vinculados / agregados
     'related',
     'chart',

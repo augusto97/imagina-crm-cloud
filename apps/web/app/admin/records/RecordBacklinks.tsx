@@ -8,6 +8,7 @@ import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { useRecords } from '@/hooks/useRecords';
 import { useRelationPaths, type RelationPath } from '@/hooks/useRelationPaths';
+import { backlinksQuery } from '@/hooks/useRecordView';
 import { __, sprintf } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
@@ -15,7 +16,6 @@ import type { FieldEntity } from '@/types/field';
 import { FieldValueDisplay } from './crm/FieldValueDisplay';
 import { RecordCreateDialog } from './RecordCreateDialog';
 
-const PAGE = 20;
 /** Tipos que no aportan en una fila compacta. */
 const SKIP_TYPES = new Set(['relation', 'long_text', 'file']);
 
@@ -47,11 +47,8 @@ export function RecordBacklinks({ listId, recordId }: { listId: number; recordId
 function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: number }): JSX.Element {
     const list = useList(path.list_id);
     const fields = useFields(path.list_id);
-    const records = useRecords(path.list_id, {
-        page: 1,
-        per_page: PAGE,
-        related_to: `${path.relation_field_id}:${recordId}`,
-    });
+    // La MISMA query que siembra el bundle de la ficha (`useRecordView`).
+    const records = useRecords(path.list_id, backlinksQuery(path.relation_field_id, recordId));
     const [open, setOpen] = useState(true);
     const [adding, setAdding] = useState(false);
 

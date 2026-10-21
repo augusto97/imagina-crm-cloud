@@ -223,6 +223,17 @@ export function buildFieldMap(fields: unknown): FieldKeyMap {
     return { toSlug, toFid };
 }
 
+/**
+ * Carga el mapa de campos de una lista desde datos ya en mano (el bundle de la
+ * ficha): así el primer listado de esa lista no tiene que pedir `/fields`
+ * otra vez sólo para traducir las claves `f{id}`.
+ */
+export function primeFieldMap(listKeys: Array<string | number>, fields: unknown): FieldKeyMap {
+    const map = buildFieldMap(fields);
+    for (const k of listKeys) fieldMaps.set(String(k), map);
+    return map;
+}
+
 /** Devuelve el mapa de campos de una lista (cache → fetch on-demand). */
 async function ensureFieldMap(listKey: string): Promise<FieldKeyMap> {
     const cached = fieldMaps.get(fieldMapKey(listKey));

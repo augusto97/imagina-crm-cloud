@@ -41,6 +41,7 @@ import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
+import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
 import { CommentsThreadBlock } from '@/portal/blocks/CommentsThreadBlock';
 import { PortalPreviewContext } from '@/portal/PreviewContext';
@@ -63,7 +64,7 @@ import { RecordStatsView } from './RecordStatsView';
 import { RelatedBlockView } from './RelatedBlockView';
 
 /** Bloques que se dibujan SIN tarjeta (son parte del flujo de la página). */
-const BARE: ReadonlySet<string> = new Set(['heading', 'divider', 'spacer', 'button', 'notice', 'stages', 'portal_access', 'payments']);
+const BARE: ReadonlySet<string> = new Set(['heading', 'divider', 'spacer', 'button', 'notice', 'stages', 'portal_access', 'payments', 'subtasks']);
 /** En el portal, comentarios y actividad traen su propia tarjeta. */
 const BARE_IN_PORTAL: ReadonlySet<string> = new Set(['activity', 'comments']);
 
@@ -296,6 +297,17 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
         case 'payments':
             if (ctx.mode === 'portal') return null;
             return <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} showEmptyHint />;
+        case 'subtasks':
+            if (ctx.mode === 'portal') return null;
+            return (
+                <RecordSubtasks
+                    listId={ctx.list.id}
+                    listSlug={ctx.list.slug}
+                    record={ctx.record}
+                    fields={ctx.fields}
+                    readOnly={ctx.preview === true}
+                />
+            );
         default:
             return null;
     }

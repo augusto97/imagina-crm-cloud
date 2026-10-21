@@ -36,18 +36,9 @@ import { ListsService } from '../lists/lists.service';
 import { ThroughEngine, type ThroughPlan } from '../records/through-fields';
 import { FieldsRepository, type FieldRow } from './fields.repository';
 
-/** Un camino posible para un lookup/rollup de una lista (v0.1.170). */
-export interface RelationPath {
-    relation_field_id: number;
-    relation_label: string;
-    direction: 'forward' | 'reverse';
-    /** Lista donde VIVE el campo relation. */
-    list_id: number;
-    list_name: string;
-    /** Lista del otro lado (de donde se leen los campos). */
-    other_list_id: number;
-    other_list_name: string;
-}
+/** Un camino posible para un lookup/rollup de una lista (v0.1.170). El shape vive en shared. */
+export type { RelationPath } from '@imagina-base/shared';
+import type { RelationPath } from '@imagina-base/shared';
 
 @Injectable()
 export class FieldsService {

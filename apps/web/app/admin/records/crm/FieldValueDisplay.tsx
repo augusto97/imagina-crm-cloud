@@ -10,7 +10,7 @@ import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
-import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
+import { formatDateStr, formatDateTimeStr, formatNumber, numberFormatLocale } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
@@ -130,7 +130,9 @@ function CurrencyDisplay({ field, value }: { field: FieldEntity; value: unknown 
     if (Number.isNaN(num)) return <span>{String(value)}</span>;
     let formatted: string;
     try {
-        formatted = new Intl.NumberFormat(undefined, {
+        // Separadores según el formato de la EMPRESA (no el del navegador):
+        // la tabla decía «2,477.18» y la ficha «US$ 2.477,18».
+        formatted = new Intl.NumberFormat(numberFormatLocale(), {
             style: 'currency',
             currency,
             minimumFractionDigits: decimals,
@@ -372,7 +374,7 @@ function OptionChip({
  * Devuelve `null` si la diferencia es < 1 día y kind=date — para
  * datetime sigue formateando "hace X minutos / horas".
  */
-function relativeTimeFrom(d: Date): string | null {
+export function relativeTimeFrom(d: Date): string | null {
     const now = Date.now();
     const diffMs = d.getTime() - now;
     const diffSec = Math.round(diffMs / 1000);
@@ -396,11 +398,14 @@ function relativeTimeFrom(d: Date): string | null {
     }
     if (Math.abs(diffDay) < 365) {
         const months = Math.round(diffDay / 30);
+        // Singular de verdad: «en 1 mes», no «en 1 meses».
+        if (Math.abs(months) === 1) return months > 0 ? __('en 1 mes') : __('hace 1 mes');
         return months > 0
             ? sprintf(__('en %d meses'), months)
             : sprintf(__('hace %d meses'), -months);
     }
     const years = Math.round(diffDay / 365);
+    if (Math.abs(years) === 1) return years > 0 ? __('en 1 año') : __('hace 1 año');
     return years > 0
         ? sprintf(__('en %d años'), years)
         : sprintf(__('hace %d años'), -years);

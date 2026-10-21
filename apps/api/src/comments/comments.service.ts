@@ -34,11 +34,17 @@ export class CommentsService {
         recordId: number,
     ): Promise<CommentDto[]> {
         await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
-        return this.tenantDb.withTenant(tenantId, async (tx) => {
-            const rows = await this.repo.listByRecord(tx, tenantId, recordId);
-            const clients = await this.clientAuthors(tx, tenantId, rows);
-            return rows.map((r) => toComment(r, clients.get(r.userId)));
-        });
+        return this.tenantDb.withTenant(tenantId, (tx) => this.listInTx(tx, tenantId, recordId));
+    }
+
+    /**
+     * Comentarios de un registro YA autorizado (el llamador verificó que la
+     * persona lo ve). Lo usa el bundle de la ficha para no repetir el chequeo.
+     */
+    async listInTx(tx: Tx, tenantId: number, recordId: number, limit?: number): Promise<CommentDto[]> {
+        const rows = await this.repo.listByRecordWithAuthor(tx, tenantId, recordId, limit);
+        const clients = await this.clientAuthors(tx, tenantId, rows);
+        return rows.map((r) => toComment(r, r.userName, clients.get(r.userId)));
     }
 
     /**
@@ -91,7 +97,7 @@ export class CommentsService {
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
             mentioned = await this.storeMentions(tx, tenantId, row);
-            return row;
+            return { row, name: await this.repo.authorNameOf(tx, actor.userId) };
         });
         this.realtime.records(tenantId, listId); // el drawer del record re-fetchea
         // `visibility: client` → además del aviso al equipo, el portal le manda
@@ -102,12 +108,12 @@ export class CommentsService {
             listId,
             recordId,
             actorId: actor.userId,
-            body: row.body,
+            body: row.row.body,
             mentioned,
-            commentId: row.id,
-            visibility: row.visibility === 'client' ? 'client' : 'internal',
+            commentId: row.row.id,
+            visibility: row.row.visibility === 'client' ? 'client' : 'internal',
         });
-        return toComment(row);
+        return toComment(row.row, row.name);
     }
 
     async update(
@@ -132,10 +138,10 @@ export class CommentsService {
             if (patch.visibility !== undefined) changes.visibility = patch.visibility;
             const updated = await this.repo.update(tx, tenantId, id, changes);
             if (!updated) throw commentNotFound(id);
-            return updated;
+            return { row: updated, name: await this.repo.authorNameOf(tx, updated.userId) };
         });
         this.realtime.records(tenantId, listId);
-        return toComment(row);
+        return toComment(row.row, row.name);
     }
 
     async remove(
@@ -208,12 +214,13 @@ export class CommentsService {
     }
 }
 
-function toComment(row: CommentRow, clientName?: string): CommentDto {
+function toComment(row: CommentRow, userName: string | null, clientName?: string): CommentDto {
     return {
         id: row.id,
         list_id: row.listId,
         record_id: row.recordId,
         user_id: row.userId,
+        user_name: userName,
         body: row.body,
         kind: row.kind as CommentKind,
         parent_id: row.parentId,

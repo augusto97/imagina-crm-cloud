@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
+    useCommentAuthors,
     useComments,
     useCreateComment,
     useDeleteComment,
     useUpdateComment,
 } from '@/hooks/useComments';
 import { ApiError } from '@/lib/api';
-import { __, sprintf } from '@/lib/i18n';
+import { __ } from '@/lib/i18n';
 import type { CommentEntity } from '@/types/comment';
 import { parseUtcDate } from '@/lib/utcDate';
 
@@ -29,9 +30,8 @@ import { formatDateTime } from '@/lib/tenantFormat';
  *   más allá de mostrar/ocultar botones.
  * - Composer abajo con Cmd/Ctrl+Enter para enviar.
  *
- * No resolvemos `user_id → display_name` aquí: muestra "Usuario #N"
- * como placeholder. La resolución vendrá en el commit de menciones,
- * cuando consultamos `/wp/v2/users` o el endpoint propio.
+ * El nombre del autor viaja en el DTO (`user_name`); lo que falte se
+ * resuelve en lote (`useCommentAuthors`).
  */
 interface CommentsPanelProps {
     listId: number;
@@ -50,6 +50,7 @@ export function CommentsPanel({
     const create = useCreateComment(listId, recordId);
     const update = useUpdateComment(listId, recordId);
     const remove = useDeleteComment(listId, recordId);
+    const authorOf = useCommentAuthors(comments.data);
 
     const [draft, setDraft] = useState('');
     // Todo comentario nace INTERNO (sólo el equipo); el cliente ve lo que se marca.
@@ -124,6 +125,7 @@ export function CommentsPanel({
                             <CommentItem
                                 key={c.id}
                                 comment={c}
+                                authorName={authorOf(c)}
                                 canEdit={isAdmin || c.user_id === currentUserId}
                                 canDelete={isAdmin || c.user_id === currentUserId}
                                 onUpdate={(content) =>
@@ -221,6 +223,7 @@ export function CommentsPanel({
 
 interface CommentItemProps {
     comment: CommentEntity;
+    authorName: string;
     canEdit: boolean;
     canDelete: boolean;
     onUpdate: (content: string) => Promise<unknown>;
@@ -229,6 +232,7 @@ interface CommentItemProps {
 
 function CommentItem({
     comment,
+    authorName,
     canEdit,
     canDelete,
     onUpdate,
@@ -279,18 +283,13 @@ function CommentItem({
         <li className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3">
             <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
-                    <span className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary imcrm-font-semibold">
-                        {String(comment.user_id).slice(-2)}
+                    <span
+                        aria-hidden
+                        className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-[10px] imcrm-text-primary imcrm-font-semibold"
+                    >
+                        {initialsOf(authorName)}
                     </span>
-                    <span className="imcrm-font-medium">
-                        {comment.from_client
-                            ? comment.author_name || __('Cliente')
-                            : sprintf(
-                                  /* translators: %d: user id */
-                                  __('Usuario #%d'),
-                                  comment.user_id,
-                              )}
-                    </span>
+                    <span className="imcrm-font-medium">{authorName}</span>
                     <ClientVisibleBadge comment={comment} />
                     <span className="imcrm-text-muted-foreground">
                         {formatDateTime(parseUtcDate(comment.created_at))}
@@ -367,4 +366,11 @@ function EmptyState(): JSX.Element {
             <p className="imcrm-text-xs">{__('Empieza la conversación con el primero.')}</p>
         </div>
     );
+}
+
+/** Iniciales para el avatar ("Ana Gómez" → "AG"; "ana@acme.co" → "A"). */
+function initialsOf(name: string): string {
+    const clean = name.replace(/#\d+/g, '').replace(/@.*$/, '').trim();
+    const parts = clean.split(/\s+/).filter(Boolean).slice(0, 2);
+    return parts.map((w) => w.charAt(0).toUpperCase()).join('') || '·';
 }

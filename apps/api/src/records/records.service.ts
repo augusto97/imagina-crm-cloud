@@ -226,10 +226,15 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
-        const { row, fields, hiddenKeys, relMap, relFieldIds } = await run(async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
+            // Igual que el listado: la ficha sabe cuántas subtareas tiene (el
+            // aviso de borrado y la sección «Subtareas» lo leen de aquí).
+            const counts = r && (r.parentId ?? null) === null
+                ? await this.repo.subtaskCounts(tx, tenantId, [r.id])
+                : new Map<number, number>();
             const rels = r
                 ? await this.relationsRepo.batchTargets(
                       tx,
@@ -250,12 +255,13 @@ export class RecordsService {
                 hiddenKeys: hiddenKeysWithDerived(fields, list.settings, actor, restricted),
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
+                subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
             };
         });
         // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
         if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
         return stripHidden(
-            toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id))),
+            toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
             hiddenKeys,
         );
     }
@@ -553,7 +559,12 @@ export class RecordsService {
             const enriched = updated
                 ? (await this.withThrough(tx, tenantId, listId, fields, [updated]))[0] ?? updated
                 : null;
-            return { updated, enriched, before: current.data, rels };
+            // La respuesta reemplaza al registro en los caches del front: sin
+            // esto volvía con 0 subtareas aunque las tuviera.
+            const subtasks = updated && (updated.parentId ?? null) === null
+                ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
+                : 0;
+            return { updated, enriched, before: current.data, rels, subtasks };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -582,6 +593,7 @@ export class RecordsService {
                 fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 result.rels.get(row.id),
             ),
+            result.subtasks,
         );
     }
 
@@ -733,26 +745,20 @@ export class RecordsService {
 
         let newlyMentioned: number[] = [];
         const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const row = await this.repo.findById(tx, tenantId, list.id, id);
+            // Fila bloqueada (igual que `update`): dos autoguardados seguidos
+            // no leen el mismo "antes" ni juntan la actividad a la vez.
+            const row = await this.repo.findByIdForUpdate(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
+            const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
             newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
-            // La bitácora registra QUE cambió, no el documento entero: el
-            // activity se lee como una línea de tiempo, no como un historial
-            // de versiones (eso sería otra feature).
-            await this.activity.logInTx(tx, {
-                tenantId,
-                listId: list.id,
-                recordId: id,
-                userId: actor.userId,
-                action: 'record_updated',
-                diff: {
-                    description: {
-                        old: row.hasDescription ? '…' : '',
-                        new: clean === null ? '' : richDocToPlainText(clean, 120),
-                    },
-                },
-            });
+            // La bitácora registra QUE cambió (con un resumen corto, nunca el
+            // documento entero) y junta el autoguardado de una misma persona
+            // en una sola entrada — si no, cada segundo escribiendo era un
+            // "actualizó este registro" vacío.
+            const from = before === null ? '' : richDocToPlainText(before, 120);
+            const to = clean === null ? '' : richDocToPlainText(clean, 120);
+            await this.activity.logDescriptionEdit(tx, { tenantId, listId: list.id, recordId: id, userId: actor.userId, from, to });
             return true;
         });
         if (!ok) throw recordNotFound(id);

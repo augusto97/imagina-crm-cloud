@@ -25,6 +25,12 @@ export const commentSchema = z.object({
     list_id: idSchema,
     record_id: idSchema,
     user_id: idSchema,
+    /**
+     * Nombre visible del autor (o su email si no tiene nombre). Se resuelve en
+     * la misma query del listado: sin esto la ficha mostraba "Usuario #2".
+     * Opcional: el portal del cliente no nombra a los empleados.
+     */
+    user_name: z.string().nullable().optional(),
     body: z.string(),
     kind: commentKindSchema,
     parent_id: idSchema.nullable(),

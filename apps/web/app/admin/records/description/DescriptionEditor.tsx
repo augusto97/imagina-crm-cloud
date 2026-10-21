@@ -17,6 +17,7 @@ import {
 import { resolveEmbed } from '@imagina-base/shared';
 
 import { api } from '@/cloud/session';
+import { FLOATING_MENU_ATTR } from '@/lib/escapeGuard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -56,6 +57,16 @@ interface SlashState {
 
 const CLOSED: SlashState = { open: false, query: '', from: 0, index: 0, rect: null };
 
+/** Marca de menú flotante propio: Esc lo cierra a él, no a la ficha. */
+const FLOATING = { [FLOATING_MENU_ATTR]: '' } as Record<string, string>;
+
+/** Lo que pide una dirección (enlace o contenido insertado). */
+interface UrlPromptState {
+    kind: 'link' | 'embed';
+    top: number;
+    left: number;
+}
+
 /**
  * Editor de bloques de la descripción del registro (v0.1.133) — el equivalente
  * al cuerpo de una tarea de ClickUp: se escribe como en un documento, con
@@ -88,6 +99,9 @@ export function DescriptionEditor({
     /** Título tipeado de la subtarea a crear (null = diálogo cerrado). */
     const [newSubtask, setNewSubtask] = useState<string | null>(null);
     const [userQuery, setUserQuery] = useState<string | null>(null);
+    /** Cuadrito para escribir una dirección (antes era `window.prompt`). */
+    const [urlPrompt, setUrlPrompt] = useState<UrlPromptState | null>(null);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const [slash, setSlash] = useState<SlashState>(CLOSED);
     const slashRef = useRef(slash);
     slashRef.current = slash;
@@ -137,27 +151,7 @@ export function DescriptionEditor({
             return;
         }
         if (cmd.action === 'embed') {
-            const url = window.prompt(
-                __('Pega el enlace de YouTube, Loom, Figma, Drive o Vimeo'),
-                'https://',
-            );
-            if (url === null || url.trim() === '') return;
-            const resolved = resolveEmbed(url);
-            if (resolved === null) {
-                // Honestidad: si no lo sabemos embeber, se deja como enlace en
-                // vez de dibujar un marco vacío.
-                window.alert(__('Ese enlace no se puede insertar; queda como enlace normal.'));
-                editor.chain().focus().insertContent(url.trim()).run();
-                return;
-            }
-            applyUiEdit(() => editor
-                .chain()
-                .focus()
-                .insertContent({
-                    type: 'embedBlock',
-                    attrs: { url: url.trim(), provider: resolved.provider },
-                })
-                .run());
+            setUrlPrompt({ kind: 'embed', ...promptPosition(editor) });
             return;
         }
         if (cmd.action === 'subtask') {
@@ -170,7 +164,7 @@ export function DescriptionEditor({
             return;
         }
         cmd.run(editor);
-    }, [applyUiEdit]);
+    }, []);
 
     const editor = useEditor(
         {
@@ -232,6 +226,23 @@ export function DescriptionEditor({
 
     const editorRef = useRef<Editor | null>(null);
     editorRef.current = editor;
+
+    /**
+     * Esc con el menú «/» abierto: el modal de la ficha (Radix) escucha Escape
+     * en el `document` en fase de captura y lo marca como manejado, así que a
+     * ProseMirror (que ignora los eventos ya marcados) nunca le llegaba y el
+     * menú quedaba abierto. La `window` captura ANTES que el `document`: aquí
+     * se cierra el menú y la ficha, al ver el menú todavía montado, no se
+     * cierra.
+     */
+    useEffect(() => {
+        if (!slash.open) return;
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.key === 'Escape') setSlash(CLOSED);
+        };
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
+    }, [slash.open]);
 
     /**
      * Detecta el patrón `/consulta` inmediatamente antes del cursor y ubica el
@@ -350,6 +361,9 @@ export function DescriptionEditor({
                 <BubbleMenu
                     editor={editor}
                     options={{ placement: 'top' }}
+                    // Siempre montada (se oculta sola): NO cuenta como menú
+                    // abierto para Esc, pero un click en ella no es "afuera".
+                    data-imcrm-popup=""
                     className="imcrm-z-50 imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
                     shouldShow={({ editor: ed, from, to }) =>
                         from !== to && ed.isEditable && !ed.isActive('codeBlock')
@@ -414,9 +428,7 @@ export function DescriptionEditor({
                                 editor.chain().focus().unsetLink().run();
                                 return;
                             }
-                            const url = window.prompt(__('Dirección del enlace'), 'https://');
-                            if (url === null || url.trim() === '') return;
-                            editor.chain().focus().setLink({ href: url.trim() }).run();
+                            setUrlPrompt({ kind: 'link', ...promptPosition(editor) });
                         }}
                     />
                     <MarkButton
@@ -433,6 +445,7 @@ export function DescriptionEditor({
                 <div
                     role="listbox"
                     aria-label={__('Insertar bloque')}
+                    {...FLOATING}
                     className="imcrm-absolute imcrm-z-50 imcrm-max-h-72 imcrm-w-72 imcrm-overflow-y-auto imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
                     style={{ top: slash.rect.top, left: slash.rect.left }}
                 >
@@ -512,6 +525,7 @@ export function DescriptionEditor({
                     const file = e.target.files?.[0];
                     e.target.value = '';
                     if (file === undefined) return;
+                    setUploadError(null);
                     setUploading(true);
                     void api
                         .uploadFile(file)
@@ -529,8 +543,8 @@ export function DescriptionEditor({
                                 )
                                 .run());
                         })
-                        .catch(() => {
-                            window.alert(__('No se pudo subir el archivo.'));
+                        .catch((err: unknown) => {
+                            setUploadError(err instanceof Error && err.message !== '' ? err.message : __('No se pudo subir el archivo.'));
                         })
                         .finally(() => setUploading(false));
                 }}
@@ -539,6 +553,47 @@ export function DescriptionEditor({
                 <span className="imcrm-mt-1 imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground">
                     {__('Subiendo…')}
                 </span>
+            )}
+            {uploadError !== null && (
+                <span className="imcrm-mt-1 imcrm-block imcrm-text-[11px] imcrm-text-destructive" role="alert">
+                    {uploadError}
+                </span>
+            )}
+
+            {/* Dirección de un enlace o de un contenido a insertar. */}
+            {urlPrompt !== null && (
+                <UrlPrompt
+                    kind={urlPrompt.kind}
+                    top={urlPrompt.top}
+                    left={urlPrompt.left}
+                    onCancel={() => {
+                        setUrlPrompt(null);
+                        editor.chain().focus().run();
+                    }}
+                    onSubmit={(url, asPlainLink) => {
+                        setUrlPrompt(null);
+                        if (urlPrompt.kind === 'link') {
+                            editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+                            return;
+                        }
+                        const resolved = asPlainLink ? null : resolveEmbed(url);
+                        if (resolved === null) {
+                            // Honestidad: si no se sabe insertar, queda como enlace
+                            // en vez de dibujar un marco vacío.
+                            applyUiEdit(() => editor
+                                .chain()
+                                .focus()
+                                .insertContent({ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] })
+                                .run());
+                            return;
+                        }
+                        applyUiEdit(() => editor
+                            .chain()
+                            .focus()
+                            .insertContent({ type: 'embedBlock', attrs: { url, provider: resolved.provider } })
+                            .run());
+                    }}
+                />
             )}
 
             {/* Selector de registro a mencionar. */}
@@ -647,7 +702,7 @@ function ColorMenu({
         <span className="imcrm-relative">
             <MarkButton icon={Icon} label={label} active={open} onClick={() => setOpen((v) => !v)} />
             {open && (
-                <div className="imcrm-absolute imcrm-left-0 imcrm-top-8 imcrm-z-50 imcrm-grid imcrm-w-40 imcrm-grid-cols-1 imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg">
+                <div {...FLOATING} className="imcrm-absolute imcrm-left-0 imcrm-top-8 imcrm-z-50 imcrm-grid imcrm-w-40 imcrm-grid-cols-1 imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg">
                     {colors.map((c) => (
                         <button
                             key={c.label}
@@ -676,4 +731,108 @@ function ColorMenu({
 function isDocEmpty(editor: Editor): boolean {
     if (!editor.isEmpty) return false;
     return editor.getText().trim() === '';
+}
+
+/** Dónde abrir el cuadrito de la dirección: debajo de la selección. */
+function promptPosition(editor: Editor): { top: number; left: number } {
+    const dom = editor.view.dom as HTMLElement;
+    const box = (dom.closest('.imcrm-relative') as HTMLElement | null)?.getBoundingClientRect() ?? dom.getBoundingClientRect();
+    try {
+        const c = editor.view.coordsAtPos(editor.state.selection.from);
+        return { top: c.bottom - box.top + 6, left: Math.max(0, Math.min(c.left - box.left, box.width - 300)) };
+    } catch {
+        return { top: 0, left: 0 };
+    }
+}
+
+/**
+ * Cuadrito para escribir una dirección (enlace o contenido de YouTube, Loom,
+ * Figma, Drive o Vimeo). Reemplaza al `window.prompt` nativo, que bloquea la
+ * página, no respeta el tema y en el teléfono sale fuera de contexto.
+ */
+function UrlPrompt({
+    kind,
+    top,
+    left,
+    onSubmit,
+    onCancel,
+}: {
+    kind: 'link' | 'embed';
+    top: number;
+    left: number;
+    onSubmit: (url: string, asPlainLink: boolean) => void;
+    onCancel: () => void;
+}): JSX.Element {
+    const [value, setValue] = useState('https://');
+    const [unsupported, setUnsupported] = useState(false);
+    const clean = value.trim();
+    const valid = /^(https?:\/\/|mailto:)\S+$/i.test(clean) && clean !== 'https://';
+
+    const submit = (): void => {
+        if (!valid) return;
+        if (kind === 'embed' && !unsupported && resolveEmbed(clean) === null) {
+            setUnsupported(true);
+            return;
+        }
+        onSubmit(clean, unsupported);
+    };
+
+    return (
+        <div
+            {...FLOATING}
+            role="dialog"
+            aria-label={kind === 'link' ? __('Agregar enlace') : __('Insertar contenido')}
+            className="imcrm-absolute imcrm-z-50 imcrm-flex imcrm-w-[300px] imcrm-max-w-[calc(100vw-2rem)] imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-2.5 imcrm-shadow-imcrm-lg"
+            style={{ top, left }}
+            data-testid="imcrm-url-prompt"
+        >
+            <label className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
+                {kind === 'link' ? __('Dirección del enlace') : __('Pega el enlace de YouTube, Loom, Figma, Drive o Vimeo')}
+            </label>
+            <input
+                autoFocus
+                value={value}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => {
+                    setValue(e.target.value);
+                    setUnsupported(false);
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submit();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onCancel();
+                    }
+                }}
+                className="imcrm-h-8 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm imcrm-outline-none focus:imcrm-border-primary"
+                inputMode="url"
+            />
+            {unsupported && (
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Ese enlace no se puede mostrar como contenido. ¿Lo insertamos como enlace normal?')}
+                </p>
+            )}
+            <div className="imcrm-flex imcrm-justify-end imcrm-gap-1.5">
+                <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={onCancel}
+                    className="imcrm-rounded-md imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent"
+                >
+                    {__('Cancelar')}
+                </button>
+                <button
+                    type="button"
+                    disabled={!valid}
+                    onClick={submit}
+                    className="imcrm-rounded-md imcrm-bg-primary imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary-foreground disabled:imcrm-opacity-50"
+                >
+                    {unsupported ? __('Insertar como enlace') : kind === 'link' ? __('Agregar') : __('Insertar')}
+                </button>
+            </div>
+        </div>
+    );
 }

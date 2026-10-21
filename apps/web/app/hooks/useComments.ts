@@ -1,6 +1,11 @@
+import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { notificationKeys } from '@/hooks/useNotifications';
+import { markLocalRecordsChange } from '@/hooks/useRecords';
+import { useMemberNames } from '@/hooks/useWpUsers';
 import { api } from '@/lib/api';
+import { __, sprintf } from '@/lib/i18n';
 import type { CommentEntity, CommentMetadata, CreateCommentInput } from '@/types/comment';
 
 /**
@@ -73,6 +78,11 @@ export function useCreateComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
+            // Comentar te suscribe al registro (ADR-S40): «Seguir» tiene que
+            // reflejarlo sin recargar.
+            void qc.invalidateQueries({ queryKey: notificationKeys.follow(recordId) });
         },
     });
 }
@@ -102,8 +112,31 @@ export function useUpdateComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
         },
     });
+}
+
+/**
+ * Nombre del autor de cada comentario. El DTO ya trae `user_name`; para los
+ * que no (comentarios viejos en cache, el portal) se resuelve en LOTE con
+ * `GET /me/users?ids=` — nunca una request por autor.
+ */
+export function useCommentAuthors(comments: readonly CommentEntity[] | undefined): (c: CommentEntity) => string {
+    // El cliente del portal no está en el directorio de miembros: su nombre
+    // viene en `author_name`.
+    const missing = (comments ?? []).filter((c) => !c.user_name && !c.from_client).map((c) => c.user_id);
+    const names = useMemberNames(missing);
+    const map = names.data;
+    return useCallback(
+        (c: CommentEntity): string =>
+            (c.user_name !== undefined && c.user_name !== null && c.user_name !== '' ? c.user_name : null)
+            ?? (c.from_client ? c.author_name || __('Cliente') : null)
+            ?? map?.get(c.user_id)
+            ?? sprintf(/* translators: %d: user id */ __('Usuario #%d'), c.user_id),
+        [map],
+    );
 }
 
 export function useDeleteComment(
@@ -117,6 +150,8 @@ export function useDeleteComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
         },
     });
 }
