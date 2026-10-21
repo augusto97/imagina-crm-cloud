@@ -193,6 +193,21 @@ describe('ExportService (Postgres real)', () => {
             (c) => { filtered += c; },
         );
         expect(filtered.trimEnd().split('\r\n')).toEqual(['Nombre', 'Globex']);
+
+        // v0.1.286 — la búsqueda y el orden de la vista también viajan.
+        await recordsService.create(tenantId, admin, 'ventas', {
+            data: { [`f${nombre.id}`]: 'Globo Ácido', [`f${monto.id}`]: 50 },
+        });
+        let searched = '';
+        await exportService.streamCsvExport(
+            tenantId,
+            admin,
+            'ventas',
+            { fieldIds: [nombre.id], delimiter: ',', withBom: false, search: 'glob', sort: `field_${monto.id}:asc` },
+            () => {},
+            (c) => { searched += c; },
+        );
+        expect(searched.trimEnd().split('\r\n')).toEqual(['Nombre', 'Globo Ácido', 'Globex']);
     });
 
     it('streamCsvExport: etiquetas, nombre de la persona, Sí/No (v0.1.252)', async () => {

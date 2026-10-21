@@ -33,6 +33,8 @@ export class ExportController {
         @Query('delimiter') delimiter?: string,
         @Query('with_bom') withBom?: string,
         @Query('filter_tree') rawFilterTree?: string,
+        @Query('search') search?: string,
+        @Query('sort') sort?: string,
     ): Promise<void> {
         if (format === 'csv') {
             const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role };
@@ -50,6 +52,10 @@ export class ExportController {
                     delimiter: delimiter === ';' ? ';' : ',',
                     withBom: withBom === '1' || withBom === 'true',
                     filterTree: parseFilterTree(rawFilterTree),
+                    // v0.1.286 — el archivo trae lo que se VE: con la búsqueda
+                    // y el orden de la vista (el whitelist lo aplica el listado).
+                    search: typeof search === 'string' && search.trim() !== '' ? search.slice(0, 200) : undefined,
+                    sort: typeof sort === 'string' && sort.length <= 500 ? sort : undefined,
                 },
                 (filename) =>
                     reply.raw.writeHead(200, {
