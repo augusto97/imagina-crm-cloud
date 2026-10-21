@@ -87,6 +87,39 @@ describe('PDF — estilo por bloque', () => {
         expect(h.y).toBeGreaterThan(20);
     });
 
+    it('v0.1.290 — el aire del último bloque no abre una página en blanco (la firma al pie)', async () => {
+        const render = async (h: number) => {
+            const out = await renderDocument(
+                input({
+                    blocks: [
+                        // Un espacio llega hasta 200 pt: varios seguidos (no llevan aire entre sí).
+                        ...Array.from({ length: Math.ceil(h / 200) }, (_, i) => ({ id: `s${i}`, type: 'spacer', height: Math.min(200, h - i * 200) })),
+                        { id: 'g', type: 'signature', signers: [{ name: 'Imagina Estudio', detail: '' }], line: true },
+                    ],
+                }),
+            );
+            // Dónde se DIBUJA la firma: la zona de la última hoja en la que cae
+            // (la posición de arranque de un bloque que no se parte puede
+            // quedar en la hoja anterior).
+            const zones = out.regions.filter((r) => r.id === 'g' && r.h > 10);
+            return { pages: out.pages, page: zones.at(-1)?.page };
+        };
+        // El primer alto con el que el documento pasa a dos páginas…
+        let lo = 200;
+        let hi = 1000;
+        while (hi - lo > 1) {
+            const mid = Math.floor((lo + hi) / 2);
+            if ((await render(mid)).pages > 1) hi = mid;
+            else lo = mid;
+        }
+        // …es porque la FIRMA ya no entra, no por su margen de abajo (antes:
+        // firma en la página 1 y una página 2 sólo con el pie).
+        const first = await render(hi);
+        expect(first.pages).toBe(2);
+        expect(first.page).toBe(2);
+        expect((await render(lo)).page).toBe(1);
+    });
+
     it('docColumnWidths reparte el ancho según la proporción y descuenta la separación', () => {
         const design = docDesignSchema.parse({
             blocks: [{ id: 'c', type: 'columns', ratio: '1-3', gap: 20, columns: [{ blocks: [] }, { blocks: [] }] }],

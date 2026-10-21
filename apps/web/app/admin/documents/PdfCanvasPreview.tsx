@@ -34,7 +34,7 @@ export interface PdfCanvasPreviewProps {
 export function PdfCanvasPreview(p: PdfCanvasPreviewProps): JSX.Element {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const [width, setWidth] = useState(720);
-    const [pages, setPages] = useState<string[]>([]);
+    const [pages, setPages] = useState<Array<{ src: string; height: number }>>([]);
     const [error, setError] = useState<string | null>(null);
     const [hover, setHover] = useState<string | null>(null);
 
@@ -58,7 +58,7 @@ export function PdfCanvasPreview(p: PdfCanvasPreviewProps): JSX.Element {
         (async () => {
             try {
                 const doc = await task.promise;
-                const out: string[] = [];
+                const out: Array<{ src: string; height: number }> = [];
                 const ratio = Math.min(2, window.devicePixelRatio || 1);
                 for (let n = 1; n <= doc.numPages; n++) {
                     const page = await doc.getPage(n);
@@ -68,7 +68,9 @@ export function PdfCanvasPreview(p: PdfCanvasPreviewProps): JSX.Element {
                     canvas.width = Math.round(viewport.width);
                     canvas.height = Math.round(viewport.height);
                     await page.render({ canvas, viewport }).promise;
-                    out.push(canvas.toDataURL('image/png'));
+                    // v0.1.290 — el alto sale de la página real (un PDF congelado
+                    // puede ser de otra hoja que la del diseño actual).
+                    out.push({ src: canvas.toDataURL('image/png'), height: viewport.height / ratio });
                 }
                 if (alive) {
                     setPages(out);
@@ -87,7 +89,6 @@ export function PdfCanvasPreview(p: PdfCanvasPreviewProps): JSX.Element {
     }, [p.pdf, width]);
 
     const scale = width / (p.pageWidth || 612);
-    const pageH = (p.pageHeight || 792) * scale;
 
     return (
         <div ref={wrapRef} className="imcrm-relative imcrm-h-full imcrm-overflow-y-auto imcrm-bg-canvas imcrm-py-4" data-testid="doc-preview">
@@ -105,11 +106,11 @@ export function PdfCanvasPreview(p: PdfCanvasPreviewProps): JSX.Element {
                 </div>
             )}
             <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-4">
-                {pages.map((src, i) => (
+                {pages.map(({ src, height }, i) => (
                     <div
                         key={i}
                         className="imcrm-relative imcrm-bg-white imcrm-shadow-imcrm-md"
-                        style={{ width, height: pageH }}
+                        style={{ width, height }}
                         data-testid="doc-page"
                         onClick={(e) => {
                             if (e.target === e.currentTarget) p.onSelect(null);

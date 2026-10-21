@@ -866,6 +866,16 @@ function wrap(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number, inner: boole
     return { stack: [node], id: `blk:${b.id}`, ...face, margin: [0, 0, 0, gap], ...(whole ? { unbreakable: true } : {}) };
 }
 
+/**
+ * v0.1.290 — El aire de abajo del ÚLTIMO bloque no separa nada y, si no
+ * entra en la hoja, pdfmake abre una página casi en blanco (le pasaba a la
+ * firma de una cotización larga: «Página 2 de 2» sola).
+ */
+function withoutBottomMargin(node: Node): Node {
+    const m = node.margin;
+    return Array.isArray(m) && m.length === 4 ? { ...node, margin: [m[0], m[1], m[2], 0] } : node;
+}
+
 // --- Documento -------------------------------------------------------------
 
 interface StartPos {
@@ -893,7 +903,10 @@ export async function renderDocument(input: DocRenderInput): Promise<DocRenderOu
         lh: t.line_height ?? 1.25,
     };
 
-    const content: Node[] = design.blocks.map((b) => wrap(ctx, b, contentW, false));
+    const content: Node[] = design.blocks.map((b, i) => {
+        const node = wrap(ctx, b, contentW, false);
+        return i === design.blocks.length - 1 ? withoutBottomMargin(node) : node;
+    });
     // Marca de fin, de alto CERO: dice dónde termina el último bloque (si no,
     // su zona en la vista previa se estiraba hasta el pie de la hoja). Un
     // rectángulo de 0×0 no ocupa lugar, así que nunca abre una página de más

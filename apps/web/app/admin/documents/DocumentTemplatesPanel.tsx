@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FileText, Loader2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { DOC_PAGE_SIZE_LABELS, type DocDesign } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { useFields } from '@/hooks/useFields';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 
 import { DocumentStarterDialog } from './DocumentStarterDialog';
 import { useDeleteDocumentTemplate, useDocumentTemplates } from './useDocuments';
@@ -95,6 +95,16 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
                                                 {__('Próximo')} {t.next_label}
                                             </span>
                                         )}
+                                        {t.freezes && (
+                                            <span
+                                                className="imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground"
+                                                title={__('Congela el PDF al emitir el número: se entrega siempre ese.')}
+                                                data-doc-freezes
+                                            >
+                                                <Lock className="imcrm-h-2.5 imcrm-w-2.5" aria-hidden />
+                                                {__('Congela')}
+                                            </span>
+                                        )}
                                         {t.portal_visible && (
                                             <span
                                                 className="imcrm-shrink-0 imcrm-rounded imcrm-bg-primary/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-primary"
@@ -120,7 +130,10 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
                                     onClick={() =>
                                         void confirm({
                                             title: __('¿Eliminar la plantilla?'),
-                                            description: `«${t.name}». ${__('Los PDF ya generados no se borran.')}`,
+                                            description:
+                                                t.frozen_count > 0
+                                                    ? `«${t.name}». ${sprintf(__('También se borran los %d PDF congelados de los documentos que emitió (los que se guardaron en registros no se borran).'), t.frozen_count)}`
+                                                    : `«${t.name}». ${__('Los PDF ya generados no se borran.')}`,
                                             confirmLabel: __('Eliminar'),
                                             destructive: true,
                                         }).then((ok) => {

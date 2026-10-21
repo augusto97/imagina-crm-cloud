@@ -533,6 +533,13 @@
       "when": 1784200000090,
       "tag": "0075_form_confirmations_portal_passwords",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1784200000100,
+      "tag": "0076_document_freeze",
+      "breakpoints": true
     }
   ]
 }

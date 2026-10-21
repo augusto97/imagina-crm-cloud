@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { ChevronDown, ChevronRight, Link2, Plus } from 'lucide-react';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, Link2, Plus, Table2 } from 'lucide-react';
+import { defaultTotalFieldIds, readStoreListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
-import { useRecords } from '@/hooks/useRecords';
+import { invalidateForList, recordsKeys, useRecords } from '@/hooks/useRecords';
 import { useRelationPaths, type RelationPath } from '@/hooks/useRelationPaths';
 import { backlinksQuery } from '@/hooks/useRecordView';
 import { __, sprintf } from '@/lib/i18n';
@@ -14,6 +15,7 @@ import { formatNumber } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
 
 import { FieldValueDisplay } from './crm/FieldValueDisplay';
+import { EditableRelatedTable, type EditableRow } from './EditableRelatedTable';
 import { RecordCreateDialog } from './RecordCreateDialog';
 
 /** Tipos que no aportan en una fila compacta. */
@@ -38,19 +40,53 @@ export function RecordBacklinks({ listId, recordId }: { listId: number; recordId
                 {__('Vinculados')}
             </h3>
             {reverse.map((p) => (
-                <BacklinkGroup key={`${p.relation_field_id}`} path={p} recordId={recordId} />
+                <BacklinkGroup key={`${p.relation_field_id}`} path={p} recordId={recordId} baseListId={listId} />
             ))}
         </section>
     );
 }
 
-function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: number }): JSX.Element {
+/** v0.1.290 — Qué grupos se ven como tabla editable (por relación, en este navegador). */
+const EDITABLE_KEY = 'imcrm:backlinks-editable:';
+
+function readEditable(relationFieldId: number): boolean {
+    try {
+        return window.localStorage.getItem(EDITABLE_KEY + relationFieldId) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function writeEditable(relationFieldId: number, on: boolean): void {
+    try {
+        if (on) window.localStorage.setItem(EDITABLE_KEY + relationFieldId, '1');
+        else window.localStorage.removeItem(EDITABLE_KEY + relationFieldId);
+    } catch {
+        // Sin almacenamiento la elección dura lo que la pestaña.
+    }
+}
+
+/** Cuántos ítems trae la tabla editable si hay más que los del bundle. */
+const EDITABLE_ROWS = 100;
+
+function BacklinkGroup({ path, recordId, baseListId }: { path: RelationPath; recordId: number; baseListId: number }): JSX.Element {
+    const qc = useQueryClient();
     const list = useList(path.list_id);
     const fields = useFields(path.list_id);
     // La MISMA query que siembra el bundle de la ficha (`useRecordView`).
     const records = useRecords(path.list_id, backlinksQuery(path.relation_field_id, recordId));
     const [open, setOpen] = useState(true);
     const [adding, setAdding] = useState(false);
+    const [editableMode, setEditableMode] = useState(() => readEditable(path.relation_field_id));
+    // La tabla editable suma TODO: si hay más ítems que los del bundle, se
+    // piden (hasta 100) sólo en ese caso.
+    const seeded = records.data;
+    const needMore = editableMode && seeded !== undefined && (seeded.meta.total ?? seeded.data.length) > seeded.data.length;
+    const more = useRecords(needMore ? path.list_id : undefined, {
+        page: 1,
+        per_page: EDITABLE_ROWS,
+        related_to: `${path.relation_field_id}:${recordId}`,
+    });
 
     const all: FieldEntity[] = useMemo(() => fields.data ?? [], [fields.data]);
     const relField = all.find((f) => f.id === path.relation_field_id);
@@ -59,8 +95,9 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
         () => all.filter((f) => f.id !== title?.id && !SKIP_TYPES.has(f.type)).slice(0, 4),
         [all, title?.id],
     );
-    const rows = records.data?.data ?? [];
-    const total = records.data?.meta.total ?? rows.length;
+    const source = needMore && more.data ? more.data : records.data;
+    const rows = useMemo(() => source?.data ?? [], [source]);
+    const total = source?.meta.total ?? rows.length;
     const initialValues = useMemo(
         () => (relField ? { [relField.slug]: [recordId] } : undefined),
         [relField, recordId],
@@ -68,6 +105,25 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
     // Una lista de tienda no admite altas desde aquí (se crean en WooCommerce).
     const storeManaged = readStoreListMarker(list.data?.settings) !== null;
     const label = path.list_name === path.relation_label ? path.list_name : `${path.list_name} · ${path.relation_label}`;
+
+    // v0.1.290 — Tabla editable: el título primero y las columnas de siempre (hasta 6).
+    const editColumns = useMemo(
+        () => (title ? [title] : []).concat(all.filter((f) => f.id !== title?.id && !SKIP_TYPES.has(f.type)).slice(0, 6)),
+        [all, title],
+    );
+    const editRows = useMemo<EditableRow[]>(
+        () => rows.map((r) => ({ id: r.id, value: (f: FieldEntity) => (f.type === 'relation' ? r.relations?.[f.slug] ?? [] : r.fields[f.slug]) })),
+        [rows],
+    );
+    const totalIds = useMemo(() => defaultTotalFieldIds(editColumns), [editColumns]);
+    // Los rollups del registro abierto (el total de la cotización) dependen de los ítems.
+    const refreshBase = useCallback(() => invalidateForList(qc, recordsKeys.all, baseListId), [qc, baseListId]);
+    const toggleEditable = (): void => {
+        const next = !editableMode;
+        setEditableMode(next);
+        writeEditable(path.relation_field_id, next);
+        if (next) setOpen(true);
+    };
 
     return (
         <div className="imcrm-rounded-md imcrm-border imcrm-border-border" data-testid={`imcrm-backlinks-${path.relation_field_id}`}>
@@ -84,7 +140,21 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
                         {formatNumber(total)}
                     </span>
                 </button>
-                {relField && fields.data && !storeManaged && (
+                {fields.data && (
+                    <Button
+                        variant={editableMode ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-text-xs"
+                        onClick={toggleEditable}
+                        aria-pressed={editableMode}
+                        title={editableMode ? __('Volver a la vista de solo lectura') : __('Editar los ítems en línea, con totales')}
+                        data-testid={`imcrm-backlinks-editable-${path.relation_field_id}`}
+                    >
+                        <Table2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Tabla editable')}
+                    </Button>
+                )}
+                {relField && fields.data && !storeManaged && !editableMode && (
                     <Button
                         variant="ghost"
                         size="sm"
@@ -97,7 +167,22 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
                     </Button>
                 )}
             </div>
-            {open && rows.length > 0 && (
+            {open && editableMode && fields.data && list.data && (
+                <EditableRelatedTable
+                    listId={path.list_id}
+                    listName={path.list_name}
+                    fields={all}
+                    columns={editColumns}
+                    totalIds={totalIds}
+                    rows={editRows}
+                    total={total}
+                    relation={relField ? { field: relField, recordId } : null}
+                    storeMarker={readStoreListMarker(list.data.settings)}
+                    onSaved={refreshBase}
+                    onChanged={refreshBase}
+                />
+            )}
+            {open && !editableMode && rows.length > 0 && (
                 <div className="imcrm-overflow-x-auto imcrm-border-t imcrm-border-border">
                     <table className="imcrm-w-full imcrm-text-[13px]">
                         <thead className="imcrm-text-[11px] imcrm-text-muted-foreground">

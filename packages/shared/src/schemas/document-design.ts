@@ -151,15 +151,113 @@ const fieldsBlock = z.object({
     lines: z.boolean().optional(),
 });
 
-export const docItemsColumnSchema = z.object({
-    slug: z.string().min(1).max(80),
-    /** Vacío = el nombre del campo. */
-    label: z.string().max(80).default(''),
-    align: align.default('left'),
-    /** fill: toma el ancho que sobra (la descripción). */
-    width: z.enum(['auto', 'fill']).default('auto'),
-});
+/**
+ * v0.1.290 — Una columna CALCULADA de la tabla de ítems (el total de cada
+ * línea de una cotización): un mini-árbol declarativo de operaciones sobre
+ * las columnas de la MISMA fila y constantes. Nunca se evalúa texto: sólo
+ * estas operaciones, así no hay forma de colar código (sin `eval`).
+ *
+ *  - `col`: el valor numérico de un campo de la lista de ítems (por slug) o
+ *    de una columna calculada ANTERIOR de la tabla (por su clave).
+ *  - `add`/`sub`/`mul`/`div`: 2 a 6 operandos, en orden.
+ *  - `pct`: `of × pct / 100` (el IVA de la línea).
+ *  - `minus_pct`: `of × (1 − pct / 100)` (aplicar el descuento de la línea).
+ *
+ * Vacíos: una columna vacía vale `null`; en sumas y restas cuenta como 0 (si
+ * TODO está vacío, el resultado es vacío); en productos y divisiones deja la
+ * celda vacía; un porcentaje vacío es 0 % (sin descuento).
+ */
+export type DocItemExpr =
+    | { op: 'col'; slug: string }
+    | { op: 'const'; value: number }
+    | { op: 'add' | 'sub' | 'mul' | 'div'; args: DocItemExpr[] }
+    | { op: 'pct' | 'minus_pct'; of: DocItemExpr; pct: DocItemExpr };
+
+export const DOC_ITEM_EXPR_MAX_DEPTH = 5;
+export const DOC_ITEM_EXPR_MAX_NODES = 24;
+
+export const docItemExprSchema: z.ZodType<DocItemExpr> = z.lazy(() =>
+    z.discriminatedUnion('op', [
+        z.object({ op: z.literal('col'), slug: z.string().min(1).max(80) }),
+        z.object({ op: z.literal('const'), value: z.number().finite().min(-1e12).max(1e12) }),
+        z.object({ op: z.enum(['add', 'sub', 'mul', 'div']), args: z.array(docItemExprSchema).min(2).max(6) }),
+        z.object({ op: z.enum(['pct', 'minus_pct']), of: docItemExprSchema, pct: docItemExprSchema }),
+    ]) as z.ZodType<DocItemExpr>,
+);
+
+/** Profundidad y cantidad de nodos de una expresión (para acotarla). */
+export function docItemExprSize(expr: DocItemExpr, depth = 1): { depth: number; nodes: number } {
+    if (expr.op === 'col' || expr.op === 'const') return { depth, nodes: 1 };
+    const kids = 'args' in expr ? expr.args : [expr.of, expr.pct];
+    let d = depth;
+    let n = 1;
+    for (const k of kids) {
+        const s = docItemExprSize(k, depth + 1);
+        d = Math.max(d, s.depth);
+        n += s.nodes;
+    }
+    return { depth: d, nodes: n };
+}
+
+/** Las columnas que lee una expresión (slugs de campos o claves de columnas calculadas). */
+export function docItemExprRefs(expr: DocItemExpr, into: Set<string> = new Set()): Set<string> {
+    if (expr.op === 'col') into.add(expr.slug);
+    else if ('args' in expr) for (const a of expr.args) docItemExprRefs(a, into);
+    else if ('of' in expr) {
+        docItemExprRefs(expr.of, into);
+        docItemExprRefs(expr.pct, into);
+    }
+    return into;
+}
+
+export const DOC_ITEM_COLUMN_FORMATS = ['currency', 'number', 'percent'] as const;
+export type DocItemColumnFormat = (typeof DOC_ITEM_COLUMN_FORMATS)[number];
+
+export const docItemsColumnSchema = z
+    .object({
+        /**
+         * El slug del campo de la lista de ítems. En una columna CALCULADA es
+         * su clave propia ("total_linea"): la usan los totales
+         * (`items_sum`) y otras columnas calculadas posteriores.
+         */
+        slug: z.string().min(1).max(80),
+        /** Vacío = el nombre del campo. */
+        label: z.string().max(80).default(''),
+        align: align.default('left'),
+        /** fill: toma el ancho que sobra (la descripción). */
+        width: z.enum(['auto', 'fill']).default('auto'),
+        /** v0.1.290 — `computed`: el valor sale de `expr` (sin campo detrás). */
+        kind: z.enum(['field', 'computed']).optional(),
+        expr: docItemExprSchema.optional(),
+        /**
+         * Cómo se muestra una columna calculada (moneda con `prefix`, número, %).
+         * En una columna de CAMPO numérico, si está, pisa el formato del campo:
+         * así el precio unitario y el total de la línea se ven igual.
+         */
+        format: z.enum(DOC_ITEM_COLUMN_FORMATS).optional(),
+        /** Decimales de una columna calculada (se REDONDEA a esto) o con `format`. */
+        decimals: z.number().int().min(0).max(4).optional(),
+        prefix: z.string().max(8).optional(),
+        /** Se calcula (y suma) pero no se dibuja: el bruto de cada línea. */
+        hidden: z.boolean().optional(),
+    })
+    .superRefine((c, ctx) => {
+        if (c.kind !== 'computed') return;
+        if (!c.expr) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expr'], message: 'Una columna calculada necesita su fórmula' });
+            return;
+        }
+        const size = docItemExprSize(c.expr);
+        if (size.depth > DOC_ITEM_EXPR_MAX_DEPTH || size.nodes > DOC_ITEM_EXPR_MAX_NODES) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['expr'], message: 'La fórmula de la columna es demasiado larga' });
+        }
+    });
 export type DocItemsColumn = z.infer<typeof docItemsColumnSchema>;
+
+/** ¿La columna es calculada (sin campo detrás)? */
+export function isComputedItemColumn(c: Pick<DocItemsColumn, 'kind' | 'expr'>): c is DocItemsColumn & { kind: 'computed'; expr: DocItemExpr } {
+    return c.kind === 'computed' && c.expr !== undefined;
+}
 
 /** De dónde salen las filas: los registros vinculados por una relación. */
 export const docItemsSourceSchema = z.object({
@@ -189,8 +287,19 @@ const totalSource = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('items_sum'), block_id: z.string().min(1).max(40), slug: z.string().min(1).max(80) }),
     /** Un campo numérico del registro. */
     z.object({ kind: z.literal('field'), slug: z.string().min(1).max(80) }),
-    /** Un porcentaje de otra fila (IVA 19 % del subtotal; retención −4 %). */
-    z.object({ kind: z.literal('percent'), of: z.string().min(1).max(40), pct: z.number().min(-100).max(100) }),
+    /**
+     * Un porcentaje de otra fila (IVA 19 % del subtotal; retención −4 %).
+     * v0.1.290 — `pct_field`: el porcentaje sale de un campo del registro (el
+     * descuento global de ESA cotización; vacío = `pct`); `negate`: el
+     * resultado se resta (un descuento se muestra negativo).
+     */
+    z.object({
+        kind: z.literal('percent'),
+        of: z.string().min(1).max(40),
+        pct: z.number().min(-100).max(100),
+        pct_field: z.string().min(1).max(80).nullable().optional(),
+        negate: z.boolean().optional(),
+    }),
     /** Suma de otras filas (menos las de `minus`). */
     z.object({
         kind: z.literal('sum'),
@@ -208,6 +317,10 @@ export const docTotalRowSchema = z.object({
     source: totalSource,
     /** La fila del total: más grande y con el color de acento. */
     emphasis: z.boolean().default(false),
+    /** v0.1.290 — Se calcula (sirve para otras filas y `{{totales.id}}`) pero no se dibuja. */
+    hidden: z.boolean().optional(),
+    /** v0.1.290 — No se dibuja si da 0 (el descuento de una cotización sin descuento). */
+    hide_zero: z.boolean().optional(),
 });
 export type DocTotalRow = z.infer<typeof docTotalRowSchema>;
 
@@ -351,8 +464,20 @@ export const docNumberingSchema = z.object({
     start: z.number().int().min(1).max(999_999_999).default(1),
     /** Además, guardarlo en un campo de texto del registro (slug). */
     save_field: z.string().min(1).max(80).nullable().default(null),
+    /**
+     * v0.1.290 — Congelar el documento al emitirlo: la primera vez que se
+     * emite el número, el PDF generado se GUARDA como archivo y desde ahí se
+     * entrega SIEMPRE ese (aunque cambien los datos del registro). Sólo con la
+     * numeración encendida. Para rehacerlo: «Anular y emitir de nuevo».
+     */
+    freeze: z.boolean().optional(),
 });
 export type DocNumbering = z.infer<typeof docNumberingSchema>;
+
+/** ¿La plantilla congela lo que emite? (necesita la numeración encendida). */
+export function docFreezes(numbering: Pick<DocNumbering, 'enabled' | 'freeze'>): boolean {
+    return numbering.enabled && numbering.freeze === true;
+}
 
 /** "CC-0042". */
 export function formatDocNumber(n: number, numbering: Pick<DocNumbering, 'prefix' | 'padding'>): string {
@@ -436,6 +561,10 @@ export const documentTemplateSummarySchema = documentTemplateSchema
         blocks: z.number().int(),
         /** "CC-0042" si numera; null si no. */
         next_label: z.string().nullable(),
+        /** v0.1.290 — Congela el PDF al emitir el número. */
+        freezes: z.boolean(),
+        /** v0.1.290 — Documentos emitidos con su PDF congelado (se borran con la plantilla). */
+        frozen_count: z.number().int(),
     });
 export type DocumentTemplateSummary = z.infer<typeof documentTemplateSummarySchema>;
 
@@ -522,6 +651,71 @@ export type DocumentLinkInput = z.infer<typeof documentLinkInputSchema>;
 export interface DocumentLinkResult {
     url: string;
     expires_at: string;
+}
+
+/**
+ * v0.1.290 — «Ver» desde la ficha: el PDF con los datos de ahora (o el
+ * congelado, si ya se emitió) SIN emitir número. Para revisar antes de
+ * generar el de verdad.
+ */
+export const viewDocumentInputSchema = z.object({ record_id: idSchema });
+export type ViewDocumentInput = z.infer<typeof viewDocumentInputSchema>;
+
+export interface ViewDocumentResult {
+    filename: string;
+    pdf: string;
+    /** El número ya emitido, o el que le tocaría ("próximo"), o null. */
+    number: string | null;
+    /** El número ya está emitido (si no, es el próximo y ver no lo gasta). */
+    issued: boolean;
+    /** true = es el PDF CONGELADO al emitirlo (no refleja cambios posteriores). */
+    frozen: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.290 — Documentos emitidos (numerados) de un registro
+// ---------------------------------------------------------------------------
+
+export const issuedDocumentSchema = z.object({
+    id: idSchema,
+    template_id: idSchema,
+    template_name: z.string(),
+    record_id: idSchema,
+    number: z.number().int(),
+    /** "CC-0042" con el formato del momento de emitirlo. */
+    label: z.string(),
+    issued_at: isoDateTimeSchema,
+    /** El PDF quedó guardado (congelado) al emitirlo. */
+    frozen: z.boolean(),
+    frozen_at: isoDateTimeSchema.nullable(),
+    /** Quién lo emitió (null = una automatización o el portal). */
+    frozen_by: z.number().int().nullable(),
+    frozen_by_name: z.string().nullable(),
+    /** Tamaño del PDF congelado (bytes). */
+    bytes: z.number().int().nullable(),
+    status: z.enum(['active', 'voided']),
+    voided_at: isoDateTimeSchema.nullable(),
+    voided_by_name: z.string().nullable(),
+    void_reason: z.string().nullable(),
+});
+export type IssuedDocument = z.infer<typeof issuedDocumentSchema>;
+
+/** «Anular y emitir de nuevo» (sólo admin). */
+export const reissueDocumentInputSchema = z.object({
+    reason: z.string().trim().max(300).optional(),
+});
+export type ReissueDocumentInput = z.infer<typeof reissueDocumentInputSchema>;
+
+export interface ReissueDocumentResult {
+    voided: IssuedDocument;
+    issued: IssuedDocument;
+    filename: string;
+    pdf: string;
+}
+
+export interface IssuedDocumentPdf {
+    filename: string;
+    pdf: string;
 }
 
 // ---------------------------------------------------------------------------

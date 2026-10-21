@@ -1,6 +1,7 @@
 import {
     AlignLeft,
     BarChart3,
+    Calculator,
     CalendarClock,
     ChartArea,
     ChartLine,
@@ -118,6 +119,25 @@ const related = (key: string, view: string, label: string, description: string, 
     create: (ctx) => block('related', { source: defaultSource(ctx), view, limit: 25 }),
 });
 
+/**
+ * v0.1.290 — La tabla editable arranca, si hay, por una relación que vive en
+ * la OTRA lista y apunta a ésta (los ítems de una cotización): es la que deja
+ * agregar ítems que nacen vinculados.
+ */
+const relatedEditable: CatalogEntry = {
+    key: 'related_editable',
+    type: 'related',
+    category: 'data',
+    label: __('Tabla editable'),
+    description: __('Los ítems vinculados se editan en línea, con totales.'),
+    icon: Calculator,
+    create: (ctx) => {
+        const reverse = ctx.paths.find((p) => p.direction === 'reverse');
+        const source: LayoutDataSource = reverse ? { kind: 'related', field_id: reverse.relation_field_id, direction: reverse.direction } : defaultSource(ctx);
+        return block('related', { source, view: 'editable', limit: 100 }, __('Ítems'));
+    },
+};
+
 export const BLOCK_CATALOG: CatalogEntry[] = [
     // Datos del registro
     {
@@ -194,6 +214,7 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
     related('related_timeline', 'timeline', __('Línea de tiempo'), __('Los vinculados ordenados por fecha.'), CalendarClock),
     related('related_list', 'list', __('Lista compacta'), __('Un renglón por vinculado.'), List),
     related('related_gallery', 'gallery', __('Galería'), __('Los vinculados por su imagen.'), GalleryHorizontalEnd),
+    relatedEditable,
     // Gráficos
     chart('chart_kpi', 'kpi', __('Indicador'), __('Una cifra: cantidad, suma o promedio.'), Gauge),
     chart('chart_bar', 'bar', __('Barras'), __('Comparar grupos.'), BarChart3),

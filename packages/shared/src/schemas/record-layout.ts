@@ -123,9 +123,29 @@ export const CHART_KIND_WIDGET: Record<LayoutChartKind, string> = {
     table: 'table',
 };
 
-/** Vistas de un bloque `related`. */
-export const RELATED_VIEWS = ['table', 'list', 'cards', 'board', 'timeline', 'gallery'] as const;
+/**
+ * Vistas de un bloque `related`. v0.1.290 — `editable`: TABLA EDITABLE (los
+ * ítems de una cotización): celdas que se editan en línea, «Agregar ítem»
+ * que nace vinculado, borrar y una fila de totales.
+ */
+export const RELATED_VIEWS = ['table', 'list', 'cards', 'board', 'timeline', 'gallery', 'editable'] as const;
 export const relatedViewSchema = z.enum(RELATED_VIEWS);
+
+/** v0.1.290 — Tipos que la fila de totales de la tabla editable sabe sumar. */
+export const EDITABLE_TOTAL_TYPES: readonly string[] = ['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup'];
+/** Operaciones de un campo calculado que dan un número (las de fecha y concat no). */
+const NUMERIC_COMPUTED_OPS: ReadonlySet<string> = new Set(['sum', 'product', 'subtract', 'divide', 'abs']);
+
+/**
+ * v0.1.290 — Qué columnas suma la tabla editable si nadie eligió: los
+ * calculados numéricos (el «total de la línea») y, si no hay ninguno, las de
+ * moneda. Con un total de línea, sumar el precio unitario sería ruido; y
+ * sumar cantidades o porcentajes por defecto no tiene sentido.
+ */
+export function defaultTotalFieldIds(fields: ReadonlyArray<{ id: number; type: string; config?: Record<string, unknown> | null }>): number[] {
+    const computed = fields.filter((f) => f.type === 'computed' && NUMERIC_COMPUTED_OPS.has(String(f.config?.operation ?? '')));
+    return (computed.length > 0 ? computed : fields.filter((f) => f.type === 'currency')).map((f) => f.id);
+}
 export type RelatedView = z.infer<typeof relatedViewSchema>;
 
 /**
@@ -162,6 +182,10 @@ export const layoutRelatedConfigSchema = z
         sort_dir: z.enum(['asc', 'desc']).optional(),
         limit: z.number().int().min(1).max(100).optional(),
         filter_tree: filterTreeSchema.optional(),
+        /** v0.1.290 — Tabla editable: columnas que se editan (vacío = todas las editables). */
+        editable_field_ids: z.array(idSchema).max(12).optional(),
+        /** v0.1.290 — Tabla editable: columnas numéricas que se suman en la fila de totales. */
+        total_field_ids: z.array(idSchema).max(12).optional(),
     })
     .passthrough();
 export type LayoutRelatedConfig = z.infer<typeof layoutRelatedConfigSchema>;
