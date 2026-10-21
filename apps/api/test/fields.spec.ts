@@ -264,6 +264,34 @@ describe('FieldsService (Postgres real + RLS)', () => {
         ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('conversión de tipo por lotes: muchas filas, una sentencia por lote, nada se pierde', async () => {
+        const cant = await service.create(tenantA, 'clientes', { label: 'Cantidad', type: 'text' });
+        const otro = await service.create(tenantA, 'clientes', { label: 'Otro', type: 'text' });
+        const k = `f${cant.id}`;
+        const ko = `f${otro.id}`;
+        // 2.500 filas: cruza varios lotes (y el borde del último, incompleto).
+        const rows = Array.from({ length: 2500 }, (_, i) => ({
+            tenantId: tenantA,
+            listId: listA,
+            // Cada 7ª no es un número → se limpia; el resto se convierte.
+            data: { [k]: i % 7 === 0 ? `x${i}` : String(i), [ko]: `otro-${i}` },
+            createdBy: 1,
+        }));
+        await withTenant(pg.db, tenantA, (tx) => tx.insert(records).values(rows));
+        await service.update(tenantA, 'clientes', String(cant.id), { type: 'number' });
+        const after = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ data: records.data }).from(records).where(eq(records.listId, listA)).orderBy(records.id),
+        );
+        expect(after).toHaveLength(2500);
+        after.forEach((r, i) => {
+            const d = r.data as Record<string, unknown>;
+            if (i % 7 === 0) expect(k in d).toBe(false);
+            else expect(d[k]).toBe(i);
+            // Los otros campos de la fila quedan intactos.
+            expect(d[ko]).toBe(`otro-${i}`);
+        });
+    });
+
     it('conversión a texto: escribe lo que la persona leía (etiqueta, nombre, Sí/No)', async () => {
         const [u] = await pg.db.insert(users).values({ email: `ana${Date.now()}@x.test`, name: 'Ana Gómez', passwordHash: 'x' }).returning();
         await pg.db.insert(memberships).values({ tenantId: tenantA, userId: u!.id, role: 'agent' });
