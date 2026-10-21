@@ -749,7 +749,7 @@ export class NotificationsService implements OnModuleInit {
             list_icon: list.icon ?? null,
             list_color: list.color ?? null,
             record_id: recordId,
-            title: typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : `Registro #${recordId}`,
+            title: typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : fallbackWorkTitle(fields, data, recordId),
             due: typeof dueVal === 'string' && dueVal ? dueVal : null,
             due_label: due?.label ?? null,
             due_is_datetime: due?.type === 'datetime',
@@ -898,6 +898,34 @@ export class NotificationsService implements OnModuleInit {
         if (listId !== null) listSlug = (await this.lists.get(tenantId, String(listId)).catch(() => null))?.slug ?? null;
         return { base, settings: `${base}/#/settings?s=avisos`, listSlug };
     }
+}
+
+/**
+ * v0.1.286 — una lista SIN campo de texto (p. ej. «Comisiones»: relación +
+ * moneda) no tiene título: «Mi trabajo» mostraba «Registro #133». Ahora se
+ * usa el primer dato legible del registro («Comisión: 777»); sólo si no hay
+ * ninguno queda el número.
+ */
+export function fallbackWorkTitle(fields: readonly Field[], data: Record<string, unknown>, recordId: number): string {
+    for (const f of fields) {
+        const v = data[`f${f.id}`];
+        if (v === null || v === undefined || v === '') continue;
+        if (['text', 'long_text', 'email', 'url', 'phone'].includes(f.type) && typeof v === 'string' && v.trim() !== '') {
+            return v.trim().slice(0, 120);
+        }
+        if (['number', 'currency', 'percent', 'rating', 'duration'].includes(f.type) && typeof v === 'number') {
+            return `${f.label}: ${v}`;
+        }
+        if (f.type === 'select' && typeof v === 'string') {
+            const opts = (f.config as { options?: Array<{ value: string; label?: string }> } | undefined)?.options ?? [];
+            const opt = opts.find((o) => o.value === v);
+            return `${f.label}: ${opt?.label || v}`;
+        }
+        if ((f.type === 'date' || f.type === 'datetime') && typeof v === 'string') {
+            return `${f.label}: ${v.slice(0, 10)}`;
+        }
+    }
+    return `Registro #${recordId}`;
 }
 
 function groupBy<T, K>(items: readonly T[], key: (t: T) => K): Map<K, T[]> {
