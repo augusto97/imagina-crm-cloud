@@ -15,6 +15,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { useDashboards, useDuplicateDashboard } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
+import { CAP, useCan } from '@/lib/permissions';
 
 import { DashboardCreateDialog } from './DashboardCreateDialog';
 import { formatDate } from '@/lib/tenantFormat';
@@ -25,6 +26,9 @@ export function DashboardsIndexPage(): JSX.Element {
     const duplicate = useDuplicateDashboard();
     const toast = useToast();
     const [createOpen, setCreateOpen] = useState(false);
+    // v0.1.286 — crear y duplicar exigen `manage_dashboards` (un viewer o un
+    // agente veía los botones y terminaba en 403).
+    const canManage = useCan(CAP.MANAGE_DASHBOARDS);
 
     // v0.1.98 — duplicar dashboard completo (widgets con ids nuevos + settings).
     const handleDuplicate = async (e: React.MouseEvent, id: number): Promise<void> => {
@@ -51,10 +55,12 @@ export function DashboardsIndexPage(): JSX.Element {
                         {__('Indicadores y gráficos sobre tus listas. Comparte un dashboard con tu equipo o créalo solo para ti.')}
                     </p>
                 </div>
-                <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setCreateOpen(true)}>
-                    <Plus className="imcrm-h-4 imcrm-w-4" />
-                    {__('Nuevo dashboard')}
-                </Button>
+                {canManage && (
+                    <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setCreateOpen(true)}>
+                        <Plus className="imcrm-h-4 imcrm-w-4" />
+                        {__('Nuevo dashboard')}
+                    </Button>
+                )}
             </header>
 
             {dashboards.isError && (
@@ -82,15 +88,17 @@ export function DashboardsIndexPage(): JSX.Element {
                                             {d.name}
                                         </span>
                                         <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => void handleDuplicate(e, d.id)}
-                                            className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                                            aria-label={__('Duplicar dashboard')}
-                                            title={__('Duplicar dashboard')}
-                                        >
-                                            <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        </button>
+                                        {canManage && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => void handleDuplicate(e, d.id)}
+                                                className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                                aria-label={__('Duplicar dashboard')}
+                                                title={__('Duplicar dashboard')}
+                                            >
+                                                <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            </button>
+                                        )}
                                         {d.visibility !== 'workspace' ? (
                                             <Badge variant="outline" className="imcrm-gap-1">
                                                 <Lock className="imcrm-h-3 imcrm-w-3" />
@@ -127,10 +135,10 @@ export function DashboardsIndexPage(): JSX.Element {
                     ))}
                 </div>
             ) : (
-                <DashboardsEmpty onCreate={() => setCreateOpen(true)} />
+                <DashboardsEmpty onCreate={canManage ? () => setCreateOpen(true) : undefined} />
             )}
 
-            <DashboardCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+            {canManage && <DashboardCreateDialog open={createOpen} onOpenChange={setCreateOpen} />}
         </div>
     );
 }
@@ -148,18 +156,20 @@ function SkeletonGrid(): JSX.Element {
     );
 }
 
-function DashboardsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
+function DashboardsEmpty({ onCreate }: { onCreate?: () => void }): JSX.Element {
     return (
         <EmptyState
             icon={BarChart3}
             title={__('Aún no hay dashboards')}
-            description={__('Crea un tablero con indicadores y gráficos sobre cualquiera de tus listas.')}
-            action={
+            description={onCreate
+                ? __('Crea un tablero con indicadores y gráficos sobre cualquiera de tus listas.')
+                : __('Todavía no hay tableros compartidos contigo.')}
+            action={onCreate ? (
                 <Button onClick={onCreate} className="imcrm-gap-2">
                     <Plus className="imcrm-h-4 imcrm-w-4" />
                     {__('Crear dashboard')}
                 </Button>
-            }
+            ) : undefined}
         />
     );
 }

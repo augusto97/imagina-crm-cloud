@@ -50,6 +50,7 @@ import { FolderSquare } from '@/admin/lists/FolderBadge';
 import { isPlatformTab, PLATFORM_TABS } from '@/admin/platform/platformTabs';
 
 import { DashboardPanelItem } from './DashboardPanelItem';
+import { DashboardsPanelList } from './DashboardsPanelList';
 import { ListPanelItem } from './ListPanelItem';
 import { ListsTree } from './ListsTree';
 import { PeekHoldContext } from './peekHold';
@@ -303,19 +304,12 @@ export function Sidebar({
                     />
                     {dashboards.data && dashboards.data.length > 0 && (
                         <PanelSection label={__('Tus dashboards')}>
-                            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                                {dashboards.data.map((d) => (
-                                    <li key={d.id}>
-                                        {/* v0.1.145 — su icono; v0.1.172 —
-                                            con menú contextual. */}
-                                        <DashboardPanelItem
-                                            dashboard={d}
-                                            starred={favs.dashboards.includes(d.id)}
-                                            onToggleStar={() => toggleFav('dashboards', d.id)}
-                                        />
-                                    </li>
-                                ))}
-                            </ul>
+                            {/* v0.1.286 — reordenables arrastrando. */}
+                            <DashboardsPanelList
+                                dashboards={dashboards.data}
+                                starredIds={favs.dashboards}
+                                onToggleStar={(id) => toggleFav('dashboards', id)}
+                            />
                         </PanelSection>
                     )}
                     {dashboards.isLoading && <PanelLoading />}
