@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import { invalidateForList } from '@/hooks/useRecords';
@@ -136,15 +136,22 @@ export function useHookCaptures(automationId: number | undefined, listening: boo
     });
 }
 
+/**
+ * Historial de corridas, de a 50 (el endpoint pagina por cursor). Antes se
+ * mostraban sólo las primeras 50 y el resto no se podía ver.
+ */
 export function useAutomationRuns(automationId: number | undefined) {
-    return useQuery({
+    return useInfiniteQuery({
         queryKey: automationsKeys.runs(automationId ?? 0),
-        queryFn: async () => {
-            const res = await api.get<AutomationRunEntity[]>(
-                `/automations/${automationId}/runs`,
-            );
-            return res.data;
+        initialPageParam: null as string | null,
+        queryFn: async ({ pageParam }) => {
+            const qs = pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : '';
+            const res = await api.get<AutomationRunEntity[]>(`/automations/${automationId}/runs${qs}`);
+            const next = (res.meta as { next_cursor?: unknown } | undefined)?.next_cursor;
+            return { runs: res.data, next: typeof next === 'string' && next !== '' ? next : null };
         },
+        getNextPageParam: (last) => last.next,
+        select: (data) => data.pages.flatMap((p) => p.runs),
         enabled: automationId !== undefined && automationId > 0,
     });
 }

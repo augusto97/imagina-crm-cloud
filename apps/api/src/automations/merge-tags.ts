@@ -1,4 +1,4 @@
-import { applyWordModifiers } from '@imagina-base/shared';
+import { applyWordModifiers, formatEmailFieldValue, zonedToday, type TenantFormat } from '@imagina-base/shared';
 
 /**
  * Resuelve merge tags `{{slug}}` en un template contra los valores de un
@@ -28,6 +28,14 @@ import { applyWordModifiers } from '@imagina-base/shared';
  * `{{fecha|larga}}` ("8 de octubre de 2026") y `{{x|mayusculas}}`.
  * Encadenables: `{{valor|pesos|mayusculas}}`.
  *
+ * Modificadores de FORMATO REGIONAL (auditoría de automatizaciones):
+ * `{{cita|fecha}}` («21/10/2026»), `{{cita|fechahora}}` («21/10/2026 14:30»
+ * en la zona de la empresa), `{{monto|moneda}}` («COP 1.250.000») y
+ * `{{monto|numero}}` («1.250.000»). Los resuelve `formatValue` (lo arma el
+ * llamador con el formato regional y el catálogo de campos); sin él, pasan
+ * el valor tal cual. El default sigue siendo el valor CRUDO (v0.1.178): es
+ * lo que otro sistema espera.
+ *
  * `escapeValue` (SEC-08): cuando el destino es HTML (email is_html), se pasa un
  * escapador para que los VALORES interpolados (datos del registro, que pueden
  * venir de un cliente del portal o de un import) no inyecten HTML/JS. El
@@ -39,31 +47,87 @@ export function applyMergeTags(
     recordId: number | null,
     escapeValue?: (s: string) => string,
     resolveLabel?: (token: string, value: unknown) => unknown,
+    formatValue?: MergeFormatter,
 ): string {
     if (!template) return template;
     const esc = escapeValue ?? ((s: string) => s);
-    return template.replace(
-        /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga))*)\s*\}\}/g,
-        (_m, token: string, mods: string) => {
-            let v: unknown;
-            if (token === 'record.id') {
-                v = recordId === null ? '' : String(recordId);
-            } else {
-                v = fieldValue(token);
-            }
-            if (mods.split('|').includes('label') && resolveLabel) {
-                v = resolveLabel(token, v);
-            }
-            if (v === null || v === undefined) return '';
-            const list = mods ? mods.split('|').filter(Boolean) : [];
-            if (Array.isArray(v)) return esc(applyWordModifiers(v.map((x) => String(x)).join(', '), v, list));
-            let out = String(v);
-            if (mods) out = applyDateModifiers(out, mods);
-            // v0.1.266 — `|letras`, `|pesos`, `|larga`, `|mayusculas`.
-            if (list.length > 0) out = applyWordModifiers(out, typeof v === 'number' ? v : out, list);
-            return esc(out);
-        },
-    );
+    return template.replace(MERGE_TAG_RE, (_m, token: string, mods: string) => {
+        let v: unknown;
+        if (token === 'record.id') {
+            v = recordId === null ? '' : String(recordId);
+        } else {
+            v = fieldValue(token);
+        }
+        if (mods.split('|').includes('label') && resolveLabel) {
+            v = resolveLabel(token, v);
+        }
+        if (v === null || v === undefined) return '';
+        const list = mods ? mods.split('|').filter(Boolean) : [];
+        const fmt = list.find((m): m is FormatModifier => (FORMAT_MODIFIERS as readonly string[]).includes(m));
+        if (Array.isArray(v)) return esc(applyWordModifiers(v.map((x) => String(x)).join(', '), v, list));
+        let out = String(v);
+        if (mods) out = applyDateModifiers(out, mods);
+        if (fmt && formatValue) {
+            // Con aritmética de fechas (`|+1m|fecha`) se formatea el resultado.
+            const formatted = formatValue(token, out !== String(v) ? out : v, fmt);
+            if (formatted !== undefined) out = formatted;
+        }
+        // v0.1.266 — `|letras`, `|pesos`, `|larga`, `|mayusculas`.
+        if (list.length > 0) out = applyWordModifiers(out, typeof v === 'number' ? v : out, list);
+        return esc(out);
+    });
+}
+
+/** Modificadores de formato regional (los resuelve `formatValue`). */
+export const FORMAT_MODIFIERS = ['fecha', 'fechahora', 'moneda', 'numero'] as const;
+export type FormatModifier = (typeof FORMAT_MODIFIERS)[number];
+export type MergeFormatter = (token: string, value: unknown, mod: FormatModifier) => string | undefined;
+
+/** `{{token|mod|mod}}` — el mismo patrón en el motor, el probador y los tests. */
+export const MERGE_TAG_RE =
+    /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga|fecha|fechahora|moneda|numero))*)\s*\}\}/g;
+
+/**
+ * Si la plantilla es UNA sola variable sin modificadores (`{{monto}}`),
+ * su token; si no, null. Al escribir un campo, esa variable se copia con su
+ * valor CRUDO (número, lista de opciones, booleano) en vez de pasar a texto
+ * — antes `{{tags}}` llegaba como «vip, promo» y `{{monto}}` como «1250000».
+ */
+export function singleTagToken(template: string): string | null {
+    const m = /^\s*\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}\s*$/.exec(template);
+    return m ? m[1]! : null;
+}
+
+/**
+ * Formateador de `|fecha`, `|fechahora`, `|moneda` y `|numero` con el formato
+ * regional de la empresa (separadores, orden de la fecha, 12/24 h) y su zona.
+ * Usa la config del campo cuando el token es un campo (moneda y decimales).
+ */
+export function regionalFormatterFor(
+    fieldsBySlug: ReadonlyMap<string, LabelFieldLike>,
+    format: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'>,
+    timeZone: string,
+): MergeFormatter {
+    const fmt = { ...format, timezone: timeZone };
+    return (token, value, mod) => {
+        const slug = token.startsWith('before.') ? token.slice('before.'.length) : token;
+        const field = fieldsBySlug.get(slug);
+        if (mod === 'fecha' || mod === 'fechahora') {
+            if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value)) return undefined;
+            const hasTime = /^\d{4}-\d{2}-\d{2}[ T]\d/.test(value);
+            if (!hasTime) return formatEmailFieldValue({ type: 'date', config: {} }, value.slice(0, 10), fmt);
+            // Un instante sin zona (`{{date.now}}`) es UTC, como lo guarda la app.
+            const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value.replace(' ', 'T')}Z`;
+            const at = new Date(iso);
+            if (Number.isNaN(at.getTime())) return undefined;
+            if (mod === 'fechahora') return formatEmailFieldValue({ type: 'datetime', config: {} }, at.toISOString(), fmt);
+            return formatEmailFieldValue({ type: 'date', config: {} }, zonedToday(timeZone, at), fmt);
+        }
+        const n = typeof value === 'number' ? value : Number(String(value).trim());
+        if (!Number.isFinite(n)) return undefined;
+        const cfg = field && (field.type === 'number' || field.type === 'currency') ? field.config : {};
+        return formatEmailFieldValue({ type: mod === 'moneda' ? 'currency' : 'number', config: cfg }, n, fmt);
+    };
 }
 
 /** Lo mínimo de un campo que hace falta para traducir value → etiqueta. */

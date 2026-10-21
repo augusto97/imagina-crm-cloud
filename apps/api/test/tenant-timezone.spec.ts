@@ -159,7 +159,7 @@ describe('Zona horaria de la empresa (v0.1.263)', () => {
             name: 'A las 8',
             trigger_type: 'scheduled',
             trigger_config: { frequency: 'daily', hour: 8, minute: 0 },
-            actions: [{ type: 'update_field', config: { values: {} } }],
+            actions: [{ type: 'update_field', config: { values: { nota: 'x' } } }],
         });
         expect(upserts.at(-1)).toEqual({ id: `sched:${auto.id}`, repeat: { pattern: '0 8 * * *', tz: 'America/Bogota' } });
 
@@ -168,7 +168,7 @@ describe('Zona horaria de la empresa (v0.1.263)', () => {
             name: 'Madrid',
             trigger_type: 'scheduled',
             trigger_config: { frequency: 'daily', hour: 9, tz: 'Europe/Madrid' },
-            actions: [{ type: 'update_field', config: { values: {} } }],
+            actions: [{ type: 'update_field', config: { values: { nota: 'x' } } }],
         });
         expect(upserts.at(-1)!.repeat).toEqual({ pattern: '0 9 * * *', tz: 'Europe/Madrid' });
 

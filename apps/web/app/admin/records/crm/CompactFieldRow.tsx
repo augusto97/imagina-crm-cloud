@@ -24,6 +24,7 @@ import { RatingControl, type RatingIcon } from '@/components/fields/RatingContro
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 
 import { FieldValueDisplay } from './FieldValueDisplay';
+import { isCheckedValue } from '../renderCellValue';
 
 interface CompactFieldRowProps {
     field: FieldEntity;
@@ -441,7 +442,7 @@ function InlineControl({
                 <input
                     id={id}
                     type="checkbox"
-                    checked={Boolean(value)}
+                    checked={isCheckedValue(value)}
                     onChange={(e) => onChange(e.target.checked)}
                     className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                 />

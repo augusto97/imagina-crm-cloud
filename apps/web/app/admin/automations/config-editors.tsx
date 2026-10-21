@@ -14,12 +14,14 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
+import { FilterOptionPicker } from '../records/FilterOptionPicker';
+import { extractFieldOptions } from '../records/fieldOptions';
 import { useFields } from '@/hooks/useFields';
 import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import { scheduleParts, scheduleTimeZone, timeZoneLabel, type Connection, type ConnectorParam } from '@imagina-base/shared';
+import { cronError, scheduleParts, scheduleTimeZone, timeZoneLabel, type Connection, type ConnectorParam } from '@imagina-base/shared';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { browserTimeZone, getTenantTimeZone } from '@/lib/tenantFormat';
 import type {
@@ -124,7 +126,8 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     // due_date_reached
     if (typeof c.due_field === 'string' && c.due_field !== '') out.due_field = c.due_field;
     if (typeof c.offset_minutes === 'number') out.offset_minutes = c.offset_minutes;
-    if (typeof c.tolerance_minutes === 'number') out.tolerance_minutes = c.tolerance_minutes;
+    // Fechas anteriores al alta de la automatización: por defecto NO disparan.
+    if (c.include_past === true) out.include_past = true;
     // incoming_webhook: CONSERVAR el token — si se pierde en un guardado, el
     // backend rota la URL y los sistemas externos quedan apuntando a un 404.
     // (Regenerar = mandar el config SIN token a propósito.)
@@ -146,11 +149,11 @@ export function helpForTrigger(triggerType: string): string {
         case 'record_updated':
             return __('Se ejecuta cada vez que se modifica un registro de esta lista. Si configuras "Disparar solo si cambian estos campos", solo dispara cuando alguno de los campos elegidos efectivamente cambió.');
         case 'field_changed':
-            return __('Se ejecuta cuando un campo específico cambia, opcionalmente con condiciones sobre el valor previo o nuevo. Ejemplo: "cuando status pasa de lead a won".');
+            return __('Se ejecuta cuando un campo específico cambia, opcionalmente de un valor a otro. Ejemplo: «cuando el estado pasa de Prospecto a Ganado».');
         case 'scheduled':
             return __('Corre en el horario que elijas, sin un registro en particular: ideal para «Editar en lote» (subir precios cada semana, marcar vencidas cada noche), crear un registro de resumen o avisar por correo.');
         case 'due_date_reached':
-            return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: "20 días después del vencimiento" para recordatorios de pago.');
+            return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: «20 días después del vencimiento» para recordatorios de pago. Si la fecha se cambia, vuelve a dispararse para la fecha nueva.');
         case 'form_submitted':
             return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que puedes avisarle al equipo, contestarle a quien lo llenó o completar campos. Puedes usar {{formulario.nombre}}.');
         case 'payment_received':
@@ -192,7 +195,7 @@ export function TriggerConfigEditor({
                 onChange={(next) => onChange({ ...config, field_filters: next })}
                 fields={fields}
                 addLabel={__('Añadir filtro')}
-                helperText={__('El trigger solo dispara si el registro cumple TODAS estas condiciones.')}
+                helperText={__('La automatización solo se dispara si el registro cumple TODAS estas condiciones.')}
             />
 
             {triggerType === 'record_updated' && (
@@ -502,53 +505,83 @@ function FieldChangedConfig({
     fields: FieldEntity[];
 }): JSX.Element {
     const field = typeof config.field === 'string' ? config.field : '';
-    const fromValue =
-        typeof config.from_value === 'string' ? config.from_value : '';
-    const toValue = typeof config.to_value === 'string' ? config.to_value : '';
+    const selected = fields.find((f) => f.slug === field);
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
             <Label>{__('Campo a observar')}</Label>
             <Select
                 value={field}
-                onChange={(e) => onChange({ ...config, field: e.target.value })}
+                // Otro campo: los valores «de/a» del anterior ya no aplican.
+                onChange={(e) => onChange({ ...config, field: e.target.value, from_value: null, to_value: null })}
                 aria-label={__('Campo')}
             >
                 <option value="">{__('Elige un campo…')}</option>
                 {fields.map((f) => (
                     <option key={f.id} value={f.slug}>
-                        {f.label} ({f.slug})
+                        {f.label}
                     </option>
                 ))}
             </Select>
-            <div className="imcrm-flex imcrm-gap-2">
-                <Input
-                    placeholder={__('Valor previo (opcional)')}
-                    value={fromValue}
-                    onChange={(e) =>
-                        onChange({
-                            ...config,
-                            from_value: e.target.value === '' ? null : e.target.value,
-                        })
-                    }
-                    className="imcrm-flex-1"
-                />
-                <Input
-                    placeholder={__('Valor nuevo (opcional)')}
-                    value={toValue}
-                    onChange={(e) =>
-                        onChange({
-                            ...config,
-                            to_value: e.target.value === '' ? null : e.target.value,
-                        })
-                    }
-                    className="imcrm-flex-1"
-                />
+            <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-2">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('De (valor anterior)')}</Label>
+                    <ChangeEndInput field={selected} value={config.from_value} onChange={(v) => onChange({ ...config, from_value: v })} />
+                </div>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('A (valor nuevo)')}</Label>
+                    <ChangeEndInput field={selected} value={config.to_value} onChange={(v) => onChange({ ...config, to_value: v })} />
+                </div>
             </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Si los valores quedan vacíos, dispara con cualquier cambio del campo.')}
+                {__('Vacío = cualquier valor. Sin ninguno de los dos, se dispara con cualquier cambio del campo.')}
             </p>
         </div>
+    );
+}
+
+/**
+ * Un extremo del cambio («de» / «a») de «Cuando cambia un campo». Para una
+ * selección o una casilla se ELIGE (antes había que tipear el valor
+ * interno, y el motor ni siquiera lo miraba).
+ */
+function ChangeEndInput({
+    field,
+    value,
+    onChange,
+}: {
+    field: FieldEntity | undefined;
+    value: unknown;
+    onChange: (next: string | null) => void;
+}): JSX.Element {
+    const current = typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value);
+    if (field?.type === 'checkbox') {
+        return (
+            <Select value={checkboxChoice(value)} onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)} aria-label={__('Valor')}>
+                <option value="">{__('Cualquiera')}</option>
+                <option value="1">{__('Marcada')}</option>
+                <option value="0">{__('Desmarcada')}</option>
+            </Select>
+        );
+    }
+    if (field && (field.type === 'select' || field.type === 'multi_select')) {
+        return (
+            <FilterOptionPicker
+                options={extractFieldOptions(field)}
+                mode="single"
+                value={current}
+                onChange={(next) => onChange(typeof next === 'string' && next !== '' ? next : null)}
+                placeholder={__('Cualquiera')}
+                aria-label={__('Valor')}
+            />
+        );
+    }
+    return (
+        <Input
+            placeholder={__('Cualquiera')}
+            value={current}
+            onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+        />
     );
 }
 
@@ -573,6 +606,8 @@ function ScheduledConfig({
     const set = (patch: Record<string, unknown>): void => onChange({ ...config, ...patch });
     const time = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
     const hasCron = typeof config.cron === 'string' && config.cron.trim() !== '';
+    // La misma validación que el servidor al guardar (shared).
+    const cronProblem = hasCron ? cronError(String(config.cron)) : null;
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
             <Label>{__('Frecuencia')}</Label>
@@ -673,14 +708,21 @@ function ScheduledConfig({
                 </p>
             )}
             <details className="imcrm-text-xs" open={hasCron || undefined}>
-                <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Avanzado: expresión cron')}</summary>
+                <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Avanzado: horario personalizado (cron)')}</summary>
                 <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Input
                         value={typeof config.cron === 'string' ? config.cron : ''}
                         placeholder="0 9 * * 1-5"
                         onChange={(e) => onChange({ ...config, cron: e.target.value })}
                         data-testid="imcrm-schedule-cron"
+                        aria-invalid={cronProblem !== null || undefined}
+                        className={cronProblem ? 'imcrm-border-destructive' : undefined}
                     />
+                    {cronProblem && (
+                        <span className="imcrm-text-destructive" data-testid="imcrm-schedule-cron-error">
+                            {sprintf(__('No es válido: %s. Así la automatización no correría nunca.'), cronProblem)}
+                        </span>
+                    )}
                     <span className="imcrm-text-muted-foreground">{__('Si la completas, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
                 </div>
             </details>
@@ -736,10 +778,6 @@ function DueDateConfig({
         typeof config.offset_minutes === 'number'
             ? config.offset_minutes
             : Number(config.offset_minutes ?? 0);
-    const tolerance =
-        typeof config.tolerance_minutes === 'number'
-            ? config.tolerance_minutes
-            : Number(config.tolerance_minutes ?? 1440); // default 1 día — más útil que 30min para casos tipo "vencido hoy"
 
     const dateFields = fields.filter((f) => f.type === 'date' || f.type === 'datetime');
     /**
@@ -818,31 +856,21 @@ function DueDateConfig({
                 </div>
             )}
 
-            <details className="imcrm-group imcrm-mt-1 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-2 [&[open]]:imcrm-bg-card [&[open]]:imcrm-shadow-imcrm-sm">
-                <summary className="imcrm-flex imcrm-cursor-pointer imcrm-list-none imcrm-items-center imcrm-gap-2 imcrm-text-[12px] imcrm-font-medium imcrm-text-foreground/80 [&::-webkit-details-marker]:imcrm-hidden">
-                    <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground imcrm-transition-transform imcrm-duration-150 group-open:imcrm-rotate-90" />
-                    <span>{__('Avanzado: ventana de tolerancia')}</span>
-                </summary>
-                <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Tolerancia (minutos)')}
-                    </Label>
-                    <Input
-                        type="number"
-                        min={1}
-                        value={tolerance}
-                        onChange={(e) =>
-                            onChange({
-                                ...config,
-                                tolerance_minutes: Math.max(1, Number(e.target.value)),
-                            })
-                        }
-                    />
-                    <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                        {__('Ventana alrededor del momento target en la que el trigger todavía dispara — evita perder registros por jitter del cron. Default 1 día (1440 min).')}
-                    </p>
-                </div>
-            </details>
+            <label className="imcrm-mt-1 imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-[13px]">
+                <input
+                    type="checkbox"
+                    className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4"
+                    checked={config.include_past === true}
+                    onChange={(e) => onChange({ ...config, include_past: e.target.checked || undefined })}
+                    data-testid="imcrm-due-include-past"
+                />
+                <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                    <span>{__('Incluir las fechas que ya pasaron antes de crear esta automatización')}</span>
+                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {__('Por defecto sólo se dispara por las fechas que llegan desde que la creas: así una automatización nueva no le escribe de golpe a todos los registros vencidos hace meses.')}
+                    </span>
+                </span>
+            </label>
         </div>
     );
 }
@@ -1162,23 +1190,13 @@ function UpdateFieldConfig({
     // con slug vacío durante la edición. Sin esto, "Añadir valor"
     // parecía no hacer nada porque la fila vacía se descartaba antes
     // de re-renderizar.
-    const [valueRows, setValueRows] = useState<Array<{ slug: string; value: string }>>(() => {
-        const rawValues = spec.config.values;
-        if (!rawValues || typeof rawValues !== 'object') return [];
-        return Object.entries(rawValues as Record<string, unknown>).map(([slug, v]) => ({
-            slug,
-            value: typeof v === 'string' ? v : String(v ?? ''),
-        }));
-    });
+    // El valor se guarda con su tipo: `false` (no «0», que el motor leía
+    // como texto verdadero) y una LISTA de opciones en un multi_select.
+    const [valueRows, setValueRows] = useState<ValueRow[]>(() => readValueRows(spec.config.values));
 
-    const commitValues = (next: Array<{ slug: string; value: string }>): void => {
+    const commitValues = (next: ValueRow[]): void => {
         setValueRows(next);
-        const out: Record<string, string> = {};
-        for (const v of next) {
-            if (v.slug.trim() === '') continue;
-            out[v.slug.trim()] = v.value;
-        }
-        onChange({ ...spec, config: { ...spec.config, values: out } });
+        onChange({ ...spec, config: { ...spec.config, values: valueRowsToConfig(next) } });
     };
 
     return (
@@ -1277,23 +1295,13 @@ function CreateRecordConfig({
 
     // Mismo patrón de state local que UpdateFieldConfig: filas con slug
     // vacío sobreviven durante la edición; solo las completas se comitean.
-    const [valueRows, setValueRows] = useState<Array<{ slug: string; value: string }>>(() => {
-        const rawValues = spec.config.values;
-        if (!rawValues || typeof rawValues !== 'object') return [];
-        return Object.entries(rawValues as Record<string, unknown>).map(([slug, v]) => ({
-            slug,
-            value: typeof v === 'string' ? v : String(v ?? ''),
-        }));
-    });
+    // El valor se guarda con su tipo: `false` (no «0», que el motor leía
+    // como texto verdadero) y una LISTA de opciones en un multi_select.
+    const [valueRows, setValueRows] = useState<ValueRow[]>(() => readValueRows(spec.config.values));
 
-    const commitValues = (next: Array<{ slug: string; value: string }>): void => {
+    const commitValues = (next: ValueRow[]): void => {
         setValueRows(next);
-        const out: Record<string, string> = {};
-        for (const v of next) {
-            if (v.slug.trim() === '') continue;
-            out[v.slug.trim()] = v.value;
-        }
-        onChange({ ...spec, config: { ...spec.config, values: out } });
+        onChange({ ...spec, config: { ...spec.config, values: valueRowsToConfig(next) } });
     };
 
     const setTargetList = (raw: string): void => {
@@ -1402,6 +1410,125 @@ function CreateRecordConfig({
     );
 }
 
+/** Una fila «campo → valor» de «Actualizar campo» / «Crear un registro». */
+interface ValueRow {
+    slug: string;
+    value: unknown;
+}
+
+function readValueRows(raw: unknown): ValueRow[] {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    return Object.entries(raw as Record<string, unknown>).map(([slug, value]) => ({ slug, value }));
+}
+
+function valueRowsToConfig(rows: ValueRow[]): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const r of rows) {
+        if (r.slug.trim() === '') continue;
+        out[r.slug.trim()] = r.value;
+    }
+    return out;
+}
+
+/** El valor de una casilla tal como lo guarda el editor: sí / no / sin elegir. */
+function checkboxChoice(value: unknown): '' | '1' | '0' {
+    if (value === true || value === '1' || value === 'true') return '1';
+    if (value === false || value === '0' || value === 'false') return '0';
+    return '';
+}
+
+/**
+ * Valor de una selección, de varias opciones o de una casilla: se ELIGE de
+ * la lista (y viaja con su tipo: una LISTA de opciones, `true`/`false`) o
+ * se usa una variable (`{{estado}}` del registro que disparó). Antes una
+ * casilla «Desmarcado» viajaba como el texto «0» —verdadero para el
+ * motor— y un multi_select sólo admitía UNA opción.
+ */
+function ChoiceValueInput({
+    field,
+    availableFields,
+    value,
+    onChange,
+}: {
+    field: FieldEntity;
+    availableFields: FieldEntity[];
+    value: unknown;
+    onChange: (next: unknown) => void;
+}): JSX.Element {
+    const [variable, setVariable] = useState(() => typeof value === 'string' && value.includes('{{'));
+    const switchLink = (label: string, next: boolean): JSX.Element => (
+        <button
+            type="button"
+            className="imcrm-self-start imcrm-text-[11px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+            onClick={() => {
+                setVariable(next);
+                onChange(next ? '' : field.type === 'multi_select' ? [] : '');
+            }}
+        >
+            {label}
+        </button>
+    );
+
+    if (variable) {
+        return (
+            <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
+                <MergeTagInput
+                    value={typeof value === 'string' ? value : ''}
+                    onChange={onChange}
+                    fields={availableFields}
+                    placeholder={__('{{campo}} del registro que disparó')}
+                    aria-label={__('Valor')}
+                />
+                {switchLink(__('Elegir de la lista'), false)}
+            </div>
+        );
+    }
+
+    let control: JSX.Element;
+    if (field.type === 'checkbox') {
+        control = (
+            <Select
+                value={checkboxChoice(value)}
+                onChange={(e) => onChange(e.target.value === '1' ? true : e.target.value === '0' ? false : '')}
+                className="imcrm-flex-1"
+                aria-label={__('Valor')}
+            >
+                <option value="">{__('Elige…')}</option>
+                <option value="1">{__('Marcada')}</option>
+                <option value="0">{__('Desmarcada')}</option>
+            </Select>
+        );
+    } else {
+        const options = extractFieldOptions(field);
+        const multi = field.type === 'multi_select';
+        const current = multi
+            ? Array.isArray(value)
+                ? value.map(String)
+                : typeof value === 'string' && value.trim() !== ''
+                  ? value.split(',').map((x) => x.trim()).filter(Boolean)
+                  : []
+            : typeof value === 'string'
+              ? value
+              : '';
+        control = (
+            <FilterOptionPicker
+                options={options}
+                mode={multi ? 'multi' : 'single'}
+                value={current}
+                onChange={(next) => onChange(multi ? (Array.isArray(next) ? next : []) : (next ?? ''))}
+                placeholder={multi ? __('Elige una o varias opciones…') : __('Elige una opción…')}
+                aria-label={__('Valor')}
+            />
+        );
+    }
+    return (
+        <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
+            {control}
+            {switchLink(__('Usar una variable'), true)}
+        </div>
+    );
+}
+
 /**
  * Input contextual para el VALOR de un campo. Switchea según el tipo:
  * - select: dropdown con las options del campo
@@ -1426,14 +1553,14 @@ function FieldValueInput({
      * texto. Si no se pasa, el picker queda en "Sistema" only.
      */
     availableFields?: FieldEntity[];
-    value: string;
-    onChange: (next: string) => void;
+    value: unknown;
+    onChange: (next: unknown) => void;
 }): JSX.Element {
     if (!field) {
         return (
             <Input
                 placeholder={__('Elige un campo primero')}
-                value={value}
+                value={typeof value === 'string' ? value : ''}
                 onChange={(e) => onChange(e.target.value)}
                 className="imcrm-flex-1"
                 disabled
@@ -1441,39 +1568,15 @@ function FieldValueInput({
         );
     }
 
-    if (field.type === 'select' || field.type === 'multi_select') {
-        const options = (field.config?.options as Array<{ value: string; label?: string }> | undefined) ?? [];
+    // Selección, varias opciones y casilla: se ELIGE de la lista (con su
+    // tipo real), o se usa una variable del registro que disparó.
+    if (field.type === 'select' || field.type === 'multi_select' || field.type === 'checkbox') {
         return (
-            <Select
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="imcrm-flex-1"
-                aria-label={__('Valor')}
-            >
-                <option value="">{__('Elige un valor…')}</option>
-                {options.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                        {opt.label || opt.value}
-                    </option>
-                ))}
-            </Select>
+            <ChoiceValueInput field={field} availableFields={availableFields ?? []} value={value} onChange={onChange} />
         );
     }
 
-    if (field.type === 'checkbox') {
-        return (
-            <Select
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="imcrm-flex-1"
-                aria-label={__('Valor')}
-            >
-                <option value="">{__('— —')}</option>
-                <option value="1">{__('Marcado')}</option>
-                <option value="0">{__('Desmarcado')}</option>
-            </Select>
-        );
-    }
+    const textValue = typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value);
 
     // date / datetime / number / currency: MergeTagInput — un input
     // tipado (type=date / type=number) NO acepta merge tags, y mapear
@@ -1484,7 +1587,7 @@ function FieldValueInput({
     if (field.type === 'date' || field.type === 'datetime') {
         return (
             <MergeTagInput
-                value={value}
+                value={textValue}
                 onChange={onChange}
                 fields={availableFields ?? []}
                 placeholder={
@@ -1511,7 +1614,7 @@ function FieldValueInput({
     ) {
         return (
             <MergeTagInput
-                value={value}
+                value={textValue}
                 onChange={onChange}
                 fields={availableFields ?? []}
                 placeholder={
@@ -1536,7 +1639,7 @@ function FieldValueInput({
         <div className="imcrm-flex-1">
             <MergeTagInput
                 {...(growable ? { rows: 1, autoGrow: true } : {})}
-                value={value}
+                value={textValue}
                 onChange={onChange}
                 fields={availableFields ?? []}
                 placeholder={__('Valor o usa los chips para insertar variables')}

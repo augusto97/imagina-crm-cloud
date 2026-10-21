@@ -56,7 +56,7 @@ function keyLit(key: string): SQL {
  *
  * Whitelist estricta (regla de oro nº 4): cada condición referencia un
  * `field_id`; se resuelve al field de la lista y a una expresión JSONB tipada
- * (`(data->>'fN')::numeric`, `::date`, …). El valor JAMÁS se interpola —
+ * (`(data->>'fN')::numeric`, `::date`, …, con cast tolerante). El valor JAMÁS se interpola —
  * siempre viaja como parámetro. Condiciones sobre campos inexistentes o no
  * filtrables se descartan (igual que el plugin).
  */
@@ -322,7 +322,16 @@ export function fieldTypedExpr(field: FilterableField, dataRef: DataRef = record
     return typedExpr(jsonbKeyForField(field.id), field.type, dataRef);
 }
 
-/** Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3). */
+/**
+ * Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3).
+ *
+ * El cast es TOLERANTE: un valor que no se puede convertir (una fecha
+ * «mañana» que escribió una automatización vieja, un número «150.000,5»
+ * importado a mano) da NULL en vez de tirar la consulta entera. Antes un
+ * solo valor basura en una fila hacía que ordenar, filtrar por fecha, los
+ * agregados y el escaneo de vencimientos de TODA la lista respondieran 500.
+ * `pg_input_is_valid` (Postgres 16) valida sin lanzar.
+ */
 function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
     const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
     switch (type) {
@@ -334,14 +343,20 @@ function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
             // v0.1.158 — rating/percent/duration guardan un número (estrellas,
             // 0-100 y minutos): comparan y ordenan con el motor numérico, no
             // como texto (donde '9' > '10').
-            return sql`${asText}::numeric`;
+            return safeCast(asText, 'numeric');
         case 'date':
-            return sql`${asText}::date`;
+            return safeCast(asText, 'date');
         case 'datetime':
-            return sql`${asText}::timestamptz`;
+            return safeCast(asText, 'timestamptz');
         default:
             return asText;
     }
+}
+
+/** `CASE WHEN pg_input_is_valid(x, 'tipo') THEN x::tipo END` — NULL si no convierte. */
+function safeCast(asText: SQL, type: 'numeric' | 'date' | 'timestamptz'): SQL {
+    // El tipo es un literal fijo de esta función (nunca input del usuario).
+    return sql`(CASE WHEN pg_input_is_valid(${asText}, ${sql.raw(`'${type}'`)}) THEN ${asText}::${sql.raw(type)} END)`;
 }
 
 const NUMERIC_FILTER_TYPES: readonly FieldType[] = [
@@ -444,7 +459,7 @@ function textArray(values: string[]): SQL {
 
 // --- Presets de rango relativo (se resuelven contra `now` en cada query) ---
 
-interface Range {
+export interface Range {
     from: string;
     to: string;
 }
@@ -552,10 +567,21 @@ function computePresetRange(preset: DateRangePreset, type: FieldType, clock: Que
  * si el valor no es un período válido.
  */
 export function relativeDateRange(value: unknown, clock: QueryClock): { from: string; to: string } | null {
+    return relativeRangeFor(value, 'date', clock);
+}
+
+/**
+ * El rango de un `between_relative` (preset «este mes» o rango fijo
+ * `{from, to}`) en el reloj de la empresa: fechas YYYY-MM-DD para un campo
+ * fecha, instantes ISO para un fecha-hora. `null` si el valor no es válido.
+ * Lo comparten el SQL de los filtros y el evaluador de condiciones de las
+ * automatizaciones (que evalúa en memoria): así «este mes» es el mismo mes.
+ */
+export function relativeRangeFor(value: unknown, type: 'date' | 'datetime', clock: QueryClock): Range | null {
     try {
         const custom = asCustomRange(value);
-        if (custom !== null) return custom;
-        return computePresetRange(asPreset(value), 'date', clock);
+        if (custom !== null) return type === 'datetime' ? dayRangeInstants(custom.from, custom.to, clock.timeZone) : custom;
+        return computePresetRange(asPreset(value), type, clock);
     } catch {
         return null;
     }
