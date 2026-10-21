@@ -153,9 +153,10 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
     }
 
     async onChange(c: RecordChange): Promise<void> {
-        const list = await this.lists.get(c.tenantId, String(c.listId)).catch(() => null);
-        if (!list) return;
-        const fields = await this.fields.listByListId(c.tenantId, c.listId);
+        // Con los campos que trae el aviso (la edición de una persona) no hay
+        // ninguna lectura: una lista sin campos con IA no paga nada por esto.
+        const fields = c.fields ?? (await this.fields.listByListId(c.tenantId, c.listId));
+        if (!fields.some((f) => f.type === 'ai')) return;
         for (const fieldId of aiFieldsToRun(fields, c)) this.enqueue({ tenantId: c.tenantId, listId: c.listId, recordId: c.recordId, fieldId });
     }
 

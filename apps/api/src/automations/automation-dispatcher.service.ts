@@ -1,6 +1,25 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Queue } from 'bullmq';
+import { and, eq } from 'drizzle-orm';
+import type Redis from 'ioredis';
+import { DRIZZLE, type Db } from '../db/client';
+import { automations } from '../db/schema';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
+import { REDIS } from '../redis/redis.module';
+
+/**
+ * Qué `trigger_type` reaccionan a cada evento de registro (el mismo mapa que
+ * usa el motor al procesarlo). Un evento que no está aquí se encola siempre.
+ */
+const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
+    record_created: ['record_created'],
+    record_updated: ['record_updated', 'field_changed'],
+    payment_received: ['payment_received'],
+    form_submitted: ['form_submitted'],
+};
+
+/** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
+const TRIGGERS_CACHE_TTL_S = 300;
 
 /** Evento de trigger que se encola para el worker de automatizaciones. */
 export interface TriggerEvent {
@@ -47,7 +66,53 @@ export class AutomationDispatcher {
     private queue: Queue | null = null;
 
     // v0.1.285 (ADR-S44) — un evento que no se pudo encolar se pierde: avisar.
-    constructor(@Optional() private readonly incidents?: IncidentHub) {}
+    constructor(
+        @Optional() private readonly incidents?: IncidentHub,
+        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
+    ) {}
+
+    /**
+     * ¿Hay alguna automatización ACTIVA de la lista que reaccione a este
+     * evento? Antes cada alta/edición encolaba un job aunque la lista no tuviera
+     * ninguna (y el worker abría una transacción para descubrirlo). Se cachea en
+     * Redis por lista con un número de versión que `invalidate` sube al guardar
+     * una automatización — el que calculó el caché con una versión vieja no lo
+     * deja vigente. Ante cualquier duda (sin Redis, sin base, un error), true.
+     */
+    async listensTo(tenantId: number, listId: number, trigger: string): Promise<boolean> {
+        const wanted = TRIGGER_TYPES_FOR_EVENT[trigger];
+        if (!wanted || !this.db || !this.redis) return true;
+        try {
+            const [version, cached] = await this.redis.mget(versionKey(tenantId, listId), cacheKey(tenantId, listId));
+            const ver = version ?? '0';
+            let types: string[] | null = null;
+            if (cached) {
+                const parsed = JSON.parse(cached) as { v: string; types: string[] };
+                if (parsed.v === ver) types = parsed.types;
+            }
+            if (types === null) {
+                const rows = await this.db
+                    .select({ type: automations.triggerType })
+                    .from(automations)
+                    .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, listId), eq(automations.isActive, true)));
+                types = [...new Set(rows.map((r) => r.type))];
+                await this.redis.set(cacheKey(tenantId, listId), JSON.stringify({ v: ver, types }), 'EX', TRIGGERS_CACHE_TTL_S);
+            }
+            return types.some((t) => wanted.includes(t));
+        } catch (err) {
+            this.logger.warn(`No se pudo consultar los disparadores de la lista ${listId}: ${String(err)}`);
+            return true;
+        }
+    }
+
+    /** Las automatizaciones de la lista cambiaron (alta, edición, pausa, baja). */
+    async invalidate(tenantId: number, listId: number): Promise<void> {
+        if (!this.redis) return;
+        await this.redis
+            .incr(versionKey(tenantId, listId))
+            .catch((err: unknown) => this.logger.warn(`No se pudo invalidar el caché de disparadores: ${String(err)}`));
+    }
 
     private lost(tenantId: number, listId: number | null, automationId: number | null, what: string, err: unknown): void {
         this.logger.error(`No se pudo encolar ${what}: ${String(err)}`);
@@ -90,9 +155,17 @@ export class AutomationDispatcher {
     }
 
     dispatch(event: TriggerEvent): void {
-        if (!this.queue) return;
-        this.queue.add('event', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
-            this.lost(event.tenantId, event.listId, null, 'la automatización', err);
-        });
+        const queue = this.queue;
+        if (!queue) return;
+        const enqueue = (): void => {
+            queue.add('event', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+                this.lost(event.tenantId, event.listId, null, 'la automatización', err);
+            });
+        };
+        if (!this.db || !this.redis) return enqueue();
+        void this.listensTo(event.tenantId, event.listId, event.trigger).then((yes) => yes && enqueue());
     }
 }
+
+const versionKey = (tenantId: number, listId: number): string => `autotrig:v:${tenantId}:${listId}`;
+const cacheKey = (tenantId: number, listId: number): string => `autotrig:${tenantId}:${listId}`;
