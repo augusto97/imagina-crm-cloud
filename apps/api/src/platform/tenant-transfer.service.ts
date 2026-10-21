@@ -808,6 +808,8 @@ export class TenantTransferService {
                     kind: String(c.kind ?? 'note'),
                     parentId: null,
                     metadata: (c.metadata as Row | null) ?? {},
+                    // Lo interno sigue interno al migrar (default del archivo viejo).
+                    visibility: c.visibility === 'client' ? 'client' : 'internal',
                     createdAt: this.date(c.createdAt) ?? new Date(),
                     updatedAt: this.date(c.updatedAt) ?? new Date(),
                     deletedAt: this.date(c.deletedAt),

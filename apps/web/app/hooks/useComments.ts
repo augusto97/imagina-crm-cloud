@@ -23,9 +23,15 @@ export function fromApiComment(c: ApiComment): CommentEntity {
     return { ...c, content: c.content ?? c.body ?? '', metadata };
 }
 
-export function toApiComment(input: { content: string; metadata?: CommentMetadata; parent_id?: number | null }): Record<string, unknown> {
+export function toApiComment(input: {
+    content: string;
+    metadata?: CommentMetadata;
+    parent_id?: number | null;
+    visibility?: 'internal' | 'client';
+}): Record<string, unknown> {
     return {
         body: input.content,
+        ...(input.visibility === 'client' ? { visibility: 'client' } : {}),
         ...(input.metadata?.kind ? { kind: input.metadata.kind } : {}),
         ...(input.parent_id ? { parent_id: input.parent_id } : {}),
         ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
@@ -118,12 +124,15 @@ export function useUpdateComment(
  * `GET /me/users?ids=` — nunca una request por autor.
  */
 export function useCommentAuthors(comments: readonly CommentEntity[] | undefined): (c: CommentEntity) => string {
-    const missing = (comments ?? []).filter((c) => !c.user_name).map((c) => c.user_id);
+    // El cliente del portal no está en el directorio de miembros: su nombre
+    // viene en `author_name`.
+    const missing = (comments ?? []).filter((c) => !c.user_name && !c.from_client).map((c) => c.user_id);
     const names = useMemberNames(missing);
     const map = names.data;
     return useCallback(
         (c: CommentEntity): string =>
             (c.user_name !== undefined && c.user_name !== null && c.user_name !== '' ? c.user_name : null)
+            ?? (c.from_client ? c.author_name || __('Cliente') : null)
             ?? map?.get(c.user_id)
             ?? sprintf(/* translators: %d: user id */ __('Usuario #%d'), c.user_id),
         [map],

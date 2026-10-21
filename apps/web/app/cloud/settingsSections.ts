@@ -55,13 +55,16 @@ export function settingsSectionGroups({
     /** v0.1.196 — Conectores: quien arma automatizaciones ve el inventario. */
     canManageAutomations?: boolean;
 }): SettingsSectionGroup[] {
-    return [
+    const groups: SettingsSectionGroup[] = [
         {
             label: 'Workspace',
             items: [
-                { id: 'plan', label: 'Plan y uso', icon: Gauge },
                 ...(isAdmin
                     ? ([
+                          // v0.1.286 — `GET /billing` es sólo para admins: a
+                          // cualquier otro rol "Plan y uso" le quedaba en blanco
+                          // (403), y era la sección POR DEFECTO de Ajustes.
+                          { id: 'plan', label: 'Plan y uso', icon: Gauge },
                           { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
                           { id: 'miembros', label: 'Miembros', icon: Users },
                           { id: 'marca', label: 'Marca', icon: Palette },
@@ -104,16 +107,22 @@ export function settingsSectionGroups({
             ],
         },
     ];
+    // Un rol sin nada de la empresa (agente/lector) no ve un grupo vacío.
+    return groups.filter((g) => g.items.length > 0);
 }
 
 /**
- * Resuelve la sección activa desde el query param `?s=`: fallback a "plan" si
- * el param no existe o apunta a una sección gateada/incógnita.
+ * Resuelve la sección activa desde el query param `?s=`. Si el param no existe
+ * o apunta a una sección que este rol no ve: "Plan y uso" para un admin y
+ * "Seguridad" (su cuenta) para el resto — v0.1.286, antes caía a "plan" y a un
+ * no-admin la página le quedaba en blanco.
  */
 export function resolveSettingsSection(
     groups: SettingsSectionGroup[],
     requested: string | null,
 ): SettingsSectionId {
     const visible = groups.flatMap((g) => g.items);
-    return visible.find((i) => i.id === requested)?.id ?? 'plan';
+    const hit = visible.find((i) => i.id === requested)?.id;
+    if (hit) return hit;
+    return visible.some((i) => i.id === 'plan') ? 'plan' : 'seguridad';
 }

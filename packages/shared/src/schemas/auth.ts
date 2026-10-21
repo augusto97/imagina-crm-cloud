@@ -71,6 +71,19 @@ export const authSessionSchema = z.object({
     impersonating: z
         .object({ operator_id: idSchema, operator_name: z.string() })
         .optional(),
+    /**
+     * Superadmin de PLATAFORMA con una sesión que puede usar la consola (abierta
+     * con contraseña y sin impersonar). Sólo lo trae `GET /auth/me`: la app lo
+     * lee para mostrar «Plataforma» sin sondear `/platform/stats` (que cuenta
+     * todos los registros y empresas) en cada arranque.
+     */
+    is_superadmin: z.boolean().optional(),
+    /**
+     * Superadmin cuya sesión NO se abrió con contraseña (SEC-24): la consola la
+     * rechaza con `reauth_required`. La app cierra la sesión y vuelve al login
+     * una vez, como hacía el sondeo.
+     */
+    platform_reauth: z.boolean().optional(),
 });
 export type AuthSession = z.infer<typeof authSessionSchema>;
 

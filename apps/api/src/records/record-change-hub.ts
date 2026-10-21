@@ -28,6 +28,8 @@ export interface RecordChange {
      * los avisos: no se le avisa a alguien de lo que hizo él mismo.
      */
     actorId?: number;
+    /** El cambio lo hizo el CLIENTE desde su portal (`actorId` es su usuario). */
+    viaPortal?: boolean;
     /**
      * La lista y sus campos, cuando quien emite ya los tenía cargados (la
      * edición de una persona). Los oyentes los usan en vez de volver a leerlos:

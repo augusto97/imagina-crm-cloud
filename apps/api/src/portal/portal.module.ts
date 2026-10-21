@@ -8,11 +8,12 @@ import { DomainsModule } from '../domains/domains.module';
 import { FieldsModule } from '../fields/fields.module';
 import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
+import { RecordsModule } from '../records/records.module';
 import { PortalController } from './portal.controller';
 import { PortalService } from './portal.service';
 
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, ActivityModule, CommentsModule, AutomationsModule, DomainsModule, DashboardsModule],
+    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, ActivityModule, CommentsModule, AutomationsModule, DomainsModule, DashboardsModule, RecordsModule],
     controllers: [PortalController],
     providers: [PortalService],
 })

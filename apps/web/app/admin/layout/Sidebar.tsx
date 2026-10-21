@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
@@ -6,7 +6,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
     AlarmClock,
-    Eye,
+    FileText,
     LayoutGrid,
     ListChecks,
     List as ListIcon,
@@ -21,7 +21,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { useSession } from '@/cloud/session';
-import { listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_DASHBOARD_ICON, DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { resolveSettingsSection, settingsSectionGroups } from '@/cloud/settingsSections';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useDashboards } from '@/hooks/useDashboards';
@@ -30,6 +30,10 @@ import { viewTypeIcon } from '@/admin/records/views/viewTypeIcon';
 import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useMyWork } from '@/hooks/useNotifications';
+import { useEventCallback } from '@/hooks/useEventCallback';
+import { useRecents } from '@/lib/recents';
+import { getTenantTimeZone, browserTimeZone, formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
+import { DUE_GROUPS, groupWork } from '@/admin/mywork/myWorkGroups';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
@@ -50,9 +54,11 @@ import { FolderSquare } from '@/admin/lists/FolderBadge';
 import { isPlatformTab, PLATFORM_TABS } from '@/admin/platform/platformTabs';
 
 import { DashboardPanelItem } from './DashboardPanelItem';
+import { DashboardsPanelList } from './DashboardsPanelList';
 import { ListPanelItem } from './ListPanelItem';
 import { ListsTree } from './ListsTree';
 import { PeekHoldContext } from './peekHold';
+import { WorkspaceSwitcherTitle } from './WorkspaceSwitcher';
 
 /** Preferencia de colapso del panel interno (persistida por navegador). */
 const PANEL_COLLAPSED_KEY = 'imcrm-panel-collapsed';
@@ -118,13 +124,14 @@ export function Sidebar({
     const updateFavorites = useUpdateFavorites();
     const reorderLists = useReorderLists();
     const favs: Favorites = favorites.data ?? EMPTY_FAVORITES;
-    const toggleFav = (kind: keyof Favorites, id: number): void => {
+    const toggleFav = useEventCallback((kind: keyof Favorites, id: number): void => {
         updateFavorites.mutate(toggledFavorites(favs, kind, id));
-    };
+    });
+    const toggleListFav = useEventCallback((id: number): void => toggleFav('lists', id));
     // Drag & drop del árbol de listas (HTML5). El índice arrastrado vive en
     // un ref (no re-renderiza); al soltar se manda el orden completo.
     const dragIndexRef = useRef<number | null>(null);
-    const handleListDrop = (targetIndex: number): void => {
+    const handleListDrop = useEventCallback((targetIndex: number): void => {
         const from = dragIndexRef.current;
         dragIndexRef.current = null;
         if (from === null || !lists.data || from === targetIndex) return;
@@ -133,7 +140,7 @@ export function Sidebar({
         if (!moved) return;
         next.splice(targetIndex, 0, moved);
         reorderLists.mutate(next.map((l) => l.id));
-    };
+    });
 
     const { pathname } = useLocation();
     const [params] = useSearchParams();
@@ -150,6 +157,10 @@ export function Sidebar({
         if (!mobileOpen) setMobileSection(null);
     }, [mobileOpen]);
     const section: RailSection = mobileMode && mobileSection !== null ? mobileSection : routeSection;
+    const [homeMounted, setHomeMounted] = useState(section === 'home');
+    useEffect(() => {
+        if (section === 'home') setHomeMounted(true);
+    }, [section]);
     /** Toque en un item del riel dentro del drawer: cambia el panel, no navega. */
     const handleRailSelect = (e: React.MouseEvent, s: RailSection): void => {
         if (!mobileMode) return;
@@ -240,11 +251,11 @@ export function Sidebar({
     const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
     const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
     const canManageLists = useCan(CAP.MANAGE_LISTS);
-    const canManageOptions = useCan('workspace_admin');
     const canSeeDashboards = (canManageDashboards || canAccessAdmin) && moduleEnabled('dashboards');
-    const canSeeSettings = canManageLists || canManageOptions;
-    // Sección de operador (superadmin de plataforma). Se detecta probando el
-    // endpoint (403 → oculto); no depende de la matriz de capabilities.
+    // v0.1.286 — "Ajustes" se ve SIEMPRE: agentes y lectores también tienen su
+    // cuenta ahí (seguridad, avisos, firma, apariencia). Antes se ocultaba.
+    // Sección de operador (superadmin de plataforma): `is_superadmin` de
+    // `/auth/me` (no depende de la matriz de capabilities).
     const isSuperadmin = useIsSuperadmin();
 
     // Header del panel según la sección del riel: nombre del workspace para
@@ -279,12 +290,17 @@ export function Sidebar({
                             active={pathname === '/lists'}
                         />
                     )}
-                    {lists.data && lists.data.length > 0 && (
+                    {/* v0.1.286 — lo abierto hace poco, arriba del árbol. */}
+                    <RecentsPanelSection />
+                    {/* v0.1.286 — también con CERO listas: la cabecera y
+                        "Nueva lista" no pueden depender de que ya haya una
+                        (un workspace nuevo quedaba con el panel en blanco). */}
+                    {lists.data && (
                         <ListsTree
                             lists={lists.data}
                             canManageLists={canManageLists}
                             starredIds={favs.lists}
-                            onToggleStar={(id: number) => toggleFav('lists', id)}
+                            onToggleStar={toggleListFav}
                             onReorder={handleListDrop}
                             dragIndexRef={dragIndexRef}
                         />
@@ -303,26 +319,19 @@ export function Sidebar({
                     />
                     {dashboards.data && dashboards.data.length > 0 && (
                         <PanelSection label={__('Tus dashboards')}>
-                            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                                {dashboards.data.map((d) => (
-                                    <li key={d.id}>
-                                        {/* v0.1.145 — su icono; v0.1.172 —
-                                            con menú contextual. */}
-                                        <DashboardPanelItem
-                                            dashboard={d}
-                                            starred={favs.dashboards.includes(d.id)}
-                                            onToggleStar={() => toggleFav('dashboards', d.id)}
-                                        />
-                                    </li>
-                                ))}
-                            </ul>
+                            {/* v0.1.286 — reordenables arrastrando. */}
+                            <DashboardsPanelList
+                                dashboards={dashboards.data}
+                                starredIds={favs.dashboards}
+                                onToggleStar={(id) => toggleFav('dashboards', id)}
+                            />
                         </PanelSection>
                     )}
                     {dashboards.isLoading && <PanelLoading />}
                 </>
             )}
 
-            {sec === 'mywork' && <MyWorkPanelNav pathname={pathname} tab={params.get('tab')} />}
+            {sec === 'mywork' && <MyWorkPanelSummary />}
 
             {sec === 'favorites' && (
                 <>
@@ -367,8 +376,52 @@ export function Sidebar({
         });
     };
 
+    // v0.1.286 — accesibilidad del drawer (<lg): cerrado queda fuera de
+    // pantalla pero sus enlaces seguían recibiendo foco con Tab → `inert`.
+    // Abierto es un diálogo modal: foco adentro (en la X) y Tab no se escapa;
+    // al cerrarse el foco vuelve a donde estaba (la hamburguesa).
+    const drawerRef = useRef<HTMLDivElement | null>(null);
+    const drawerHidden = isNarrow && !mobileOpen;
+    useEffect(() => {
+        if (!mobileMode) return;
+        const root = drawerRef.current;
+        if (!root) return;
+        const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const focusables = (): HTMLElement[] =>
+            Array.from(
+                root.querySelectorAll<HTMLElement>(
+                    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                ),
+            ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+        const close = root.querySelector<HTMLElement>('[data-testid="imcrm-drawer-close"]');
+        (close ?? focusables()[0])?.focus({ preventScroll: true });
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.key !== 'Tab') return;
+            const items = focusables();
+            if (items.length === 0) return;
+            const first = items[0]!;
+            const last = items[items.length - 1]!;
+            const active = document.activeElement;
+            if (e.shiftKey && (active === first || !root.contains(active))) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+                e.preventDefault();
+                first.focus();
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            if (previous && document.contains(previous)) previous.focus({ preventScroll: true });
+        };
+    }, [mobileMode]);
+
     return (
         <div
+            ref={drawerRef}
+            {...(drawerHidden ? ({ inert: '' } as Record<string, string>) : {})}
+            {...(mobileMode ? { role: 'dialog', 'aria-modal': true, 'aria-label': __('Menú') } : {})}
             className={cn(
                 // `imcrm-admin-sidebar`: el modo fullscreen del template editor
                 // oculta este chrome (globals.css) — riel + panel juntos.
@@ -466,24 +519,26 @@ export function Sidebar({
                         to="/dashboards"
                         active={section === 'dashboards'}
                         icon={BarChart3}
-                        label={__('Dashboards')}
+                        // v0.1.286 — en el riel (68px) «Dashboards» no entra
+                        // ni en dos renglones: «Tableros», con el nombre
+                        // completo en el tooltip.
+                        label={__('Tableros')}
+                        hint={__('Dashboards')}
                         onPeek={() => peek('dashboards')}
                         onUnpeek={unpeek}
                         onSelect={(e) => handleRailSelect(e, 'dashboards')}
                     />
                 )}
-                {canSeeSettings && (
-                    <RailItem
-                        to="/settings"
-                        active={section === 'settings'}
-                        icon={Settings}
-                        label={__('Ajustes')}
-                        onPeek={() => peek('settings')}
-                        onUnpeek={unpeek}
-                        onSelect={(e) => handleRailSelect(e, 'settings')}
-                    />
-                )}
-                {isSuperadmin.data === true && (
+                <RailItem
+                    to="/settings"
+                    active={section === 'settings'}
+                    icon={Settings}
+                    label={__('Ajustes')}
+                    onPeek={() => peek('settings')}
+                    onUnpeek={unpeek}
+                    onSelect={(e) => handleRailSelect(e, 'settings')}
+                />
+                {isSuperadmin && (
                     <RailItem
                         to="/platform"
                         active={section === 'platform'}
@@ -547,9 +602,15 @@ export function Sidebar({
                 )}
             >
                 <div className="imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-pl-4 imcrm-pr-2 lg:imcrm-h-10">
-                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground lg:imcrm-text-[14px]">
-                        {titleFor(section)}
-                    </span>
+                    {/* v0.1.286 — en las secciones de contenido el título es
+                        la empresa, y con más de una se cambia desde aquí. */}
+                    {section === 'home' || section === 'dashboards' ? (
+                        <WorkspaceSwitcherTitle title={titleFor(section)} />
+                    ) : (
+                        <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground lg:imcrm-text-[14px]">
+                            {titleFor(section)}
+                        </span>
+                    )}
                     {/* v0.1.169 — X de cierre del drawer (sólo mobile): antes
                         la única salida era tocar el velo, que en un drawer
                         de casi toda la pantalla queda como una franja. */}
@@ -590,7 +651,19 @@ export function Sidebar({
                     onClick={closeOnLinkActivation}
                     className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
                 >
-                    {panelBody(section)}
+                    {/* v0.1.286 — el árbol de listas queda MONTADO (oculto)
+                        al pasar a otra sección: con 300 listas, volver a
+                        "Listas" lo reconstruía entero (tareas largas de
+                        66-138 ms). Se monta la primera vez que se ve. */}
+                    {homeMounted && (
+                        <div
+                            className={cn('imcrm-flex imcrm-flex-col imcrm-gap-5', section !== 'home' && 'imcrm-hidden')}
+                            data-testid="panel-home"
+                        >
+                            {panelBody('home')}
+                        </div>
+                    )}
+                    {section !== 'home' && panelBody(section)}
                 </nav>
             </div>
         </div>
@@ -664,6 +737,7 @@ function RailItem({
     to,
     icon: Icon,
     label,
+    hint,
     active,
     onPeek,
     onUnpeek,
@@ -672,6 +746,8 @@ function RailItem({
     to: string;
     icon: LucideIcon;
     label: string;
+    /** Tooltip / nombre accesible cuando la etiqueta del riel es abreviada. */
+    hint?: string;
     active: boolean;
     /** Hover: abre el panel flotante de esta sección (v0.1.145). */
     onPeek?: () => void;
@@ -682,7 +758,8 @@ function RailItem({
     return (
         <Link
             to={to}
-            title={label}
+            title={hint ?? label}
+            aria-label={hint}
             onMouseEnter={onPeek}
             onMouseLeave={onUnpeek}
             onClick={onSelect}
@@ -690,7 +767,7 @@ function RailItem({
             className={cn(
                 // Mobile: objetivo táctil más alto y etiqueta legible; lg:
                 // las medidas compactas del escritorio.
-                'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-0.5 imcrm-py-3 imcrm-transition-colors imcrm-duration-100 lg:imcrm-px-1 lg:imcrm-py-2',
+                'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-0.5 imcrm-py-3 imcrm-transition-colors imcrm-duration-100 lg:imcrm-px-0 lg:imcrm-py-2',
                 // v0.1.176 — velo y tinta salen de los tokens del riel (no de
                 // blanco fijo): un riel CLARO elegido en Marca lleva tinta
                 // oscura y velo oscuro; el default oscuro se ve igual que antes.
@@ -700,7 +777,9 @@ function RailItem({
             )}
         >
             <Icon className="imcrm-h-5 imcrm-w-5 imcrm-shrink-0" />
-            <span className="imcrm-max-w-full imcrm-truncate imcrm-text-[11px] imcrm-font-medium imcrm-leading-none lg:imcrm-text-[10px]">
+            {/* v0.1.286 — la etiqueta entra entera: hasta dos renglones
+                centrados (antes "Mi trab…", "Dashb…" truncadas). */}
+            <span className="imcrm-line-clamp-2 imcrm-max-w-full imcrm-text-center imcrm-text-[11px] imcrm-font-medium imcrm-leading-[1.15] lg:imcrm-text-[10px] lg:imcrm-tracking-[-0.01em]">
                 {label}
             </span>
         </Link>
@@ -878,21 +957,130 @@ function PanelNavItem({
     );
 }
 
-/** v0.1.276 — panel de «Mi trabajo»: sus tres pestañas con su cantidad. */
-function MyWorkPanelNav({ pathname, tab }: { pathname: string; tab: string | null }): JSX.Element {
+/**
+ * v0.1.286 — panel de «Mi trabajo»: antes repetía las tres pestañas de la
+ * página. Ahora es un RESUMEN que sirve sin abrirla: cuánto está vencido,
+ * para hoy y para la semana, y lo más urgente con enlace directo al registro.
+ */
+function MyWorkPanelSummary(): JSX.Element {
     const work = useMyWork();
-    const on = pathname.startsWith('/my-work');
-    const current = tab === 'reminders' || tab === 'following' ? tab : 'assigned';
-    const n = (k: 'assigned' | 'reminders' | 'following'): string =>
-        work.data ? ` (${work.data[k].length})` : '';
+    const tz = getTenantTimeZone() ?? browserTimeZone() ?? 'UTC';
+    if (work.isLoading) return <PanelLoading />;
+    const assigned = work.data?.assigned ?? [];
+    const groups = groupWork(assigned, tz);
+    const urgent = [...(groups.get('overdue') ?? []), ...(groups.get('today') ?? []), ...(groups.get('week') ?? [])].slice(0, 6);
+    const overdueIds = new Set((groups.get('overdue') ?? []).map((i) => i.record_id));
+    const counts = DUE_GROUPS.filter((g) => g.key === 'overdue' || g.key === 'today' || g.key === 'week').map((g) => ({
+        ...g,
+        n: groups.get(g.key)?.length ?? 0,
+    }));
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-            <PanelNavItem to="/my-work" icon={ListChecks} label={`${__('Asignado a mí')}${n('assigned')}`} active={on && current === 'assigned'} />
-            <PanelNavItem to="/my-work?tab=reminders" icon={AlarmClock} label={`${__('Recordatorios')}${n('reminders')}`} active={on && current === 'reminders'} />
-            <PanelNavItem to="/my-work?tab=following" icon={Eye} label={`${__('Siguiendo')}${n('following')}`} active={on && current === 'following'} />
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="mywork-panel">
+            <dl className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1.5 imcrm-px-1">
+                {counts.map((c) => (
+                    <div key={c.key} className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-rounded-md imcrm-bg-background imcrm-px-1 imcrm-py-2 imcrm-ring-1 imcrm-ring-border">
+                        <dd
+                            className={cn(
+                                'imcrm-text-lg imcrm-font-semibold imcrm-tabular-nums imcrm-leading-none',
+                                c.key === 'overdue' && c.n > 0 && 'imcrm-text-destructive',
+                            )}
+                        >
+                            {c.n}
+                        </dd>
+                        <dt className="imcrm-mt-1 imcrm-text-center imcrm-text-[10px] imcrm-leading-tight imcrm-text-muted-foreground">{__(c.label)}</dt>
+                    </div>
+                ))}
+            </dl>
+            <PanelSection label={__('Lo más urgente')}>
+                {urgent.length === 0 ? (
+                    <p className="imcrm-px-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
+                        {assigned.length === 0
+                            ? __('No tienes nada asignado. Cuando alguien te asigne un registro, aparece aquí.')
+                            : __('Nada vence esta semana.')}
+                    </p>
+                ) : (
+                    <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                        {urgent.map((item) => {
+                            const Icon = listIcon(item.list_icon) ?? DEFAULT_LIST_ICON;
+                            const due = item.due ? (item.due_is_datetime ? formatDateTimeStr(item.due) : formatDateStr(item.due.slice(0, 10))) : null;
+                            return (
+                                <li key={`${item.list_id}-${item.record_id}`}>
+                                    <Link
+                                        to={`/lists/${item.list_slug}/records?record=${item.record_id}`}
+                                        title={`${item.title} · ${item.list_name}`}
+                                        className="imcrm-flex imcrm-min-h-10 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[14px] imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground lg:imcrm-min-h-0 lg:imcrm-text-[13px]"
+                                    >
+                                        <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" style={listColor(item.list_color) ? { color: listColor(item.list_color) } : undefined} aria-hidden />
+                                        <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{item.title}</span>
+                                        {due && (
+                                            <span
+                                                className={cn(
+                                                    'imcrm-shrink-0 imcrm-text-[11px] imcrm-tabular-nums',
+                                                    overdueIds.has(item.record_id) ? 'imcrm-font-medium imcrm-text-destructive' : 'imcrm-text-muted-foreground',
+                                                )}
+                                            >
+                                                {due}
+                                            </span>
+                                        )}
+                                    </Link>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+            </PanelSection>
+            {(work.data?.reminders.length ?? 0) > 0 && (
+                <PanelNavItem
+                    to="/my-work?tab=reminders"
+                    icon={AlarmClock}
+                    label={`${__('Recordatorios')} (${work.data?.reminders.length ?? 0})`}
+                    active={false}
+                />
+            )}
         </div>
     );
 }
+
+/**
+ * v0.1.286 — «Recientes» arriba del árbol de listas: lo último abierto (listas,
+ * registros, tableros), por empresa y por navegador. Máximo 4: es un atajo,
+ * no un historial (el completo está en la paleta, Ctrl+K).
+ */
+const RecentsPanelSection = memo(function RecentsPanelSection(): JSX.Element | null {
+    const tenantId = useSession((s) => s.activeTenantId);
+    const recents = useRecents(tenantId).slice(0, 4);
+    if (recents.length === 0) return null;
+    return (
+        <PanelSection label={__('Recientes')}>
+            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="panel-recents">
+                {recents.map((r) => {
+                    const Icon =
+                        r.kind === 'record'
+                            ? FileText
+                            : (listIcon(r.icon) ?? (r.kind === 'dashboard' ? DEFAULT_DASHBOARD_ICON : DEFAULT_LIST_ICON));
+                    const color = r.kind === 'record' ? undefined : listColor(r.color);
+                    return (
+                        <li key={`${r.kind}-${r.id}`}>
+                            <a
+                                href={`#${r.href}`}
+                                title={r.context ? `${r.label} · ${r.context}` : r.label}
+                                className="imcrm-flex imcrm-min-h-10 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[14px] imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground lg:imcrm-min-h-0 lg:imcrm-text-[13px]"
+                            >
+                                <Icon className={cn('imcrm-h-4 imcrm-w-4 imcrm-shrink-0', !color && 'imcrm-opacity-60')} style={color ? { color } : undefined} aria-hidden />
+                                <span className="imcrm-min-w-0 imcrm-truncate">{r.label}</span>
+                                {r.context && (
+                                    <span className="imcrm-ml-auto imcrm-max-w-[40%] imcrm-shrink-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
+                                        {r.context}
+                                    </span>
+                                )}
+                            </a>
+                        </li>
+                    );
+                })}
+            </ul>
+        </PanelSection>
+    );
+});
 
 /** Spinner chico para los árboles que aún cargan. */
 function PanelLoading(): JSX.Element {

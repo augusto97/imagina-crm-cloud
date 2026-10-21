@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
+    addDaysYmd,
     BLUEPRINT_EXCLUDED_SETTINGS,
     BLUEPRINT_EXCLUDED_TRIGGER_KEYS,
     BLUEPRINT_VERSION,
@@ -623,7 +624,7 @@ export class BlueprintService {
                         if (fid === undefined) continue;
                         const f = fieldsById.get(fid);
                         if (!f || !isDataField(f.type)) continue;
-                        data[jsonbKeyForField(fid)] = value;
+                        data[jsonbKeyForField(fid)] = sampleValue(value, f.type, actorId);
                     }
                     const row = await this.recordsRepo.insert(tx, {
                         tenantId,
@@ -715,6 +716,23 @@ export class BlueprintService {
         }
         return target;
     }
+}
+
+/**
+ * v0.1.286 — Valores RELATIVOS de los registros de muestra de una plantilla:
+ * `{ $days: N }` en una fecha es hoy + N días (así "Entregas" y "Próximas
+ * entregas" no arrancan vacías con fechas de cuando se escribió la
+ * plantilla) y `{ $me: true }` en un campo persona es quien la aplica.
+ */
+export function sampleValue(value: unknown, type: Field['type'], actorId: number): unknown {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const v = value as { $days?: unknown; $me?: unknown };
+    if (typeof v.$days === 'number' && (type === 'date' || type === 'datetime')) {
+        const ymd = addDaysYmd(new Date().toISOString().slice(0, 10), Math.trunc(v.$days));
+        return type === 'date' ? ymd : `${ymd}T15:00:00.000Z`;
+    }
+    if (v.$me === true && type === 'user') return actorId;
+    return value;
 }
 
 function newWidgetId(): string {

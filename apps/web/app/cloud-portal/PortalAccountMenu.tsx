@@ -25,11 +25,20 @@ export function PortalAccountMenu({
     accountId,
     onSelect,
     onLogout,
+    notifyEmail,
 }: {
     accountId: number | null;
     onSelect: (id: number) => void;
     onLogout: () => void;
+    /** ¿Recibe un correo cuando el equipo le responde? (null = no se ofrece). */
+    notifyEmail?: boolean | null;
 }): JSX.Element {
+    const [notify, setNotify] = useState<boolean | null>(notifyEmail ?? null);
+    const savePref = useMutation({
+        mutationFn: (next: boolean) => portalApi.portalSetPreferences(next),
+        onMutate: (next) => setNotify(next),
+        onError: (_e, next) => setNotify(!next),
+    });
     const accounts = useQuery({
         queryKey: ['portal-accounts', accountId],
         queryFn: () => portalApi.portalAccounts(),
@@ -133,6 +142,28 @@ export function PortalAccountMenu({
                                 <span className="imcrm-block">¿Eres cliente de otra empresa?</span>
                                 <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
                                     Te mandamos a tu correo un enlace para verlas todas juntas
+                                </span>
+                            </span>
+                        </DropdownMenuItem>
+                    )}
+                    {notify !== null && (
+                        <DropdownMenuItem
+                            data-testid="portal-notify-email"
+                            disabled={savePref.isPending}
+                            // No cierra el menú: es un interruptor.
+                            onSelect={(e) => {
+                                e.preventDefault();
+                                savePref.mutate(!notify);
+                            }}
+                            className="imcrm-flex imcrm-items-start imcrm-gap-2"
+                        >
+                            <span className="imcrm-mt-0.5 imcrm-w-4 imcrm-shrink-0">
+                                {notify && <Check className="imcrm-h-4 imcrm-w-4" aria-hidden />}
+                            </span>
+                            <span>
+                                <span className="imcrm-block">Avisarme por correo</span>
+                                <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
+                                    Cuando la empresa me responda
                                 </span>
                             </span>
                         </DropdownMenuItem>

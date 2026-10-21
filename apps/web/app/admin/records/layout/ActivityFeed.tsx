@@ -4,6 +4,7 @@ import { Activity as ActivityIcon, Loader2, Mail, MessageSquare, Pencil, Phone, 
 import { ActivityValue } from '@/admin/activity/ActivityPanel';
 import { actionText, actorOf, changeSentence, changesOf, descriptionSentence, type FieldChange } from '@/admin/activity/activityText';
 import { CommentContent } from '@/admin/comments/CommentContent';
+import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -74,6 +75,7 @@ export function ActivityFeed({
     // Nombres de los autores: del DTO, y en LOTE lo que falte (antes era una
     // request por autor con useWpUser).
     const authorOf = useCommentAuthors(comments.data);
+    const portalEnabled = useListPortalEnabled(listId);
     const [filter, setFilter] = useState<FeedFilter>(initialFilter);
     const [visible, setVisible] = useState(PAGE);
 
@@ -87,7 +89,7 @@ export function ActivityFeed({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-activity-feed">
-            <Composer listId={listId} recordId={recordId} />
+            <Composer listId={listId} recordId={recordId} portalEnabled={portalEnabled} />
             <div className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs" role="tablist" aria-label={__('Filtrar actividad')}>
                 <FilterTab active={filter === 'all'} onClick={() => setFilter('all')}>{__('Todo')}</FilterTab>
                 <FilterTab active={filter === 'comments'} onClick={() => setFilter('comments')} count={counts.comments}>
@@ -167,19 +169,22 @@ function FilterTab({ active, onClick, count, children }: { active: boolean; onCl
 
 // ── Composer ─────────────────────────────────────────────────────────────
 
-function Composer({ listId, recordId }: { listId: number; recordId: number }): JSX.Element {
+function Composer({ listId, recordId, portalEnabled }: { listId: number; recordId: number; portalEnabled: boolean }): JSX.Element {
     const create = useCreateComment(listId, recordId);
     const toast = useToast();
     const [open, setOpen] = useState(false);
     const [mode, setMode] = useState<CommentKind>('note');
     const [draft, setDraft] = useState('');
     const [meta, setMeta] = useState<CommentMetadata>({});
+    // Todo comentario nace INTERNO: el cliente sólo ve lo que se marca a propósito.
+    const [forClient, setForClient] = useState(false);
     const me = getBootData().user.displayName;
 
     const reset = (): void => {
         setDraft('');
         setMeta({});
         setMode('note');
+        setForClient(false);
         setOpen(false);
     };
 
@@ -195,7 +200,7 @@ function Composer({ listId, recordId }: { listId: number; recordId: number }): J
             return out;
         })();
         try {
-            await create.mutateAsync({ content, metadata });
+            await create.mutateAsync({ content, metadata, visibility: portalEnabled && forClient ? 'client' : 'internal' });
             reset();
         } catch (err) {
             toast.error(__('No se pudo publicar'), err instanceof Error ? err.message : '');
@@ -256,6 +261,7 @@ function Composer({ listId, recordId }: { listId: number; recordId: number }): J
                     );
                 })}
                 <span className="imcrm-flex-1" />
+                {portalEnabled && <ClientVisibilityToggle checked={forClient} onChange={setForClient} disabled={create.isPending} />}
                 <Button type="button" variant="ghost" size="sm" className="imcrm-h-7" onClick={reset}>
                     {__('Cancelar')}
                 </Button>
@@ -469,6 +475,7 @@ function CommentRow({ comment, name, canEdit, listId, recordId }: { comment: Com
                 <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-gap-2">
                     <p className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-1.5 imcrm-text-[13px]">
                         <span className="imcrm-font-medium imcrm-text-foreground">{name}</span>
+                        <ClientVisibleBadge comment={comment} />
                         {meta.kind && meta.kind !== 'note' && (
                             <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground">
                                 <KindIcon className="imcrm-h-3 imcrm-w-3" />

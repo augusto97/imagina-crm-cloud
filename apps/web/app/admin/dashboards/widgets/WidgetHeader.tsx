@@ -46,12 +46,12 @@ export function WidgetHeader({
  * Badge "Promedio: N" para la esquina superior derecha del header
  * (charts de barras / línea / área — paridad ClickUp).
  */
-export function AverageBadge({ value }: { value: number }): JSX.Element {
+export function AverageBadge({ value, format }: { value: number; format?: (n: number) => string }): JSX.Element {
     return (
         <span className="imcrm-whitespace-nowrap imcrm-text-[12px] imcrm-text-muted-foreground">
             {__('Promedio')}:{' '}
             <span className="imcrm-font-bold imcrm-tabular-nums imcrm-text-foreground">
-                {formatNumber(value, { maxFrac: 2 })}
+                {format ? format(value) : formatNumber(value, { maxFrac: 2 })}
             </span>
         </span>
     );

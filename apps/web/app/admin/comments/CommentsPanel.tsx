@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
 
 import { CommentContent } from '@/admin/comments/CommentContent';
+import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { MentionAutocomplete } from '@/admin/comments/MentionAutocomplete';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -52,6 +53,9 @@ export function CommentsPanel({
     const authorOf = useCommentAuthors(comments.data);
 
     const [draft, setDraft] = useState('');
+    // Todo comentario nace INTERNO (sólo el equipo); el cliente ve lo que se marca.
+    const portalEnabled = useListPortalEnabled(listId);
+    const [forClient, setForClient] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [cursor, setCursor] = useState(0);
     const listEndRef = useRef<HTMLDivElement | null>(null);
@@ -84,8 +88,9 @@ export function CommentsPanel({
         const content = draft.trim();
         if (content === '') return;
         try {
-            await create.mutateAsync({ content });
+            await create.mutateAsync({ content, visibility: portalEnabled && forClient ? 'client' : 'internal' });
             setDraft('');
+            setForClient(false);
         } catch (err) {
             if (err instanceof ApiError || err instanceof Error) {
                 setSubmitError(err.message);
@@ -199,7 +204,8 @@ export function CommentsPanel({
                 {submitError && (
                     <p className="imcrm-text-xs imcrm-text-destructive">{submitError}</p>
                 )}
-                <div className="imcrm-flex imcrm-justify-end">
+                <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-2">
+                    {portalEnabled && <ClientVisibilityToggle checked={forClient} onChange={setForClient} disabled={create.isPending} />}
                     <Button
                         type="submit"
                         size="sm"
@@ -284,6 +290,7 @@ function CommentItem({
                         {initialsOf(authorName)}
                     </span>
                     <span className="imcrm-font-medium">{authorName}</span>
+                    <ClientVisibleBadge comment={comment} />
                     <span className="imcrm-text-muted-foreground">
                         {formatDateTime(parseUtcDate(comment.created_at))}
                     </span>

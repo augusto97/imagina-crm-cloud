@@ -16,6 +16,7 @@ import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import type { ListSummary } from '@/types/list';
 import { PORTAL_DEFAULTS, type PortalSettings, type PortalTemplate } from '@/types/portal';
+import { PortalCreatablePicker } from '@/admin/lists/PortalCreatablePicker';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { layoutBlocks, readPortalLayoutV3, type PortalRelatedList } from '@imagina-base/shared';
@@ -69,6 +70,19 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
             setSubmitError(
                 err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'),
             );
+        }
+    };
+
+    const handleCreatable = async (next: PortalSettings['creatable_lists']): Promise<void> => {
+        setSubmitError(null);
+        const previous = portal;
+        const merged = { ...portal, creatable_lists: next };
+        setPortal(merged);
+        try {
+            await update.mutateAsync({ settings: mergeIntoSettings(list.settings, merged) });
+        } catch (err) {
+            setPortal(previous);
+            setSubmitError(err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'));
         }
     };
 
@@ -168,6 +182,13 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                             onChange={(ids) => void handleRelated(ids)}
                         />
 
+                        <PortalCreatablePicker
+                            list={list}
+                            value={portal.creatable_lists}
+                            disabled={update.isPending}
+                            onChange={(next) => void handleCreatable(next)}
+                        />
+
                         {/* Cómo accede el cliente — reemplaza al shortcode de WordPress. */}
                         <div className="imcrm-flex imcrm-items-start imcrm-gap-2.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-4 imcrm-py-3">
                             <KeyRound className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />
@@ -237,7 +258,7 @@ function RelatedListsPicker({
             <span className="imcrm-text-sm imcrm-font-medium">{__('Qué más ve el cliente')}</span>
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Además de su ficha, el cliente puede ver los registros de otras listas que le pertenecen (sus facturas, sus tickets…). Elige cuáles: por defecto no ve ninguna.')}
+                    {__('Además de su ficha, el cliente puede ver los registros de otras listas que le pertenecen (sus facturas, sus tickets…). Elige cuáles: por defecto no ve ninguna. En el diseño automático aparecen solas; con un diseño propio, se ven donde las pongas en el editor (con las columnas que elijas ahí).')}
                 </p>
                 {options.isLoading && (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Buscando listas vinculadas…')}</p>
@@ -285,6 +306,21 @@ function readPortal(settings: Record<string, unknown>): PortalSettings {
     }
     const p = raw as Record<string, unknown>;
     return {
+        // Lo que este panel no conoce se conserva al guardar.
+        ...(p as object),
+        creatable_lists: Array.isArray(p.creatable_lists)
+            ? (p.creatable_lists as unknown[]).flatMap((c) => {
+                  if (!c || typeof c !== 'object') return [];
+                  const o = c as { list_id?: unknown; field_ids?: unknown; label?: unknown };
+                  const id = Number(o.list_id);
+                  if (!Number.isInteger(id) || id <= 0) return [];
+                  return [{
+                      list_id: id,
+                      field_ids: Array.isArray(o.field_ids) ? o.field_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [],
+                      label: typeof o.label === 'string' ? o.label : '',
+                  }];
+              })
+            : [],
         related_lists: Array.isArray(p.related_lists)
             ? p.related_lists.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)
             : [],

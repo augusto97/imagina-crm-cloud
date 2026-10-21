@@ -208,19 +208,19 @@ export function PlatformTenantsCard(): JSX.Element {
     return (
         <Card>
             <CardHeader>
-                <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
-                    <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-3">
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-start imcrm-gap-3 sm:imcrm-min-w-[16rem]">
                         <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                             <Building2 className="imcrm-h-4 imcrm-w-4" aria-hidden />
                         </span>
-                        <div>
+                        <div className="imcrm-min-w-0">
                             <CardTitle>{__('Empresas (clientes)')}</CardTitle>
                             <CardDescription>
                                 {__('Cada fila es un workspace. Cambiar el estado a "Impaga/Cancelada" deja la cuenta en solo-lectura (los datos nunca se secuestran).')}
                             </CardDescription>
                         </div>
                     </div>
-                    <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-3">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
                         <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
                             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
                             {__('Ver archivadas')}

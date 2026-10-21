@@ -47,6 +47,7 @@ export class CommentsRepository {
                 userId: comments.userId,
                 body: comments.body,
                 kind: comments.kind,
+                visibility: comments.visibility,
                 parentId: comments.parentId,
                 metadata: comments.metadata,
                 createdAt: comments.createdAt,
@@ -72,6 +73,26 @@ export class CommentsRepository {
     async authorNameOf(tx: Tx, userId: number): Promise<string | null> {
         const [row] = await tx.select({ name: authorName }).from(users).where(eq(users.id, userId)).limit(1);
         return row?.name ?? null;
+    }
+
+    /**
+     * La conversación que ve el CLIENTE en su portal: sólo los comentarios
+     * marcados visibles para él (los suyos lo son siempre).
+     */
+    listClientVisible(tx: Tx, tenantId: number, recordId: number, limit = 200): Promise<CommentRow[]> {
+        return tx
+            .select()
+            .from(comments)
+            .where(
+                and(
+                    eq(comments.tenantId, tenantId),
+                    eq(comments.recordId, recordId),
+                    eq(comments.visibility, 'client'),
+                    isNull(comments.deletedAt),
+                ),
+            )
+            .orderBy(asc(comments.id))
+            .limit(Math.min(Math.max(limit, 1), 500));
     }
 
     async findById(tx: Tx, tenantId: number, id: number): Promise<CommentRow | null> {

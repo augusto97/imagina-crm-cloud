@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
     ChevronDown,
@@ -80,7 +80,12 @@ interface ListsTreeProps {
  * derecho): renombrar, color e ícono, nueva lista adentro, plegar/desplegar,
  * carpeta nueva y eliminar. Y un "+" al hover que crea una lista adentro.
  */
-export function ListsTree({
+/**
+ * v0.1.286 — memoizado: el Sidebar se re-renderiza en cada navegación y el
+ * árbol (con cientos de listas) no tiene por qué recalcularse si sus props
+ * —estables desde el Sidebar— no cambiaron.
+ */
+export const ListsTree = memo(function ListsTree({
     lists,
     canManageLists,
     starredIds,
@@ -89,6 +94,12 @@ export function ListsTree({
     dragIndexRef,
 }: ListsTreeProps): JSX.Element {
     const groups = useListGroups();
+    const [createListOpen, setCreateListOpen] = useState(false);
+    const peekHold = usePeekHold();
+    // Con el diálogo de "Nueva lista" abierto desde el flotante, se sostiene.
+    useEffect(() => {
+        peekHold(createListOpen);
+    }, [createListOpen, peekHold]);
     // Estable entre renders: los items del panel son memo (v0.1.253).
     const toggleStar = useEventCallback(onToggleStar);
     const createGroup = useCreateListGroup();
@@ -185,20 +196,60 @@ export function ListsTree({
                     {__('Espacio de trabajo')}
                 </h3>
                 {canManageLists && (
-                    <button
-                        type="button"
-                        title={__('Nueva carpeta')}
-                        aria-label={__('Nueva carpeta')}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            startCreating();
-                        }}
-                        className="imcrm-rounded imcrm-p-1.5 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground lg:imcrm-p-0.5"
-                    >
-                        <FolderPlus className="imcrm-h-4 imcrm-w-4 lg:imcrm-h-3.5 lg:imcrm-w-3.5" />
-                    </button>
+                    <span className="imcrm-flex imcrm-items-center imcrm-gap-0.5">
+                        <button
+                            type="button"
+                            title={__('Nueva lista')}
+                            aria-label={__('Nueva lista')}
+                            data-testid="panel-new-list"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setCreateListOpen(true);
+                            }}
+                            className="imcrm-rounded imcrm-p-1.5 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground lg:imcrm-p-0.5"
+                        >
+                            <Plus className="imcrm-h-4 imcrm-w-4 lg:imcrm-h-3.5 lg:imcrm-w-3.5" />
+                        </button>
+                        <button
+                            type="button"
+                            title={__('Nueva carpeta')}
+                            aria-label={__('Nueva carpeta')}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                startCreating();
+                            }}
+                            className="imcrm-rounded imcrm-p-1.5 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground lg:imcrm-p-0.5"
+                        >
+                            <FolderPlus className="imcrm-h-4 imcrm-w-4 lg:imcrm-h-3.5 lg:imcrm-w-3.5" />
+                        </button>
+                    </span>
                 )}
             </div>
+
+            {/* v0.1.286 — workspace vacío: el panel ya no queda en blanco. */}
+            {lists.length === 0 && sortedGroups.length === 0 && !creating && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-items-start imcrm-gap-2 imcrm-px-2.5 imcrm-py-1" data-testid="panel-empty-lists">
+                    <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
+                        {canManageLists
+                            ? __('Todavía no hay listas. Crea la primera desde cero o con una plantilla.')
+                            : __('Todavía no hay listas en esta empresa.')}
+                    </p>
+                    {canManageLists && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setCreateListOpen(true);
+                            }}
+                            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2.5 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-foreground hover:imcrm-bg-muted"
+                        >
+                            <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Nueva lista')}
+                        </button>
+                    )}
+                </div>
+            )}
+            {createListOpen && <ListCreateDialog open={createListOpen} onOpenChange={setCreateListOpen} />}
 
             {creating && (
                 <div className="imcrm-px-1 imcrm-pb-1" onClick={(e) => e.stopPropagation()}>
@@ -275,7 +326,7 @@ export function ListsTree({
             </ul>
         </div>
     );
-}
+});
 
 /**
  * Cabecera de una carpeta (v0.1.173): icono de color que se vuelve chevron al

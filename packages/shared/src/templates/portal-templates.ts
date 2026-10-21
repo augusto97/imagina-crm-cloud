@@ -89,6 +89,15 @@ const CLOSED_RE = /cerr|resuel|solucion|finaliz|complet|closed|resolved|done|ter
 
 const hay = (f: LayoutFieldLite): string => `${f.slug} ${f.label}`;
 
+/**
+ * ¿El nombre del campo suena a dato interno del equipo (costo, margen,
+ * comisión, «interno»…)? El portal nunca lo ofrece por su cuenta: sólo viaja
+ * si quien diseña lo puso a propósito en un bloque.
+ */
+export function soundsInternalField(f: { slug: string; label: string }): boolean {
+    return INTERNAL_RE.test(`${f.slug} ${f.label}`);
+}
+
 function optionsOf(f: LayoutFieldLite | undefined): Array<{ value: string; label: string }> {
     const raw = (f?.config as { options?: unknown } | undefined)?.options;
     if (!Array.isArray(raw)) return [];
