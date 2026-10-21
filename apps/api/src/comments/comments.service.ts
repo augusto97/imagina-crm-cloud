@@ -34,10 +34,16 @@ export class CommentsService {
         recordId: number,
     ): Promise<CommentDto[]> {
         await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.listByRecord(tx, tenantId, recordId),
-        );
-        return rows.map(toComment);
+        return this.tenantDb.withTenant(tenantId, (tx) => this.listInTx(tx, tenantId, recordId));
+    }
+
+    /**
+     * Comentarios de un registro YA autorizado (el llamador verificó que la
+     * persona lo ve). Lo usa el bundle de la ficha para no repetir el chequeo.
+     */
+    async listInTx(tx: Tx, tenantId: number, recordId: number, limit?: number): Promise<CommentDto[]> {
+        const rows = await this.repo.listByRecordWithAuthor(tx, tenantId, recordId, limit);
+        return rows.map((r) => toComment(r, r.userName));
     }
 
     async create(
@@ -73,11 +79,11 @@ export class CommentsService {
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
             mentioned = await this.storeMentions(tx, tenantId, row);
-            return row;
+            return { row, name: await this.repo.authorNameOf(tx, actor.userId) };
         });
         this.realtime.records(tenantId, listId); // el drawer del record re-fetchea
-        this.notify?.emit({ type: 'comment', tenantId, listId, recordId, actorId: actor.userId, body: row.body, mentioned });
-        return toComment(row);
+        this.notify?.emit({ type: 'comment', tenantId, listId, recordId, actorId: actor.userId, body: row.row.body, mentioned });
+        return toComment(row.row, row.name);
     }
 
     async update(
@@ -101,10 +107,10 @@ export class CommentsService {
             if (patch.metadata !== undefined) changes.metadata = patch.metadata;
             const updated = await this.repo.update(tx, tenantId, id, changes);
             if (!updated) throw commentNotFound(id);
-            return updated;
+            return { row: updated, name: await this.repo.authorNameOf(tx, updated.userId) };
         });
         this.realtime.records(tenantId, listId);
-        return toComment(row);
+        return toComment(row.row, row.name);
     }
 
     async remove(
@@ -177,12 +183,13 @@ export class CommentsService {
     }
 }
 
-function toComment(row: CommentRow): CommentDto {
+function toComment(row: CommentRow, userName: string | null): CommentDto {
     return {
         id: row.id,
         list_id: row.listId,
         record_id: row.recordId,
         user_id: row.userId,
+        user_name: userName,
         body: row.body,
         kind: row.kind as CommentKind,
         parent_id: row.parentId,

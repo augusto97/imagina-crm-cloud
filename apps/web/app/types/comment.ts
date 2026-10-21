@@ -26,6 +26,8 @@ export interface CommentEntity {
     list_id: number;
     record_id: number;
     user_id: number;
+    /** Nombre visible del autor (antes la ficha decía "Usuario #2"). */
+    user_name?: string | null;
     parent_id: number | null;
     content: string;
     metadata: CommentMetadata;

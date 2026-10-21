@@ -10,9 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useRecordActivity } from '@/hooks/useActivity';
-import { useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
+import { useCommentAuthors, useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
 import { useFields } from '@/hooks/useFields';
-import { useWpUser } from '@/hooks/useWpUsers';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr, formatTimeOfDay } from '@/lib/tenantFormat';
@@ -72,6 +71,9 @@ export function ActivityFeed({
     const comments = useComments(listId, recordId);
     const activity = useRecordActivity(listId, recordId);
     const fields = useFields(listId);
+    // Nombres de los autores: del DTO, y en LOTE lo que falte (antes era una
+    // request por autor con useWpUser).
+    const authorOf = useCommentAuthors(comments.data);
     const [filter, setFilter] = useState<FeedFilter>(initialFilter);
     const [visible, setVisible] = useState(PAGE);
 
@@ -123,6 +125,7 @@ export function ActivityFeed({
                                         fields={fields.data ?? []}
                                         listId={listId}
                                         recordId={recordId}
+                                        authorOf={authorOf}
                                         canEditComment={(c) => isAdmin || c.user_id === currentUserId}
                                     />
                                 ))}
@@ -319,16 +322,18 @@ function FeedRow({
     fields,
     listId,
     recordId,
+    authorOf,
     canEditComment,
 }: {
     item: FeedItem;
     fields: FieldEntity[];
     listId: number;
     recordId: number;
+    authorOf: (c: CommentEntity) => string;
     canEditComment: (c: CommentEntity) => boolean;
 }): JSX.Element {
     if (item.kind === 'comment') {
-        return <CommentRow comment={item.comment} canEdit={canEditComment(item.comment)} listId={listId} recordId={recordId} />;
+        return <CommentRow comment={item.comment} name={authorOf(item.comment)} canEdit={canEditComment(item.comment)} listId={listId} recordId={recordId} />;
     }
     return <ChangeRow entries={item.entries} fields={fields} />;
 }
@@ -407,9 +412,7 @@ function ChangeLine({ change, withLabel }: { change: FieldChange; withLabel: boo
     );
 }
 
-function CommentRow({ comment, canEdit, listId, recordId }: { comment: CommentEntity; canEdit: boolean; listId: number; recordId: number }): JSX.Element {
-    const author = useWpUser(comment.user_id);
-    const name = author.data?.display_name ?? sprintf(__('Usuario #%d'), comment.user_id);
+function CommentRow({ comment, name, canEdit, listId, recordId }: { comment: CommentEntity; name: string; canEdit: boolean; listId: number; recordId: number }): JSX.Element {
     const update = useUpdateComment(listId, recordId);
     const remove = useDeleteComment(listId, recordId);
     const confirm = useConfirm();
