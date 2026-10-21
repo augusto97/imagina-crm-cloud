@@ -217,6 +217,23 @@ export class FieldsService {
         return rows.map(toField);
     }
 
+    /**
+     * Los campos de TODAS las listas de la empresa, agrupados por lista, en
+     * una sola consulta (quien recorre muchas listas a la vez — «Mi trabajo» —
+     * no hace una lectura por lista).
+     */
+    async listByTenantGrouped(tenantId: number): Promise<Map<number, Field[]>> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) => this.repo.listByTenant(tx, tenantId));
+        const out = new Map<number, Field[]>();
+        for (const row of rows) {
+            const f = toField(row);
+            const arr = out.get(f.list_id);
+            if (arr) arr.push(f);
+            else out.set(f.list_id, [f]);
+        }
+        return out;
+    }
+
     /** Igual que listByListId pero DENTRO de un tx ya abierto (PERF-02). */
     async listByListIdWithinTx(tx: Tx, tenantId: number, listId: number): Promise<Field[]> {
         const rows = await this.repo.listByList(tx, tenantId, listId);

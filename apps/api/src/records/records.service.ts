@@ -184,7 +184,7 @@ export class RecordsService {
             after: row.data,
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list, fields });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
         return toRecord(withComputed(fields, enriched[0] ?? row), {
             ...byFieldToKeys(relFieldIds, undefined),
@@ -235,6 +235,24 @@ export class RecordsService {
             toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id))),
             hiddenKeys,
         );
+    }
+
+    /**
+     * De estas personas, ¿quiénes pueden VER el registro? El mismo criterio que
+     * `get` (la fila existe y el alcance del rol la alcanza), pero leyendo la
+     * lista y la fila UNA vez para todos — los avisos antes hacían un `get`
+     * completo por destinatario.
+     */
+    async viewersOf(tenantId: number, listId: number, recordId: number, actors: readonly Actor[]): Promise<Set<number>> {
+        if (actors.length === 0) return new Set();
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, String(listId)).catch(() => null);
+            if (!list) return null;
+            const row = await this.repo.findById(tx, tenantId, list.id, recordId);
+            return row ? { list, row } : null;
+        });
+        if (!found) return new Set();
+        return new Set(actors.filter((a) => this.aclCanReach(found.list, a, 'view', found.row)).map((a) => a.userId));
     }
 
     async list(
@@ -462,7 +480,7 @@ export class RecordsService {
             before: result.before, // para changed_fields
         });
         // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId, list, fields });
         // Recurrencias con trigger status_change: fire-and-forget (no bloquea
         // la respuesta del update; un fallo se loguea y no rompe la mutación).
         void this.recurrences
