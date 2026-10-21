@@ -18,6 +18,25 @@ export class ActivityRepository {
         await tx.insert(activity).values(values);
     }
 
+    /** La última entrada de un registro (para juntar ediciones seguidas). */
+    async latestForRecord(tx: Tx, tenantId: number, recordId: number): Promise<typeof activity.$inferSelect | null> {
+        const [row] = await tx
+            .select()
+            .from(activity)
+            .where(and(eq(activity.tenantId, tenantId), eq(activity.recordId, recordId)))
+            .orderBy(desc(activity.id))
+            .limit(1);
+        return row ?? null;
+    }
+
+    /** Reescribe el diff de una entrada y la trae al presente. */
+    async rewrite(tx: Tx, tenantId: number, id: number, diff: Record<string, unknown>): Promise<void> {
+        await tx
+            .update(activity)
+            .set({ diff, createdAt: new Date() })
+            .where(and(eq(activity.tenantId, tenantId), eq(activity.id, id)));
+    }
+
     /** Log por lista (o por record si se pasa recordId), keyset desc por id. */
     list(
         tx: Tx,

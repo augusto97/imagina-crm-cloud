@@ -628,24 +628,16 @@ export class RecordsService {
         const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.repo.findById(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
+            const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
             newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
-            // La bitácora registra QUE cambió, no el documento entero: el
-            // activity se lee como una línea de tiempo, no como un historial
-            // de versiones (eso sería otra feature).
-            await this.activity.logInTx(tx, {
-                tenantId,
-                listId: list.id,
-                recordId: id,
-                userId: actor.userId,
-                action: 'record_updated',
-                diff: {
-                    description: {
-                        old: row.hasDescription ? '…' : '',
-                        new: clean === null ? '' : richDocToPlainText(clean, 120),
-                    },
-                },
-            });
+            // La bitácora registra QUE cambió (con un resumen corto, nunca el
+            // documento entero) y junta el autoguardado de una misma persona
+            // en una sola entrada — si no, cada segundo escribiendo era un
+            // "actualizó este registro" vacío.
+            const from = before === null ? '' : richDocToPlainText(before, 120);
+            const to = clean === null ? '' : richDocToPlainText(clean, 120);
+            await this.activity.logDescriptionEdit(tx, { tenantId, listId: list.id, recordId: id, userId: actor.userId, from, to });
             return true;
         });
         if (!ok) throw recordNotFound(id);
