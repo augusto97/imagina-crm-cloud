@@ -417,7 +417,8 @@ export class RecordsService {
         // (semántica parcial: los ausentes no se tocan).
         const rel = splitRelationValues(fields, input.data);
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const current = await this.repo.findById(tx, tenantId, listId, id);
+            // Con lock: dos ediciones simultáneas se encolan en vez de pisarse.
+            const current = await this.repo.findByIdForUpdate(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
