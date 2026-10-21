@@ -18,7 +18,7 @@ import { fieldsKeys } from './useFields';
 import { listsKeys } from './useLists';
 import { notificationKeys } from './useNotifications';
 import { descriptionKeys } from './useRecordDescription';
-import { canonicalListId, recordsKeys } from './useRecords';
+import { canonicalListId, listIdentifiersFor, recordsKeys } from './useRecords';
 
 /**
  * Ficha del registro en UN request (regla de oro nº 8).
@@ -47,6 +47,21 @@ export function subtasksQuery(recordId: number): RecordsQuery {
 
 /** Las keys de actividad que usa la ficha (panel lateral 100, feed 50). */
 const ACTIVITY_LIMITS = [50, RECORD_VIEW_ACTIVITY_LIMIT];
+
+/**
+ * Un registro que se acaba de borrar: sus piezas (ficha, descripción,
+ * comentarios, actividad) salen del cache. Si quedaran, la invalidación de la
+ * lista o el aviso del socket las volvían a pedir y respondían 404.
+ */
+export function forgetRecord(qc: QueryClient, listKey: string | number, recordId: number): void {
+    for (const id of listIdentifiersFor(qc, listKey)) {
+        qc.removeQueries({ queryKey: recordViewKeys.forRecord(id, recordId), exact: true });
+        qc.removeQueries({ queryKey: descriptionKeys.forRecord(id, recordId), exact: true });
+        qc.removeQueries({ queryKey: commentsKeys.forRecord(id, recordId) });
+        qc.removeQueries({ queryKey: activityKeys.forRecord(id, recordId) });
+        qc.removeQueries({ queryKey: recordsKeys.item(id, recordId), exact: true });
+    }
+}
 
 export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     const listId = b.list.id;

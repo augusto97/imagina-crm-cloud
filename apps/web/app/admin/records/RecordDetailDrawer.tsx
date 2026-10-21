@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,6 +21,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import {
     Sheet,
     SheetCloseButton,
@@ -27,10 +29,10 @@ import {
     SheetFooter,
     SheetTitle,
 } from '@/components/ui/sheet';
-import { useDeleteRecord, useUpdateRecord } from '@/hooks/useRecords';
+import { markLocalRecordsChange, useDeleteRecord, useUpdateRecord } from '@/hooks/useRecords';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { notificationKeys } from '@/hooks/useNotifications';
-import { useRecordView } from '@/hooks/useRecordView';
+import { forgetRecord, useRecordView } from '@/hooks/useRecordView';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { escapeIntent, FLOATING_MENU_ATTR, isEditableTarget, isInsideFloatingUi, leaveField } from '@/lib/escapeGuard';
@@ -145,6 +147,7 @@ export function RecordDetailDrawer({
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const remove = useDeleteRecord(listId);
     const confirm = useConfirm();
+    const toast = useToast();
     const navigate = useNavigate();
     const qc = useQueryClient();
     // v0.1.213 — lista de una tienda: qué campos se editan en WooCommerce.
@@ -294,12 +297,19 @@ export function RecordDetailDrawer({
             confirmLabel: __('Eliminar'),
         });
         if (!ok) return;
+        // Se cierra ANTES de borrar: con la ficha montada, la invalidación de
+        // la lista y el aviso del socket volvían a pedir el registro, su
+        // descripción y sus comentarios (404 de un registro que ya no existe).
+        const id = record.id;
+        draft.reset();
+        flushSync(() => onOpenChange(false));
+        markLocalRecordsChange(qc, listId);
         try {
-            await remove.mutateAsync({ id: record.id, purge: false });
-            draft.reset();
-            onOpenChange(false);
+            await remove.mutateAsync({ id, purge: false });
+            forgetRecord(qc, listId, id);
+            toast.success(__('Registro eliminado'));
         } catch (err) {
-            setError(err instanceof Error ? err.message : __('Error al eliminar'));
+            toast.error(__('No se pudo eliminar el registro'), err instanceof Error ? err.message : undefined);
         }
     };
 

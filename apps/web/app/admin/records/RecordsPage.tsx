@@ -373,12 +373,22 @@ export function RecordsPage(): JSX.Element {
     const [searchParams, setSearchParams] = useSearchParams();
     const location = useLocation();
     const recordParam = Number(searchParams.get('record'));
-    const drawerRecordId = Number.isInteger(recordParam) && recordParam > 0 ? recordParam : null;
+    const urlRecordId = Number.isInteger(recordParam) && recordParam > 0 ? recordParam : null;
+    // El cambio de URL es una transición (react-router) y puede tardar en
+    // pintarse: el modal se cierra AL INSTANTE con este estado local, así
+    // nada de la ficha (ni el registro de respaldo) se sigue pidiendo — tras
+    // borrarlo, eso eran 404.
+    const [closingRecordId, setClosingRecordId] = useState<number | null>(null);
+    useEffect(() => {
+        if (closingRecordId !== null && urlRecordId !== closingRecordId) setClosingRecordId(null);
+    }, [urlRecordId, closingRecordId]);
+    const drawerRecordId = urlRecordId !== null && urlRecordId !== closingRecordId ? urlRecordId : null;
     const openedByUsRef = useRef(false);
     const setDrawerRecordId = useEventCallback((id: number | null): void => {
         const pushedHere = (location.state as { imcrmRecordModal?: boolean } | null)?.imcrmRecordModal === true;
         if (id === null) {
             if (drawerRecordId === null) return;
+            setClosingRecordId(drawerRecordId);
             // Lo abrimos nosotros con un paso en el historial: cerrar = atrás
             // (así el botón atrás después no vuelve a abrirlo).
             if (pushedHere && openedByUsRef.current) {
@@ -392,6 +402,7 @@ export function RecordsPage(): JSX.Element {
             return;
         }
         if (id === drawerRecordId) return;
+        setClosingRecordId(null);
         const next = new URLSearchParams(searchParams);
         next.set('record', String(id));
         if (drawerRecordId === null) {

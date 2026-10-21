@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -32,11 +33,12 @@ import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { notificationKeys } from '@/hooks/useNotifications';
-import { useDeleteRecord, useRecord, useUpdateRecord } from '@/hooks/useRecords';
-import { useRecordView } from '@/hooks/useRecordView';
+import { markLocalRecordsChange, useDeleteRecord, useRecord, useUpdateRecord } from '@/hooks/useRecords';
+import { forgetRecord, useRecordView } from '@/hooks/useRecordView';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
@@ -65,15 +67,20 @@ export function RecordPage(): JSX.Element {
     const qc = useQueryClient();
 
     const id = Number(recordId);
-    const view = useRecordView(listSlug, id);
+    // Recién borrado: la página deja de pedir el registro AL INSTANTE (la
+    // navegación a la lista es una transición y llega después del DELETE).
+    const [deletedId, setDeletedId] = useState<number | null>(null);
+    const liveId = deletedId === id ? undefined : id;
+    const view = useRecordView(listSlug, liveId);
     // Hasta que el bundle sembró los caches, nada sale a pedir lo suyo.
     const list = useList(view.ready ? listSlug : undefined);
     const fields = useFields(view.ready ? list.data?.id : undefined);
-    const record = useRecord(view.ready ? list.data?.id : undefined, id);
+    const record = useRecord(view.ready ? list.data?.id : undefined, liveId);
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const update = useUpdateRecord(list.data?.id ?? 0);
     const remove = useDeleteRecord(list.data?.id ?? 0);
     const confirm = useConfirm();
+    const toast = useToast();
 
     // Sólo lo que la persona tocó: un cambio de otra persona (o el
     // autoguardado de la descripción, que vuelve a pedir el registro) ya no
@@ -111,14 +118,31 @@ export function RecordPage(): JSX.Element {
             confirmLabel: __('Eliminar'),
         });
         if (!ok) return;
+        // Se sale ANTES de borrar: con la página montada, la invalidación de
+        // la lista y el aviso del socket volvían a pedir el registro (404).
+        const id = record.data.id;
+        const listId = list.data.id;
+        draft.reset();
+        flushSync(() => setDeletedId(id));
+        navigate(`/lists/${list.data.slug}/records`);
+        markLocalRecordsChange(qc, listId);
         try {
-            await remove.mutateAsync({ id: record.data.id, purge: false });
-            draft.reset();
-            navigate(`/lists/${list.data.slug}/records`);
+            await remove.mutateAsync({ id, purge: false });
+            forgetRecord(qc, listId, id);
+            toast.success(__('Registro eliminado'));
         } catch (err) {
-            setError(err instanceof Error ? err.message : __('Error al eliminar'));
+            toast.error(__('No se pudo eliminar el registro'), err instanceof Error ? err.message : undefined);
         }
     };
+
+    if (deletedId === id) {
+        return (
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-12 imcrm-text-sm imcrm-text-muted-foreground">
+                <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
+                {__('Eliminando registro…')}
+            </div>
+        );
+    }
 
     if (!view.ready || list.isLoading || fields.isLoading || record.isLoading) {
         return (
