@@ -103,19 +103,32 @@ export class RecordSearchService {
                 sql`, `,
             );
             const userIdText = String(actor.userId);
+            // El título se extrae y se pasa a minúsculas UNA vez por fila (las
+            // capas con `OFFSET 0` impiden que el planner las aplane y vuelva
+            // a calcular la expresión para el filtro y para el orden): con un
+            // término que aparece en 100k registros, la mitad del tiempo se
+            // iba en recalcularla.
             const result = await tx.execute(sql`
-                SELECT r.id, r.parent_id, r.list_id, r.data ->> t.k AS title, r.updated_at
-                FROM records r
-                JOIN (VALUES ${values}) AS t(list_id, k, scope, akey) ON r.list_id = t.list_id
-                WHERE r.tenant_id = ${tenantId}
-                  AND r.deleted_at IS NULL
-                  AND strpos(lower(r.data ->> t.k), ${needle}) > 0
-                  AND (
-                      t.scope = 'all'
-                      OR r.created_by = ${actor.userId}
-                      OR (t.scope = 'assigned' AND t.akey IS NOT NULL AND (r.data ->> t.akey) = ${userIdText})
-                  )
-                ORDER BY (strpos(lower(r.data ->> t.k), ${needle}) = 1) DESC, r.updated_at DESC, r.id DESC
+                SELECT s.id, s.parent_id, s.list_id, s.title, to_json(s.updated_at) #>> '{}' AS updated_at
+                FROM (
+                    SELECT x.*, strpos(lower(x.title), ${needle}) AS pos
+                    FROM (
+                        SELECT r.id, r.parent_id, r.list_id, r.updated_at, r.data ->> t.k AS title
+                        FROM records r
+                        JOIN (VALUES ${values}) AS t(list_id, k, scope, akey) ON r.list_id = t.list_id
+                        WHERE r.tenant_id = ${tenantId}
+                          AND r.deleted_at IS NULL
+                          AND (
+                              t.scope = 'all'
+                              OR r.created_by = ${actor.userId}
+                              OR (t.scope = 'assigned' AND t.akey IS NOT NULL AND (r.data ->> t.akey) = ${userIdText})
+                          )
+                        OFFSET 0
+                    ) x
+                    OFFSET 0
+                ) s
+                WHERE s.pos > 0
+                ORDER BY (s.pos = 1) DESC, s.updated_at DESC, s.id DESC
                 LIMIT ${query.limit}
             `);
             return (result.rows as Array<{
