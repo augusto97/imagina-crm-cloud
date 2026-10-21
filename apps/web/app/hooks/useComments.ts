@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FollowStateDto } from '@imagina-base/shared';
 
 import { notificationKeys } from '@/hooks/useNotifications';
 import { markLocalRecordsChange } from '@/hooks/useRecords';
@@ -36,6 +37,15 @@ export function toApiComment(input: {
         ...(input.parent_id ? { parent_id: input.parent_id } : {}),
         ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
     };
+}
+
+/**
+ * Estado de «Seguir» después de comentar: quien comenta queda siguiendo. Sin
+ * estado previo en cache no se inventa uno (la invalidación lo trae).
+ */
+export function followAfterComment(prev: FollowStateDto | undefined): FollowStateDto | undefined {
+    if (!prev || prev.following) return prev;
+    return { following: true, followers: prev.followers + 1 };
 }
 
 export const commentsKeys = {
@@ -81,7 +91,10 @@ export function useCreateComment(
             // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
             markLocalRecordsChange(qc, listId);
             // Comentar te suscribe al registro (ADR-S40): «Seguir» tiene que
-            // reflejarlo sin recargar.
+            // reflejarlo sin recargar. v0.1.287 — se marca al toque (el estado
+            // también vive sembrado por el bundle de la ficha, que no se
+            // vuelve a pedir) y después se confirma contra el servidor.
+            qc.setQueryData<FollowStateDto>(notificationKeys.follow(recordId), (prev) => followAfterComment(prev));
             void qc.invalidateQueries({ queryKey: notificationKeys.follow(recordId) });
         },
     });

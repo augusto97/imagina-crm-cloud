@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, comments, fields, lists, memberships, mentions, records, tenants, users } from '../src/db/schema';
+import { activity, comments, fields, lists, memberships, mentions, recordFollows, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
@@ -217,6 +217,22 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         expect(feed[0]).toMatchObject({ user_id: ana.userId, record_id: rec.id });
         expect((feed[0]!.changes as { snippet: string }).snippet).toContain('mira esto');
         expect(await meService.mentions(tenantA, ana.userId, 20)).toHaveLength(0);
+    });
+
+    it('comentar te pone a seguir el registro EN EL MISMO tx (el botón «Seguir» lo ve al toque)', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'Seguido' } });
+        const follows = () =>
+            withTenant(pg.db, tenantA, (tx) =>
+                tx.select().from(recordFollows).where(and(eq(recordFollows.tenantId, tenantA), eq(recordFollows.recordId, rec.id))),
+            );
+        expect(await follows()).toHaveLength(0);
+        // Sin NotifyHub (el hub corre en segundo plano): igual queda siguiendo.
+        await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'Ojo con esto', kind: 'note' });
+        const rows = await follows();
+        expect(rows.map((r) => r.userId)).toEqual([beto.userId]);
+        // Un segundo comentario no duplica.
+        await commentsService.create(tenantA, beto, 'clientes', rec.id, { body: 'Y esto', kind: 'note' });
+        expect(await follows()).toHaveLength(1);
     });
 
     it('comentar sobre un record inexistente/ajeno → 404', async () => {

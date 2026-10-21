@@ -7,7 +7,7 @@ import type {
 } from '@imagina-base/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { memberships, mentions, users } from '../db/schema';
+import { memberships, mentions, recordFollows, users } from '../db/schema';
 import { RealtimeService } from '../realtime/realtime.service';
 import { ListsService } from '../lists/lists.service';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -97,6 +97,16 @@ export class CommentsService {
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
             mentioned = await this.storeMentions(tx, tenantId, row);
+            // Comentar te suscribe al registro (ADR-S40) — en el MISMO tx, no
+            // después: el aviso de `NotifyHub` corre en segundo plano y el
+            // botón «Seguir» de la ficha releía el estado antes de que llegara
+            // (v0.1.287). El hub lo repite y no pasa nada (conflict → nada).
+            if (actor.role !== 'client') {
+                await tx
+                    .insert(recordFollows)
+                    .values({ tenantId, userId: actor.userId, listId, recordId })
+                    .onConflictDoNothing();
+            }
             return { row, name: await this.repo.authorNameOf(tx, actor.userId) };
         });
         this.realtime.records(tenantId, listId); // el drawer del record re-fetchea

@@ -58,7 +58,7 @@ export function CommentsPanel({
     const [forClient, setForClient] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [cursor, setCursor] = useState(0);
-    const listEndRef = useRef<HTMLDivElement | null>(null);
+    const scrollRef = useRef<HTMLDivElement | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
     /**
@@ -78,8 +78,22 @@ export function CommentsPanel({
     }, [draft, cursor]);
 
     // Scroll al final al recibir nuevos comentarios — UX típica de chat.
+    // v0.1.287 — se mueve SÓLO el contenedor del hilo (su scrollTop). Antes
+    // era `scrollIntoView`, que también scrollea a los ancestros: la página
+    // del registro abría corrida hacia abajo (162-197 px en escritorio,
+    // ~1100 en el celular) apenas cargaban los comentarios. Al cargar, salta
+    // sin animación; con un comentario nuevo, suave. Si el panel no es su
+    // propio scroller (crece con la página), asignar scrollTop no hace nada.
+    const prevCountRef = useRef<number | null>(null);
     useEffect(() => {
-        listEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const count = comments.data?.length;
+        if (count === undefined) return;
+        const prev = prevCountRef.current;
+        prevCountRef.current = count;
+        const el = scrollRef.current;
+        if (!el || el.scrollHeight <= el.clientHeight) return;
+        if (prev === null) el.scrollTop = el.scrollHeight;
+        else if (count > prev) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }, [comments.data?.length]);
 
     const handleSubmit = async (e?: React.FormEvent): Promise<void> => {
@@ -107,7 +121,7 @@ export function CommentsPanel({
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-            <div className="imcrm-flex-1 imcrm-overflow-y-auto imcrm-pr-1">
+            <div ref={scrollRef} className="imcrm-flex-1 imcrm-overflow-y-auto imcrm-pr-1">
                 {comments.isLoading ? (
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
                         <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
@@ -134,7 +148,6 @@ export function CommentsPanel({
                                 onDelete={() => remove.mutateAsync(c.id)}
                             />
                         ))}
-                        <div ref={listEndRef} />
                     </ul>
                 )}
             </div>
