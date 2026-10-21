@@ -228,6 +228,23 @@ export function DescriptionEditor({
     editorRef.current = editor;
 
     /**
+     * Esc con el menú «/» abierto: el modal de la ficha (Radix) escucha Escape
+     * en el `document` en fase de captura y lo marca como manejado, así que a
+     * ProseMirror (que ignora los eventos ya marcados) nunca le llegaba y el
+     * menú quedaba abierto. La `window` captura ANTES que el `document`: aquí
+     * se cierra el menú y la ficha, al ver el menú todavía montado, no se
+     * cierra.
+     */
+    useEffect(() => {
+        if (!slash.open) return;
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.key === 'Escape') setSlash(CLOSED);
+        };
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
+    }, [slash.open]);
+
+    /**
      * Detecta el patrón `/consulta` inmediatamente antes del cursor y ubica el
      * menú. Sólo dispara si el `/` arranca palabra — así una fecha `12/8` o
      * una URL no abren el menú.
@@ -344,7 +361,9 @@ export function DescriptionEditor({
                 <BubbleMenu
                     editor={editor}
                     options={{ placement: 'top' }}
-                    {...FLOATING}
+                    // Siempre montada (se oculta sola): NO cuenta como menú
+                    // abierto para Esc, pero un click en ella no es "afuera".
+                    data-imcrm-popup=""
                     className="imcrm-z-50 imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
                     shouldShow={({ editor: ed, from, to }) =>
                         from !== to && ed.isEditable && !ed.isActive('codeBlock')
@@ -683,7 +702,7 @@ function ColorMenu({
         <span className="imcrm-relative">
             <MarkButton icon={Icon} label={label} active={open} onClick={() => setOpen((v) => !v)} />
             {open && (
-                <div className="imcrm-absolute imcrm-left-0 imcrm-top-8 imcrm-z-50 imcrm-grid imcrm-w-40 imcrm-grid-cols-1 imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg">
+                <div {...FLOATING} className="imcrm-absolute imcrm-left-0 imcrm-top-8 imcrm-z-50 imcrm-grid imcrm-w-40 imcrm-grid-cols-1 imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg">
                     {colors.map((c) => (
                         <button
                             key={c.label}

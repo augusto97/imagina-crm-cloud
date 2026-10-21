@@ -15,6 +15,16 @@
 
 /** Marca de un menú flotante propio (no Radix) mientras está abierto. */
 export const FLOATING_MENU_ATTR = 'data-imcrm-floating-menu';
+/**
+ * Marca de una barra flotante que vive montada aunque no se vea (la de formato
+ * del editor): no cuenta para Esc, pero un click en ella no es "afuera".
+ */
+export const POPUP_ATTR = 'data-imcrm-popup';
+
+/** ¿El click fue en un menú o barra flotante propia (no "afuera" de la ficha)? */
+export function isInsideFloatingUi(target: Element | null): boolean {
+    return target?.closest(`[${FLOATING_MENU_ATTR}], [${POPUP_ATTR}]`) != null;
+}
 
 const TEXT_INPUTS = new Set([
     'text', 'search', 'email', 'url', 'tel', 'number', 'password', 'date', 'datetime-local', 'time', 'month', 'week', '',

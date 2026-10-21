@@ -532,7 +532,8 @@ function ReadButton({
             <button
                 type="button"
                 onClick={onEdit}
-                aria-label={empty ? `${__('Agregar')} ${field.label}` : `${__('Editar')} ${field.label}`}
+                aria-label={empty ? `${__('Agregar')} ${field.label}` : undefined}
+                title={empty ? undefined : `${__('Editar')} ${field.label}`}
                 className={cn(
                     'imcrm-inline-flex imcrm-min-h-[24px] imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded imcrm-py-0.5 imcrm-text-left imcrm-text-sm',
                     'imcrm-text-foreground',

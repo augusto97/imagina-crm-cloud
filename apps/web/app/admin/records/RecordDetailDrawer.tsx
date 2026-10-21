@@ -33,7 +33,7 @@ import { notificationKeys } from '@/hooks/useNotifications';
 import { useRecordView } from '@/hooks/useRecordView';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
-import { escapeIntent, FLOATING_MENU_ATTR, isEditableTarget, leaveField } from '@/lib/escapeGuard';
+import { escapeIntent, FLOATING_MENU_ATTR, isEditableTarget, isInsideFloatingUi, leaveField } from '@/lib/escapeGuard';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -353,8 +353,7 @@ export function RecordDetailDrawer({
                         // Un click en un menú flotante propio (barra del
                         // editor, «/», mención) no es "afuera".
                         onPointerDownOutside={(e) => {
-                            const target = e.target as Element | null;
-                            if (target?.closest(`[${FLOATING_MENU_ATTR}]`)) e.preventDefault();
+                            if (isInsideFloatingUi(e.target as Element | null)) e.preventDefault();
                         }}
                         className={cn(
                             // Celular: pantalla completa (la tarjeta flotante dejaba
