@@ -49,6 +49,9 @@ export class RecordsGroupedController {
             collapsed: keyList(q.collapsed),
             filterTree: parseFilter(q.filter_tree),
             search: typeof q.search === 'string' ? q.search : undefined,
+            // v0.1.286 — orden de las filas dentro de cada grupo (mismo formato
+            // que el listado; el whitelist de campos lo aplica el servicio).
+            sort: typeof q.sort === 'string' && q.sort.length <= 500 ? q.sort : undefined,
             perPage,
             aggregateFieldIds,
         });

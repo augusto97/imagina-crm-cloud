@@ -20,6 +20,7 @@ import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { withComputedExprs } from '../records/computed-sql';
+import { compileSearch } from '../records/search-sql';
 import { effectivePermissions, resolvePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import {
@@ -104,7 +105,13 @@ export class AggregateService {
          * grupo sumaba filas que no se ven. Los tableros cuentan TODO y filtran
          * por tipo cuando hace falta.
          */
-        opts: { rootsOnly?: boolean; viewer?: AggregateViewer; related?: RelatedScope } = {},
+        opts: {
+            rootsOnly?: boolean;
+            viewer?: AggregateViewer;
+            related?: RelatedScope;
+            /** v0.1.286 — la búsqueda de la tabla (misma regla que el listado). */
+            search?: string;
+        } = {},
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
@@ -127,6 +134,7 @@ export class AggregateService {
             opts.rootsOnly ? isNull(records.parentId) : undefined,
             acl.scope,
             filterWhere,
+            compileSearch(fields.filter((f) => !acl.hidden.has(f.id)), opts.search),
             // v0.1.230 — sólo los vinculados a un registro (bloques de la ficha).
             opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
         );
@@ -267,6 +275,15 @@ export class AggregateService {
             filter_tree?: AggregateRequest['filter_tree'];
             group_by_field_id?: number;
             viewer?: AggregateViewer;
+            /** v0.1.286 — la búsqueda de la tabla: el pie suma lo que se ve. */
+            search?: string;
+            /**
+             * v0.1.286 — sólo el desglose por grupo (la vista agrupada), y sólo
+             * de estos grupos (`null` = «sin valor»): sumar 100k filas para
+             * mostrar 40 grupos costaba 400 ms.
+             */
+            groupsOnly?: boolean;
+            groupKeys?: Array<string | null>;
         },
     ): Promise<FooterAggregates> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -287,6 +304,8 @@ export class AggregateService {
             // total de un pedido (el pedido + sus líneas).
             isNull(records.parentId),
             filterWhere,
+            compileSearch(fields.filter((f) => !acl.hidden.has(f.id)), opts.search),
+            opts.groupsOnly ? groupKeysWhere(byId.get(opts.group_by_field_id ?? 0), fieldsById, opts.groupKeys) : undefined,
         );
 
         // v0.1.252 — un campo DERIVADO (rollup, lookup, computed) es una
@@ -329,10 +348,10 @@ export class AggregateService {
                 sql`, `,
             );
 
-        const totalsRes = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.execute(sql`select ${selectList()} from ${source}`),
-        );
-        const row = (totalsRes.rows as Record<string, unknown>[])[0];
+        const totalsRes = opts.groupsOnly
+            ? undefined
+            : await this.tenantDb.withTenant(tenantId, (tx) => tx.execute(sql`select ${selectList()} from ${source}`));
+        const row = (totalsRes?.rows as Record<string, unknown>[] | undefined)?.[0];
         const bagFrom = (r: Record<string, unknown> | undefined): Record<string, AggregateBag> => {
             const out: Record<string, AggregateBag> = {};
             for (const p of plan) {
@@ -346,7 +365,10 @@ export class AggregateService {
         if (opts.group_by_field_id !== undefined) {
             const gf = byId.get(opts.group_by_field_id);
             if (gf) {
-                const groupExpr = fieldTextExpr(gf.id);
+                // v0.1.286 — la MISMA clave que los buckets (combinación de un
+                // multi_select, derivados por su expresión): antes un pie por
+                // grupo de multi_select nunca encontraba su grupo.
+                const groupExpr = groupKeyExpr(gf, fieldsById);
                 const res = await this.tenantDb.withTenant(tenantId, (tx) =>
                     tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`),
                 );
@@ -453,6 +475,32 @@ export interface FooterAggregates {
 function multiSelectSetExpr(fieldId: number): SQL {
     const col = sql`(${records.data} -> ${jsonbKeyForField(fieldId)})`;
     return sql`(CASE WHEN jsonb_typeof(${col}) = 'array' AND jsonb_array_length(${col}) > 0 THEN (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e) ELSE NULL END)`;
+}
+
+/**
+ * v0.1.286 — clave de grupo de una fila al agrupar por un campo (sin buckets
+ * temporales): la que usan los buckets de `run`, el pie por grupo y las filas
+ * de cada grupo de la vista agrupada — tiene que ser la misma en los tres.
+ */
+export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableField>): SQL {
+    if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
+    if (isThroughField(field.type) || field.type === 'computed') return throughGroupExpr(field, fieldsById);
+    return fieldTextExpr(field.id);
+}
+
+/** Filas de ciertos grupos (`groupKeys`) del campo agrupado; sin claves, todas. */
+function groupKeysWhere(
+    field: Field | undefined,
+    fieldsById: Map<number, FilterableField>,
+    keys: Array<string | null> | undefined,
+): SQL | undefined {
+    if (!field || !keys) return undefined;
+    const expr = groupKeyExpr(field, fieldsById);
+    const values = keys.filter((k): k is string => k !== null);
+    const parts: SQL[] = [];
+    if (values.length > 0) parts.push(sql`(${expr}) IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
+    if (keys.includes(null)) parts.push(sql`(${expr}) IS NULL`);
+    return parts.length > 0 ? sql`(${sql.join(parts, sql` OR `)})` : sql`false`;
 }
 
 /** Métricas base aplicables a cada tipo de campo (la UI deriva pct/range). */

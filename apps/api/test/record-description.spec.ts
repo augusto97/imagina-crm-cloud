@@ -187,9 +187,11 @@ describe('Descripción del registro (v0.1.133)', () => {
             expanded: Record<string, { records: { data: Array<{ id: number }>; meta: { total: number } } }>;
         };
         // Un grupo por combinación EXACTA, clave normalizada (set ordenado).
+        // v0.1.286 — en el orden del CATÁLOGO (vip es la 1ª opción, promo la
+        // 2ª): primero «VIP», después «VIP + Promo»; «(sin valor)» al final.
         expect(bundle.buckets).toEqual([
-            { value: '["promo", "vip"]', count: 2 },
             { value: '["vip"]', count: 1 },
+            { value: '["promo", "vip"]', count: 2 },
             { value: null, count: 1 },
         ]);
         // Las filas del grupo son las que tienen exactamente ese conjunto —

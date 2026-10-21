@@ -144,6 +144,13 @@ function compileCondition(
         return compileJsonArrayPresence(key, op, dataRef);
     }
 
+    // v0.1.286 — fecha y hora: "es" abarca el minuto (o el día, si el valor
+    // es sólo una fecha) y un valor sin zona se lee en la zona de la empresa.
+    if (field.type === 'datetime') {
+        const ranged = compileDatetimeComparison(typedExpr(key, field.type, dataRef), op, cond.value, now.timeZone);
+        if (ranged !== null) return ranged;
+    }
+
     // Expresión de texto base y expresión tipada según el tipo del campo.
     const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
 
@@ -306,6 +313,66 @@ function compileComparison(
         case 'lte':
             return sql`${expr} <= ${value}`;
     }
+}
+
+/**
+ * v0.1.286 — comparación sobre un campo FECHA Y HORA. El valor del filtro se
+ * lee como un intervalo:
+ *  - sólo fecha (`2026-10-21`): el día entero en el reloj de la empresa;
+ *  - fecha y hora SIN zona (`2026-10-21T14:30`, lo que mandaba el selector):
+ *    ese minuto en el reloj de la empresa — antes `::timestamptz` lo leía en
+ *    UTC y en Colombia el filtro quedaba corrido 5 horas;
+ *  - con zona (`…Z`, `…-05:00`): el minuto de ese instante.
+ * "es" = dentro del intervalo; "no es" = fuera; ">" = después; "≥" = desde
+ * el inicio; "<" = antes del inicio; "≤" = hasta el final. Un valor que no se
+ * puede leer devuelve null y cae a la comparación de siempre.
+ */
+function compileDatetimeComparison(expr: SQL, op: FilterOperator, value: unknown, timeZone: string): SQL | null {
+    if (op !== 'eq' && op !== 'neq' && op !== 'gt' && op !== 'gte' && op !== 'lt' && op !== 'lte') return null;
+    const range = datetimeFilterRange(value, timeZone);
+    if (range === null) return null;
+    const { from, to } = range;
+    switch (op) {
+        case 'eq':
+            return sql`(${expr} >= ${from} AND ${expr} < ${to})`;
+        case 'neq':
+            return sql`(${expr} IS NULL OR ${expr} < ${from} OR ${expr} >= ${to})`;
+        case 'gt':
+            return sql`${expr} >= ${to}`;
+        case 'gte':
+            return sql`${expr} >= ${from}`;
+        case 'lt':
+            return sql`${expr} < ${from}`;
+        case 'lte':
+            return sql`${expr} < ${to}`;
+    }
+}
+
+const DATE_ONLY_RE = /^(\d{4}-\d{2}-\d{2})$/;
+const NAIVE_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/;
+
+/** Intervalo `[from, to)` (instantes ISO) de un valor de filtro de fecha y hora. */
+export function datetimeFilterRange(value: unknown, timeZone: string): { from: string; to: string } | null {
+    if (typeof value !== 'string') return null;
+    const v = value.trim();
+    const day = DATE_ONLY_RE.exec(v);
+    if (day) {
+        return {
+            from: zonedInstant(day[1]!, timeZone).toISOString(),
+            to: zonedInstant(addDaysYmd(day[1]!, 1), timeZone).toISOString(),
+        };
+    }
+    let start: Date;
+    const naive = NAIVE_DATETIME_RE.exec(v);
+    if (naive) {
+        start = zonedInstant(naive[1]!, timeZone, { h: Number(naive[2]), m: Number(naive[3]) });
+    } else {
+        const t = Date.parse(v);
+        if (!Number.isFinite(t)) return null;
+        start = new Date(Math.floor(t / 60_000) * 60_000);
+    }
+    if (!Number.isFinite(start.getTime())) return null;
+    return { from: start.toISOString(), to: new Date(start.getTime() + 60_000).toISOString() };
 }
 
 /** Expresión de texto JSONB de un campo: `(data->>'fN')`. */

@@ -51,6 +51,7 @@ export * from './field-types/validate';
 export * from './field-types/computed';
 export * from './field-types/phone';
 export * from './field-types/duration';
+export * from './field-types/search';
 export * from './field-types/spanish-words';
 export * from './schemas/templates';
 export * from './schemas/connector';
