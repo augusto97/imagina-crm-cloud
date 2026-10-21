@@ -29,6 +29,8 @@ interface RecordSubtasksProps {
      * cambia de registro. Sin esto se navega a la página del registro.
      */
     onOpenRecord?: (id: number) => void;
+    /** Sin alta en línea (la vista previa del editor de la ficha). */
+    readOnly?: boolean;
     className?: string;
 }
 
@@ -43,11 +45,11 @@ function titleOf(record: RecordEntity | undefined, titleField: FieldEntity | und
  * registro): la lista de hijas con su estado, alta en línea y, si el registro
  * ES una subtarea, el vínculo a su padre. Un solo nivel, como en la tabla.
  */
-export function RecordSubtasks({ listId, listSlug, record, fields, onOpenRecord, className }: RecordSubtasksProps): JSX.Element | null {
+export function RecordSubtasks({ listId, listSlug, record, fields, onOpenRecord, readOnly = false, className }: RecordSubtasksProps): JSX.Element | null {
     const titleField = useMemo(() => titleFieldOf(fields), [fields]);
     const statusField = useMemo(() => pickStatusField(fields), [fields]);
     const storeRules = useStoreRules();
-    const canCreate = useCan(CAP.CREATE_RECORDS) && !storeRules;
+    const canCreate = useCan(CAP.CREATE_RECORDS) && !storeRules && !readOnly;
     const isSubtask = record.parent_id !== null && record.parent_id !== undefined;
     const parent = useRecord(isSubtask ? listId : undefined, isSubtask ? (record.parent_id as number) : undefined);
     const children = useRecords(isSubtask ? undefined : listId, subtasksQuery(record.id));
@@ -86,7 +88,9 @@ export function RecordSubtasks({ listId, listSlug, record, fields, onOpenRecord,
 
     const rows = children.data?.data ?? [];
     const total = children.data?.meta.total ?? rows.length;
-    if (!children.isLoading && rows.length === 0 && !canCreate) return null;
+    // En la vista previa del editor el bloque se ve aunque el registro de
+    // muestra no tenga subtareas (si no, quedaba un hueco invisible).
+    if (!children.isLoading && rows.length === 0 && !canCreate && !readOnly) return null;
 
     const submit = async (): Promise<void> => {
         const clean = draft.trim();
@@ -109,7 +113,9 @@ export function RecordSubtasks({ listId, listSlug, record, fields, onOpenRecord,
             {children.isLoading ? (
                 <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
             ) : (
-                rows.length > 0 && (
+                rows.length === 0 ? (
+                    readOnly && <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Este registro no tiene subtareas.')}</p>
+                ) : (
                     <ul className="imcrm-flex imcrm-flex-col imcrm-rounded-md imcrm-border imcrm-border-border">
                         {rows.map((r) => (
                             <li

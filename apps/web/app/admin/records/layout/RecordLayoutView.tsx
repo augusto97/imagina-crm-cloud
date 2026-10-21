@@ -13,6 +13,7 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
 
+import { RecordSubtasks } from '../RecordSubtasks';
 import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
@@ -92,12 +93,30 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> {__('Preparando la ficha…')}
                         </div>
                     ) : (
-                        <LayoutBody layout={layout} />
+                        <LayoutBody layout={layout} footer={<ImplicitSubtasks layout={layout} />} />
                     )}
                 </div>
             </WidgetDataOverrideContext.Provider>
         </LayoutContext.Provider>
     );
+}
+
+/**
+ * Un diseño que no incluye el bloque «Subtareas» no esconde las que existen:
+ * si el registro tiene subtareas (o es una), se muestran al final de la
+ * primera pestaña. Quien quiera ubicarlas en otro lado agrega el bloque.
+ */
+function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const [params] = useSearchParams();
+    const tab = params.get('tab');
+    const first = layout.pages[0]!;
+    const onFirst = tab === null || tab === first.id || !layout.pages.some((p) => p.id === tab);
+    const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'subtasks'))));
+    const r = ctx.record;
+    const has = (r.subtask_count ?? 0) > 0 || (r.parent_id !== null && r.parent_id !== undefined);
+    if (!onFirst || placed || !has) return null;
+    return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} />;
 }
 
 export interface LayoutBodyProps {
