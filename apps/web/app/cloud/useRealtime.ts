@@ -40,10 +40,25 @@ export function useRealtime(): void {
         const join = () => socket.emit(RT_EVENT_JOIN, { tenantId });
         socket.on('connect', join);
 
+        // v0.1.286 — los eventos llegan en RÁFAGAS (aplicar una plantilla crea
+        // 2-3 listas con sus campos y vistas: un evento por cada cosa) y cada
+        // uno re-pedía lo mismo — `GET /lists` ×5 tras crear una lista desde
+        // una plantilla. Se juntan los iguales durante 150 ms y se invalida
+        // UNA vez por tema/lista.
+        const pending = new Map<string, RtInvalidate>();
+        let flushTimer: number | null = null;
+        const flush = (): void => {
+            flushTimer = null;
+            const batch = [...pending.values()];
+            pending.clear();
+            for (const ev of batch) invalidate(ev);
+        };
         socket.on(RT_EVENT_INVALIDATE, (raw: unknown) => {
             const parsed = rtInvalidateSchema.safeParse(raw);
             if (!parsed.success) return;
-            invalidate(parsed.data);
+            const ev = parsed.data;
+            pending.set(`${ev.topic}:${ev.listId ?? '*'}`, ev);
+            if (flushTimer === null) flushTimer = window.setTimeout(flush, 150);
         });
 
         function invalidate(ev: RtInvalidate): void {
@@ -54,7 +69,9 @@ export function useRealtime(): void {
             // refrescaban la lista abierta hasta recargar.
             switch (ev.topic) {
                 case 'lists':
-                    void qc.invalidateQueries({ queryKey: listsKeys.all });
+                    // `cancelRefetch: false`: si la mutación de ESTA pestaña ya
+                    // está trayendo las listas, no se corta para pedirlas otra vez.
+                    void qc.invalidateQueries({ queryKey: listsKeys.all }, { cancelRefetch: false });
                     break;
                 case 'fields':
                     if (ev.listId !== undefined) invalidateForList(qc, fieldsKeys.all, ev.listId);
@@ -82,6 +99,7 @@ export function useRealtime(): void {
         }
 
         return () => {
+            if (flushTimer !== null) window.clearTimeout(flushTimer);
             socket.off('connect', join);
             socket.disconnect();
         };

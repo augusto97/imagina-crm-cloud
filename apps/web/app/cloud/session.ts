@@ -26,6 +26,13 @@ interface SessionState {
      * (dominio = una empresa; el switcher no ofrece otras).
      */
     domainTenant: DomainTenant | null;
+    /**
+     * Superadmin de plataforma con la consola utilizable (`/auth/me` →
+     * `is_superadmin`). Antes se averiguaba sondeando `/platform/stats`.
+     */
+    isSuperadmin: boolean;
+    /** Superadmin con una sesión vieja (sin contraseña): hay que reingresar. */
+    platformReauth: boolean;
     setSession: (session: AuthSession) => void;
     setActiveTenant: (tenantId: number) => void;
     setDomainTenant: (tenant: DomainTenant | null) => void;
@@ -42,6 +49,8 @@ export const useSession = create<SessionState>()(
             ready: false,
             impersonating: undefined,
             domainTenant: null,
+            isSuperadmin: false,
+            platformReauth: false,
             setSession: (session) => {
                 const isMember = (id: number | null): boolean =>
                     id !== null && session.memberships.some((m) => m.tenant_id === id);
@@ -54,6 +63,8 @@ export const useSession = create<SessionState>()(
                     user: session.user,
                     memberships: session.memberships,
                     impersonating: session.impersonating,
+                    isSuperadmin: session.is_superadmin === true,
+                    platformReauth: session.platform_reauth === true,
                     activeTenantId:
                         lockedId ??
                         (isMember(prevId) ? prevId : (session.memberships[0]?.tenant_id ?? null)),
@@ -89,7 +100,14 @@ export const useSession = create<SessionState>()(
             },
             clear: () =>
                 // `domainTenant` se conserva: depende del Host, no de la sesión.
-                set({ user: null, memberships: [], activeTenantId: null, impersonating: undefined }),
+                set({
+                    user: null,
+                    memberships: [],
+                    activeTenantId: null,
+                    impersonating: undefined,
+                    isSuperadmin: false,
+                    platformReauth: false,
+                }),
             markReady: () => set({ ready: true }),
         }),
         {

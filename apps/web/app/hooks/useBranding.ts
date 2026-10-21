@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { BrandingResponse } from '@imagina-base/shared';
 
 import { api, useSession } from '@/cloud/session';
-import { applyDocumentTitle, applyFavicon } from '@/lib/favicon';
+import { applyFavicon } from '@/lib/favicon';
+import { setTitleAppName } from '@/lib/documentTitle';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { useTheme, type ResolvedTheme } from '@/lib/theme';
 
@@ -272,7 +273,9 @@ export function useBranding() {
     const appName = query.data !== undefined ? (query.data.app_name ?? null) : domainName;
     useEffect(() => {
         applyFavicon(logoUrl);
-        applyDocumentTitle(appName);
+        // v0.1.286 — el nombre de la app es la base; la pantalla (lista,
+        // registro, tablero) la antepone `RouteTracker`.
+        setTitleAppName(appName);
     }, [logoUrl, appName]);
 
     return query;

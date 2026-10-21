@@ -11,6 +11,9 @@ import { cn } from '@/lib/utils';
  *
  * Para los casos donde NECESITAS el solid (ej. label de un menu),
  * usa `solid` o `default`.
+ *
+ * v0.1.286 — el texto usa la TINTA del color (`--imcrm-*-ink`, un escalón más
+ * oscuro en claro): el color base sobre su propio tinte quedaba bajo 4.5:1.
  */
 const badgeVariants = cva(
     'imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-tracking-tight imcrm-leading-tight imcrm-whitespace-nowrap',
@@ -18,19 +21,19 @@ const badgeVariants = cva(
         variants: {
             variant: {
                 default:
-                    'imcrm-border imcrm-border-primary/20 imcrm-bg-primary/10 imcrm-text-primary',
+                    'imcrm-border imcrm-border-primary/20 imcrm-bg-primary/10 imcrm-text-[hsl(var(--imcrm-primary-ink))]',
                 secondary:
                     'imcrm-border imcrm-border-border imcrm-bg-muted imcrm-text-foreground',
                 outline:
                     'imcrm-border imcrm-border-border imcrm-text-foreground/80',
                 success:
-                    'imcrm-border imcrm-border-success/25 imcrm-bg-success/10 imcrm-text-success',
+                    'imcrm-border imcrm-border-success/25 imcrm-bg-success/10 imcrm-text-[hsl(var(--imcrm-success-ink))]',
                 warning:
-                    'imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-text-warning',
+                    'imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-text-[hsl(var(--imcrm-warning-ink))]',
                 destructive:
-                    'imcrm-border imcrm-border-destructive/25 imcrm-bg-destructive/10 imcrm-text-destructive',
+                    'imcrm-border imcrm-border-destructive/25 imcrm-bg-destructive/10 imcrm-text-[hsl(var(--imcrm-destructive-ink))]',
                 info:
-                    'imcrm-border imcrm-border-info/25 imcrm-bg-info/10 imcrm-text-info',
+                    'imcrm-border imcrm-border-info/25 imcrm-bg-info/10 imcrm-text-[hsl(var(--imcrm-info-ink))]',
                 /* Variante sólida — para cuando un fill llamativo es deseado. */
                 solid:
                     'imcrm-bg-primary imcrm-text-primary-foreground imcrm-shadow-[inset_0_1px_0_rgb(255_255_255/0.12)]',

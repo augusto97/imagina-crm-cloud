@@ -186,7 +186,25 @@ export interface FieldKeyMap {
 // Cache por lista (clave = segmento del path, id o slug). Se puebla desde las
 // respuestas del endpoint `/fields` (que la UI siempre carga) y, como respaldo,
 // con un fetch on-demand. Se refresca en cada GET de fields → nunca queda stale.
+//
+// v0.1.286 — la clave lleva el TENANT: con el cambio de empresa, la lista
+// `clientes` de una empresa no puede usar el mapa de la `clientes` de otra. Y
+// un mismo mapa se guarda bajo el id Y el slug de la lista (los campos traen
+// `list_id`): así un listado pedido por id no vuelve a pedir los campos que ya
+// llegaron por slug.
 const fieldMaps = new Map<string, FieldKeyMap>();
+
+function fieldMapKey(listKey: string): string {
+    return `${getBootData().tenantId ?? 0}:${listKey}`;
+}
+
+function storeFieldMap(listKey: string, fields: unknown): FieldKeyMap {
+    const map = buildFieldMap(fields);
+    fieldMaps.set(fieldMapKey(listKey), map);
+    const first = Array.isArray(fields) ? (fields[0] as { list_id?: unknown } | null | undefined) : undefined;
+    if (first && typeof first.list_id === 'number') fieldMaps.set(fieldMapKey(String(first.list_id)), map);
+    return map;
+}
 
 export function buildFieldMap(fields: unknown): FieldKeyMap {
     const toSlug: Record<string, string> = {};
@@ -207,7 +225,7 @@ export function buildFieldMap(fields: unknown): FieldKeyMap {
 
 /** Devuelve el mapa de campos de una lista (cache → fetch on-demand). */
 async function ensureFieldMap(listKey: string): Promise<FieldKeyMap> {
-    const cached = fieldMaps.get(listKey);
+    const cached = fieldMaps.get(fieldMapKey(listKey));
     if (cached) return cached;
     try {
         const boot = getBootData();
@@ -218,9 +236,7 @@ async function ensureFieldMap(listKey: string): Promise<FieldKeyMap> {
             credentials: 'include',
         });
         const payload = res.ok ? await res.json().catch(() => null) : null;
-        const map = buildFieldMap((payload as { data?: unknown } | null)?.data);
-        fieldMaps.set(listKey, map);
-        return map;
+        return storeFieldMap(listKey, (payload as { data?: unknown } | null)?.data);
     } catch {
         return { toSlug: {}, toFid: {} };
     }
@@ -326,7 +342,7 @@ async function normalizeCloudResponse<T>(
     if (/\/lists\/[^/]+\/fields$/.test(path)) {
         const listKey = listKeyFromPath(path);
         const arr = (payload as { data?: unknown } | null)?.data;
-        if (listKey) fieldMaps.set(listKey, buildFieldMap(arr));
+        if (listKey) storeFieldMap(listKey, arr);
     }
 
     // Genérico: enveloped (`{data}`) → desenvolver; objeto crudo → envolver.

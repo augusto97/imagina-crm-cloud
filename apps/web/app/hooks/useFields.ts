@@ -1,7 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
+import { invalidateForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import type { CreateFieldInput, FieldEntity, UpdateFieldInput } from '@/types/field';
 
@@ -15,10 +15,14 @@ export const fieldsKeys = {
 };
 
 export function useFields(listId: string | number | undefined) {
+    const qc = useQueryClient();
     return useQuery({
         queryKey: fieldsKeys.forList(listId ?? ''),
         queryFn: async () => {
             const res = await api.get<FieldEntity[]>(`/lists/${listId}/fields`);
+            // v0.1.286 — mismos campos bajo el otro identificador (id↔slug):
+            // la página los pide por slug y sus hijos por id → dos requests.
+            seedFieldsForList(qc, listId, res.data);
             return res.data;
         },
         enabled: listId !== undefined && listId !== '',
@@ -26,6 +30,19 @@ export function useFields(listId: string | number | undefined) {
         // refetch en cada mount de RecordsPage/ListBuilder. (Fase 16.D)
         staleTime: 60_000,
     });
+}
+
+/**
+ * Guarda los campos de una lista bajo su id y su slug. El otro identificador
+ * sale del índice de listas o, si no cargó, del `list_id` de los campos.
+ */
+export function seedFieldsForList(qc: QueryClient, listKey: string | number | undefined, data: FieldEntity[]): void {
+    if (listKey === undefined || listKey === '') return;
+    const keys = listIdentifiersFor(qc, listKey);
+    const first = data[0];
+    if (first && typeof first.list_id === 'number') keys.add(String(first.list_id));
+    keys.delete(String(listKey));
+    for (const k of keys) qc.setQueryData(fieldsKeys.forList(k), data);
 }
 
 export interface FieldDistinctValue {

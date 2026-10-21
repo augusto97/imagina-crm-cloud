@@ -158,6 +158,7 @@ export const ListPanelItem = memo(function ListPanelItem({
         <>
             <PanelListLink
                 to={`${base}/records`}
+                activeWhen={base}
                 name={list.name}
                 starred={starred}
                 icon={listIcon(list.icon) ?? DEFAULT_LIST_ICON}

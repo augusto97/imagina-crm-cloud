@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import type { CreateListInput, ListSummary, UpdateListInput } from '@/types/list';
@@ -29,16 +29,43 @@ export function useLists() {
     });
 }
 
+/**
+ * Una lista por id o slug. v0.1.286 — abrir una lista pedía `/lists/<slug>` Y
+ * `/lists/<id>` (la página resuelve por slug; sus hijos por id). Ahora:
+ *  - si el índice `/lists` (que el panel ya cargó) está fresco, la lista sale
+ *    de ahí sin request (mismo DTO);
+ *  - lo que se trae por un identificador se siembra bajo el otro.
+ */
 export function useList(idOrSlug: string | number | undefined) {
+    const qc = useQueryClient();
+    const key = idOrSlug === undefined ? '' : String(idOrSlug);
     return useQuery({
-        queryKey: listsKeys.detail(idOrSlug ?? ''),
+        queryKey: listsKeys.detail(key),
         queryFn: async () => {
-            const res = await api.get<ListSummary>(`/lists/${idOrSlug}`);
+            const res = await api.get<ListSummary>(`/lists/${key}`);
+            seedListDetail(qc, res.data);
             return res.data;
         },
-        enabled: idOrSlug !== undefined && idOrSlug !== '',
+        initialData: () => findInIndex(qc, key),
+        initialDataUpdatedAt: () => qc.getQueryState(listsKeys.list())?.dataUpdatedAt,
+        enabled: key !== '',
         staleTime: META_STALE_TIME,
     });
+}
+
+function findInIndex(qc: QueryClient, key: string): ListSummary | undefined {
+    if (key === '') return undefined;
+    const all = qc.getQueryData<ListSummary[]>(listsKeys.list());
+    return Array.isArray(all) ? all.find((l) => l.slug === key || String(l.id) === key) : undefined;
+}
+
+/** Guarda la lista bajo su id y su slug (regla de oro nº 7: id↔slug). */
+export function seedListDetail(qc: QueryClient, list: ListSummary | undefined): void {
+    if (!list) return;
+    for (const k of [String(list.id), list.slug]) {
+        const cur = qc.getQueryData<ListSummary>(listsKeys.detail(k));
+        if (cur !== list) qc.setQueryData(listsKeys.detail(k), list);
+    }
 }
 
 export function useCreateList() {
