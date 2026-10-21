@@ -182,6 +182,29 @@ export class AutomationDispatcher {
         return true;
     }
 
+    /**
+     * v0.1.288 — una tanda de un horario «para cada registro» (job
+     * 'scheduled-batch'). false si no hay cola: el motor la corre en el acto.
+     */
+    dispatchScheduledBatch(data: { tenantId: number; automationId: number; recordIds: number[] }): boolean {
+        if (!this.queue) return false;
+        this.queue.add('scheduled-batch', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+            this.lost(data.tenantId, null, data.automationId, 'una tanda del horario «para cada registro»', err);
+        });
+        return true;
+    }
+
+    /**
+     * v0.1.288 — reanudar una corrida que terminó su espera (job 'resume').
+     * El reloj de las esperas ya la pasó a `running`; si no se puede encolar,
+     * el llamador la devuelve a `waiting`.
+     */
+    async dispatchResume(data: { tenantId: number; runId: number }): Promise<boolean> {
+        if (!this.queue) return false;
+        await this.queue.add('resume', data, { removeOnComplete: 1000, removeOnFail: 1000 });
+        return true;
+    }
+
     dispatch(event: TriggerEvent): void {
         const queue = this.queue;
         if (!queue) return;

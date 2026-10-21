@@ -67,6 +67,8 @@ export interface AutomationEntity {
     updated_at: string;
     /** v0.1.285 — la última corrida (sólo en el listado). */
     last_run?: { status: string; error: string | null; at: string } | null;
+    /** v0.1.288 — corridas en pausa en un «Esperar» (sólo en el listado). */
+    waiting_runs?: number;
 }
 
 export interface CreateAutomationInput {
@@ -85,6 +87,8 @@ export interface UpdateAutomationInput {
     trigger_config?: TriggerConfig;
     actions?: ActionSpec[];
     is_active?: boolean;
+    /** v0.1.288 — el guardado restaura esta versión (nota del historial). */
+    restored_from?: number;
 }
 
 export interface TriggerMeta {
@@ -112,7 +116,7 @@ export interface ActionMeta {
     };
 }
 
-export type AutomationRunStatus = 'pending' | 'running' | 'success' | 'failed';
+export type AutomationRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'waiting' | 'cancelled';
 
 export type ActionLogStatus = 'success' | 'failed' | 'skipped';
 
@@ -136,4 +140,6 @@ export interface AutomationRunEntity {
     started_at: string | null;
     finished_at: string | null;
     created_at: string | null;
+    /** v0.1.288 — una corrida en espera sigue a esta hora. */
+    resume_at?: string | null;
 }

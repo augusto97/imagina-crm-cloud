@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
 import { PAYMENT_MERGE_TAGS } from '@imagina-base/shared';
 
@@ -12,6 +12,8 @@ import {
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+
+import { StepVariablesContext } from './flowContext';
 
 interface MergeTagInputProps {
     value: string;
@@ -223,8 +225,13 @@ interface MergeTagPickerProps {
 const NUMBER_TYPES = new Set(['number', 'currency', 'percent', 'rollup', 'computed']);
 const DATE_TYPES = new Set(['date', 'datetime']);
 
-export function MergeTagPicker({ fields, onPick, context = 'automation', extra = [] }: MergeTagPickerProps): JSX.Element {
+export function MergeTagPicker({ fields, onPick, context = 'automation', extra: extraProp = [] }: MergeTagPickerProps): JSX.Element {
     const [search, setSearch] = useState('');
+    // v0.1.288 — en una automatización, cada paso suma lo que existe en ese
+    // punto del flujo: el vinculado de un bucle y las respuestas de los
+    // webhooks anteriores (con las rutas de una respuesta real, si la hay).
+    const stepVars = useContext(StepVariablesContext);
+    const extra = context === 'automation' ? [...stepVars, ...extraProp] : extraProp;
 
     const matches = (s: string): boolean =>
         search === '' || s.toLowerCase().includes(search.toLowerCase());

@@ -8155,6 +8155,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         colores en claro/oscuro; agrupado doble con conteos exactos; celular),
         re-verificado en la rama integrada.
 
+  - [x] **Automatizaciones con pasos de verdad (v0.1.288, ADR-S47, segunda
+        entrega del «hazlo todo»)**: (a) **«Esperar»** N minutos/horas/días o
+        hasta una fecha del registro (con desplazamiento y «a las 9:00» en la
+        zona de la empresa; `waitResumeAt` en shared, así el editor muestra lo
+        mismo que hará el motor). La espera es DURABLE en Postgres —no en una
+        cola diferida—: `automation_runs` gana `resume_at`/`resumed_at`/
+        `resume_state` (puntero al paso siguiente + contexto acumulado,
+        migración 0074) y un reloj de BullMQ por minuto toma las vencidas con
+        `FOR UPDATE SKIP LOCKED` (dos nodos nunca toman la misma). Reanuda
+        dentro de ramas si/sino, reevalúa «continuar sólo si…» sobre el
+        registro releído y, si la fecha cambia mientras espera, la espera se
+        mueve. Se cancela con el motivo si el registro se borra, la
+        automatización se pausa o se borra (no se retoma al reactivarla; el
+        editor lo avisa antes de guardar), la empresa queda en solo-lectura o
+        el paso cambió. Historial con «En espera hasta…» y «Cancelar espera»;
+        una reanudación que revienta abre un Problema (ADR-S44). (b)
+        **«Repetir por cada registro vinculado»** (`for_each_linked`): la
+        relación en cualquier sentido, filtro sobre la otra lista,
+        `{{item.<slug>}}`/`{{item.record.id}}`, «Actualizar campo» del
+        vinculado (`target: 'item'`) o del que disparó, tope de 200 y log
+        resumido (estado por vinculado + detalle del primero y de hasta 3
+        fallidos); contenedor en el flujo y marco «Por cada vinculado» en el
+        lienzo; adentro no se espera ni se repite (validado en shared, editor
+        y asistente). (c) **Respuestas de webhook en los pasos siguientes**:
+        `{{webhook.status}}`/`{{webhook.body.<ruta>}}` (índices incluidos) y
+        con nombre `{{respuestas.<nombre>…}}` (hasta 10), 64 KB por respuesta,
+        sobreviven a una espera; el selector sugiere las rutas de una
+        respuesta real. (d) **«Probar» paso a paso** (`POST
+        /lists/:l/automations/test-run`, con lo que se está editando SIN
+        guardar): el MISMO motor en modo simulación (`ctx.sim`) — si el
+        disparador coincidiría regla por regla, qué rama y por qué, campos
+        antes → después, el correo armado, la petición con secretos tapados,
+        hasta cuándo esperaría, cuántos editaría el lote, el bucle con el
+        primer vinculado — sin efectos, salvo los webhooks/conectores que se
+        marquen «Ejecutar de verdad». (e) **Programado «para cada registro
+        que cumpla…»**: una corrida por registro, tandas de 50, tope de 1.000
+        (con nota y Problema si se excede). (f) **Duplicar** (copia pausada,
+        token de webhook nuevo, se abre en el editor). (g) **Historial de
+        versiones** (`automation_versions`, RLS, últimas 50, sin secretos):
+        quién y cuándo, qué cambió en lenguaje claro, ver en sólo lectura y
+        restaurar = cargar en el editor y guardar (el servidor repone los
+        secretos actuales). Asistente/MCP, plantillas y migración de empresa
+        al día. 11 tests de API y 8 del front nuevos (78 de los specs de
+        automatizaciones y asistente en verde en la rama integrada) + E2E en
+        navegador 12/12, 17/17, 30/30, 12/12 y 5/5 en la rama del trabajo y
+        10/10 sobre la integración.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

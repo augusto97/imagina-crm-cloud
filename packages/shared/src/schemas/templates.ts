@@ -214,9 +214,12 @@ function walkAutomationSlugs(value: unknown, onSlug: (slug: string) => string | 
             const next = onSlug(slug);
             return next === undefined ? whole : `{{${before ?? ''}${next}${prop}${mods}}}`;
         });
-    const walk = (v: unknown, key: string | null): unknown => {
+    // v0.1.288 — `item.estado` (un campo del registro vinculado de un bucle) no
+    // es un slug de ESTA lista: no es un rol ni se remapea.
+    const isOwnSlug = (s: string): boolean => !s.includes('.');
+    const walk = (v: unknown, key: string | null, foreignValues = false): unknown => {
         if (typeof v === 'string') {
-            if (key !== null && SLUG_KEYS.has(key)) return onSlug(v) ?? v;
+            if (key !== null && SLUG_KEYS.has(key)) return isOwnSlug(v) ? onSlug(v) ?? v : v;
             return mapString(v);
         }
         if (Array.isArray(v)) {
@@ -226,15 +229,26 @@ function walkAutomationSlugs(value: unknown, onSlug: (slug: string) => string | 
             return v.map((item) => walk(item, null));
         }
         if (isPlainObject(v)) {
-            const renameKeys = key !== null && SLUG_MAP_KEYS.has(key);
+            // v0.1.288 — «Actualizar campo» sobre el registro VINCULADO de un
+            // bucle: las claves de `values` son campos de la otra lista.
+            const itemTarget = v.type === 'update_field' && isPlainObject(v.config) && v.config.target === 'item';
+            const renameKeys = key !== null && SLUG_MAP_KEYS.has(key) && !foreignValues;
             const out: Record<string, unknown> = {};
             for (const [k, inner] of Object.entries(v)) {
                 const nk = renameKeys ? onSlug(k) ?? k : k;
-                out[nk] = walk(inner, k);
+                out[nk] = k === 'config' && itemTarget ? walkForeignConfig(inner) : walk(inner, k);
             }
             return out;
         }
         return v;
+    };
+    // La config de un «Actualizar campo» del vinculado: sus `values` no se
+    // renombran (los merge tags adentro sí: pueden leer el registro que disparó).
+    const walkForeignConfig = (cfg: unknown): unknown => {
+        if (!isPlainObject(cfg)) return cfg;
+        const out: Record<string, unknown> = {};
+        for (const [k, inner] of Object.entries(cfg)) out[k] = k === 'values' ? walk(inner, k, true) : walk(inner, k);
+        return out;
     };
     return walk(value, null);
 }

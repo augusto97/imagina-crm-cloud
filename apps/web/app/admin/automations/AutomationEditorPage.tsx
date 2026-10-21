@@ -7,6 +7,9 @@ import {
     ArrowUp,
     ChevronDown,
     Copy,
+    CopyPlus,
+    FlaskConical,
+    GitCommitVertical,
     History,
     LayoutList,
     Loader2,
@@ -24,18 +27,22 @@ import {
     useActionCatalog,
     useAutomations,
     useCreateAutomation,
+    useDuplicateAutomation,
     useTriggerCatalog,
     useUpdateAutomation,
 } from '@/hooks/useAutomations';
+import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
 import { api, ApiError } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { automationConfigIssues, type AutomationConfigIssue } from '@imagina-base/shared';
+import { automationConfigIssues, type AutomationConfigIssue, type AutomationVersion } from '@imagina-base/shared';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { automationsKeys } from '@/hooks/useAutomations';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/tenantFormat';
+import { parseUtcDate } from '@/lib/utcDate';
 import type {
     ActionMeta,
     ActionSpec,
@@ -69,6 +76,9 @@ import {
     type AutomationFormState,
 } from './config-editors';
 import { ActionTypeSelect } from './ActionTypeSelect';
+import { AutomationTestPanel } from './AutomationTestPanel';
+import { AutomationVersionsSheet, versionHasSecrets } from './AutomationVersionsSheet';
+import { AutomationFlowContext, StepScope, type AutomationFlowValue } from './flowContext';
 
 // El lienzo visual (vista n8n/Make) se carga bajo demanda — la mayoría
 // de automatizaciones simples se editan en el flujo vertical.
@@ -235,6 +245,15 @@ function EditorBody({
     );
     const [error, setError] = useState<string | null>(null);
     const [runsOpen, setRunsOpen] = useState(false);
+    // v0.1.288 — «Probar» paso a paso, historial de versiones y duplicar.
+    const [testOpen, setTestOpen] = useState(false);
+    const [versionsOpen, setVersionsOpen] = useState(false);
+    const [restored, setRestored] = useState<{ id: number; at: string; secrets: boolean } | null>(null);
+    const duplicate = useDuplicateAutomation(list.id);
+    const relationPaths = useRelationPaths(list.id);
+    // Respuestas reales (de «Probar» o del probador de un webhook) por ruta
+    // del paso: el selector de variables sugiere sus rutas en los pasos de abajo.
+    const [samples, setSamples] = useState<Record<string, unknown>>({});
     // v0.1.221 — «Ejecutar ahora» de una automatización programada.
     const [runningNow, setRunningNow] = useState(false);
     const qc = useQueryClient();
@@ -422,7 +441,11 @@ function EditorBody({
 
         try {
             if (editing) {
-                const updated = await update.mutateAsync({ id: editing.id, input: payload });
+                const updated = await update.mutateAsync({
+                    id: editing.id,
+                    input: restored ? { ...payload, restored_from: restored.id } : payload,
+                });
+                setRestored(null);
                 // v0.1.110 — el backend puede generar/rotar el token del
                 // webhook entrante al guardar: reflejarlo sin recargar.
                 const serverToken = updated?.trigger_config?.webhook_token;
@@ -458,9 +481,53 @@ function EditorBody({
     const triggerMeta = triggerMetaFor(state.triggerType);
     const triggerFilters = triggerConditionCount(state.triggerConfig);
 
+    const flowValue = useMemo<AutomationFlowValue>(
+        () => ({
+            actions: state.actions,
+            samples,
+            setSample: (path, body) => setSamples((prev) => ({ ...prev, [path]: body })),
+        }),
+        [state.actions, samples],
+    );
+
+    const restoreVersion = (v: AutomationVersion): void => {
+        setState((s) => ({
+            ...s,
+            name: v.name,
+            description: v.description ?? '',
+            triggerType: v.trigger_type,
+            triggerConfig: { ...v.trigger_config },
+            actions: (v.actions as ActionSpec[]).map((a) => JSON.parse(JSON.stringify(a)) as ActionSpec),
+            isActive: v.is_active,
+        }));
+        setRestored({ id: v.id, at: v.created_at, secrets: versionHasSecrets(v) });
+        setExpanded(new Set());
+        setError(null);
+        toast.success(__('Versión cargada en el editor: revísala y guarda para aplicarla.'));
+    };
+
+    const duplicateThis = async (): Promise<void> => {
+        if (!editing) return;
+        try {
+            const copy = await duplicate.mutateAsync(editing.id);
+            // La copia entra al cache ANTES de navegar: si no, el editor la
+            // buscaría en el listado viejo y diría «no encontrada».
+            qc.setQueryData<AutomationEntity[]>(automationsKeys.forList(list.id), (old) =>
+                old ? [...old.filter((a) => a.id !== copy.id), copy] : [copy],
+            );
+            toast.success(__('Copia creada. Quedó pausada: actívala cuando esté lista.'));
+            navigate(`/lists/${list.slug}/automations/${copy.id}`);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : __('No se pudo duplicar.'));
+        }
+    };
+
+    const waitingRuns = editing?.waiting_runs ?? 0;
+
     return (
         <AutomationEditorListContext.Provider value={list.id}>
         <AutomationEditorAutomationContext.Provider value={editing?.id}>
+        <AutomationFlowContext.Provider value={flowValue}>
             <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-[880px] imcrm-flex-col imcrm-gap-5 imcrm-pb-24">
                 {/* ── Header ─────────────────────────────────────────── */}
                 <header className="imcrm-flex imcrm-flex-col imcrm-gap-3">
@@ -480,9 +547,10 @@ function EditorBody({
                     </div>
 
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                        {/* En el celular el nombre ocupa su propia fila (antes quedaba
-                            aplastado a ~45px al lado de los botones). */}
-                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-basis-full imcrm-flex-col imcrm-gap-0.5 sm:imcrm-basis-0">
+                        {/* El nombre ocupa su propia fila: con Probar, Historial,
+                            Versiones y Duplicar al lado quedaba recortado (antes en el
+                            celular se aplastaba a ~45px). */}
+                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-basis-full imcrm-flex-col imcrm-gap-0.5">
                             <input
                                 value={state.name}
                                 onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
@@ -520,6 +588,18 @@ function EditorBody({
                                     {__('Ejecutar ahora')}
                                 </Button>
                             )}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="imcrm-gap-1.5"
+                                onClick={() => setTestOpen(true)}
+                                aria-label={__('Probar')}
+                                title={__('Probar paso a paso con un registro real, sin enviar ni cambiar nada')}
+                                data-testid="imcrm-automation-test"
+                            >
+                                <FlaskConical className="imcrm-h-3.5 imcrm-w-3.5" />
+                                <span className="imcrm-hidden sm:imcrm-inline">{__('Probar')}</span>
+                            </Button>
                             {editing && (
                                 <Button
                                     variant="outline"
@@ -533,6 +613,35 @@ function EditorBody({
                                     <span className="imcrm-hidden sm:imcrm-inline">{__('Historial')}</span>
                                 </Button>
                             )}
+                            {editing && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="imcrm-gap-1.5"
+                                    onClick={() => setVersionsOpen(true)}
+                                    aria-label={__('Versiones')}
+                                    title={__('Versiones guardadas')}
+                                    data-testid="imcrm-automation-versions"
+                                >
+                                    <GitCommitVertical className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    <span className="imcrm-hidden sm:imcrm-inline">{__('Versiones')}</span>
+                                </Button>
+                            )}
+                            {editing && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="imcrm-gap-1.5"
+                                    onClick={() => void duplicateThis()}
+                                    disabled={duplicate.isPending || dirty}
+                                    aria-label={__('Duplicar')}
+                                    title={dirty ? __('Guarda los cambios antes de duplicar.') : __('Crea una copia pausada')}
+                                    data-testid="imcrm-automation-duplicate"
+                                >
+                                    <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    <span className="imcrm-hidden lg:imcrm-inline">{__('Duplicar')}</span>
+                                </Button>
+                            )}
                             <Button size="sm" onClick={handleSave} disabled={isPending} className="imcrm-gap-1.5">
                                 {isPending && <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" />}
                                 {isPending ? __('Guardando…') : __('Guardar')}
@@ -543,6 +652,24 @@ function EditorBody({
                     {dirty && !isPending && (
                         <p className="imcrm-text-[11px] imcrm-font-medium imcrm-text-warning">
                             {__('Cambios sin guardar')}
+                        </p>
+                    )}
+                    {restored && (
+                        <p className="imcrm-rounded-md imcrm-border imcrm-border-info/30 imcrm-bg-info/5 imcrm-px-3 imcrm-py-2 imcrm-text-[12px]" data-testid="imcrm-restored-note">
+                            {sprintf(__('Cargaste la versión del %s. Revísala y guarda para aplicarla (queda en el historial).'), formatVersionDate(restored.at))}
+                            {restored.secrets && ` ${__('Los secretos no se guardan en las versiones: al guardar se conservan los actuales de cada paso.')}`}
+                        </p>
+                    )}
+                    {editing && editing.is_active && !state.isActive && waitingRuns > 0 && (
+                        <p className="imcrm-rounded-md imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-[12px]" data-testid="imcrm-pause-waiting-note">
+                            {sprintf(
+                                _n(
+                                    'Hay %d corrida en espera: al guardarla pausada se cancela y no se retoma al reactivarla.',
+                                    'Hay %d corridas en espera: al guardarla pausada se cancelan y no se retoman al reactivarla.',
+                                    waitingRuns,
+                                ),
+                                waitingRuns,
+                            )}
                         </p>
                     )}
                 </header>
@@ -593,6 +720,7 @@ function EditorBody({
                                 actionsCatalog={actionsCatalog}
                                 fields={fields}
                                 lists={lists}
+                                relationPaths={relationPaths.data}
                             />
                         </Suspense>
                     </div>
@@ -672,7 +800,7 @@ function EditorBody({
                                         i + 1,
                                     )}
                                     icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
-                                    title={summarizeAction(spec, fields, lists, actionsCatalog)}
+                                    title={summarizeAction(spec, fields, lists, actionsCatalog, relationPaths.data)}
                                     badges={
                                         condCount > 0 ? (
                                             <Badge variant="outline" className="imcrm-shrink-0">
@@ -712,6 +840,7 @@ function EditorBody({
                                         </>
                                     }
                                 >
+                                    <StepScope path={[i]}>
                                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                                         <ActionTypeSelect
                                             spec={spec}
@@ -733,6 +862,7 @@ function EditorBody({
                                             actionsCatalog={actionsCatalog}
                                         />
                                     </div>
+                                    </StepScope>
                                 </FlowCard>
                             </div>
                         );
@@ -760,6 +890,32 @@ function EditorBody({
                     onOpenChange={setRunsOpen}
                 />
             )}
+            {editing && (
+                <AutomationVersionsSheet
+                    open={versionsOpen}
+                    onOpenChange={setVersionsOpen}
+                    listId={list.id}
+                    automationId={editing.id}
+                    fields={fields}
+                    lists={lists}
+                    catalog={actionsCatalog}
+                    relationPaths={relationPaths.data}
+                    onRestore={restoreVersion}
+                />
+            )}
+            <AutomationTestPanel
+                open={testOpen}
+                onOpenChange={setTestOpen}
+                listId={list.id}
+                automationId={editing?.id}
+                triggerType={state.triggerType}
+                triggerConfig={cleanTriggerConfig(state.triggerConfig)}
+                actions={state.actions}
+                fields={fields}
+                actionsCatalog={actionsCatalog}
+                onResponses={(responses) => setSamples((prev) => ({ ...prev, ...responses }))}
+            />
+        </AutomationFlowContext.Provider>
         </AutomationEditorAutomationContext.Provider>
         </AutomationEditorListContext.Provider>
     );
@@ -1072,13 +1228,18 @@ function ActiveTogglePill({
 function describeIssue(issue: AutomationConfigIssue, prefix: string): string {
     const rest = issue.path.startsWith(prefix) ? issue.path.slice(prefix.length) : issue.path;
     const parts: string[] = [];
-    const re = /(?:^|\.)(actions|then_actions|else_actions)\.(\d+)/g;
+    const re = /(?:^|\.)(config\.)?(actions|then_actions|else_actions)\.(\d+)/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(rest)) !== null) {
-        const n = Number(m[2]) + 1;
-        if (m[1] === 'actions') parts.push(sprintf(__('Paso %d'), n));
-        else parts.push(sprintf(m[1] === 'then_actions' ? __('rama «Sí», paso %d') : __('rama «No», paso %d'), n));
+        const n = Number(m[3]) + 1;
+        // v0.1.288 — `config.actions` es el cuerpo de una repetición.
+        if (m[2] === 'actions') parts.push(m[1] ? sprintf(__('repetición, paso %d'), n) : sprintf(__('Paso %d'), n));
+        else parts.push(sprintf(m[2] === 'then_actions' ? __('rama «Sí», paso %d') : __('rama «No», paso %d'), n));
     }
     if (parts.length === 0 && rest.startsWith('trigger_config') && prefix === '') parts.push(__('Disparador'));
     return parts.length > 0 ? `${parts.join(' › ')}: ${issue.message}` : issue.message;
+}
+
+function formatVersionDate(iso: string): string {
+    return formatDateTime(parseUtcDate(iso));
 }

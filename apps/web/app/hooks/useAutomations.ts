@@ -1,5 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import type { AutomationTestRunInput, AutomationTestRunResult, AutomationVersion } from '@imagina-base/shared';
+
 import { api } from '@/lib/api';
 import { invalidateForList } from '@/hooks/useRecords';
 import type {
@@ -153,5 +155,60 @@ export function useAutomationRuns(automationId: number | undefined) {
         getNextPageParam: (last) => last.next,
         select: (data) => data.pages.flatMap((p) => p.runs),
         enabled: automationId !== undefined && automationId > 0,
+    });
+}
+
+/** v0.1.288 — Duplicar: copia pausada «Nombre (copia)», sin el token del webhook. */
+export function useDuplicateAutomation(listId: string | number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => {
+            const res = await api.post<AutomationEntity>(`/lists/${listId}/automations/${id}/duplicate`, {});
+            return res.data;
+        },
+        onSuccess: () => {
+            invalidateForList(qc, automationsKeys.all, listId);
+        },
+    });
+}
+
+/** v0.1.288 — Historial de versiones (la más nueva primero, hasta 50). */
+export function useAutomationVersions(listId: string | number, automationId: number | undefined, enabled: boolean) {
+    return useQuery({
+        queryKey: [...automationsKeys.all, 'versions', String(automationId ?? 0)] as const,
+        queryFn: async () => {
+            const res = await api.get<AutomationVersion[]>(`/lists/${listId}/automations/${automationId}/versions`);
+            return res.data;
+        },
+        enabled: enabled && automationId !== undefined && automationId > 0,
+        staleTime: 0,
+    });
+}
+
+/** v0.1.288 — Cancelar una corrida que está en un «Esperar». */
+export function useCancelWaitingRun(automationId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (runId: number) => {
+            const res = await api.post<{ cancelled: boolean }>(`/automations/${automationId}/runs/${runId}/cancel`, {});
+            return res.data;
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: automationsKeys.runs(automationId) });
+            void qc.invalidateQueries({ queryKey: automationsKeys.all });
+        },
+    });
+}
+
+/**
+ * v0.1.288 — «Probar» paso a paso: corre la automatización tal como se está
+ * editando (sin guardar) contra un registro real, en modo simulación.
+ */
+export function useAutomationTestRun(listId: string | number) {
+    return useMutation({
+        mutationFn: async (input: AutomationTestRunInput) => {
+            const res = await api.post<AutomationTestRunResult>(`/lists/${listId}/automations/test-run`, input);
+            return res.data;
+        },
     });
 }

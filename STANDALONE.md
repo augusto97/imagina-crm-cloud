@@ -3219,6 +3219,48 @@ Mayús+clic, Mayús+flechas o arrastrando, y Escape lo quita. Fuera de alcance: 
 rango que cruce grupos en la vista agrupada, rellenar hacia arriba o de lado,
 pegar relaciones y archivos, y cortar (Ctrl+X).
 
+
+### ADR-S47 — Esperas durables y simulación de automatizaciones (v0.1.288)
+
+**Contexto.** Segunda entrega del pedido «hazlo todo» (carencias de ADR-S45):
+pasos de espera, repetir por los registros vinculados, usar la respuesta de un
+webhook, probar paso a paso, horarios por registro, duplicar y versiones. Hasta
+acá una automatización era una sola pasada sin estado: no podía «esperar tres
+días y recordar», ni recorrer las facturas de un cliente, ni mostrar qué haría
+antes de activarla.
+
+**Decisión.**
+1. **El estado de una espera vive en Postgres, no en una cola diferida**: la
+   corrida queda `waiting` en `automation_runs` con `resume_at` y el puntero al
+   paso siguiente + el contexto acumulado (`resume_state`). Un reloj de BullMQ
+   por minuto toma las vencidas con `FOR UPDATE SKIP LOCKED`, así sobrevive a
+   un deploy o a un Redis vaciado y dos nodos nunca toman la misma.
+2. **Qué se fotografía y qué no**: la config de la espera (hora y condición) se
+   guarda al pausar la corrida; los pasos POSTERIORES se leen de la config
+   actual al reanudar. Si el paso apuntado ya no es un «Esperar», la espera se
+   cancela con el motivo.
+3. **Pausar cancela y no reanuda**: una automatización pausada que se reactiva
+   no dispara de golpe todo lo que esperaba. El solo-lectura por impago también
+   cancela (ADR-S09, SEC-34).
+4. **Dentro de un bucle no se espera ni se anida otro bucle**: se valida en
+   shared, en el editor y en el asistente.
+5. **Topes**: 200 vinculados por bucle, 1.000 registros por disparo programado,
+   64 KB por respuesta de webhook y 10 respuestas con nombre.
+6. **La simulación es el motor**: «Probar» corre el mismo código con
+   `ctx.sim`; nada escribe, envía ni llama salvo los pasos marcados como
+   reales (`real_steps`). Lo que explica es lo que decidiría.
+7. **Versiones sin secretos**: cada guardado deja una foto con los secretos
+   tapados; restaurar carga la versión en el editor y, al guardar, el servidor
+   repone los secretos actuales de cada paso.
+8. **Rutas de paso** `índice|then|else|each` para ubicar una acción en el árbol
+   (reanudar, simular, mostrar el log).
+
+**Consecuencias.** Migración 0074 (columnas de espera e índices parciales
+`WHERE status='waiting'`, tabla `automation_versions` con RLS). Al migrar una
+empresa, las corridas en espera llegan canceladas con el motivo. Fuera de
+alcance: plantillas del sistema que usen esperas o bucles (la infraestructura
+ya lo soporta).
+
 ---
 
-**Versión del documento:** 1.85.0 (la tabla como hoja de cálculo — ADR-S46)
+**Versión del documento:** 1.86.0 (esperas durables y simulación de automatizaciones — ADR-S47)
