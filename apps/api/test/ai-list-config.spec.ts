@@ -577,6 +577,65 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect((await views.list(tenantId, 'clientes')).some((v) => v.id === view!.id)).toBe(false);
     });
 
+    it('vistas de tabla (v0.1.287): segundo agrupado, columnas fijas y colores condicionales, y get_list_schema los describe', async () => {
+        const created = json(
+            await call('propose_create_view', {
+                list: 'clientes',
+                view: {
+                    name: 'Colores',
+                    type: 'table',
+                    group_by: 'estado',
+                    sub_group_by: 'email',
+                    frozen_columns: 2,
+                    color_rules: [
+                        { field: 'estado', op: 'eq', value: 'baja', color: 'red' },
+                        { field: 'telefono', op: 'is_null', color: 'amber', target: 'cell' },
+                    ],
+                },
+            }),
+        );
+        expect((created.proposal as { summary: string }).summary).toContain('y luego por «Email»');
+        await apply(created.proposal_id);
+        const view = (await views.list(tenantId, 'clientes')).find((v) => v.name === 'Colores')!;
+        const cfg = view.config as Record<string, unknown>;
+        const byLabel = new Map((await fields.listByListId(tenantId, view.list_id)).map((f) => [f.slug, f.id]));
+        expect(cfg.sub_group_by_field_id).toBe(byLabel.get('email'));
+        expect(cfg.frozen_columns).toBe(2);
+        expect(cfg.color_rules).toEqual([
+            { id: 'r1', enabled: true, condition: { type: 'condition', field_id: byLabel.get('estado'), op: 'eq', value: 'baja' }, color: 'red', target: 'row' },
+            { id: 'r2', enabled: true, condition: { type: 'condition', field_id: byLabel.get('telefono'), op: 'is_null' }, color: 'amber', target: 'cell', cell_field_id: byLabel.get('telefono') },
+        ]);
+
+        const schema = json(await call('get_list_schema', { list: 'clientes' }));
+        const described = (schema.views as Array<Record<string, unknown>>).find((v) => v.name === 'Colores');
+        expect(described).toMatchObject({
+            group_by: 'estado',
+            sub_group_by: 'email',
+            frozen_columns: 2,
+            color_rules: [
+                { field: 'estado', op: 'eq', value: 'baja', color: 'red', target: 'row' },
+                { field: 'telefono', op: 'is_null', color: 'amber', target: 'cell', column: 'telefono' },
+            ],
+        });
+
+        // Errores corregibles: sin group_by, por un archivo, color fuera de la paleta.
+        for (const bad of [
+            { name: 'X', type: 'table', sub_group_by: 'email' },
+            { name: 'X', type: 'table', group_by: 'estado', sub_group_by: 'contrato' },
+            { name: 'X', type: 'table', color_rules: [{ field: 'estado', op: 'eq', value: 'baja', color: 'fucsia' }] },
+            { name: 'X', type: 'table', color_rules: [{ field: 'nada', op: 'is_null', color: 'red' }] },
+        ]) {
+            expect(isError(await call('propose_create_view', { list: 'clientes', view: bad }))).toBe(true);
+        }
+
+        // Cambiar sólo las columnas fijas (la config se reemplaza, como siempre).
+        const upd = json(await call('propose_update_view', { list: 'clientes', view: view.id, config: { group_by: 'estado', frozen_columns: 3 } }));
+        await apply(upd.proposal_id);
+        const after = (await views.list(tenantId, 'clientes')).find((v) => v.id === view.id)!;
+        expect((after.config as Record<string, unknown>).frozen_columns).toBe(3);
+        expect((after.config as Record<string, unknown>).color_rules).toBeUndefined();
+    });
+
     it('propose_update_list mueve a una carpeta existente (y rechaza una inexistente); list_dashboards lee los tableros', async () => {
         const [g] = await pg.db.insert(listGroups).values({ tenantId, name: 'Comercial', position: 0 }).returning();
         const bad = await call('propose_update_list', { list: 'gastos', folder: 'Inexistente' });

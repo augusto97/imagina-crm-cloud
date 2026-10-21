@@ -1,3 +1,5 @@
+import type { ViewColorRule } from '@imagina-base/shared';
+
 import {
     EMPTY_FILTER_TREE,
     type FilterOperator,
@@ -92,6 +94,18 @@ export interface RecordsState {
      * presentación: 12,5px en la hoja de cálculo, 14 en la lista.
      */
     fontSize: RowFontSize | null;
+    /**
+     * v0.1.287 — Segundo nivel de agrupación («Y luego por»): cada grupo se
+     * parte en subgrupos por este campo. `null` = un solo nivel.
+     */
+    subGroupByFieldId: number | null;
+    /**
+     * v0.1.287 — Cuántas de las primeras columnas visibles quedan fijas a la
+     * izquierda. `null` = el default (sólo la primera).
+     */
+    frozenColumns: number | null;
+    /** v0.1.287 — Reglas de color de filas/celdas (en orden de prioridad). */
+    colorRules: ViewColorRule[];
 }
 
 /** Alturas de fila que puede elegir quien mira la vista. */
@@ -129,6 +143,9 @@ export const INITIAL_STATE: RecordsState = {
     spreadsheet: false,
     density: null,
     fontSize: null,
+    subGroupByFieldId: null,
+    frozenColumns: null,
+    colorRules: [],
 };
 
 /**

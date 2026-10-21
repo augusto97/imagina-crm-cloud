@@ -14,6 +14,9 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    batchUpdateRecordsSchema,
+    type BatchUpdateRecordsInput,
+    type BatchUpdateRecordsResult,
     bulkEditApplySchema,
     bulkEditPreviewSchema,
     bulkRecordsSchema,
@@ -146,6 +149,23 @@ export class RecordsController {
             input.include_subtasks,
             input.edit_id,
         );
+    }
+
+    /**
+     * v0.1.287 — Varias filas con valores distintos por fila en UNA llamada
+     * (pegar desde Excel, rellenar hacia abajo, deshacer/rehacer). Cada fila
+     * pasa por el mismo camino que una edición de celda; los errores vuelven
+     * por celda o por fila sin abortar el resto. Ruta estática: Fastify la
+     * resuelve antes que `PATCH /:id`.
+     */
+    @Patch('batch')
+    @RequireCapability('edit_records', 'edit_own_records')
+    batchUpdate(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(batchUpdateRecordsSchema)) input: BatchUpdateRecordsInput,
+    ): Promise<BatchUpdateRecordsResult> {
+        return this.records.batchUpdate(tenantId(req), actor(req), list, input.items);
     }
 
     @Get(':id')

@@ -30,6 +30,9 @@ import {
     updateListSchema,
     updateViewSchema,
     viewTypeSchema,
+    viewRowColorSchema,
+    VIEW_ROW_COLORS,
+    MAX_VIEW_COLOR_RULES,
     type AiProposal,
     type AiProposalKind,
     type AiProposalPreview,
@@ -180,10 +183,40 @@ export function rulesToFilterTree(rules: FilterRuleSpec[], resolveId: (slug: str
     };
 }
 
+/**
+ * v0.1.287 — Color condicional de una vista de tabla, en el vocabulario del
+ * modelo (slugs). Se guarda con ids (`condition.field_id`, `cell_field_id`).
+ */
+const colorRuleSpec = z.object({
+    field: fieldSlugSchema.describe('Slug del campo de la condición'),
+    op: filterOperatorSchema,
+    value: z.unknown().optional().describe('Mismo formato que un filtro: el `value` de la opción en un select, AAAA-MM-DD en fechas, un preset («today», «this_week», «last_7_days»…) con between_relative'),
+    color: viewRowColorSchema.describe(`Uno de: ${VIEW_ROW_COLORS.join(', ')}`),
+    target: z.enum(['row', 'cell']).optional().describe('row = pinta toda la fila (default); cell = sólo la celda de `column`'),
+    column: fieldSlugSchema.optional().describe('Con target=cell: la columna a pintar (default: el campo de la condición)'),
+    enabled: z.boolean().optional(),
+});
+type ColorRuleSpec = z.infer<typeof colorRuleSpec>;
+
 const viewSpec = z.object({
     name: z.string().min(1).max(190),
     type: viewTypeSchema.describe('table | kanban | calendar | cards'),
     group_by: fieldSlugSchema.optional().describe('kanban: campo select por el que se arman las columnas (obligatorio). table: agrupar filas por este campo.'),
+    sub_group_by: fieldSlugSchema
+        .optional()
+        .describe('table: segundo nivel de agrupado («y luego por»): subgrupos dentro de cada grupo de `group_by`. Otro campo; no relación ni archivo.'),
+    frozen_columns: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .optional()
+        .describe('table: cuántas columnas visibles, contando desde la primera, quedan fijas a la izquierda al scrollear en horizontal (default: sólo la primera)'),
+    color_rules: z
+        .array(colorRuleSpec)
+        .max(MAX_VIEW_COLOR_RULES)
+        .optional()
+        .describe('table: colores condicionales. El orden es la prioridad (gana la primera regla que se cumple, por fila y por celda).'),
     date_field: fieldSlugSchema.optional().describe('calendar: campo date/datetime (obligatorio)'),
     filters: z.array(filterRuleSpec).max(20).optional().describe('Condiciones unidas por AND'),
     sort: z.array(z.object({ field: fieldSlugSchema, dir: z.enum(['asc', 'desc']) })).max(5).optional(),
@@ -815,7 +848,7 @@ export class StructureTools implements AiProposalApplier {
             content: {
                 list: { slug: list.slug, name: list.name, icon: list.icon, color: list.color, records_count: count, folder },
                 fields: fields.map((f) => describeFieldForModel(f, listById, fieldById)),
-                views: views.map((v) => ({ id: v.id, name: v.name, type: v.type, is_default: v.is_default })),
+                views: views.map((v) => describeViewForModel(v, fieldById)),
                 linked_lists: paths.map((p) => ({
                     slug: listById.get(p.other_list_id)?.slug ?? null,
                     name: p.other_list_name,
@@ -1177,6 +1210,9 @@ export class StructureTools implements AiProposalApplier {
         });
         const details: string[] = [];
         if (input.view.group_by) details.push(`agrupada por «${bySlug.get(input.view.group_by)?.label}»`);
+        if (input.view.sub_group_by) details.push(`y luego por «${bySlug.get(input.view.sub_group_by)?.label}»`);
+        if (input.view.frozen_columns) details.push(`${input.view.frozen_columns} columna${input.view.frozen_columns === 1 ? '' : 's'} fija${input.view.frozen_columns === 1 ? '' : 's'}`);
+        if (input.view.color_rules?.length) details.push(`${input.view.color_rules.length} regla${input.view.color_rules.length === 1 ? '' : 's'} de color`);
         if (input.view.date_field) details.push(`sobre «${bySlug.get(input.view.date_field)?.label}»`);
         if (input.view.filters?.length) details.push(`${input.view.filters.length} filtro${input.view.filters.length === 1 ? '' : 's'}`);
         if (input.view.sort?.length) details.push('con orden');
@@ -1913,6 +1949,9 @@ export class StructureTools implements AiProposalApplier {
             }
             const bits: string[] = [];
             if (spec.group_by) bits.push(`agrupada por «${bySlug.get(spec.group_by)?.label}»`);
+            if (spec.sub_group_by) bits.push(`y luego por «${bySlug.get(spec.sub_group_by)?.label}»`);
+            if (spec.frozen_columns) bits.push(`${spec.frozen_columns} columna${spec.frozen_columns === 1 ? '' : 's'} fija${spec.frozen_columns === 1 ? '' : 's'}`);
+            if (spec.color_rules?.length) bits.push(`${spec.color_rules.length} regla${spec.color_rules.length === 1 ? '' : 's'} de color`);
             if (spec.filters?.length) bits.push(`${spec.filters.length} filtro${spec.filters.length === 1 ? '' : 's'}`);
             if (spec.sort?.length) bits.push('con orden');
             if (spec.hidden_columns?.length) bits.push(`${spec.hidden_columns.length} columnas ocultas`);
@@ -2679,6 +2718,40 @@ export class StructureTools implements AiProposalApplier {
         } else if (v.type === 'table' && v.group_by) {
             config.group_by_field_id = resolve(v.group_by).id;
         }
+        // v0.1.287 — segundo agrupado, columnas fijas y colores condicionales (tabla).
+        if (v.sub_group_by !== undefined) {
+            if (v.type !== 'table') throw new AiToolError(`Vista «${v.name}»: sub_group_by sólo aplica a vistas de tabla.`);
+            if (!v.group_by) throw new AiToolError(`Vista «${v.name}»: sub_group_by necesita group_by.`);
+            if (v.sub_group_by === v.group_by) throw new AiToolError(`Vista «${v.name}»: sub_group_by tiene que ser otro campo que group_by.`);
+            const sub = resolve(v.sub_group_by);
+            if (sub.type === 'relation' || sub.type === 'file') {
+                throw new AiToolError(`Vista «${v.name}»: no se puede agrupar por «${v.sub_group_by}» (${sub.type}).`);
+            }
+            config.sub_group_by_field_id = sub.id;
+        }
+        if (v.frozen_columns !== undefined) {
+            if (v.type !== 'table') throw new AiToolError(`Vista «${v.name}»: frozen_columns sólo aplica a vistas de tabla.`);
+            config.frozen_columns = v.frozen_columns;
+        }
+        if (v.color_rules?.length) {
+            if (v.type !== 'table') throw new AiToolError(`Vista «${v.name}»: color_rules sólo aplica a vistas de tabla.`);
+            config.color_rules = v.color_rules.map((r: ColorRuleSpec, i: number) => {
+                const target = r.target ?? 'row';
+                return {
+                    id: `r${i + 1}`,
+                    enabled: r.enabled ?? true,
+                    condition: {
+                        type: 'condition',
+                        field_id: resolve(r.field).id,
+                        op: r.op,
+                        ...(r.value !== undefined ? { value: r.value } : {}),
+                    },
+                    color: r.color,
+                    target,
+                    ...(target === 'cell' ? { cell_field_id: resolve(r.column ?? r.field).id } : {}),
+                };
+            });
+        }
         if (v.type === 'calendar') {
             if (!v.date_field) throw new AiToolError(`La vista calendario «${v.name}» necesita date_field.`);
             const d = resolve(v.date_field);
@@ -3093,6 +3166,42 @@ function crmTemplateLabel(id: string): string {
         ({ auto: 'Automática', contact: 'Contacto', deal: 'Venta / Oportunidad', task: 'Tarea', support: 'Soporte', custom: 'Personalizada' } as Record<string, string>)[id]
         ?? id
     );
+}
+
+/**
+ * v0.1.287 — Una vista guardada en el vocabulario del modelo: además de id,
+ * nombre y tipo, lo que se puede leer y devolver con `propose_update_view`
+ * (agrupado en dos niveles, columnas fijas y colores condicionales), por slug.
+ */
+function describeViewForModel(
+    v: { id: number; name: string; type: string; is_default: boolean; config: Record<string, unknown> },
+    fieldById: Map<number, Field>,
+): Record<string, unknown> {
+    const slugOf = (id: unknown): string | null => (typeof id === 'number' ? fieldById.get(id)?.slug ?? null : null);
+    const out: Record<string, unknown> = { id: v.id, name: v.name, type: v.type, is_default: v.is_default };
+    const cfg = v.config ?? {};
+    const groupBy = slugOf(cfg.group_by_field_id);
+    if (groupBy) out.group_by = groupBy;
+    if (v.type === 'table') {
+        const sub = slugOf(cfg.sub_group_by_field_id);
+        if (sub) out.sub_group_by = sub;
+        if (typeof cfg.frozen_columns === 'number') out.frozen_columns = cfg.frozen_columns;
+        if (Array.isArray(cfg.color_rules) && cfg.color_rules.length > 0) {
+            out.color_rules = (cfg.color_rules as Array<Record<string, unknown>>).map((r) => {
+                const cond = (r.condition ?? {}) as Record<string, unknown>;
+                return {
+                    field: slugOf(cond.field_id),
+                    op: cond.op,
+                    ...(cond.value !== undefined ? { value: cond.value } : {}),
+                    color: r.color,
+                    target: r.target ?? 'row',
+                    ...(r.target === 'cell' ? { column: slugOf(r.cell_field_id) } : {}),
+                    ...(r.enabled === false ? { enabled: false } : {}),
+                };
+            });
+        }
+    }
+    return out;
 }
 
 function viewTypeLabel(type: string): string {

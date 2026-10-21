@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
+import { editLabel, useGridHistory } from './grid/history';
 import { isCheckedValue, renderCellValue } from './renderCellValue';
 import { useRelationTitlesFor } from './relationTitlesContext';
 import { useWrapText } from './wrapText';
@@ -76,6 +77,7 @@ function EditableCellInner({
     // v0.1.259 — UNA mutación por tabla (contexto), no una por celda: con
     // decenas de filas visibles eran cientos de observers montados por nada.
     const updateRecord = useContext(RecordUpdaterContext)!;
+    const history = useGridHistory();
     const [pending, setPending] = useState(false);
     const wrapText = useWrapText();
     const relationTitles = useRelationTitlesFor(field.id);
@@ -116,8 +118,17 @@ function EditableCellInner({
         setError(null);
         try {
             setPending(true);
-            await updateRecord({ id: recordId, values: { [field.slug]: next } });
+            const saved = await updateRecord({ id: recordId, values: { [field.slug]: next } });
             setEditing(false);
+            // v0.1.287 — la edición de una celda es UN paso de deshacer
+            // (Ctrl/Cmd+Z con el foco en la tabla). El "después" es lo que
+            // QUEDÓ guardado: deshacer compara contra eso.
+            if (history) {
+                const after = field.type === 'relation'
+                    ? saved?.relations?.[field.slug] ?? next
+                    : saved?.fields?.[field.slug] ?? next;
+                history.record({ label: editLabel(field), cells: [{ recordId, field, before: value, after }] });
+            }
         } catch (err) {
             const msg = err instanceof ApiError
                 ? (err.errors[field.slug] ?? err.message)

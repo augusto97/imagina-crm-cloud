@@ -19,6 +19,8 @@
  *  8. text      — fallback.
  */
 
+import { cleanNumberString } from '@imagina-base/shared';
+
 const THRESHOLD = 0.8;
 const SELECT_MAX_CARDINALITY = 20;
 
@@ -75,16 +77,11 @@ export function isNumberish(v: string): boolean {
     return clean !== '' && !Number.isNaN(Number(clean));
 }
 
-/** Limpia separadores ES (1.234,56 → 1234.56) y coma decimal (12,5 → 12.5). */
-export function cleanNumberString(v: string): string {
-    if (/^-?[0-9]{1,3}(\.[0-9]{3})+(,[0-9]+)?$/.test(v)) {
-        return v.replace(/\./g, '').replace(',', '.');
-    }
-    if (v.includes(',') && !v.includes('.')) {
-        return v.replace(',', '.');
-    }
-    return v;
-}
+/**
+ * Limpia separadores ES (1.234,56 → 1234.56) y coma decimal (12,5 → 12.5).
+ * v0.1.287 — vive en `packages/shared` (la comparte el pegar de la tabla).
+ */
+export { cleanNumberString };
 
 function isDateish(v: string): boolean {
     // ISO 8601: YYYY-MM-DD, posiblemente con hora.

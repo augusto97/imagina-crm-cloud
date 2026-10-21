@@ -21,6 +21,9 @@ const baseState: RecordsState = {
     spreadsheet: false,
     density: null,
     fontSize: null,
+    subGroupByFieldId: null,
+    frozenColumns: null,
+    colorRules: [],
 };
 
 /**
@@ -168,5 +171,46 @@ describe('tamaño de letra (v0.1.141)', () => {
         expect(stateToViewConfig(baseState).font_size).toBeUndefined();
         expect(viewConfigToState({}, 50).fontSize).toBeNull();
         expect(viewConfigToState({ font_size: 'enorme' }, 50).fontSize).toBeNull();
+    });
+});
+
+describe('v0.1.287 — columnas fijas, colores y segundo agrupado', () => {
+    const rule = {
+        id: 'r1',
+        enabled: true,
+        condition: { type: 'condition' as const, field_id: 7, op: 'eq' as const, value: 'vencida' },
+        color: 'red' as const,
+        target: 'row' as const,
+    };
+
+    it('viajan a la vista guardada y vuelven iguales', () => {
+        const state = { ...baseState, groupByFieldId: 3, subGroupByFieldId: 5, frozenColumns: 2, colorRules: [rule] };
+        const config = stateToViewConfig(state);
+        expect(config.sub_group_by_field_id).toBe(5);
+        expect(config.frozen_columns).toBe(2);
+        expect(config.color_rules).toEqual([rule]);
+        const back = viewConfigToState(config, 50);
+        expect(back.subGroupByFieldId).toBe(5);
+        expect(back.frozenColumns).toBe(2);
+        expect(back.colorRules).toEqual([rule]);
+        expect(hasChangesVsView(state, jsonbRoundTrip(config))).toBe(false);
+    });
+
+    it('el segundo agrupado sin el primero no se guarda', () => {
+        expect(stateToViewConfig({ ...baseState, subGroupByFieldId: 5 }).sub_group_by_field_id).toBeUndefined();
+        expect(viewConfigToState({ sub_group_by_field_id: 5 }, 50).subGroupByFieldId).toBeNull();
+    });
+
+    it('una regla guardada sin enabled/target se completa y no cuenta como cambio', () => {
+        const saved = { color_rules: [{ id: 'x', condition: rule.condition, color: 'red' }] } as unknown as SavedViewConfig;
+        const state = viewConfigToState(saved, 50);
+        expect(state.colorRules[0]).toMatchObject({ enabled: true, target: 'row' });
+        expect(hasChangesVsView(state, saved)).toBe(false);
+    });
+
+    it('cambiar una regla o el fijado marca cambios sin guardar', () => {
+        const config = stateToViewConfig({ ...baseState, colorRules: [rule] });
+        expect(hasChangesVsView({ ...baseState, colorRules: [{ ...rule, color: 'blue' }] }, config)).toBe(true);
+        expect(hasChangesVsView({ ...baseState, colorRules: [rule], frozenColumns: 3 }, config)).toBe(true);
     });
 });

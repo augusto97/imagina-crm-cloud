@@ -1,5 +1,6 @@
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Injectable,
     Logger,
@@ -15,10 +16,12 @@ import {
     jsonbKeyForField,
     readStoreListMarker,
     richDocToPlainText,
+    sameBulkValue,
     sanitizeRichDoc,
     storeCellAccess,
     storeValueError,
     validateFieldValue,
+    type BatchUpdateRecordsResult,
     type CreateRecordInput,
     type Field,
     type List,
@@ -423,6 +426,54 @@ export class RecordsService {
     }
 
     /**
+     * v0.1.287 — Filas de VARIOS subgrupos (pares grupo/subgrupo) de la vista
+     * agrupada en dos niveles, en UNA consulta, con el mismo filtro, búsqueda,
+     * ACL, orden y regla de subtareas que el listado. Las claves de los dos
+     * niveles las arma `groupKeyExpr` (las mismas del motor de agregados).
+     */
+    async listSubGroupRows(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        opts: {
+            groupFieldId: number;
+            subGroupFieldId: number;
+            groupKeyExpr: (field: Field, fieldsById: Map<number, FilterableField>) => SQL;
+            pairs: Array<[string | null, string | null]>;
+            perGroup: number;
+            filter_tree?: ListRecordsQuery['filter_tree'];
+            search?: string;
+            sort?: string;
+        },
+    ): Promise<Map<string, RecordDto[]>> {
+        const out = new Map<string, RecordDto[]>();
+        if (opts.pairs.length === 0) return out;
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            const groupField = ctx.fields.find((f) => f.id === opts.groupFieldId);
+            const subField = ctx.fields.find((f) => f.id === opts.subGroupFieldId);
+            if (!groupField || !subField || ctx.hiddenIds.has(groupField.id) || ctx.hiddenIds.has(subField.id)) return out;
+            if (groupKeyHasSubquery(groupField.type) || groupKeyHasSubquery(subField.type)) await disableJitForTx(tx);
+            const picked = await this.repo.listPerGroupPair(tx, tenantId, ctx.list.id, {
+                where: this.readWhere(ctx, { filter_tree: opts.filter_tree, search: opts.search }),
+                groupExpr: opts.groupKeyExpr(groupField, ctx.fieldsById),
+                subExpr: opts.groupKeyExpr(subField, ctx.fieldsById),
+                pairs: opts.pairs,
+                orderBy: parseFieldSort(opts.sort, ctx.fieldsById, ctx.fields),
+                perGroup: opts.perGroup,
+            });
+            const dtos = await this.hydrate(tx, tenantId, ctx, picked.map((p) => p.row));
+            picked.forEach((p, i) => {
+                const k = subGroupPairKey(p.group, p.sub);
+                const list = out.get(k) ?? [];
+                list.push(dtos[i]!);
+                out.set(k, list);
+            });
+            return out;
+        });
+    }
+
+    /**
      * Lo que necesita una LECTURA de la lista para quien pide (v0.1.286, antes
      * vivía dentro de `list`): campos, ACL (scope + ocultos), campos filtrables
      * con las expresiones de los derivados y el reloj de la empresa.
@@ -517,11 +568,24 @@ export class RecordsService {
          * `automationChain`: el cambio lo hizo una automatización (el evento
          * lleva la cadena — tope de profundidad y sin auto-disparo).
          */
-        opts: { silent?: boolean; noAutomations?: boolean; automationChain?: AutomationChain } = {},
+        opts: {
+            silent?: boolean;
+            noAutomations?: boolean;
+            automationChain?: AutomationChain;
+            /**
+             * v0.1.287 — Deshacer/rehacer de la tabla: los valores (por `f{id}`)
+             * que el cliente cree vigentes. Si alguno cambió desde entonces, la
+             * fila NO se toca (409 `record_changed`): deshacer no pisa el
+             * cambio de otra persona.
+             */
+            expect?: Record<string, unknown>;
+            /** v0.1.287 — lista y campos ya resueltos (edición en lote: no se re-resuelven por fila). */
+            prepared?: { list: List; fields: Field[] };
+        } = {},
     ): Promise<RecordDto> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const list = opts.prepared?.list ?? (await this.lists.get(tenantId, listIdOrSlug));
         const listId = list.id;
-        const fields = await this.fields.listByListId(tenantId, listId);
+        const fields = opts.prepared?.fields ?? (await this.fields.listByListId(tenantId, listId));
 
         // Los campos `relation` presentes en el patch se sincronizan aparte
         // (semántica parcial: los ausentes no se tocan).
@@ -530,6 +594,7 @@ export class RecordsService {
             // Con lock: dos ediciones simultáneas se encolan en vez de pisarse.
             const current = await this.repo.findByIdForUpdate(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
+            if (opts.expect) await this.assertUnchanged(tx, tenantId, fields, current, opts.expect);
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             const patch = this.validateData(fields, rel.data, { partial: true });
@@ -1000,6 +1065,127 @@ export class RecordsService {
     }
 
     /**
+     * v0.1.287 — Varias filas con valores DISTINTOS por fila (pegar un bloque,
+     * rellenar hacia abajo, deshacer/rehacer desde la tabla). Cada ítem pasa
+     * por `update` —ACL, validación, reglas de la tienda, actividad,
+     * automatizaciones— con la lista y los campos resueltos UNA vez, y el
+     * realtime avisa UNA sola vez al final (como `bulk`).
+     *
+     * Errores por CELDA sin abortar el resto: si una fila trae un valor que el
+     * campo no acepta (o una columna que la tienda no deja tocar), esa celda
+     * se reporta y el resto de la fila se escribe igual. Una fila que no se
+     * puede tocar (sin permiso, borrada, conflicto de deshacer) se reporta
+     * entera.
+     */
+    async batchUpdate(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        items: Array<{ id: number; data: Record<string, unknown>; expect?: Record<string, unknown> }>,
+    ): Promise<BatchUpdateRecordsResult> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const keyBySlug = new Map(fields.map((f) => [f.slug, jsonbKeyForField(f.id)]));
+        const slugByKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f.slug]));
+        const updated: RecordDto[] = [];
+        const failed: BatchUpdateRecordsResult['failed'] = [];
+        const cellErrors: BatchUpdateRecordsResult['cell_errors'] = [];
+        // Un id repetido en el pedido se escribe UNA vez (con lo último).
+        const merged = new Map<number, { data: Record<string, unknown>; expect?: Record<string, unknown> }>();
+        for (const item of items) {
+            const prev = merged.get(item.id);
+            merged.set(item.id, {
+                data: { ...(prev?.data ?? {}), ...item.data },
+                expect: item.expect || prev?.expect ? { ...(prev?.expect ?? {}), ...(item.expect ?? {}) } : undefined,
+            });
+        }
+        for (const [id, item] of merged) {
+            const data = { ...item.data };
+            // Cada vuelta saca las celdas que fallaron; a lo sumo una por clave.
+            for (let attempt = 0; attempt <= Object.keys(item.data).length; attempt++) {
+                if (Object.keys(data).length === 0) break;
+                try {
+                    updated.push(
+                        await this.update(tenantId, actor, String(list.id), id, { data }, {
+                            silent: true,
+                            expect: item.expect,
+                            prepared: { list, fields },
+                        }),
+                    );
+                    break;
+                } catch (err) {
+                    const info = describeError(err);
+                    const badKeys = info.fieldErrors
+                        ? Object.keys(info.fieldErrors)
+                              .map((k) => (/^f\d+$/.test(k) ? k : keyBySlug.get(k)))
+                              .filter((k): k is string => k !== undefined && k in data)
+                        : [];
+                    if (badKeys.length > 0) {
+                        for (const key of badKeys) {
+                            const slug = slugByKey.get(key);
+                            cellErrors.push({
+                                id,
+                                key,
+                                message: info.fieldErrors![key] ?? (slug ? info.fieldErrors![slug] : undefined) ?? info.message,
+                            });
+                            delete data[key];
+                        }
+                        continue;
+                    }
+                    failed.push({ id, code: info.code, message: info.message, ...(info.changed ? { changed: info.changed } : {}) });
+                    break;
+                }
+            }
+        }
+        if (updated.length > 0) this.realtime.records(tenantId, list.id);
+        return { updated, failed, cell_errors: cellErrors };
+    }
+
+    /**
+     * v0.1.287 — ¿Los valores que el cliente cree vigentes (`expect`, por
+     * `f{id}`) siguen siendo los de la fila? Si no, 409 con las claves que
+     * cambiaron. Las relaciones se comparan como conjunto de vínculos; una
+     * casilla vacía vale lo mismo que desmarcada.
+     */
+    private async assertUnchanged(
+        tx: Tx,
+        tenantId: number,
+        fields: Field[],
+        current: Pick<RecordListRow, 'id' | 'data'>,
+        expect: Record<string, unknown>,
+    ): Promise<void> {
+        const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
+        const relationIds = Object.keys(expect)
+            .map((k) => byKey.get(k))
+            .filter((f): f is Field => f?.type === 'relation')
+            .map((f) => f.id);
+        const rels = relationIds.length > 0
+            ? (await this.relationsRepo.batchTargets(tx, tenantId, [current.id], relationIds)).get(current.id)
+            : undefined;
+        const data = current.data as Record<string, unknown>;
+        const changed: string[] = [];
+        for (const [key, expected] of Object.entries(expect)) {
+            const field = byKey.get(key);
+            if (!field) continue;
+            if (field.type === 'relation') {
+                if (!sameBulkValue(rels?.get(field.id) ?? [], expected, true)) changed.push(key);
+            } else if (field.type === 'checkbox') {
+                if (isTruthyCheckbox(data[key]) !== isTruthyCheckbox(expected)) changed.push(key);
+            } else if (!sameBulkValue(data[key], expected, field.type === 'multi_select')) {
+                changed.push(key);
+            }
+        }
+        if (changed.length > 0) {
+            const labels = changed.map((k) => byKey.get(k)?.label ?? k);
+            throw new ConflictException({
+                code: 'record_changed',
+                message: `Alguien cambió ${labels.map((l) => `«${l}»`).join(', ')} después: no se pisó.`,
+                data: { status: 409, changed },
+            });
+        }
+    }
+
+    /**
      * v0.1.213 — En una lista sincronizada con una tienda, cada columna que
      * cambia tiene que ser editable EN ESA FILA (precios, stock y estados, con
      * las reglas de `store-rules.ts`) y el valor tiene que ser uno que la
@@ -1450,4 +1636,45 @@ function selectOptionValues(field: Field): string[] {
     return options
         .map((o) => (o && typeof o === 'object' ? (o as { value?: unknown }).value : undefined))
         .filter((v): v is string => typeof v === 'string');
+}
+
+/** Una casilla marcada (tolera los textos «0»/«false» que guardaban automatizaciones viejas). */
+function isTruthyCheckbox(v: unknown): boolean {
+    if (typeof v === 'string') return !['', '0', 'false', 'no'].includes(v.trim().toLowerCase());
+    return v === true || (typeof v === 'number' && v !== 0);
+}
+
+/**
+ * v0.1.287 — Lo que la edición en lote necesita saber de un error de `update`:
+ * su código y mensaje, los errores por campo (validación, reglas de la tienda)
+ * y, en un conflicto de deshacer, qué claves cambiaron.
+ */
+function describeError(err: unknown): {
+    code: string;
+    message: string;
+    fieldErrors?: Record<string, string>;
+    changed?: string[];
+} {
+    const res = (err as { getResponse?: () => unknown }).getResponse?.();
+    const body = res && typeof res === 'object' ? (res as { code?: unknown; message?: unknown; data?: Record<string, unknown> }) : {};
+    const code = typeof body.code === 'string' ? body.code : 'error';
+    const message = typeof body.message === 'string' ? body.message : err instanceof Error ? err.message : 'Error';
+    const data = body.data ?? {};
+    let fieldErrors: Record<string, string> | undefined;
+    if (code === 'validation_failed' && data.errors && typeof data.errors === 'object') {
+        fieldErrors = data.errors as Record<string, string>;
+    } else if ((code === 'store_field_locked' || code === 'store_invalid_value') && typeof data.field_id === 'number') {
+        fieldErrors = { [`f${data.field_id}`]: message };
+    }
+    const changed = Array.isArray(data.changed) ? (data.changed as unknown[]).map(String) : undefined;
+    return { code, message, ...(fieldErrors ? { fieldErrors } : {}), ...(changed ? { changed } : {}) };
+}
+
+/**
+ * v0.1.287 — Clave de un par (grupo, subgrupo) de la vista agrupada en dos
+ * niveles: el JSON de las dos claves crudas («(sin valor)» = `__null__`). El
+ * front la arma igual para buscar las filas de cada subgrupo en el bundle.
+ */
+export function subGroupPairKey(group: string | null, sub: string | null): string {
+    return JSON.stringify([group ?? '__null__', sub ?? '__null__']);
 }

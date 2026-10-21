@@ -22,13 +22,19 @@ import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
 import { useMainVirtualRows } from './useMainVirtualRows';
 import { SortIndicator } from './SortIndicator';
-import { isTypingTarget, moveActiveCell, type GridPos } from './gridKeyboard';
+import type { ViewColorRule } from '@imagina-base/shared';
+
+import { activeColorRules, cellTintStyle, evaluateRowColors, rowTintStyle, type RowColors } from '../grid/colorRules';
+import { computeFrozen, FROZEN_EDGE_SHADOW } from '../grid/frozen';
+import type { GridColumnRef } from '../grid/gridPlan';
+import { useGridController } from '../grid/useGridController';
+import { useWidth } from '../grid/useWidth';
 import { FloatingAddColumn, tableMinWidth, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
-import { formatDateTimeStr } from '@/lib/tenantFormat';
+import { formatDateTimeStr, getTenantTimeZone } from '@/lib/tenantFormat';
 import { CAP, useCan, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -43,7 +49,7 @@ import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, footerIsAggregatable, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup } from './hscrollGroup';
-import { MAIN_SCROLLER_ID, usePageStickyTop, useStuckSentinel } from './stickyTop';
+import { usePageStickyTop, useStuckSentinel } from './stickyTop';
 import { isImageUrlField } from '@/lib/imageProxy';
 
 
@@ -118,6 +124,16 @@ interface TableViewProps {
     fontSize?: RowFontSize | null;
     /** Índice de la primera fila de la página (para numerar continuo). */
     rowNumberOffset?: number;
+    /**
+     * v0.1.287 — Cuántas de las primeras columnas quedan fijas a la
+     * izquierda (`null` = sólo la primera, como siempre).
+     */
+    frozenColumns?: number | null;
+    onFrozenColumnsChange?: (next: number | null) => void;
+    /** v0.1.287 — Reglas de color de la vista (filas o celdas). */
+    colorRules?: ViewColorRule[];
+    /** v0.1.287 — "Colorear filas según esta columna…" del menú de la columna. */
+    onColorColumn?: (field: FieldEntity) => void;
 }
 
 /**
@@ -170,6 +186,10 @@ export function TableView({
     density = null,
     fontSize = null,
     rowNumberOffset = 0,
+    frozenColumns = null,
+    onFrozenColumnsChange,
+    colorRules,
+    onColorColumn,
 }: TableViewProps): JSX.Element {
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -446,77 +466,63 @@ export function TableView({
     const virtualRows = windowed.items;
     const { paddingTop, paddingBottom } = windowed;
 
-    // v0.1.286 — celda activa + teclado (ver gridKeyboard.ts). La tabla es
-    // enfocable: las flechas mueven el recuadro, Enter edita (o abre el
-    // registro en la primera columna), Escape suelta. Funciona con la ventana
-    // virtual: si la fila no está dibujada, se la trae a la vista primero.
-    const [activeCell, setActiveCell] = useState<GridPos | null>(null);
-    const [gridFocused, setGridFocused] = useState(false);
-    const cellEl = (pos: GridPos): HTMLElement | null =>
-        tableContainerRef.current?.querySelector<HTMLElement>(`td[data-cell="${pos.row}:${pos.col}"]`) ?? null;
-    const revealCell = (pos: GridPos, attempt = 0): void => {
-        const td = cellEl(pos);
-        if (!td) {
-            if (attempt === 0) windowed.scrollToIndex(pos.row);
-            if (attempt < 3) requestAnimationFrame(() => revealCell(pos, attempt + 1));
-            return;
-        }
-        const main = document.getElementById(MAIN_SCROLLER_ID);
-        const body = tableContainerRef.current;
-        const r = td.getBoundingClientRect();
-        if (main) {
-            // Debajo de la cabecera fija (página + columnas), no detrás.
-            const headBottom = headScrollRef.current?.getBoundingClientRect().bottom ?? main.getBoundingClientRect().top;
-            const mainBottom = main.getBoundingClientRect().bottom;
-            if (r.top < headBottom) main.scrollTop -= headBottom - r.top;
-            else if (r.bottom > mainBottom) main.scrollTop += r.bottom - mainBottom;
-        }
-        if (body) {
-            const b = body.getBoundingClientRect();
-            const stickyCell = body.querySelector<HTMLElement>(`td[data-cell="${pos.row}:0"]`);
-            const leftEdge = pos.col === 0 ? b.left : Math.max(b.left, stickyCell?.getBoundingClientRect().right ?? b.left);
-            if (r.left < leftEdge) body.scrollLeft -= leftEdge - r.left;
-            else if (r.right > b.right) body.scrollLeft += r.right - b.right;
-        }
-    };
-    const onGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
-        const container = e.currentTarget;
-        const onContainer = e.target === container;
-        // Al terminar de editar (Enter/Escape/Tab dentro del editor) el editor
-        // se desmonta y el foco quedaba en el <body>: vuelve a la tabla.
-        if (!onContainer && (e.key === 'Escape' || e.key === 'Enter' || e.key === 'Tab')) {
-            requestAnimationFrame(() => {
-                const a = document.activeElement;
-                if (!a || a === document.body) container.focus({ preventScroll: true });
-            });
-        }
-        // Dentro de un editor las teclas escriben; en un botón de celda
-        // Enter/Espacio los maneja el propio botón.
-        if (isTypingTarget(e.target)) return;
-        if (!onContainer && (e.key === 'Enter' || e.key === ' ')) return;
-        const colCount = table.getVisibleLeafColumns().length;
-        if (onContainer && (e.key === 'Enter' || e.key === 'F2') && activeCell) {
-            e.preventDefault();
-            const row = rows[activeCell.row];
-            if (activeCell.col === 0 && onRowClick && row) {
-                onRowClick(row.original);
-                return;
+    // v0.1.287 — la tabla como hoja de cálculo (ver grid/useGridController):
+    // celda activa, rango, copiar/pegar, rellenar, borrar y deshacer. Las
+    // celdas llevan `data-cell="fila:columna"` dentro del scroller del cuerpo.
+    const visibleLeafColumns = table.getVisibleLeafColumns();
+    const leafKey = visibleLeafColumns.map((c) => `${c.id}:${c.getSize()}`).join('|');
+    const gridColumns = useMemo<GridColumnRef[]>(
+        () =>
+            visibleLeafColumns.map((c) => {
+                const m = c.columnDef.meta as { fieldId: number | null } | undefined;
+                const fid = m?.fieldId ?? null;
+                return { id: c.id, field: fid !== null ? fieldsById.get(fid) ?? null : null };
+            }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [leafKey, fieldsById],
+    );
+    const gridRows = useMemo(() => rows.map((r) => r.original), [rows]);
+
+    // Columnas fijas: las primeras N visibles (por defecto, sólo la primera).
+    // En pantallas angostas, si lo fijado taparía casi todo, sólo la primera.
+    const containerWidth = useWidth(tableContainerRef);
+    const frozen = useMemo(
+        () => computeFrozen(visibleLeafColumns.map((c) => ({ id: c.id, width: c.getSize() })), frozenColumns ?? 1, containerWidth),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [leafKey, frozenColumns, containerWidth],
+    );
+    const showFrozenEdge = frozenColumns !== null && frozen.count > 0;
+
+    const grid = useGridController({
+        containerRef: tableContainerRef,
+        rows: gridRows,
+        columns: gridColumns,
+        listId,
+        canEdit: canEditRecords,
+        locked: storeRules
+            ? (field, record) => {
+                const a = storeAccessFor(storeRules, field, record);
+                return a?.access === 'locked' ? a.reason : null;
             }
-            const trigger = cellEl(activeCell)?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), [role="button"]');
-            trigger?.click();
-            return;
-        }
-        if (onContainer && e.key === 'Escape') {
-            setActiveCell(null);
-            return;
-        }
-        const next = moveActiveCell(activeCell, e.key, e.shiftKey, rows.length, colCount);
-        if (next === undefined) return;
-        e.preventDefault();
-        if (!onContainer) container.focus({ preventScroll: true });
-        setActiveCell(next);
-        requestAnimationFrame(() => revealCell(next));
-    };
+            : undefined,
+        relationTitles,
+        onOpenRow: onRowClick,
+        scrollToIndex: windowed.scrollToIndex,
+        headBottom: () => headScrollRef.current?.getBoundingClientRect().bottom ?? null,
+        frozenCount: frozen.count,
+    });
+
+    // Colores condicionales: se evalúan en el navegador con el evaluador
+    // COMPARTIDO de condiciones (el mismo de las automatizaciones), con "hoy"
+    // en el reloj de la empresa.
+    const rulesInUse = useMemo(() => activeColorRules(colorRules, fieldsById), [colorRules, fieldsById]);
+    const rowColors = useMemo(() => {
+        const out = new Map<number, RowColors>();
+        if (rulesInUse.length === 0) return out;
+        const opts = { timeZone: getTenantTimeZone() };
+        for (const r of gridRows) out.set(r.id, evaluateRowColors(rulesInUse, r, fieldsById, opts));
+        return out;
+    }, [rulesInUse, gridRows, fieldsById]);
 
     /**
      * Reordena `columnOrder` insertando `dragged` justo antes de
@@ -541,31 +547,18 @@ export function TableView({
         onColumnOrderChange(currentOrder);
     };
 
-    // Sticky-left: la PRIMERA columna dinámica visible queda fija en
-    // `left: 0` (ancla la fila al scrollear horizontal). El checkbox
-    // ya no es sticky — scrollea con el resto de columnas. UX igual
-    // a ClickUp: la columna fija es la que ancla la fila visualmente
-    // (típicamente "Nombre"), no los controles de selección.
-    //
-    // Cuál es esa primera columna dinámica? Tomamos la primera columna
-    // visible (en column order) cuyo `meta.fieldId !== null` (es decir,
-    // descartamos `id` y `updated_at` de TanStack si están al inicio
-    // del orden, aunque normalmente `id` está oculto y `updated_at` al
-    // final).
-    const stickyColumnId = useMemo(() => {
-        const visibleLeaves = table.getVisibleLeafColumns();
-        for (const c of visibleLeaves) {
-            const m = c.columnDef.meta as { fieldId: number | null } | undefined;
-            if (m && m.fieldId !== null) return c.id;
-        }
-        return null;
-    }, [table, columnOrder, columnVisibility]);
+    // Sticky-left: las columnas fijas (v0.1.287 — "Fijar hasta esta columna";
+    // sin elección, sólo la primera, como siempre) quedan clavadas a la
+    // izquierda al scrollear en horizontal. La casilla NO es sticky: scrollea
+    // con el resto (como ClickUp, la columna fija es la que ancla la fila).
+    const stickyColumnId = frozen.left.size > 0 ? visibleLeafColumns[0]?.id ?? null : null;
     const stickyStyleFor = (columnId: string): React.CSSProperties | undefined => {
-        if (columnId === stickyColumnId) {
-            return { position: 'sticky' as const, left: 0, zIndex: 1 };
-        }
-        return undefined;
+        const left = frozen.left.get(columnId);
+        if (left === undefined) return undefined;
+        return { position: 'sticky' as const, left, zIndex: 1 };
     };
+    const frozenEdgeFor = (columnId: string): string | null =>
+        showFrozenEdge && frozen.lastId === columnId ? FROZEN_EDGE_SHADOW : null;
 
     // v0.1.193 — la cabecera de columnas queda FIJA bajo la cabecera de la
     // página al scrollear (como ClickUp) con `position: sticky` NATIVO.
@@ -716,6 +709,7 @@ export function TableView({
                                         style={{
                                             width: h.getSize(),
                                             ...(stickyStyle ?? {}),
+                                            ...(frozenEdgeFor(h.id) ? { boxShadow: frozenEdgeFor(h.id)! } : {}),
                                         }}
                                         draggable={isDraggable}
                                         onDragStart={isDraggable ? (e) => {
@@ -755,7 +749,7 @@ export function TableView({
                                         // Click DERECHO sobre el header = abrir el menú
                                         // contextual de la columna (además del chevron).
                                         onContextMenu={
-                                            fieldId !== null && onEditField !== undefined
+                                            fieldId !== null
                                                 ? (e) => {
                                                     const btn = e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null;
                                                     if (!btn) return;
@@ -806,7 +800,6 @@ export function TableView({
                                                 flexRender(h.column.columnDef.header, h.getContext())
                                             )}
                                             {fieldId !== null
-                                                && onEditField !== undefined
                                                 && fieldsById.has(fieldId) && (
                                                 <FieldHeaderMenu
                                                     listId={listId}
@@ -838,6 +831,13 @@ export function TableView({
                                                                 .filter((slug): slug is string => slug !== undefined),
                                                         );
                                                     }}
+                                                    onFreeze={onFrozenColumnsChange
+                                                        ? () => onFrozenColumnsChange(Math.max(1, visibleLeafColumns.findIndex((c) => c.id === h.id) + 1))
+                                                        : undefined}
+                                                    onUnfreeze={onFrozenColumnsChange && frozenColumns !== null
+                                                        ? () => onFrozenColumnsChange(null)
+                                                        : undefined}
+                                                    onColor={onColorColumn}
                                                 />
                                             )}
                                         </div>
@@ -897,18 +897,8 @@ export function TableView({
                 // va plana sobre el canvas, estilo ClickUp — solo hairlines.
                 ref={tableContainerRef}
                 className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden focus-visible:imcrm-outline-none"
-                tabIndex={0}
-                aria-label={__('Registros: usa las flechas para moverte entre celdas y Enter para editar')}
-                onKeyDown={onGridKeyDown}
-                onFocus={(e) => {
-                    if (e.target === e.currentTarget) {
-                        setGridFocused(true);
-                        if (activeCell === null && rows.length > 0) setActiveCell({ row: 0, col: 0 });
-                    }
-                }}
-                onBlur={(e) => {
-                    if (e.target === e.currentTarget) setGridFocused(false);
-                }}
+                aria-label={__('Registros: usa las flechas para moverte entre celdas, Mayús para elegir un rango, Ctrl+C y Ctrl+V para copiar y pegar, y Enter para editar')}
+                {...grid.containerProps}
             >
             <table className={tableClassName} style={tableStyle} aria-label={__('Registros de la lista')}>
                 {colGroup}
@@ -940,6 +930,7 @@ export function TableView({
                             ).map((row, visualIndex) => {
                             const isSelected = selectedSet.has(row.original.id);
                             const rowIndex = virtualActive ? (virtualRows[visualIndex]?.index ?? visualIndex) : visualIndex;
+                            const colors = rowColors.get(row.original.id);
                             // Numeración continua entre páginas; con
                             // virtualización el índice real es el de la fila.
                             const rowNumber = rowNumberOffset
@@ -955,12 +946,14 @@ export function TableView({
                                         e.preventDefault();
                                         setRowMenu({ record: row.original, x: e.clientX, y: e.clientY });
                                     }}
+                                    style={rowTintStyle(colors?.row ?? null)}
                                     className={cn(
                                         // Sin `transition-colors` aquí — daba lag
                                         // perceptible en hover (200ms de wait con
                                         // duration-100 antes de la primera frame).
                                         // Hover bg debe ser instantáneo.
                                         'imcrm-group/row',
+                                        colors?.row && 'imcrm-tinted-row',
                                         isSelected
                                             ? 'imcrm-bg-primary/5'
                                             : 'hover:imcrm-bg-muted/40',
@@ -1017,21 +1010,23 @@ export function TableView({
                                         // click ahí abre el drawer.
                                         const isOpenerCell = cellIndex === 0;
                                         const cellSticky = stickyStyleFor(cell.column.id);
-                                        const isActive = gridFocused
-                                            && activeCell !== null
-                                            && activeCell.row === rowIndex
-                                            && activeCell.col === cellIndex;
+                                        const shadows = grid.cellShadows(rowIndex, cellIndex);
+                                        const edge = frozenEdgeFor(cell.column.id);
+                                        if (edge) shadows.push(edge);
+                                        const cellFieldId = (cell.column.columnDef.meta as { fieldId: number | null } | undefined)?.fieldId ?? null;
+                                        const cellColor = cellFieldId !== null ? colors?.cells.get(cellFieldId) : undefined;
+                                        const hasHandle = grid.hasFillHandle(rowIndex, cellIndex);
                                         return (
                                             <td
                                                 key={cell.id}
                                                 data-cell={`${rowIndex}:${cellIndex}`}
-                                                data-active={isActive ? 'true' : undefined}
-                                                onMouseDown={() => setActiveCell({ row: rowIndex, col: cellIndex })}
+                                                data-active={grid.active?.row === rowIndex && grid.active.col === cellIndex ? 'true' : undefined}
                                                 style={{
                                                     width: cell.column.getSize(),
                                                     maxWidth: cell.column.getSize(),
                                                     ...(cellSticky ?? {}),
-                                                    ...(isActive ? { boxShadow: 'inset 0 0 0 2px hsl(var(--imcrm-primary))' } : {}),
+                                                    ...(shadows.length > 0 ? { boxShadow: shadows.join(', ') } : {}),
+                                                    ...cellTintStyle(cellColor),
                                                 }}
                                                 className={cn(
                                                     // `overflow-hidden` + `width/maxWidth` cortan el
@@ -1045,6 +1040,8 @@ export function TableView({
                                                     cellSticky && (isSelected
                                                         ? 'imcrm-bg-primary/5'
                                                         : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
+                                                    hasHandle && !cellSticky && 'imcrm-relative',
+                                                    cellColor && 'imcrm-tinted-cell',
                                                     isOpenerCell && onRowClick && 'imcrm-cursor-pointer imcrm-font-medium',
                                                 )}
                                                 onClick={
@@ -1054,6 +1051,14 @@ export function TableView({
                                                 }
                                             >
                                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                {hasHandle && (
+                                                    <span
+                                                        data-fill-handle
+                                                        className="imcrm-fill-handle"
+                                                        title={__('Arrastra para rellenar hacia abajo')}
+                                                        onMouseDown={grid.onFillHandleMouseDown}
+                                                    />
+                                                )}
                                             </td>
                                         );
                                     })}
@@ -1102,6 +1107,7 @@ export function TableView({
                                                 width: col.getSize(),
                                                 maxWidth: col.getSize(),
                                                 ...(cellSticky ?? {}),
+                                                ...(frozenEdgeFor(col.id) ? { boxShadow: frozenEdgeFor(col.id)! } : {}),
                                             }}
                                             className={cn(
                                                 'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',

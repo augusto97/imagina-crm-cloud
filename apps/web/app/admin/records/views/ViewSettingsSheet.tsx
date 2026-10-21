@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ViewColorRule } from '@imagina-base/shared';
 import { Link } from 'react-router';
 import {
     Check,
@@ -12,6 +13,8 @@ import {
     Group,
     History,
     Layers,
+    Paintbrush,
+    Pin,
     Settings,
     Star,
     Store,
@@ -55,6 +58,7 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { FiltersPanel } from '../FiltersPanel';
 import { ColumnsConfigDialog } from './ColumnsConfigDialog';
+import { ColorRulesEditor } from './ColorRulesEditor';
 
 interface ViewSettingsSheetProps {
     open: boolean;
@@ -111,6 +115,17 @@ interface ViewSettingsSheetProps {
     onCsvUpdate?: () => void;
     /** v0.1.220 — eliminar todo lo que coincide con la vista (vista previa + deshacer). */
     onDeleteMatching?: () => void;
+    /** v0.1.287 — segundo nivel de agrupación («Y luego por»). */
+    subGroupByFieldId?: number | null;
+    onSubGroupByFieldIdChange?: (next: number | null) => void;
+    /** v0.1.287 — reglas de color de filas/celdas. */
+    colorRules?: ViewColorRule[];
+    onColorRulesChange?: (next: ViewColorRule[]) => void;
+    /** v0.1.287 — columnas fijas a la izquierda (`null` = sólo la primera). */
+    frozenColumns?: number | null;
+    onFrozenColumnsChange?: (next: number | null) => void;
+    /** v0.1.287 — abrir el panel directo en una sección (atajo del menú de la columna). */
+    focusSection?: { section: 'colors'; n: number } | null;
 }
 
 /**
@@ -164,6 +179,13 @@ export function ViewSettingsSheet({
     onBulkHistory,
     onCsvUpdate,
     onDeleteMatching,
+    subGroupByFieldId = null,
+    onSubGroupByFieldIdChange,
+    colorRules = [],
+    onColorRulesChange,
+    frozenColumns = null,
+    onFrozenColumnsChange,
+    focusSection = null,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -175,6 +197,16 @@ export function ViewSettingsSheet({
     // Sólo la tabla tiene filas, columnas y densidad.
     const isTable = viewType === 'table';
     const [copied, setCopied] = useState(false);
+    const [colorsOpen, setColorsOpen] = useState(false);
+    const colorsRef = useRef<HTMLDivElement>(null);
+    // "Colorear filas según esta columna…" (menú de la columna) abre aquí,
+    // con la sección de colores desplegada y a la vista.
+    useEffect(() => {
+        if (!focusSection) return;
+        setColorsOpen(true);
+        const t = window.setTimeout(() => colorsRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 150);
+        return () => window.clearTimeout(t);
+    }, [focusSection]);
 
     const hiddenCount = Object.values(columnVisibility).filter((v) => v === false).length;
     // +2 por las columnas fijas (ID y actualizado); las de relación no se
@@ -192,6 +224,10 @@ export function ViewSettingsSheet({
                 || (f.through?.target_field != null && f.through.target_field.type !== 'computed')),
     );
     const groupField = groupByFieldId !== null ? fields.find((f) => f.id === groupByFieldId) : null;
+    const subGroupField = subGroupByFieldId !== null ? fields.find((f) => f.id === subGroupByFieldId) : null;
+    // Columnas fijas: hasta cuántas se pueden fijar (las visibles, con tope).
+    const maxFrozen = Math.min(10, visibleColumnsCount(fields, columnVisibility));
+    const activeRules = colorRules.filter((r) => r.enabled).length;
 
     const handleCopyLink = async (): Promise<void> => {
         try {
@@ -334,7 +370,67 @@ export function ViewSettingsSheet({
                                     onColumnVisibilityChange({ ...columnVisibility, id: v })
                                 }
                             />
+                            {onFrozenColumnsChange && (
+                                <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-px-1 imcrm-py-1.5">
+                                    <span className="imcrm-flex imcrm-min-w-0 imcrm-items-start imcrm-gap-2">
+                                        <Pin className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                                        <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
+                                            <span className="imcrm-text-sm">{__('Columnas fijas')}</span>
+                                            <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                                {__('Quedan a la vista al desplazarte hacia los lados.')}
+                                            </span>
+                                        </span>
+                                    </span>
+                                    <Select
+                                        aria-label={__('Columnas fijas')}
+                                        className="imcrm-h-8 imcrm-w-[150px] imcrm-shrink-0"
+                                        value={frozenColumns ?? ''}
+                                        onChange={(e) =>
+                                            onFrozenColumnsChange(e.target.value === '' ? null : parseInt(e.target.value, 10))
+                                        }
+                                    >
+                                        <option value="">{__('Sólo la primera')}</option>
+                                        {Array.from({ length: Math.max(0, maxFrozen - 1) }, (_, k) => k + 2).map((n) => (
+                                            <option key={n} value={n}>
+                                                {sprintf(__('Las primeras %d'), n)}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </div>
+                            )}
                         </Group_>
+                        )}
+
+                        {isTable && onColorRulesChange && (
+                        <div ref={colorsRef}>
+                        <Group_ label={__('Colores')}>
+                            <RowButton
+                                icon={Paintbrush}
+                                label={__('Colorear filas')}
+                                value={
+                                    colorRules.length === 0
+                                        ? __('Ninguna regla')
+                                        : sprintf(
+                                              /* translators: %d: active color rule count */
+                                              __('%d activa(s)'),
+                                              activeRules,
+                                          )
+                                }
+                                expanded={colorsOpen}
+                                onClick={() => setColorsOpen((v) => !v)}
+                            />
+                            {colorsOpen && (
+                                <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-p-3">
+                                    <ColorRulesEditor
+                                        listId={listId}
+                                        fields={fields}
+                                        rules={colorRules}
+                                        onChange={onColorRulesChange}
+                                    />
+                                </div>
+                            )}
+                        </Group_>
+                        </div>
                         )}
 
                         <Group_ label={__('Qué se ve y en qué orden')}>
@@ -406,13 +502,49 @@ export function ViewSettingsSheet({
                                     </Select>
                                 </div>
                             )}
+                            {/* v0.1.287 — segundo nivel: cada grupo se parte en
+                                subgrupos. Sólo en la tabla agrupada (la hoja de
+                                cálculo no agrupa). */}
+                            {canGroup && isTable && groupField && !spreadsheet && onSubGroupByFieldIdChange && (
+                                <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-px-1 imcrm-py-1.5">
+                                    <span className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-pl-6 imcrm-text-sm">
+                                        {__('Y luego por')}
+                                    </span>
+                                    <Select
+                                        aria-label={__('Y luego por')}
+                                        className="imcrm-h-8 imcrm-w-[190px]"
+                                        value={subGroupByFieldId ?? ''}
+                                        onChange={(e) =>
+                                            onSubGroupByFieldIdChange(
+                                                e.target.value === '' ? null : parseInt(e.target.value, 10),
+                                            )
+                                        }
+                                    >
+                                        <option value="">{__('Un solo nivel')}</option>
+                                        {groupable
+                                            .filter((f) => f.id !== groupByFieldId)
+                                            .map((f) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.label}
+                                                </option>
+                                            ))}
+                                    </Select>
+                                </div>
+                            )}
                             {canGroup && groupField && (
                                 <p className="imcrm-px-1 imcrm-text-xs imcrm-text-muted-foreground">
-                                    {sprintf(
-                                        /* translators: %s: field label */
-                                        __('Las filas se agrupan por «%s».'),
-                                        groupField.label,
-                                    )}
+                                    {subGroupField
+                                        ? sprintf(
+                                              /* translators: 1: field label, 2: second field label */
+                                              __('Las filas se agrupan por «%1$s» y, dentro de cada grupo, por «%2$s».'),
+                                              groupField.label,
+                                              subGroupField.label,
+                                          )
+                                        : sprintf(
+                                              /* translators: %s: field label */
+                                              __('Las filas se agrupan por «%s».'),
+                                              groupField.label,
+                                          )}
                                 </p>
                             )}
                         </Group_>
@@ -564,6 +696,12 @@ export function ViewSettingsSheet({
             />
         </>
     );
+}
+
+/** Cuántas columnas se ven en la tabla (campos visibles + ID/Actualizado). */
+function visibleColumnsCount(fields: FieldEntity[], visibility: Record<string, boolean>): number {
+    const ids = [...fields.map((f) => f.slug), 'id', 'updated_at'];
+    return ids.filter((id) => visibility[id] !== false).length;
 }
 
 /** Bloque con título, como los grupos separados por línea de ClickUp. */

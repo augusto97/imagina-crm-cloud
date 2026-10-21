@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, forwardRef, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, Inbox, KeyRound, Loader2, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -48,6 +48,13 @@ import { useMainVirtualRows } from './useMainVirtualRows';
 import { SortIndicator } from './SortIndicator';
 import type { ActiveSort } from '../recordsState';
 import { FloatingAddColumn, tableMinWidth, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
+import type { ViewColorRule } from '@imagina-base/shared';
+import { activeColorRules, cellTintStyle, evaluateRowColors, rowTintStyle, type RowColors } from '../grid/colorRules';
+import { computeFrozen, FROZEN_EDGE_SHADOW, type FrozenLayout } from '../grid/frozen';
+import type { GridColumnRef } from '../grid/gridPlan';
+import { useGridController } from '../grid/useGridController';
+import { useWidth } from '../grid/useWidth';
+import { getTenantTimeZone } from '@/lib/tenantFormat';
 
 /**
  * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
@@ -119,7 +126,7 @@ interface GroupedTableViewProps {
      * de agrupación y el `value` del bucket para que el caller pueda
      * pre-rellenar el form de creación.
      */
-    onAddRecord?: (groupByField: FieldEntity, bucketValue: string | null) => void;
+    onAddRecord?: (groupByField: FieldEntity, bucketValue: string | null, sub?: SubBucketRef) => void;
     /** Alta de subtarea desde el menú contextual de la fila (v0.1.137). */
     onCreateSubtask?: (record: RecordEntity) => void;
     /**
@@ -144,6 +151,23 @@ interface GroupedTableViewProps {
     sort?: ActiveSort[];
     onSortChange?: (fieldId: number, multi: boolean) => void;
     onSortSet?: (fieldId: number, dir: 'asc' | 'desc') => void;
+    /**
+     * v0.1.287 — Segundo nivel («Y luego por»): cada grupo se parte en
+     * subgrupos por este campo, con su encabezado, su conteo y su pie.
+     */
+    subGroupByField?: FieldEntity | null;
+    /** v0.1.287 — Columnas fijas a la izquierda (`null` = sólo la primera). */
+    frozenColumns?: number | null;
+    onFrozenColumnsChange?: (next: number | null) => void;
+    /** v0.1.287 — Colores condicionales de filas/celdas. */
+    colorRules?: ViewColorRule[];
+    onColorColumn?: (field: FieldEntity) => void;
+}
+
+/** v0.1.287 — Un subgrupo dentro de su grupo (para precargar el alta con los dos valores). */
+export interface SubBucketRef {
+    field: FieldEntity;
+    value: string | null;
 }
 
 /**
@@ -195,6 +219,11 @@ function GroupedTableViewImpl({
     sort = EMPTY_SORT,
     onSortChange,
     onSortSet,
+    subGroupByField = null,
+    frozenColumns = null,
+    onFrozenColumnsChange,
+    colorRules,
+    onColorColumn,
 }: GroupedTableViewProps): JSX.Element {
     const sortParam = sort.length > 0 ? sort.map((x) => `field_${x.field_id}:${x.dir}`).join(',') : undefined;
     const filterTreeParam = useMemo(
@@ -259,9 +288,25 @@ function GroupedTableViewImpl({
     // los cerrados" en vez de la lista de abiertos: antes esa lista salía de
     // la respuesta anterior, así que cada búsqueda eran DOS vueltas y los
     // grupos que traía la búsqueda nueva se veían vacíos entre medio.
+    // v0.1.287 — las claves de los SUBGRUPOS cerrados viven en la misma
+    // lista guardada como `["v:grupo","v:subgrupo"]` (empiezan con `[`, no
+    // chocan con las de primer nivel) y viajan al backend como pares crudos.
     const collapsedRaw = useMemo(
-        () => [...collapsedSet].filter((k) => ! openLocally.has(k)).map(localToRawKey),
+        () => [...collapsedSet].filter((k) => ! openLocally.has(k) && ! isPairKey(k)).map(localToRawKey),
         [collapsedSet, openLocally],
+    );
+    const subField = subGroupByField && subGroupByField.id !== groupByField.id ? subGroupByField : null;
+    const collapsedSubRaw = useMemo(
+        () =>
+            subField === null
+                ? []
+                : [...collapsedSet]
+                      .filter((k) => ! openLocally.has(k) && isPairKey(k))
+                      .flatMap((k): Array<[string, string]> => {
+                          const pair = parsePairKey(k);
+                          return pair ? [[localToRawKey(pair[0]), localToRawKey(pair[1])]] : [];
+                      }),
+        [collapsedSet, openLocally, subField],
     );
     const bundle = useRecordsGroupedBundle({
         listId,
@@ -271,6 +316,8 @@ function GroupedTableViewImpl({
         search,
         sort: sortParam,
         aggregateFieldIds,
+        subGroupBy: subField?.id ?? null,
+        collapsedSub: collapsedSubRaw,
     });
 
     const buckets = bundle.data?.buckets ?? [];
@@ -330,6 +377,36 @@ function GroupedTableViewImpl({
         return total;
     }, [visibleColumns, columnSizing]);
 
+    // v0.1.287 — columnas fijas (las mismas en todos los grupos) y reglas de
+    // color. Van ANTES de los early returns (regla de hooks).
+    const rootRef = useRef<HTMLDivElement>(null);
+    const rootWidth = useWidth(rootRef, ! bundle.isLoading);
+    const frozen = useMemo(
+        () =>
+            computeFrozen(
+                visibleColumns.map((c) => ({ id: c.id, width: (columnSizing ?? {})[c.id] ?? defaultSizeForColumn(c) })),
+                frozenColumns ?? 1,
+                rootWidth,
+            ),
+        [visibleColumns, columnSizing, frozenColumns, rootWidth],
+    );
+    const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
+    const rulesInUse = useMemo(() => activeColorRules(colorRules, fieldsById), [colorRules, fieldsById]);
+    const viewDecor = useMemo<ViewDecor>(
+        () => ({
+            frozen,
+            showFrozenEdge: frozenColumns !== null && frozen.count > 0,
+            rules: rulesInUse,
+            fieldsById,
+            onFreeze: onFrozenColumnsChange
+                ? (f: FieldEntity) => onFrozenColumnsChange(Math.max(1, visibleColumns.findIndex((c) => c.field?.id === f.id) + 1))
+                : undefined,
+            onUnfreeze: onFrozenColumnsChange && frozenColumns !== null ? () => onFrozenColumnsChange(null) : undefined,
+            onColor: onColorColumn,
+        }),
+        [frozen, frozenColumns, rulesInUse, fieldsById, onFrozenColumnsChange, onColorColumn, visibleColumns],
+    );
+
     // OJO: este `useMemo` TIENE que estar ANTES de los early returns de
     // loading/error/empty (fix 0.57.32). Antes vivía después y violaba
     // las reglas de hooks: cuando bundle pasaba de loading a ready,
@@ -383,7 +460,7 @@ function GroupedTableViewImpl({
         <RecurrencesBatchProvider listId={listId} recordIds={allVisibleRecordIds}>
         <RecordUpdaterProvider listId={listId}>
        <WrapTextContext.Provider value={wrapText}>
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+        <div ref={rootRef} className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {/* Scroll horizontal único compartido entre todos los
                 buckets — sin esto cada bucket tenía su propio
                 overflow-x-auto y las columnas no quedaban alineadas
@@ -406,60 +483,102 @@ function GroupedTableViewImpl({
                     {buckets.map((bucket) => {
                         const key = bucketKey(bucket);
                         const rawKey = bucketRawKey(bucket);
+                        const shared = {
+                            listId,
+                            listSlug,
+                            columns: visibleColumns,
+                            columnSizing: columnSizing ?? {},
+                            onColumnSizingChange,
+                            tableWidth,
+                            baseTree: filterTree,
+                            search,
+                            selectedIds,
+                            onSelectionChange,
+                            onRowClick,
+                            bundleFetching: bundle.isFetching,
+                            aggregateFieldIds,
+                            // El "+" de agregar columna flota sobre la cabecera
+                            // de cada grupo (un solo trigger por tabla visible).
+                            onAddColumn,
+                            onEditField,
+                            allFields: fields,
+                            onHideColumn:
+                                onColumnVisibilityChange
+                                    ? (f: FieldEntity) =>
+                                          onColumnVisibilityChange({
+                                              ...columnVisibility,
+                                              // El id de columna es el SLUG del campo.
+                                              [f.slug]: false,
+                                          })
+                                    : undefined,
+                            onCreateSubtask,
+                            density,
+                            fontSize,
+                            footerAggregates,
+                            onFooterAggregatesChange,
+                            sort,
+                            sortParam,
+                            onSortChange,
+                            onSortSet,
+                            decor: viewDecor,
+                        };
+                        // v0.1.287 — dos niveles: el grupo es un encabezado fijo
+                        // y adentro van sus subgrupos, cada uno con su tabla.
+                        if (subField !== null) {
+                            return (
+                                <ParentGroupSection
+                                    key={key}
+                                    groupByField={groupByField}
+                                    bucket={bucket}
+                                    isOpen={isOpen(key)}
+                                    onToggle={() => toggleGroup(key)}
+                                >
+                                    {(parentHeaderHeight) =>
+                                        (bucket.sub_buckets ?? []).map((sub) => {
+                                            const subKey = pairLocalKey(key, bucketKey(sub));
+                                            const pairRaw = subGroupPairRawKey(bucket.value, sub.value);
+                                            const prefetched = expandedMap[pairRaw];
+                                            return (
+                                                <GroupBucketSection
+                                                    key={subKey}
+                                                    {...shared}
+                                                    groupByField={subField}
+                                                    bucket={sub}
+                                                    parentCondition={{ field: groupByField, value: bucket.value }}
+                                                    headerOffset={parentHeaderHeight}
+                                                    level={1}
+                                                    isOpen={isOpen(subKey)}
+                                                    onToggle={() => toggleGroup(subKey)}
+                                                    prefetchedRecords={prefetched?.records}
+                                                    prefetchedAggregates={prefetched?.aggregates}
+                                                    onAddRecord={
+                                                        onAddRecord
+                                                            ? () => onAddRecord(groupByField, bucket.value, { field: subField, value: sub.value })
+                                                            : undefined
+                                                    }
+                                                />
+                                            );
+                                        })
+                                    }
+                                </ParentGroupSection>
+                            );
+                        }
                         const prefetched = expandedMap[rawKey];
                         return (
                             <GroupBucketSection
                                 key={key}
-                                listId={listId}
-                                listSlug={listSlug}
+                                {...shared}
                                 groupByField={groupByField}
                                 bucket={bucket}
                                 isOpen={isOpen(key)}
                                 onToggle={() => toggleGroup(key)}
-                                columns={visibleColumns}
-                                columnSizing={columnSizing ?? {}}
-                                onColumnSizingChange={onColumnSizingChange}
-                                tableWidth={tableWidth}
-                                baseTree={filterTree}
-                                search={search}
-                                selectedIds={selectedIds}
-                                onSelectionChange={onSelectionChange}
-                                onRowClick={onRowClick}
                                 prefetchedRecords={prefetched?.records}
                                 prefetchedAggregates={prefetched?.aggregates}
-                                bundleFetching={bundle.isFetching}
-                                aggregateFieldIds={aggregateFieldIds}
-                                // El "+" de agregar columna solo se muestra
-                                // en el header del PRIMER bucket — sino sale
-                                // duplicado en cada grupo. UX consistent con
-                                // el flat view (un solo trigger).
-                                onAddColumn={onAddColumn}
-                                onEditField={onEditField}
-                                allFields={fields}
-                                onHideColumn={
-                                    onColumnVisibilityChange
-                                        ? (f) =>
-                                              onColumnVisibilityChange({
-                                                  ...columnVisibility,
-                                                  // El id de columna es el SLUG del campo.
-                                                  [f.slug]: false,
-                                              })
-                                        : undefined
-                                }
-                                onCreateSubtask={onCreateSubtask}
-                                density={density}
-                                fontSize={fontSize}
                                 onAddRecord={
                                     onAddRecord
                                         ? () => onAddRecord(groupByField, bucket.value)
                                         : undefined
                                 }
-                                footerAggregates={footerAggregates}
-                                onFooterAggregatesChange={onFooterAggregatesChange}
-                                sort={sort}
-                                sortParam={sortParam}
-                                onSortChange={onSortChange}
-                                onSortSet={onSortSet}
                             />
                         );
                     })}
@@ -493,6 +612,16 @@ function GroupedTableViewImpl({
                             __('Se muestran los primeros %1$d grupos; %2$d más quedan afuera. Agrupa por un campo con menos valores distintos o filtra.'),
                             (bundle.data?.meta.total_groups ?? 0) - (bundle.data?.meta.hidden_groups ?? 0),
                             bundle.data?.meta.hidden_groups ?? 0,
+                        )}
+                    </span>
+                )}
+                {(bundle.data?.meta.hidden_sub_groups ?? 0) > 0 && (
+                    <span className="imcrm-ml-1 imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                        {' · '}
+                        {sprintf(
+                            /* translators: %d hidden sub groups */
+                            __('%d combinaciones de grupo y subgrupo quedan afuera. Agrupa por campos con menos valores distintos o filtra.'),
+                            bundle.data?.meta.hidden_sub_groups ?? 0,
                         )}
                     </span>
                 )}
@@ -588,11 +717,33 @@ function buildColumns(fields: FieldEntity[]): ColumnDef[] {
     ];
 }
 
+/**
+ * v0.1.287 — Lo que comparten todos los grupos de la vista: columnas fijas,
+ * reglas de color y los atajos del menú de la columna.
+ */
+interface ViewDecor {
+    frozen: FrozenLayout;
+    showFrozenEdge: boolean;
+    rules: ViewColorRule[];
+    fieldsById: ReadonlyMap<number, FieldEntity>;
+    onFreeze?: (field: FieldEntity) => void;
+    onUnfreeze?: () => void;
+    onColor?: (field: FieldEntity) => void;
+}
+
 interface GroupBucketSectionProps {
     listId: number;
     listSlug?: string;
+    /** El campo del ENCABEZADO de esta sección (el del subgrupo, en dos niveles). */
     groupByField: FieldEntity;
     bucket: RecordGroupBucket;
+    /** v0.1.287 — En un subgrupo: el grupo al que pertenece (filtra también por él). */
+    parentCondition?: { field: FieldEntity; value: string | null };
+    /** v0.1.287 — Alto del encabezado del grupo padre (los fijos se apilan debajo). */
+    headerOffset?: number;
+    /** v0.1.287 — 0 = grupo, 1 = subgrupo. */
+    level?: 0 | 1;
+    decor: ViewDecor;
     isOpen: boolean;
     onToggle: () => void;
     columns: ColumnDef[];
@@ -653,6 +804,10 @@ function GroupBucketSection({
     listSlug,
     groupByField,
     bucket,
+    parentCondition,
+    headerOffset = 0,
+    level = 0,
+    decor,
     isOpen,
     onToggle,
     columns,
@@ -707,16 +862,16 @@ function GroupBucketSection({
     // Filter tree del bucket: árbol base + condición `groupByField op
     // value`. Solo se usa para fallback (page > 1 o cuando el bundle
     // no incluyó este bucket por algún motivo).
+    const parentField = parentCondition?.field ?? null;
+    const parentValue = parentCondition?.value ?? null;
     const bucketTree: FilterTree = useMemo(() => {
-        const op = filterOpForBucket(groupByField.type, bucket.value);
-        const cond: FilterCondition = {
-            type: 'condition',
-            field_id: groupByField.id,
-            op: op.op,
-            value: op.value,
+        const condFor = (field: FieldEntity, value: string | null): FilterCondition => {
+            const op = filterOpForBucket(field.type, value);
+            return { type: 'condition', field_id: field.id, op: op.op, value: op.value };
         };
-        return addNode(baseTree, [], cond);
-    }, [baseTree, groupByField.id, groupByField.type, bucket.value]);
+        const withParent = parentField ? addNode(baseTree, [], condFor(parentField, parentValue)) : baseTree;
+        return addNode(withParent, [], condFor(groupByField, bucket.value));
+    }, [baseTree, groupByField, bucket.value, parentField, parentValue]);
 
     // Page 1 viene del bundle; page > 1 cae al `useRecords` clásico.
     // Esto evita que el componente reviente cuando el user paginea
@@ -776,22 +931,6 @@ function GroupBucketSection({
         : { data: fallbackAggregates.data };
 
     const labelText = formatBucketLabel(groupByField, bucket.value);
-    // Header chip: cuando el campo agrupado es select/multi_select y el
-    // bucket matchea una opción declarada, el chip usa el COLOR real de
-    // la opción (mismo render que las celdas — estilo ClickUp). Para el
-    // resto de tipos (texto, fecha, etc.) cae al chip genérico.
-    // v0.1.190 — un multi_select agrupa por COMBINACIÓN: el bucket es el
-    // JSON del set y el encabezado lleva UN chip por opción, cada uno con
-    // su color, en el orden del catálogo (como la celda).
-    const fieldOptions = groupByField.type === 'select' || groupByField.type === 'multi_select'
-        ? extractFieldOptions(groupByField)
-        : [];
-    const multiValues = groupByField.type === 'multi_select' ? parseMultiBucket(bucket.value) : null;
-    const chipValues = multiValues !== null
-        ? orderByCatalog(multiValues, fieldOptions)
-        : bucket.value !== null ? [bucket.value] : [];
-    const useOptionChip = groupByField.type === 'select' || groupByField.type === 'multi_select';
-    const colorAccent = bucket.value === null ? 'imcrm-bg-muted' : 'imcrm-bg-primary/10';
 
     // v0.1.189 — con cero filas `every` da true y la casilla del grupo
     // aparecía MARCADA en un grupo vacío.
@@ -828,7 +967,9 @@ function GroupBucketSection({
     // bajo la cabecera de la página y su recorrido lo limita la sección
     // (al terminar, se va con ella); la cabecera de columnas —en su propia
     // tabla, fuera del scroller horizontal— se pega DEBAJO del encabezado.
-    const stickyTop = usePageStickyTop();
+    // v0.1.287 — en un subgrupo, los fijos se apilan DEBAJO del encabezado
+    // del grupo padre (que sigue pegado mientras se recorren sus subgrupos).
+    const stickyTop = usePageStickyTop() + headerOffset;
     const [headerEl, setHeaderEl] = useState<HTMLButtonElement | null>(null);
     const headerHeight = useElementHeight(headerEl);
     const [groupSentinelEl, setGroupSentinelEl] = useState<HTMLDivElement | null>(null);
@@ -858,6 +999,39 @@ function GroupBucketSection({
             return row ? [{ ...row, index: it.index }] : [];
         })
         : flatRows.map((row, index) => ({ ...row, index }));
+    // v0.1.287 — la tabla del grupo como hoja de cálculo (rango, copiar,
+    // pegar, rellenar, deshacer): mismo controlador que la tabla plana.
+    const gridColumns = useMemo<GridColumnRef[]>(() => columns.map((c) => ({ id: c.id, field: c.field })), [columns]);
+    const gridRows = useMemo(() => flatRows.map((r) => r.record), [flatRows]);
+    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const grid = useGridController({
+        containerRef: bodyScrollRef,
+        rows: gridRows,
+        columns: gridColumns,
+        listId,
+        canEdit: canEditRecords,
+        locked: storeRules ? (field, record) => lockedReasonOf(storeRules, field, record) : undefined,
+        relationTitles,
+        onOpenRow: onRowClick,
+        scrollToIndex: windowed.scrollToIndex,
+        headBottom: () => headScrollRef.current?.getBoundingClientRect().bottom ?? null,
+        frozenCount: decor.frozen.count,
+    });
+    const rowColors = useMemo(() => {
+        const out = new Map<number, RowColors>();
+        if (decor.rules.length === 0) return out;
+        const opts = { timeZone: getTenantTimeZone() };
+        for (const r of gridRows) out.set(r.id, evaluateRowColors(decor.rules, r, decor.fieldsById, opts));
+        return out;
+    }, [decor.rules, decor.fieldsById, gridRows]);
+    const stickyFor = (columnId: string): React.CSSProperties | undefined => {
+        const left = decor.frozen.left.get(columnId);
+        return left === undefined ? undefined : { position: 'sticky' as const, left, zIndex: 1 };
+    };
+    const edgeFor = (columnId: string): string | null =>
+        decor.showFrozenEdge && decor.frozen.lastId === columnId ? FROZEN_EDGE_SHADOW : null;
+    const firstDynamicIndex = columns.findIndex((cc) => cc.field !== null);
+
     useEffect(() => {
         if (!hScrollSync || !tableMounted) return;
         const body = bodyScrollRef.current;
@@ -907,52 +1081,16 @@ function GroupBucketSection({
             aria-expanded={isOpen}
         >
             <div ref={setGroupSentinelEl} aria-hidden className="imcrm-h-px imcrm--mb-px" />
-            <button
+            <GroupHeaderButton
                 ref={setHeaderEl}
-                type="button"
-                onClick={onToggle}
-                data-testid="imcrm-group-header"
-                style={{ top: stickyTop }}
-                className={cn(
-                    'imcrm-sticky imcrm-z-30 imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-bg-background imcrm-px-2 imcrm-py-2 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40',
-                    headerStuck && 'imcrm-rounded-none imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
-                )}
-            >
-                {isOpen ? (
-                    <ChevronDown className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                ) : (
-                    <ChevronRight className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                )}
-                {useOptionChip && bucket.value !== null ? (
-                    <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
-                        {chipValues.map((v) => (
-                            <OptionChip
-                                key={v}
-                                opt={fieldOptions.find((o) => o.value === v)}
-                                fallback={fieldOptions.find((o) => o.value === v)?.label ?? v}
-                            />
-                        ))}
-                    </span>
-                ) : (
-                    <span
-                        className={cn(
-                            'imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-semibold',
-                            colorAccent,
-                        )}
-                    >
-                        {labelText}
-                    </span>
-                )}
-                <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {bucket.count === 1
-                        ? __('1 registro')
-                        : sprintf(
-                              /* translators: %d count */
-                              __('%d registros'),
-                              bucket.count,
-                          )}
-                </span>
-            </button>
+                field={groupByField}
+                bucket={bucket}
+                isOpen={isOpen}
+                onToggle={onToggle}
+                top={stickyTop}
+                stuck={headerStuck}
+                level={level}
+            />
 
             {isOpen && (
                 // Sin `overflow-x-auto` aquí — el scroll horizontal es
@@ -1005,24 +1143,21 @@ function GroupBucketSection({
                                             aria-label={__('Seleccionar todos en grupo')}
                                         />
                                     </th>
-                                    {columns.map((c, ci) => {
+                                    {columns.map((c) => {
                                         const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
-                                        // Sticky-left: primera columna dinámica (la
-                                        // que tiene `field !== null`). UX igual a
+                                        // Sticky-left: las columnas fijas (v0.1.287;
+                                        // por defecto sólo la primera). UX igual a
                                         // ClickUp — el "Nombre" se queda fijo,
                                         // checkbox no.
-                                        const isFirstDynamic = c.field !== null
-                                            && columns.findIndex((cc) => cc.field !== null) === ci;
-                                        const sticky = isFirstDynamic
-                                            ? { position: 'sticky' as const, left: 0, zIndex: 1 }
-                                            : undefined;
+                                        const sticky = stickyFor(c.id);
+                                        const edge = edgeFor(c.id);
                                         return (
                                             <th
                                                 key={c.id}
                                                 scope="col"
-                                                style={{ width: w, minWidth: w, ...(sticky ?? {}) }}
+                                                style={{ width: w, minWidth: w, ...(sticky ?? {}), ...(edge ? { boxShadow: edge } : {}) }}
                                                 onContextMenu={
-                                                    c.field !== null && onEditField !== undefined
+                                                    c.field !== null
                                                         ? (e) => {
                                                     const btn = e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null;
                                                     if (!btn) return;
@@ -1079,7 +1214,7 @@ function GroupBucketSection({
                                                             {c.field && <StoreColumnBadge fieldId={c.field.id} />}
                                                         </>
                                                     )}
-                                                    {c.field !== null && onEditField !== undefined && (
+                                                    {c.field !== null && (
                                                         <FieldHeaderMenu
                                                             listId={listId}
                                                             listSlug={listSlug}
@@ -1088,6 +1223,9 @@ function GroupBucketSection({
                                                             onEdit={onEditField}
                                                             onHide={onHideColumn}
                                                             onSort={onSortSet && isSortableField(c.field) ? (f, dir) => onSortSet(f.id, dir) : undefined}
+                                                            onFreeze={decor.onFreeze}
+                                                            onUnfreeze={decor.onUnfreeze}
+                                                            onColor={decor.onColor}
                                                         />
                                                     )}
                                                 </span>
@@ -1130,7 +1268,12 @@ function GroupBucketSection({
                         </div>
                         {onAddColumn && <FloatingAddColumn onClick={onAddColumn} />}
                         </div>
-                        <div ref={bodyScrollRef} className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden">
+                        <div
+                            ref={bodyScrollRef}
+                            className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden focus-visible:imcrm-outline-none"
+                            aria-label={__('Registros del grupo: usa las flechas para moverte, Mayús para elegir un rango y Ctrl+C o Ctrl+V para copiar y pegar')}
+                            {...grid.containerProps}
+                        >
                         <table className={tableClassName} style={tableStyle} aria-label={labelText}>
                             {colGroup}
                             <tbody>
@@ -1141,6 +1284,7 @@ function GroupBucketSection({
                                 )}
                                 {visibleRows.map(({ record, depth, index }) => {
                                     const isSelected = selectedSet.has(record.id);
+                                    const colors = rowColors.get(record.id);
                                     return (
                                         <tr
                                             key={record.id}
@@ -1150,8 +1294,10 @@ function GroupBucketSection({
                                                 e.preventDefault();
                                                 setRowMenu({ record, x: e.clientX, y: e.clientY });
                                             }}
+                                            style={rowTintStyle(colors?.row ?? null)}
                                             className={cn(
                                                 'imcrm-group/row',
+                                                colors?.row && 'imcrm-tinted-row',
                                                 isSelected
                                                     ? 'imcrm-bg-primary/5'
                                                     : 'hover:imcrm-bg-muted/40',
@@ -1182,21 +1328,32 @@ function GroupBucketSection({
                                             </td>
                                             {columns.map((c, ci) => {
                                                 const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
-                                                const isFirstDynamic = c.field !== null
-                                                    && columns.findIndex((cc) => cc.field !== null) === ci;
-                                                const sticky = isFirstDynamic
-                                                    ? { position: 'sticky' as const, left: 0, zIndex: 1 }
-                                                    : undefined;
+                                                const sticky = stickyFor(c.id);
+                                                const shadows = grid.cellShadows(index, ci);
+                                                const edge = edgeFor(c.id);
+                                                if (edge) shadows.push(edge);
+                                                const cellColor = c.field ? colors?.cells.get(c.field.id) : undefined;
+                                                const hasHandle = grid.hasFillHandle(index, ci);
                                                 return (
                                                     <td
                                                         key={c.id}
-                                                        style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
+                                                        data-cell={`${index}:${ci}`}
+                                                        data-active={grid.active?.row === index && grid.active.col === ci ? 'true' : undefined}
+                                                        style={{
+                                                            width: w,
+                                                            maxWidth: w,
+                                                            ...(sticky ?? {}),
+                                                            ...(shadows.length > 0 ? { boxShadow: shadows.join(', ') } : {}),
+                                                            ...cellTintStyle(cellColor),
+                                                        }}
                                                         className={cn(
                                                             'imcrm-overflow-hidden imcrm-px-2 imcrm-py-2.5',
                                                             wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
                                                             sticky && (isSelected
                                                                 ? 'imcrm-bg-primary/5'
                                                                 : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
+                                                            hasHandle && !sticky && 'imcrm-relative',
+                                                            cellColor && 'imcrm-tinted-cell',
                                                             ci === 0 &&
                                                                 onRowClick &&
                                                                 'imcrm-cursor-pointer imcrm-font-medium',
@@ -1218,6 +1375,14 @@ function GroupBucketSection({
                                                             </RecordNameCell>
                                                         ) : (
                                                             renderColumnCell(c, record, listId, storeRules)
+                                                        )}
+                                                        {hasHandle && (
+                                                            <span
+                                                                data-fill-handle
+                                                                className="imcrm-fill-handle"
+                                                                title={__('Arrastra para rellenar hacia abajo')}
+                                                                onMouseDown={grid.onFillHandleMouseDown}
+                                                            />
                                                         )}
                                                     </td>
                                                 );
@@ -1244,11 +1409,8 @@ function GroupBucketSection({
                                         <td className="imcrm-w-7" />
                                         {columns.map((c, ci) => {
                                             const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
-                                            const isFirstDynamic = c.field !== null
-                                                && columns.findIndex((cc) => cc.field !== null) === ci;
-                                            const sticky = isFirstDynamic
-                                                ? { position: 'sticky' as const, left: 0, zIndex: 1 }
-                                                : undefined;
+                                            const isFirstDynamic = c.field !== null && firstDynamicIndex === ci;
+                                            const sticky = stickyFor(c.id);
 
                                             // Primera columna dinámica → "+ Agregar tarea"
                                             if (isFirstDynamic && onAddRecord) {
@@ -1368,6 +1530,159 @@ function GroupBucketSection({
         </section>
         </RelationTitlesContext.Provider>
     );
+}
+
+/**
+ * El encabezado de un grupo (o subgrupo): chevron + chip con el valor (el
+ * COLOR real de la opción en select/multi_select — un multi_select agrupa
+ * por COMBINACIÓN, así que lleva un chip por opción) + el conteo. Queda fijo
+ * bajo la cabecera de la página mientras se recorre su sección.
+ */
+const GroupHeaderButton = forwardRef<
+    HTMLButtonElement,
+    {
+        field: FieldEntity;
+        bucket: RecordGroupBucket;
+        isOpen: boolean;
+        onToggle: () => void;
+        top: number;
+        stuck: boolean;
+        level: 0 | 1;
+    }
+>(function GroupHeaderButton({ field, bucket, isOpen, onToggle, top, stuck, level }, ref) {
+    const labelText = formatBucketLabel(field, bucket.value);
+    const fieldOptions = field.type === 'select' || field.type === 'multi_select' ? extractFieldOptions(field) : [];
+    const multiValues = field.type === 'multi_select' ? parseMultiBucket(bucket.value) : null;
+    const chipValues = multiValues !== null
+        ? orderByCatalog(multiValues, fieldOptions)
+        : bucket.value !== null ? [bucket.value] : [];
+    const useOptionChip = field.type === 'select' || field.type === 'multi_select';
+    const colorAccent = bucket.value === null ? 'imcrm-bg-muted' : 'imcrm-bg-primary/10';
+    return (
+        <button
+            ref={ref}
+            type="button"
+            onClick={onToggle}
+            data-testid={level === 1 ? 'imcrm-subgroup-header' : 'imcrm-group-header'}
+            data-group-label={labelText}
+            aria-expanded={isOpen}
+            style={{ top }}
+            className={cn(
+                'imcrm-sticky imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-bg-background imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40',
+                // El del subgrupo va por DEBAJO del de su grupo (que lo tapa
+                // cuando la sección termina y se va).
+                level === 1 ? 'imcrm-z-[29] imcrm-py-1.5 imcrm-pl-7 imcrm-pr-2' : 'imcrm-z-30 imcrm-px-2 imcrm-py-2',
+                stuck && 'imcrm-rounded-none imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
+            )}
+        >
+            {isOpen ? (
+                <ChevronDown className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+            ) : (
+                <ChevronRight className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+            )}
+            {level === 1 && (
+                <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{field.label}</span>
+            )}
+            {useOptionChip && bucket.value !== null ? (
+                <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
+                    {chipValues.map((v) => (
+                        <OptionChip
+                            key={v}
+                            opt={fieldOptions.find((o) => o.value === v)}
+                            fallback={fieldOptions.find((o) => o.value === v)?.label ?? v}
+                        />
+                    ))}
+                </span>
+            ) : (
+                <span
+                    className={cn(
+                        'imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-semibold',
+                        colorAccent,
+                    )}
+                >
+                    {labelText}
+                </span>
+            )}
+            <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                {sprintf(
+                    /* translators: %d count */
+                    _n('%d registro', '%d registros', bucket.count),
+                    bucket.count,
+                )}
+            </span>
+        </button>
+    );
+});
+
+/**
+ * v0.1.287 — Un grupo de primer nivel con subgrupos («Y luego por»): su
+ * encabezado queda fijo mientras se recorren TODOS sus subgrupos, y cada
+ * subgrupo (con su tabla, su conteo y su pie) se pega debajo.
+ */
+function ParentGroupSection({
+    groupByField,
+    bucket,
+    isOpen,
+    onToggle,
+    children,
+}: {
+    groupByField: FieldEntity;
+    bucket: RecordGroupBucket & { sub_buckets?: RecordGroupBucket[] };
+    isOpen: boolean;
+    onToggle: () => void;
+    children: (headerHeight: number) => ReactNode;
+}): JSX.Element {
+    const stickyTop = usePageStickyTop();
+    const [headerEl, setHeaderEl] = useState<HTMLButtonElement | null>(null);
+    const headerHeight = useElementHeight(headerEl);
+    const [sentinelEl, setSentinelEl] = useState<HTMLDivElement | null>(null);
+    const stuck = useStuckSentinel(sentinelEl, stickyTop);
+    return (
+        <section aria-expanded={isOpen} data-testid="imcrm-parent-group">
+            <div ref={setSentinelEl} aria-hidden className="imcrm-h-px imcrm--mb-px" />
+            <GroupHeaderButton
+                ref={setHeaderEl}
+                field={groupByField}
+                bucket={bucket}
+                isOpen={isOpen}
+                onToggle={onToggle}
+                top={stickyTop}
+                stuck={stuck}
+                level={0}
+            />
+            {isOpen && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-pt-1">
+                    {children(headerHeight)}
+                </div>
+            )}
+        </section>
+    );
+}
+
+/** v0.1.287 — ¿Es la clave local de un SUBGRUPO (`["v:a","v:b"]`)? */
+function isPairKey(key: string): boolean {
+    return key.startsWith('[');
+}
+
+function parsePairKey(key: string): [string, string] | null {
+    try {
+        const v: unknown = JSON.parse(key);
+        return Array.isArray(v) && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'string'
+            ? [v[0], v[1]]
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Clave local de un subgrupo: el par de claves locales (grupo, subgrupo). */
+function pairLocalKey(groupKey: string, subKey: string): string {
+    return JSON.stringify([groupKey, subKey]);
+}
+
+/** Clave del par en `expanded` del bundle (la misma `subGroupPairKey` del backend). */
+function subGroupPairRawKey(group: string | null, sub: string | null): string {
+    return JSON.stringify([group ?? '__null__', sub ?? '__null__']);
 }
 
 function renderColumnCell(

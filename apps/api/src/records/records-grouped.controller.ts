@@ -54,7 +54,28 @@ export class RecordsGroupedController {
             sort: typeof q.sort === 'string' && q.sort.length <= 500 ? q.sort : undefined,
             perPage,
             aggregateFieldIds,
+            // v0.1.287 — segundo nivel de agrupado y sus subgrupos cerrados.
+            subGroupBy: q.sub_group_by === undefined || q.sub_group_by === '' ? undefined : intParam(q.sub_group_by, 'sub_group_by'),
+            collapsedSub: pairList(q.collapsed_sub),
         });
+    }
+}
+
+/**
+ * v0.1.287 — Pares `[grupo, subgrupo]` (claves crudas, `__null__` para «sin
+ * valor») de los subgrupos cerrados, como JSON. Lo que no tenga esa forma se
+ * ignora.
+ */
+export function pairList(v: unknown): Array<[string, string]> {
+    if (typeof v !== 'string' || v.trim() === '') return [];
+    try {
+        const parsed: unknown = JSON.parse(v);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .filter((p): p is [string, string] => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && typeof p[1] === 'string')
+            .slice(0, 1000);
+    } catch {
+        return [];
     }
 }
 

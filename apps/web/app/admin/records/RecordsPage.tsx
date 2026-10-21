@@ -89,6 +89,10 @@ import { useEventCallback } from '@/hooks/useEventCallback';
 import { TableView } from './views/TableView';
 import { SaveViewDialog } from './views/SaveViewDialog';
 import { ViewSettingsSheet } from './views/ViewSettingsSheet';
+import { GridHistoryProvider } from './grid/history';
+import { newColorRuleId } from './grid/colorRules';
+import { operatorsForType } from './operators';
+import type { SubBucketRef } from './views/GroupedTableView';
 import { ViewsTabs } from './views/ViewsTabs';
 import { canWriteView } from './views/viewAccess';
 import { MAIN_SCROLLER_ID, PageStickyTopContext, useElementHeight, useStuckSentinel } from './views/stickyTop';
@@ -323,6 +327,9 @@ export function RecordsPage(): JSX.Element {
     const [exportOpen, setExportOpen] = useState(false);
     // Panel "Personalizar vista" (engranaje de la toolbar) — v0.1.127.
     const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
+    // v0.1.287 — "Colorear filas según esta columna…" abre el panel justo en
+    // la sección de colores, con una regla nueva sobre esa columna.
+    const [viewSettingsFocus, setViewSettingsFocus] = useState<{ section: 'colors'; n: number } | null>(null);
     // Diálogo "Compartir" (v0.1.128) — enlace del equipo + página pública.
     const [shareOpen, setShareOpen] = useState(false);
 
@@ -457,10 +464,34 @@ export function RecordsPage(): JSX.Element {
     );
     const onGroupedAddColumn = useEventCallback(openFieldCreate);
     const onGroupedEditField = useEventCallback(openFieldEdit);
-    const onGroupedAddRecord = useEventCallback((groupField: FieldEntity, bucketValue: string | null) => {
+    const onGroupedAddRecord = useEventCallback((groupField: FieldEntity, bucketValue: string | null, sub?: SubBucketRef) => {
         // Prefill: crear desde el grupo "Hecho" → el form abre con estado=hecho.
-        setCreateDefaults(prefillForGroup(groupField, bucketValue));
+        // v0.1.287 — desde un subgrupo, con los DOS valores.
+        const first = prefillForGroup(groupField, bucketValue);
+        const second = sub ? prefillForGroup(sub.field, sub.value) : undefined;
+        setCreateDefaults(first || second ? { ...(first ?? {}), ...(second ?? {}) } : undefined);
         setCreateOpen(true);
+    });
+    const onFrozenColumnsChange = useEventCallback((next: number | null) =>
+        setState((s) => ({ ...s, frozenColumns: next })),
+    );
+    const onColorColumn = useEventCallback((field: FieldEntity) => {
+        const op = operatorsForType(field.type, field)[0]?.op ?? 'eq';
+        setState((s) => ({
+            ...s,
+            colorRules: [
+                ...s.colorRules,
+                {
+                    id: newColorRuleId(),
+                    enabled: true,
+                    condition: { type: 'condition', field_id: field.id, op, value: '' },
+                    color: 'yellow',
+                    target: 'row',
+                },
+            ],
+        }));
+        setViewSettingsFocus({ section: 'colors', n: Date.now() });
+        setViewSettingsOpen(true);
     });
     const onGroupedSortChange = useEventCallback((fieldId: number, multi: boolean) => handleSortChange(fieldId, multi));
     const onGroupedSortSet = useEventCallback((fieldId: number, dir: 'asc' | 'desc') => handleSortSet(fieldId, dir));
@@ -803,6 +834,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         // v0.1.68 generaba una barra interna que no quería).
         <StoreRulesContext.Provider value={storeRules}>
         <PageStickyTopContext.Provider value={pageStickyTop}>
+        <GridHistoryProvider listId={list.data.id}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
             {/* Centinela del bloque fijo: cuando sale por arriba, el bloque
                 está pegado y dibuja su línea inferior. */}
@@ -1139,8 +1171,21 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onColumnOrderChange={(next) => setState((s) => ({ ...s, columnOrder: next }))}
                     groupByFieldId={state.groupByFieldId}
                     onGroupByFieldIdChange={(next) =>
-                        setState((s) => ({ ...s, groupByFieldId: next, page: 1 }))
+                        setState((s) => ({
+                            ...s,
+                            groupByFieldId: next,
+                            // El segundo nivel sin el primero (o igual a él) no existe.
+                            subGroupByFieldId: next === null || next === s.subGroupByFieldId ? null : s.subGroupByFieldId,
+                            page: 1,
+                        }))
                     }
+                    subGroupByFieldId={state.subGroupByFieldId}
+                    onSubGroupByFieldIdChange={(next) => setState((s) => ({ ...s, subGroupByFieldId: next }))}
+                    colorRules={state.colorRules}
+                    onColorRulesChange={(next) => setState((s) => ({ ...s, colorRules: next }))}
+                    frozenColumns={state.frozenColumns}
+                    onFrozenColumnsChange={onFrozenColumnsChange}
+                    focusSection={viewSettingsFocus}
                     canGroup={!isAlternativeView}
                     viewType={isKanban ? 'kanban' : isCalendar ? 'calendar' : isCards ? 'cards' : 'table'}
                     wrapText={state.wrapText}
@@ -1368,6 +1413,15 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     sort={state.sort}
                                     onSortChange={onGroupedSortChange}
                                     onSortSet={onGroupedSortSet}
+                                    subGroupByField={
+                                        state.subGroupByFieldId !== null
+                                            ? fields.data.find((f) => f.id === state.subGroupByFieldId) ?? null
+                                            : null
+                                    }
+                                    frozenColumns={state.frozenColumns}
+                                    onFrozenColumnsChange={onFrozenColumnsChange}
+                                    colorRules={state.colorRules}
+                                    onColorColumn={onColorColumn}
                                 />
                             ) : (
                                 <TableView
@@ -1416,6 +1470,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, footerAggregates: next }))
                                     }
                                     totalCount={records.data?.meta.total ?? 0}
+                                    frozenColumns={state.frozenColumns}
+                                    onFrozenColumnsChange={onFrozenColumnsChange}
+                                    colorRules={state.colorRules}
+                                    onColorColumn={onColorColumn}
                                 />
                             )}
                         </>
@@ -1515,6 +1573,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </>
             )}
         </div>
+        </GridHistoryProvider>
         </PageStickyTopContext.Provider>
         </StoreRulesContext.Provider>
     );

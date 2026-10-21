@@ -215,7 +215,8 @@ export const recordsKeys = {
  * 1 + N + N requests que tenía GroupedTableView.
  */
 export interface GroupedBundleResponse {
-    buckets: RecordGroupBucket[];
+    /** v0.1.287 — con segundo agrupado, cada grupo trae `sub_buckets`. */
+    buckets: Array<RecordGroupBucket & { sub_buckets?: RecordGroupBucket[] }>;
     meta: {
         group_by_field_id: number;
         group_by_slug: string;
@@ -224,10 +225,18 @@ export interface GroupedBundleResponse {
         total_records: number;
         /** v0.1.252 — grupos que existen pero no se mandan (tope del servidor). */
         hidden_groups?: number;
+        /** v0.1.287 — el segundo agrupado. */
+        sub_group_by_field_id?: number;
+        sub_group_by_slug?: string;
+        sub_group_by_type?: string;
+        /** v0.1.287 — combinaciones que no se mandan (tope del servidor). */
+        hidden_sub_groups?: number;
     };
     /**
      * Map keyed por valor crudo del bucket (string), o `__null__` para
      * el bucket "(sin valor)". Los buckets no expandidos no aparecen.
+     * v0.1.287 — con segundo agrupado la clave es la del PAR:
+     * `JSON.stringify([grupo ?? '__null__', subgrupo ?? '__null__'])`.
      */
     expanded: Record<string, {
         records: RecordListResponse;
@@ -251,6 +260,10 @@ interface UseGroupedBundleArgs {
     sort?: string;
     perPage?: number;
     aggregateFieldIds?: number[];
+    /** v0.1.287 — segundo agrupado («Y luego por»). */
+    subGroupBy?: number | null;
+    /** v0.1.287 — subgrupos cerrados: pares `[grupo, subgrupo]` crudos. */
+    collapsedSub?: Array<[string, string]>;
 }
 
 export function useRecordsGroupedBundle({
@@ -263,6 +276,8 @@ export function useRecordsGroupedBundle({
     sort,
     perPage = 50,
     aggregateFieldIds = [],
+    subGroupBy = null,
+    collapsedSub = [],
 }: UseGroupedBundleArgs) {
     const qc = useQueryClient();
     const params: Record<string, unknown> = {
@@ -289,6 +304,11 @@ export function useRecordsGroupedBundle({
     if (sort) params.sort = sort;
     if (aggregateFieldIds.length > 0) {
         params.aggregate_fields = aggregateFieldIds.join(',');
+    }
+    if (subGroupBy !== null && subGroupBy > 0 && subGroupBy !== groupBy) {
+        params.sub_group_by = subGroupBy;
+        const pairs = collapsedSub.map((p) => JSON.stringify(p)).sort();
+        if (pairs.length > 0) params.collapsed_sub = `[${pairs.join(',')}]`;
     }
 
     return useQuery({

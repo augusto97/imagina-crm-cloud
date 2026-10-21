@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { idSchema } from './common';
-import { filterTreeSchema } from './filter';
+import { filterConditionSchema, filterTreeSchema } from './filter';
 
 /** Tipos de vista (CONTRACT.md §7). */
 export const VIEW_TYPES = ['table', 'kanban', 'calendar', 'cards'] as const;
@@ -10,6 +10,48 @@ export type ViewType = z.infer<typeof viewTypeSchema>;
 const sortSchema = z.array(
     z.object({ field_id: idSchema, dir: z.enum(['asc', 'desc']) }),
 );
+
+/**
+ * v0.1.287 — Colores condicionales de la tabla. La paleta es CERRADA (claves,
+ * no hex): cada color se mezcla con transparencia sobre el fondo del tema, así
+ * se ve bien en claro y en oscuro y el texto conserva su contraste.
+ */
+export const VIEW_ROW_COLORS = [
+    'red',
+    'orange',
+    'amber',
+    'yellow',
+    'green',
+    'teal',
+    'cyan',
+    'blue',
+    'violet',
+    'pink',
+    'gray',
+] as const;
+export const viewRowColorSchema = z.enum(VIEW_ROW_COLORS);
+export type ViewRowColor = z.infer<typeof viewRowColorSchema>;
+
+/**
+ * Una regla de color: si la fila cumple la condición (los mismos operadores
+ * que los filtros, sobre un campo por ID), se pinta la FILA entera o la
+ * CELDA de una columna (`cell_field_id`). El orden del array es la
+ * prioridad: gana la primera regla activa que se cumple (por destino: una
+ * regla de fila y una de celda pueden convivir).
+ */
+export const viewColorRuleSchema = z.object({
+    id: z.string().min(1).max(40),
+    enabled: z.boolean().default(true),
+    condition: filterConditionSchema,
+    color: viewRowColorSchema,
+    target: z.enum(['row', 'cell']).default('row'),
+    /** Columna a pintar cuando `target` es `cell` (por ID: sobrevive a renombres). */
+    cell_field_id: idSchema.nullable().optional(),
+});
+export type ViewColorRule = z.infer<typeof viewColorRuleSchema>;
+
+/** Tope de reglas de color por vista (cada una se evalúa por fila visible). */
+export const MAX_VIEW_COLOR_RULES = 20;
 
 /**
  * Estado COMÚN que el front captura en cualquier vista guardada (filtros,
@@ -52,6 +94,16 @@ const viewStateCommon = {
      * agrandar el texto).
      */
     font_size: z.enum(['sm', 'md', 'lg']).optional(),
+    /**
+     * v0.1.287 — Columnas fijas a la izquierda («Fijar hasta esta columna»):
+     * cuántas columnas VISIBLES, contando desde la primera, quedan clavadas
+     * al scrollear en horizontal. Sin valor = sólo la primera (como siempre).
+     * Es un conteo y no un id: sobrevive a reordenar columnas igual que en
+     * Excel o Airtable.
+     */
+    frozen_columns: z.number().int().min(1).max(20).optional(),
+    /** v0.1.287 — Colores condicionales de filas o celdas (ver `viewColorRuleSchema`). */
+    color_rules: z.array(viewColorRuleSchema).max(MAX_VIEW_COLOR_RULES).optional(),
 };
 
 export const tableViewConfigSchema = z.object({
@@ -60,6 +112,12 @@ export const tableViewConfigSchema = z.object({
     visible_field_ids: z.array(idSchema).default([]),
     column_sizing: z.record(z.string(), z.number()).default({}),
     group_by_field_id: idSchema.nullable().default(null),
+    /**
+     * v0.1.287 — Segundo nivel de agrupación («Agrupar por… y luego por…»):
+     * subgrupos dentro de cada grupo de la tabla. Sólo aplica con
+     * `group_by_field_id` y si es OTRO campo.
+     */
+    sub_group_by_field_id: idSchema.nullable().optional(),
 });
 
 export const kanbanViewConfigSchema = z.object({

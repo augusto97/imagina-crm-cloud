@@ -78,6 +78,30 @@ describe('remapJson', () => {
         ]);
     });
 
+    it('v0.1.287 — config de vista: segundo agrupado y colores condicionales (condición y celda)', () => {
+        const out = remapJson(
+            {
+                group_by_field_id: 10,
+                sub_group_by_field_id: 11,
+                frozen_columns: 2,
+                color_rules: [
+                    { id: 'r1', enabled: true, condition: { type: 'condition', field_id: 10, op: 'eq', value: 'baja' }, color: 'red', target: 'row' },
+                    { id: 'r2', enabled: true, condition: { type: 'condition', field_id: 12, op: 'is_null' }, color: 'amber', target: 'cell', cell_field_id: 11 },
+                ],
+            },
+            maps(),
+        );
+        expect(out).toEqual({
+            group_by_field_id: 110,
+            sub_group_by_field_id: 111,
+            frozen_columns: 2,
+            color_rules: [
+                { id: 'r1', enabled: true, condition: { type: 'condition', field_id: 110, op: 'eq', value: 'baja' }, color: 'red', target: 'row' },
+                { id: 'r2', enabled: true, condition: { type: 'condition', field_id: 112, op: 'is_null' }, color: 'amber', target: 'cell', cell_field_id: 111 },
+            ],
+        });
+    });
+
     it('deja intactos los slugs y los valores que no son referencias', () => {
         const out = remapJson({ field: 'estado', op: 'eq', value: 10 }, maps());
         expect(out).toEqual({ field: 'estado', op: 'eq', value: 10 });

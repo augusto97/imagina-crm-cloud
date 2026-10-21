@@ -8105,6 +8105,56 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         CONTINUIDAD (pasos de espera y bucles, prueba paso a paso, formularios
         por páginas, captcha, enlace público de tableros, versiones por campo).
 
+  - [x] **La tabla como hoja de cálculo (v0.1.287, ADR-S46, primera de las
+        carencias de la auditoría II que el usuario pidió hacer «todas»)**:
+        (a) **rango de celdas** —Mayús+clic, Mayús+flechas, arrastrar y
+        Ctrl+A—; **copiar** (Ctrl/Cmd+C) en TSV LEGIBLE (etiqueta de la opción,
+        fecha y número en el formato de la empresa, nombre de la persona,
+        «Sí/No») y **pegar** bloques de Excel/Sheets con la MISMA conversión
+        del import, que se mudó a shared (`coerceTextToFieldValue`, personas
+        por nombre o email); una sola celda copiada llena todo el rango, y lo
+        que no se escribe a mano (calculado, lookup, rollup, IA, archivo,
+        relación, lo que bloquea la tienda) se saltea con el motivo en un
+        resumen. Todo en UNA llamada a `PATCH /lists/:l/records/batch`
+        (`{items:[{id, data, expect?}]}`, tope 500): cada fila por
+        `RecordsService.update` (ACL, validación, actividad,
+        automatizaciones), errores por celda sin abortar el resto y un solo
+        evento realtime. (b) **Rellenar hacia abajo** con Ctrl/Cmd+D y con el
+        asa de la esquina (vista previa al arrastrar); Supr vacía un rango.
+        (c) **Deshacer/rehacer** (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y) de 50
+        pasos —una edición, un pegado o un relleno es un paso— que NO pisa lo
+        que otra persona cambió después: el servidor compara con `expect` y
+        responde 409 `record_changed`; dentro de un editor, Ctrl+Z sigue
+        siendo el del editor. Un clic sigue abriendo el editor de la celda
+        (v0.1.74); el rango se arma con Mayús+clic o arrastrando, y Escape lo
+        quita. (d) **Columnas fijas** («Fijar hasta esta columna» en el menú de
+        la columna, `frozen_columns` en la vista) con cabecera y cuerpo
+        alineados al pixel y una línea tras la última fija; si lo fijado
+        taparía más del 60 % del ancho, se fija sólo la primera. (e) **Colores
+        condicionales** por fila o por celda (`color_rules`: condición con el
+        mismo editor de los filtros, paleta de 11 colores, orden = prioridad)
+        evaluados en el navegador con `evaluateFilterCondition` —el evaluador
+        de las automatizaciones, mudado a shared—, «hoy» en la zona de la
+        empresa y contraste medido en claro y oscuro (`color-mix` sobre el
+        fondo del tema). (f) **Agrupar por dos campos** («Y luego por»,
+        `sub_group_by_field_id`): subgrupos con encabezado fijo, chip con el
+        color real, conteo, pie propio, plegado por par y «+ Agregar» con los
+        DOS valores puestos; el bundle trae el segundo nivel en la misma
+        request. El motor de agregados gana el agrupado en dos niveles como
+        capacidad GENERAL (`sub_group_by_field_id` + `sub_time_bucket` →
+        `groups[].sub_groups`, una consulta con `GROUPING SETS`, tope 2.000
+        pares), pensada también para las barras apiladas y la tabla dinámica de
+        los tableros. Sin migración: todo vive en `saved_views.config`.
+        Asistente/MCP (`propose_create_view`/`propose_update_view`,
+        `get_list_schema`), plantillas y migración de empresa re-mapean los
+        campos nuevos de la vista. Tests de API (batch, agrupado doble, claves
+        de grupo, config de vista, re-mapeo, asistente), 34 nuevos del front y
+        la conversión en shared — 224 shared y 373 front en verde — + E2E en
+        navegador 68/68 (pegar desde una «hoja» con etiquetas, 30/07/2026 y
+        1.250.000; copiar; deshacer sin pisar; asa; columnas fijas medidas;
+        colores en claro/oscuro; agrupado doble con conteos exactos; celular),
+        re-verificado en la rama integrada.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -200,34 +200,20 @@ export class AggregateService {
         if (req.group_by_field_id !== undefined) {
             const groupField = byId.get(req.group_by_field_id);
             if (!groupField) throw badRequest('group_by_field_id no pertenece a la lista');
-            // v0.1.252 — una relación no vive en `data`: agrupar por ella daba
-            // UN solo grupo con todo. Se dice en vez de devolver algo falso.
-            if (groupField.type === 'relation' || groupField.type === 'file') {
-                throw badRequest(`No se puede agrupar por «${groupField.label}»: los campos de tipo ${groupField.type === 'relation' ? 'relación' : 'archivo'} no forman grupos.`);
-            }
-            // v0.1.97 — bucketing temporal: si el campo agrupado es fecha y el
-            // request trae `time_bucket`, agrupamos por bucket (día/semana/mes/
-            // trimestre/año) en vez de por valor crudo. Los labels resultantes
-            // ordenan cronológicamente como string.
-            // v0.1.190 — multi_select: un bucket por COMBINACIÓN exacta de
-            // opciones (como ClickUp: cada registro cae en UN solo grupo), con
-            // la clave NORMALIZADA (set ordenado) para que `["a","b"]` y
-            // `["b","a"]` sean el mismo grupo; sin opciones → bucket null.
-            // v0.1.200 — agrupar por un campo DERIVADO (lookup / rollup). Su
-            // valor no vive en `data`: es la subconsulta correlacionada que el
-            // motor de through-fields ya arma para filtrar y ordenar. Sin ella
-            // (config a medias, relación borrada) agrupar daría un solo bucket
-            // vacío, que es peor que decirlo.
-            const groupExpr =
-                req.time_bucket !== undefined
-                    && (groupField.type === 'date' || groupField.type === 'datetime')
-                    ? timeBucketExpr(groupField, req.time_bucket, clock.timeZone)
-                    : groupField.type === 'multi_select'
-                        ? multiSelectSetExpr(groupField.id)
-                        : isThroughField(groupField.type) || groupField.type === 'computed'
-                            ? throughGroupExpr(groupField, fieldsById)
-                            : fieldTextExpr(groupField.id);
+            const groupExpr = groupingExpr(groupField, req.time_bucket, fieldsById, clock.timeZone);
             if (groupKeyHasSubquery(groupField.type)) await disableJitForTx(tx);
+
+            // v0.1.287 — SEGUNDO nivel (subgrupos de la vista agrupada, barras
+            // apiladas, tabla dinámica): mismas reglas que el primero.
+            if (req.sub_group_by_field_id !== undefined) {
+                if (req.sub_group_by_field_id === groupField.id) throw badRequest('El segundo agrupado tiene que ser otro campo.');
+                const subField = byId.get(req.sub_group_by_field_id);
+                if (!subField) throw badRequest('sub_group_by_field_id no pertenece a la lista');
+                const subExpr = groupingExpr(subField, req.sub_time_bucket, fieldsById, clock.timeZone);
+                if (groupKeyHasSubquery(subField.type)) await disableJitForTx(tx);
+                return this.twoLevelGroups(tx, baseWhere, groupExpr, subExpr, aggExpr, req.metric, opts.top);
+            }
+
             if (opts.top) {
                 return {
                     metric: req.metric,
@@ -256,6 +242,87 @@ export class AggregateService {
 
         const [row] = await tx.select({ val: aggExpr }).from(records).where(baseWhere);
         return { metric: req.metric, value: normalize(row?.val) };
+    }
+
+    /**
+     * v0.1.287 — Agrupado en DOS niveles: `(grupo, subgrupo) → métrica` y,
+     * además, la métrica de cada GRUPO entero (calculada sobre sus registros,
+     * no sumando los subgrupos: así vale también para promedio, mín/máx o
+     * valores únicos). Una sola consulta con `GROUPING SETS ((grp, sub), (grp))`
+     * sobre una subconsulta que calcula las dos claves UNA vez por fila (la
+     * clave de un multi_select o de un derivado es cara) y se llama "records",
+     * así la métrica —que apunta a `"records"."data"`— vale sin tocarla.
+     *
+     * Con `top` (gráficos): los grupos son los de `topGroups` (los N primeros
+     * + "Otros") y el desglose de "Otros" se calcula sobre SUS registros.
+     * Tope de pares `(grupo, subgrupo)`: `MAX_SUB_GROUP_PAIRS`; los que no
+     * entran se informan en `hidden_sub_groups`.
+     */
+    private async twoLevelGroups(
+        tx: Tx,
+        baseWhere: SQL | undefined,
+        groupExpr: SQL,
+        subExpr: SQL,
+        aggExpr: SQL,
+        metric: AggregateMetric,
+        top: AggregateTop | undefined,
+    ): Promise<AggregateResult> {
+        const where = baseWhere ?? sql`true`;
+        let topList: NonNullable<AggregateResult['groups']> | null = null;
+        let bucketCol = sql`${sql.identifier('records')}.${sql.identifier('grp')}`;
+        if (top) {
+            topList = await this.topGroups(tx, baseWhere, groupExpr, aggExpr, top);
+            const kept = topList.filter((g) => g.group !== AGGREGATE_OTHERS_KEY);
+            if (kept.length < topList.length) {
+                // Lo que no entró en el tope cae en "Otros" también en el desglose.
+                const values = kept.map((g) => g.group).filter((g): g is string => g !== null);
+                const parts: SQL[] = [];
+                if (values.length > 0) parts.push(sql`${bucketCol} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
+                if (kept.some((g) => g.group === null)) parts.push(sql`${bucketCol} IS NULL`);
+                const inTop = parts.length > 0 ? sql.join(parts, sql` OR `) : sql`false`;
+                bucketCol = sql`(CASE WHEN ${inTop} THEN ${bucketCol} ELSE ${AGGREGATE_OTHERS_KEY} END)`;
+            }
+        }
+        const keyed = sql`(SELECT ${records}.*, (${groupExpr})::text AS grp, (${subExpr})::text AS sub FROM ${records} WHERE ${where} OFFSET 0) AS ${sql.identifier('records')}`;
+        const res = await tx.execute(sql`
+            SELECT bucket AS grp, sub, val, gs FROM (
+                SELECT ${bucketCol} AS bucket, ${sql.identifier('records')}.${sql.identifier('sub')} AS sub, ${aggExpr} AS val,
+                       GROUPING(${sql.identifier('records')}.${sql.identifier('sub')}) AS gs
+                FROM ${keyed}
+                GROUP BY GROUPING SETS ((1, 2), (1))
+            ) t
+            ORDER BY grp ASC NULLS LAST, gs DESC, sub ASC NULLS LAST`);
+        const rows = res.rows as Array<{ grp: unknown; sub: unknown; val: unknown; gs: unknown }>;
+        const keyOf = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+        const byGroup = new Map<string | null, { value: number | string | null; subs: Array<{ group: string | null; value: number | string | null }> }>();
+        const order: Array<string | null> = [];
+        let pairs = 0;
+        let hidden = 0;
+        for (const r of rows) {
+            const g = keyOf(r.grp);
+            let entry = byGroup.get(g);
+            if (!entry) {
+                entry = { value: null, subs: [] };
+                byGroup.set(g, entry);
+                order.push(g);
+            }
+            if (Number(r.gs) === 1) {
+                entry.value = normalize(r.val);
+            } else if (pairs < MAX_SUB_GROUP_PAIRS) {
+                entry.subs.push({ group: keyOf(r.sub), value: normalize(r.val) });
+                pairs++;
+            } else {
+                hidden++;
+            }
+        }
+        let groups: NonNullable<AggregateResult['groups']>;
+        if (topList) {
+            // El orden y los valores del grupo, los de `topGroups` (por valor o por clave).
+            groups = topList.map((g) => ({ ...g, sub_groups: byGroup.get(g.group)?.subs ?? [] }));
+        } else {
+            groups = order.map((g) => ({ group: g, value: byGroup.get(g)!.value, sub_groups: byGroup.get(g)!.subs }));
+        }
+        return { metric, value: null, groups, ...(hidden > 0 ? { hidden_sub_groups: hidden } : {}) };
     }
 
     /**
@@ -408,6 +475,12 @@ export class AggregateService {
              */
             groupsOnly?: boolean;
             groupKeys?: Array<string | null>;
+            /**
+             * v0.1.287 — el pie por SUBGRUPO de la vista agrupada en dos
+             * niveles: el desglose es por (grupo, subgrupo) y cada entrada
+             * trae `sub_value`.
+             */
+            sub_group_by_field_id?: number;
         },
     ): Promise<FooterAggregates> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -493,14 +566,19 @@ export class AggregateService {
                 // multi_select, derivados por su expresión): antes un pie por
                 // grupo de multi_select nunca encontraba su grupo.
                 const groupExpr = groupKeyExpr(gf, fieldsById);
+                const sf = opts.sub_group_by_field_id !== undefined ? byId.get(opts.sub_group_by_field_id) : undefined;
+                const subExpr = sf ? groupKeyExpr(sf, fieldsById) : undefined;
                 const res = await this.tenantDb.withTenant(tenantId, async (tx) => {
-                    if (groupKeyHasSubquery(gf.type)) await disableJitForTx(tx);
-                    return tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`);
+                    if (groupKeyHasSubquery(gf.type) || (sf && groupKeyHasSubquery(sf.type))) await disableJitForTx(tx);
+                    return subExpr
+                        ? tx.execute(sql`select ${selectList(groupExpr)}, ${subExpr} as ${sql.identifier('sub')} from ${source} group by 1, ${sql.raw(String(Object.keys(cols).length + 2))} order by 1`)
+                        : tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`);
                 });
                 groups = (res.rows as Record<string, unknown>[]).map((rec) => {
                     const grp = rec.grp;
                     return {
                         value: grp === null || grp === undefined ? null : String(grp),
+                        ...(subExpr ? { sub_value: rec.sub === null || rec.sub === undefined ? null : String(rec.sub) } : {}),
                         aggregates: bagFrom(rec),
                     };
                 });
@@ -586,6 +664,9 @@ export class AggregateService {
 /** v0.1.286 — Tope de grupos que puede pedir cualquiera (endpoint incluido). */
 export const MAX_GROUPS = 1000;
 
+/** v0.1.287 — Tope de pares (grupo, subgrupo) de un agrupado en dos niveles. */
+export const MAX_SUB_GROUP_PAIRS = 2000;
+
 /** v0.1.286 — Agrupado con tope + "Otros". */
 export interface AggregateTop {
     limit: number;
@@ -642,7 +723,8 @@ export type AggregateBag = Partial<Record<AggregateMetric, number | string | nul
 
 export interface FooterAggregates {
     totals: Record<string, AggregateBag>;
-    groups: Array<{ value: string | null; aggregates: Record<string, AggregateBag> }>;
+    /** `sub_value` sólo con `sub_group_by_field_id` (pie por subgrupo, v0.1.287). */
+    groups: Array<{ value: string | null; sub_value?: string | null; aggregates: Record<string, AggregateBag> }>;
 }
 
 /**
@@ -681,6 +763,33 @@ export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableFie
     if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
     if (isThroughField(field.type) || field.type === 'computed') return throughGroupExpr(field, fieldsById);
     return fieldTextExpr(field.id);
+}
+
+/**
+ * Clave de agrupado de un campo para el motor de agregados (`run`), con sus
+ * reglas: relación y archivo no forman grupos (se dice, en vez de devolver
+ * un único grupo con todo); una fecha con `bucket` agrupa por día/semana/mes/
+ * trimestre/año en el reloj de la empresa; un multi_select por COMBINACIÓN
+ * normalizada; un derivado (lookup / rollup / computed) por su expresión.
+ * La comparten el primer y el segundo nivel de agrupado.
+ */
+function groupingExpr(
+    field: Field,
+    bucket: TimeBucket | undefined,
+    fieldsById: Map<number, FilterableField>,
+    timeZone: string,
+): SQL {
+    // v0.1.252 — una relación no vive en `data`: agrupar por ella daba UN
+    // solo grupo con todo.
+    if (field.type === 'relation' || field.type === 'file') {
+        throw badRequest(`No se puede agrupar por «${field.label}»: los campos de tipo ${field.type === 'relation' ? 'relación' : 'archivo'} no forman grupos.`);
+    }
+    // v0.1.97 — bucketing temporal (labels ordenables cronológicamente como string).
+    if (bucket !== undefined && (field.type === 'date' || field.type === 'datetime')) {
+        return timeBucketExpr(field, bucket, timeZone);
+    }
+    // v0.1.190 — multi_select por combinación; v0.1.200 — derivados por su expresión.
+    return groupKeyExpr(field, fieldsById);
 }
 
 /** Filas de ciertos grupos (`groupKeys`) del campo agrupado; sin claves, todas. */

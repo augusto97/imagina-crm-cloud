@@ -143,3 +143,54 @@ export const bulkRecordsSchema = z.object({
     values: z.record(z.unknown()).default({}),
 });
 export type BulkRecordsInput = z.infer<typeof bulkRecordsSchema>;
+
+/**
+ * v0.1.287 — Edición de VARIAS filas con valores DISTINTOS por fila en una
+ * sola llamada: pegar un bloque copiado de Excel, rellenar hacia abajo,
+ * deshacer y rehacer desde la tabla. Cada ítem es un update parcial (`data`
+ * con claves `f{id}`) que pasa por el mismo camino que una edición de celda
+ * (ACL, validación, actividad, automatizaciones, reglas de la tienda), y el
+ * realtime avisa UNA vez al final.
+ *
+ * `expect` (deshacer/rehacer): los valores que el cliente cree vigentes. Si
+ * alguno cambió desde entonces (otra persona lo editó), esa fila NO se toca y
+ * vuelve como conflicto — deshacer nunca pisa el cambio de otro.
+ */
+export const MAX_BATCH_UPDATE_ITEMS = 500;
+export const batchUpdateRecordsSchema = z.object({
+    items: z
+        .array(
+            z.object({
+                id: idSchema,
+                data: recordDataSchema,
+                expect: recordDataSchema.optional(),
+            }),
+        )
+        .min(1)
+        .max(MAX_BATCH_UPDATE_ITEMS),
+});
+export type BatchUpdateRecordsInput = z.infer<typeof batchUpdateRecordsSchema>;
+
+/** Una celda que no se pudo escribir (el resto de la fila sí se escribió). */
+export interface BatchUpdateCellError {
+    id: number;
+    /** Clave `f{id}` del campo. */
+    key: string;
+    message: string;
+}
+
+/** Una fila que no se tocó (sin permiso, borrada, conflicto…). */
+export interface BatchUpdateRowError {
+    id: number;
+    code: string;
+    message: string;
+    /** Conflicto: las claves `f{id}` que cambiaron desde que el cliente las leyó. */
+    changed?: string[];
+}
+
+export interface BatchUpdateRecordsResult {
+    /** Las filas ya escritas (como las devuelve el update: `data` por `f{id}`). */
+    updated: RecordDto[];
+    failed: BatchUpdateRowError[];
+    cell_errors: BatchUpdateCellError[];
+}

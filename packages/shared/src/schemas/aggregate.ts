@@ -56,10 +56,28 @@ export const aggregateRequestSchema = z
          * para cualquier otro tipo de campo.
          */
         time_bucket: timeBucketSchema.optional(),
+        /**
+         * v0.1.287 — SEGUNDO nivel de agrupado: dentro de cada grupo, un
+         * desglose por este otro campo (subgrupos de la vista agrupada,
+         * barras apiladas, tabla dinámica). Mismas reglas que el primero:
+         * multi_select por combinación, sin valor → `null`, relación y
+         * archivo no agrupan. Requiere `group_by_field_id` y otro campo.
+         */
+        sub_group_by_field_id: idSchema.optional(),
+        /** Bucket temporal del segundo nivel (si es un campo de fecha). */
+        sub_time_bucket: timeBucketSchema.optional(),
     })
     .refine((r) => !FIELD_METRICS.includes(r.metric) || r.field_id !== undefined, {
         message: 'Esta métrica requiere field_id',
         path: ['field_id'],
+    })
+    .refine((r) => r.sub_group_by_field_id === undefined || r.group_by_field_id !== undefined, {
+        message: 'sub_group_by_field_id requiere group_by_field_id',
+        path: ['sub_group_by_field_id'],
+    })
+    .refine((r) => r.sub_group_by_field_id === undefined || r.sub_group_by_field_id !== r.group_by_field_id, {
+        message: 'El segundo agrupado tiene que ser otro campo',
+        path: ['sub_group_by_field_id'],
     });
 export type AggregateRequest = z.infer<typeof aggregateRequestSchema>;
 
@@ -74,6 +92,13 @@ export const aggregateValueSchema = z.union([z.number(), z.string(), z.null()]);
  */
 export const AGGREGATE_OTHERS_KEY = '__others__';
 
+/** v0.1.287 — Una celda del segundo nivel: (grupo, subgrupo) → valor. */
+export const aggregateSubGroupSchema = z.object({
+    group: z.string().nullable(),
+    value: aggregateValueSchema,
+});
+export type AggregateSubGroup = z.infer<typeof aggregateSubGroupSchema>;
+
 /** Resultado: valor total y, si hubo group_by, el desglose por grupo. */
 export const aggregateResultSchema = z.object({
     metric: aggregateMetricSchema,
@@ -82,11 +107,19 @@ export const aggregateResultSchema = z.object({
         .array(
             z.object({
                 group: z.string().nullable(),
+                /** El valor del GRUPO entero (bien calculado también para promedio, mín/máx o únicos). */
                 value: aggregateValueSchema,
                 /** Sólo en el grupo "Otros": cuántos grupos resume. */
                 others: z.number().int().nonnegative().optional(),
+                /**
+                 * v0.1.287 — con `sub_group_by_field_id`: el desglose por el
+                 * segundo campo DENTRO de este grupo, en el orden de las claves.
+                 */
+                sub_groups: z.array(aggregateSubGroupSchema).optional(),
             }),
         )
         .optional(),
+    /** v0.1.287 — con segundo nivel: pares (grupo, subgrupo) que existen pero no viajan (tope). */
+    hidden_sub_groups: z.number().int().nonnegative().optional(),
 });
 export type AggregateResult = z.infer<typeof aggregateResultSchema>;
