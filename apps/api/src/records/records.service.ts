@@ -131,7 +131,9 @@ export class RecordsService {
                 data: { status: 403 },
             });
         }
-        if (!opts.planChecked) await this.billing?.assertCanCreateRecord(tenantId);
+        // El tope del plan se verifica DENTRO de la transacción del alta (ver
+        // assertRecordRoomInTx): aquí sólo se lee cuál es.
+        const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
         const fields = await this.fields.listByListId(tenantId, listId);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
@@ -139,6 +141,7 @@ export class RecordsService {
         const data = this.validateData(fields, rel.data, { partial: false });
 
         const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
             // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
             // lista y ser de primer nivel — un solo nivel de anidado.
             const parentId = input.parent_id ?? null;
