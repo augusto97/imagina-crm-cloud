@@ -37,6 +37,17 @@ export function FloatingAddColumn({ onClick }: { onClick: () => void }): JSX.Ele
  */
 export const ADD_COLUMN_GUTTER = 44;
 
+/**
+ * Ancho mínimo de la tabla para que la columna de relleno (sin ancho propio)
+ * reciba el hueco del "+": suma de columnas + el hueco + la separación entre
+ * celdas (`border-spacing` del navegador, 2 px, con `border-collapse:
+ * separate` — ver globals.css v0.1.137), que también ocupa ancho.
+ */
+export function tableMinWidth(columnsWidth: number, columnCount: number, withGutter: boolean): number {
+    if (!withGutter) return columnsWidth;
+    return columnsWidth + ADD_COLUMN_GUTTER + 2 * (columnCount + 2);
+}
+
 /** ¿Quedan columnas por ver a la derecha? (scroll horizontal no al final) */
 export function useOverflowsRight(ref: RefObject<HTMLElement>, deps: unknown[] = []): boolean {
     const [overflows, setOverflows] = useState(false);

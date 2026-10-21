@@ -22,7 +22,7 @@ import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
 import { useMainVirtualRows } from './useMainVirtualRows';
 import { SortIndicator } from './SortIndicator';
-import { ADD_COLUMN_GUTTER, FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
+import { FloatingAddColumn, tableMinWidth, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
@@ -533,7 +533,8 @@ export function TableView({
     const tableStyle: React.CSSProperties = {
         tableLayout: 'fixed',
         width: '100%',
-        minWidth: table.getCenterTotalSize() + (onAddColumn ? ADD_COLUMN_GUTTER : 0),
+        // 28 = la columna de la casilla (va en el colgroup, no en TanStack).
+        minWidth: tableMinWidth(28 + table.getCenterTotalSize(), table.getVisibleLeafColumns().length + 1, Boolean(onAddColumn)),
     };
     // v0.1.142 — `table-layout: fixed` + `width: 100%` reparte el espacio
     // sobrante ENTRE TODAS las columnas, así que la de la casilla se
