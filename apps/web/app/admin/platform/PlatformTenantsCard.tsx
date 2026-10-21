@@ -29,6 +29,7 @@ import { MemberInviteForm, MemberRow } from '@/cloud/components/MemberControls';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
     Card,
     CardContent,
@@ -208,8 +209,11 @@ export function PlatformTenantsCard(): JSX.Element {
     return (
         <Card>
             <CardHeader>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-3">
-                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-start imcrm-gap-3 sm:imcrm-min-w-[16rem]">
+                {/* v0.1.287 — en el celular se APILA (título y descripción a lo
+                    ancho, controles debajo): en fila, la descripción quedaba de
+                    una palabra por renglón y «Ver archivadas» pisaba el título. */}
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between">
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-items-start imcrm-gap-3 sm:imcrm-flex-1">
                         <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                             <Building2 className="imcrm-h-4 imcrm-w-4" aria-hidden />
                         </span>
@@ -220,8 +224,8 @@ export function PlatformTenantsCard(): JSX.Element {
                             </CardDescription>
                         </div>
                     </div>
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                        <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 sm:imcrm-shrink-0">
+                        <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-text-xs imcrm-text-muted-foreground">
                             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
                             {__('Ver archivadas')}
                         </label>
@@ -531,6 +535,7 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
     const update = useUpdateTenant();
     const del = useDeleteTenant();
     const impersonate = useImpersonate();
+    const confirm = useConfirm();
     const [name, setName] = useState('');
     // <input type="date"> quiere YYYY-MM-DD; el backend guarda ISO completo.
     const [until, setUntil] = useState('');
@@ -576,10 +581,13 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
         }
     };
 
-    const doImpersonate = (userId: number, who: string): void => {
-        if (confirm(`${__('¿Entrar como')} ${who}? ${__('Se abrirá una sesión de soporte (queda auditada).')}`)) {
-            impersonate.mutate(userId);
-        }
+    const doImpersonate = async (userId: number, who: string): Promise<void> => {
+        const ok = await confirm({
+            title: `${__('¿Entrar como')} ${who}?`,
+            description: __('Se abrirá una sesión de soporte (queda auditada). Al cerrar sesión vuelves a la tuya.'),
+            confirmLabel: __('Entrar como esta persona'),
+        });
+        if (ok) impersonate.mutate(userId);
     };
 
     const busy = update.isPending || del.isPending;
@@ -697,7 +705,7 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 tenantId={t.id}
                                 members={detail.data.members}
                                 impersonating={impersonate.isPending}
-                                onImpersonate={doImpersonate}
+                                onImpersonate={(userId, who) => void doImpersonate(userId, who)}
                             />
 
                             {error !== null && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
