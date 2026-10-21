@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, LogOut, Mail } from 'lucide-react';
+import { Building2, Check, ChevronDown, KeyRound, LogOut, Mail } from 'lucide-react';
 import type { PortalAccount } from '@imagina-base/shared';
 
 import {
@@ -12,6 +12,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { portalApi } from '@/cloud-portal/portalClient';
+import { PortalPasswordDialog } from '@/cloud-portal/PortalPasswordDialog';
 import { CloudApiError } from '@/lib/cloud/client';
 
 /**
@@ -26,13 +27,20 @@ export function PortalAccountMenu({
     onSelect,
     onLogout,
     notifyEmail,
+    password,
+    companyName = '',
 }: {
     accountId: number | null;
     onSelect: (id: number) => void;
     onLogout: () => void;
     /** ¿Recibe un correo cuando el equipo le responde? (null = no se ofrece). */
     notifyEmail?: boolean | null;
+    /** v0.1.289 — entrar con contraseña: si la empresa lo permite y si ya la creó. */
+    password?: { enabled: boolean; has_password: boolean };
+    companyName?: string;
 }): JSX.Element {
+    const [pwOpen, setPwOpen] = useState(false);
+    const [hasPassword, setHasPassword] = useState(password?.has_password ?? false);
     const [notify, setNotify] = useState<boolean | null>(notifyEmail ?? null);
     const savePref = useMutation({
         mutationFn: (next: boolean) => portalApi.portalSetPreferences(next),
@@ -168,6 +176,21 @@ export function PortalAccountMenu({
                             </span>
                         </DropdownMenuItem>
                     )}
+                    {password?.enabled && (
+                        <DropdownMenuItem
+                            data-testid="portal-password-item"
+                            onSelect={() => setPwOpen(true)}
+                            className="imcrm-flex imcrm-items-start imcrm-gap-2"
+                        >
+                            <KeyRound className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
+                            <span>
+                                <span className="imcrm-block">{hasPassword ? 'Cambiar contraseña' : 'Crear contraseña'}</span>
+                                <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
+                                    Para entrar sin esperar un enlace
+                                </span>
+                            </span>
+                        </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                         data-testid="portal-logout"
                         onSelect={() => logout.mutate()}
@@ -178,6 +201,22 @@ export function PortalAccountMenu({
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
+            {password?.enabled && (
+                <PortalPasswordDialog
+                    open={pwOpen}
+                    onOpenChange={setPwOpen}
+                    hasPassword={hasPassword}
+                    companyName={companyName}
+                    onSaved={() => {
+                        setNotice(
+                            hasPassword
+                                ? 'Listo: cambiaste tu contraseña.'
+                                : 'Listo: desde ahora también puedes entrar con tu correo y esta contraseña.',
+                        );
+                        setHasPassword(true);
+                    }}
+                />
+            )}
             {notice && (
                 <p role="status" className="imcrm-max-w-xs imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
                     {notice}

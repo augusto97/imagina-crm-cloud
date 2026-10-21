@@ -24,7 +24,7 @@ export interface PortalEmail {
 
 const NEUTRAL = '#1f2937';
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
     return value
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -34,12 +34,12 @@ function escapeHtml(value: string): string {
 }
 
 /** Sólo un hex de 6 dígitos llega al CSS del correo (nada de inyección de estilos). */
-function safeColor(color: string | null): string {
+export function safeColor(color: string | null): string {
     return color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : NEUTRAL;
 }
 
 /** Tinta legible sobre el color del botón (luminancia WCAG). */
-function inkOn(hex: string): string {
+export function inkOn(hex: string): string {
     const channel = (i: number) => {
         const c = parseInt(hex.slice(i, i + 2), 16) / 255;
         return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;

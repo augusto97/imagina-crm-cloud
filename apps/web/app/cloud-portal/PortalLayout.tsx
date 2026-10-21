@@ -102,6 +102,7 @@ export function PortalLayout({ boot, layout }: { boot: PortalBoot; layout: Recor
             fields: boot.fields,
         },
         blockLists: boot.layout_data?.block_lists,
+        portalPayments: boot.payments,
     };
 
     return (

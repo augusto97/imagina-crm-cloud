@@ -39,6 +39,7 @@ import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { CompactFieldRow } from '@/admin/records/crm/CompactFieldRow';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { PortalPaymentsBlockView, PortalPaymentsPreview } from './PortalPaymentsBlock';
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
@@ -109,13 +110,17 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     const card =
         block.type === 'field'
             ? block.config.card === true
-            : !BARE.has(block.type) && !(ctx.mode === 'portal' && BARE_IN_PORTAL.has(block.type));
+            : // v0.1.289 — en el portal, «Pagos» va en su tarjeta con título.
+              (ctx.mode === 'portal' && block.type === 'payments') ||
+              (!BARE.has(block.type) && !(ctx.mode === 'portal' && BARE_IN_PORTAL.has(block.type)));
     const title = blockTitle(block, ctx.fieldsById);
     const collapsible = block.type === 'fields' && block.config.collapsible !== false && title !== null;
     const [open, setOpen] = useState(block.config.collapsed !== true);
     const Icon = blockIcon(block);
 
     if (isEmptyActionButton(block, ctx)) return null;
+    // Sin conexión de cobro (o sin nada que mostrar) el cliente no ve «Pagos».
+    if (ctx.mode === 'portal' && !ctx.preview && block.type === 'payments' && !ctx.portalPayments?.[block.id]) return null;
     const body = <BlockBody block={block} />;
     if (!card) {
         return (
@@ -213,6 +218,8 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
             return __('Comentarios');
         case 'record_stats':
             return __('Resumen');
+        case 'payments':
+            return __('Pagos');
         default:
             return null;
     }
@@ -294,9 +301,27 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
         case 'portal_access':
             if (ctx.mode === 'portal') return null;
             return <PortalAccessButton list={ctx.list} record={ctx.record} />;
-        case 'payments':
-            if (ctx.mode === 'portal') return null;
-            return <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} showEmptyHint />;
+        case 'payments': {
+            if (ctx.mode !== 'portal') return <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} showEmptyHint />;
+            // v0.1.289 — en el portal: los pagos del cliente y «Pagar». En el
+            // editor, una vista previa (con el monto del registro de muestra).
+            if (ctx.preview) {
+                const amountField = ctx.fieldsById.get(Number((c.pay_button as { amount_field_id?: unknown } | undefined)?.amount_field_id));
+                const currency = typeof amountField?.config?.currency === 'string' ? amountField.config.currency.toUpperCase() : 'COP';
+                const titleField = ctx.fields.find((f) => f.is_primary);
+                const titleValue = titleField ? ctx.values[titleField.slug] : null;
+                return (
+                    <PortalPaymentsPreview
+                        config={c}
+                        amount={amountField ? ctx.values[amountField.slug] : null}
+                        currency={currency}
+                        recordTitle={typeof titleValue === 'string' || typeof titleValue === 'number' ? String(titleValue) : ''}
+                    />
+                );
+            }
+            const data = ctx.portalPayments?.[block.id];
+            return data ? <PortalPaymentsBlockView blockId={block.id} data={data} /> : null;
+        }
         case 'subtasks':
             if (ctx.mode === 'portal') return null;
             return (

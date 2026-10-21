@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { PublicFormMeta } from '@imagina-base/shared';
+import { CAPTCHA_PROVIDER_INFO, captchaCspSources, type CaptchaProvider, type PublicFormMeta } from '@imagina-base/shared';
 
 /**
  * v0.1.275 (ADR-S39) — Página pública de un formulario. La sirve el API
@@ -11,9 +11,14 @@ import type { PublicFormMeta } from '@imagina-base/shared';
  * Todo el contenido se arma con `textContent`/`createElement`: ni una
  * etiqueta, descripción u opción llega como HTML. El script lleva nonce y
  * la CSP no deja correr otro.
+ *
+ * v0.1.289 — varias páginas (un paso por vez con barra de progreso),
+ * verificación anti-robots (sólo los dominios del proveedor elegido entran
+ * a la CSP, y sólo si el formulario la pide) y la pantalla de «revisa tu
+ * correo» del doble opt-in.
  */
 
-function escapeHtml(input: string): string {
+export function escapeHtml(input: string): string {
     return input
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -46,13 +51,21 @@ export function formFrameAncestors(domains: string[]): string {
     return sources.length === 0 ? '*' : `'self' ${sources.join(' ')}`;
 }
 
-export function formPageCsp(nonce: string, frameAncestors: string): string {
+/**
+ * CSP de la página. Con captcha se suman SÓLO los orígenes de ese proveedor
+ * (script, marco del widget, verificación y estilos): un formulario sin
+ * captcha no puede cargar nada de afuera.
+ */
+export function formPageCsp(nonce: string, frameAncestors: string, captcha: CaptchaProvider | null = null): string {
+    const c = captchaCspSources(captcha);
+    const join = (base: string, extra: string[]): string => [base, ...extra].join(' ');
     return [
         "default-src 'none'",
-        `script-src 'nonce-${nonce}'`,
-        "style-src 'unsafe-inline'",
+        join(`script-src 'nonce-${nonce}'`, c.script),
+        join("style-src 'unsafe-inline'", c.style),
         "img-src 'self' data: https:",
-        "connect-src 'self'",
+        join("connect-src 'self'", c.connect),
+        ...(c.frame.length > 0 ? [join('frame-src', c.frame)] : []),
         "form-action 'self'",
         "base-uri 'none'",
         `frame-ancestors ${frameAncestors}`,
@@ -71,16 +84,12 @@ interface PageOpts {
     token: string;
 }
 
-export function renderFormPage(opts: PageOpts): string {
-    const boot = jsonForScript({ token: opts.token, preview: opts.meta === null, meta: opts.meta });
-    return `<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex" />
-<title>${escapeHtml(opts.title)}</title>
-<style>
+/** Scripts de los widgets: el cliente los carga por URL, nunca otra. */
+const CAPTCHA_SCRIPTS = Object.fromEntries(
+    Object.entries(CAPTCHA_PROVIDER_INFO).map(([k, v]) => [k, v.script_url]),
+) as Record<CaptchaProvider, string>;
+
+const BASE_CSS = `
   :root { --accent: #0e7490; --accent-ink: #ffffff; --bg: #f4f5f7; --card: #ffffff; --fg: #1d2330;
           --muted: #667085; --border: #d9dde5; --danger: #c0262d; --radius: 10px; }
   * { box-sizing: border-box; }
@@ -89,19 +98,43 @@ export function renderFormPage(opts: PageOpts): string {
          font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
   body.embedded { background: transparent; }
   .wrap { max-width: 660px; margin: 0 auto; padding: 32px 16px 48px; }
+  /* Lo oculto se oculta SIEMPRE (si no, .btn { display:inline-flex } gana a [hidden]). */
+  [hidden] { display: none !important; }
   body.embedded .wrap { padding: 8px 4px 16px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
           box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 24px rgba(16,24,40,.06); overflow: hidden; }
   body.embedded .card { box-shadow: none; }
   .band { height: 6px; background: var(--accent); }
   .inner { padding: 28px 28px 24px; }
-  @media (max-width: 520px) { .inner { padding: 22px 18px 18px; } }
+  @media (max-width: 520px) { .inner { padding: 22px 18px 18px; } .wrap { padding: 16px 10px 32px; } }
   .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; color: var(--muted); font-size: 13px; }
   .brand img { max-height: 36px; max-width: 160px; object-fit: contain; }
   h1 { font-size: 24px; line-height: 1.25; margin: 0 0 8px; font-weight: 700; letter-spacing: -.01em; }
+  .btn { appearance: none; border: 0; border-radius: 8px; padding: 11px 22px; font: inherit; font-weight: 600;
+         background: var(--accent); color: var(--accent-ink); cursor: pointer; min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+  .btn[disabled] { opacity: .6; cursor: default; }
+  .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  .done { text-align: center; padding: 28px 8px 12px; }
+  .done .tick { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+                display: inline-flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 14px; }
+  .done h2 { margin: 0 0 6px; font-size: 22px; }
+  .done p { color: var(--muted); margin: 0 0 18px; white-space: pre-wrap; }
+  .done .small { font-size: 13px; }
+`;
+
+export function renderFormPage(opts: PageOpts): string {
+    const boot = jsonForScript({ token: opts.token, preview: opts.meta === null, meta: opts.meta, scripts: CAPTCHA_SCRIPTS });
+    return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>${escapeHtml(opts.title)}</title>
+<style>${BASE_CSS}
   .desc p { margin: 0 0 8px; color: var(--muted); white-space: pre-wrap; }
   .items { margin-top: 22px; display: flex; flex-direction: column; gap: 20px; }
-  .item[hidden] { display: none; }
+  .item[hidden], .page[hidden] { display: none; }
   .sec { font-size: 17px; font-weight: 650; margin: 10px 0 -6px; padding-top: 14px; border-top: 1px solid var(--border); }
   .note p { margin: 0 0 6px; white-space: pre-wrap; color: var(--fg); }
   .q { display: block; font-weight: 600; margin-bottom: 6px; }
@@ -143,17 +176,19 @@ export function renderFormPage(opts: PageOpts): string {
   .item.invalid input, .item.invalid select, .item.invalid textarea { border-color: var(--danger); }
   .alert { border: 1px solid #f3c2c4; background: #fdf1f1; color: var(--danger); border-radius: 8px; padding: 10px 12px; margin-top: 18px; font-size: 14px; }
   .foot { margin-top: 24px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .btn { appearance: none; border: 0; border-radius: 8px; padding: 11px 22px; font: inherit; font-weight: 600;
-         background: var(--accent); color: var(--accent-ink); cursor: pointer; min-height: 44px; }
-  .btn[disabled] { opacity: .6; cursor: default; }
-  .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
-  .done { text-align: center; padding: 28px 8px 12px; }
-  .done .tick { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
-                display: inline-flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 14px; }
-  .done h2 { margin: 0 0 6px; font-size: 22px; }
-  .done p { color: var(--muted); margin: 0 0 18px; white-space: pre-wrap; }
+  .foot .grow { flex: 1; }
+  @media (max-width: 520px) { .foot.paged .btn { flex: 1; } .foot.paged .grow { display: none; } }
   .closed { text-align: center; padding: 24px 8px; color: var(--muted); white-space: pre-wrap; }
   .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .steps { margin-top: 20px; }
+  .steps-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .steps-top strong { color: var(--fg); font-weight: 600; }
+  .bar { height: 6px; background: rgba(127,127,127,.18); border-radius: 99px; overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .25s ease; }
+  .page-title { font-size: 19px; line-height: 1.3; font-weight: 650; margin: 0 0 -4px; }
+  .page-title:focus { outline: none; }
+  .captcha { margin-top: 20px; min-height: 66px; }
+  .captcha-ph { margin-top: 20px; border: 1.5px dashed var(--border); border-radius: 8px; padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
   .preview-item { cursor: pointer; border-radius: 8px; outline-offset: 6px; }
   .preview-item:hover { outline: 1px dashed #b7c0cd; }
   .preview-item.selected { outline: 2px solid var(--accent); }
@@ -170,9 +205,10 @@ export function renderFormPage(opts: PageOpts): string {
 }
 
 /**
- * Cliente del formulario. Espeja `formItemVisible`/`evaluateFormCondition`
- * de shared (las condiciones las vuelve a evaluar el servidor al enviar: lo
- * que decide qué se guarda es el servidor, esto sólo arma la pantalla).
+ * Cliente del formulario. Espeja `formItemVisible`/`evaluateFormCondition`/
+ * `splitFormPages`/`formPageVisible` de shared (las condiciones las vuelve a
+ * evaluar el servidor al enviar: lo que decide qué se guarda es el servidor,
+ * esto sólo arma la pantalla).
  */
 const CLIENT_JS = String.raw`
 (function () {
@@ -190,6 +226,14 @@ const CLIENT_JS = String.raw`
   var itemEls = {};
   var errEls = {};
   var selectedId = null;
+  // Varias páginas: índice (en "pages") de la que se ve.
+  var pages = [];
+  var pageEls = [];
+  var current = 0;
+  var stepsEl = null, stepsLabel = null, barEl = null;
+  var prevBtn = null, nextBtn = null, submitBtn = null, captchaBox = null, alertBox = null;
+  // Captcha
+  var captchaToken = null, captchaWidget = null, captchaMounted = false;
 
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -263,6 +307,41 @@ const CLIENT_JS = String.raw`
     if (!visible(ctl, (depth || 0) + 1)) return false;
     return cond(item.show_if, values[ctl.key]);
   }
+  // ── Páginas ──
+  function splitPages(items) {
+    var out = [], cur = { breakId: null, title: '', items: [] };
+    items.forEach(function (i) {
+      if (i.type === 'page_break') {
+        if (cur.items.length) out.push(cur);
+        cur = { breakId: i.id, title: i.title || '', items: [] };
+        return;
+      }
+      cur.items.push(i);
+    });
+    if (cur.items.length || !out.length) out.push(cur);
+    return out;
+  }
+  function pageVisible(p) {
+    if (BOOT.preview) return true;
+    var qs = p.items.filter(function (i) { return i.type === 'field'; });
+    if (qs.length) return qs.some(function (i) { return !i.hidden && visible(i, 0); });
+    return p.items.some(function (i) { return visible(i, 0); });
+  }
+  function paged() { return pages.length > 1; }
+  function visiblePages() {
+    var out = [];
+    pages.forEach(function (p, idx) { if (pageVisible(p)) out.push(idx); });
+    return out;
+  }
+  function isLastPage() {
+    var vis = visiblePages();
+    return !vis.length || vis[vis.length - 1] <= current;
+  }
+  function pageOfItem(id) {
+    for (var p = 0; p < pages.length; p++) for (var j = 0; j < pages[p].items.length; j++) if (pages[p].items[j].id === id) return p;
+    for (var q = 0; q < pages.length; q++) if (pages[q].breakId === id) return q;
+    return 0;
+  }
   function refresh() {
     meta.items.forEach(function (i) {
       var n = itemEls[i.id]; if (!n) return;
@@ -271,6 +350,36 @@ const CLIENT_JS = String.raw`
       if (BOOT.preview) show = true;
       n.hidden = !show;
     });
+    if (paged()) paintPages();
+  }
+  function paintPages() {
+    var vis = visiblePages();
+    // La página actual dejó de aplicar (cambió una respuesta anterior): a la siguiente que sí.
+    if (vis.length && vis.indexOf(current) < 0) {
+      var next = vis.filter(function (i) { return i > current; })[0];
+      current = next !== undefined ? next : vis[vis.length - 1];
+    }
+    pageEls.forEach(function (n, idx) { n.hidden = idx !== current; });
+    var pos = Math.max(0, vis.indexOf(current)) + 1, total = Math.max(1, vis.length);
+    if (stepsLabel) stepsLabel.textContent = 'Paso ' + pos + ' de ' + total;
+    if (barEl) barEl.style.width = Math.round((pos / total) * 100) + '%';
+    var last = isLastPage();
+    if (prevBtn) prevBtn.hidden = pos <= 1;
+    if (nextBtn) nextBtn.hidden = last;
+    if (submitBtn) submitBtn.hidden = !last;
+    if (captchaBox) captchaBox.hidden = !last;
+    if (last) mountCaptcha();
+  }
+  function goToPage(idx, focus) {
+    current = idx;
+    paintPages();
+    if (alertBox) alertBox.hidden = true;
+    if (focus !== false) {
+      var target = stepsEl || root;
+      try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { target.scrollIntoView(); }
+      if (stepsLabel) stepsLabel.focus({ preventScroll: true });
+    }
+    reportHeight();
   }
   function parseNumber(s) {
     s = String(s || '').trim(); if (!s) return null;
@@ -298,6 +407,56 @@ const CLIENT_JS = String.raw`
     n.classList.toggle('invalid', !!msg);
   }
   function clearErrs() { Object.keys(errEls).forEach(function (id) { setErr(id, ''); }); }
+  /** Revisa las preguntas a la vista de estos ítems; marca y devuelve si hay errores. */
+  function validate(items) {
+    var bad = false;
+    items.forEach(function (i) {
+      if (i.type !== 'field' || i.hidden || !visible(i, 0)) return;
+      setErr(i.id, '');
+      if (i.required && empty(values[i.key])) { setErr(i.id, 'Esta pregunta es obligatoria.'); bad = true; }
+      else if (i.field_type === 'email' && !empty(values[i.key]) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values[i.key])) { setErr(i.id, 'Revisa el correo.'); bad = true; }
+      else if ((i.field_type === 'number' || i.field_type === 'currency' || i.field_type === 'percent') && typeof values[i.key] === 'number' && isNaN(values[i.key])) { setErr(i.id, 'Escribe un número.'); bad = true; }
+      else if (i.field_type === 'file' && (uploads[i.key] || []).some(function (u) { return u.pending; })) { setErr(i.id, 'Espera a que termine de subir.'); bad = true; }
+    });
+    return bad;
+  }
+
+  // ── Captcha ──
+  function captchaApi() {
+    var p = meta.captcha && meta.captcha.provider;
+    return p === 'turnstile' ? window.turnstile : p === 'hcaptcha' ? window.hcaptcha : p === 'recaptcha' ? window.grecaptcha : null;
+  }
+  function mountCaptcha() {
+    if (!meta.captcha || BOOT.preview || captchaMounted || !captchaBox) return;
+    captchaMounted = true;
+    var c = meta.captcha;
+    window.__imbCaptchaReady = function () {
+      var api = captchaApi();
+      if (!api || !api.render) return;
+      var opts = {
+        sitekey: c.site_key,
+        callback: function (t) { captchaToken = t; if (alertBox) alertBox.hidden = true; },
+        'expired-callback': function () { captchaToken = null; },
+        'error-callback': function () { captchaToken = null; }
+      };
+      if (c.provider === 'turnstile') opts.language = 'es';
+      try { captchaWidget = api.render(captchaBox, opts); } catch (e) { /* el widget dirá qué pasó */ }
+      reportHeight();
+    };
+    var api = captchaApi();
+    if (api && api.render) { window.__imbCaptchaReady(); return; }
+    var src = BOOT.scripts[c.provider];
+    if (!src) return;
+    var s = document.createElement('script');
+    s.src = src + '?render=explicit&onload=__imbCaptchaReady' + (c.provider === 'turnstile' ? '' : '&hl=es');
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+  function resetCaptcha() {
+    captchaToken = null;
+    var api = captchaApi();
+    if (api && api.reset && captchaWidget !== null) { try { api.reset(captchaWidget); } catch (e) {} }
+  }
 
   function control(f) {
     var key = f.key, id = 'q_' + f.id, cfg = f.config || {};
@@ -470,9 +629,46 @@ const CLIENT_JS = String.raw`
     });
   }
 
-  function render() {
+  function itemNode(i, controls) {
+    var node;
+    if (i.type === 'heading') node = el('div', { cls: 'item sec', text: i.text });
+    else if (i.type === 'text') node = el('div', { cls: 'item note' }, [paragraphs(i.text, '')]);
+    else {
+      var c = control(i);
+      controls[i.id] = c;
+      var kids = [];
+      if (i.field_type !== 'checkbox') {
+        var q = el('label', { cls: 'q', for: 'q_' + i.id, text: i.label });
+        if (i.required) q.appendChild(el('span', { cls: 'req', text: '*', 'aria-hidden': 'true' }));
+        kids.push(q);
+      }
+      if (i.help) kids.push(el('div', { cls: 'help', text: i.help }));
+      kids.push(c);
+      var err = el('div', { cls: 'err', role: 'alert', hidden: true });
+      kids.push(err);
+      errEls[i.id] = err;
+      node = el('div', { cls: 'item' }, kids);
+      if (BOOT.preview && i.hidden) node.style.opacity = '.55';
+      if (BOOT.preview && i.hidden) node.insertBefore(el('span', { cls: 'pv-tag', text: 'Oculta · se completa desde la dirección' }), node.firstChild);
+    }
+    if (BOOT.preview) {
+      node.classList.add('preview-item');
+      if (i.show_if) node.insertBefore(el('span', { cls: 'pv-tag', text: 'Condicional · sólo aparece si se cumple su condición' }), node.firstChild);
+      if (i.id === selectedId) node.classList.add('selected');
+      node.addEventListener('click', function (e) {
+        e.preventDefault();
+        parent.postMessage({ type: 'imb-form-select', id: i.id }, location.origin);
+      }, true);
+    }
+    itemEls[i.id] = node;
+    return node;
+  }
+
+  function render(keepPage) {
     root.textContent = '';
-    itemEls = {}; errEls = {};
+    itemEls = {}; errEls = {}; pageEls = []; stepsEl = stepsLabel = barEl = null;
+    prevBtn = nextBtn = submitBtn = captchaBox = alertBox = null;
+    captchaMounted = false; captchaWidget = null; captchaToken = null;
     if (!meta) { root.appendChild(el('div', { cls: 'pv-empty', text: 'Cargando vista previa…' })); return; }
     var accent = meta.accent_color || '#0e7490';
     document.documentElement.style.setProperty('--accent', accent);
@@ -488,97 +684,133 @@ const CLIENT_JS = String.raw`
       return;
     }
 
+    pages = splitPages(meta.items);
+    if (!keepPage || current >= pages.length) current = 0;
+
     var form = el('form', { novalidate: true });
-    var items = el('div', { cls: 'items' });
     var controls = {};
-    meta.items.forEach(function (i) {
-      var node;
-      if (i.type === 'heading') node = el('div', { cls: 'item sec', text: i.text });
-      else if (i.type === 'text') node = el('div', { cls: 'item note' }, [paragraphs(i.text, '')]);
-      else {
-        var c = control(i);
-        controls[i.id] = c;
-        var kids = [];
-        if (i.field_type !== 'checkbox') {
-          var q = el('label', { cls: 'q', for: 'q_' + i.id, text: i.label });
-          if (i.required) q.appendChild(el('span', { cls: 'req', text: '*', 'aria-hidden': 'true' }));
-          kids.push(q);
+    if (paged()) {
+      stepsLabel = el('strong', { tabindex: '-1' });
+      barEl = el('span');
+      stepsEl = el('div', { cls: 'steps', 'aria-live': 'polite' }, [
+        el('div', { cls: 'steps-top' }, [stepsLabel]),
+        el('div', { cls: 'bar', role: 'presentation' }, [barEl])
+      ]);
+      form.appendChild(stepsEl);
+    }
+    pages.forEach(function (p, pidx) {
+      var box = el('div', { cls: 'items page' });
+      // Al diseñar, el salto de página se ve siempre (con o sin título) para poder elegirlo.
+      if (paged() && (p.title || (BOOT.preview && p.breakId))) {
+        var t = p.title ? el('h2', { cls: 'page-title', text: p.title }) : el('span', { cls: 'pv-tag', text: 'Página ' + (pidx + 1) + ' · sin título' });
+        if (BOOT.preview && p.breakId) {
+          t.classList.add('preview-item');
+          if (p.breakId === selectedId) t.classList.add('selected');
+          t.addEventListener('click', function (e) { e.preventDefault(); parent.postMessage({ type: 'imb-form-select', id: p.breakId }, location.origin); }, true);
         }
-        if (i.help) kids.push(el('div', { cls: 'help', text: i.help }));
-        kids.push(c);
-        var err = el('div', { cls: 'err', role: 'alert', hidden: true });
-        kids.push(err);
-        errEls[i.id] = err;
-        node = el('div', { cls: 'item' }, kids);
-        if (BOOT.preview && i.hidden) node.style.opacity = '.55';
-        if (BOOT.preview && i.hidden) node.insertBefore(el('span', { cls: 'pv-tag', text: 'Oculta · se completa desde la dirección' }), node.firstChild);
+        box.appendChild(t);
       }
-      if (BOOT.preview) {
-        node.classList.add('preview-item');
-        if (i.show_if) node.insertBefore(el('span', { cls: 'pv-tag', text: 'Condicional · sólo aparece si se cumple su condición' }), node.firstChild);
-        if (i.id === selectedId) node.classList.add('selected');
-        node.addEventListener('click', function (e) {
-          e.preventDefault();
-          parent.postMessage({ type: 'imb-form-select', id: i.id }, location.origin);
-        }, true);
-      }
-      itemEls[i.id] = node;
-      items.appendChild(node);
+      p.items.forEach(function (i) { box.appendChild(itemNode(i, controls)); });
+      if (BOOT.preview && !p.items.length && !meta.items.length) box.appendChild(el('div', { cls: 'pv-empty', text: 'Agrega preguntas desde el panel de la izquierda.' }));
+      pageEls.push(box);
+      form.appendChild(box);
     });
-    if (BOOT.preview && !meta.items.length) items.appendChild(el('div', { cls: 'pv-empty', text: 'Agrega preguntas desde el panel de la izquierda.' }));
-    form.appendChild(items);
 
     var hp = el('div', { cls: 'hp', 'aria-hidden': 'true' }, [el('label', { text: 'No completar' }), el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off' })]);
     form.appendChild(hp);
-    var alertBox = el('div', { cls: 'alert', role: 'alert', hidden: true });
+    if (meta.captcha) {
+      if (BOOT.preview) form.appendChild(el('div', { cls: 'captcha-ph', text: 'Aquí aparece la verificación anti-robots (' + (meta.captcha.provider === 'turnstile' ? 'Cloudflare Turnstile' : meta.captcha.provider === 'hcaptcha' ? 'hCaptcha' : 'Google reCAPTCHA') + ').' }));
+      else { captchaBox = el('div', { cls: 'captcha', 'data-provider': meta.captcha.provider }); form.appendChild(captchaBox); }
+    }
+    alertBox = el('div', { cls: 'alert', role: 'alert', hidden: true });
     form.appendChild(alertBox);
-    var btn = el('button', { type: 'submit', cls: 'btn', text: meta.submit_label || 'Enviar' });
-    form.appendChild(el('div', { cls: 'foot' }, [btn]));
+    submitBtn = el('button', { type: 'submit', cls: 'btn', text: meta.submit_label || 'Enviar' });
+    if (paged()) {
+      prevBtn = el('button', { type: 'button', cls: 'btn ghost', text: 'Anterior' });
+      nextBtn = el('button', { type: 'button', cls: 'btn', text: 'Siguiente' });
+      prevBtn.addEventListener('click', function () {
+        var vis = visiblePages();
+        var before = vis.filter(function (i) { return i < current; });
+        if (before.length) goToPage(before[before.length - 1]);
+      });
+      nextBtn.addEventListener('click', function () { advance(); });
+      form.appendChild(el('div', { cls: 'foot paged' }, [prevBtn, el('span', { cls: 'grow' }), nextBtn, submitBtn]));
+    } else {
+      form.appendChild(el('div', { cls: 'foot' }, [submitBtn]));
+    }
     root.appendChild(form);
 
     prefill(controls);
     refresh();
+    if (!paged() && meta.captcha) mountCaptcha();
+
+    function advance() {
+      if (!BOOT.preview) {
+        alertBox.hidden = true;
+        if (validate(pages[current].items)) { focusFirstError(); return; }
+      }
+      var vis = visiblePages();
+      var after = vis.filter(function (i) { return i > current; });
+      if (after.length) goToPage(after[0]);
+    }
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      // Enter en una página que no es la última = «Siguiente».
+      if (paged() && !isLastPage()) { advance(); return; }
       if (BOOT.preview) return;
       clearErrs(); alertBox.hidden = true;
-      var missing = false;
-      meta.items.forEach(function (i) {
-        if (i.type !== 'field' || i.hidden || !visible(i, 0)) return;
-        if (i.required && empty(values[i.key])) { setErr(i.id, 'Esta pregunta es obligatoria.'); missing = true; }
-        else if (i.field_type === 'email' && !empty(values[i.key]) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values[i.key])) { setErr(i.id, 'Revisa el correo.'); missing = true; }
-        else if ((i.field_type === 'number' || i.field_type === 'currency' || i.field_type === 'percent') && typeof values[i.key] === 'number' && isNaN(values[i.key])) { setErr(i.id, 'Escribe un número.'); missing = true; }
-        else if (i.field_type === 'file' && (uploads[i.key] || []).some(function (u) { return u.pending; })) { setErr(i.id, 'Espera a que termine de subir.'); missing = true; }
-      });
-      if (missing) { focusFirstError(); return; }
+      if (validate(meta.items)) {
+        var firstBad = meta.items.filter(function (i) { return itemEls[i.id] && itemEls[i.id].classList.contains('invalid'); })[0];
+        if (firstBad && paged()) goToPage(pageOfItem(firstBad.id), false);
+        focusFirstError(); return;
+      }
+      if (meta.captcha && !captchaToken) {
+        alertBox.textContent = 'Completa la verificación para enviar.';
+        alertBox.hidden = false;
+        return;
+      }
       var outValues = {}, outUploads = {};
       meta.items.forEach(function (i) {
         if (i.type !== 'field') return;
         if (i.field_type === 'file') { outUploads[i.key] = (uploads[i.key] || []).filter(function (u) { return u.token; }).map(function (u) { return u.token; }); return; }
         if (values[i.key] !== undefined) outValues[i.key] = values[i.key];
       });
-      btn.disabled = true; btn.textContent = 'Enviando…';
+      submitBtn.disabled = true; submitBtn.textContent = 'Enviando…';
+      if (prevBtn) prevBtn.disabled = true;
+      var body = { values: outValues, uploads: outUploads, stamp: meta.stamp, hp: hp.querySelector('input').value };
+      if (meta.captcha) body.captcha = captchaToken;
       fetch(API + '/submit', {
         method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: outValues, uploads: outUploads, stamp: meta.stamp, hp: hp.querySelector('input').value })
+        body: JSON.stringify(body)
       })
         .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }, function () { return { ok: r.ok, b: {} }; }); })
         .then(function (res) {
           if (res.ok) {
+            if (res.b.pending_confirmation) { checkEmail(res.b.email_hint); return; }
             if (res.b.redirect_url) { goTo(res.b.redirect_url); return; }
             done(); return;
           }
+          // El token del captcha ya se usó (el servidor lo verifica una vez).
+          if (meta.captcha) resetCaptcha();
           var errs = res.b && res.b.data && res.b.data.errors;
-          if (errs) { Object.keys(errs).forEach(function (id) { setErr(id, errs[id]); }); focusFirstError(); }
+          if (errs) {
+            var ids = Object.keys(errs);
+            ids.forEach(function (id) { setErr(id, errs[id]); });
+            if (paged() && ids.length) goToPage(pageOfItem(ids[0]), false);
+            focusFirstError();
+          }
           alertBox.textContent = (res.b && res.b.message) || 'No se pudo enviar. Prueba de nuevo.';
           alertBox.hidden = false;
-          btn.disabled = false; btn.textContent = meta.submit_label || 'Enviar';
+          submitBtn.disabled = false; submitBtn.textContent = meta.submit_label || 'Enviar';
+          if (prevBtn) prevBtn.disabled = false;
         })
         .catch(function () {
+          if (meta.captcha) resetCaptcha();
           alertBox.textContent = 'No hay conexión. Revisa tu internet y prueba de nuevo.';
           alertBox.hidden = false;
-          btn.disabled = false; btn.textContent = meta.submit_label || 'Enviar';
+          submitBtn.disabled = false; submitBtn.textContent = meta.submit_label || 'Enviar';
+          if (prevBtn) prevBtn.disabled = false;
         });
     });
   }
@@ -617,6 +849,17 @@ const CLIENT_JS = String.raw`
     root.appendChild(box);
     try { parent.postMessage({ type: 'imb-form-submitted' }, '*'); } catch (e) {}
   }
+  // Doble opt-in: la respuesta quedó pendiente hasta que abra el enlace.
+  function checkEmail(hint) {
+    root.textContent = '';
+    root.appendChild(el('div', { cls: 'done', 'data-testid': 'form-check-email' }, [
+      el('div', { cls: 'tick', text: '\u2709', 'aria-hidden': 'true' }),
+      el('h2', { text: 'Revisa tu correo' }),
+      el('p', { text: 'Te enviamos un enlace' + (hint ? ' a ' + hint : '') + ' para confirmar tu respuesta. Hasta que lo abras, no queda registrada.' }),
+      el('p', { cls: 'small', text: '¿No te llegó? Revisa la carpeta de spam. El enlace vence en 48 horas.' })
+    ]));
+    try { parent.postMessage({ type: 'imb-form-submitted' }, '*'); } catch (e) {}
+  }
 
   if (BOOT.preview) {
     window.addEventListener('message', function (e) {
@@ -624,12 +867,14 @@ const CLIENT_JS = String.raw`
       var keep = window.scrollY;
       meta = e.data.meta; selectedId = e.data.selected || null;
       values = {}; uploads = {};
-      render();
+      render(true);
+      // Elegir una pregunta en el constructor lleva a su página.
+      if (selectedId && paged()) { var p = pageOfItem(selectedId); if (p !== current) { current = p; paintPages(); } }
       window.scrollTo(0, keep);
     });
     parent.postMessage({ type: 'imb-form-ready' }, location.origin);
   }
-  render();
+  render(false);
 })();
 `;
 
@@ -665,3 +910,66 @@ export const FORM_EMBED_JS = String.raw`(function () {
   });
 })();
 `;
+
+// ─────────────────── Confirmación del correo (v0.1.289) ───────────────────
+
+/** Tinta legible sobre el color de la marca (luminancia WCAG). */
+function inkOn(hex: string): string {
+    const channel = (i: number): number => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const l = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+    return l > 0.45 ? '#1d2330' : '#ffffff';
+}
+
+export interface FormNoticeBrand {
+    company: string;
+    accent: string;
+    logoUrl: string | null;
+}
+
+/**
+ * Página del enlace de confirmación (doble opt-in) y de su resultado, con la
+ * MARCA de la empresa. `confirmAction` = la página de llegada: un formulario
+ * que se envía solo (POST). Los escáneres de correo abren los enlaces con GET
+ * para revisarlos; si el GET confirmara, la respuesta quedaría confirmada sin
+ * que la persona hiciera nada. Sin JavaScript, el botón hace lo mismo.
+ */
+export function renderFormNoticePage(opts: {
+    nonce: string;
+    brand: FormNoticeBrand;
+    title: string;
+    message: string;
+    tone: 'ok' | 'info' | 'error';
+    /** Acción POST que confirma (sólo en la página de llegada). */
+    confirmAction?: string;
+    /** Botón «Continuar» (la redirección del formulario, https). */
+    continueUrl?: string | null;
+}): string {
+    const e = escapeHtml;
+    const accent = /^#[0-9a-fA-F]{6}$/.test(opts.brand.accent) ? opts.brand.accent : '#0e7490';
+    const icon = opts.tone === 'ok' ? '\u2713' : opts.tone === 'error' ? '!' : '\u2709';
+    const logo = opts.brand.logoUrl ? `<div class="brand"><img src="${e(opts.brand.logoUrl)}" alt="${e(opts.brand.company)}"></div>` : opts.brand.company ? `<div class="brand">${e(opts.brand.company)}</div>` : '';
+    const action = opts.confirmAction
+        ? `<form method="post" action="${e(opts.confirmAction)}" id="confirm"><button type="submit" class="btn">Confirmar mi correo</button></form>
+<script nonce="${opts.nonce}">(function(){var f=document.getElementById('confirm');if(f){var b=f.querySelector('button');b.disabled=true;b.textContent='Confirmando…';f.submit();}})();</script>`
+        : opts.continueUrl
+          ? `<a class="btn" href="${e(opts.continueUrl)}">Continuar</a>`
+          : '';
+    return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" />
+<title>${e(opts.title)}</title>
+<style>${BASE_CSS}
+  :root { --accent: ${accent}; --accent-ink: ${inkOn(accent)}; }
+  .done .tick.error { background: var(--danger); color: #fff; }
+</style></head>
+<body><div class="wrap"><div class="card"><div class="band"></div><div class="inner">
+${logo}
+<div class="done" data-testid="form-notice" data-tone="${opts.tone}">
+<div class="tick${opts.tone === 'error' ? ' error' : ''}" aria-hidden="true">${icon}</div>
+<h2>${e(opts.title)}</h2>
+<p>${e(opts.message)}</p>
+${action}
+</div></div></div></div></body></html>`;
+}

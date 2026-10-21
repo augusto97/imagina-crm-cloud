@@ -13,9 +13,12 @@ import {
     Heading2,
     Link2,
     Loader2,
+    MailCheck,
     Monitor,
     Plus,
     Redo2,
+    SeparatorHorizontal,
+    ShieldCheck,
     Smartphone,
     Trash2,
     Type,
@@ -24,9 +27,11 @@ import {
 } from 'lucide-react';
 import {
     buildPublicFormItems,
+    CAPTCHA_PROVIDER_INFO,
     FORM_CONDITION_OPS,
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
+    type CaptchaAvailability,
     type FormFileAccept,
     type FormCondition,
     type FormConditionOp,
@@ -58,15 +63,18 @@ import {
     addFieldItem,
     availableFields,
     conditionCandidates,
+    emailQuestions,
     missingRequired,
     moveItem,
     moveItemTo,
+    pageCount,
+    pageNumbers,
     questionCount,
     removeItem,
     updateItem,
     updateSettings,
 } from './formDesignOps';
-import { formEmbedCode, formPublicUrl, useUpdateForm } from './useForms';
+import { formEmbedCode, formPublicUrl, useCaptchaAvailability, useUpdateForm } from './useForms';
 
 /**
  * v0.1.275 — Constructor de formularios a pantalla completa (ADR-S39).
@@ -129,6 +137,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const confirm = useConfirm();
     const update = useUpdateForm(listId);
     const branding = useBrandingData();
+    const captcha = useCaptchaAvailability(listId);
     const narrow = useMediaQuery('(max-width: 1023px)');
 
     const [draft, setDraft] = useState<Draft>({ name: form.name, config: form.config });
@@ -216,8 +225,11 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             closed: null,
             stamp: '',
             max_upload_bytes: 20 * 1024 * 1024,
+            // La vista previa no carga el widget: muestra dónde va.
+            captcha: s.captcha && captcha.data?.provider ? { provider: captcha.data.provider, site_key: '' } : null,
+            confirm_email: s.confirm_email,
         };
-    }, [config, draft.name, fields, branding.data]);
+    }, [config, draft.name, fields, branding.data, captcha.data?.provider]);
 
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {
@@ -284,7 +296,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         change(next);
         setSelected(id);
     };
-    const addContent = (type: 'heading' | 'text'): void => {
+    const addContent = (type: 'heading' | 'text' | 'page_break'): void => {
         const { config: next, id } = addContentItem(config, type, selected);
         change(next);
         setSelected(id);
@@ -317,7 +329,15 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             onClose={() => setSelected(null)}
         />
     ) : (
-        <SettingsInspector draft={draft} setName={(name) => setDraft((d) => ({ ...d, name }))} config={config} onChange={change} missing={missing} />
+        <SettingsInspector
+            draft={draft}
+            setName={(name) => setDraft((d) => ({ ...d, name }))}
+            config={config}
+            onChange={change}
+            missing={missing}
+            fields={fields}
+            captcha={captcha.data ?? null}
+        />
     );
     const preview = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
@@ -547,13 +567,14 @@ interface LeftPanelProps {
     selected: string | null;
     onSelect: (id: string) => void;
     onAddField: (fieldId: number) => void;
-    onAddContent: (type: 'heading' | 'text') => void;
+    onAddContent: (type: 'heading' | 'text' | 'page_break') => void;
     onChange: (next: FormConfig) => void;
 }
 
 function itemTitle(item: FormItem, fieldsById: Map<number, FieldEntity>): string {
     if (item.type === 'heading') return item.text || __('Título de sección');
     if (item.type === 'text') return item.text.split('\n')[0] || __('Texto');
+    if (item.type === 'page_break') return item.title || __('Salto de página');
     return item.label.trim() || fieldsById.get(item.field_id)?.label || __('Campo borrado');
 }
 
@@ -561,6 +582,8 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
     const available = availableFields(p.fields, p.config);
     const [dragId, setDragId] = useState<string | null>(null);
     const [dropAt, setDropAt] = useState<number | null>(null);
+    const pageOf = pageNumbers(p.config);
+    const multiPage = pageCount(p.config) > 1;
     return (
         <div className="imcrm-flex imcrm-flex-col">
             <div role="tablist" className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-2 imcrm-pt-2">
@@ -629,6 +652,18 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                             <Type className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
                             {__('Texto o aclaración')}
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => p.onAddContent('page_break')}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm hover:imcrm-bg-accent"
+                            data-testid="form-add-page-break"
+                        >
+                            <SeparatorHorizontal className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
+                            {__('Salto de página')}
+                        </button>
+                        <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            {__('Con saltos de página el formulario se responde por pasos, con una barra de progreso.')}
+                        </p>
                     </div>
                 </div>
             ) : (
@@ -638,9 +673,21 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                             {__('Todavía no hay preguntas. Agrégalas desde la pestaña «Agregar».')}
                         </li>
                     )}
+                    {multiPage && p.config.items[0]?.type !== 'page_break' && (
+                        <li className="imcrm-px-1.5 imcrm-pb-0.5 imcrm-pt-1 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                            {__('Página')} 1
+                        </li>
+                    )}
                     {p.config.items.map((item, idx) => {
                         const Icon =
-                            item.type === 'heading' ? Heading2 : item.type === 'text' ? Type : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
+                            item.type === 'heading'
+                                ? Heading2
+                                : item.type === 'text'
+                                  ? Type
+                                  : item.type === 'page_break'
+                                    ? SeparatorHorizontal
+                                    : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
+                        const isBreak = item.type === 'page_break';
                         return (
                             <li
                                 key={item.id}
@@ -670,6 +717,7 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                                 }}
                                 className={cn(
                                     'imcrm-group imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-transparent imcrm-px-1.5 imcrm-py-1.5 imcrm-text-sm',
+                                    isBreak && 'imcrm-mt-2 imcrm-border-dashed imcrm-border-t-border imcrm-bg-muted/40',
                                     p.selected === item.id ? 'imcrm-border-primary/40 imcrm-bg-primary/5' : 'hover:imcrm-bg-accent',
                                     dropAt === idx && 'imcrm-border-t-primary',
                                     dropAt === idx + 1 && idx === p.config.items.length - 1 && 'imcrm-border-b-primary',
@@ -679,7 +727,14 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                                 <GripVertical className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-cursor-grab imcrm-text-muted-foreground" />
                                 <button type="button" className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1.5 imcrm-text-left" onClick={() => p.onSelect(item.id)}>
                                     <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                                    <span className={cn('imcrm-truncate', item.type === 'heading' && 'imcrm-font-medium')}>{itemTitle(item, p.fieldsById)}</span>
+                                    {isBreak && (
+                                        <span className="imcrm-shrink-0 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                            {__('Página')} {pageOf.get(item.id) ?? 1}
+                                        </span>
+                                    )}
+                                    <span className={cn('imcrm-truncate', item.type === 'heading' && 'imcrm-font-medium', isBreak && 'imcrm-text-muted-foreground')}>
+                                        {isBreak ? (item.title ? `· ${item.title}` : '') : itemTitle(item, p.fieldsById)}
+                                    </span>
                                     {item.type === 'field' && item.hidden && <EyeOff className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground" aria-label={__('Oculto')} />}
                                     {item.show_if && <span className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-text-[10px] imcrm-text-muted-foreground">{__('si…')}</span>}
                                 </button>
@@ -717,7 +772,14 @@ function ItemInspector({
 }): JSX.Element {
     const set = (patch: Partial<FormItem>): void => onChange(updateItem(config, item.id, patch));
     const field = item.type === 'field' ? fieldsById.get(item.field_id) : undefined;
-    const title = item.type === 'heading' ? __('Título de sección') : item.type === 'text' ? __('Texto') : (field?.label ?? __('Pregunta'));
+    const title =
+        item.type === 'heading'
+            ? __('Título de sección')
+            : item.type === 'text'
+              ? __('Texto')
+              : item.type === 'page_break'
+                ? __('Salto de página')
+                : (field?.label ?? __('Pregunta'));
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-item-inspector">
@@ -753,6 +815,16 @@ function ItemInspector({
                 <Field label={__('Texto')} hint={__('Una línea en blanco separa párrafos.')}>
                     <Textarea rows={5} value={item.text} onChange={(e) => set({ text: e.target.value })} />
                 </Field>
+            )}
+            {item.type === 'page_break' && (
+                <>
+                    <Field label={__('Título de la página que empieza aquí')} hint={__('Opcional. Ej.: «Datos de la empresa».')}>
+                        <Input value={item.title} onChange={(e) => set({ title: e.target.value })} data-testid="form-page-title" />
+                    </Field>
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Quien responde ve un paso por vez con «Anterior» y «Siguiente», y no puede avanzar sin completar las obligatorias de la página. Una página cuyas preguntas están todas escondidas por sus condiciones se salta sola.')}
+                    </p>
+                </>
             )}
             {item.type === 'field' && field && (
                 <>
@@ -799,12 +871,18 @@ function ItemInspector({
                         />
                     )}
                     <Section title={__('Respuesta')}>
-                        {field.is_required ? (
+                        {config.settings.confirm_email && config.settings.respondent_email_field_id === field.id ? (
+                            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                {__('Obligatoria y siempre visible: es el correo al que se manda la confirmación de cada respuesta.')}
+                            </p>
+                        ) : field.is_required ? (
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Obligatoria: la lista exige este campo.')}</p>
                         ) : (
                             <Check label={__('Obligatoria')} checked={item.required} onChange={(v) => set({ required: v })} />
                         )}
-                        <Check label={__('Oculta: se completa desde la dirección')} checked={item.hidden} onChange={(v) => set({ hidden: v })} />
+                        {!(config.settings.confirm_email && config.settings.respondent_email_field_id === field.id) && (
+                            <Check label={__('Oculta: se completa desde la dirección')} checked={item.hidden} onChange={(v) => set({ hidden: v })} />
+                        )}
                         {item.hidden && (
                             <p className="imcrm-break-all imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-1.5 imcrm-font-mono imcrm-text-[11px]">
                                 …/f/xxxx?{field.slug}=valor
@@ -814,7 +892,10 @@ function ItemInspector({
                 </>
             )}
 
-            <ConditionEditor item={item} config={config} fieldsById={fieldsById} onSet={(show_if) => set({ show_if })} />
+            {item.type !== 'page_break' &&
+                !(item.type === 'field' && config.settings.confirm_email && config.settings.respondent_email_field_id === item.field_id) && (
+                <ConditionEditor item={item} config={config} fieldsById={fieldsById} onSet={(show_if) => set({ show_if })} />
+            )}
         </div>
     );
 }
@@ -913,15 +994,30 @@ function SettingsInspector({
     config,
     onChange,
     missing,
+    fields,
+    captcha,
 }: {
     draft: Draft;
     setName: (name: string) => void;
     config: FormConfig;
     onChange: (next: FormConfig) => void;
     missing: FieldEntity[];
+    fields: FieldEntity[];
+    captcha: CaptchaAvailability | null;
 }): JSX.Element {
     const s = config.settings;
     const set = (patch: Partial<FormConfig['settings']>): void => onChange(updateSettings(config, patch));
+    const emails = emailQuestions(fields, config);
+    const emailId = s.respondent_email_field_id !== null && emails.some((f) => f.id === s.respondent_email_field_id) ? s.respondent_email_field_id : null;
+    /** Confirmar el correo: la pregunta queda obligatoria, visible y sin condición. */
+    const setConfirm = (on: boolean): void => {
+        let next = updateSettings(config, { confirm_email: on });
+        if (on && emailId !== null) {
+            const it = next.items.find((i) => i.type === 'field' && i.field_id === emailId);
+            if (it) next = updateItem(next, it.id, { required: true, hidden: false, show_if: null });
+        }
+        onChange(next);
+    };
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-settings">
             {missing.length > 0 && (
@@ -982,6 +1078,79 @@ function SettingsInspector({
                 <Field label={__('Mensaje cuando está cerrado')}>
                     <Textarea rows={2} value={s.closed_message} onChange={(e) => set({ closed_message: e.target.value })} />
                 </Field>
+            </Section>
+
+            <Section title={__('Correo de quien responde')}>
+                <Field
+                    label={__('Pregunta con el correo')}
+                    hint={emails.length === 0 ? __('Agrega una pregunta de tipo email para usar estas opciones.') : undefined}
+                >
+                    <Select
+                        value={emailId === null ? '' : String(emailId)}
+                        disabled={emails.length === 0}
+                        onChange={(e) => {
+                            const v = e.target.value === '' ? null : Number(e.target.value);
+                            set(v === null ? { respondent_email_field_id: null, confirm_email: false, send_copy: false } : { respondent_email_field_id: v });
+                        }}
+                        data-testid="form-respondent-email"
+                    >
+                        <option value="">{__('Ninguna')}</option>
+                        {emails.map((f) => (
+                            <option key={f.id} value={f.id}>
+                                {f.label}
+                            </option>
+                        ))}
+                    </Select>
+                </Field>
+                <Check
+                    label={__('Confirmar el correo con un clic')}
+                    checked={s.confirm_email && emailId !== null}
+                    disabled={emailId === null}
+                    onChange={setConfirm}
+                    testId="form-confirm-email"
+                />
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    <MailCheck className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
+                    {__('La respuesta queda pendiente y le llega a la persona un correo con tu marca para confirmarla. Recién al confirmar se crea el registro, corren las automatizaciones y cuenta para el cupo. Si no confirma en 48 horas, se descarta sola.')}
+                </p>
+                <Check
+                    label={__('Enviarle una copia de sus respuestas')}
+                    checked={s.send_copy && emailId !== null}
+                    disabled={emailId === null}
+                    onChange={(v) => set({ send_copy: v })}
+                    testId="form-send-copy"
+                />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Los correos salen por el correo de tu empresa y cuentan en su cuota mensual.')}
+                </p>
+            </Section>
+
+            <Section title={__('Verificación anti-robots')}>
+                {captcha?.provider ? (
+                    <>
+                        <Check label={__('Pedir verificación anti-robots')} checked={s.captcha} onChange={(v) => set({ captcha: v })} testId="form-captcha" />
+                        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            <ShieldCheck className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
+                            {__('Se usa')} {CAPTCHA_PROVIDER_INFO[captcha.provider].label}{' '}
+                            {captcha.source === 'tenant' ? __('con las llaves de tu empresa.') : __('con las llaves de la plataforma.')}{' '}
+                            {__('Aparece al final del formulario, antes del botón de enviar.')}
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <Check label={__('Pedir verificación anti-robots')} checked={false} disabled onChange={() => undefined} testId="form-captcha" />
+                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-captcha-unavailable">
+                            {__('No hay llaves de captcha configuradas.')}{' '}
+                            {captcha?.can_configure ? (
+                                <a href="/#/settings?s=portal" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline">
+                                    {__('Cárgalas en Ajustes → Portal y formularios')}
+                                </a>
+                            ) : (
+                                __('Pídele al administrador que las cargue en Ajustes → Portal y formularios.')
+                            )}
+                        </p>
+                    </>
+                )}
             </Section>
 
             <Section title={__('Apariencia')}>

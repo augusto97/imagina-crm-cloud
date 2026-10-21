@@ -11,6 +11,7 @@ import {
     createDashboardSchema,
     createViewSchema,
     describeWait,
+    splitFormPages,
     crmTemplateIdSchema,
     fieldSlugSchema,
     filterOperatorSchema,
@@ -61,7 +62,7 @@ import {
     type UpdateListPermissionsInput,
     type UpdatePublicListInput,
 } from '@imagina-base/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { DocumentsService } from '../../documents/documents.service';
@@ -70,7 +71,7 @@ import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
 import { AutomationsService } from '../../automations/automations.service';
 import { DashboardsService } from '../../dashboards/dashboards.service';
-import { fields as fieldsTable, listGroups, records, tenants } from '../../db/schema';
+import { connections, fields as fieldsTable, listGroups, records, tenants } from '../../db/schema';
 import { FieldsService } from '../../fields/fields.service';
 import { ListsService } from '../../lists/lists.service';
 import { TenantDb } from '../../tenancy/tenant-db.service';
@@ -570,7 +571,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_configure_portal',
             label: 'Armando el portal del cliente',
             description:
-                'Propone configurar el PORTAL DEL CLIENTE de una lista: habilitarlo, qué otras listas vinculadas ve el cliente al pie (sus facturas, sus tickets…) y el DISEÑO de su página. Lo más potente es `design` — el mismo modelo de la ficha: pestañas → secciones con columnas → bloques (sus datos con la forma que mejor los muestra, propiedades que él puede corregir con `editable: true`, gráficos y tablas/tableros de SUS registros vinculados con `from` = slug de la lista, avisos, botones, comentarios, actividad) más `page` (fondo, ancho, tipografía). Todo lo vinculado se acota solo a lo del cliente. `blocks` (vocabulario anterior: portada, formulario editable, preguntas frecuentes…) también se acepta y se convierte. Lee antes get_list_schema: ahí están los campos y las listas vinculadas.',
+                'Propone configurar el PORTAL DEL CLIENTE de una lista: habilitarlo, qué otras listas vinculadas ve el cliente al pie (sus facturas, sus tickets…) y el DISEÑO de su página. Lo más potente es `design` — el mismo modelo de la ficha: pestañas → secciones con columnas → bloques (sus datos con la forma que mejor los muestra, propiedades que él puede corregir con `editable: true`, gráficos y tablas/tableros de SUS registros vinculados con `from` = slug de la lista, avisos, botones, comentarios, actividad, y `payments`: sus links de pago y, con `pay_button`, un botón para que pague el monto de un campo del registro — necesita una conexión de cobro del equipo, Mercado Pago o Wompi) más `page` (fondo, ancho, tipografía). Todo lo vinculado se acota solo a lo del cliente. `blocks` (vocabulario anterior: portada, formulario editable, preguntas frecuentes…) también se acepta y se convierte. Lee antes get_list_schema: ahí están los campos y las listas vinculadas.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63).describe('Slug de la lista cuyos registros son los clientes'),
@@ -910,7 +911,23 @@ export class StructureTools implements AiProposalApplier {
                 // v0.1.266 — plantillas de documentos PDF de la lista (para
                 // generate_pdf y los adjuntos de send_email).
                 document_templates: documentTemplates.map((d) => ({ id: d.id, name: d.name, in_portal: d.portal_visible, next_number: d.next_label })),
-                forms: listForms.map((f) => ({ id: f.id, name: f.name, published: f.enabled, submissions: f.submissions_count })),
+                // v0.1.289 — también cómo está armado: páginas, verificación
+                // anti-robots y confirmación del correo de quien responde.
+                forms: listForms.map((f) => {
+                    const st = f.config.settings;
+                    const emailField = st.respondent_email_field_id ? fieldById.get(st.respondent_email_field_id) : undefined;
+                    return {
+                        id: f.id,
+                        name: f.name,
+                        published: f.enabled,
+                        submissions: f.submissions_count,
+                        pages: splitFormPages(f.config.items).length,
+                        captcha: st.captcha,
+                        respondent_email_field: emailField?.slug ?? null,
+                        confirm_email: st.confirm_email && emailField !== undefined,
+                        send_copy: st.send_copy && emailField !== undefined,
+                    };
+                }),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -1543,7 +1560,7 @@ export class StructureTools implements AiProposalApplier {
             const userLists = related
                 .filter((r) => r.via === 'user')
                 .map((r) => ({ list_id: r.id, slug: r.slug, name: r.name, fields: r.fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type })) }));
-            const built = buildRecordLayoutV3(input.design, { ...dctx, portal: { userLists } });
+            const built = buildRecordLayoutV3(input.design, { ...dctx, portal: { userLists }, collections: await this.teamCollections(ctx) });
             v3 = built.layout;
             warnings.push(...built.warnings);
             blocksPreview = built.preview.map((b) => ({ type: b.type, label: b.label, detail: b.detail }));
@@ -1651,6 +1668,17 @@ export class StructureTools implements AiProposalApplier {
             preview: { changes, blocks },
             payload: { kind: 'configure_record_layout', listId: list.id, listSlug: list.slug, layout: input.layout, templateId, custom, v3 },
         });
+    }
+
+    /** v0.1.289 — conexiones de cobro del EQUIPO (para el botón «Pagar» del portal). */
+    private async teamCollections(ctx: AiToolContext): Promise<Array<{ id: number; name: string; provider: string }>> {
+        const rows = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ id: connections.id, name: connections.name, provider: connections.provider, visibility: connections.visibility })
+                .from(connections)
+                .where(and(eq(connections.tenantId, ctx.tenantId), inArray(connections.provider, ['mercadopago', 'wompi']))),
+        );
+        return rows.filter((r) => r.visibility !== 'private').map((r) => ({ id: r.id, name: r.name, provider: r.provider }));
     }
 
     /** Campos propios, relaciones y campos de las listas del otro lado (para `design`). */

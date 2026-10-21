@@ -1,4 +1,14 @@
 import {
+    captchaKeysInputSchema,
+    captchaKeysStatusSchema,
+    portalAuthSettingsSchema,
+    portalLoginOptionsSchema,
+    portalPayResultSchema,
+    type CaptchaKeysInput,
+    type CaptchaKeysStatus,
+    type PortalAuthSettings,
+    type PortalLoginOptions,
+    type PortalPayResult,
     connectionSchema,
     connectionTestResultSchema,
     connectionUsageSchema,
@@ -732,6 +742,21 @@ export class CloudClient {
             schema: smtpDiagnosticSchema,
         });
     }
+    // --- v0.1.289 — llaves de captcha (empresa y plataforma) ---
+    captchaKeysGet(scope: 'tenant' | 'platform'): Promise<CaptchaKeysStatus> {
+        return this.request('GET', scope === 'tenant' ? '/workspaces/current/captcha' : '/system/captcha', {
+            schema: captchaKeysStatusSchema,
+        });
+    }
+    captchaKeysSet(scope: 'tenant' | 'platform', input: CaptchaKeysInput): Promise<CaptchaKeysStatus> {
+        return this.request('PUT', scope === 'tenant' ? '/workspaces/current/captcha' : '/system/captcha', {
+            body: captchaKeysInputSchema.parse(input),
+            schema: captchaKeysStatusSchema,
+        });
+    }
+    captchaKeysClear(scope: 'tenant' | 'platform'): Promise<void> {
+        return this.request('DELETE', scope === 'tenant' ? '/workspaces/current/captcha' : '/system/captcha', {});
+    }
     /** Envía un correo de prueba al email del propio admin (sin cola). */
     tenantSmtpTest(): Promise<{ ok: boolean; error?: string }> {
         return this.request('POST', '/workspaces/current/smtp/test', {
@@ -1404,9 +1429,43 @@ export class CloudClient {
      * El propio cliente pide un enlace nuevo (v0.1.154). Público: no hace
      * falta sesión. Siempre responde ok — no revela si el email tiene acceso.
      */
-    portalRequestAccess(email: string): Promise<void> {
+    portalRequestAccess(email: string, empresa?: string | null): Promise<void> {
         return this.request('POST', '/portal/request-access', {
-            body: portalRequestAccessSchema.parse({ email }),
+            body: portalRequestAccessSchema.parse({ email, ...(empresa ? { empresa } : {}) }),
+        });
+    }
+    /**
+     * v0.1.289 — la pantalla de entrar: la marca de la empresa (por el dominio
+     * o por `?empresa=`) y si deja entrar con contraseña.
+     */
+    portalLoginOptions(empresa?: string | null): Promise<PortalLoginOptions> {
+        return this.request('GET', '/portal/login-options', {
+            query: empresa ? { empresa } : undefined,
+            schema: portalLoginOptionsSchema,
+        });
+    }
+    /** v0.1.289 — entrar al portal con correo + la contraseña del portal de esa empresa. */
+    portalLogin(input: { email: string; password: string; empresa?: string | null }): Promise<void> {
+        return this.request('POST', '/portal/login', {
+            body: { email: input.email, password: input.password, ...(input.empresa ? { empresa: input.empresa } : {}) },
+        });
+    }
+    /** v0.1.289 — crear o cambiar la contraseña del portal (con la sesión del portal). */
+    portalSetPassword(password: string): Promise<void> {
+        return this.request('PUT', '/portal/me/password', { body: { password } });
+    }
+    /** v0.1.289 — «Pagar» en un bloque «Pagos»: devuelve el checkout del proveedor. */
+    portalPay(blockId: string): Promise<PortalPayResult> {
+        return this.request('POST', `/portal/me/payments/${encodeURIComponent(blockId)}/pay`, { schema: portalPayResultSchema });
+    }
+    /** v0.1.289 — Ajustes → Portal y formularios: entrar con contraseña. */
+    portalAuthGet(): Promise<PortalAuthSettings> {
+        return this.request('GET', '/workspaces/current/portal-auth', { schema: portalAuthSettingsSchema });
+    }
+    portalAuthSet(passwordEnabled: boolean): Promise<PortalAuthSettings> {
+        return this.request('PATCH', '/workspaces/current/portal-auth', {
+            body: { password_enabled: passwordEnabled },
+            schema: portalAuthSettingsSchema,
         });
     }
     /** Boot del portal para el client autenticado (record + campos + template). */
