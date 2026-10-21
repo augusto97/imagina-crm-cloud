@@ -21,7 +21,7 @@ import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import { scheduleParts, scheduleTimeZone, timeZoneLabel, type Connection, type ConnectorParam } from '@imagina-base/shared';
+import { cronError, scheduleParts, scheduleTimeZone, timeZoneLabel, type Connection, type ConnectorParam } from '@imagina-base/shared';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { browserTimeZone, getTenantTimeZone } from '@/lib/tenantFormat';
 import type {
@@ -606,6 +606,8 @@ function ScheduledConfig({
     const set = (patch: Record<string, unknown>): void => onChange({ ...config, ...patch });
     const time = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
     const hasCron = typeof config.cron === 'string' && config.cron.trim() !== '';
+    // La misma validación que el servidor al guardar (shared).
+    const cronProblem = hasCron ? cronError(String(config.cron)) : null;
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
             <Label>{__('Frecuencia')}</Label>
@@ -706,14 +708,21 @@ function ScheduledConfig({
                 </p>
             )}
             <details className="imcrm-text-xs" open={hasCron || undefined}>
-                <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Avanzado: expresión cron')}</summary>
+                <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Avanzado: horario personalizado (cron)')}</summary>
                 <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Input
                         value={typeof config.cron === 'string' ? config.cron : ''}
                         placeholder="0 9 * * 1-5"
                         onChange={(e) => onChange({ ...config, cron: e.target.value })}
                         data-testid="imcrm-schedule-cron"
+                        aria-invalid={cronProblem !== null || undefined}
+                        className={cronProblem ? 'imcrm-border-destructive' : undefined}
                     />
+                    {cronProblem && (
+                        <span className="imcrm-text-destructive" data-testid="imcrm-schedule-cron-error">
+                            {sprintf(__('No es válido: %s. Así la automatización no correría nunca.'), cronProblem)}
+                        </span>
+                    )}
                     <span className="imcrm-text-muted-foreground">{__('Si la completas, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
                 </div>
             </details>

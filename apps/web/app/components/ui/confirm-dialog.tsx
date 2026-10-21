@@ -136,3 +136,11 @@ export function useConfirm(): ConfirmContextValue['confirm'] {
     }
     return ctx.confirm;
 }
+
+/**
+ * Igual que `useConfirm` pero sin exigir el provider: `null` fuera de él
+ * (para hooks reutilizables que caen a `window.confirm`).
+ */
+export function useOptionalConfirm(): ConfirmContextValue['confirm'] | null {
+    return useContext(ConfirmContext)?.confirm ?? null;
+}
