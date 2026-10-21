@@ -80,8 +80,13 @@ export const recordBlockSpec = z.discriminatedUnion('type', [
         title: z.string().max(120).optional(),
         from: listRef.describe('Slug de la lista vinculada'),
         via: sourceSpec.via,
-        view: z.enum(RELATED_VIEWS).optional().describe('table (default) | list | cards | board | timeline | gallery'),
+        view: z
+            .enum(RELATED_VIEWS)
+            .optional()
+            .describe('table (default) | list | cards | board | timeline | gallery | editable (tabla EDITABLE en la ficha: los ítems de una cotización — se editan en línea, «Agregar ítem» nace vinculado, borrar y fila de totales)'),
         columns: z.array(slug).max(12).optional().describe('Campos de la lista vinculada'),
+        editable_columns: z.array(slug).max(12).optional().describe('Para editable: cuáles de las columnas se editan (vacío = todas las que se pueden editar)'),
+        total_columns: z.array(slug).max(12).optional().describe('Para editable: columnas numéricas (cantidad, precio, total) que se suman en la fila de totales'),
         sort: slug.optional(),
         sort_dir: z.enum(['asc', 'desc']).optional(),
         limit: z.number().int().min(1).max(100).optional(),
@@ -351,7 +356,22 @@ export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext):
                 const s = source(b.from, b.via, where);
                 if (b.from === 'all') throw new AiToolError(`${where}: una tabla de vinculados necesita una lista vinculada, no "all".`);
                 const cols = (b.columns ?? []).map((c) => otherField(s.fields, c, `${where} (columns)`)!).filter((x) => x !== undefined);
-                preview.push({ type: 'related', label: b.title ?? s.name, detail: b.view ?? 'table' });
+                if ((b.editable_columns?.length || b.total_columns?.length) && b.view !== 'editable') {
+                    throw new AiToolError(`${where}: editable_columns y total_columns son de la vista "editable".`);
+                }
+                const editableIds = (b.editable_columns ?? []).map((c) => otherField(s.fields, c, `${where} (editable_columns)`)!).filter((x) => x !== undefined);
+                const totalIds = (b.total_columns ?? [])
+                    .map((c) =>
+                        otherField(
+                            s.fields,
+                            c,
+                            `${where} (total_columns)`,
+                            (f) => ['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup'].includes(f.type),
+                            'un campo numérico',
+                        )!,
+                    )
+                    .filter((x) => x !== undefined);
+                preview.push({ type: 'related', label: b.title ?? s.name, detail: b.view === 'editable' ? 'tabla editable' : b.view ?? 'table' });
                 return {
                     id: id('rl'),
                     type: 'related',
@@ -366,6 +386,9 @@ export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext):
                         group_field_id: otherField(s.fields, b.group_field, `${where} (group_field)`, (f) => f.type === 'select', 'un select'),
                         date_field_id: otherField(s.fields, b.date_field, `${where} (date_field)`, (f) => f.type === 'date' || f.type === 'datetime', 'una fecha'),
                         image_field_id: otherField(s.fields, b.image_field, `${where} (image_field)`, (f) => f.type === 'url' || f.type === 'file', 'un url o archivo'),
+                        // v0.1.290 — tabla editable: qué se edita y qué se suma.
+                        editable_field_ids: editableIds.length ? editableIds : undefined,
+                        total_field_ids: totalIds.length ? totalIds : undefined,
                     }),
                 };
             }

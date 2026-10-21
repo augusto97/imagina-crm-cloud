@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
     CreateDocumentTemplateInput,
     DocumentPreviewInput,
@@ -7,7 +7,11 @@ import type {
     DocumentLinkResult,
     DocumentTemplateSummary,
     GenerateDocumentResult,
+    IssuedDocument,
+    IssuedDocumentPdf,
+    ReissueDocumentResult,
     UpdateDocumentTemplateInput,
+    ViewDocumentResult,
 } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
@@ -20,6 +24,16 @@ export const documentKeys = {
     all: ['documents'] as const,
     forList: (listId: number) => ['documents', listId] as const,
     detail: (listId: number, id: number) => ['documents', listId, 'detail', id] as const,
+};
+
+/**
+ * v0.1.290 — Documentos emitidos (numerados) de un registro. El índice 1 es
+ * el id de la lista (como el resto de las familias); se siembra con el
+ * bundle de la ficha (`issued_documents`).
+ */
+export const issuedDocumentKeys = {
+    all: ['issued-documents'] as const,
+    forRecord: (listId: number, recordId: number) => ['issued-documents', listId, recordId] as const,
 };
 
 export function useDocumentTemplates(listId: number | undefined) {
@@ -94,4 +108,39 @@ export function downloadPdf(base64: string, filename: string): void {
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// ── v0.1.290 — Ver, documentos emitidos y «Anular y emitir de nuevo» ─────
+
+export function useIssuedDocuments(listId: number | undefined, recordId: number | undefined) {
+    return useQuery({
+        queryKey: issuedDocumentKeys.forRecord(listId ?? 0, recordId ?? 0),
+        queryFn: async () =>
+            (await api.get<IssuedDocument[]>(`/lists/${listId}/documents/issued`, { query: { record_id: recordId } })).data,
+        enabled: listId !== undefined && listId > 0 && recordId !== undefined && recordId > 0,
+        staleTime: 30_000,
+    });
+}
+
+/** «Ver»: el PDF sin emitir número (o el congelado, si ya se emitió). */
+export async function viewDocument(listId: number, templateId: number, recordId: number): Promise<ViewDocumentResult> {
+    return (await api.post<ViewDocumentResult>(`/lists/${listId}/documents/${templateId}/view`, { record_id: recordId })).data;
+}
+
+/** El PDF de un documento emitido (el congelado, si lo tiene). */
+export async function fetchIssuedPdf(listId: number, numberId: number): Promise<IssuedDocumentPdf> {
+    return (await api.get<IssuedDocumentPdf>(`/lists/${listId}/documents/issued/${numberId}/pdf`)).data;
+}
+
+export async function reissueDocument(listId: number, numberId: number, reason?: string): Promise<ReissueDocumentResult> {
+    return (await api.post<ReissueDocumentResult>(`/lists/${listId}/documents/issued/${numberId}/reissue`, reason ? { reason } : {})).data;
+}
+
+/**
+ * Generar, anular o reemitir cambia los números, el estado de congelado y a
+ * veces el registro (el número guardado en un campo): se refresca todo eso.
+ */
+export function invalidateIssued(qc: QueryClient, listId: number, recordId: number): void {
+    void qc.invalidateQueries({ queryKey: issuedDocumentKeys.forRecord(listId, recordId) });
+    void qc.invalidateQueries({ queryKey: documentKeys.forList(listId) });
 }

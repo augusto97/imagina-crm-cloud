@@ -2,6 +2,8 @@ import {
     DESIGN_FONTS,
     docAllBlocks,
     docDesignSchema,
+    docItemExprRefs,
+    docItemExprSchema,
     emailDesignSchema,
     markdownToRichDoc,
     richDocToMarkdown,
@@ -63,12 +65,14 @@ export const EMAIL_DESIGN_GUIDE =
 export const DOC_DESIGN_DOC =
     'Diseño por BLOQUES del PDF (el mismo del editor visual). {theme?, footer?, numbering?, blocks}. ' +
     'theme: {page_size letter|a4|legal, orientation portrait|landscape, margin narrow|normal|wide, font_size 8-13 (pt), text, muted, accent (títulos, encabezado de la tabla, total; si falta, el color de la marca), border, font, heading_font, line_height}. ' +
-    'footer: {text (con variables), page_numbers}. numbering: {enabled, prefix "CC-", padding 4, start 1, save_field (slug de un campo de texto donde guardarlo)} → {{documento.numero}}. ' +
+    'footer: {text (con variables), page_numbers}. numbering: {enabled, prefix "CC-", padding 4, start 1, save_field (slug de un campo de texto donde guardarlo), freeze (true = CONGELAR el documento al emitirlo: la primera vez que sale con su número se guarda el PDF y desde ahí se entrega siempre ése aunque cambie el registro; sólo con enabled; para facturas y documentos que no deben cambiar)} → {{documento.numero}}. ' +
     'Bloques (type): header {layout split|centered|band, logo {kind none|brand|url, url}, logo_width 30-240, company (renglones de quien emite; el primero en negrita), title "CUENTA DE COBRO", number "N.º {{documento.numero}}", date "Bogotá, {{date.today|larga}}"} | ' +
     'heading {text, level, align, color} | text {text (formato sencillo, igual que en correos), align left|center|right|justify, size sm|md|lg, color} | ' +
     'fields {title, slugs, layout table|stacked, columns 1|2, label_color, value_color, label_width, lines} | ' +
-    'items {title, from (slug de la lista VINCULADA cuyos registros son las filas), via (slug del campo relación, sólo si hay dos relaciones con esa lista), columns [{slug (de la lista vinculada), label, align, width auto|fill}], numbered, sort {slug, dir}, limit, striped, empty_text} | ' +
-    'totals {rows [{id, label, source: {kind items_sum, block_id (id del bloque items), slug} | {kind field, slug} | {kind percent, of (id de otra fila), pct} | {kind sum, rows [ids], minus [ids]} | {kind text, value}, emphasis}], width half|full, prefix "$ ", decimals} → cada fila también queda como {{totales.<id>}} | ' +
+    'items {title, from (slug de la lista VINCULADA cuyos registros son las filas), via (slug del campo relación, sólo si hay dos relaciones con esa lista), columns [{slug (de la lista vinculada), label, align, width auto|fill} | columna CALCULADA {kind "computed", slug (clave propia que no sea un campo, p. ej. "calc_total"), label, align right, expr, format currency|number|percent, decimals (se redondea a esto: 0 en pesos), prefix "$ ", hidden (se calcula y suma pero no se dibuja)}], numbered, sort {slug, dir}, limit, striped, empty_text}. ' +
+    'expr (fórmula SIN código, sobre la MISMA fila): {op col, slug (campo de la lista vinculada o columna calculada ANTERIOR)} | {op const, value} | {op add|sub|mul|div, args [2-6 expr]} | {op pct, of expr, pct expr} (of × pct / 100) | {op minus_pct, of expr, pct expr} (of × (1 − pct/100): aplicar un descuento %). Ej. total de la línea con descuento: {op minus_pct, of {op mul, args [{op col, slug cantidad}, {op col, slug precio}]}, pct {op col, slug descuento}}. Vacíos: en sumas cuentan 0, en productos dejan la celda vacía, un % vacío es 0. | ' +
+    'totals {rows [{id, label (admite variables), source: {kind items_sum, block_id (id del bloque items), slug (campo o columna calculada)} | {kind field, slug} | {kind percent, of (id de otra fila), pct, pct_field (slug de un campo numérico del registro con el %; vacío = pct), negate (true = se resta: un descuento)} | {kind sum, rows [ids], minus [ids]} | {kind text, value}, emphasis, hidden (se calcula pero no se dibuja), hide_zero (no se dibuja si da 0)}], width half|full, prefix "$ ", decimals (cada fila se redondea a esto antes de usarse en otra)} → cada fila también queda como {{totales.<id>}}. ' +
+    'Cotización/factura: Subtotal = items_sum de la columna bruto (cantidad × precio, hidden); Descuentos = items_sum de una calculada (total − bruto, hidden, en negativo, hide_zero); Descuento global = percent of neto con negate; Base gravable = sum; IVA = percent 19 of base; TOTAL = sum(base, iva) con emphasis; y un text "Son: {{totales.total|pesos|mayusculas}} M/CTE.". | ' +
     'image {src {kind brand|url, url}, width %, align, frame} | qr {value (con variables), size 40-240, align, caption} | signature {signers [{name, detail}] (1-3), align, line, image {kind url, url}} | ' +
     'divider | spacer {height} | page_break | columns {columns: [{blocks: [heading|text|image|fields|qr|divider|spacer], background, style}] (2-3), ratio, gap}. ' +
     'Todos aceptan background, padding y ' +
@@ -308,11 +312,36 @@ export function buildDocDesign(input: z.infer<typeof docDesignInput>, ctx: DocDe
         delete b.via;
         const cols = Array.isArray(b.columns) ? (b.columns as Array<Record<string, unknown>>) : [];
         const pool = itemsFields.get(String(b.id))!;
-        const bad = cols.map((c) => String(c.slug ?? '')).filter((s) => !pool.has(s));
+        const fieldSlugs = new Set(pool);
         if (cols.length === 0) throw new AiToolError(`El bloque items «${String(b.id)}» necesita columns (slugs de la lista vinculada).`);
-        if (bad.length > 0) throw new AiToolError(`El bloque items «${String(b.id)}» usa columnas que no existen en la lista vinculada: ${bad.join(', ')}. Campos: ${[...pool].join(', ')}.`);
+        // v0.1.290 — Una columna calculada (`kind: computed`) tiene su clave
+        // propia y su fórmula lee campos de la lista vinculada o calculadas
+        // ANTERIORES; su clave queda disponible para los totales (items_sum).
+        const bad: string[] = [];
+        for (const c of cols) {
+            const slug = String(c.slug ?? '');
+            if (c.kind === 'computed') {
+                if (!slug || fieldSlugs.has(slug)) {
+                    throw new AiToolError(`items «${String(b.id)}»: la columna calculada necesita un \`slug\` propio que no sea un campo (p. ej. "calc_total").`);
+                }
+                const expr = docItemExprSchema.safeParse(c.expr);
+                if (!expr.success) {
+                    throw new AiToolError(`items «${String(b.id)}», columna «${slug}»: la fórmula (expr) no es válida. Usa {op: col|const|add|sub|mul|div|pct|minus_pct, …}.`);
+                }
+                const missing = [...docItemExprRefs(expr.data)].filter((r) => !pool.has(r));
+                if (missing.length > 0) {
+                    throw new AiToolError(
+                        `items «${String(b.id)}», columna «${slug}»: la fórmula lee ${missing.join(', ')}, que no son campos de la lista vinculada ni columnas calculadas anteriores. Campos: ${[...fieldSlugs].join(', ')}.`,
+                    );
+                }
+                pool.add(slug);
+                continue;
+            }
+            if (!fieldSlugs.has(slug)) bad.push(slug);
+        }
+        if (bad.length > 0) throw new AiToolError(`El bloque items «${String(b.id)}» usa columnas que no existen en la lista vinculada: ${bad.join(', ')}. Campos: ${[...fieldSlugs].join(', ')}.`);
         const sort = b.sort as { slug?: string } | null | undefined;
-        if (sort?.slug && !pool.has(sort.slug)) throw new AiToolError(`items «${String(b.id)}»: no se puede ordenar por «${sort.slug}».`);
+        if (sort?.slug && !fieldSlugs.has(sort.slug)) throw new AiToolError(`items «${String(b.id)}»: no se puede ordenar por «${sort.slug}».`);
     }
 
     // Logo/imágenes: el modelo no sube archivos; `file` sólo si ya venía (ida y vuelta).
@@ -348,6 +377,13 @@ export function buildDocDesign(input: z.infer<typeof docDesignInput>, ctx: DocDe
                     if (!pool.has(s.slug)) throw new AiToolError(`El total «${r.label || r.id}» suma «${s.slug}», que no es una columna de la lista vinculada.`);
                 }
                 if (s.kind === 'percent' && !rowIds.has(s.of)) throw new AiToolError(`El total «${r.label || r.id}» es un porcentaje de «${s.of}», que no es otra fila de este bloque.`);
+                if (s.kind === 'percent' && s.pct_field) {
+                    const f = byId.get(s.pct_field);
+                    if (!f) bad.add(s.pct_field);
+                    else if (!['number', 'percent', 'currency', 'computed', 'rollup', 'lookup'].includes(f.type)) {
+                        throw new AiToolError(`El total «${r.label || r.id}» toma el porcentaje de «${s.pct_field}», que no es numérico (${f.type}).`);
+                    }
+                }
                 if (s.kind === 'sum') {
                     const missing = [...s.rows, ...s.minus].filter((x) => !rowIds.has(x));
                     if (missing.length > 0) throw new AiToolError(`El total «${r.label || r.id}» suma filas que no existen: ${missing.join(', ')}.`);
@@ -356,6 +392,9 @@ export function buildDocDesign(input: z.infer<typeof docDesignInput>, ctx: DocDe
         }
     }
     if (bad.size > 0) throw new AiToolError(`El documento usa campos que no existen en la lista: ${[...bad].join(', ')}. Campos: ${[...slugs].join(', ')}.`);
+    if (design.numbering.freeze && !design.numbering.enabled) {
+        throw new AiToolError('numbering.freeze (congelar al emitir) necesita numbering.enabled: el PDF se congela al emitir su número.');
+    }
     const saveField = design.numbering.save_field;
     if (saveField) {
         const f = byId.get(saveField);
@@ -439,7 +478,11 @@ export function describeDesignBlocks(blocks: Array<Record<string, unknown>>): Ar
                 detail = [b.title, b.number].filter(Boolean).join(' · ') || null;
                 break;
             case 'items':
-                detail = ((b.columns as Array<{ slug: string; label?: string }>) ?? []).map((c) => c.label || c.slug).join(', ') || null;
+                detail =
+                    ((b.columns as Array<{ slug: string; label?: string; kind?: string; hidden?: boolean }>) ?? [])
+                        .filter((c) => !c.hidden)
+                        .map((c) => `${c.label || c.slug}${c.kind === 'computed' ? ' (calculada)' : ''}`)
+                        .join(', ') || null;
                 break;
             case 'totals':
                 detail = ((b.rows as Array<{ label: string }>) ?? []).map((r) => r.label).join(', ') || null;

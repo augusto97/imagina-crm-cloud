@@ -615,7 +615,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_create_document_template',
             label: 'Diseñando el documento',
             description:
-                'Propone una PLANTILLA DE DOCUMENTO PDF (cuenta de cobro, recibo, cotización, orden, certificado…) para una lista: sus variables son los campos de esa lista y la tabla de ítems sale de los registros VINCULADOS. ' +
+                'Propone una PLANTILLA DE DOCUMENTO PDF (cuenta de cobro, recibo, cotización, factura no electrónica, orden, certificado…) para una lista: sus variables son los campos de esa lista y la tabla de ítems sale de los registros VINCULADOS (con columnas CALCULADAS como el total de cada línea). ' +
                 'Se usa desde el botón «Generar PDF» de la ficha, la acción generate_pdf y como adjunto de send_email (pdf_templates); queda editable en el editor visual de documentos. Lee antes get_list_schema (campos y linked_lists). ' +
                 DOC_DESIGN_DOC +
                 ' ' +
@@ -910,7 +910,15 @@ export class StructureTools implements AiProposalApplier {
                 // datos pide.
                 // v0.1.266 — plantillas de documentos PDF de la lista (para
                 // generate_pdf y los adjuntos de send_email).
-                document_templates: documentTemplates.map((d) => ({ id: d.id, name: d.name, in_portal: d.portal_visible, next_number: d.next_label })),
+                // v0.1.290 — `freezes`: congela el PDF al emitir (una factura no cambia más).
+                document_templates: documentTemplates.map((d) => ({
+                    id: d.id,
+                    name: d.name,
+                    in_portal: d.portal_visible,
+                    next_number: d.next_label,
+                    freezes: d.freezes,
+                    frozen_documents: d.frozen_count,
+                })),
                 // v0.1.289 — también cómo está armado: páginas, verificación
                 // anti-robots y confirmación del correo de quien responde.
                 forms: listForms.map((f) => {
@@ -1784,7 +1792,7 @@ export class StructureTools implements AiProposalApplier {
         return this.saveProposal(ctx, {
             kind: 'create_document_template',
             title: `Crear la plantilla de documento «${input.name}» en «${list.name}»`,
-            summary: `Un PDF ${design.theme.page_size === 'a4' ? 'A4' : design.theme.page_size === 'legal' ? 'oficio' : 'carta'} con ${design.blocks.length} bloques${design.numbering.enabled ? `, numerado (${design.numbering.prefix}${'0'.repeat(Math.max(0, design.numbering.padding - 1))}${design.numbering.start})` : ''}${input.portal_visible ? ' y disponible en el portal del cliente' : ''}. Queda editable en el editor de documentos.`,
+            summary: `Un PDF ${design.theme.page_size === 'a4' ? 'A4' : design.theme.page_size === 'legal' ? 'oficio' : 'carta'} con ${design.blocks.length} bloques${design.numbering.enabled ? `, numerado (${design.numbering.prefix}${'0'.repeat(Math.max(0, design.numbering.padding - 1))}${design.numbering.start})${design.numbering.freeze ? ' y congelado al emitirlo' : ''}` : ''}${input.portal_visible ? ' y disponible en el portal del cliente' : ''}. Queda editable en el editor de documentos.`,
             destructive: false,
             listSlug: list.slug,
             preview: {

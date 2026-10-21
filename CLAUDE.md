@@ -8258,6 +8258,55 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         siteverify y Turnstile simulados (formulario de 3 páginas en celular,
         confirmación por correo, portal con contraseña, pago marcado solo).
 
+  - [x] **Cotización y factura con IVA, ítems editables en la ficha y documentos
+        congelados (v0.1.290, addendum ADR-S35 fase 3, cuarta entrega del
+        «hazlo todo» y los tres pendientes de PDF)**: (a) la galería de
+        documentos suma **«Cotización»** y **«Factura (no electrónica)»** (con
+        el aviso «No es factura electrónica DIAN» en la galería, el formulario
+        y el pie del PDF). El total de cada línea lo calculan **columnas
+        calculadas declarativas** (`document-calc.ts` en shared: un árbol
+        cerrado col/const/add/sub/mul/div/pct/minus_pct validado con Zod, tope
+        de 5 niveles y 24 nodos, sin `eval`), con redondeo a la moneda por
+        línea y por fila de totales —lo que se ve es lo que se suma—; las
+        filas de totales ganan `pct_field` (el % de un campo, como el
+        descuento global), `negate`, `hidden` y `hide_zero`, y encadenan
+        Subtotal → Descuentos → Descuento global → Base gravable → IVA (19 %
+        configurable, o «No responsable de IVA» con su leyenda) → Total, y
+        «Son: … PESOS M/CTE.». Cotización con validez y condiciones; factura
+        con fecha y forma de pago y datos bancarios. El mapeo de roles se
+        sugiere solo y lo no mapeado se ve como «[Precio unitario]»; el
+        inspector del editor arma columnas calculadas con fórmulas listas. (b)
+        **«Tabla editable»** de los ítems: vista nueva del bloque «Vinculados»
+        de la ficha diseñada (biblioteca + inspector: qué columnas se editan y
+        cuáles se suman) y botón en el panel de vinculados de la ficha clásica
+        (`EditableRelatedTable`, con la `EditableCell` de siempre): «Agregar
+        ítem» ya vinculado (si falta un obligatorio, el formulario completo),
+        borrar con confirmación, permisos y «la tienda manda» respetados, fila
+        de totales que suma el SERVIDOR sobre todo lo vinculado (sin elección:
+        los calculados numéricos o la moneda, `defaultTotalFieldIds`), y los
+        ítems llegan en el bundle de la ficha sin pedidos extra; en el portal
+        y la vista previa se ve de sólo lectura. El asistente/MCP acepta
+        `view:"editable"`. (c) **«Congelar al emitir»** (migración 0076,
+        `document_numbers` gana `file_id` con FK RESTRICT, `frozen_*`,
+        `voided_*`): la primera emisión real guarda el PDF en el almacenamiento
+        de la empresa EN LA MISMA transacción que el número —si no se puede
+        guardar, la emisión falla con el motivo y el número no se usa—; ficha,
+        portal, automatización (adjunto y `{{pdf.link}}`) y enlace firmado
+        devuelven el congelado aunque cambien los datos. «Ver» arma el PDF sin
+        gastar número; «Documentos emitidos» y, para admin, «Anular y emitir de
+        nuevo» (el anulado conserva su número y su PDF; un índice único parcial
+        deja un solo número ACTIVO por plantilla y registro). De paso:
+        «Enviarme una prueba» de una automatización emitía números reales sobre
+        registros de muestra (desde v0.1.267), el margen del último bloque
+        abría una página casi en blanco al pie, y el precio unitario salía con
+        otro formato que el total. Tests: `documents-freeze` (7, congelado byte
+        a byte tras cambiar el precio, anular y reemitir, falla sin consumir
+        número, cotización completa) + `document-calc` (10) y los existentes de
+        documentos, ficha y asistente en verde + E2E en navegador 48/48
+        (cotización desde la galería con mapeo sugerido, tabla editable en las
+        dos fichas, emitir COT-0001 congelado, anular y reemitir COT-0002,
+        factura sin IVA FAC-0001, oscuro y celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

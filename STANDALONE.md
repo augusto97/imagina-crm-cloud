@@ -2552,6 +2552,22 @@ de otra lista o de otra empresa da 404. Bajarlo emite el número igual que
 generarlo desde la ficha. `document_numbers`, `next_number` y `portal_visible`
 viajan en la migración de empresa.
 
+**Addendum v0.1.290 (fase 3: cálculo, tabla editable y congelar).**
+1. **Columnas calculadas declarativas**: el total de una línea no es una
+   fórmula libre sino un árbol cerrado (col, const, add, sub, mul, div, pct,
+   minus_pct) validado con Zod (5 niveles, 24 nodos) y evaluado por UNA función
+   de shared, la misma para la vista previa, el PDF y los tests. Cada línea y
+   cada fila de totales se redondean a la moneda antes de reusarse.
+2. **Congelar en la misma transacción**: el número y el PDF congelado se
+   escriben juntos; los bytes escritos antes se descartan si la transacción
+   revierte, así nunca hay número sin PDF ni PDF suelto. FK RESTRICT protege el
+   archivo.
+3. **Anular, nunca reusar**: un índice único parcial (sin los anulados) deja un
+   solo número activo por plantilla y registro; el anulado conserva su PDF.
+4. **Tabla editable sin pedidos extra**: es una vista del bloque «Vinculados»
+   que se alimenta del bundle de la ficha; la fila de totales la suma el
+   servidor con el mismo alcance y ACL.
+
 ### ADR-S36 — Almacenamiento propio de cada empresa + enlace del PDF sin guardarlo (v0.1.268)
 
 **Contexto.** El usuario preguntó cómo evitar que miles de PDF generados por
