@@ -144,7 +144,9 @@ export class RecordsService {
                 data: { status: 403 },
             });
         }
-        if (!opts.planChecked) await this.billing?.assertCanCreateRecord(tenantId);
+        // El tope del plan se verifica DENTRO de la transacción del alta (ver
+        // assertRecordRoomInTx): aquí sólo se lee cuál es.
+        const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
         const fields = await this.fields.listByListId(tenantId, listId);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
@@ -152,6 +154,7 @@ export class RecordsService {
         const data = this.validateData(fields, rel.data, { partial: false });
 
         const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
             // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
             // lista y ser de primer nivel — un solo nivel de anidado.
             const parentId = input.parent_id ?? null;
@@ -197,7 +200,7 @@ export class RecordsService {
             after: row.data,
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list, fields });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
         return toRecord(withComputed(fields, enriched[0] ?? row), {
             ...byFieldToKeys(relFieldIds, undefined),
@@ -248,6 +251,24 @@ export class RecordsService {
             toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id))),
             hiddenKeys,
         );
+    }
+
+    /**
+     * De estas personas, ¿quiénes pueden VER el registro? El mismo criterio que
+     * `get` (la fila existe y el alcance del rol la alcanza), pero leyendo la
+     * lista y la fila UNA vez para todos — los avisos antes hacían un `get`
+     * completo por destinatario.
+     */
+    async viewersOf(tenantId: number, listId: number, recordId: number, actors: readonly Actor[]): Promise<Set<number>> {
+        if (actors.length === 0) return new Set();
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, String(listId)).catch(() => null);
+            if (!list) return null;
+            const row = await this.repo.findById(tx, tenantId, list.id, recordId);
+            return row ? { list, row } : null;
+        });
+        if (!found) return new Set();
+        return new Set(actors.filter((a) => this.aclCanReach(found.list, a, 'view', found.row)).map((a) => a.userId));
     }
 
     async list(
@@ -489,7 +510,8 @@ export class RecordsService {
         // (semántica parcial: los ausentes no se tocan).
         const rel = splitRelationValues(fields, input.data);
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const current = await this.repo.findById(tx, tenantId, listId, id);
+            // Con lock: dos ediciones simultáneas se encolan en vez de pisarse.
+            const current = await this.repo.findByIdForUpdate(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
@@ -533,7 +555,7 @@ export class RecordsService {
             before: result.before, // para changed_fields
         });
         // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId, list, fields });
         // Recurrencias con trigger status_change: fire-and-forget (no bloquea
         // la respuesta del update; un fallo se loguea y no rompe la mutación).
         void this.recurrences

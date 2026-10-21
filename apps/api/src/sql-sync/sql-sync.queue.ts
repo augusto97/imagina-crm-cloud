@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleIn
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 
 export const SQL_SYNC_QUEUE = 'sql-sync';
 const TICK_JOB = 'tick';
@@ -72,7 +72,7 @@ export class SqlSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdow
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(SQL_SYNC_QUEUE, { connection: conn() });
+            this.queue = new Queue(SQL_SYNC_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de SQL con error: ${err.message}`));
             this.worker = new Worker(
                 SQL_SYNC_QUEUE,

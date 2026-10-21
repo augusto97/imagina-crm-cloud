@@ -58,7 +58,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(AUTOMATIONS_QUEUE, { connection: conn() });
+            this.queue = new Queue(AUTOMATIONS_QUEUE, { connection: conn(), defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 } });
             this.queue.on('error', (err) => this.logger.warn(`Cola de automatizaciones con error: ${err.message}`));
             this.worker = new Worker(
                 AUTOMATIONS_QUEUE,
