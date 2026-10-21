@@ -352,14 +352,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.287** (la tabla como hoja de cálculo, ADR-S46), en `main`.
+versión publicada: **v0.1.288** (automatizaciones con esperas, bucles, prueba paso a paso y versiones, ADR-S47), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
   la auditoría II, y dejó a mi criterio los pendientes de PDF y del cliente de
   Google. Plan: seis entregas trabajadas en paralelo en copias aisladas y
   publicadas en el orden en que terminan — **tabla** (hecha, v0.1.287),
-  automatizaciones (esperar, repetir por vinculados, probar paso a paso,
+  **automatizaciones** (hecha, v0.1.288: esperar, repetir por vinculados, probar paso a paso,
   respuesta de webhook, programado por registro, duplicar, versiones), ficha
   (historial por campo con restaurar, reacciones e hilos, vista previa de
   adjuntos, registro de tiempo), portal y formularios (varias páginas, captcha,
@@ -574,6 +574,18 @@ versión publicada: **v0.1.287** (la tabla como hoja de cálculo, ADR-S46), en `
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.288** — **Automatizaciones con pasos de verdad**
+  (ADR-S47), segunda entrega del «hazlo todo». «Esperar» minutos/horas/días o
+  hasta una fecha del registro, durable en Postgres (migración 0074) con un
+  reloj por minuto; «Repetir por cada registro vinculado» con `{{item.…}}`;
+  respuestas de webhook usables en los pasos siguientes
+  (`{{webhook.body.…}}`, `{{respuestas.<nombre>…}}`); «Probar» paso a paso con
+  el mismo motor en simulación; horarios «para cada registro que cumpla…»;
+  duplicar; e historial de versiones con restaurar. Decisión: pausar cancela
+  las esperas y no se retoman al reactivar (el editor lo avisa). La migración
+  del agente era la 0076 y se renumeró a 0074 al integrar (el migrador de
+  drizzle salta una migración con `when` menor a la última aplicada). Queda: el
+  resto de las entregas del plan (ver §10).
 - **2026-10-21 · v0.1.287** — **La tabla como hoja de cálculo** (ADR-S46),
   primera entrega del «hazlo todo» del usuario sobre las carencias de la
   auditoría II. Rango de celdas (Mayús+clic, Mayús+flechas, arrastrar, Ctrl+A),
