@@ -350,7 +350,7 @@ describe('v0.1.285 — problemas (Postgres + Redis reales)', () => {
         const auto = await automations.create(tenantId, 'facturas', {
             name: 'Cobrar vencidas',
             trigger_type: 'due_date_reached',
-            trigger_config: { due_field: 'vence' },
+            trigger_config: { due_field: 'vence', include_past: true },
             actions: [{ type: 'call_webhook', config: { url: 'http://127.0.0.1:9/cobrar' } }],
         });
         await recs.create(tenantId, { userId: ana, role: 'admin' }, 'facturas', { data: { [fNombre]: 'C', [fVence]: '2020-01-01' } });

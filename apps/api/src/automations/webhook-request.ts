@@ -15,7 +15,29 @@ import { joinUrl, type ConnectionParts } from '../connectors/connection-parts';
  * petición, así lo que se prueba es lo que después se ejecuta.
  */
 
-export type MergeFn = (raw: unknown) => string;
+/**
+ * Resuelve las variables de una plantilla. `escapeValue` (opcional) escapa
+ * cada VALOR interpolado —no la plantilla—: lo usa el cuerpo crudo JSON/XML
+ * para que un dato del registro no rompa el formato ni inyecte claves.
+ */
+export type MergeFn = (raw: unknown, escapeValue?: (s: string) => string) => string;
+
+/** Un valor como contenido de un string JSON (sin las comillas de afuera). */
+export function escapeJsonFragment(s: string): string {
+    return JSON.stringify(s).slice(1, -1);
+}
+
+/** Un valor como texto de XML/HTML. */
+export function escapeMarkup(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c] ?? c);
+}
+
+/** El escapador de los valores de un cuerpo crudo según su tipo de contenido. */
+export function rawBodyEscaper(contentType: WebhookContentType): ((s: string) => string) | undefined {
+    if (contentType === 'json') return escapeJsonFragment;
+    if (contentType === 'xml' || contentType === 'html') return escapeMarkup;
+    return undefined;
+}
 
 export interface WebhookRequest {
     url: string;
@@ -111,9 +133,13 @@ export function buildWebhookRequest(
     // Cuerpo: filas clave/valor si las hay; si no, la plantilla cruda; si no,
     // el payload por defecto con el registro que disparó.
     const actionParams = readPairs(cfg.body_params, merge);
+    // El cuerpo crudo se escribe a mano: los VALORES de las variables se
+    // escapan según el formato (JSON / XML / HTML). Antes un nombre con
+    // comillas rompía el JSON o, peor, inyectaba claves
+    // (`","admin":true,"x":"`) en la petición.
     const rawTemplate =
         typeof cfg.body_template === 'string' && cfg.body_template.trim() !== ''
-            ? merge(cfg.body_template)
+            ? merge(cfg.body_template, rawBodyEscaper(contentType))
             : '';
     // Los campos de la conexión (auth de tipo `body`) sólo entran cuando el
     // cuerpo se arma con filas. Con una plantilla cruda manda lo escrito: meter

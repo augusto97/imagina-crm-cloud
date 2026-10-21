@@ -107,8 +107,8 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
                     type: 'send_email',
                     config: {
                         to: '',
-                        subject: '{{titulo}} pasó a {{estado}}',
-                        body: '«{{titulo}}» cambió de {{before.estado}} a {{estado}}.',
+                        subject: '{{titulo}} pasó a {{estado|label}}',
+                        body: '«{{titulo}}» cambió de {{before.estado|label}} a {{estado|label}}.',
                     },
                 },
             ],
@@ -153,7 +153,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
                     config: {
                         to: '',
                         subject: 'Vence en 3 días: {{titulo}}',
-                        body: '«{{titulo}}» vence el {{fecha}}.',
+                        body: '«{{titulo}}» vence el {{fecha|fecha}}.',
                     },
                 },
             ],
@@ -178,7 +178,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
                     config: {
                         to: '{{email}}',
                         subject: 'Recordatorio de pago: {{titulo}}',
-                        body: 'Hola,\n\nTe recordamos que «{{titulo}}», emitida el {{fecha}}, sigue pendiente de pago.\n\nGracias.',
+                        body: 'Hola,\n\nTe recordamos que «{{titulo}}», emitida el {{fecha|fecha}}, sigue pendiente de pago.\n\nGracias.',
                     },
                 },
             ],

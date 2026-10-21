@@ -251,8 +251,8 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
 
     const systemTags: Array<{ tag: string; label: string; hint?: string }> = [
         { tag: 'record.id', label: __('ID del registro'), hint: '#42' },
-        { tag: 'date.now', label: __('Fecha y hora del disparo'), hint: 'YYYY-MM-DD HH:MM:SS' },
-        { tag: 'date.today', label: __('Fecha de hoy'), hint: 'YYYY-MM-DD' },
+        { tag: 'date.now', label: __('Fecha y hora del disparo'), hint: 'AAAA-MM-DD HH:MM:SS (UTC)' },
+        { tag: 'date.today', label: __('Fecha de hoy'), hint: 'AAAA-MM-DD' },
     ];
     const visibleSystem = systemTags.filter((t) => matches(t.label) || matches(t.tag));
 
@@ -268,6 +268,39 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
             .map((f) => ({ tag: `${f.slug}|larga`, label: `${f.label} · ${__('fecha larga')}`, hint: __('8 de octubre de 2026') })),
         { tag: 'date.today|larga', label: __('Hoy · fecha larga'), hint: __('8 de octubre de 2026') },
     ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('letras')));
+    // Un campo Persona guarda el id: `.email` / `.nombre` lo hacen útil en un
+    // correo («Para: {{responsable.email}}»). Sólo en automatizaciones.
+    const personItems =
+        context === 'automation'
+            ? fields
+                  .filter((f) => f.type === 'user')
+                  .flatMap((f) => [
+                      { tag: `${f.slug}.email`, label: `${f.label} · ${__('email')}`, hint: `{{${f.slug}.email}}` },
+                      { tag: `${f.slug}.nombre`, label: `${f.label} · ${__('nombre')}`, hint: `{{${f.slug}.nombre}}` },
+                  ])
+                  .filter((t) => matches(t.label) || matches(t.tag) || matches(__('Persona')))
+            : [];
+    // Con el formato regional de la empresa (separadores, orden de la fecha,
+    // su zona horaria). Sin modificador la variable sale cruda: 1250000,
+    // 2026-10-21T19:30:00Z — lo que espera otro sistema, no una persona.
+    const formatItems =
+        context === 'automation'
+            ? [
+                  ...fields
+                      .filter((f) => f.type === 'currency')
+                      .map((f) => ({ tag: `${f.slug}|moneda`, label: `${f.label} · ${__('moneda')}`, hint: 'COP 1.250.000' })),
+                  ...fields
+                      .filter((f) => f.type === 'number' || f.type === 'percent' || f.type === 'rollup' || f.type === 'computed')
+                      .map((f) => ({ tag: `${f.slug}|numero`, label: `${f.label} · ${__('número')}`, hint: '1.250.000' })),
+                  ...fields
+                      .filter((f) => f.type === 'date' || f.type === 'datetime')
+                      .map((f) => ({ tag: `${f.slug}|fecha`, label: `${f.label} · ${__('fecha')}`, hint: '21/10/2026' })),
+                  ...fields
+                      .filter((f) => f.type === 'datetime')
+                      .map((f) => ({ tag: `${f.slug}|fechahora`, label: `${f.label} · ${__('fecha y hora')}`, hint: '21/10/2026 14:30' })),
+                  { tag: 'date.now|fechahora', label: __('Ahora · fecha y hora'), hint: '21/10/2026 14:30' },
+              ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('formato')))
+            : [];
     const extraSections = extra
         .map((sec) => ({ ...sec, items: sec.items.filter((t) => matches(t.label) || matches(t.tag)) }))
         .filter((sec) => sec.items.length > 0);
@@ -331,6 +364,12 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
                         }))}
                         onPick={onPick}
                     />
+                )}
+                {personItems.length > 0 && (
+                    <Section title={__('Persona (correo y nombre)')} items={personItems} onPick={onPick} />
+                )}
+                {formatItems.length > 0 && (
+                    <Section title={__('Con el formato de la empresa')} items={formatItems} onPick={onPick} />
                 )}
                 {extraSections.map((sec) => (
                     <Section key={sec.title} title={sec.title} items={sec.items} onPick={onPick} />

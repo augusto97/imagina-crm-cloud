@@ -366,6 +366,19 @@ export class BlueprintService {
                 try {
                     await this.automations.create(tenantId, String(list.id), parsed.data);
                 } catch (err) {
+                    // Incompleta (p. ej. un correo sin «Para») o sobre el límite
+                    // de automatizaciones del plan: se crea PAUSADA y se avisa,
+                    // en vez de perderla.
+                    const code = (err as { getResponse?: () => { code?: unknown } }).getResponse?.()?.code;
+                    if (parsed.data.is_active !== false && (code === 'automation_incomplete' || code === 'plan_limit_reached')) {
+                        try {
+                            await this.automations.create(tenantId, String(list.id), { ...parsed.data, is_active: false });
+                            warnings.push(`Automatización «${a.name}» de «${bl.name}» quedó pausada: ${message(err)}`);
+                            continue;
+                        } catch {
+                            // cae al aviso de abajo
+                        }
+                    }
                     warnings.push(`Automatización «${a.name}» de «${bl.name}»: ${message(err)}`);
                 }
             }
