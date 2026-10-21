@@ -20,7 +20,7 @@ import {
     zonedToday,
     type BillingStatus,
 } from '@imagina-base/shared';
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
@@ -43,6 +43,7 @@ import {
     compileIntegrationValues,
 } from '../connectors/integration-calls';
 import { buildWebhookRequest } from './webhook-request';
+import { IncidentHub } from '../incidents/incident-hub';
 import {
     AutomationsRepository,
     type AutomationRow,
@@ -80,6 +81,7 @@ export class AutomationsService {
         @Optional() private readonly mail?: MailService,
         // v0.1.266 — los PDF adjuntos de la prueba.
         @Optional() private readonly documents?: DocumentsService,
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     /**
@@ -119,10 +121,28 @@ export class AutomationsService {
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Automation[]> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.listByList(tx, tenantId, list.id),
-        );
-        return rows.map(toAutomation);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await this.repo.listByList(tx, tenantId, list.id);
+            if (rows.length === 0) return [];
+            // v0.1.285 — la última corrida de cada una, en UNA consulta (índice
+            // por automatización + id descendente: no recorre el historial).
+            const last = await tx.execute<{ automation_id: string; status: string; error: string | null; created_at: Date | string }>(sql`
+                select a.id as automation_id, r.status, r.error, r.created_at
+                from (values ${sql.join(rows.map((r) => sql`(${r.id}::bigint)`), sql`, `)}) as a(id)
+                join lateral (
+                    select status, error, created_at from automation_runs
+                    where tenant_id = ${tenantId} and automation_id = a.id
+                    order by id desc limit 1
+                ) r on true`);
+            const byId = new Map(last.rows.map((r) => [Number(r.automation_id), r]));
+            return rows.map((row) => {
+                const r = byId.get(row.id);
+                return {
+                    ...toAutomation(row),
+                    last_run: r ? { status: r.status, error: r.error, at: new Date(r.created_at).toISOString() } : null,
+                };
+            });
+        });
     }
 
     async get(tenantId: number, listIdOrSlug: string, id: number): Promise<Automation> {
@@ -257,6 +277,8 @@ export class AutomationsService {
         });
         if (!deleted) throw notFound(id);
         await this.scheduler.remove(id);
+        // v0.1.285 — lo que ya no existe no puede seguir "fallando".
+        this.incidents?.resolve(tenantId, `automation:${id}`);
     }
 
     /**

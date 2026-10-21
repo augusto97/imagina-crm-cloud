@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Queue } from 'bullmq';
+import { IncidentHub, errorText } from '../incidents/incident-hub';
 
 /** Evento de trigger que se encola para el worker de automatizaciones. */
 export interface TriggerEvent {
@@ -45,6 +46,22 @@ export class AutomationDispatcher {
     private readonly logger = new Logger(AutomationDispatcher.name);
     private queue: Queue | null = null;
 
+    // v0.1.285 (ADR-S44) — un evento que no se pudo encolar se pierde: avisar.
+    constructor(@Optional() private readonly incidents?: IncidentHub) {}
+
+    private lost(tenantId: number, listId: number | null, automationId: number | null, what: string, err: unknown): void {
+        this.logger.error(`No se pudo encolar ${what}: ${String(err)}`);
+        this.incidents?.report({
+            tenantId,
+            key: automationId ? `automation:${automationId}` : `automations:list:${listId ?? 0}`,
+            source: 'automation',
+            sourceId: automationId,
+            listId,
+            title: automationId ? 'Una automatización no se pudo poner en marcha' : 'Las automatizaciones de una lista no se pudieron poner en marcha',
+            message: `No se pudo encolar ${what} (la cola de tareas del servidor no responde): ${errorText(err)}`,
+        });
+    }
+
     setQueue(queue: Queue): void {
         this.queue = queue;
     }
@@ -53,7 +70,7 @@ export class AutomationDispatcher {
     dispatchWebhook(data: { tenantId: number; automationId: number; payload: Record<string, unknown> }): void {
         if (!this.queue) return;
         this.queue.add('webhook', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
-            this.logger.error(`No se pudo encolar el webhook entrante: ${String(err)}`);
+            this.lost(data.tenantId, null, data.automationId, 'el webhook entrante', err);
         });
     }
 
@@ -67,7 +84,7 @@ export class AutomationDispatcher {
     dispatchBulkEdit(data: BulkEditJob): boolean {
         if (!this.queue) return false;
         this.queue.add('bulk-edit', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
-            this.logger.error(`No se pudo encolar la edición masiva: ${String(err)}`);
+            this.lost(data.tenantId, data.listId, data.automationId, 'la edición en lote', err);
         });
         return true;
     }
@@ -75,7 +92,7 @@ export class AutomationDispatcher {
     dispatch(event: TriggerEvent): void {
         if (!this.queue) return;
         this.queue.add('event', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
-            this.logger.error(`No se pudo encolar la automatización: ${String(err)}`);
+            this.lost(event.tenantId, event.listId, null, 'la automatización', err);
         });
     }
 }

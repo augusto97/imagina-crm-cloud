@@ -3038,6 +3038,70 @@ trae al directorio de transferencias (sin pisar un archivo con el mismo nombre).
 Desde ahí se importa como siempre. Subir y traer corren en segundo plano, una
 operación a la vez, con el estado en Redis (`transfers:drive:run`).
 
+### ADR-S44 — Problemas: lo que corre solo y falla, a la vista (v0.1.285)
+
+**Contexto.** Reporte de los clientes: «no se avisa cuando una conexión falla,
+una API da error, un conector deja de funcionar, no se envían los correos de
+una automatización o no se generó algo». Un relevamiento de todo el trabajo en
+segundo plano lo confirmó: **ninguna falla le avisaba a nadie**. Quedaban en un
+registro que había que ir a abrir (el historial de cada automatización, la
+tarjeta de cada conector o sincronización), o sólo en el log del servidor
+(errores de la cola, correos que no salían, avisos de pago ignorados por una
+clave ilegible, formularios que perdían respuestas). Peor: un error de la base
+dentro de una acción abortaba la transacción de la corrida y **ni siquiera
+quedaba el registro** de que falló.
+
+**Decisión.**
+1. **Problema = una fila por (empresa, `key`) abierta** (`incidents`, RLS,
+   único parcial `WHERE resolved_at IS NULL`). Las fallas repetidas de lo
+   mismo (`automation:12`, `mail`, `connection:4`, `store_sync:4:push`…) suman
+   `count` y actualizan el último error: una automatización que falla cada 5
+   minutos es UN problema, no cientos.
+2. **Aviso inmediato y recordatorio diario**: al abrirse, aviso tipo `failure`
+   (campana + correo, encendido por defecto) a los **admins** y a quien creó lo
+   que falla (dueño de la conexión, de la sincronización, del formulario).
+   Mientras siga abierto, a lo sumo un «Sigue fallando: … N veces desde hace D
+   días» cada 24 h. El reclamo del aviso es un `UPDATE … WHERE notified_at <
+   …` (dos nodos que fallan a la vez avisan una vez).
+3. **El correo del aviso sale por el correo de la PLATAFORMA**, no el de la
+   empresa: si lo que falla es el correo de la empresa, por ahí no llegaría
+   nunca (y tampoco gasta su cuota).
+4. **Se cierra solo** cuando lo que fallaba vuelve a funcionar (corrida buena,
+   correo enviado, token renovado, sincronización completa, aviso de pago
+   aplicado); también al borrar lo que fallaba. El camino feliz no toca la
+   base: mira una marca en Redis (`incident:{tenant}:{key}`). «Ya lo arreglé»
+   lo cierra a mano; si vuelve a fallar, se abre otro y se avisa de nuevo.
+5. **Sin acoplar módulos**: `IncidentHub` (global, como `NotifyHub` y
+   `RecordChangeHub`) — el correo, los conectores y el motor reportan sin
+   depender del módulo de problemas, que depende de avisos y correo.
+6. **Qué reporta**: automatizaciones (cada corrida fallida, el trabajo que se
+   cae antes de registrar la corrida, el evento que no se pudo encolar),
+   correo de la empresa (configuración rota, falla en el último intento de la
+   cola, cuota agotada; los correos de cuenta sin empresa no), conectores
+   (autorización vencida o revocada, renovación fallida, credencial ilegible
+   — además queda en la tarjeta como último resultado), sincronización SQL
+   (fatal o detenida por el plan), tienda (corrida, avisos en tiempo real,
+   cambios hechos en la app que la tienda rechazó, clave ilegible), campos con
+   IA en segundo plano, formularios que no pudieron guardar una respuesta,
+   recurrencias (plan lleno, error) y avisos de pago (clave ilegible, firma que
+   no coincide, clave rechazada al releer).
+7. **Robustez del motor**: cada acción corre en su **savepoint** — un error de
+   la base en una acción deshace sólo esa acción; la corrida queda registrada
+   y las demás siguen. Por vencimiento, una automatización que falla se
+   reintenta **3 veces por registro** (antes, cada 5 minutos para siempre, y
+   re-mandaba los pasos que sí salían).
+8. **Interfaz**: Ajustes → **Problemas** (abiertos/resueltos, qué falló,
+   cuántas veces, desde cuándo, «Ir a arreglarlo» y «Ya lo arreglé»), una
+   **pastilla «N problemas»** en la barra superior mientras haya alguno
+   abierto, el aviso en rojo en la campana, y en el índice de automatizaciones
+   «Falló la última vez» con el motivo (`last_run` en el listado, una consulta
+   lateral con índice por automatización). El admin ve todos; el resto, los de
+   lo que creó.
+
+**Consecuencias.** Lo que falla ya no depende de que alguien vaya a mirar. Quedan
+fuera: avisos push del navegador, un canal externo (Slack/WhatsApp) para los
+problemas y el historial de errores por registro (sigue en cada corrida).
+
 ---
 
-**Versión del documento:** 1.82.0 (mover una empresa por el Drive — ADR-S43)
+**Versión del documento:** 1.83.0 (problemas a la vista — ADR-S44)

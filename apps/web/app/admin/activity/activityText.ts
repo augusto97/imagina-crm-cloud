@@ -169,7 +169,7 @@ export function relativeTime(iso: string): string {
     const ms = Date.now() - t.getTime();
     if (Number.isNaN(ms)) return '';
     const min = Math.round(ms / 60000);
-    if (min < 1) return __('recién');
+    if (min < 1) return __('hace un momento');
     if (min < 60) return sprintf(/* translators: %d: minutes */ __('hace %d min'), min);
     const hours = Math.round(min / 60);
     if (hours < 24) return sprintf(/* translators: %d: hours */ __('hace %d h'), hours);

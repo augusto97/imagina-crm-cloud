@@ -352,9 +352,38 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.284** (mover una empresa por el Drive; F12 completa), en `main`.
+versión publicada: **v0.1.285** (Problemas: avisos de fallas en segundo plano, ADR-S44), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-21 — **Reporte de los clientes: "no se avisa cuando algo falla"**
+  (conexiones, APIs, conectores, correos de automatizaciones, cosas que no se
+  generan). Confirmado: ninguna falla en segundo plano avisaba a nadie.
+  Resuelto en **v0.1.285** (ADR-S44): Problemas con aviso en campana y correo,
+  pastilla en la barra, sección en Ajustes y cierre automático. Queda para
+  después, si se pide: aviso por un canal externo (Slack/WhatsApp) y push del
+  navegador.
+- 2026-10-19 — **Pregunta del usuario sobre PDF/facturas**: ¿cómo se agregan
+  los ítems, cómo se calcula, IVA y descuentos? Se le explicó: los ítems son
+  registros de otra lista vinculados por relación; cálculos por línea con
+  campos calculados y totales con filas (suma de columna, %, sumas y restas);
+  IVA de una tarifa directo en Totales, tarifas mezcladas con un campo por
+  línea; dos límites (los valores NO quedan congelados al regenerar — guardar
+  el PDF en un campo Archivo — y NO es factura electrónica DIAN: para eso, un
+  sistema habilitado integrado). Se le ofreció: (1) plantilla «Cotización /
+  Factura con IVA y descuento» que arme las dos listas, la relación y los
+  calculados solos; (2) editar los ítems como tablita en la ficha; (3) «Congelar
+  al emitir». **Queda esperando su respuesta** (pasó a otro tema).
+- 2026-10-18 — **Pregunta del usuario sobre F12**: «¿hay que crear otro
+  cliente de Google para el backup si ya tenemos la integración de Google en
+  Ajustes?». Respuesta: sí es OAuth, pero el de las copias usa el tipo «TV y
+  dispositivos de entrada limitada» (código de dispositivo) porque tiene que
+  funcionar en un servidor RECIÉN instalado, sin dominio ni HTTPS, y la
+  integración web exige una URI de redirección registrada. No hace falta otro
+  proyecto: es otro cliente en el MISMO proyecto de Google Cloud. Se le
+  propuso: en el servidor que ya funciona, conectar el Drive de las copias con
+  la app web de Plataforma → Integraciones (un botón «Autorizar», sin cliente
+  extra) y dejar el código de dispositivo sólo para restaurar en un servidor
+  sin dominio. **Queda esperando su respuesta.**
 - 2026-10-18 — **Recuperar el servidor desde Google Drive** (ADR-S43, pedido
   del usuario: en un VPS limpio correr unos comandos, conectar el Drive, elegir
   la copia y restaurar). Plan acordado: «Las tres» entregas y «Los dos»
@@ -508,6 +537,19 @@ versión publicada: **v0.1.284** (mover una empresa por el Drive; F12 completa),
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.285** — **Problemas: lo que corre solo y falla, a la
+  vista** (ADR-S44). Reporte de los clientes: no se avisaba cuando algo fallaba
+  (conectores, APIs, correos de automatizaciones). Confirmado con un
+  relevamiento: ninguna falla en segundo plano avisaba a nadie. Ahora cada falla
+  abre un problema (uno por cosa que falla, las repeticiones se suman), avisa
+  en la campana y por correo (por el correo de la plataforma) a los admins y a
+  quien lo creó, muestra «N problemas» en la barra superior y vive en Ajustes →
+  Problemas con «Ir a arreglarlo»; se cierra solo al volver a funcionar. Cubre
+  automatizaciones, correo de la empresa, conectores (OAuth vencido, clave
+  ilegible), sincronizaciones SQL y de tienda, campos con IA, formularios,
+  recurrencias y avisos de pago. Además: cada acción de una automatización en
+  su savepoint (un error de la base ya no borra la corrida) y tope de 3
+  reintentos por vencimiento. Verificado: 12 tests nuevos + E2E 26/26.
 - **2026-10-18 · v0.1.284** — Tercera y última entrega de ADR-S43 (F12
   completa): **mover una empresa entre servidores por Google Drive**. En
   Plataforma → Migrar empresas, «Subir a Drive» sube el archivo de la empresa

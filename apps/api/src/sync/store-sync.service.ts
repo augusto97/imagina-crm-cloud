@@ -806,7 +806,17 @@ export class StoreSyncService {
             tx.select({ connectionId: connectionSyncs.connectionId, enabled: connectionSyncs.enabled }).from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1),
         );
         if (!row || !row.enabled) return null;
-        return this.credsOf(tenantId, row.connectionId).catch(() => null);
+        return this.credsOf(tenantId, row.connectionId).catch((err: unknown) => {
+            // v0.1.285 — antes esto devolvía null en silencio y los cambios
+            // hechos en la app dejaban de llegar a la tienda sin que nadie lo supiera.
+            this.engine.storeIncident(
+                { tenantId, connectionId: row.connectionId, actorId: 0 },
+                'push',
+                `${err instanceof Error ? err.message : String(err)} Los cambios hechos en la app no se están enviando a la tienda: vuelve a conectarla en Ajustes → Integraciones.`,
+                'No se puede usar la clave de la tienda',
+            );
+            return null;
+        });
     }
 
     async runNow(tenantId: number, userId: number, role: Role, connectionId: number, full: boolean): Promise<StoreSyncStatus> {
@@ -837,6 +847,9 @@ export class StoreSyncService {
             });
         });
         this.rt?.lists(tenantId);
+        for (const part of ['run', 'realtime', 'push'] as const) {
+            this.engine.storeIncident({ tenantId, connectionId, actorId: 0 }, part, null, '');
+        }
     }
 
     // ── Campos de otros plugins ─────────────────────────────────────────────

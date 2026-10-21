@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { IncidentHub } from '../incidents/incident-hub';
 import {
     SQL_SYNC_MAX_ROWS,
     SQL_SYNC_FIELD_TYPES,
@@ -96,6 +97,8 @@ export class SqlSyncEngine {
         private readonly realtime: RealtimeService,
         @Inject(REDIS) private readonly redis: SqlSyncLockStore,
         @Inject(SQL_RUNNER) private readonly runner: SqlRunner,
+        // v0.1.285 (ADR-S44) — una sincronización que se corta abre un problema.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     // ── Corrida programada / manual ─────────────────────────────────────────
@@ -136,6 +139,22 @@ export class SqlSyncEngine {
                 patch.last_error = fatal;
             }
             await this.saveState(tenantId, syncId, patch, next);
+            const problem = outcome ? outcome.warning : fatal;
+            const key = `sql_sync:${row.connectionId}:${row.id}`;
+            if (problem) {
+                this.incidents?.report({
+                    tenantId,
+                    key,
+                    source: 'sql_sync',
+                    sourceId: row.connectionId,
+                    listId: row.listId,
+                    ownerId: row.createdBy,
+                    title: outcome ? `La sincronización «${row.name}» se detuvo antes de terminar` : `Falló la sincronización «${row.name}»`,
+                    message: problem,
+                });
+            } else {
+                this.incidents?.resolve(tenantId, key);
+            }
             return true;
         } finally {
             const current = await this.redis.get(lockKey).catch(() => null);
@@ -604,6 +623,11 @@ export class SqlSyncEngine {
             const [r] = await tx.select().from(sqlSyncs).where(and(eq(sqlSyncs.tenantId, tenantId), eq(sqlSyncs.id, syncId))).limit(1);
             return r ?? null;
         });
+    }
+
+    /** v0.1.285 — la sincronización se borró: su problema abierto (si había) se cierra. */
+    forgetIncident(tenantId: number, connectionId: number, syncId: number): void {
+        this.incidents?.resolve(tenantId, `sql_sync:${connectionId}:${syncId}`);
     }
 
     /** Mezcla en `state` (nunca pisa `settings`, que edita la persona). */

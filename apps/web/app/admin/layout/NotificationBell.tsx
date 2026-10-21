@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Settings2, UserPlus, type LucideIcon } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Settings2, TriangleAlert, UserPlus, type LucideIcon } from 'lucide-react';
 import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -16,6 +16,7 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
     comment: MessageSquare,
     update: PenLine,
     reminder: AlarmClock,
+    failure: TriangleAlert,
 };
 
 /**
@@ -57,7 +58,9 @@ export function NotificationBell(): JSX.Element {
 
     const openItem = (n: NotificationDto): void => {
         if (!n.read_at) mark.mutate({ ids: [n.id] });
-        if (n.list_slug && n.record_id) go(`/lists/${n.list_slug}/records/${n.record_id}`);
+        // v0.1.285 — una falla lleva a la página de Problemas (ahí está a dónde ir a arreglarla).
+        if (n.kind === 'failure') go('/settings?s=problemas');
+        else if (n.list_slug && n.record_id) go(`/lists/${n.list_slug}/records/${n.record_id}`);
         else go('/my-work');
     };
 
@@ -145,7 +148,14 @@ export function NotificationBell(): JSX.Element {
                                                 data-notification={n.id}
                                                 data-unread={n.read_at ? undefined : ''}
                                             >
-                                                <span className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
+                                                <span
+                                                    className={cn(
+                                                        'imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full',
+                                                        n.kind === 'failure'
+                                                            ? 'imcrm-bg-destructive/10 imcrm-text-destructive'
+                                                            : 'imcrm-bg-muted imcrm-text-muted-foreground',
+                                                    )}
+                                                >
                                                     <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
                                                 </span>
                                                 <span className="imcrm-min-w-0 imcrm-flex-1">

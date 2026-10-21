@@ -105,6 +105,14 @@ export const automationSchema = z.object({
     is_active: z.boolean(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
+    /**
+     * v0.1.285 (ADR-S44) — la última corrida (sólo en el listado): el índice
+     * muestra «Falló» sin abrir el historial de cada una.
+     */
+    last_run: z
+        .object({ status: z.string(), error: z.string().nullable(), at: isoDateTimeSchema })
+        .nullable()
+        .optional(),
 });
 export type Automation = z.infer<typeof automationSchema>;
 

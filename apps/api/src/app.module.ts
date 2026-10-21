@@ -38,6 +38,8 @@ import { FormsModule } from './forms/forms.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AiFieldsModule } from './ai-fields/ai-fields.module';
 import { NotifyHubModule } from './notifications/notify-hub';
+import { IncidentHubModule } from './incidents/incident-hub';
+import { IncidentsModule } from './incidents/incidents.module';
 import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
@@ -58,6 +60,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RedisModule,
         RecordChangeHubModule,
         NotifyHubModule,
+        IncidentHubModule,
         TenancyModule,
         AuthzModule,
         MailModule,
@@ -71,6 +74,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         DocumentsModule,
         FormsModule,
         NotificationsModule,
+        IncidentsModule,
         AiFieldsModule,
         AuthModule,
         WorkspacesModule,

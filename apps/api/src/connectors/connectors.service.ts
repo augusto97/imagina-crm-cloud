@@ -82,6 +82,7 @@ import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { attachments, automations, connections, lists, tenants, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { stripStoreMarkers } from '../lists/store-guard';
+import { IncidentHub } from '../incidents/incident-hub';
 import {
     connectionParts,
     joinUrl,
@@ -292,6 +293,8 @@ export class ConnectorsService {
         private readonly apps: IntegrationAppsService,
         // v0.1.243 — SQL Server: opcional para no obligar a los specs viejos.
         @Optional() @Inject(SQL_RUNNER) private readonly sqlRunner?: SqlRunner,
+        // v0.1.285 (ADR-S44) — una conexión que deja de servir abre un problema.
+        @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
     // ── Ajustes del workspace ────────────────────────────────────────────
@@ -354,7 +357,7 @@ export class ConnectorsService {
      */
     async resolveParts(tenantId: number, connectionId: number): Promise<ConnectionParts | null> {
         const row = await this.ensureFreshToken(tenantId, await this.row(tenantId, connectionId));
-        return this.partsFrom(row);
+        return this.partsFrom(row, tenantId);
     }
 
     /**
@@ -370,7 +373,7 @@ export class ConnectorsService {
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
             .limit(1);
         const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
-        return this.partsFrom(row);
+        return this.partsFrom(row, tenantId);
     }
 
     /**
@@ -403,7 +406,7 @@ export class ConnectorsService {
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
             .limit(1);
         const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
-        const parts = this.partsFrom(row);
+        const parts = this.partsFrom(row, tenantId);
         if (!row || !parts) return null;
         // v0.1.203 — una app de la galería trae sus acciones del CATÁLOGO (no
         // de la fila): así una mejora de la acción llega a todas las empresas
@@ -411,7 +414,7 @@ export class ConnectorsService {
         const def = integrationDef(row.provider);
         if (def && isIntegrationKey(row.provider)) {
             const secrets = this.readSecrets(row);
-            if (secrets === null) throw new ConnectionUnusableError(row.name);
+            if (secrets === null) throw this.unusable(tenantId, row);
             return {
                 parts,
                 action: findConnectorAction(def.actions, actionKey),
@@ -657,10 +660,10 @@ export class ConnectorsService {
         return Number(row?.n ?? 0);
     }
 
-    private partsFrom(row: ConnectionRow | null): ConnectionParts | null {
+    private partsFrom(row: ConnectionRow | null, tenantId: number): ConnectionParts | null {
         if (!row) return null;
         const secrets = this.readSecrets(row);
-        if (secrets === null) throw new ConnectionUnusableError(row.name);
+        if (secrets === null) throw this.unusable(tenantId, row);
         return connectionParts(
             {
                 baseUrl: row.baseUrl,
@@ -1118,14 +1121,12 @@ export class ConnectorsService {
         if (!needsRefresh(state.expiresAt, Date.now())) return row;
 
         const secrets = this.readSecrets(row);
-        if (secrets === null) throw new ConnectionUnusableError(row.name);
+        if (secrets === null) throw this.unusable(tenantId, row);
         const refresh = secrets.refresh_token ?? '';
         if (refresh === '') {
-            throw new BadRequestException({
-                code: 'oauth_expired',
-                message: `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Vuelve a conectarla en Ajustes → Integraciones.`,
-                data: { status: 400 },
-            });
+            const message = `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Vuelve a conectarla en Ajustes → Integraciones.`;
+            this.connectionFailed(tenantId, row, message);
+            throw new BadRequestException({ code: 'oauth_expired', message, data: { status: 400 } });
         }
 
         const lock = oauthLockKey(tenantId, row.id);
@@ -1154,11 +1155,13 @@ export class ConnectorsService {
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             await this.setOAuthError(tenantId, row.id, message);
-            throw new BadRequestException({
-                code: 'oauth_refresh_failed',
-                message: `No se pudo renovar la autorización de «${row.name}»: ${message}`,
-                data: { status: 400 },
-            });
+            const text = `No se pudo renovar la autorización de «${row.name}»: ${message}`;
+            this.connectionFailed(
+                tenantId,
+                row,
+                `${text}. Si el error dice «invalid_grant», la autorización se revocó o venció: vuelve a conectarla en Ajustes → Integraciones.`,
+            );
+            throw new BadRequestException({ code: 'oauth_refresh_failed', message: text, data: { status: 400 } });
         } finally {
             await this.redis.del(lock).catch(() => undefined);
         }
@@ -1226,6 +1229,32 @@ export class ConnectorsService {
                 .set({ secrets, config, updatedAt: new Date() })
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, row.id))),
         );
+        // Renovada o reautorizada: vuelve a funcionar.
+        this.incidents?.resolve(tenantId, `connection:${row.id}`);
+    }
+
+    /**
+     * v0.1.285 (ADR-S44) — la conexión dejó de servir mientras algo la usaba:
+     * se abre el problema (avisa a los admins y a su dueño) y queda en la
+     * tarjeta como último resultado fallido.
+     */
+    private connectionFailed(tenantId: number, row: Pick<ConnectionRow, 'id' | 'name' | 'ownerUserId'>, message: string): void {
+        this.incidents?.report({
+            tenantId,
+            key: `connection:${row.id}`,
+            source: 'connection',
+            sourceId: row.id,
+            ownerId: row.ownerUserId,
+            title: `La conexión «${row.name}» dejó de funcionar`,
+            message,
+        });
+        void this.recordCheck(tenantId, row.id, false, message.slice(0, 500));
+    }
+
+    private unusable(tenantId: number, row: Pick<ConnectionRow, 'id' | 'name' | 'ownerUserId'>): ConnectionUnusableError {
+        const err = new ConnectionUnusableError(row.name);
+        this.connectionFailed(tenantId, row, err.message);
+        return err;
     }
 
     /** Deja el motivo a la vista en el panel en vez de sólo en los logs. */
@@ -1881,6 +1910,11 @@ export class ConnectorsService {
                 meta: { in_use: usage.length, forced: force },
             });
         });
+        // Lo que ya no existe no puede seguir fallando (la conexión y lo que corría sobre ella).
+        this.incidents?.resolve(tenantId, `connection:${id}`);
+        this.incidents?.resolvePrefix(tenantId, `store_sync:${id}:`);
+        this.incidents?.resolvePrefix(tenantId, `sql_sync:${id}:`);
+        this.incidents?.resolvePrefix(tenantId, `collections:${id}:`);
     }
 
     // ── Dónde se usa ─────────────────────────────────────────────────────
@@ -2395,6 +2429,7 @@ export class ConnectorsService {
         error: string | null,
     ): Promise<void> {
         if (id === null) return;
+        if (ok) this.incidents?.resolve(tenantId, `connection:${id}`);
         await this.tenantDb
             .withTenant(tenantId, (tx) =>
                 tx
