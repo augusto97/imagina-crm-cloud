@@ -370,6 +370,10 @@ export function RecordPage(): JSX.Element {
                                 showTypeIcon
                                 lockedReasons={lockedReasons}
                                 hiddenSlugs={titleField ? [titleField.slug] : undefined}
+                                history={{
+                                    canRestore: canEditRecords,
+                                    onRestored: (slug, v, saved) => draft.markSaved({ [slug]: v }, saved),
+                                }}
                             />
                         )}
 

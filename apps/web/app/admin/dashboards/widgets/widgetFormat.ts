@@ -47,6 +47,8 @@ export function formatMetricValue(
         return Number.isInteger(value) ? formatNumber(value, { maxFrac: 0 }) : formatNumber(value, { maxFrac: 2 });
     }
     switch (f.type) {
+        // v0.1.288 — el tiempo registrado son minutos, como una duración.
+        case 'time_tracked':
         case 'duration': {
             const fmt = (f.config as { format?: DurationFormat }).format;
             return formatDuration(Math.round(value), fmt);

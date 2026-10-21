@@ -29,6 +29,40 @@ const INLINE_SAFE = new Set([
     'image/bmp',
     'image/x-icon',
     'application/pdf',
+    // v0.1.288 — la vista previa de adjuntos reproduce video y audio. Un
+    // contenedor de medios no ejecuta script: el navegador sólo lo decodifica.
+    'video/mp4',
+    'video/webm',
+    'video/ogg',
+    'video/quicktime',
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/wave',
+    'audio/x-wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/m4a',
+    'audio/aac',
+    'audio/flac',
+]);
+
+/**
+ * v0.1.288 — Texto que se puede MOSTRAR (no ejecutar): se sirve siempre como
+ * `text/plain` (con `nosniff` y `CSP: sandbox`), nunca con su tipo original.
+ * HTML, SVG y XML quedan afuera a propósito: aunque su contenido sea texto,
+ * un navegador los interpreta.
+ */
+const TEXT_AS_PLAIN = new Set([
+    'text/plain',
+    'text/csv',
+    'text/tab-separated-values',
+    'text/markdown',
+    'text/x-markdown',
+    'application/json',
+    'application/x-ndjson',
 ]);
 
 export interface SafeDisposition {
@@ -42,12 +76,47 @@ export interface SafeDisposition {
  * Traduce el mime almacenado al par (content-type, disposition) con el que es
  * seguro servirlo. Normaliza mayúsculas y parámetros (`; charset=…`).
  */
-export function safeDisposition(storedMime: string): SafeDisposition {
+export function safeDisposition(storedMime: string, opts: { download?: boolean } = {}): SafeDisposition {
     const base = storedMime.split(';')[0]!.trim().toLowerCase();
+    // `download` (botón «Descargar» de la vista previa): mismo tipo seguro,
+    // pero siempre como archivo para guardar.
+    const inline = opts.download ? 'attachment' : 'inline';
     if (INLINE_SAFE.has(base)) {
-        return { contentType: base, disposition: 'inline' };
+        return { contentType: base, disposition: inline };
+    }
+    if (TEXT_AS_PLAIN.has(base)) {
+        return { contentType: 'text/plain; charset=utf-8', disposition: inline };
     }
     return { contentType: 'application/octet-stream', disposition: 'attachment' };
+}
+
+/**
+ * v0.1.288 — Rango pedido (`Range: bytes=…`) sobre un archivo de `size`
+ * bytes, para que el video y el audio de la vista previa se puedan adelantar.
+ * Sólo un rango simple; cualquier otra cosa (varios rangos, sintaxis rara)
+ * devuelve null y se sirve el archivo entero, como si no se hubiera pedido.
+ * `invalid` = el rango cae fuera del archivo (416).
+ */
+export function parseByteRange(header: string | undefined, size: number): { start: number; end: number } | 'invalid' | null {
+    if (!header) return null;
+    const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+    if (!m || (m[1] === '' && m[2] === '')) return null;
+    let start: number;
+    let end: number;
+    if (m[1] === '') {
+        // `bytes=-500`: los últimos 500.
+        const tail = Number(m[2]);
+        if (!Number.isSafeInteger(tail) || tail <= 0) return 'invalid';
+        start = Math.max(0, size - tail);
+        end = size - 1;
+    } else {
+        start = Number(m[1]);
+        end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+    }
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || size <= 0 || start >= size || start > end) {
+        return 'invalid';
+    }
+    return { start, end };
 }
 
 /**

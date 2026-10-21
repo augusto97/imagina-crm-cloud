@@ -2,6 +2,8 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import type {
     CommentDto,
     CommentKind,
+    CommentReactionEmoji,
+    CommentReactionSummary,
     CreateCommentInput,
     UpdateCommentInput,
 } from '@imagina-base/shared';
@@ -44,7 +46,13 @@ export class CommentsService {
     async listInTx(tx: Tx, tenantId: number, recordId: number, limit?: number): Promise<CommentDto[]> {
         const rows = await this.repo.listByRecordWithAuthor(tx, tenantId, recordId, limit);
         const clients = await this.clientAuthors(tx, tenantId, rows);
-        return rows.map((r) => toComment(r, r.userName, clients.get(r.userId)));
+        // v0.1.288 — las reacciones de toda la tanda en una query.
+        const reactions = await this.repo.reactionsFor(
+            tx,
+            tenantId,
+            rows.filter((r) => r.deletedAt === null).map((r) => r.id),
+        );
+        return rows.map((r) => toComment(r, r.userName, clients.get(r.userId), reactions.get(r.id)));
     }
 
     /**
@@ -74,15 +82,12 @@ export class CommentsService {
 
         let mentioned: number[] = [];
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // v0.1.288 — hilos de UN nivel: responder a una respuesta cuelga
+            // del mismo raíz, y la respuesta HEREDA la visibilidad del raíz
+            // (una respuesta a algo interno jamás llega al portal).
+            let root: CommentRow | null = null;
             if (input.parent_id !== undefined) {
-                const parent = await this.repo.findById(tx, tenantId, input.parent_id);
-                if (!parent || parent.recordId !== recordId) {
-                    throw new BadRequestException({
-                        code: 'invalid_parent',
-                        message: 'El comentario padre no pertenece a este record',
-                        data: { status: 400, errors: { parent_id: 'Inválido' } },
-                    });
-                }
+                root = await this.threadRoot(tx, tenantId, recordId, input.parent_id);
             }
             const row = await this.repo.insert(tx, {
                 tenantId,
@@ -91,9 +96,9 @@ export class CommentsService {
                 userId: actor.userId,
                 body: input.body,
                 kind: input.kind,
-                parentId: input.parent_id ?? null,
+                parentId: root?.id ?? null,
                 metadata: input.metadata ?? {},
-                visibility: input.visibility ?? 'internal',
+                visibility: root ? (root.visibility === 'client' ? 'client' : 'internal') : (input.visibility ?? 'internal'),
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
             mentioned = await this.storeMentions(tx, tenantId, row);
@@ -122,8 +127,53 @@ export class CommentsService {
             mentioned,
             commentId: row.row.id,
             visibility: row.row.visibility === 'client' ? 'client' : 'internal',
+            ...(row.row.parentId !== null ? { parentId: row.row.parentId } : {}),
         });
         return toComment(row.row, row.name);
+    }
+
+    /**
+     * El raíz del hilo al que se responde. Si el padre ya es una respuesta, el
+     * raíz es SU padre (un solo nivel). Tiene que ser de este registro y estar
+     * vivo: a un comentario eliminado no se le responde.
+     */
+    private async threadRoot(tx: Tx, tenantId: number, recordId: number, parentId: number): Promise<CommentRow> {
+        const invalid = (): BadRequestException =>
+            new BadRequestException({
+                code: 'invalid_parent',
+                message: 'No se puede responder a ese comentario: no es de este registro o se eliminó.',
+                data: { status: 400, errors: { parent_id: 'Inválido' } },
+            });
+        const parent = await this.repo.findById(tx, tenantId, parentId);
+        if (!parent || parent.recordId !== recordId) throw invalid();
+        if (parent.parentId === null) return parent;
+        const root = await this.repo.findById(tx, tenantId, parent.parentId);
+        if (!root || root.recordId !== recordId) throw invalid();
+        return root;
+    }
+
+    /**
+     * v0.1.288 — Pone o quita una reacción (toggle) y devuelve las del
+     * comentario. Quien puede comentar puede reaccionar; un comentario
+     * eliminado no recibe reacciones.
+     */
+    async toggleReaction(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        recordId: number,
+        id: number,
+        emoji: CommentReactionEmoji,
+    ): Promise<{ reactions: CommentReactionSummary[] }> {
+        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
+        const reactions = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const current = await this.repo.findById(tx, tenantId, id);
+            if (!current || current.recordId !== recordId) throw commentNotFound(id);
+            await this.repo.toggleReaction(tx, tenantId, id, actor.userId, emoji);
+            return (await this.repo.reactionsFor(tx, tenantId, [id])).get(id) ?? [];
+        });
+        this.realtime.records(tenantId, listId);
+        return { reactions };
     }
 
     async update(
@@ -145,15 +195,38 @@ export class CommentsService {
             const changes: Partial<typeof import('../db/schema').comments.$inferInsert> = {};
             if (patch.body !== undefined) changes.body = patch.body;
             if (patch.metadata !== undefined) changes.metadata = patch.metadata;
-            if (patch.visibility !== undefined) changes.visibility = patch.visibility;
+            if (patch.visibility !== undefined) {
+                // v0.1.288 — una respuesta no tiene visibilidad propia: es la
+                // del comentario original.
+                if (current.parentId !== null) {
+                    throw new BadRequestException({
+                        code: 'reply_visibility',
+                        message: 'Una respuesta se ve igual que el comentario al que responde: cambia la visibilidad de ese comentario.',
+                        data: { status: 400 },
+                    });
+                }
+                changes.visibility = patch.visibility;
+            }
             const updated = await this.repo.update(tx, tenantId, id, changes);
             if (!updated) throw commentNotFound(id);
-            return { row: updated, name: await this.repo.authorNameOf(tx, updated.userId) };
+            if (patch.visibility !== undefined) {
+                await this.repo.setRepliesVisibility(tx, tenantId, id, patch.visibility);
+            }
+            const reactions = (await this.repo.reactionsFor(tx, tenantId, [id])).get(id);
+            return { row: updated, name: await this.repo.authorNameOf(tx, updated.userId), reactions };
         });
         this.realtime.records(tenantId, listId);
-        return toComment(row.row, row.name);
+        return toComment(row.row, row.name, undefined, row.reactions);
     }
 
+    /**
+     * Borrar es suave (`deleted_at`). v0.1.288 — si el comentario es un RAÍZ
+     * con respuestas vivas, el listado lo sigue mostrando como «Comentario
+     * eliminado» (sin texto ni reacciones): borrar lo que otros respondieron
+     * no le corresponde a quien escribió el primer mensaje, y el hilo sin su
+     * cabeza no se entendería. Cuando se borra la última respuesta, el raíz
+     * desaparece solo.
+     */
     async remove(
         tenantId: number,
         actor: Actor,
@@ -224,22 +297,31 @@ export class CommentsService {
     }
 }
 
-function toComment(row: CommentRow, userName: string | null, clientName?: string): CommentDto {
+function toComment(
+    row: CommentRow,
+    userName: string | null,
+    clientName?: string,
+    reactions?: CommentReactionSummary[],
+): CommentDto {
+    const deleted = row.deletedAt !== null;
     return {
         id: row.id,
         list_id: row.listId,
         record_id: row.recordId,
         user_id: row.userId,
         user_name: userName,
-        body: row.body,
+        // Un raíz eliminado que conserva sus respuestas viaja SIN su texto.
+        body: deleted ? '' : row.body,
         kind: row.kind as CommentKind,
         parent_id: row.parentId,
-        metadata: row.metadata,
+        metadata: deleted ? {} : row.metadata,
         visibility: row.visibility === 'client' ? 'client' : 'internal',
         from_client: clientName !== undefined,
         author_name: clientName ?? null,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
+        reactions: deleted ? [] : (reactions ?? []),
+        deleted,
     };
 }
 

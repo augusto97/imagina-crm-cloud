@@ -100,7 +100,7 @@ export function missingRequired<F extends FieldLike>(fields: readonly F[], confi
         // Una casilla obligatoria sin marcar se guarda como «no»; los
         // calculados no se escriben.
         if (!f.is_required || f.type === 'checkbox') return false;
-        if (['computed', 'lookup', 'rollup'].includes(f.type)) return false;
+        if (['computed', 'lookup', 'rollup', 'time_tracked'].includes(f.type)) return false;
         const item = config.items.find((i) => i.type === 'field' && i.field_id === f.id);
         if (!item || item.type !== 'field') return true;
         // Oculta (sólo por la dirección) o condicional: puede llegar vacía.

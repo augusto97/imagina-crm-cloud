@@ -276,7 +276,7 @@ export function orderBuckets(field: Pick<Field, 'type' | 'config'>, buckets: Gro
     });
 }
 
-const NUMERIC_GROUP_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'rating', 'percent', 'duration', 'rollup']);
+const NUMERIC_GROUP_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'time_tracked']);
 
 /** Clave de un grupo multi_select (`["a", "b"]`) → array; otra cosa → null. */
 function parseSetKey(key: string): string[] | null {

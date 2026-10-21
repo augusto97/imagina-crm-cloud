@@ -13,6 +13,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { TimeTrackingService } from '../src/time-tracking/time-tracking.service';
 import { RecordViewService } from '../src/record-view/record-view.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
@@ -86,6 +87,7 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
             documents as never,
             collections as never,
             layoutData as never,
+            new TimeTrackingService(tenantDb, lists, fields, recs, rt),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();

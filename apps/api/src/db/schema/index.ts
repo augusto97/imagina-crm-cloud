@@ -36,3 +36,5 @@ export * from './document-templates';
 export * from './forms';
 export * from './notifications';
 export * from './incidents';
+export * from './comment-reactions';
+export * from './time-entries';

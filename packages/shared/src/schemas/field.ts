@@ -39,6 +39,11 @@ export const FIELD_TYPES = [
     // traducir). Vive en `records.data` como texto, pero nadie lo escribe a
     // mano: lo recalcula el servidor cuando cambian sus fuentes.
     'ai',
+    // v0.1.288 — tiempo registrado: la suma de las entradas de tiempo del
+    // registro (cronómetro + manuales), en MINUTOS. No se persiste ni se
+    // escribe: se resuelve en cada lectura con una subconsulta sobre
+    // `time_entries`, así se filtra, ordena y suma como un rollup.
+    'time_tracked',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -201,6 +206,8 @@ export const fieldConfigSchemas = {
         filter_tree: filterTreeSchema.optional(),
     }),
     ai: aiFieldConfigSchema,
+    /** v0.1.288 — igual que `duration`: el valor SIEMPRE son minutos. */
+    time_tracked: z.object({ format: z.enum(['hm', 'clock']).optional() }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
@@ -222,8 +229,9 @@ export function parseFieldConfig(type: FieldType, config: unknown): Record<strin
  * - `relation`: sus valores viven en la tabla `relations` (CONTRACT.md §3).
  * - `computed`: solo lectura, se evalúa server-side.
  * - `lookup` / `rollup`: solo lectura, se resuelven cruzando `relations`.
+ * - `time_tracked` (v0.1.288): solo lectura, la suma de `time_entries`.
  */
-export const NON_DATA_FIELD_TYPES: readonly FieldType[] = ['relation', 'computed', 'lookup', 'rollup'];
+export const NON_DATA_FIELD_TYPES: readonly FieldType[] = ['relation', 'computed', 'lookup', 'rollup', 'time_tracked'];
 
 export function isDataField(type: FieldType): boolean {
     return !NON_DATA_FIELD_TYPES.includes(type);

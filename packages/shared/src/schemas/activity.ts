@@ -34,6 +34,29 @@ export const activitySchema = z.object({
 });
 export type ActivityDto = z.infer<typeof activitySchema>;
 
+/**
+ * v0.1.288 — Historial de UN campo de un registro: cada cambio que tocó esa
+ * clave del diff (`f{id}`), de lo más nuevo a lo más viejo, con quién y
+ * cuándo. `from`/`to` son los valores CRUDOS guardados (la UI los formatea
+ * como en la ficha y decide si se pueden restaurar).
+ */
+export const fieldHistoryEntrySchema = z.object({
+    id: idSchema,
+    user_id: idSchema.nullable(),
+    user_name: z.string().nullable(),
+    action: activityActionSchema,
+    from: z.unknown(),
+    to: z.unknown(),
+    created_at: isoDateTimeSchema,
+});
+export type FieldHistoryEntry = z.infer<typeof fieldHistoryEntrySchema>;
+
+export const fieldHistoryPageSchema = z.object({
+    data: z.array(fieldHistoryEntrySchema),
+    meta: z.object({ next_cursor: z.string().nullable() }),
+});
+export type FieldHistoryPage = z.infer<typeof fieldHistoryPageSchema>;
+
 // --- v0.1.114: bitácora de acciones ADMINISTRATIVAS del workspace ---
 // Distinta de `activity` (cambios de registros): aquí van las acciones que
 // cambian la configuración o destruyen datos, incluidas las que no cuelgan

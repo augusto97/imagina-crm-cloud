@@ -338,7 +338,7 @@ export function buildDocDesign(input: z.infer<typeof docDesignInput>, ctx: DocDe
                 if (s.kind === 'field' && !slugs.has(s.slug)) bad.add(s.slug);
                 if (s.kind === 'field') {
                     const f = byId.get(s.slug);
-                    if (f && !['number', 'currency', 'percent', 'computed', 'rollup', 'lookup', 'duration'].includes(f.type)) {
+                    if (f && !['number', 'currency', 'percent', 'computed', 'rollup', 'lookup', 'duration', 'time_tracked'].includes(f.type)) {
                         throw new AiToolError(`El total «${r.label || r.id}» usa «${s.slug}», que no es numérico (${f.type}).`);
                     }
                 }

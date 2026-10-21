@@ -22,7 +22,9 @@ export type FieldTypeSlug =
     | 'lookup'
     | 'rollup'
     // v0.1.277 — campo con IA (ADR-S41).
-    | 'ai';
+    | 'ai'
+    // v0.1.288 — tiempo registrado (suma de las entradas de tiempo, minutos).
+    | 'time_tracked';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

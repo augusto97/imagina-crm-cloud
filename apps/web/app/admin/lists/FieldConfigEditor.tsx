@@ -111,6 +111,10 @@ export function FieldConfigEditor({
     if (type === 'duration') {
         return <DurationEditor config={config} onChange={onChange} />;
     }
+    // v0.1.288 — tiempo registrado: sólo el formato (el valor lo suma el servidor).
+    if (type === 'time_tracked') {
+        return <TimeTrackedEditor config={config} onChange={onChange} />;
+    }
     // v0.1.210 — un enlace puede mostrarse como miniatura (la foto de un producto).
     if (type === 'url') {
         return <UrlDisplayEditor config={config} onChange={onChange} />;
@@ -480,6 +484,22 @@ function DurationEditor({ config, onChange }: SubProps): JSX.Element {
             </Select>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                 {__('Se puede escribir de cualquier forma (90, 1:30, 1h 30m): siempre se guarda en minutos.')}
+            </p>
+        </div>
+    );
+}
+
+function TimeTrackedEditor({ config, onChange }: SubProps): JSX.Element {
+    const format = typeof config.format === 'string' ? config.format : 'hm';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <Label>{__('Formato')}</Label>
+            <Select value={format} onChange={(e) => onChange({ ...config, format: e.target.value })}>
+                <option value="hm">{__('12h 30m')}</option>
+                <option value="clock">{__('12:30')}</option>
+            </Select>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Suma el tiempo que el equipo carga en cada registro (con el cronómetro o a mano, desde la ficha). Se filtra, ordena y suma en el pie y en los tableros; no se escribe a mano.')}
             </p>
         </div>
     );

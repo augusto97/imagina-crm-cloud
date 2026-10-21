@@ -113,6 +113,9 @@ const AI_FIELD_TYPES = [
     'checkbox', 'url', 'email', 'phone', 'user', 'relation', 'file', 'rating', 'percent', 'duration', 'computed',
     // v0.1.277 (ADR-S41) — campo con IA.
     'ai',
+    // v0.1.288 — tiempo registrado (la suma de las entradas de tiempo del
+    // registro, en minutos; sólo lectura, sin config obligatoria).
+    'time_tracked',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -2932,7 +2935,7 @@ interface UpdateViewSpec {
 
 // ── Helpers puros ───────────────────────────────────────────────────────
 
-const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'computed'];
+const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'computed', 'time_tracked'];
 const DATE_TYPES: readonly FieldType[] = ['date', 'datetime'];
 
 const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
@@ -3062,6 +3065,9 @@ function describeFieldForModel(
     if (f.type === 'computed') {
         out.operation = cfg.operation;
         out.inputs = ((cfg.inputs as number[]) ?? []).map((id) => fieldById.get(id)?.slug ?? `f${id}`);
+    }
+    if (f.type === 'time_tracked') {
+        out.note = 'Sólo lectura: minutos registrados con el cronómetro o a mano en la ficha (se filtra, ordena y suma).';
     }
     if (f.type === 'lookup' || f.type === 'rollup') {
         out.through = f.through ? `${f.through.relation_label} → ${f.through.other_list_name}${f.through.target_field ? '.' + f.through.target_field.label : ''}` : null;

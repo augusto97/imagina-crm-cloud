@@ -11,6 +11,7 @@ import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
 import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
 import { activityKeys } from '@/hooks/useActivity';
+import { fieldHistoryKeys } from '@/hooks/fieldHistoryKeys';
 import { commentsKeys } from '@/hooks/useComments';
 import { descriptionKeys } from '@/hooks/useRecordDescription';
 import {
@@ -103,6 +104,8 @@ export function useRealtime(): void {
                             // refrescan las queries montadas).
                             invalidateForList(qc, descriptionKeys.all, ev.listId);
                             invalidateForList(qc, activityKeys.all, ev.listId);
+                            // v0.1.288 — historial por campo y registro de tiempo.
+                            invalidateForList(qc, fieldHistoryKeys.all, ev.listId);
                             const ids = listIdentifiersFor(qc, ev.listId);
                             void qc.invalidateQueries({
                                 predicate: (q) =>

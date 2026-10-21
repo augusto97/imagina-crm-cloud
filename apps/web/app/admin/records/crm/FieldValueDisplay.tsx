@@ -49,6 +49,12 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
     if (field.type === 'rollup') {
         return <FieldValueDisplay field={rollupDisplayField(field)} value={value} />;
     }
+    // v0.1.288 — tiempo registrado (minutos) como duración.
+    if (field.type === 'time_tracked') {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return <span className="imcrm-text-muted-foreground/60">—</span>;
+        return <span className="imcrm-tabular-nums">{formatDuration(n, (field.config as { format?: DurationFormat }).format)}</span>;
+    }
 
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground/60">—</span>;

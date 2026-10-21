@@ -33,7 +33,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'driz
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { lists, memberships, notifications, records, recordFollows, reminders, tenants, users } from '../db/schema';
+import { comments, lists, memberships, notifications, records, recordFollows, reminders, tenants, users } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -146,11 +146,25 @@ export class NotificationsService implements OnModuleInit {
                 title: notificationTitle('mention', { actorName, recordTitle: ctx.title, source: 'comment' }),
                 body: snippet,
             });
+            // v0.1.288 — una RESPUESTA: quienes escribieron en ese hilo (el
+            // raíz y las otras respuestas) reciben «respondió», que es más
+            // directo que el aviso genérico a los seguidores.
+            let replied: number[] = [];
+            if (e.parentId !== undefined) {
+                replied = (await this.threadParticipants(e.tenantId, e.parentId)).filter((u) => !e.mentioned.includes(u));
+                await this.deliver(e.tenantId, 'reply', replied, {
+                    listId: e.listId,
+                    recordId: e.recordId,
+                    actorId: e.actorId,
+                    title: notificationTitle('reply', { actorName, recordTitle: ctx.title }),
+                    body: snippet,
+                });
+            }
             const followers = await this.followerIds(e.tenantId, e.recordId);
             await this.deliver(
                 e.tenantId,
                 'comment',
-                followers.filter((u) => !e.mentioned.includes(u)),
+                followers.filter((u) => !e.mentioned.includes(u) && !replied.includes(u)),
                 {
                     listId: e.listId,
                     recordId: e.recordId,
@@ -204,6 +218,22 @@ export class NotificationsService implements OnModuleInit {
             body: summary.text,
             coalesce: true,
         });
+    }
+
+    /** Quiénes escribieron en un hilo: el raíz (aunque se haya borrado) y las respuestas vivas. */
+    private async threadParticipants(tenantId: number, rootId: number): Promise<number[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .selectDistinct({ userId: comments.userId })
+                .from(comments)
+                .where(
+                    and(
+                        eq(comments.tenantId, tenantId),
+                        or(eq(comments.id, rootId), and(eq(comments.parentId, rootId), isNull(comments.deletedAt))),
+                    ),
+                ),
+        );
+        return rows.map((r) => r.userId);
     }
 
     // ─────────────────────────── Entrega ───────────────────────────

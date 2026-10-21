@@ -13,9 +13,12 @@ import {
 } from '@nestjs/common';
 import {
     createCommentSchema,
+    toggleCommentReactionSchema,
     updateCommentSchema,
     type CommentDto,
+    type CommentReactionSummary,
     type CreateCommentInput,
+    type ToggleCommentReactionInput,
     type UpdateCommentInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
@@ -67,6 +70,23 @@ export class CommentsController {
         @Body(new ZodValidationPipe(updateCommentSchema)) patch: UpdateCommentInput,
     ): Promise<CommentDto> {
         return this.comments.update(req.tenant!.tenantId, actor(req), list, recordId, id, patch);
+    }
+
+    /**
+     * v0.1.288 — Pone o quita una reacción con emoji (toggle). Quien puede
+     * comentar puede reaccionar.
+     */
+    @Post(':id/reactions')
+    @HttpCode(200)
+    @RequireCapability('create_records', 'edit_records', 'edit_own_records')
+    toggleReaction(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('recordId', ParseIntPipe) recordId: number,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(toggleCommentReactionSchema)) input: ToggleCommentReactionInput,
+    ): Promise<{ reactions: CommentReactionSummary[] }> {
+        return this.comments.toggleReaction(req.tenant!.tenantId, actor(req), list, recordId, id, input.emoji);
     }
 
     @Delete(':id')

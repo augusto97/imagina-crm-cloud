@@ -77,6 +77,13 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     if (field.type === 'rollup') {
         return renderCellValue(rollupDisplayField(field), value);
     }
+    // v0.1.288 — tiempo registrado: minutos como duración («12h 30m»); sin
+    // tiempo cargado, vacío (no «0m» en cada fila).
+    if (field.type === 'time_tracked') {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return <span className="imcrm-text-muted-foreground">—</span>;
+        return <span className="imcrm-tabular-nums">{formatDuration(n, (field.config as { format?: DurationFormat }).format)}</span>;
+    }
 
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground">—</span>;

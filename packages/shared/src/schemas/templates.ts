@@ -41,7 +41,7 @@ export type TemplateRoleField = z.infer<typeof templateRoleFieldSchema>;
  * campo original y no se podía aplicar a otra lista con un tipo vecino.
  */
 const ROLE_TYPE_FAMILIES: ReadonlyArray<ReadonlyArray<FieldType>> = [
-    ['number', 'currency', 'percent', 'rating', 'duration', 'rollup'],
+    ['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'time_tracked'],
     ['date', 'datetime'],
     ['text', 'long_text', 'email', 'url', 'phone'],
     ['select', 'multi_select'],

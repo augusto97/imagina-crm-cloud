@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import {
     CHART_KIND_WIDGET,
+    isDataField,
     layoutChartKindSchema,
     resolveEmbed,
     type LayoutBlock,
@@ -37,6 +38,7 @@ import {
 
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { CompactFieldRow } from '@/admin/records/crm/CompactFieldRow';
+import { FieldHistoryButton } from '@/admin/records/history/FieldHistory';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
@@ -337,7 +339,7 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     return (
         <div className="imcrm-group imcrm-relative imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2">
             {showLabel && (
-                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-pr-6 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                <span className={cn('imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground', editable ? 'imcrm-pr-14' : 'imcrm-pr-7')}>
                     <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
                     <span className="imcrm-truncate">{block.title || field.label}</span>
                 </span>
@@ -354,6 +356,17 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
                     fullWidth={actionButton}
                 />
             </div>
+            {ctx.mode !== 'portal' && !ctx.preview && isDataField(field.type) && (
+                // v0.1.288 — el historial de este campo, junto al lápiz.
+                <FieldHistoryButton
+                    listId={ctx.list.id}
+                    recordId={ctx.record.id}
+                    field={field}
+                    currentValue={value}
+                    canRestore={editable}
+                    className={cn('imcrm-absolute imcrm-top-0', editable ? 'imcrm-right-7' : 'imcrm-right-0')}
+                />
+            )}
             {editable && (
                 <Popover>
                     <PopoverTrigger asChild>
@@ -374,6 +387,7 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
                             onChange={(v) => ctx.setValue(field.slug, v)}
                             error={ctx.errors[field.slug]}
                             allowCreateOptions={ctx.mode !== 'portal'}
+                            history={ctx.mode === 'portal' || ctx.preview ? null : { canRestore: true }}
                         />
                     </PopoverContent>
                 </Popover>
@@ -412,6 +426,8 @@ export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: s
                             onChange={(v) => ctx.setValue(f.slug, v)}
                             error={ctx.errors[f.slug]}
                             allowCreateOptions={ctx.mode !== 'portal'}
+                            // v0.1.288 — «Ver historial» (no en el portal ni en el editor).
+                            history={ctx.mode === 'portal' || ctx.preview ? null : { canRestore: ctx.canEdit }}
                             lockedReason={
                                 ctx.mode === 'portal'
                                     ? null

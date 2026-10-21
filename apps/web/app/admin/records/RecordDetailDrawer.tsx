@@ -566,6 +566,11 @@ export function RecordDetailDrawer({
                                             showTypeIcon
                                             lockedReasons={lockedReasons}
                                             hiddenSlugs={titleField ? [titleField.slug] : undefined}
+                                            history={{
+                                                canRestore: canEditRecords,
+                                                // Lo restaurado ya está guardado: el borrador no lo cuenta como cambio.
+                                                onRestored: (slug, v, saved) => draft.markSaved({ [slug]: v }, saved),
+                                            }}
                                         />
                                     )}
 

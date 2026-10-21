@@ -68,7 +68,7 @@ const GROUPABLE_TYPES = [
     'checkbox',
     'user',
     'number', 'currency', 'rating', 'percent', 'duration',
-    'lookup', 'rollup',
+    'lookup', 'rollup', 'time_tracked',
 ];
 
 /**

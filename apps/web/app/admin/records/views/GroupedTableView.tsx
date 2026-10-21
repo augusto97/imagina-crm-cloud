@@ -1,4 +1,5 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { formatDuration } from '@imagina-base/shared';
 import { ChevronDown, ChevronRight, Inbox, KeyRound, Loader2, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -1465,6 +1466,11 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
     // etiqueta de la opción, la fecha en el formato de la empresa), que es
     // exactamente lo que muestra la celda.
     if (field.type === 'rollup') return formatBucketLabel(rollupDisplayField(field), value);
+    // v0.1.288 — el tiempo registrado agrupa por minutos: se lee como duración.
+    if (field.type === 'time_tracked') {
+        const n = Number(value);
+        return Number.isFinite(n) ? formatDuration(n) || '0m' : value;
+    }
     if (field.type === 'lookup') {
         const display = lookupDisplayField(field);
         if (!display) return value;

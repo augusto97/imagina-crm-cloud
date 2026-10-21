@@ -43,6 +43,7 @@ import {
     type PortalEmailLinkResult,
     type PortalSwitchResult,
     type PortalCommentInput,
+    type CommentReactionEmoji,
     type PortalLinkedList,
     type PortalRelatedList,
     type PortalUpdateMeInput,
@@ -1182,20 +1183,80 @@ export class PortalService implements OnModuleInit {
             .leftJoin(memberships, and(eq(memberships.userId, users.id), eq(memberships.tenantId, tenantId)))
             .where(inArray(users.id, authorIds));
         const byId = new Map(authors.map((a) => [a.id, a]));
+        // v0.1.288 — reacciones: cuántas y si una es de quien mira (nunca
+        // quiénes del equipo: el portal no identifica a los empleados).
+        const reactions = await this.commentsRepo.reactionsFor(
+            tx,
+            tenantId,
+            rows.filter((r) => r.deletedAt === null).map((r) => r.id),
+        );
         return rows.map((r) => {
             const a = byId.get(r.userId);
             const fromTeam = a?.role !== undefined && a.role !== null && a.role !== 'client';
             const mine = r.userId === viewerId;
+            const deleted = r.deletedAt !== null;
             return {
                 id: r.id,
-                body: r.body,
-                content: r.body,
+                body: deleted ? '' : r.body,
+                content: deleted ? '' : r.body,
                 created_at: r.createdAt.toISOString(),
                 mine,
                 from_team: fromTeam,
                 author_name: mine ? 'Tú' : fromTeam ? firstName(a?.name) || companyName || 'El equipo' : firstName(a?.name) || 'Cliente',
+                parent_id: r.parentId,
+                reactions: deleted
+                    ? []
+                    : (reactions.get(r.id) ?? []).map((x) => ({ emoji: x.emoji, count: x.count, mine: x.user_ids.includes(viewerId) })),
+                deleted,
             };
         });
+    }
+
+    /**
+     * v0.1.288 — El cliente reacciona a un comentario que VE en su portal
+     * (toggle). Mismas reglas que comentar: el diseño tiene que tener la
+     * conversación abierta y la empresa no estar en solo-lectura.
+     */
+    async toggleMyReaction(
+        actor: PortalActor,
+        commentId: number,
+        emoji: CommentReactionEmoji,
+    ): Promise<{ reactions: Array<{ emoji: string; count: number; mine: boolean }> }> {
+        const link = await this.requireLink(actor);
+        const reactions = await this.tenantDb.withTenant(link.tenantId, async (tx) => {
+            await this.assertWritable(tx, link.tenantId);
+            const ctx = await this.portalCtx(tx, link.tenantId, link.listId);
+            if (!ctx.conversation.writable) {
+                throw new ForbiddenException({
+                    code: 'portal_comments_disabled',
+                    message: 'Este portal no recibe comentarios',
+                    data: { status: 403 },
+                });
+            }
+            const target = await this.clientVisibleComment(tx, link.tenantId, link.recordId, commentId);
+            await this.commentsRepo.toggleReaction(tx, link.tenantId, target.id, actor.userId, emoji);
+            const list = (await this.commentsRepo.reactionsFor(tx, link.tenantId, [target.id])).get(target.id) ?? [];
+            return list.map((x) => ({ emoji: x.emoji, count: x.count, mine: x.user_ids.includes(actor.userId) }));
+        });
+        this.realtime.records(link.tenantId, link.listId);
+        return { reactions };
+    }
+
+    /**
+     * Un comentario del registro del cliente que ÉL puede ver (visible para el
+     * cliente, vivo, y si es una respuesta, con su raíz también visible). Si
+     * no, 404 opaco: el cliente no distingue «no existe» de «es interno».
+     */
+    private async clientVisibleComment(tx: Tx, tenantId: number, recordId: number, commentId: number) {
+        const notFound = (): NotFoundException =>
+            new NotFoundException({ code: 'comment_not_found', message: 'Comentario no encontrado', data: { status: 404 } });
+        const row = await this.commentsRepo.findById(tx, tenantId, commentId);
+        if (!row || row.recordId !== recordId || row.visibility !== 'client') throw notFound();
+        if (row.parentId !== null) {
+            const root = await this.commentsRepo.findById(tx, tenantId, row.parentId);
+            if (!root || root.visibility !== 'client') throw notFound();
+        }
+        return row;
     }
 
     /** GET /portal/me/comments — la conversación del registro del cliente. */
@@ -1226,6 +1287,13 @@ export class PortalService implements OnModuleInit {
                     data: { status: 403 },
                 });
             }
+            // v0.1.288 — responder a un comentario que el cliente ve: cuelga
+            // del raíz del hilo (un solo nivel).
+            let parentId: number | null = null;
+            if (input.parent_id !== undefined) {
+                const parent = await this.clientVisibleComment(tx, link.tenantId, link.recordId, input.parent_id);
+                parentId = parent.parentId ?? parent.id;
+            }
             const inserted = await this.commentsRepo.insert(tx, {
                 tenantId: link.tenantId,
                 listId: link.listId,
@@ -1233,7 +1301,7 @@ export class PortalService implements OnModuleInit {
                 userId,
                 body: input.content,
                 kind: 'note',
-                parentId: null,
+                parentId,
                 metadata: {},
                 visibility: 'client',
             });
@@ -1253,6 +1321,7 @@ export class PortalService implements OnModuleInit {
             visibility: 'client',
             fromClient: true,
             clientName,
+            ...(row.parentId !== null ? { parentId: row.parentId } : {}),
         });
         return {
             id: row.id,
@@ -1262,6 +1331,9 @@ export class PortalService implements OnModuleInit {
             mine: true,
             from_team: false,
             author_name: 'Tú',
+            parent_id: row.parentId,
+            reactions: [],
+            deleted: false,
         };
     }
 

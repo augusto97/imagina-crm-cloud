@@ -143,6 +143,8 @@ export function operatorsForType(
         case 'rating':
         case 'percent':
         case 'duration':
+        // v0.1.288 — minutos registrados (subconsulta sobre `time_entries`).
+        case 'time_tracked':
             return NUMERIC;
         case 'date':
         case 'datetime':

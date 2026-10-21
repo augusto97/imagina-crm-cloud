@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AiFieldValue } from '../AiFieldValue';
 import { ExternalLink, Lock, Mail, Pencil, Phone } from 'lucide-react';
-import { formatPhone } from '@imagina-base/shared';
+import { formatPhone, isDataField } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
@@ -16,6 +16,8 @@ import { isImageUrlField } from '@/lib/imageProxy';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+import type { RecordEntity } from '@/types/record';
+import { FieldHistoryButton } from '@/admin/records/history/FieldHistory';
 
 import { DurationControl } from '@/components/fields/DurationControl';
 import { PhoneControl } from '@/components/fields/PhoneControl';
@@ -59,6 +61,12 @@ interface CompactFieldRowProps {
      * selectores van planos (sin caja), como en la tabla.
      */
     variant?: 'row' | 'property';
+    /**
+     * v0.1.288 — «Ver historial» del campo (con «Restaurar» si se puede
+     * escribir). Sólo en la ficha de un registro existente del equipo: ni en
+     * el alta ni en el portal.
+     */
+    history?: { canRestore: boolean; onRestored?: (value: unknown, saved: RecordEntity | null) => void } | null;
 }
 
 /**
@@ -85,6 +93,7 @@ export function CompactFieldRow({
     lockedReason = null,
     allowCreateOptions = true,
     variant = 'row',
+    history = null,
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
     const property = variant === 'property';
@@ -140,19 +149,36 @@ export function CompactFieldRow({
         <ReadButton field={field} value={value} property={property} onEdit={() => setEditing(true)} />
     );
 
+    // El historial de un campo es lo que guardó la actividad: sólo los que
+    // viven en los datos del registro (no los calculados ni las relaciones).
+    const historyButton =
+        history && recordId !== undefined && isDataField(field.type) ? (
+            <FieldHistoryButton
+                listId={listId}
+                recordId={recordId}
+                field={field}
+                currentValue={value}
+                canRestore={history.canRestore && !isReadOnly}
+                onRestored={history.onRestored}
+            />
+        ) : null;
+
     if (property) {
         return (
             <div className="imcrm-prop" data-prop={field.slug}>
                 <div className={cn('imcrm-prop-row imcrm-group imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-transition-colors hover:imcrm-bg-accent/50', editing && 'imcrm-bg-accent/40')}>
-                    <label
-                        htmlFor={`field-${field.id}`}
-                        className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-[3px] imcrm-text-xs imcrm-text-muted-foreground"
-                        title={field.label}
-                    >
-                        <TypeIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70" aria-hidden />
-                        <span className="imcrm-truncate">{field.label}</span>
-                        {field.is_required && <span className="imcrm-text-destructive">*</span>}
-                    </label>
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-items-start imcrm-gap-1">
+                        <label
+                            htmlFor={`field-${field.id}`}
+                            className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1.5 imcrm-pt-[3px] imcrm-text-xs imcrm-text-muted-foreground"
+                            title={field.label}
+                        >
+                            <TypeIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70" aria-hidden />
+                            <span className="imcrm-truncate">{field.label}</span>
+                            {field.is_required && <span className="imcrm-text-destructive">*</span>}
+                        </label>
+                        {historyButton}
+                    </div>
                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
                         {control}
                         {error !== undefined && <span className="imcrm-text-xs imcrm-text-destructive">{error}</span>}
@@ -174,27 +200,32 @@ export function CompactFieldRow({
                 editing && 'imcrm-bg-accent/20',
             )}
         >
-            <label
-                htmlFor={`field-${field.id}`}
+            <div
                 className={cn(
-                    'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground',
+                    'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1',
                     // Con icono de tipo (drawer/página, estilo ClickUp) el
                     // label ocupa ~200px; sin icono (layout CRM) queda 120px.
                     // v0.1.252 — en el celular el label se achica para que el
                     // control tenga lugar (antes los selects se aplastaban).
                     showTypeIcon ? 'imcrm-w-full sm:imcrm-w-[200px]' : 'imcrm-w-full sm:imcrm-w-[120px]',
-                    'imcrm-pt-0 sm:imcrm-pt-1',
+                    'imcrm-pt-0 sm:imcrm-pt-0.5',
                 )}
             >
-                {showTypeIcon && (
-                    <TypeIcon
-                        className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70"
-                        aria-hidden
-                    />
-                )}
-                <span className="imcrm-truncate">{field.label}</span>
-                {field.is_required && <span className="imcrm-text-destructive">*</span>}
-            </label>
+                <label
+                    htmlFor={`field-${field.id}`}
+                    className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground sm:imcrm-pt-0.5"
+                >
+                    {showTypeIcon && (
+                        <TypeIcon
+                            className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70"
+                            aria-hidden
+                        />
+                    )}
+                    <span className="imcrm-truncate">{field.label}</span>
+                    {field.is_required && <span className="imcrm-text-destructive">*</span>}
+                </label>
+                {historyButton}
+            </div>
 
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
                 {control}

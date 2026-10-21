@@ -7,6 +7,7 @@ import { FieldsModule } from '../fields/fields.module';
 import { ListsModule } from '../lists/lists.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RecordsModule } from '../records/records.module';
+import { TimeTrackingModule } from '../time-tracking/time-tracking.module';
 import { RecordViewController } from './record-view.controller';
 import { RecordViewService } from './record-view.service';
 
@@ -25,6 +26,7 @@ import { RecordViewService } from './record-view.service';
         CommentsModule,
         NotificationsModule,
         DashboardsModule,
+        TimeTrackingModule,
     ],
     controllers: [RecordViewController],
     providers: [RecordViewService],

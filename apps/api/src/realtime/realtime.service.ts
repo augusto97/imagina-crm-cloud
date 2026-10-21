@@ -53,4 +53,8 @@ export class RealtimeService {
     notifications(tenantId: number, userId: number): void {
         this.server?.to(userRoom(tenantId, userId)).emit(RT_EVENT_INVALIDATE, { topic: 'notifications' } satisfies RtInvalidate);
     }
+    /** v0.1.288 — el cronómetro de una persona cambió (sus otras pestañas y equipos). */
+    timer(tenantId: number, userId: number): void {
+        this.server?.to(userRoom(tenantId, userId)).emit(RT_EVENT_INVALIDATE, { topic: 'timer' } satisfies RtInvalidate);
+    }
 }

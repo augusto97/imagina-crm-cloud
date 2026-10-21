@@ -3,6 +3,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import { api } from '@/lib/api';
 import type { AggregatesResponse } from '@/hooks/useAggregates';
 import { activityKeys } from '@/hooks/useActivity';
+import { fieldHistoryKeys } from './fieldHistoryKeys';
 import { listsKeys } from '@/hooks/useLists';
 import type { ListSummary } from '@/types/list';
 import type {
@@ -513,6 +514,8 @@ export function useUpdateRecord(listId: string | number) {
             // v0.1.149 — cada edición escribe una entrada de actividad: el
             // feed de la ficha tiene que verla sin recargar.
             invalidateForList(qc, activityKeys.all, listId);
+            // v0.1.288 — y el historial del campo, si está abierto.
+            invalidateForList(qc, fieldHistoryKeys.all, listId);
         },
     });
 }

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Activity as ActivityIcon, Loader2, Mail, MessageSquare, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
 
 import { ActivityValue } from '@/admin/activity/ActivityPanel';
+import { RestorePreviousButton } from '@/admin/records/history/FieldHistory';
 import { actionText, actorOf, changeSentence, changesOf, descriptionSentence, type FieldChange } from '@/admin/activity/activityText';
 import { CommentContent } from '@/admin/comments/CommentContent';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
@@ -341,10 +342,20 @@ function FeedRow({
     if (item.kind === 'comment') {
         return <CommentRow comment={item.comment} name={authorOf(item.comment)} canEdit={canEditComment(item.comment)} listId={listId} recordId={recordId} />;
     }
-    return <ChangeRow entries={item.entries} fields={fields} />;
+    return <ChangeRow entries={item.entries} fields={fields} listId={listId} recordId={recordId} />;
 }
 
-function ChangeRow({ entries, fields }: { entries: ActivityEntity[]; fields: FieldEntity[] }): JSX.Element {
+function ChangeRow({
+    entries,
+    fields,
+    listId,
+    recordId,
+}: {
+    entries: ActivityEntity[];
+    fields: FieldEntity[];
+    listId: number;
+    recordId: number;
+}): JSX.Element {
     const first = entries[0]!;
     const changes = entries.flatMap((e) => changesOf(e, fields));
     const actor = actorOf(first);
@@ -390,7 +401,7 @@ function ChangeRow({ entries, fields }: { entries: ActivityEntity[]; fields: Fie
                 {shown.length > 0 && (
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                         {shown.map((c, i) => (
-                            <ChangeLine key={`${c.label}-${i}`} change={c} withLabel={shown.length > 1} />
+                            <ChangeLine key={`${c.label}-${i}`} change={c} withLabel={shown.length > 1} listId={listId} recordId={recordId} />
                         ))}
                     </ul>
                 )}
@@ -412,7 +423,17 @@ function dedupeChanges(changes: FieldChange[]): FieldChange[] {
     return [...byLabel.values()];
 }
 
-function ChangeLine({ change, withLabel }: { change: FieldChange; withLabel: boolean }): JSX.Element {
+function ChangeLine({
+    change,
+    withLabel,
+    listId,
+    recordId,
+}: {
+    change: FieldChange;
+    withLabel: boolean;
+    listId: number;
+    recordId: number;
+}): JSX.Element {
     const { from, to } = changeSentence(change);
     if (change.description) {
         // Un adelanto del texto, nunca el documento entero.
@@ -436,6 +457,10 @@ function ChangeLine({ change, withLabel }: { change: FieldChange; withLabel: boo
                 <ActivityValue field={change.field} raw={change.to} text={to} />
             ) : (
                 <span className="imcrm-italic">{__('vacío')}</span>
+            )}
+            {/* v0.1.288 — deshacer este cambio (vuelve al valor anterior). */}
+            {change.field !== undefined && (
+                <RestorePreviousButton listId={listId} recordId={recordId} field={change.field} value={change.from} />
             )}
         </li>
     );

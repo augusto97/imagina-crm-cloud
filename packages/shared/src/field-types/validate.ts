@@ -181,6 +181,7 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
         case 'computed':
         case 'lookup':
         case 'rollup':
+        case 'time_tracked':
             return fail(`El tipo '${type}' no se escribe en los datos del registro.`);
         default: {
             const _exhaustive: never = type;

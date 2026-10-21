@@ -29,6 +29,12 @@ export interface FileStorage {
      * vuelve a leer. Sin esto, la clave es la que se pidió.
      */
     writeKeyed?(key: string, source: Readable, name?: string): Promise<{ size: number; key: string }>;
+    /**
+     * v0.1.288 — leer sólo un tramo (`start`..`end`, ambos incluidos): el
+     * video y el audio de la vista previa piden rangos para adelantar. Sin
+     * esto, el archivo se sirve entero (se reproduce, pero no se adelanta).
+     */
+    readRange?(key: string, start: number, end: number): Readable;
 }
 
 /** Guarda en cualquier storage y devuelve la clave REAL con la que quedó. */
@@ -72,6 +78,10 @@ export class LocalFileStorage implements FileStorage {
 
     read(key: string): Readable {
         return createReadStream(this.resolve(key));
+    }
+
+    readRange(key: string, start: number, end: number): Readable {
+        return createReadStream(this.resolve(key), { start, end });
     }
 
     async probe(key: string): Promise<boolean> {
