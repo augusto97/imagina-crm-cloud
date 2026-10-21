@@ -1,4 +1,4 @@
--- v0.1.290 — Respuestas de formularios que esperan que la persona confirme su
+-- v0.1.289 — Respuestas de formularios que esperan que la persona confirme su
 -- correo (doble opt-in). Guarda la respuesta YA validada; el registro se crea
 -- recién al abrir el enlace del correo. Con RLS (son datos personales de la
 -- empresa); el enlace público la busca por el HASH del token con la conexión
@@ -24,7 +24,7 @@ CREATE POLICY "tenant_isolation" ON "form_pending_submissions"
     USING ("tenant_id" = NULLIF(current_setting('app.tenant_id', true), '')::bigint)
     WITH CHECK ("tenant_id" = NULLIF(current_setting('app.tenant_id', true), '')::bigint);
 --> statement-breakpoint
--- v0.1.290 — Contraseña del PORTAL del cliente, por empresa. NO es la
+-- v0.1.289 — Contraseña del PORTAL del cliente, por empresa. NO es la
 -- contraseña de la cuenta (`users.password_hash`): un cliente de dos empresas
 -- tiene dos contraseñas independientes y ninguna sirve para la app del equipo.
 CREATE TABLE IF NOT EXISTS "portal_credentials" (
