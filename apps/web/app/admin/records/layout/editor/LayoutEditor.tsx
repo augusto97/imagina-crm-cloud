@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { ArrowLeft, Check, LayoutTemplate, Loader2, Monitor, Redo2, RotateCcw, Smartphone, Undo2 } from 'lucide-react';
 import type { RecordLayoutV3 } from '@imagina-base/shared';
 
@@ -7,6 +7,7 @@ import { RecordSelector } from '@/admin/lists/template-editor/RecordSelector';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useToast } from '@/components/ui/toast';
 import { WidgetDataOverrideContext } from '@/hooks/useDashboards';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
@@ -68,7 +69,6 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
     const paths = useRelationPaths(list.id);
     const boot = getBootData();
     const confirm = useConfirm();
-    const navigate = useNavigate();
 
     const dirty = useMemo(() => JSON.stringify(layout) !== JSON.stringify(saved), [layout, saved]);
     // v0.1.237 — galería de plantillas del portal (`?plantillas=1` la abre al entrar).
@@ -208,29 +208,13 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
         return () => document.removeEventListener('keydown', onKey);
     }, [dirty, update.isPending, save, undo, redo, selection, layout, commit]);
 
-    // Salir con cambios sin guardar: aviso del navegador y de la app.
-    useEffect(() => {
-        if (!dirty) return;
-        const onBefore = (e: BeforeUnloadEvent): void => {
-            e.preventDefault();
-        };
-        window.addEventListener('beforeunload', onBefore);
-        return () => window.removeEventListener('beforeunload', onBefore);
-    }, [dirty]);
+    // Salir con cambios sin guardar: cerrar/recargar la pestaña, la flecha de
+    // volver (un enlace) y Atrás del navegador piden confirmación (antes sólo
+    // `beforeunload`: Atrás descartaba el diseño sin preguntar).
+    useUnsavedChangesGuard(dirty, __('Si sales ahora se pierde lo que diseñaste desde la última vez que guardaste.'));
     const backHref = portal ? `/lists/${list.slug}/edit?s=compartir` : `/lists/${list.slug}/records${record.id > 0 ? `/${record.id}` : ''}`;
     // Ajustes de página del portal (fondo, ancho, tipografía) en la vista previa.
     const page = portal ? readPageSettings((layout as { page?: unknown }).page) : {};
-    const leave = async (e: React.MouseEvent): Promise<void> => {
-        if (!dirty) return;
-        e.preventDefault();
-        const ok = await confirm({
-            title: __('Tienes cambios sin guardar'),
-            description: __('Si sales ahora se pierde lo que diseñaste desde la última vez que guardaste.'),
-            confirmLabel: __('Salir sin guardar'),
-            destructive: true,
-        });
-        if (ok) navigate(backHref);
-    };
 
     // El editor usa toda la ventana: fuera el menú y la barra de la app.
     useEffect(() => {
@@ -252,7 +236,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                     <div className="imcrm-flex imcrm-h-[calc(100vh-1rem)] imcrm-min-h-[560px] imcrm-flex-col imcrm-gap-2" data-testid="layout-editor">
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-pb-2">
                             <Button asChild variant="ghost" size="sm" className="imcrm-gap-1.5 imcrm-text-muted-foreground">
-                                <Link to={backHref} onClick={(e) => void leave(e)}>
+                                <Link to={backHref}>
                                     <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
                                     <span className="imcrm-hidden sm:imcrm-inline">{list.name}</span>
                                 </Link>

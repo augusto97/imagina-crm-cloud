@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { notificationKeys } from '@/hooks/useNotifications';
@@ -87,6 +88,8 @@ export function RecordPage(): JSX.Element {
     // borra lo que se está escribiendo ni se revierte al guardar.
     const draft = useRecordDraft(record.data);
     const { values, setValues, dirty } = draft;
+    // Salir con cambios sin guardar (enlace, Atrás, cerrar la pestaña) pregunta.
+    useUnsavedChangesGuard(dirty);
     // v0.1.213 — lista de una tienda: sin borrar y con los campos de WooCommerce de lectura.
     const storeMarker = readStoreListMarker(list.data?.settings);
     const storeRules = useMemo<StoreRules | null>(
@@ -122,8 +125,10 @@ export function RecordPage(): JSX.Element {
         // la lista y el aviso del socket volvían a pedir el registro (404).
         const id = record.data.id;
         const listId = list.data.id;
-        draft.reset();
-        flushSync(() => setDeletedId(id));
+        flushSync(() => {
+            draft.reset();
+            setDeletedId(id);
+        });
         navigate(`/lists/${list.data.slug}/records`);
         markLocalRecordsChange(qc, listId);
         try {

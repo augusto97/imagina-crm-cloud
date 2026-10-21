@@ -22,6 +22,7 @@ import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
     Sheet,
     SheetCloseButton,
@@ -155,6 +156,9 @@ export function RecordDetailDrawer({
 
     const draft = useRecordDraft(record);
     const { values, setValues, dirty } = draft;
+    // Atrás del navegador (que cierra el modal: `?record=`), un enlace de la
+    // app o cerrar la pestaña con cambios sin guardar → pregunta antes.
+    useUnsavedChangesGuard(open && dirty);
     const view = useRecordView(listId, record?.id, open && record !== null);
     const lockedReasons = useMemo(() => lockedReasonsFor(storeRules, fields, values), [storeRules, fields, values]);
     const [error, setError] = useState<string | null>(null);
@@ -210,7 +214,9 @@ export function RecordDetailDrawer({
             cancelLabel: __('Seguir editando'),
             destructive: true,
         });
-        if (ok) draft.reset();
+        // flushSync: la guardia de «cambios sin guardar» se apaga ANTES de que
+        // el cierre mueva el historial (si no, «Atrás» preguntaba dos veces).
+        if (ok) flushSync(() => draft.reset());
         return ok;
     };
     const requestClose = async (): Promise<void> => {
@@ -269,7 +275,7 @@ export function RecordDetailDrawer({
 
         try {
             const saved = await update.mutateAsync({ id: record.id, values: patch });
-            draft.markSaved(patch, saved ?? null);
+            flushSync(() => draft.markSaved(patch, saved ?? null));
             // Asignarse un registro te suscribe a él (ADR-S40).
             void qc.invalidateQueries({ queryKey: notificationKeys.follow(record.id) });
             onOpenChange(false);
@@ -301,8 +307,10 @@ export function RecordDetailDrawer({
         // la lista y el aviso del socket volvían a pedir el registro, su
         // descripción y sus comentarios (404 de un registro que ya no existe).
         const id = record.id;
-        draft.reset();
-        flushSync(() => onOpenChange(false));
+        flushSync(() => {
+            draft.reset();
+            onOpenChange(false);
+        });
         markLocalRecordsChange(qc, listId);
         try {
             await remove.mutateAsync({ id, purge: false });
