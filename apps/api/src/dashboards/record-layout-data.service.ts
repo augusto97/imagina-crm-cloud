@@ -3,6 +3,7 @@ import {
     CHART_KIND_WIDGET,
     layoutChartConfigSchema,
     layoutRelatedConfigSchema,
+    parseLooseAmount,
     soundsInternalField,
     type Field,
     type FilterGroup,
@@ -352,7 +353,10 @@ export class RecordLayoutDataService {
             visible = visible.filter((f) => wanted.has(f.id) && f.type !== 'relation' && f.type !== 'user');
             noteFields(portal.used, src.listId, { field_ids: visible.map((f) => f.id) });
         }
-        const limit = cfg.limit ?? 25;
+        // v0.1.292 — La tabla editable (los ítems de una cotización) trae hasta
+        // 100 filas y en el orden en que se cargaron (no el más reciente primero).
+        const editable = cfg.view === 'editable' && !portal;
+        const limit = cfg.limit ?? (editable ? 100 : 25);
         const sortOk = cfg.sort_field_id !== undefined && visible.some((f) => f.id === cfg.sort_field_id);
         const page = await this.records.list(
             tenantId,
@@ -360,7 +364,7 @@ export class RecordLayoutDataService {
             String(src.listId),
             {
                 limit,
-                sort_dir: sortOk ? 'asc' : 'desc',
+                sort_dir: sortOk || editable ? 'asc' : 'desc',
                 sort: sortOk ? `field_${cfg.sort_field_id}:${cfg.sort_dir ?? 'asc'}` : undefined,
                 filter_tree: cfg.filter_tree,
                 with_total: true,
@@ -368,14 +372,66 @@ export class RecordLayoutDataService {
             { related: src.related },
         );
         const rows = portal ? page.data.map((r) => portalRow(r, visible, portal.signFile)) : page.data;
+        const total = page.meta?.total ?? page.data.length;
         return {
             list: { id: list.id, slug: list.slug, name: list.name, icon: list.icon ?? null, color: list.color ?? null },
             fields: visible,
             rows,
-            total: page.meta?.total ?? page.data.length,
+            total,
+            ...(editable ? { totals: await this.editableTotals(tenantId, viewer, src, cfg, visible, page.data, total) } : {}),
         };
     }
+
+    /**
+     * v0.1.292 — La fila de totales de una tabla editable: la suma de cada
+     * columna numérica elegida sobre TODO lo vinculado (si hay más filas que
+     * las que viajan, la suma la hace el motor de agregados con el MISMO
+     * alcance y ACL, en vez de sumar sólo la página).
+     */
+    private async editableTotals(
+        tenantId: number,
+        viewer: DashboardViewer,
+        src: ResolvedSource,
+        cfg: ReturnType<typeof layoutRelatedConfigSchema.parse>,
+        visible: Field[],
+        rows: RecordDto[],
+        total: number,
+    ): Promise<Record<string, number | null>> {
+        const ids = (cfg.total_field_ids ?? []).filter((id) => visible.some((f) => f.id === id && SUMMABLE.has(f.type)));
+        const out: Record<string, number | null> = {};
+        if (ids.length === 0) return out;
+        if (total <= rows.length) {
+            for (const id of ids) {
+                let sum = 0;
+                let any = false;
+                for (const r of rows) {
+                    const v = parseLooseAmount(r.data[`f${id}`]);
+                    if (v === null) continue;
+                    sum += v;
+                    any = true;
+                }
+                out[String(id)] = any ? sum : rows.length === 0 ? 0 : null;
+            }
+            return out;
+        }
+        for (const id of ids) {
+            const widget = {
+                id: `sum_${id}`,
+                type: 'kpi',
+                list_id: src.listId,
+                title: '',
+                config: { metric: 'sum', metric_field_id: id, ...(cfg.filter_tree ? { filter_tree: cfg.filter_tree } : {}) },
+                layout: { x: 0, y: 0, w: 12, h: 4 },
+            } as WidgetSpec;
+            const r = (await this.dashboards.computeLooseWidget(tenantId, viewer, widget, src.related)) as { value?: unknown };
+            out[String(id)] = typeof r?.value === 'number' ? r.value : null;
+        }
+        return out;
+    }
 }
+
+/** Tipos que la fila de totales de una tabla editable puede sumar. */
+const SUMMABLE: ReadonlySet<string> = new Set(['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup']);
 
 function badBlock(message: string): BadRequestException {
     return new BadRequestException({ code: 'invalid_layout_block', message, data: { status: 400 } });

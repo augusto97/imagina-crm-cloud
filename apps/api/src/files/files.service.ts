@@ -1,7 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Inject,
     Injectable,
@@ -12,7 +13,7 @@ import {
 import { roleHasCapability, type Role } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
-import { attachments, dashboards, fields, lists, records } from '../db/schema';
+import { attachments, dashboards, documentNumbers, fields, lists, records } from '../db/schema';
 import type { Tx } from '../db/client';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -362,6 +363,66 @@ export class FilesService {
         return toDto(row, this.signedUrl(tenantId, row.id, 4 * 3600));
     }
 
+    /**
+     * v0.1.292 — Guarda unos bytes como archivo DENTRO de una transacción
+     * abierta: la fila de `attachments` queda en ese tx (si revierte, no
+     * queda), así lo que se guarda junto con otra cosa (el PDF congelado de
+     * un número emitido) existe si y sólo si esa otra cosa existe. Los bytes
+     * se escriben ANTES (un storage no es transaccional): quien llama guarda
+     * la referencia y, si su tx revierte, la descarta con `discardBytes`.
+     */
+    async storeBufferInTx(
+        tx: Tx,
+        tenantId: number,
+        userId: number,
+        filename: string,
+        mime: string,
+        buffer: Buffer,
+    ): Promise<{ id: number; ref: StoredFileRef; external: boolean }> {
+        const clean = sanitizeFilename(filename) || 'documento.pdf';
+        const key = `t${tenantId}/${randomBytes(16).toString('hex')}${extOf(clean)}`;
+        const target = await this.uploadTarget(tenantId);
+        let size: number;
+        let storedKey = key;
+        try {
+            ({ size, key: storedKey } = await storeBytes(target.storage, key, Readable.from(buffer), clean));
+        } catch (err) {
+            if (target.connectionId === null) throw err;
+            throw storageUnavailable(`No se pudo guardar el archivo en el almacenamiento de la empresa: ${describeStorageError(err)}`);
+        }
+        const ref: StoredFileRef = { storageKey: storedKey, storageConnectionId: target.connectionId };
+        try {
+            const [inserted] = await tx
+                .insert(attachments)
+                .values({
+                    tenantId,
+                    filename: clean,
+                    mime: mime || 'application/octet-stream',
+                    sizeBytes: size,
+                    storageKey: storedKey,
+                    storageConnectionId: target.connectionId,
+                    createdBy: userId > 0 ? userId : null,
+                })
+                .returning({ id: attachments.id });
+            return { id: inserted!.id, ref, external: target.connectionId !== null };
+        } catch (err) {
+            await this.discardBytes(tenantId, [ref]);
+            throw err;
+        }
+    }
+
+    /** Borra bytes que quedaron sin metadata (un tx que revirtió). Best-effort. */
+    async discardBytes(tenantId: number, refs: readonly StoredFileRef[]): Promise<void> {
+        for (const ref of refs) {
+            try {
+                const storage = await this.storageOf(tenantId, ref.storageConnectionId);
+                await storage.delete(ref.storageKey);
+            } catch {
+                // Un bucket caído no puede tapar el error original de quien llama.
+            }
+        }
+    }
+
     /** Resuelve un batch de IDs (para tarjetas/galerías — 1 request). */
     async resolve(tenantId: number, ids: number[], actor?: FileActor): Promise<AttachmentDto[]> {
         const unique = Array.from(new Set(ids.filter((n) => Number.isInteger(n) && n > 0))).slice(
@@ -437,6 +498,20 @@ export class FilesService {
                     code: 'file_not_yours',
                     message: 'Sólo quien subió el archivo (o quien edita todos los registros) puede borrarlo',
                     data: { status: 403 },
+                });
+            }
+            // v0.1.292 — El PDF congelado de un documento emitido es su copia
+            // fiel: no se borra suelto (para rehacerlo: «Anular y emitir de nuevo»).
+            const [issued] = await tx
+                .select({ label: documentNumbers.label })
+                .from(documentNumbers)
+                .where(and(eq(documentNumbers.tenantId, tenantId), eq(documentNumbers.fileId, found.id)))
+                .limit(1);
+            if (issued) {
+                throw new ConflictException({
+                    code: 'file_is_issued_document',
+                    message: `Es el PDF del documento emitido ${issued.label}: no se puede borrar. Para rehacerlo, anúlalo y emítelo de nuevo desde la ficha.`,
+                    data: { status: 409 },
                 });
             }
             await tx.delete(attachments).where(eq(attachments.id, found.id));

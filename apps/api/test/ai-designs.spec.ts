@@ -153,6 +153,73 @@ describe('v0.1.281 — constructores de diseño (puros)', () => {
         expect(() => base([{ type: 'totals', rows: [{ id: 'a', label: 'A', source: { kind: 'field', slug: 'estado' } }] }])).toThrow(/no es numérico/);
         expect(() => base([{ type: 'spacer' }], { numbering: { enabled: true, save_field: 'total' } })).toThrow(/campo de texto/);
     });
+
+    it('v0.1.292 — columnas calculadas, totales de cotización (descuento con campo, ocultos) y congelar', () => {
+        const ctx = {
+            fields: [...fields, fieldRef(5, 'dto_global', 'percent')],
+            relations: [{ relation_field_id: 90, relation_slug: 'cotizacion', direction: 'reverse' as const, other_list_id: 7, other_list_slug: 'items' }],
+            otherFields: new Map([[7, [fieldRef(70, 'detalle', 'text'), fieldRef(71, 'cant', 'number'), fieldRef(72, 'precio', 'currency'), fieldRef(73, 'dto', 'percent')]]]),
+        };
+        const col = (slug: string) => ({ op: 'col', slug });
+        const design = buildDocDesign(
+            {
+                numbering: { enabled: true, prefix: 'COT-', freeze: true },
+                blocks: [
+                    {
+                        id: 'tabla',
+                        type: 'items',
+                        from: 'items',
+                        columns: [
+                            { slug: 'detalle', width: 'fill' },
+                            { slug: 'cant' },
+                            { slug: 'precio', align: 'right' },
+                            { slug: 'calc_bruto', kind: 'computed', expr: { op: 'mul', args: [col('cant'), col('precio')] }, hidden: true, decimals: 0 },
+                            { slug: 'calc_total', kind: 'computed', label: 'Total', expr: { op: 'minus_pct', of: col('calc_bruto'), pct: col('dto') }, decimals: 0 },
+                        ],
+                    },
+                    {
+                        type: 'totals',
+                        decimals: 0,
+                        rows: [
+                            { id: 'sub', label: 'Subtotal', source: { kind: 'items_sum', block_id: 'tabla', slug: 'calc_total' } },
+                            { id: 'dg', label: 'Descuento', source: { kind: 'percent', of: 'sub', pct: 0, pct_field: 'dto_global', negate: true }, hide_zero: true },
+                            { id: 'base', label: 'Base', source: { kind: 'sum', rows: ['sub', 'dg'] }, hidden: true },
+                            { id: 'iva', label: 'IVA 19 %', source: { kind: 'percent', of: 'base', pct: 19 } },
+                            { id: 'tot', label: 'TOTAL', source: { kind: 'sum', rows: ['base', 'iva'] }, emphasis: true },
+                        ],
+                    },
+                ],
+            },
+            ctx,
+        );
+        expect(design.numbering).toMatchObject({ enabled: true, freeze: true });
+        const items = design.blocks[0]!;
+        expect(items.type === 'items' && items.columns.filter((c) => c.kind === 'computed').map((c) => c.slug)).toEqual(['calc_bruto', 'calc_total']);
+
+        const base = (blocks: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}): unknown => buildDocDesign({ blocks, ...extra }, ctx);
+        // La fórmula lee una columna que no existe (o una calculada POSTERIOR).
+        expect(() =>
+            base([{ type: 'items', from: 'items', columns: [{ slug: 'calc_x', kind: 'computed', expr: { op: 'mul', args: [col('cant'), col('iva')] } }] }]),
+        ).toThrow(/la fórmula lee iva/);
+        expect(() =>
+            base([
+                {
+                    type: 'items',
+                    from: 'items',
+                    columns: [
+                        { slug: 'calc_a', kind: 'computed', expr: col('calc_b') },
+                        { slug: 'calc_b', kind: 'computed', expr: col('cant') },
+                    ],
+                },
+            ]),
+        ).toThrow(/la fórmula lee calc_b/);
+        // La clave de una calculada no puede ser un campo; sin fórmula válida, error corregible.
+        expect(() => base([{ type: 'items', from: 'items', columns: [{ slug: 'cant', kind: 'computed', expr: col('precio') }] }])).toThrow(/slug` propio/);
+        expect(() => base([{ type: 'items', from: 'items', columns: [{ slug: 'calc_x', kind: 'computed', expr: { op: 'eval', code: 'x' } }] }])).toThrow(/no es válida/);
+        // El % desde un campo tiene que ser numérico; congelar necesita numeración.
+        expect(() => base([{ type: 'totals', rows: [{ id: 'a', label: 'A', source: { kind: 'field', slug: 'total' } }, { id: 'b', label: 'B', source: { kind: 'percent', of: 'a', pct: 0, pct_field: 'estado' } }] }])).toThrow(/no es numérico/);
+        expect(() => base([{ type: 'spacer' }], { numbering: { enabled: false, freeze: true } })).toThrow(/freeze/);
+    });
 });
 
 describe('v0.1.281 — correos y PDF diseñados por el asistente/MCP (Postgres + Redis)', () => {

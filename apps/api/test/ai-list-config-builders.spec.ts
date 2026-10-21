@@ -188,6 +188,27 @@ describe('buildRecordLayoutV3 (v0.1.232)', () => {
         expect(ok.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toMatchObject({ source: { kind: 'related', field_id: 51 }, metric_field_id: 60 });
     });
 
+    it('v0.1.292 — vinculados como TABLA EDITABLE: qué columnas se editan y cuáles se suman', async () => {
+        const { buildRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
+        const r = buildRecordLayoutV3(
+            page([{ type: 'related', from: 'pedidos', via: 'cliente', view: 'editable', columns: ['total'], editable_columns: ['total'], total_columns: ['total'] }]) as never,
+            ctx,
+        );
+        expect(r.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toMatchObject({
+            source: { kind: 'related', field_id: 50 },
+            view: 'editable',
+            field_ids: [60],
+            editable_field_ids: [60],
+            total_field_ids: [60],
+        });
+        expect(r.preview[0]).toMatchObject({ type: 'related', detail: 'tabla editable' });
+        // Sumar sólo lo numérico; y esas opciones son de la vista editable.
+        expect(() =>
+            buildRecordLayoutV3(page([{ type: 'related', from: 'pedidos', via: 'cliente', view: 'editable', total_columns: ['nombre'] }]) as never, ctx),
+        ).toThrow(AiToolError);
+        expect(() => buildRecordLayoutV3(page([{ type: 'related', from: 'pedidos', via: 'cliente', view: 'table', total_columns: ['total'] }]) as never, ctx)).toThrow(/vista "editable"/);
+    });
+
     it('botones: destino fijo seguro o el campo del registro', async () => {
         const { buildRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
         expect(() => buildRecordLayoutV3(page([{ type: 'button', label: 'Ir', url: 'javascript:alert(1)' }]) as never, ctx)).toThrow(AiToolError);

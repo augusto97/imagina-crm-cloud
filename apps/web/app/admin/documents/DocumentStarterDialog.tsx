@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
-import { ArrowLeft, FileSpreadsheet, FileText, Receipt, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calculator, FileSpreadsheet, FileText, Receipt, ReceiptText, X } from 'lucide-react';
 import {
+    DEFAULT_IVA_RATE,
     DOCUMENT_STARTERS,
     buildDocumentStarter,
     emptyIssuer,
@@ -19,6 +20,7 @@ import { useSession } from '@/cloud/session';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useFields } from '@/hooks/useFields';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
+import { fieldPrecision } from '@/lib/fieldNumberFormat';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -76,6 +78,8 @@ const DialogFooter = ({ children, className }: { children: React.ReactNode; clas
 const ICONS: Record<string, typeof FileText> = {
     cuenta_cobro: Receipt,
     cuenta_cobro_detalle: FileSpreadsheet,
+    cotizacion: Calculator,
+    factura: ReceiptText,
     blank: FileText,
 };
 
@@ -135,6 +139,12 @@ export function DocumentStarterDialog({
                                         </span>
                                         <span className="imcrm-text-sm imcrm-font-semibold">{__(s.name)}</span>
                                         <span className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">{__(s.description)}</span>
+                                        {s.notice && (
+                                            <span className="imcrm-flex imcrm-items-start imcrm-gap-1 imcrm-text-[11px] imcrm-font-medium imcrm-leading-snug imcrm-text-amber-700 dark:imcrm-text-amber-300" data-starter-notice>
+                                                <AlertTriangle className="imcrm-mt-px imcrm-h-3 imcrm-w-3 imcrm-shrink-0" aria-hidden />
+                                                {__('No es factura electrónica DIAN')}
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}
@@ -173,6 +183,12 @@ function StarterForm({
     const path = (paths.data ?? []).find((p) => `${p.relation_field_id}:${p.direction}` === pathKey) ?? null;
     const itemFields = useFields(path?.other_list_id);
     const [itemMapping, setItemMapping] = useState<Record<string, string>>({});
+    // v0.1.292 — IVA, descuento global fijo, validez y congelar (cotización / factura).
+    const [ivaOn, setIvaOn] = useState(true);
+    const [ivaRate, setIvaRate] = useState(DEFAULT_IVA_RATE);
+    const [globalPct, setGlobalPct] = useState(0);
+    const [validityDays, setValidityDays] = useState(30);
+    const [freeze, setFreeze] = useState(starter.freeze_default ?? false);
 
     // La primera relación disponible queda elegida; y los campos de los
     // ítems se sugieren apenas se conocen.
@@ -195,6 +211,8 @@ function StarterForm({
         } catch {
             /* sin storage */
         }
+        // Los decimales de la moneda: los del campo del precio unitario.
+        const priceField = (itemFields.data ?? []).find((f) => f.slug === itemMapping.precio);
         onCreate(
             buildDocumentStarter(starter.key, {
                 accent: branding.data?.primary_color ?? null,
@@ -203,6 +221,15 @@ function StarterForm({
                     ? { source: { relation_field_id: path.relation_field_id, direction: path.direction, list_id: path.other_list_id }, fields: itemMapping }
                     : null,
                 issuer,
+                ...(starter.taxes
+                    ? {
+                          tax: { iva: ivaOn, rate: ivaRate },
+                          global_discount_pct: globalPct,
+                          money_decimals: priceField ? fieldPrecision(priceField) : 0,
+                          freeze,
+                          validity_days: validityDays,
+                      }
+                    : {}),
             }),
         );
     };
@@ -220,6 +247,12 @@ function StarterForm({
                 </DialogTitle>
                 <DialogDescription>{__('Elige qué campo de la lista va en cada lugar y carga tus datos. Lo que no elijas queda marcado entre corchetes para completarlo en el editor.')}</DialogDescription>
             </DialogHeader>
+            {starter.notice && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-amber-300 imcrm-bg-amber-50 imcrm-p-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-amber-900 dark:imcrm-border-amber-700/60 dark:imcrm-bg-amber-950/40 dark:imcrm-text-amber-200" data-starter-form-notice>
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
+                    {__(starter.notice)}
+                </p>
+            )}
 
             <div className="imcrm-grid imcrm-gap-5 md:imcrm-grid-cols-2">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
@@ -290,6 +323,74 @@ function StarterForm({
                     </div>
                     <Input value={issuer.account_number} onChange={(e) => set('account_number', e.target.value)} placeholder={__('Número de cuenta')} aria-label={__('Número de cuenta')} />
                     <Input value={issuer.account_holder} onChange={(e) => set('account_holder', e.target.value)} placeholder={__('Titular (si es otro)')} aria-label={__('Titular')} />
+                    {starter.taxes && (
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2.5" data-starter-taxes>
+                            <h4 className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{__('Impuestos y descuentos')}</h4>
+                            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
+                                <input type="checkbox" checked={ivaOn} onChange={(e) => setIvaOn(e.target.checked)} data-starter-iva />
+                                <span className="imcrm-flex-1">{__('Cobro IVA')}</span>
+                                {ivaOn && (
+                                    <span className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                                        <Input
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            step="0.01"
+                                            value={ivaRate}
+                                            onChange={(e) => setIvaRate(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                                            className="imcrm-h-7 imcrm-w-20 imcrm-text-xs"
+                                            aria-label={__('Tarifa de IVA')}
+                                        />
+                                        %
+                                    </span>
+                                )}
+                            </label>
+                            {!ivaOn && (
+                                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                    {__('No responsable de IVA: el documento no lleva IVA y sale con la nota tributaria de abajo.')}
+                                </span>
+                            )}
+                            {!mapping.descuento_global && (
+                                <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
+                                    <span className="imcrm-flex-1">{__('Descuento global fijo (opcional)')}</span>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        step="0.01"
+                                        value={globalPct}
+                                        onChange={(e) => setGlobalPct(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+                                        className="imcrm-h-7 imcrm-w-20 imcrm-text-xs"
+                                        aria-label={__('Descuento global')}
+                                    />
+                                    %
+                                </label>
+                            )}
+                            {starter.key === 'cotizacion' && !mapping.validez && (
+                                <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
+                                    <span className="imcrm-flex-1">{__('Válida por (días, sin campo de vencimiento)')}</span>
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        max={365}
+                                        value={validityDays}
+                                        onChange={(e) => setValidityDays(Math.max(1, Math.min(365, Math.floor(Number(e.target.value) || 30))))}
+                                        className="imcrm-h-7 imcrm-w-20 imcrm-text-xs"
+                                        aria-label={__('Días de validez')}
+                                    />
+                                </label>
+                            )}
+                            <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs">
+                                <input type="checkbox" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} className="imcrm-mt-0.5" data-starter-freeze />
+                                <span>
+                                    <span className="imcrm-font-medium">{__('Congelar el documento al emitirlo')}</span>
+                                    <span className="imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground">
+                                        {__('Con su número se guarda el PDF y se entrega siempre ese, aunque cambien los datos.')}
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+                    )}
                     <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-xs">
                         <span className="imcrm-font-medium">{__('Nota tributaria al pie')}</span>
                         <Textarea rows={3} value={issuer.tax_note} onChange={(e) => set('tax_note', e.target.value)} className="imcrm-text-xs" />
@@ -356,7 +457,21 @@ const norm = (s: string): string =>
 function looksLike(role: TemplateRoleField, f: FieldEntity): boolean {
     const name = `${norm(f.label)} ${norm(f.slug)}`;
     const words = [...norm(role.key).split(' '), ...norm(role.label).split(' ')].filter((w) => w.length > 3);
-    const extra: Record<string, string[]> = { cliente_doc: ['nit', 'cedula', 'documento', 'rut'], numero: ['numero', 'consecutivo', 'factura'] };
+    const extra: Record<string, string[]> = {
+        cliente_doc: ['nit', 'cedula', 'documento', 'rut'],
+        numero: ['numero', 'consecutivo', 'factura'],
+        // v0.1.292 — cotización y factura.
+        precio: ['precio', 'unitario', 'tarifa'],
+        cantidad: ['cantidad', 'cant', 'unidades', 'qty'],
+        descuento: ['descuento', 'dto', 'desc'],
+        descuento_global: ['descuento', 'dto'],
+        direccion: ['direccion', 'domicilio'],
+        correo: ['correo', 'email', 'mail'],
+        validez: ['validez', 'vence', 'vencimiento', 'valida', 'hasta'],
+        condiciones: ['condiciones', 'terminos'],
+        forma_pago: ['forma', 'metodo', 'medio'],
+        fecha_pago: ['pago', 'limite', 'vence'],
+    };
     return words.some((w) => name.includes(w)) || (extra[role.key] ?? []).some((w) => name.includes(w));
 }
 

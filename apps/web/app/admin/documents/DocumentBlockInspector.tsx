@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Calculator, Copy, ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-react';
 import {
     COLUMN_RATIOS,
     DOC_BLOCK_LABELS,
+    describeDocItemExpr,
     DOC_INNER_BLOCK_TYPES,
     type BlockStyle,
     type BorderStyle,
@@ -12,6 +13,7 @@ import {
     type DocImage,
     type DocInnerBlock,
     type DocInnerBlockType,
+    type DocItemsColumn,
     type DocPadding,
     type DocTotalRow,
     type DocTotalSource,
@@ -61,6 +63,7 @@ import {
 } from '../automations/email/EmailBlockInspector';
 import { EmailTextEditor } from '../automations/email/EmailTextEditor';
 import { makeDocInner, newTotalRowId } from './documentDesignOps';
+import { FORMULA_ARITY, exprToFormula, formulaToExpr, newComputedKey, renameItemsColumnRef, type Formula, type FormulaKind, type FormulaOperand } from './itemFormula';
 
 /**
  * v0.1.266 — Ajustes del bloque elegido en el editor de documentos PDF
@@ -820,9 +823,13 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                 <Field label={__('Columnas')} hint={__('En el orden en que aparecen. «Llena» toma el ancho que sobra (la descripción).')}>
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                         {block.columns.map((c, i) => (
-                            <div key={`${c.slug}-${i}`} className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
+                            <div key={`${c.slug}-${i}`} className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2" data-items-column={c.slug}>
                                 <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
-                                    <span className="imcrm-flex-1 imcrm-truncate imcrm-text-xs imcrm-font-medium">{label(c.slug)}</span>
+                                    <span className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-gap-1.5 imcrm-truncate imcrm-text-xs imcrm-font-medium">
+                                        {c.kind === 'computed' && <Calculator className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-primary" aria-hidden />}
+                                        <span className="imcrm-truncate">{c.kind === 'computed' ? c.label || __('Columna calculada') : label(c.slug)}</span>
+                                        {c.hidden && <span className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-text-[10px] imcrm-font-normal imcrm-text-muted-foreground">{__('oculta')}</span>}
+                                    </span>
                                     <IconBtn
                                         label={__('Subir')}
                                         icon={ArrowUp}
@@ -835,9 +842,44 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                                     />
                                     <IconBtn label={__('Quitar')} icon={X} danger onClick={() => setColumns(block.columns.filter((_, k) => k !== i))} />
                                 </div>
+                                {/* v0.1.292 — Una columna de campo (o la marcadora «[Precio unitario]»
+                                    de la galería) elige su campo; cambiarlo re-apunta las fórmulas. */}
+                                {c.kind !== 'computed' && (
+                                    <Select
+                                        value={fields.some((f) => f.slug === c.slug) ? c.slug : ''}
+                                        onChange={(e) => e.target.value && setColumns(renameItemsColumnRef(block.columns, c.slug, e.target.value))}
+                                        className={cn('imcrm-h-7 imcrm-text-xs', !fields.some((f) => f.slug === c.slug) && 'imcrm-border-amber-500')}
+                                        aria-label={__('Campo de la columna')}
+                                        data-items-column-field
+                                    >
+                                        <option value="">{/^\[.+\]$/.test(c.slug) ? `${c.slug} — ${__('elige el campo…')}` : __('Elige el campo…')}</option>
+                                        {fields.map((f) => (
+                                            <option key={f.id} value={f.slug}>
+                                                {f.label}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                )}
+                                {c.kind === 'computed' && (
+                                    <ComputedColumnEditor
+                                        column={c}
+                                        operands={[
+                                            ...fields.filter((f) => NUMERIC.has(f.type)).map((f) => ({ slug: f.slug, label: f.label })),
+                                            // Las calculadas ANTERIORES (una posterior se lee vacía).
+                                            ...block.columns
+                                                .slice(0, i)
+                                                .filter((x) => x.kind === 'computed')
+                                                .map((x) => ({ slug: x.slug, label: x.label || x.slug })),
+                                            // Las marcadoras de la galería siguen visibles hasta que se elija su campo.
+                                            ...block.columns.filter((x) => /^\[.+\]$/.test(x.slug)).map((x) => ({ slug: x.slug, label: x.slug })),
+                                        ]}
+                                        labelOf={(slug) => block.columns.find((x) => x.slug === slug && x.kind === 'computed')?.label || label(slug)}
+                                        onChange={(patch) => setColumns(block.columns.map((x, k) => (k === i ? { ...x, ...patch } : x)))}
+                                    />
+                                )}
                                 <Input
                                     value={c.label}
-                                    placeholder={label(c.slug)}
+                                    placeholder={c.kind === 'computed' ? __('Encabezado') : label(c.slug)}
                                     onChange={(e) => setColumns(block.columns.map((x, k) => (k === i ? { ...x, label: e.target.value } : x)))}
                                     className="imcrm-h-7 imcrm-text-xs"
                                     aria-label={__('Encabezado de la columna')}
@@ -863,6 +905,13 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                                         <option value="fill">{__('Llena')}</option>
                                     </Select>
                                 </div>
+                                {c.kind === 'computed' && (
+                                    <Check
+                                        label={__('Ocultarla (sólo para calcular los totales)')}
+                                        checked={c.hidden === true}
+                                        onChange={(v) => setColumns(block.columns.map((x, k) => (k === i ? { ...x, hidden: v || undefined } : x)))}
+                                    />
+                                )}
                             </div>
                         ))}
                         <Select
@@ -884,6 +933,40 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                                     </option>
                                 ))}
                         </Select>
+                        {/* v0.1.292 — Columna CALCULADA: el total de la línea y compañía. */}
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="imcrm-gap-1.5"
+                            disabled={block.columns.length >= 10}
+                            data-testid="doc-items-add-computed"
+                            onClick={() => {
+                                const numeric = fields.filter((f) => NUMERIC.has(f.type));
+                                const a = numeric[0]?.slug;
+                                const b = numeric[1]?.slug;
+                                setColumns([
+                                    ...block.columns,
+                                    {
+                                        slug: newComputedKey(block.columns),
+                                        label: __('Total'),
+                                        align: 'right',
+                                        width: 'auto',
+                                        kind: 'computed',
+                                        expr: {
+                                            op: 'mul',
+                                            args: [a ? { op: 'col', slug: a } : { op: 'const', value: 1 }, b ? { op: 'col', slug: b } : { op: 'const', value: 1 }],
+                                        },
+                                        format: 'currency',
+                                        decimals: 0,
+                                        prefix: '$ ',
+                                    },
+                                ]);
+                            }}
+                        >
+                            <Calculator className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Columna calculada')}
+                        </Button>
                     </div>
                 </Field>
             )}
@@ -919,6 +1002,159 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                 </>
             )}
         </>
+    );
+}
+
+// ── Columna calculada (v0.1.292) ─────────────────────────────────────────
+
+const FORMULA_LABELS: Record<FormulaKind, string> = {
+    mul: 'A × B',
+    mul_disc: 'A × B − descuento %',
+    add: 'A + B',
+    sub: 'A − B',
+    div: 'A ÷ B',
+    pct: 'B % de A',
+    minus_pct: 'A − B %',
+    ref: 'Igual a A',
+};
+
+/**
+ * El total de cada línea (y compañía), sin escribir fórmulas: la forma
+ * («A × B − descuento %») y un selector por operando (una columna de la fila
+ * o un número fijo). Una fórmula armada por el asistente que no encaja en
+ * ninguna forma se muestra tal cual y se puede reemplazar.
+ */
+function ComputedColumnEditor({
+    column,
+    operands,
+    labelOf,
+    onChange,
+}: {
+    column: DocItemsColumn;
+    operands: Array<{ slug: string; label: string }>;
+    labelOf: (slug: string) => string;
+    onChange: (patch: Partial<DocItemsColumn>) => void;
+}): JSX.Element {
+    const formula = exprToFormula(column.expr);
+    const first = operands[0]?.slug;
+    const fallback: Formula = {
+        kind: 'mul',
+        a: first ? { kind: 'col', slug: first } : { kind: 'const', value: 1 },
+        b: operands[1] ? { kind: 'col', slug: operands[1].slug } : { kind: 'const', value: 1 },
+        d: { kind: 'const', value: 0 },
+    };
+    const set = (f: Formula): void => onChange({ expr: formulaToExpr(f) });
+    const current = formula ?? fallback;
+    const arity = FORMULA_ARITY[current.kind];
+    const cls = 'imcrm-h-7 imcrm-text-xs';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded imcrm-bg-muted/40 imcrm-p-2" data-computed-editor>
+            {formula === null && column.expr && (
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Fórmula personalizada')}: <strong className="imcrm-text-foreground">{describeDocItemExpr(column.expr, labelOf)}</strong>.{' '}
+                    {__('Elige una forma para reemplazarla.')}
+                </p>
+            )}
+            <Select
+                value={formula ? formula.kind : ''}
+                onChange={(e) => set({ ...current, kind: e.target.value as FormulaKind })}
+                className={cls}
+                aria-label={__('Cálculo')}
+                data-formula-kind
+            >
+                {formula === null && <option value="">{__('Personalizada')}</option>}
+                {(Object.keys(FORMULA_LABELS) as FormulaKind[]).map((k) => (
+                    <option key={k} value={k}>
+                        {__(FORMULA_LABELS[k])}
+                    </option>
+                ))}
+            </Select>
+            {formula !== null && (
+                <>
+                    <OperandPicker label="A" value={current.a} operands={operands} onChange={(a) => set({ ...current, a })} />
+                    {arity >= 2 && <OperandPicker label="B" value={current.b} operands={operands} onChange={(b) => set({ ...current, b })} />}
+                    {arity >= 3 && <OperandPicker label={__('Desc. %')} value={current.d} operands={operands} onChange={(d) => set({ ...current, d })} />}
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground" data-formula-summary>
+                        = {describeDocItemExpr(formulaToExpr(current), labelOf)}
+                    </p>
+                </>
+            )}
+            <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1">
+                <Select
+                    value={column.format ?? 'currency'}
+                    onChange={(e) => onChange({ format: e.target.value as DocItemsColumn['format'] })}
+                    className={cls}
+                    aria-label={__('Formato')}
+                >
+                    <option value="currency">{__('Moneda')}</option>
+                    <option value="number">{__('Número')}</option>
+                    <option value="percent">%</option>
+                </Select>
+                <Select value={String(column.decimals ?? 2)} onChange={(e) => onChange({ decimals: Number(e.target.value) })} className={cls} aria-label={__('Decimales')}>
+                    {[0, 1, 2, 3, 4].map((n) => (
+                        <option key={n} value={n}>
+                            {n} {__('dec.')}
+                        </option>
+                    ))}
+                </Select>
+                <Input
+                    value={column.prefix ?? '$ '}
+                    maxLength={8}
+                    disabled={(column.format ?? 'currency') !== 'currency'}
+                    onChange={(e) => onChange({ prefix: e.target.value })}
+                    className={cls}
+                    aria-label={__('Antes del número')}
+                />
+            </div>
+            <p className="imcrm-text-[10px] imcrm-leading-snug imcrm-text-muted-foreground">
+                {__('Cada línea se redondea a estos decimales; el total suma lo que se ve.')}
+            </p>
+        </div>
+    );
+}
+
+function OperandPicker({
+    label,
+    value,
+    operands,
+    onChange,
+}: {
+    label: string;
+    value: FormulaOperand;
+    operands: Array<{ slug: string; label: string }>;
+    onChange: (o: FormulaOperand) => void;
+}): JSX.Element {
+    const cls = 'imcrm-h-7 imcrm-text-xs';
+    return (
+        <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+            <span className="imcrm-w-12 imcrm-shrink-0 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{label}</span>
+            <Select
+                value={value.kind === 'col' ? `col:${value.slug}` : 'const'}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    onChange(v === 'const' ? { kind: 'const', value: value.kind === 'const' ? value.value : 0 } : { kind: 'col', slug: v.slice(4) });
+                }}
+                className={cls}
+                aria-label={`${__('Operando')} ${label}`}
+            >
+                {operands.map((o) => (
+                    <option key={o.slug} value={`col:${o.slug}`}>
+                        {o.label}
+                    </option>
+                ))}
+                {value.kind === 'col' && !operands.some((o) => o.slug === value.slug) && <option value={`col:${value.slug}`}>{value.slug}</option>}
+                <option value="const">{__('Un número fijo')}</option>
+            </Select>
+            {value.kind === 'const' && (
+                <Input
+                    type="number"
+                    value={value.value}
+                    onChange={(e) => onChange({ kind: 'const', value: Number(e.target.value) || 0 })}
+                    className={cn(cls, 'imcrm-w-20')}
+                    aria-label={`${__('Valor')} ${label}`}
+                />
+            )}
+        </div>
     );
 }
 
@@ -969,6 +1205,11 @@ function TotalsFields(p: DocInspectorProps): JSX.Element {
                     </Select>
                     <TotalSourceEditor row={row} block={block} itemsBlocks={itemsBlocks} fields={p.fields} onChange={(source) => patchRow(i, { source })} />
                     <Check label={__('Destacada (el total)')} checked={row.emphasis} onChange={(v) => patchRow(i, { emphasis: v })} />
+                    {/* v0.1.292 — filas internas (el neto) y las que sobran en cero (descuentos). */}
+                    <Check label={__('Ocultarla (sólo para otros cálculos)')} checked={row.hidden === true} onChange={(v) => patchRow(i, { hidden: v || undefined })} />
+                    {row.source.kind !== 'text' && (
+                        <Check label={__('No mostrarla si da 0')} checked={row.hide_zero === true} onChange={(v) => patchRow(i, { hide_zero: v || undefined })} />
+                    )}
                 </div>
             ))}
             <Button
@@ -1078,22 +1319,41 @@ function TotalSourceEditor({
             );
         case 'percent':
             return (
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
-                    <Input
-                        type="number"
-                        value={s.pct}
-                        onChange={(e) => onChange({ ...s, pct: Math.max(-100, Math.min(100, Number(e.target.value) || 0)) })}
-                        className={cn(cls, 'imcrm-w-20')}
-                        aria-label={__('Porcentaje')}
-                    />
-                    <span className="imcrm-text-xs">% {__('de')}</span>
-                    <Select value={s.of} onChange={(e) => onChange({ ...s, of: e.target.value })} className={cls} aria-label={__('Fila base')}>
-                        {others.map((r) => (
-                            <option key={r.id} value={r.id}>
-                                {r.label || r.id}
-                            </option>
-                        ))}
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                        <Input
+                            type="number"
+                            value={s.pct}
+                            onChange={(e) => onChange({ ...s, pct: Math.max(-100, Math.min(100, Number(e.target.value) || 0)) })}
+                            className={cn(cls, 'imcrm-w-20')}
+                            aria-label={__('Porcentaje')}
+                        />
+                        <span className="imcrm-text-xs">% {__('de')}</span>
+                        <Select value={s.of} onChange={(e) => onChange({ ...s, of: e.target.value })} className={cls} aria-label={__('Fila base')}>
+                            {others.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                    {r.label || r.id}
+                                </option>
+                            ))}
+                        </Select>
+                    </div>
+                    {/* v0.1.292 — el % de un campo del registro (el descuento global de ESA cotización). */}
+                    <Select
+                        value={s.pct_field ?? ''}
+                        onChange={(e) => onChange({ ...s, pct_field: e.target.value || null })}
+                        className={cls}
+                        aria-label={__('Porcentaje desde un campo')}
+                    >
+                        <option value="">{__('El porcentaje fijo de arriba')}</option>
+                        {fields
+                            .filter((f) => f.type === 'percent' || f.type === 'number')
+                            .map((f) => (
+                                <option key={f.id} value={f.slug}>
+                                    {__('El % del campo')} «{f.label}» ({__('vacío = el fijo')})
+                                </option>
+                            ))}
                     </Select>
+                    <Check label={__('Restarlo (es un descuento)')} checked={s.negate === true} onChange={(v) => onChange({ ...s, negate: v || undefined })} />
                 </div>
             );
         case 'sum':

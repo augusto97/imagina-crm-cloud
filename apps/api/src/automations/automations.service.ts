@@ -473,6 +473,8 @@ export class AutomationsService {
                             recordId: sample.record!.id,
                             templateId: id,
                             actor: { userId: 0, role: 'admin' },
+                            // v0.1.292 — Una prueba no emite números ni congela.
+                            assign: false,
                         }),
                     );
                     attachments.push({ filename: doc.filename, contentType: 'application/pdf', contentBase64: doc.buffer.toString('base64') });

@@ -47,6 +47,7 @@ import type { RecordEntity } from '@/types/record';
 import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
+import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
@@ -596,6 +597,11 @@ export function RecordDetailDrawer({
                                         <div className="imcrm-mt-4">
                                             <RecordPaymentsPanel listId={listData.data.id} recordId={record.id} />
                                         </div>
+                                    )}
+
+                                    {/* v0.1.292 — documentos emitidos (numerados): congelados, anulados. */}
+                                    {listData.data !== undefined && view.ready && (
+                                        <IssuedDocumentsSection className="imcrm-mt-4" listId={listData.data.id} listSlug={listData.data.slug} recordId={record.id} />
                                     )}
 
                                     {view.ready && <RecordBacklinks listId={listId} recordId={record.id} />}

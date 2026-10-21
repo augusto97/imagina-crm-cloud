@@ -15,6 +15,8 @@ import {
     comments,
     connections,
     dashboards,
+    documentNumbers,
+    documentTemplates,
     emailUsage,
     fields,
     listGroups,
@@ -193,6 +195,25 @@ describe('Migración de empresa (v0.1.197)', () => {
             })
             .returning();
         subtareaRecId = subtarea!.id;
+        // v0.1.292 — un documento emitido CONGELADO (y después anulado): su PDF
+        // es un adjunto más y viaja re-mapeado, con quién y cuándo.
+        const [docTpl] = await pg.db
+            .insert(documentTemplates)
+            .values({ tenantId: tenantA, listId: clientesId, name: 'Factura', design: { blocks: [] }, nextNumber: 2 })
+            .returning();
+        await pg.db.insert(documentNumbers).values({
+            tenantId: tenantA,
+            templateId: docTpl!.id,
+            recordId: clienteRecId,
+            number: 1,
+            label: 'FAC-0001',
+            fileId: attachmentId,
+            frozenAt: new Date('2026-10-01T12:00:00Z'),
+            frozenBy: anaId,
+            voidedAt: new Date('2026-10-02T12:00:00Z'),
+            voidedBy: anaId,
+            voidReason: 'Precio mal',
+        });
         const [factura] = await pg.db
             .insert(records)
             .values({
@@ -473,6 +494,19 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(doc.content[0]!.content![0]!.attrs.id).toBe(anaId);
         expect(doc.content[0]!.content![1]!.attrs.id).toBe(newCliente.id);
         expect(doc.content[1]!.attrs!.fileId).toBe(newAttachments[0]!.id);
+
+        // v0.1.292 — el documento emitido congelado apunta al adjunto NUEVO.
+        const newDocNumbers = await pg.db.select().from(documentNumbers).where(eq(documentNumbers.tenantId, tenantB));
+        expect(newDocNumbers).toHaveLength(1);
+        expect(newDocNumbers[0]).toMatchObject({
+            recordId: newCliente.id,
+            label: 'FAC-0001',
+            fileId: newAttachments[0]!.id,
+            frozenBy: anaId,
+            voidedBy: anaId,
+            voidReason: 'Precio mal',
+        });
+        expect(newDocNumbers[0]!.frozenAt?.toISOString()).toBe('2026-10-01T12:00:00.000Z');
 
         // ── Relaciones ─────────────────────────────────────────────────
         const newRelations = await pg.db.select().from(relations).where(eq(relations.tenantId, tenantB));

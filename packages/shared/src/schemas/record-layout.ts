@@ -123,8 +123,12 @@ export const CHART_KIND_WIDGET: Record<LayoutChartKind, string> = {
     table: 'table',
 };
 
-/** Vistas de un bloque `related`. */
-export const RELATED_VIEWS = ['table', 'list', 'cards', 'board', 'timeline', 'gallery'] as const;
+/**
+ * Vistas de un bloque `related`. v0.1.292 — `editable`: TABLA EDITABLE (los
+ * ítems de una cotización): celdas que se editan en línea, «Agregar ítem»
+ * que nace vinculado, borrar y una fila de totales.
+ */
+export const RELATED_VIEWS = ['table', 'list', 'cards', 'board', 'timeline', 'gallery', 'editable'] as const;
 export const relatedViewSchema = z.enum(RELATED_VIEWS);
 export type RelatedView = z.infer<typeof relatedViewSchema>;
 
@@ -162,6 +166,10 @@ export const layoutRelatedConfigSchema = z
         sort_dir: z.enum(['asc', 'desc']).optional(),
         limit: z.number().int().min(1).max(100).optional(),
         filter_tree: filterTreeSchema.optional(),
+        /** v0.1.292 — Tabla editable: columnas que se editan (vacío = todas las editables). */
+        editable_field_ids: z.array(idSchema).max(12).optional(),
+        /** v0.1.292 — Tabla editable: columnas numéricas que se suman en la fila de totales. */
+        total_field_ids: z.array(idSchema).max(12).optional(),
     })
     .passthrough();
 export type LayoutRelatedConfig = z.infer<typeof layoutRelatedConfigSchema>;

@@ -82,6 +82,11 @@ export class RecordViewService {
             () => soft('seguir', () => this.notifications.followState(tenantId, actor.userId, recordId)),
             () => soft('recordatorios', () => this.notifications.listReminders(tenantId, actor, { recordId })),
             () => soft('documentos', () => this.documents.list(tenantId, listKey)),
+            // v0.1.292 — «Documentos emitidos» (el registro ya pasó el ACL arriba).
+            () =>
+                soft('documentos emitidos', () =>
+                    this.tenantDb.withTenant(tenantId, (tx) => this.documents.issuedInTx(tx, tenantId, recordId)),
+                ),
             () => soft('cobros', () => this.collections.recordPayments(tenantId, actor, listKey, recordId)),
             () => soft('relaciones', () => this.fields.relationPaths(tenantId, listKey)),
             () =>
@@ -117,6 +122,7 @@ export class RecordViewService {
             follow,
             reminders,
             documents,
+            issuedDocuments,
             payments,
             paths,
             comments,
@@ -129,6 +135,7 @@ export class RecordViewService {
             RecordViewBundle['follow'],
             RecordViewBundle['reminders'],
             RecordViewBundle['documents'],
+            RecordViewBundle['issued_documents'],
             RecordViewBundle['payments'],
             RelationPath[] | null,
             RecordViewBundle['comments'],
@@ -180,6 +187,7 @@ export class RecordViewService {
             follow,
             reminders,
             documents,
+            issued_documents: issuedDocuments,
             payments,
             relation_paths: paths,
             linked_lists: linked,

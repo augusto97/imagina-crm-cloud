@@ -7,7 +7,7 @@ import {
     type RecordViewBundle,
 } from '@imagina-base/shared';
 
-import { documentKeys } from '@/admin/documents/useDocuments';
+import { documentKeys, issuedDocumentKeys } from '@/admin/documents/useDocuments';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { api, cloudRecordsMeta, mapRecord, normalizeDates, primeFieldMap, type FieldKeyMap } from '@/lib/api';
 import type { RecordsQuery } from '@/types/record';
@@ -79,6 +79,7 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.follow) qc.setQueryData(notificationKeys.follow(recordId), b.follow);
     if (b.reminders) qc.setQueryData(notificationKeys.reminders(recordId), normalizeDates(b.reminders));
     if (b.documents) qc.setQueryData(documentKeys.forList(listId), normalizeDates(b.documents));
+    if (b.issued_documents) qc.setQueryData(issuedDocumentKeys.forRecord(listId, recordId), normalizeDates(b.issued_documents));
     if (b.payments) qc.setQueryData(['record-payments', listId, recordId], b.payments);
     if (b.relation_paths) qc.setQueryData(['relation-paths', lid], b.relation_paths);
     if (b.comments) {

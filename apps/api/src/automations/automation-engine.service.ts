@@ -35,6 +35,7 @@ import { lists, memberships, records, tenants, users } from '../db/schema';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
+import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
@@ -126,6 +127,12 @@ interface RunContext {
      */
     pdf?: Record<string, unknown>;
     pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null }>;
+    /**
+     * v0.1.292 — Bytes que guardó la acción en curso al CONGELAR un documento
+     * emitido: si su transacción revierte, se descartan (un storage no es
+     * transaccional) y los PDF armados en ella salen del cache del run.
+     */
+    docUploads?: StoredFileRef[];
     /** La cadena de automatizaciones de la que viene este evento (tope y anti-loop). */
     chain?: AutomationChain;
     /** Personas de los campos «Persona» (`{{responsable.email}}`), por id. */
@@ -698,12 +705,21 @@ export class AutomationEngine {
         // v0.1.285 — cada acción en su propia transacción: un error de base de
         // datos en una acción no arrastra a las demás ni a la corrida.
         let out: ActionLogEntry | null = null;
+        const pdfsBefore = new Set(ctx.pdfs?.keys() ?? []);
+        ctx.docUploads = [];
         try {
             await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
                 out = await this.execAction(tx, ctx, spec);
             });
+            ctx.docUploads = undefined;
             return [out!];
         } catch (err) {
+            // v0.1.292 — La transacción revirtió: lo que esta acción numeró o
+            // congeló no existe. Fuera sus bytes y sus PDF del cache del run.
+            const orphans = ctx.docUploads ?? [];
+            ctx.docUploads = undefined;
+            if (orphans.length > 0) await this.documents?.discardUploads(ctx.tenantId, orphans);
+            for (const key of [...(ctx.pdfs?.keys() ?? [])]) if (!pdfsBefore.has(key)) ctx.pdfs?.delete(key);
             const done = out as ActionLogEntry | null;
             if (done?.status === 'failed') return [done];
             const message = done ? `Se deshizo por un error de la base de datos: ${errorText(err)}` : errorText(err, 2000);
@@ -1418,6 +1434,7 @@ export class AutomationEngine {
             templateId,
             actor: { userId: SYSTEM_USER, role: 'admin' },
             filename,
+            uploads: ctx.docUploads,
             // Las variables del contexto del run: {{before.x}}, {{pago.link}}, {{payload.x}}.
             extra: (token) =>
                 token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.') || token === 'formulario.nombre'

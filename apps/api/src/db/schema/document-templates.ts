@@ -1,5 +1,8 @@
-import { bigint, boolean, index, integer, jsonb, pgTable, timestamp, unique, varchar } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, boolean, index, integer, jsonb, pgTable, timestamp, unique, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { attachments } from './attachments';
 import { records } from './records';
+import { users } from './users';
 import { lists } from './lists';
 import { tenants } from './tenants';
 
@@ -52,11 +55,26 @@ export const documentNumbers = pgTable(
         number: integer('number').notNull(),
         label: varchar('label', { length: 40 }).notNull(),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+        /**
+         * v0.1.292 — El PDF CONGELADO al emitirlo (un adjunto del módulo de
+         * archivos). Mientras exista, se entrega ése aunque cambie el registro.
+         */
+        fileId: bigint('file_id', { mode: 'number' }).references(() => attachments.id, { onDelete: 'restrict' }),
+        frozenAt: timestamp('frozen_at', { withTimezone: true }),
+        /** Quién lo emitió (null = una automatización, el portal o un enlace). */
+        frozenBy: bigint('frozen_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        /** v0.1.292 — Anulado: conserva su número (no se reusa) y su archivo. */
+        voidedAt: timestamp('voided_at', { withTimezone: true }),
+        voidedBy: bigint('voided_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        voidReason: varchar('void_reason', { length: 300 }),
     },
     (t) => [
-        unique('document_numbers_record_uq').on(t.templateId, t.recordId),
+        // Un número VIGENTE por (plantilla, registro); los anulados son historia.
+        uniqueIndex('document_numbers_record_active_uq').on(t.templateId, t.recordId).where(sql`${t.voidedAt} IS NULL`),
         unique('document_numbers_number_uq').on(t.templateId, t.number),
         index('document_numbers_record_ix').on(t.recordId),
         index('document_numbers_tenant_ix').on(t.tenantId),
+        index('document_numbers_file_ix').on(t.fileId).where(sql`${t.fileId} IS NOT NULL`),
     ],
 );
+export type DocumentNumberRow = typeof documentNumbers.$inferSelect;

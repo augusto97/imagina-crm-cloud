@@ -96,7 +96,9 @@ export type AuditAction =
     // v0.1.266 — plantillas de documentos PDF.
     | 'document_template.create'
     | 'document_template.update'
-    | 'document_template.delete';
+    | 'document_template.delete'
+    // v0.1.292 — «Anular y emitir de nuevo» un documento emitido.
+    | 'document.reissue';
 
 export interface AuditEntryDto {
     id: number;

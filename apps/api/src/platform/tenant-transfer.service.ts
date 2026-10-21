@@ -1017,6 +1017,15 @@ export class TenantTransferService {
                 number: Number(n.number),
                 label: String(n.label ?? ''),
                 createdAt: this.date(n.createdAt) ?? new Date(),
+                // v0.1.292 — el PDF congelado viaja como un adjunto más (sus
+                // bytes ya están en el archivo): se re-mapea su id. Si no
+                // viajó, el número queda sin congelar (no apunta a nada ajeno).
+                fileId: mapId(maps.attachment, n.fileId),
+                frozenAt: this.date(n.frozenAt),
+                frozenBy: mapId(maps.user, n.frozenBy),
+                voidedAt: this.date(n.voidedAt),
+                voidedBy: mapId(maps.user, n.voidedBy),
+                voidReason: typeof n.voidReason === 'string' ? n.voidReason : null,
             };
         });
 

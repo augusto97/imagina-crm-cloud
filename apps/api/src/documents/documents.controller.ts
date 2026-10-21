@@ -4,7 +4,10 @@ import {
     documentLinkInputSchema,
     documentPreviewInputSchema,
     generateDocumentInputSchema,
+    queryIdSchema,
+    reissueDocumentInputSchema,
     updateDocumentTemplateSchema,
+    viewDocumentInputSchema,
     type CreateDocumentTemplateInput,
     type DocumentLinkInput,
     type DocumentLinkResult,
@@ -14,7 +17,13 @@ import {
     type DocumentTemplateSummary,
     type GenerateDocumentInput,
     type GenerateDocumentResult,
+    type IssuedDocument,
+    type IssuedDocumentPdf,
+    type ReissueDocumentInput,
+    type ReissueDocumentResult,
     type UpdateDocumentTemplateInput,
+    type ViewDocumentInput,
+    type ViewDocumentResult,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -52,6 +61,41 @@ export class DocumentsController {
         @Body(new ZodValidationPipe(documentPreviewInputSchema)) input: DocumentPreviewInput,
     ): Promise<DocumentPreviewResult> {
         return this.documents.preview(req.tenant!.tenantId, actor(req), list, input);
+    }
+
+    /** v0.1.292 — Los documentos emitidos (numerados) de un registro. */
+    @Get('issued')
+    @RequireCapability('view_records', 'view_own_records')
+    issued(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Query('record_id', new ZodValidationPipe(queryIdSchema)) recordId: number,
+    ): Promise<{ data: IssuedDocument[] }> {
+        return this.documents.issuedForRecord(req.tenant!.tenantId, actor(req), list, recordId).then((data) => ({ data }));
+    }
+
+    /** v0.1.292 — El PDF de un documento emitido (el congelado, si lo tiene). */
+    @Get('issued/:numberId/pdf')
+    @RequireCapability('view_records', 'view_own_records')
+    issuedPdf(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('numberId', ParseIntPipe) numberId: number,
+    ): Promise<IssuedDocumentPdf> {
+        return this.documents.issuedPdf(req.tenant!.tenantId, actor(req), list, numberId);
+    }
+
+    /** v0.1.292 — «Anular y emitir de nuevo» (el service exige rol admin). */
+    @Post('issued/:numberId/reissue')
+    @HttpCode(200)
+    @RequireCapability('view_records', 'view_own_records')
+    reissue(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('numberId', ParseIntPipe) numberId: number,
+        @Body(new ZodValidationPipe(reissueDocumentInputSchema)) input: ReissueDocumentInput,
+    ): Promise<ReissueDocumentResult> {
+        return this.documents.reissue(req.tenant!.tenantId, actor(req), list, numberId, input);
     }
 
     @Get(':id')
@@ -100,6 +144,19 @@ export class DocumentsController {
         @Body(new ZodValidationPipe(generateDocumentInputSchema)) input: GenerateDocumentInput & { record_id: number },
     ): Promise<GenerateDocumentResult & { pdf: string }> {
         return this.documents.generateForRecord(req.tenant!.tenantId, actor(req), list, input.record_id, id, input);
+    }
+
+    /** v0.1.292 — «Ver»: el PDF sin emitir número (o el congelado, si ya se emitió). */
+    @Post(':id/view')
+    @HttpCode(200)
+    @RequireCapability('view_records', 'view_own_records')
+    view(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(viewDocumentInputSchema)) input: ViewDocumentInput,
+    ): Promise<ViewDocumentResult> {
+        return this.documents.viewForRecord(req.tenant!.tenantId, actor(req), list, input.record_id, id);
     }
 
     /** v0.1.268 — enlace de 30 días que arma el PDF al abrirlo (no guarda nada). */

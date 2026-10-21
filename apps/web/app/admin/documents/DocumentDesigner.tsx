@@ -797,6 +797,17 @@ function PagePanel({
                             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                                 {__('Para mostrarlo en el documento usa la variable')} <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1">{'{{documento.numero}}'}</code>.
                             </p>
+                            {/* v0.1.292 — Congelar al emitir (ADR-S35). */}
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2.5" data-testid="doc-numbering-freeze">
+                                <Check
+                                    label={__('Congelar el documento al emitirlo')}
+                                    checked={n.freeze === true}
+                                    onChange={(v) => onNumbering({ freeze: v }, 'numbering_freeze')}
+                                />
+                                <p className="imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
+                                    {__('La primera vez que se emite el número, el PDF se guarda como archivo (en el almacenamiento de la empresa) y desde ahí se entrega siempre ese —desde la ficha, el portal, una automatización o un enlace—, aunque cambien los datos del registro. Para corregirlo, un administrador lo anula y lo emite de nuevo desde «Documentos emitidos». Ideal para facturas.')}
+                                </p>
+                            </div>
                         </>
                     )}
                 </div>

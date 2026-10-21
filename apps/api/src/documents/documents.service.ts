@@ -1,18 +1,25 @@
 import {
     BadRequestException,
     ConflictException,
+    ForbiddenException,
+    HttpException,
     Injectable,
     Logger,
     NotFoundException,
     Optional,
+    ServiceUnavailableException,
 } from '@nestjs/common';
 import {
     DOC_MAX_PDF_BYTES,
     FALLBACK_TIME_ZONE,
     applyWordModifiers,
+    computeItemsRows,
+    describeDocItemExpr,
     docAllBlocks,
     docDesignFileIds,
+    docFreezes,
     formatDocNumber,
+    isComputedItemColumn,
     formatEmailFieldValue,
     groupNumber,
     jsonbKeyForField,
@@ -33,14 +40,21 @@ import {
     type DocumentTemplateSummary,
     type EmailFieldLike,
     type Field,
+    type DocItemsColumn,
     type GenerateDocumentInput,
     type GenerateDocumentResult,
+    type IssuedDocument,
+    type IssuedDocumentPdf,
     type RecordDto,
+    type ReissueDocumentInput,
+    type ReissueDocumentResult,
     type TenantFormat,
     type UpdateDocumentTemplateInput,
+    type ViewDocumentResult,
 } from '@imagina-base/shared';
 import { Readable } from 'node:stream';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { AuditService } from '../audit/audit.service';
 import { applyDateModifiers, labelForFieldValue } from '../automations/merge-tags';
@@ -50,7 +64,7 @@ import type { Tx } from '../db/client';
 import { attachments, automations, documentNumbers, documentTemplates, memberships, records as recordsTable, tenants, users } from '../db/schema';
 import type { DocumentTemplateRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { FilesService } from '../files/files.service';
+import { FilesService, type StoredFileRef } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
 import type { ThroughPlan } from '../records/through-fields';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -89,6 +103,13 @@ export interface RenderedDocument {
      * copia del registro para que una acción posterior no lo pise.
      */
     numberField: { key: string; value: string } | null;
+    /**
+     * v0.1.292 — true = son los bytes del PDF CONGELADO al emitir el número
+     * (no se volvió a armar). `pages`/`regions` no aplican.
+     */
+    frozen: boolean;
+    /** v0.1.292 — La fila del número vigente (para «Documentos emitidos»). */
+    issuedId: number | null;
 }
 
 export interface RenderRequest {
@@ -107,6 +128,17 @@ export interface RenderRequest {
      * sólo se MIRA el que tiene o el próximo (vista previa).
      */
     template?: { id: number; assign: boolean };
+    /**
+     * v0.1.292 — Entregar el PDF congelado si el número vigente lo tiene
+     * (generar, ver, portal, enlace, automatización). La vista previa del
+     * editor NUNCA (arma el diseño en edición).
+     */
+    useFrozen?: boolean;
+    /**
+     * v0.1.292 — Dónde anotar los bytes que se guardaron al congelar: si la
+     * transacción de quien llama revierte, los descarta (`files.discardBytes`).
+     */
+    uploads?: StoredFileRef[];
 }
 
 /**
@@ -139,13 +171,31 @@ export class DocumentsService {
 
     async list(tenantId: number, listIdOrSlug: string): Promise<DocumentTemplateSummary[]> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx
+        const { rows, frozen } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx
                 .select()
                 .from(documentTemplates)
                 .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.listId, list.id)))
-                .orderBy(asc(documentTemplates.name), asc(documentTemplates.id)),
-        );
+                .orderBy(asc(documentTemplates.name), asc(documentTemplates.id));
+            // v0.1.292 — cuántos PDF congelados tiene cada una (una sola consulta).
+            const counts = rows.length
+                ? await tx
+                      .select({ id: documentNumbers.templateId, n: sql<number>`count(*)::int` })
+                      .from(documentNumbers)
+                      .where(
+                          and(
+                              eq(documentNumbers.tenantId, tenantId),
+                              inArray(
+                                  documentNumbers.templateId,
+                                  rows.map((r) => r.id),
+                              ),
+                              sql`${documentNumbers.fileId} IS NOT NULL`,
+                          ),
+                      )
+                      .groupBy(documentNumbers.templateId)
+                : [];
+            return { rows, frozen: new Map(counts.map((c) => [c.id, Number(c.n)])) };
+        });
         return rows.map((r) => {
             const d = parseDocDesign(r.design);
             return {
@@ -159,6 +209,8 @@ export class DocumentsService {
                 portal_visible: r.portalVisible,
                 next_number: r.nextNumber,
                 next_label: d?.numbering.enabled ? formatDocNumber(nextOf(r.nextNumber, d.numbering), d.numbering) : null,
+                freezes: d ? docFreezes(d.numbering) : false,
+                frozen_count: frozen.get(r.id) ?? 0,
             };
         });
     }
@@ -263,9 +315,28 @@ export class DocumentsService {
                     data: { status: 409, automations: used },
                 });
             }
+            // v0.1.292 — Los PDF congelados de sus documentos emitidos se van
+            // con ella (si no, quedarían ocupando espacio sin forma de verlos).
+            // Primero los números (la FK de `file_id` es RESTRICT), después los
+            // archivos; los bytes, cuando la base ya confirmó.
+            const frozen = await tx
+                .select({ fileId: documentNumbers.fileId })
+                .from(documentNumbers)
+                .where(and(eq(documentNumbers.tenantId, tenantId), eq(documentNumbers.templateId, id), sql`${documentNumbers.fileId} IS NOT NULL`));
+            const fileIds = frozen.map((f) => f.fileId!).filter((x) => x > 0);
+            await tx.delete(documentNumbers).where(and(eq(documentNumbers.tenantId, tenantId), eq(documentNumbers.templateId, id)));
+            const refs: StoredFileRef[] = fileIds.length
+                ? (
+                      await tx
+                          .delete(attachments)
+                          .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, fileIds)))
+                          .returning({ storageKey: attachments.storageKey, storageConnectionId: attachments.storageConnectionId })
+                  ).map((r) => ({ storageKey: r.storageKey, storageConnectionId: r.storageConnectionId }))
+                : [];
             await tx.delete(documentTemplates).where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, id)));
-            return row;
+            return { ...row, refs };
         });
+        await this.files.discardBytes(tenantId, removed.refs);
         await this.audit.log({
             tenantId,
             userId,
@@ -273,7 +344,7 @@ export class DocumentsService {
             targetType: 'document_template',
             targetId: removed.id,
             targetLabel: removed.name,
-            meta: { list_id: list.id },
+            meta: { list_id: list.id, frozen_deleted: removed.refs.length },
         });
     }
 
@@ -384,7 +455,7 @@ export class DocumentsService {
         input: GenerateDocumentInput,
     ): Promise<GenerateDocumentResult & { pdf: string }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const rendered = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const rendered = await this.withDocTx(tenantId, async (tx, uploads) => {
             const tpl = await this.findInTx(tx, tenantId, list.id, templateId);
             if (!tpl) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);
@@ -397,6 +468,8 @@ export class DocumentsService {
                 filename: tpl.filename || tpl.name,
                 mode: 'real',
                 template: { id: tpl.id, assign: true },
+                useFrozen: true,
+                uploads,
             });
         });
         if (rendered.recordId === null) throw new NotFoundException({ code: 'record_not_found', message: 'Registro no encontrado', data: { status: 404 } });
@@ -454,6 +527,13 @@ export class DocumentsService {
             actor: Actor;
             filename?: string;
             extra?: (token: string) => unknown;
+            /** v0.1.292 — Bytes guardados al congelar (para descartarlos si el tx revierte). */
+            uploads?: StoredFileRef[];
+            /**
+             * v0.1.292 — false = una PRUEBA («Enviarme una prueba» de un correo):
+             * no emite número ni congela (muestra el congelado si ya existe).
+             */
+            assign?: boolean;
         },
     ): Promise<RenderedDocument> {
         const tpl = await this.findAnyInTx(tx, opts.tenantId, opts.templateId);
@@ -470,7 +550,9 @@ export class DocumentsService {
             filename: opts.filename?.trim() || tpl.filename || tpl.name,
             mode: 'real',
             extra: opts.extra,
-            template: { id: tpl.id, assign: true },
+            template: { id: tpl.id, assign: opts.assign ?? true },
+            useFrozen: true,
+            uploads: opts.uploads,
         });
     }
 
@@ -501,7 +583,7 @@ export class DocumentsService {
         ) {
             throw templateNotFound(templateId);
         }
-        const rendered = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const rendered = await this.withDocTx(tenantId, async (tx, uploads) => {
             const tpl = await this.findAnyInTx(tx, tenantId, templateId);
             if (!tpl) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);
@@ -516,6 +598,8 @@ export class DocumentsService {
                 filename: tpl.filename || tpl.name,
                 mode: 'real',
                 template: { id: tpl.id, assign: true },
+                useFrozen: true,
+                uploads,
             });
         });
         if (rendered.recordId === null) throw templateNotFound(templateId);
@@ -534,6 +618,224 @@ export class DocumentsService {
         const url = this.liveLink(tenantId, templateId, recordId);
         const exp = Number(new URL(url, 'http://x').searchParams.get('exp'));
         return { url, expires_at: new Date(exp * 1000).toISOString() };
+    }
+
+    // ── v0.1.292 — Ver, documentos emitidos y «Anular y emitir de nuevo» ──
+
+    /**
+     * «Ver» desde la ficha: el PDF con los datos de ahora (o el congelado, si
+     * ya se emitió y congeló) SIN emitir número — revisar no gasta.
+     */
+    async viewForRecord(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number, templateId: number): Promise<ViewDocumentResult> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const tpl = await this.findInTx(tx, tenantId, list.id, templateId);
+            if (!tpl) throw templateNotFound(templateId);
+            return this.renderInTx(tx, {
+                tenantId,
+                actor,
+                listId: list.id,
+                recordId,
+                design: this.validDesign(tpl.design),
+                filename: tpl.filename || tpl.name,
+                mode: 'real',
+                template: { id: tpl.id, assign: false },
+                useFrozen: true,
+            });
+        });
+        return { filename: out.filename, pdf: out.buffer.toString('base64'), number: out.number, issued: out.issuedId !== null, frozen: out.frozen };
+    }
+
+    /** Los documentos emitidos (numerados) de un registro, vigentes y anulados. */
+    async issuedForRecord(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<IssuedDocument[]> {
+        // ACL: quien no ve el registro no ve sus documentos (404 opaco).
+        await this.records.get(tenantId, actor, listIdOrSlug, recordId);
+        return this.tenantDb.withTenant(tenantId, (tx) => this.issuedInTx(tx, tenantId, recordId));
+    }
+
+    /** Lo mismo, dentro de un tx (el bundle de la ficha ya verificó el acceso). */
+    async issuedInTx(tx: Tx, tenantId: number, recordId: number, onlyId?: number): Promise<IssuedDocument[]> {
+        const frozenUser = alias(users, 'frozen_user');
+        const voidUser = alias(users, 'void_user');
+        const rows = await tx
+            .select({
+                n: documentNumbers,
+                templateName: documentTemplates.name,
+                frozenName: frozenUser.name,
+                voidName: voidUser.name,
+                bytes: attachments.sizeBytes,
+            })
+            .from(documentNumbers)
+            .innerJoin(documentTemplates, eq(documentTemplates.id, documentNumbers.templateId))
+            .leftJoin(frozenUser, eq(frozenUser.id, documentNumbers.frozenBy))
+            .leftJoin(voidUser, eq(voidUser.id, documentNumbers.voidedBy))
+            .leftJoin(attachments, eq(attachments.id, documentNumbers.fileId))
+            .where(
+                and(
+                    eq(documentNumbers.tenantId, tenantId),
+                    eq(documentNumbers.recordId, recordId),
+                    ...(onlyId !== undefined ? [eq(documentNumbers.id, onlyId)] : []),
+                ),
+            )
+            .orderBy(desc(documentNumbers.createdAt), desc(documentNumbers.id));
+        return rows.map((r) => ({
+            id: r.n.id,
+            template_id: r.n.templateId,
+            template_name: r.templateName,
+            record_id: r.n.recordId,
+            number: r.n.number,
+            label: r.n.label,
+            issued_at: r.n.createdAt.toISOString(),
+            frozen: r.n.fileId !== null,
+            frozen_at: r.n.frozenAt?.toISOString() ?? null,
+            frozen_by: r.n.frozenBy,
+            frozen_by_name: r.frozenName ?? null,
+            bytes: r.bytes ?? null,
+            status: r.n.voidedAt ? 'voided' : 'active',
+            voided_at: r.n.voidedAt?.toISOString() ?? null,
+            voided_by_name: r.voidName ?? null,
+            void_reason: r.n.voidReason ?? null,
+        }));
+    }
+
+    /**
+     * Bajar un documento emitido: su PDF congelado (vigente o anulado), o —si
+     * no se congeló y sigue vigente— el de ahora con su mismo número.
+     */
+    async issuedPdf(tenantId: number, actor: Actor, listIdOrSlug: string, numberId: number): Promise<IssuedDocumentPdf> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const row = await this.issuedRow(tenantId, list.id, numberId);
+        await this.records.get(tenantId, actor, String(list.id), row.recordId);
+        const out = await this.withDocTx(tenantId, async (tx, uploads) => {
+            if (row.fileId !== null) return this.readFrozenInTx(tx, tenantId, row.fileId).then((f) => ({ buffer: f.bytes, filename: f.filename }));
+            if (row.voidedAt) {
+                throw new ConflictException({
+                    code: 'voided_document_without_copy',
+                    message: `El documento ${row.label} se anuló y no tiene una copia guardada (no se congeló al emitirlo).`,
+                    data: { status: 409 },
+                });
+            }
+            const tpl = await this.findInTx(tx, tenantId, list.id, row.templateId);
+            if (!tpl) throw templateNotFound(row.templateId);
+            return this.renderInTx(tx, {
+                tenantId,
+                actor,
+                listId: list.id,
+                recordId: row.recordId,
+                design: this.validDesign(tpl.design),
+                filename: tpl.filename || tpl.name,
+                mode: 'real',
+                template: { id: tpl.id, assign: true },
+                useFrozen: true,
+                uploads,
+            });
+        });
+        return { filename: out.filename, pdf: out.buffer.toString('base64') };
+    }
+
+    /**
+     * «Anular y emitir de nuevo» (sólo admin): el número vigente queda ANULADO
+     * —conserva su número, que no se reusa, y su PDF— y se emite el siguiente
+     * con los datos actuales (congelado si la plantilla congela). Todo en una
+     * transacción: si el nuevo no se puede emitir, el anterior sigue vigente.
+     */
+    async reissue(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        numberId: number,
+        input: ReissueDocumentInput,
+    ): Promise<ReissueDocumentResult> {
+        if (actor.role !== 'admin') {
+            throw new ForbiddenException({
+                code: 'admin_only',
+                message: 'Sólo un administrador puede anular un documento emitido.',
+                data: { status: 403 },
+            });
+        }
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const first = await this.issuedRow(tenantId, list.id, numberId);
+        await this.records.get(tenantId, actor, String(list.id), first.recordId);
+        const out = await this.withDocTx(tenantId, async (tx, uploads) => {
+            // El bloqueo de la plantilla ordena esta anulación con cualquier
+            // emisión en curso del mismo documento.
+            const [tpl] = await tx
+                .select()
+                .from(documentTemplates)
+                .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.listId, list.id), eq(documentTemplates.id, first.templateId)))
+                .for('update');
+            if (!tpl) throw templateNotFound(first.templateId);
+            const design = this.validDesign(tpl.design);
+            if (!design.numbering.enabled) {
+                throw new BadRequestException({
+                    code: 'numbering_disabled',
+                    message: 'La plantilla ya no numera: enciende la numeración para emitir un número nuevo.',
+                    data: { status: 400 },
+                });
+            }
+            const voided = await tx
+                .update(documentNumbers)
+                .set({ voidedAt: new Date(), voidedBy: actor.userId > 0 ? actor.userId : null, voidReason: input.reason?.trim() || null })
+                .where(and(eq(documentNumbers.tenantId, tenantId), eq(documentNumbers.id, numberId), isNull(documentNumbers.voidedAt)))
+                .returning({ id: documentNumbers.id });
+            if (voided.length === 0) {
+                throw new ConflictException({ code: 'already_voided', message: `El documento ${first.label} ya estaba anulado.`, data: { status: 409 } });
+            }
+            const rendered = await this.renderInTx(tx, {
+                tenantId,
+                actor,
+                listId: list.id,
+                recordId: first.recordId,
+                design,
+                filename: tpl.filename || tpl.name,
+                mode: 'real',
+                template: { id: tpl.id, assign: true },
+                useFrozen: true,
+                uploads,
+            });
+            const [voidedDto] = await this.issuedInTx(tx, tenantId, first.recordId, numberId);
+            const [issuedDto] = rendered.issuedId !== null ? await this.issuedInTx(tx, tenantId, first.recordId, rendered.issuedId) : [];
+            if (!issuedDto) throw new ServiceUnavailableException({ code: 'reissue_failed', message: 'No se pudo emitir el número nuevo.', data: { status: 503 } });
+            return { rendered, voided: voidedDto!, issued: issuedDto };
+        });
+        await this.audit.log({
+            tenantId,
+            userId: actor.userId,
+            action: 'document.reissue',
+            targetType: 'record',
+            targetId: first.recordId,
+            targetLabel: `${out.voided.label} → ${out.issued.label}`,
+            meta: { list_id: list.id, template_id: first.templateId, voided: out.voided.label, issued: out.issued.label, reason: input.reason ?? null },
+        });
+        return { voided: out.voided, issued: out.issued, filename: out.rendered.filename, pdf: out.rendered.buffer.toString('base64') };
+    }
+
+    /** Un número emitido de una plantilla de ESTA lista (404 si no). */
+    private async issuedRow(tenantId: number, listId: number, numberId: number) {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    id: documentNumbers.id,
+                    templateId: documentNumbers.templateId,
+                    recordId: documentNumbers.recordId,
+                    label: documentNumbers.label,
+                    fileId: documentNumbers.fileId,
+                    voidedAt: documentNumbers.voidedAt,
+                })
+                .from(documentNumbers)
+                .innerJoin(documentTemplates, eq(documentTemplates.id, documentNumbers.templateId))
+                .where(and(eq(documentNumbers.tenantId, tenantId), eq(documentNumbers.id, numberId), eq(documentTemplates.listId, listId)))
+                .limit(1),
+        );
+        if (!row) {
+            throw new NotFoundException({ code: 'issued_document_not_found', message: `Documento emitido #${numberId} no encontrado`, data: { status: 404 } });
+        }
+        return row;
+    }
+
+    /** v0.1.292 — Descarta bytes guardados al congelar en un tx que revirtió (motor). */
+    async discardUploads(tenantId: number, refs: readonly StoredFileRef[]): Promise<void> {
+        await this.files.discardBytes(tenantId, refs);
     }
 
     /** Enlace absoluto y firmado (30 días) a un PDF guardado: `{{pdf.link}}`. */
@@ -584,6 +886,11 @@ export class DocumentsService {
         if (record && numbering.field) record = { ...record, data: { ...record.data, [numbering.field.key]: numbering.field.value } };
         if (!design.numbering.enabled && JSON.stringify(design).includes('documento.numero')) {
             warnings.push('El documento usa {{documento.numero}} pero la numeración está apagada: enciéndela en «Hoja y estilo».');
+        }
+        // v0.1.292 — Ya emitido y CONGELADO: se entrega ese PDF tal cual, aunque
+        // el registro haya cambiado (es la copia fiel de lo que se emitió).
+        if (req.useFrozen && record && numbering.fileId !== null) {
+            return this.frozenDocument(tx, tenantId, record.id, numbering);
         }
 
         // Ítems (tablas de registros vinculados).
@@ -636,7 +943,7 @@ export class DocumentsService {
                 totals: (id) => totalsByRow.get(id),
                 money: (n, id) => {
                     const m = (id && moneyOf.get(id)) || { prefix: '$ ', decimals: 0 };
-                    return `${m.prefix}${groupNumber(n, m.decimals, format.number_format)}`;
+                    return formatMoney(n, m.prefix, m.decimals, format.number_format);
                 },
                 dateFormat: (ymd) => formatValue({ type: 'date' }, ymd, format, userName),
                 docNumber: numbering.label,
@@ -649,24 +956,29 @@ export class DocumentsService {
         });
         totalsByRow = totals.byRowId;
         const totalsResolved = new Map<string, TotalsRowResolved[]>();
+        // Todas las filas formateadas (también las ocultas): para los tests.
+        const totalsContent: Record<string, string> = {};
         for (const b of design.blocks) {
             if (b.type !== 'totals') continue;
             const rows = totals.byBlock.get(b.id) ?? [];
-            totalsResolved.set(
-                b.id,
-                rows.map((r) => ({
-                    id: r.id,
-                    label: r.label,
-                    emphasis: r.emphasis,
-                    value: tagsMode
-                        ? totalsTagValue(b, r.id)
-                        : r.text !== null
-                          ? r.text
-                          : r.num === null
-                            ? '—'
-                            : `${b.prefix}${groupNumber(r.num, b.decimals, format.number_format)}`,
-                })),
-            );
+            const drawn: TotalsRowResolved[] = [];
+            for (const r of rows) {
+                const value = tagsMode
+                    ? totalsTagValue(b, r.id)
+                    : r.text !== null
+                      ? r.text
+                      : r.num === null
+                        ? '—'
+                        : formatMoney(r.num, b.prefix, b.decimals, format.number_format);
+                if (!(r.id in totalsContent)) totalsContent[r.id] = value;
+                // v0.1.292 — Las filas ocultas (y las en cero con «ocultar si da
+                // 0») no se dibujan; en el modo variables del editor se ven
+                // todas menos las ocultas a propósito.
+                const def = b.rows.find((x) => x.id === r.id);
+                if (tagsMode ? def?.hidden === true : r.hidden) continue;
+                drawn.push({ id: r.id, label: tagsMode ? r.label : resolve(r.label), emphasis: r.emphasis, value });
+            }
+            totalsResolved.set(b.id, drawn);
         }
         const images = await this.loadImages(tx, tenantId, actor, design, tenant.logoFileId, warnings);
 
@@ -691,6 +1003,16 @@ export class DocumentsService {
             });
         }
         for (const set of itemSets.values()) if (set.warning) warnings.push(set.warning);
+        // v0.1.292 — Congelar: la primera vez que el documento sale de verdad
+        // con su número (o el primero después de encender la opción). Va en
+        // la MISMA transacción que emitió el número: si el PDF no se puede
+        // guardar (cupo del plan, almacenamiento caído), falla todo y el
+        // número queda libre.
+        let frozen = false;
+        if (req.template?.assign && record && numbering.rowId !== null && numbering.fileId === null && docFreezes(design.numbering)) {
+            await this.freezeInTx(tx, req, numbering.rowId, filename, out.buffer);
+            frozen = true;
+        }
         return {
             buffer: out.buffer,
             filename,
@@ -702,12 +1024,106 @@ export class DocumentsService {
             warnings,
             content: {
                 items: Object.fromEntries([...itemsTables].map(([id, t]) => [id, t.rows])),
-                totals: Object.fromEntries([...totalsResolved.values()].flat().map((r) => [r.id, r.value])),
+                totals: totalsContent,
             },
             number: numbering.label,
             numberIssued: numbering.issued,
             numberField: numbering.field,
+            frozen,
+            issuedId: numbering.rowId,
         };
+    }
+
+    /**
+     * v0.1.292 — Guarda el PDF recién emitido como archivo (en el almacenamiento
+     * que eligió la empresa: el servidor —cuenta para el plan— o el suyo) y lo
+     * ata al número. Dentro del tx del que emite; los bytes se anotan en
+     * `req.uploads` para descartarlos si ese tx revierte.
+     */
+    private async freezeInTx(tx: Tx, req: RenderRequest, numberId: number, filename: string, buffer: Buffer): Promise<void> {
+        const { tenantId } = req;
+        try {
+            if (this.billing && !(await this.files.uploadsExternally(tenantId))) {
+                await this.billing.assertCanUpload(tenantId, buffer.length);
+            }
+            const saved = await this.files.storeBufferInTx(tx, tenantId, req.actor.userId, filename, 'application/pdf', buffer);
+            req.uploads?.push(saved.ref);
+            await tx
+                .update(documentNumbers)
+                .set({ fileId: saved.id, frozenAt: new Date(), frozenBy: req.actor.userId > 0 ? req.actor.userId : null })
+                .where(and(eq(documentNumbers.tenantId, tenantId), eq(documentNumbers.id, numberId)));
+        } catch (err) {
+            const message = `No se pudo emitir el documento: no se pudo guardar su PDF congelado (${errorText(err)}). El número no se usó.`;
+            const status = err instanceof HttpException ? err.getStatus() : 503;
+            if (status === 403) throw new ForbiddenException({ code: 'document_freeze_failed', message, data: { status } });
+            throw new ServiceUnavailableException({ code: 'document_freeze_failed', message, data: { status: 503 } });
+        }
+    }
+
+    /** v0.1.292 — El PDF congelado de un número emitido (sus bytes, tal cual). */
+    private async frozenDocument(tx: Tx, tenantId: number, recordId: number, numbering: IssuedNumber): Promise<RenderedDocument> {
+        const file = await this.readFrozenInTx(tx, tenantId, numbering.fileId!);
+        return {
+            buffer: file.bytes,
+            filename: file.filename,
+            pages: 0,
+            pageWidth: 0,
+            pageHeight: 0,
+            regions: [],
+            recordId,
+            warnings: [],
+            content: { items: {}, totals: {} },
+            number: numbering.label,
+            numberIssued: false,
+            numberField: null,
+            frozen: true,
+            issuedId: numbering.rowId,
+        };
+    }
+
+    /** Los bytes de un PDF congelado. Si no se pueden leer, FALLA (nunca se rearma en silencio). */
+    private async readFrozenInTx(tx: Tx, tenantId: number, fileId: number): Promise<{ bytes: Buffer; filename: string }> {
+        const [row] = await tx
+            .select({ key: attachments.storageKey, conn: attachments.storageConnectionId, name: attachments.filename })
+            .from(attachments)
+            .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, fileId)))
+            .limit(1);
+        if (!row) {
+            throw new ServiceUnavailableException({
+                code: 'frozen_document_missing',
+                message: 'El PDF congelado de este documento ya no está guardado. Anúlalo y emítelo de nuevo.',
+                data: { status: 503 },
+            });
+        }
+        let bytes: Buffer | null;
+        try {
+            bytes = await readAll(await this.files.readStream(tenantId, { storageKey: row.key, storageConnectionId: row.conn }), DOC_MAX_PDF_BYTES * 2);
+        } catch (err) {
+            throw new ServiceUnavailableException({
+                code: 'frozen_document_unreadable',
+                message: `No se pudo leer el PDF congelado: ${errorText(err)}`,
+                data: { status: 503 },
+            });
+        }
+        if (!bytes) {
+            throw new ServiceUnavailableException({ code: 'frozen_document_unreadable', message: 'El PDF congelado es demasiado grande.', data: { status: 503 } });
+        }
+        return { bytes, filename: row.name };
+    }
+
+    /**
+     * v0.1.292 — Corre `fn` en una transacción de la empresa y, si revierte,
+     * descarta los bytes que se guardaron al congelar (un storage no es
+     * transaccional: sin esto quedarían archivos sin dueño).
+     */
+    private async withDocTx<T>(tenantId: number, fn: (tx: Tx, uploads: StoredFileRef[]) => Promise<T>): Promise<T> {
+        const uploads: StoredFileRef[] = [];
+        try {
+            return await this.tenantDb.withTenant(tenantId, (tx) => fn(tx, uploads));
+        } catch (err) {
+            await this.files.discardBytes(tenantId, uploads);
+            throw err;
+        }
     }
 
     /**
@@ -726,28 +1142,30 @@ export class DocumentsService {
         record: RecordDto | null,
         fields: Field[],
         warnings: string[],
-    ): Promise<{ label: string | null; issued: boolean; field: { key: string; value: string } | null }> {
-        if (!numbering.enabled) return { label: null, issued: false, field: null };
+    ): Promise<IssuedNumber> {
+        const none = (label: string | null): IssuedNumber => ({ label, issued: false, field: null, rowId: null, fileId: null });
+        if (!numbering.enabled) return none(null);
         // Sin plantilla guardada (un diseño nuevo en el editor): el primero.
-        if (!template) return { label: formatDocNumber(numbering.start, numbering), issued: false, field: null };
-        const existing = async (): Promise<string | null> => {
+        if (!template) return none(formatDocNumber(numbering.start, numbering));
+        // v0.1.292 — El número VIGENTE (los anulados son historia).
+        const existing = async (): Promise<IssuedNumber | null> => {
             if (!record) return null;
             const [row] = await tx
-                .select({ label: documentNumbers.label })
+                .select({ id: documentNumbers.id, label: documentNumbers.label, fileId: documentNumbers.fileId })
                 .from(documentNumbers)
-                .where(and(eq(documentNumbers.templateId, template.id), eq(documentNumbers.recordId, record.id)))
+                .where(and(eq(documentNumbers.templateId, template.id), eq(documentNumbers.recordId, record.id), isNull(documentNumbers.voidedAt)))
                 .limit(1);
-            return row?.label ?? null;
+            return row ? { label: row.label, issued: false, field: null, rowId: row.id, fileId: row.fileId } : null;
         };
         const already = await existing();
-        if (already !== null) return { label: already, issued: false, field: null };
+        if (already !== null) return already;
         if (!record || !template.assign) {
             const [tpl] = await tx
                 .select({ next: documentTemplates.nextNumber })
                 .from(documentTemplates)
                 .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, template.id)))
                 .limit(1);
-            return { label: formatDocNumber(nextOf(tpl?.next ?? 1, numbering), numbering), issued: false, field: null };
+            return none(formatDocNumber(nextOf(tpl?.next ?? 1, numbering), numbering));
         }
         // Emitir: bloquear la plantilla y volver a mirar (otra generación pudo
         // emitirlo mientras esperábamos el bloqueo).
@@ -756,12 +1174,15 @@ export class DocumentsService {
             .from(documentTemplates)
             .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, template.id)))
             .for('update');
-        if (!locked) return { label: null, issued: false, field: null };
+        if (!locked) return none(null);
         const raced = await existing();
-        if (raced !== null) return { label: raced, issued: false, field: null };
+        if (raced !== null) return raced;
         const n = nextOf(locked.next, numbering);
         const label = formatDocNumber(n, numbering);
-        await tx.insert(documentNumbers).values({ tenantId, templateId: template.id, recordId: record.id, number: n, label });
+        const [ins] = await tx
+            .insert(documentNumbers)
+            .values({ tenantId, templateId: template.id, recordId: record.id, number: n, label })
+            .returning({ id: documentNumbers.id });
         await tx
             .update(documentTemplates)
             .set({ nextNumber: n + 1 })
@@ -785,7 +1206,7 @@ export class DocumentsService {
                 field = { key: jsonbKeyForField(f.id), value: label };
             }
         }
-        return { label, issued: true, field };
+        return { label, issued: true, field, rowId: ins!.id, fileId: null };
     }
 
     // ── Portal del cliente ───────────────────────────────────────────────
@@ -807,7 +1228,7 @@ export class DocumentsService {
      * el número si todavía no tenía (es el documento de verdad).
      */
     async renderForPortal(tenantId: number, listId: number, recordId: number, templateId: number): Promise<RenderedDocument> {
-        return this.tenantDb.withTenant(tenantId, async (tx) => {
+        return this.withDocTx(tenantId, async (tx, uploads) => {
             const tpl = await this.findInTx(tx, tenantId, listId, templateId);
             if (!tpl || !tpl.portalVisible) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);
@@ -820,6 +1241,8 @@ export class DocumentsService {
                 filename: tpl.filename || tpl.name,
                 mode: 'real',
                 template: { id: tpl.id, assign: true },
+                useFrozen: true,
+                uploads,
             });
         });
     }
@@ -860,17 +1283,24 @@ export class DocumentsService {
         const itemPlans = await this.fields.through.plans(tx, req.tenantId, b.source.list_id, itemFields);
         const display = displayFields(itemFields, itemPlans);
         const bySlug = new Map(itemFields.map((f) => [f.slug, f]));
-        const cols = b.columns.filter((c) => bySlug.has(c.slug));
-        const columns: ItemsTable['columns'] = cols.map((c) => ({
-            label: c.label.trim() || bySlug.get(c.slug)!.label,
+        // v0.1.292 — Columnas de campo, CALCULADAS (sin campo detrás) y las
+        // marcadoras de la galería ("[Precio unitario]": falta elegir el campo,
+        // se ven tal cual). Las ocultas se calculan y suman pero no se dibujan.
+        const cols = b.columns.filter((c) => isComputedItemColumn(c) || bySlug.has(c.slug) || isPlaceholderSlug(c.slug));
+        const drawn = cols.filter((c) => !c.hidden);
+        const labelOf = (slug: string): string => bySlug.get(slug)?.label ?? cols.find((c) => c.slug === slug)?.label ?? slug.replace(/^\[|\]$/g, '');
+        const columns: ItemsTable['columns'] = drawn.map((c) => ({
+            label: c.label.trim() || labelOf(c.slug),
             align: c.align,
             width: c.width,
         }));
-        if (cols.length === 0) {
+        if (drawn.length === 0) {
             return { ...empty('Elige las columnas de la tabla.'), table: { columns: [], rows: [], notice: 'Elige las columnas de la tabla.' } };
         }
         if (tagsMode) {
-            const row = cols.map((c) => `{{${c.slug}}}`);
+            const row = drawn.map((c) =>
+                isComputedItemColumn(c) ? `= ${describeDocItemExpr(c.expr, labelOf)}` : isPlaceholderSlug(c.slug) ? c.slug : `{{${c.slug}}}`,
+            );
             return { table: { columns, rows: [row, row] }, sums: new Map(), raw: [], fields: itemFields };
         }
         if (!record) return { table: { columns, rows: [] }, sums: new Map(), raw: [], fields: itemFields };
@@ -902,8 +1332,22 @@ export class DocumentsService {
         const names = await this.userNames(tx, req.tenantId, [...userIds]);
         const fmt: FormatOpts = { ...(await this.tenantInfo(tx, req.tenantId)).format, timezone: await this.zone(req.tenantId, tx) };
         const sums = new Map<string, number>();
-        const rows = rawRows.map((data) =>
-            cols.map((c) => {
+        // v0.1.292 — Las columnas calculadas de cada fila (el total de la
+        // línea), con la MISMA función que prueba shared.
+        const calc = computeItemsRows(
+            cols,
+            rawRows.map((data) => (slug: string) => {
+                const f = bySlug.get(slug);
+                return f ? parseLooseAmount(firstScalar(data[jsonbKeyForField(f.id)])) : null;
+            }),
+        );
+        const rows = rawRows.map((data, i) =>
+            drawn.map((c) => {
+                if (isComputedItemColumn(c)) {
+                    const v = calc.values[i]?.get(c.slug) ?? null;
+                    return v === null ? '—' : formatComputedCell(v, c, fmt.number_format);
+                }
+                if (isPlaceholderSlug(c.slug)) return c.slug;
                 const f = bySlug.get(c.slug)!;
                 const raw = data[jsonbKeyForField(f.id)];
                 const n = parseLooseAmount(firstScalar(raw));
@@ -911,6 +1355,8 @@ export class DocumentsService {
                 return formatValue(display.get(f.id) ?? f, raw, fmt, (id) => names.get(id) ?? null);
             }),
         );
+        // Las sumas de las calculadas (de los valores ya redondeados por línea).
+        for (const [slug, total] of calc.sums) sums.set(slug, total);
         // Sumas también para columnas que la tabla no muestra (un total por una
         // columna oculta sigue sumando).
         for (const f of itemFields) {
@@ -1048,6 +1494,46 @@ export class DocumentsService {
 }
 
 // ── Helpers puros ───────────────────────────────────────────────────────
+
+/** v0.1.292 — El número de un documento: el vigente, el emitido ahora o el próximo. */
+interface IssuedNumber {
+    label: string | null;
+    /** Se emitió en esta generación (no existía). */
+    issued: boolean;
+    field: { key: string; value: string } | null;
+    /** La fila del número VIGENTE (null = no hay: vista previa o sin numeración). */
+    rowId: number | null;
+    /** Su PDF congelado (null = todavía no se congeló). */
+    fileId: number | null;
+}
+
+function errorText(err: unknown): string {
+    if (err instanceof HttpException) {
+        const res = err.getResponse();
+        const msg = typeof res === 'object' && res !== null ? (res as { message?: unknown }).message : res;
+        if (typeof msg === 'string' && msg !== '') return msg;
+    }
+    return err instanceof Error ? err.message : String(err);
+}
+
+/** Un monto con el prefijo y el signo ADELANTE: "-$ 30.000" (no "$ -30.000"). */
+export function formatMoney(n: number, prefix: string, decimals: number, numberFormat: TenantFormat['number_format']): string {
+    const text = groupNumber(Math.abs(n), decimals, numberFormat);
+    return n < 0 ? `-${prefix}${text}` : `${prefix}${text}`;
+}
+
+/** El valor de una columna calculada con su formato (moneda, número o %). */
+function formatComputedCell(n: number, c: DocItemsColumn, numberFormat: TenantFormat['number_format']): string {
+    const decimals = c.decimals ?? 2;
+    if (c.format === 'percent') return `${groupNumber(n, decimals, numberFormat)} %`;
+    if (c.format === 'number') return groupNumber(n, decimals, numberFormat);
+    return formatMoney(n, c.prefix ?? '$ ', decimals, numberFormat);
+}
+
+/** Una columna marcadora de la galería ("[Precio unitario]"): falta elegir su campo. */
+function isPlaceholderSlug(slug: string): boolean {
+    return /^\[.+\]$/.test(slug);
+}
 
 interface LoadedItems {
     table: ItemsTable;

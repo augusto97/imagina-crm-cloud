@@ -5,8 +5,11 @@ import {
     type DocBlock,
     type DocDesign,
     type DocInnerBlock,
+    type DocItemExpr,
+    type DocItemsColumn,
     type DocItemsSource,
     type DocTheme,
+    type DocTotalRow,
 } from '../schemas/document-design';
 
 /**
@@ -73,6 +76,20 @@ export interface DocumentStarter {
     item_roles: TemplateRoleField[];
     /** ¿Pide los datos de quien cobra? */
     issuer: boolean;
+    /** v0.1.292 — ¿Pregunta por el IVA (tarifa / no responsable) y el descuento global? */
+    taxes?: boolean;
+    /** v0.1.292 — «Congelar el documento al emitirlo» encendido de entrada. */
+    freeze_default?: boolean;
+    /** v0.1.292 — Aviso visible en la galería ("No es factura electrónica DIAN"). */
+    notice?: string;
+}
+
+/** v0.1.292 — IVA de la cotización/factura: tarifa, o «no responsable» (sin IVA). */
+export interface DocumentTaxInput {
+    /** false = no responsable de IVA: no hay fila de IVA y va la leyenda. */
+    iva: boolean;
+    /** Tarifa en % (19 en Colombia). */
+    rate: number;
 }
 
 export interface DocumentStarterInput {
@@ -84,7 +101,23 @@ export interface DocumentStarterInput {
         fields: Record<string, string | null | undefined>;
     } | null;
     issuer?: DocumentIssuer | null;
+    /** v0.1.292 — IVA (sólo plantillas con `taxes`). Por defecto 19 %. */
+    tax?: DocumentTaxInput | null;
+    /**
+     * v0.1.292 — Descuento global % fijo (sin un campo «descuento global»
+     * mapeado). 0 o vacío = sin descuento global.
+     */
+    global_discount_pct?: number | null;
+    /** v0.1.292 — Decimales de la moneda (los del campo del precio). Por defecto 0. */
+    money_decimals?: number | null;
+    /** v0.1.292 — Congelar el documento al emitirlo (por defecto, el de la plantilla). */
+    freeze?: boolean | null;
+    /** v0.1.292 — Cotización sin campo de validez: válida por N días desde hoy. */
+    validity_days?: number | null;
 }
+
+/** v0.1.292 — IVA por defecto de las plantillas con impuestos (Colombia). */
+export const DEFAULT_IVA_RATE = 19;
 
 export interface DocumentStarterResult {
     name: string;
@@ -101,6 +134,33 @@ const CLIENT_ROLES: TemplateRoleField[] = [
 ];
 
 const MONEY_TYPES: TemplateRoleField['types'] = ['currency', 'number', 'computed', 'rollup', 'lookup'];
+
+/** v0.1.292 — Datos de contacto del cliente (cotización y factura). */
+const CUSTOMER_ROLES: TemplateRoleField[] = [
+    { key: 'cliente', label: 'Nombre del cliente', types: ['text', 'long_text', 'lookup', 'email', 'select'], required: true },
+    { key: 'cliente_doc', label: 'NIT o cédula del cliente', types: ['text', 'number', 'lookup'], required: false },
+    { key: 'direccion', label: 'Dirección del cliente', types: ['text', 'long_text', 'lookup'], required: false },
+    { key: 'correo', label: 'Correo del cliente', types: ['email', 'text', 'lookup'], required: false },
+];
+
+/** v0.1.292 — Las líneas de una cotización o factura (lista vinculada). */
+const LINE_ITEM_ROLES: TemplateRoleField[] = [
+    { key: 'descripcion', label: 'Descripción', types: ['text', 'long_text', 'select', 'lookup'], required: true },
+    { key: 'cantidad', label: 'Cantidad', types: ['number', 'rollup', 'lookup', 'computed'], required: true },
+    { key: 'precio', label: 'Precio unitario', types: MONEY_TYPES, required: true },
+    { key: 'descuento', label: 'Descuento % por línea', types: ['percent', 'number'], required: false },
+];
+
+const GLOBAL_DISCOUNT_ROLE: TemplateRoleField = {
+    key: 'descuento_global',
+    label: 'Descuento global %',
+    types: ['percent', 'number'],
+    required: false,
+};
+
+/** v0.1.292 — El aviso de la factura en la galería. */
+export const DIAN_NOTICE =
+    'No es factura electrónica DIAN: sirve como soporte o cuenta para tus clientes, pero no reemplaza la factura electrónica de venta.';
 
 export const DOCUMENT_STARTERS: readonly DocumentStarter[] = [
     {
@@ -130,6 +190,41 @@ export const DOCUMENT_STARTERS: readonly DocumentStarter[] = [
             { key: 'total', label: 'Valor de la línea', types: MONEY_TYPES, required: true },
         ],
         issuer: true,
+    },
+    {
+        key: 'cotizacion',
+        name: 'Cotización',
+        description: 'Ítems con cantidad, precio y descuento por línea, el total de cada línea calculado, IVA, validez y condiciones comerciales.',
+        roles: [
+            ...CUSTOMER_ROLES,
+            { key: 'numero', label: 'Número de la cotización', types: ['text', 'number'], required: false },
+            { key: 'fecha', label: 'Fecha de la cotización', types: ['date', 'datetime'], required: false },
+            { key: 'validez', label: 'Válida hasta (fecha de vencimiento)', types: ['date', 'datetime'], required: false },
+            { key: 'condiciones', label: 'Condiciones comerciales', types: ['long_text', 'text'], required: false },
+            GLOBAL_DISCOUNT_ROLE,
+        ],
+        item_roles: LINE_ITEM_ROLES,
+        issuer: true,
+        taxes: true,
+        freeze_default: false,
+    },
+    {
+        key: 'factura',
+        name: 'Factura (no electrónica)',
+        description: 'Ítems con el total de cada línea calculado, descuentos, base gravable, IVA, forma de pago y tus datos bancarios.',
+        roles: [
+            ...CUSTOMER_ROLES,
+            { key: 'numero', label: 'Número de la factura', types: ['text', 'number'], required: false },
+            { key: 'fecha', label: 'Fecha de emisión', types: ['date', 'datetime'], required: false },
+            { key: 'fecha_pago', label: 'Fecha de pago (límite)', types: ['date', 'datetime'], required: false },
+            { key: 'forma_pago', label: 'Forma de pago', types: ['select', 'text', 'long_text'], required: false },
+            GLOBAL_DISCOUNT_ROLE,
+        ],
+        item_roles: LINE_ITEM_ROLES,
+        issuer: true,
+        taxes: true,
+        freeze_default: true,
+        notice: DIAN_NOTICE,
     },
     {
         key: 'blank',
@@ -181,6 +276,10 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
     };
     let n = 0;
     const id = (p: string): string => `${p}${++n}`;
+
+    if (starter.key === 'cotizacion' || starter.key === 'factura') {
+        return buildSalesDocument(starter, input, { tag, slug, id });
+    }
 
     if (starter.key === 'blank') {
         return {
@@ -389,6 +488,271 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
             theme: theme(input.accent),
             footer: { text: '', page_numbers: withItems },
             numbering: { enabled: !ownNumber, prefix: '', padding: 4, start: 1, save_field: null },
+            blocks,
+        },
+    };
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.292 — Cotización y factura (no electrónica)
+// ---------------------------------------------------------------------------
+
+/** Claves de las columnas calculadas (no chocan con un slug: llevan prefijo). */
+export const DOC_CALC_GROSS = 'calc_bruto';
+export const DOC_CALC_LINE_TOTAL = 'calc_total';
+export const DOC_CALC_LINE_DISCOUNT = 'calc_descuento';
+
+/**
+ * El diseño de una cotización o una factura: los ítems con el total de cada
+ * línea CALCULADO (cantidad × precio − descuento %) y los totales Subtotal →
+ * Descuentos → Descuento global → Base gravable → IVA → Total. El IVA va
+ * sobre la base gravable (lo que queda después de TODOS los descuentos), como
+ * en una factura de verdad.
+ */
+function buildSalesDocument(
+    starter: DocumentStarter,
+    input: DocumentStarterInput,
+    h: { tag: (k: string, mods?: string) => string; slug: (k: string) => string | null; id: (p: string) => string },
+): DocumentStarterResult {
+    const { tag, slug, id } = h;
+    const quote = starter.key === 'cotizacion';
+    const issuer = input.issuer ?? emptyIssuer();
+    const tax: DocumentTaxInput = input.tax ?? { iva: true, rate: DEFAULT_IVA_RATE };
+    const rate = Number.isFinite(tax.rate) ? Math.max(0, Math.min(100, tax.rate)) : DEFAULT_IVA_RATE;
+    const decimals = Math.max(0, Math.min(4, Math.trunc(input.money_decimals ?? 0)));
+    const rawGlobal = input.global_discount_pct;
+    const globalPct = typeof rawGlobal === 'number' && Number.isFinite(rawGlobal) ? Math.max(0, Math.min(100, rawGlobal)) : 0;
+    const freeze = input.freeze ?? starter.freeze_default ?? false;
+    const pctLabel = (n: number): string => String(n).replace('.', ',');
+
+    const docId = `${issuer.doc_label || 'C.C.'} ${issuer.doc_number}`.trim();
+    const issuerName = issuer.name.trim() || '[Tu nombre o el de tu empresa]';
+    const company = [issuerName, issuer.doc_number ? docId : '', issuer.address, [issuer.phone, issuer.email].filter(Boolean).join(' · ')]
+        .filter((l) => l.trim() !== '')
+        .join('\n');
+    const ownNumber = slug('numero') !== null;
+    const numero = ownNumber ? tag('numero') : '{{documento.numero}}';
+    const fecha = slug('fecha') ? tag('fecha', '|larga') : '{{date.today|larga}}';
+    const blocks: DocBlock[] = [];
+    const boxBg = '#f8fafc';
+
+    blocks.push({
+        id: id('h'),
+        type: 'header',
+        layout: 'split',
+        logo: { kind: 'brand', file_id: null, url: '' },
+        logo_width: 110,
+        company,
+        title: quote ? 'COTIZACIÓN' : 'FACTURA',
+        number: `N.º ${numero}`,
+        date: issuer.city.trim() ? `${issuer.city.trim()}, ${fecha}` : fecha,
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 12 });
+
+    // A quién se le cotiza/factura | los datos del documento.
+    const clientLines: RichNode[] = [para(txt(tag('cliente'), true))];
+    if (slug('cliente_doc')) clientLines.push(para(txt('NIT / C.C. '), txt(tag('cliente_doc'))));
+    if (slug('direccion')) clientLines.push(para(txt(tag('direccion'))));
+    if (slug('correo')) clientLines.push(para(txt(tag('correo'))));
+    const infoLines: RichNode[] = [para(txt(quote ? 'Fecha: ' : 'Fecha de emisión: ', true), txt(fecha))];
+    if (quote) {
+        const days = Math.max(1, Math.trunc(input.validity_days ?? 30));
+        infoLines.push(para(txt('Válida hasta: ', true), txt(slug('validez') ? tag('validez', '|larga') : `{{date.today|+${days}d|larga}}`)));
+    } else {
+        if (slug('fecha_pago')) infoLines.push(para(txt('Fecha de pago: ', true), txt(tag('fecha_pago', '|larga'))));
+        if (slug('forma_pago')) infoLines.push(para(txt('Forma de pago: ', true), txt(tag('forma_pago'))));
+    }
+    const party = (title: string, lines: RichNode[]): DocInnerBlock[] => [
+        { id: id('ht'), type: 'heading', text: title, level: 3, align: 'left', color: null },
+        { id: id('pt'), type: 'text', doc: doc(...lines), align: 'left', size: 'md', background: boxBg, padding: 'md' },
+    ];
+    blocks.push({
+        id: id('c'),
+        type: 'columns',
+        columns: [{ blocks: party('CLIENTE', clientLines) }, { blocks: party(quote ? 'COTIZACIÓN' : 'FACTURA', infoLines) }],
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 12 });
+
+    // Ítems: lo mapeado como columna de campo; lo que falta, como columna
+    // marcadora "[Precio unitario]" bien visible para completarla en el editor.
+    const items = input.items ?? null;
+    const itemSlug = (k: string): string | null => {
+        const v = items?.fields[k];
+        return typeof v === 'string' && v !== '' ? v : null;
+    };
+    const itemLabel = (k: string): string => starter.item_roles.find((r) => r.key === k)?.label ?? k;
+    const ref = (k: string): string => itemSlug(k) ?? `[${itemLabel(k)}]`;
+    const fieldCol = (k: string, label: string, align: 'left' | 'center' | 'right', width: 'auto' | 'fill' = 'auto'): DocItemsColumn => ({
+        slug: ref(k),
+        label,
+        align,
+        width,
+    });
+    const col = (key: string): DocItemExpr => ({ op: 'col', slug: key });
+    const hasDiscount = itemSlug('descuento') !== null;
+    const money = { kind: 'computed' as const, format: 'currency' as const, decimals, prefix: '$ ' };
+    const columns: DocItemsColumn[] = [
+        fieldCol('descripcion', 'Descripción', 'left', 'fill'),
+        fieldCol('cantidad', 'Cant.', 'center'),
+        fieldCol('precio', 'Precio unitario', 'right'),
+    ];
+    if (hasDiscount) columns.push(fieldCol('descuento', 'Desc. %', 'center'));
+    columns.push({
+        slug: DOC_CALC_GROSS,
+        label: 'Bruto',
+        align: 'right',
+        width: 'auto',
+        ...money,
+        expr: { op: 'mul', args: [col(ref('cantidad')), col(ref('precio'))] },
+        hidden: true,
+    });
+    columns.push({
+        slug: DOC_CALC_LINE_TOTAL,
+        label: 'Total',
+        align: 'right',
+        width: 'auto',
+        ...money,
+        expr: hasDiscount ? { op: 'minus_pct', of: col(DOC_CALC_GROSS), pct: col(ref('descuento')) } : col(DOC_CALC_GROSS),
+    });
+    if (hasDiscount) {
+        // El descuento de cada línea, en negativo (para la fila «Descuentos»).
+        columns.push({
+            slug: DOC_CALC_LINE_DISCOUNT,
+            label: 'Descuento',
+            align: 'right',
+            width: 'auto',
+            ...money,
+            expr: { op: 'sub', args: [col(DOC_CALC_LINE_TOTAL), col(DOC_CALC_GROSS)] },
+            hidden: true,
+        });
+    }
+    const itemsId = 'items';
+    blocks.push({
+        id: itemsId,
+        type: 'items',
+        title: 'DETALLE',
+        source: items?.source ?? null,
+        columns,
+        numbered: true,
+        sort: null,
+        limit: 200,
+        striped: true,
+        empty_text: 'Sin ítems.',
+    });
+    blocks.push({ id: id('s'), type: 'spacer', height: 6 });
+
+    // Totales.
+    const rows: DocTotalRow[] = [
+        { id: 'subtotal', label: 'Subtotal', source: { kind: 'items_sum', block_id: itemsId, slug: DOC_CALC_GROSS }, emphasis: false },
+    ];
+    let net = 'subtotal';
+    if (hasDiscount) {
+        rows.push({
+            id: 'descuentos',
+            label: 'Descuentos',
+            source: { kind: 'items_sum', block_id: itemsId, slug: DOC_CALC_LINE_DISCOUNT },
+            emphasis: false,
+            hide_zero: true,
+        });
+        rows.push({ id: 'neto', label: 'Neto', source: { kind: 'sum', rows: ['subtotal', 'descuentos'], minus: [] }, emphasis: false, hidden: true });
+        net = 'neto';
+    }
+    const globalField = slug('descuento_global');
+    const withGlobal = globalField !== null || globalPct > 0;
+    if (withGlobal) {
+        rows.push({
+            id: 'descuento_global',
+            label: globalField ? 'Descuento global' : `Descuento global (${pctLabel(globalPct)} %)`,
+            source: { kind: 'percent', of: net, pct: globalPct, pct_field: globalField, negate: true },
+            emphasis: false,
+            hide_zero: true,
+        });
+    }
+    const afterDiscounts = withGlobal ? [net, 'descuento_global'] : [net];
+    if (tax.iva) {
+        rows.push({ id: 'base', label: 'Base gravable', source: { kind: 'sum', rows: afterDiscounts, minus: [] }, emphasis: false });
+        rows.push({ id: 'iva', label: `IVA ${pctLabel(rate)} %`, source: { kind: 'percent', of: 'base', pct: rate }, emphasis: false });
+        rows.push({ id: 'total', label: 'TOTAL', source: { kind: 'sum', rows: ['base', 'iva'], minus: [] }, emphasis: true });
+    } else {
+        rows.push({ id: 'total', label: 'TOTAL', source: { kind: 'sum', rows: afterDiscounts, minus: [] }, emphasis: true });
+    }
+    blocks.push({ id: 'totals', type: 'totals', rows, width: 'half', prefix: '$ ', decimals });
+
+    blocks.push({ id: id('s'), type: 'spacer', height: 8 });
+    blocks.push({
+        id: id('w'),
+        type: 'text',
+        doc: doc(para(txt('Son: ', true), txt('{{totales.total|pesos|mayusculas}} M/CTE.'))),
+        align: 'left',
+        size: 'md',
+        background: boxBg,
+        padding: 'md',
+    });
+
+    if (quote) {
+        blocks.push({ id: id('s'), type: 'spacer', height: 10 });
+        blocks.push({ id: id('ht'), type: 'heading', text: 'CONDICIONES COMERCIALES', level: 3, align: 'left', color: null });
+        const terms = slug('condiciones')
+            ? doc(para(txt(tag('condiciones'))))
+            : doc(
+                  para(txt('Precios en pesos colombianos.')),
+                  para(txt(tax.iva ? `El IVA (${pctLabel(rate)} %) va discriminado en los totales.` : 'Valores sin IVA.')),
+                  para(txt('Forma de pago y tiempos de entrega: a convenir.')),
+              );
+        blocks.push({ id: id('ct'), type: 'text', doc: terms, align: 'left', size: 'md' });
+    } else {
+        const bank = issuer.bank.trim() !== '' && issuer.account_number.trim() !== '';
+        const lines: RichNode[] = [];
+        if (bank) {
+            const holder = issuer.account_holder.trim() || issuerName;
+            lines.push(
+                para(
+                    txt('Consignar o transferir a la cuenta de '),
+                    txt(`${issuer.account_type || 'ahorros'} N.º ${issuer.account_number.trim()}`, true),
+                    txt(` de ${issuer.bank.trim()}, a nombre de ${holder}${issuer.doc_number ? ` (${docId})` : ''}.`),
+                ),
+            );
+        } else {
+            lines.push(para(txt('[Tus datos bancarios: banco, tipo y número de cuenta]')));
+        }
+        blocks.push({ id: id('s'), type: 'spacer', height: 10 });
+        blocks.push({ id: id('ht'), type: 'heading', text: 'DATOS PARA EL PAGO', level: 3, align: 'left', color: null });
+        blocks.push({ id: id('pt'), type: 'text', doc: doc(...lines), align: 'left', size: 'md' });
+    }
+
+    // Sin IVA: la leyenda de no responsable (la nota de quien emite).
+    if (!tax.iva) {
+        const note = issuer.tax_note.trim() || DEFAULT_TAX_NOTE;
+        blocks.push({ id: id('s'), type: 'spacer', height: 10 });
+        blocks.push({ id: id('tn'), type: 'text', doc: doc(para(txt(note))), align: 'left', size: 'sm', color: '#6b7280' });
+    }
+
+    blocks.push({ id: id('s'), type: 'spacer', height: 24 });
+    blocks.push({
+        id: id('g'),
+        type: 'signature',
+        signers: [{ name: issuerName, detail: issuer.doc_number ? docId : '' }],
+        align: 'left',
+        image: { kind: 'none', file_id: null, url: '' },
+        line: true,
+    });
+
+    const clientInName = slug('cliente') ? ` - ${tag('cliente')}` : '';
+    return {
+        name: starter.name,
+        filename: `${quote ? 'Cotización' : 'Factura'} ${numero}${clientInName}`,
+        design: {
+            version: DOC_DESIGN_VERSION,
+            theme: theme(input.accent),
+            footer: { text: quote ? '' : 'Este documento no es una factura electrónica de venta.', page_numbers: true },
+            numbering: {
+                enabled: !ownNumber,
+                prefix: quote ? 'COT-' : 'FAC-',
+                padding: 4,
+                start: 1,
+                save_field: null,
+                freeze: !ownNumber && freeze,
+            },
             blocks,
         },
     };
