@@ -648,7 +648,9 @@ export class RecordsService {
 
         let newlyMentioned: number[] = [];
         const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const row = await this.repo.findById(tx, tenantId, list.id, id);
+            // Fila bloqueada (igual que `update`): dos autoguardados seguidos
+            // no leen el mismo "antes" ni juntan la actividad a la vez.
+            const row = await this.repo.findByIdForUpdate(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
             const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
