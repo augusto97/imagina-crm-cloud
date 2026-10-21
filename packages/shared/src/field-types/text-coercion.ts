@@ -195,7 +195,7 @@ export function parseNumberText(raw: string, format?: TextNumberFormat): number 
     }
     // Espacios (incluidos los de miles: normal, no separable, fino) y
     // apóstrofos suizos fuera; símbolos de moneda y letras («COP», «USD») fuera.
-    s = s.replace(/[\s  ']/g, '').replace(/%$/, '');
+    s = s.replace(/[\s\u00A0\u202F']/g, '').replace(/%$/, '');
     s = s.replace(/^[^\d+\-.,]+/, '').replace(/[^\d.,]+$/, '');
     if (s.startsWith('-')) {
         negative = !negative;
