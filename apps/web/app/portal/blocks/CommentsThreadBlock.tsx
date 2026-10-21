@@ -1,127 +1,135 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { usePortalPreview } from '../PreviewContext';
 import { portalAccountHeaders } from '../portalAccount';
 import type { PortalBootData } from '../types';
 
-interface CommentItem {
+/** Un comentario tal como lo ve el cliente (`PortalCommentDto`). */
+export interface PortalCommentItem {
     id: number;
     content: string;
     created_at: string;
-    user_id: number;
+    /** Lo escribió quien mira. */
+    mine: boolean;
+    /** «Tú», el nombre de pila de quien respondió o la empresa. */
+    author_name: string;
+    from_team: boolean;
 }
 
 interface Props {
     config: {
         title?: string;
-        /** Si true, el cliente puede crear comentarios. Default true. */
+        /** Si true, el cliente sólo lee (no hay caja para escribir). */
         readonly?: boolean;
     };
     boot: PortalBootData;
 }
 
+/** Cada cuánto se busca si el equipo respondió (sólo con la pestaña a la vista). */
+const POLL_MS = 30_000;
+
+export const portalCommentsKey = (accountId: number | null | undefined) => ['portal-comments', accountId ?? null] as const;
+
 /**
- * Bloque `comments_thread` (Fase 12.D). Hilo de comentarios del
- * record del cliente.
+ * Bloque de conversación del portal. Sólo muestra lo que la empresa marcó
+ * «visible para el cliente» y lo que escribió él (el servidor nunca manda lo
+ * interno). La primera página llega con `GET /portal/me`; mientras la pestaña
+ * está a la vista se busca cada 30 s si el equipo respondió.
  *
  * Backend:
- *  - `GET  /portal/me/comments` — lista los comments del record del
- *    cliente. list_id + record_id se resuelven desde el ClientResolver
- *    (sin spoofing).
- *  - `POST /portal/me/comments` — el cliente crea un comment.
- *    user_id viene de la session.
- *
- * Estado vacío + loading + error nativos. Sin menciones / edit /
- * delete — el portal mantiene UX simple. El admin maneja la
- * moderación desde el `CommentsPanel` del CRM.
+ *  - `GET  /portal/me/comments` — la conversación del registro del cliente.
+ *  - `POST /portal/me/comments` — el cliente escribe (si el diseño lo permite).
  */
 export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
     const readonly = config.readonly ?? false;
     const isPreview = usePortalPreview();
-    const [items, setItems] = useState<CommentItem[] | null>(isPreview ? MOCK_COMMENTS : null);
-    const [error, setError] = useState<string | null>(null);
+    const qc = useQueryClient();
     const [draft, setDraft] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-
+    const [sendError, setSendError] = useState<string | null>(null);
     const baseUrl = boot.rest_root.replace(/\/$/, '');
+    const key = portalCommentsKey(boot.account_id);
 
-    useEffect(() => {
-        if (isPreview) return;
-        const ac = new AbortController();
-        fetch(`${baseUrl}/portal/me/comments`, {
-            signal: ac.signal,
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json', ...portalAccountHeaders() },
-        })
-            .then(async (res) => {
-                if (!res.ok) throw new Error(`http-${res.status}`);
-                const body = (await res.json()) as { data: CommentItem[] };
-                setItems(body.data);
-            })
-            .catch((err: unknown) => {
-                if (err instanceof DOMException && err.name === 'AbortError') return;
-                setError('No se pudieron cargar los comentarios.');
+    const thread = useQuery({
+        queryKey: key,
+        queryFn: async (): Promise<PortalCommentItem[]> => {
+            const res = await fetch(`${baseUrl}/portal/me/comments`, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json', ...portalAccountHeaders() },
             });
-        return () => ac.abort();
-    }, [baseUrl, isPreview]);
+            if (!res.ok) throw new Error(`http-${res.status}`);
+            return ((await res.json()) as { data: PortalCommentItem[] }).data;
+        },
+        enabled: !isPreview,
+        refetchInterval: POLL_MS,
+        // react-query no busca en segundo plano: con la pestaña oculta, nada.
+        refetchIntervalInBackground: false,
+        refetchOnWindowFocus: true,
+        staleTime: 10_000,
+    });
 
-    const handleSubmit = async (e: React.FormEvent): Promise<void> => {
-        e.preventDefault();
-        const content = draft.trim();
-        if (content === '') return;
-        setSubmitting(true);
-        setError(null);
-        try {
+    const send = useMutation({
+        mutationFn: async (content: string): Promise<PortalCommentItem> => {
             const res = await fetch(`${baseUrl}/portal/me/comments`, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    ...portalAccountHeaders(),
-                },
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...portalAccountHeaders() },
                 body: JSON.stringify({ content }),
             });
-            if (!res.ok) throw new Error(`http-${res.status}`);
-            const body = (await res.json()) as { data: CommentItem };
-            setItems((prev) => (prev !== null ? [...prev, body.data] : [body.data]));
+            const body = (await res.json().catch(() => ({}))) as { data?: PortalCommentItem; message?: string };
+            if (!res.ok || !body.data) throw new Error(body.message || 'No se pudo enviar el comentario.');
+            return body.data;
+        },
+        onSuccess: (created) => {
+            qc.setQueryData<PortalCommentItem[]>(key, (prev) => [...(prev ?? []), created]);
             setDraft('');
-        } catch {
-            setError('No se pudo enviar el comentario.');
-        } finally {
-            setSubmitting(false);
-        }
+            setSendError(null);
+        },
+        onError: (err) => setSendError(err instanceof Error ? err.message : 'No se pudo enviar el comentario.'),
+    });
+
+    const items = isPreview ? MOCK_COMMENTS : thread.data ?? null;
+    const loadError = !isPreview && thread.isError && !thread.data;
+
+    const handleSubmit = (e: React.FormEvent): void => {
+        e.preventDefault();
+        const content = draft.trim();
+        if (content === '' || isPreview) return;
+        send.mutate(content);
     };
 
     return (
         <section className="imcrm-portal-block imcrm-portal-block--comments">
             <h2 className="imcrm-portal-block__title">{config.title ?? 'Comentarios'}</h2>
 
-            {error !== null && (
+            {(loadError || sendError !== null) && (
                 <p className="imcrm-portal-block__error" role="alert">
-                    {error}
+                    {sendError ?? 'No se pudieron cargar los comentarios.'}
                 </p>
             )}
 
             {items === null ? (
-                <p className="imcrm-portal-block__loading">Cargando…</p>
+                !loadError && <p className="imcrm-portal-block__loading">Cargando…</p>
             ) : items.length === 0 ? (
                 <p className="imcrm-portal-block__empty">Aún no hay comentarios.</p>
             ) : (
                 <ul className="imcrm-portal-comments">
                     {items.map((c) => (
-                        <li key={c.id} className="imcrm-portal-comments__item">
+                        <li
+                            key={c.id}
+                            className={`imcrm-portal-comments__item${c.mine ? ' imcrm-portal-comments__item--mine' : ''}`}
+                            data-testid="portal-comment"
+                        >
+                            <span className="imcrm-portal-comments__author">{c.author_name}</span>
                             <p className="imcrm-portal-comments__content">{c.content}</p>
-                            <span className="imcrm-portal-comments__meta">
-                                {formatRelativeDate(c.created_at)}
-                            </span>
+                            <span className="imcrm-portal-comments__meta">{formatDateTimeStr(c.created_at)}</span>
                         </li>
                     ))}
                 </ul>
             )}
 
-            {! readonly && (
+            {!readonly && (
                 <form onSubmit={handleSubmit} className="imcrm-portal-comments__composer">
                     <textarea
                         value={draft}
@@ -129,15 +137,15 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
                         placeholder="Escribe tu comentario…"
                         rows={3}
                         maxLength={5000}
-                        disabled={submitting}
+                        disabled={send.isPending}
                         className="imcrm-portal-comments__textarea"
                     />
                     <button
                         type="submit"
-                        disabled={submitting || draft.trim() === ''}
+                        disabled={send.isPending || draft.trim() === ''}
                         className="imcrm-portal-comments__submit"
                     >
-                        {submitting ? 'Enviando…' : 'Enviar'}
+                        {send.isPending ? 'Enviando…' : 'Enviar'}
                     </button>
                 </form>
             )}
@@ -145,11 +153,7 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
     );
 }
 
-function formatRelativeDate(iso: string): string {
-    return formatDateTimeStr(iso);
-}
-
-const MOCK_COMMENTS: CommentItem[] = [
-    { id: 1, user_id: 2, created_at: '2026-05-26 10:15:00', content: 'Hola, ¿podemos coordinar una reunión esta semana?' },
-    { id: 2, user_id: 1, created_at: '2026-05-26 11:20:00', content: 'Claro, tengo disponible el jueves a las 15h. ¿Te sirve?' },
+const MOCK_COMMENTS: PortalCommentItem[] = [
+    { id: 1, mine: true, from_team: false, author_name: 'Tú', created_at: '2026-05-26 10:15:00', content: 'Hola, ¿podemos coordinar una reunión esta semana?' },
+    { id: 2, mine: false, from_team: true, author_name: 'Laura', created_at: '2026-05-26 11:20:00', content: 'Claro, tengo disponible el jueves a las 15h. ¿Te sirve?' },
 ];

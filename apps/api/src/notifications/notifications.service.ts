@@ -116,11 +116,28 @@ export class NotificationsService implements OnModuleInit {
     // ─────────────────────────── Eventos ───────────────────────────
 
     async onNotify(e: NotifyEvent): Promise<void> {
+        if (e.type === 'portal_record_created') {
+            // Lo que el cliente abre desde su portal le llega a quien sigue SU
+            // registro (no hay seguidores en uno recién creado).
+            const followers = await this.followerIds(e.tenantId, e.parentRecordId);
+            await this.follow(e.tenantId, e.listId, e.recordId, followers);
+            await this.deliver(e.tenantId, 'update', followers, {
+                listId: e.listId,
+                recordId: e.recordId,
+                actorId: e.actorId,
+                title: `${clientLabel(e.clientName)} creó «${(e.title || 'Sin título').slice(0, 80)}» en «${e.listName}»`,
+                body: 'Lo abrió desde su portal.',
+            });
+            return;
+        }
         const ctx = await this.recordCtx(e.tenantId, e.listId, e.recordId);
         if (!ctx) return;
-        const actorName = await this.userName(e.actorId);
+        // Lo que hace el CLIENTE desde su portal se nombra como tal: el equipo
+        // tiene que distinguir de un vistazo «el cliente comentó».
+        const actorName = e.type === 'comment' && e.fromClient ? clientLabel(e.clientName) : await this.userName(e.actorId);
         if (e.type === 'comment') {
-            await this.follow(e.tenantId, e.listId, e.recordId, [e.actorId]);
+            // Al cliente no se lo pone a seguir: no es del equipo, no recibe avisos.
+            if (!e.fromClient) await this.follow(e.tenantId, e.listId, e.recordId, [e.actorId]);
             const snippet = e.body.replace(/\s+/g, ' ').trim().slice(0, 240);
             await this.deliver(e.tenantId, 'mention', e.mentioned, {
                 listId: e.listId,
@@ -160,9 +177,9 @@ export class NotificationsService implements OnModuleInit {
         if (!ctx) return;
         const userFieldIds = ctx.fields.filter((f) => f.type === 'user').map((f) => f.id);
         const assigned = newlyAssigned(userFieldIds, c.before, c.after).filter((u) => u !== actorId);
-        const actorName = actorId > 0 ? await this.userName(actorId) : null;
+        const actorName = c.viaPortal ? clientLabel(actorId > 0 ? await this.userName(actorId) : null) : actorId > 0 ? await this.userName(actorId) : null;
 
-        if (c.kind === 'created' && actorId > 0) await this.follow(c.tenantId, c.listId, c.recordId, [actorId]);
+        if (c.kind === 'created' && actorId > 0 && !c.viaPortal) await this.follow(c.tenantId, c.listId, c.recordId, [actorId]);
         if (assigned.length > 0) {
             await this.follow(c.tenantId, c.listId, c.recordId, assigned);
             await this.deliver(c.tenantId, 'assigned', assigned, {
@@ -1086,4 +1103,10 @@ function byDue(a: MyWorkItem, b: MyWorkItem): number {
     if (a.due === null) return 1;
     if (b.due === null) return -1;
     return a.due < b.due ? -1 : 1;
+}
+
+/** «El cliente Ana» / «El cliente»: quien escribió o cambió algo desde su portal. */
+function clientLabel(name: string | null | undefined): string {
+    const n = (name ?? '').trim();
+    return n === '' ? 'El cliente' : `El cliente ${n}`;
 }

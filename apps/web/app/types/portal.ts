@@ -13,6 +13,14 @@ export interface PortalSettings {
      * apunte al cliente no tiene por qué ser visible para él.
      */
     related_lists: number[];
+    /** Listas donde el cliente crea registros desde su portal (opt-in). */
+    creatable_lists: PortalCreatable[];
+}
+
+export interface PortalCreatable {
+    list_id: number;
+    field_ids: number[];
+    label: string;
 }
 
 export const PORTAL_DEFAULTS: PortalSettings = {
@@ -20,6 +28,7 @@ export const PORTAL_DEFAULTS: PortalSettings = {
     owner_field_id: null,
     default_template_id: null,
     related_lists: [],
+    creatable_lists: [],
 };
 
 export type PortalBlockType =

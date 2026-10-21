@@ -23,4 +23,8 @@ export const attachments = pgTable('attachments', {
     // v0.1.268 (ADR-S36) — NULL = servidor de la plataforma; id = la conexión
     // (bucket propio de la empresa) donde quedaron los bytes.
     storageConnectionId: bigint('storage_connection_id', { mode: 'number' }).references(() => connections.id),
+    // Subido a un formulario público que TODAVÍA no se envió: no cuenta para
+    // el almacenamiento del plan hasta que llega con su respuesta (si nunca
+    // llega, el barrido lo borra). NULL = archivo común.
+    pendingFormId: bigint('pending_form_id', { mode: 'number' }),
 });

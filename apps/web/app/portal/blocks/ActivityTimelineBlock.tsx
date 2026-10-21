@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 
+import { changeSentence, changesOf } from '@/admin/activity/activityText';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
+import type { ActivityEntity } from '@/types/activity';
+import type { FieldEntity } from '@/types/field';
 import { usePortalPreview } from '../PreviewContext';
 import { portalAccountHeaders } from '../portalAccount';
 import type { PortalBootData } from '../types';
@@ -9,9 +12,10 @@ interface ActivityItem {
     id: number;
     action: string;
     created_at: string;
+    /** Sólo viene cuando lo hizo el propio cliente (del equipo nunca se expone). */
     user_id: number | null;
-    /** Cambios concretos cuando aplica. Shape libre por type de evento. */
-    changes?: Record<string, unknown> | null;
+    /** Diff por campo `{ fN: { from, to } }`, ya acotado a lo que el cliente ve. */
+    diff?: Record<string, unknown> | null;
 }
 
 interface Props {
@@ -23,16 +27,14 @@ interface Props {
 }
 
 /**
- * Bloque `activity_timeline` (Fase 9 — pulidos). Timeline de eventos
- * del record del cliente.
+ * Bloque `activity_timeline`: lo que pasó con el registro del cliente, en
+ * lenguaje humano y con el MISMO formateo que la ficha del equipo («Laura
+ * cambió Estado de Pendiente a Pagado»; antes se veían códigos internos como
+ * `record_updated`). El servidor ya manda sólo los campos que el cliente ve;
+ * lo que hizo el equipo se firma con el nombre de la empresa.
  *
- * Backend: `GET /portal/me/activity` resuelve list_id + record_id
- * desde el ClientResolver — sin que el cliente pueda spoofear IDs.
- *
- * Formato visual: timeline simple con dot + meta line. Sin avatares
- * (la activity puede ser del sistema sin user_id concreto). Sin
- * iconos por type de action (cubrir 20+ types implicaría mucho
- * mapeo; texto crudo de `action` es suficiente para 3.G).
+ * Backend: `GET /portal/me/activity` (el registro sale de la sesión: el
+ * cliente no puede pedir el de otro).
  */
 export function ActivityTimelineBlock({ config, boot }: Props): JSX.Element {
     const limit = config.limit ?? 20;
@@ -59,7 +61,10 @@ export function ActivityTimelineBlock({ config, boot }: Props): JSX.Element {
                 setError('No se pudo cargar la actividad.');
             });
         return () => ac.abort();
-    }, [boot, limit, isPreview]);
+    }, [boot.rest_root, boot.account_id, limit, isPreview]);
+
+    const fields = (boot.fields ?? []) as unknown as FieldEntity[];
+    const company = boot.company_name?.trim() || 'El equipo';
 
     return (
         <section className="imcrm-portal-block imcrm-portal-block--activity">
@@ -74,50 +79,80 @@ export function ActivityTimelineBlock({ config, boot }: Props): JSX.Element {
                 <p className="imcrm-portal-block__empty">Sin actividad reciente.</p>
             ) : (
                 <ul className="imcrm-portal-activity">
-                    {items.map((item) => (
-                        <li key={item.id} className="imcrm-portal-activity__item">
-                            <span aria-hidden className="imcrm-portal-activity__dot" />
-                            <div className="imcrm-portal-activity__body">
-                                <p className="imcrm-portal-activity__action">
-                                    {readableAction(item.action)}
-                                </p>
-                                <p className="imcrm-portal-activity__meta">
-                                    {formatDate(item.created_at)}
-                                </p>
-                            </div>
-                        </li>
-                    ))}
+                    {items.map((item) => {
+                        const text = portalActivityText(item, fields, { mine: item.user_id !== null && item.user_id === boot.user_id, company });
+                        return (
+                            <li key={item.id} className="imcrm-portal-activity__item">
+                                <span aria-hidden className="imcrm-portal-activity__dot" />
+                                <div className="imcrm-portal-activity__body">
+                                    <p className="imcrm-portal-activity__action">{text.title}</p>
+                                    {text.lines.length > 0 && (
+                                        <ul className="imcrm-portal-activity__changes">
+                                            {text.lines.map((l, i) => (
+                                                <li key={i}>{l}</li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    <p className="imcrm-portal-activity__meta">{formatDateTimeStr(item.created_at)}</p>
+                                </div>
+                            </li>
+                        );
+                    })}
                 </ul>
             )}
         </section>
     );
 }
 
+/** Verbos del cliente en segunda persona («cambiaste»); los del equipo, como la ficha. */
+const YOU: Record<string, string> = { estableció: 'estableciste', cambió: 'cambiaste', vació: 'vaciaste' };
+
 /**
- * Mapea los `action` slugs internos a frases legibles. Lista mínima
- * — los slugs no mapeados caen al fallback `String(action)`.
+ * La entrada en lenguaje humano para el cliente. Reusa la traducción del log
+ * de la ficha (`activityText`: etiquetas de las opciones, fechas y montos con
+ * el formato de la empresa); el sujeto es «Tú» o la empresa, nunca un
+ * miembro del equipo ni un código interno.
  */
-function readableAction(action: string): string {
-    const map: Record<string, string> = {
-        'record.created':         'Registro creado',
-        'record.updated':         'Registro actualizado',
-        'record.deleted':         'Registro eliminado',
-        'comment.created':        'Comentario agregado',
-        'comment.updated':        'Comentario actualizado',
-        'comment.deleted':        'Comentario eliminado',
-        'mention.received':       'Mención recibida',
-        'automation.run':         'Automatización ejecutada',
+export function portalActivityText(
+    item: ActivityItem,
+    fields: FieldEntity[],
+    who: { mine: boolean; company: string },
+): { title: string; lines: string[] } {
+    const entry = { ...item, list_id: 0, record_id: null, user_name: null, changes: (item.diff ?? {}) as Record<string, unknown> } as ActivityEntity;
+    const action = item.action;
+    if (action === 'record_created' || action === 'record.created') {
+        return { title: who.mine ? 'Creaste este registro' : `${who.company} creó este registro`, lines: [] };
+    }
+    if (action === 'record_deleted' || action === 'record.deleted') {
+        return { title: `${who.company} eliminó este registro`, lines: [] };
+    }
+    const changes = changesOf(entry, fields);
+    if (changes.length === 0) {
+        return { title: who.mine ? 'Actualizaste tus datos' : `${who.company} actualizó este registro`, lines: [] };
+    }
+    const sentence = (c: (typeof changes)[number]): string => {
+        const s = changeSentence(c);
+        const verb = who.mine ? (YOU[s.verb] ?? s.verb) : s.verb;
+        if (s.from !== null && s.to !== null) return `${verb} ${c.label} de ${s.from} a ${s.to}`;
+        if (s.to !== null) return `${verb} ${c.label} en ${s.to}`;
+        return `${verb} ${c.label}`;
     };
-    return map[action] ?? action;
+    const subject = who.mine ? '' : `${who.company} `;
+    if (changes.length === 1) {
+        const line = sentence(changes[0]!);
+        return { title: who.mine ? capitalize(line) : `${subject}${line}`, lines: [] };
+    }
+    return {
+        title: who.mine ? `Cambiaste ${changes.length} datos` : `${subject}cambió ${changes.length} datos`,
+        lines: changes.map((c) => capitalize(sentence(c))),
+    };
 }
 
-function formatDate(iso: string): string {
-    // ISO con zona (backend) o naive-UTC (mocks legacy).
-    return formatDateTimeStr(iso);
+function capitalize(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 const MOCK_ACTIVITY: ActivityItem[] = [
-    { id: 1, action: 'record.updated',  created_at: '2026-05-26T14:30:00', user_id: 1 },
-    { id: 2, action: 'comment.created', created_at: '2026-05-25T11:15:00', user_id: 2 },
-    { id: 3, action: 'record.created',  created_at: '2026-05-20T09:00:00', user_id: 1 },
+    { id: 1, action: 'record_updated', created_at: '2026-05-26T14:30:00Z', user_id: null, diff: {} },
+    { id: 3, action: 'record_created', created_at: '2026-05-20T09:00:00Z', user_id: null, diff: {} },
 ];

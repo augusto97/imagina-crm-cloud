@@ -43,6 +43,41 @@ export const portalLayoutDataSchema = z.object({
 });
 export type PortalLayoutData = z.infer<typeof portalLayoutDataSchema>;
 
+/**
+ * Un comentario tal como lo ve el CLIENTE en su portal: sólo los que la
+ * empresa marcó «visible para el cliente» y los que escribió él. Nunca el id
+ * de un miembro del equipo: el autor llega como «Tú», el nombre de pila de
+ * quien respondió o el nombre de la empresa.
+ */
+export const portalCommentDtoSchema = z.object({
+    id: idSchema,
+    body: z.string(),
+    /** Alias de `body` (los bloques heredados del plugin leen `content`). */
+    content: z.string(),
+    created_at: z.string(),
+    /** Lo escribió la persona que mira (se muestra «Tú»). */
+    mine: z.boolean(),
+    /** Quién lo escribió, tal como se le muestra al cliente. */
+    author_name: z.string(),
+    /** Lo escribió alguien del equipo de la empresa (no otro cliente). */
+    from_team: z.boolean(),
+});
+export type PortalCommentDto = z.infer<typeof portalCommentDtoSchema>;
+
+/**
+ * Una lista en la que el CLIENTE puede crear registros desde su portal (abrir
+ * un ticket, pedir algo). La relación hacia su registro la pone el servidor;
+ * el cliente sólo completa los campos que la empresa permitió.
+ */
+export const portalCreatableListSchema = z.object({
+    list_id: idSchema,
+    name: z.string(),
+    /** Texto del botón («Abrir un ticket»). */
+    label: z.string(),
+    fields: z.array(fieldSchema),
+});
+export type PortalCreatableList = z.infer<typeof portalCreatableListSchema>;
+
 export const portalBootSchema = z.object({
     list_id: idSchema,
     list_slug: z.string(),
@@ -87,8 +122,30 @@ export const portalBootSchema = z.object({
      * `GET /portal/me/documents/:id`, siempre del registro del cliente.
      */
     documents: z.array(z.object({ id: idSchema, name: z.string() })).default([]),
+    /**
+     * Las cuentas de la persona y la primera página de comentarios viajan en
+     * el MISMO request (regla de oro nº 8): antes el portal pedía /me, después
+     * /accounts y /me/comments en cascada. `comments` es null cuando el diseño
+     * no tiene conversación.
+     */
+    accounts: z.lazy(() => portalAccountsSchema).nullable().default(null),
+    comments: z.array(portalCommentDtoSchema).nullable().default(null),
+    /** Listas donde el cliente puede crear registros (opt-in del admin). */
+    creatable_lists: z.array(portalCreatableListSchema).default([]),
+    /** El cliente recibe un correo cuando el equipo le responde (opt-out). */
+    notify_email: z.boolean().default(true),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
+
+/** POST /portal/lists/:id/records — el cliente crea un registro (por id de campo). */
+export const portalCreateRecordSchema = z.object({
+    fields: z.record(z.string(), z.unknown()).default({}),
+});
+export type PortalCreateRecordInput = z.infer<typeof portalCreateRecordSchema>;
+
+/** PATCH /portal/me/preferences — el cliente decide si recibe correos. */
+export const portalPreferencesSchema = z.object({ notify_email: z.boolean() });
+export type PortalPreferencesInput = z.infer<typeof portalPreferencesSchema>;
 
 /**
  * PATCH /portal/me — el cliente edita SU record. Solo se aceptan slugs

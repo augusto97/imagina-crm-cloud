@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import {
     evaluateFormCondition,
     formConfigSchema,
+    formFileAllowed,
     formItemVisible,
     newFormItemId,
     type Field,
@@ -29,8 +30,8 @@ import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
-import { formFrameAncestors, formPageCsp, renderFormPage } from '../src/forms/form-page';
-import { FormsService, sanitizeConfig } from '../src/forms/forms.service';
+import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, renderFormPage } from '../src/forms/form-page';
+import { FormsService, pastCloseDate, sanitizeConfig } from '../src/forms/forms.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { MailService } from '../src/mail/mail.service';
@@ -108,6 +109,26 @@ describe('v0.1.275 — formularios (puro)', () => {
         expect(out.items[1]!.show_if).toBeNull();
     });
 
+    it('cierre por fecha: vale hasta el final de ese día en la zona de la empresa', () => {
+        // 22:00 del 20 en Bogotá = 03:00 UTC del 21.
+        const tarde = new Date('2026-10-21T03:00:00Z');
+        expect(pastCloseDate('2026-10-20', 'America/Bogota', tarde)).toBe(false);
+        expect(pastCloseDate('2026-10-20', 'UTC', tarde)).toBe(true);
+        // 00:30 del 21 en Bogotá: cerrado.
+        expect(pastCloseDate('2026-10-20', 'America/Bogota', new Date('2026-10-21T05:30:00Z'))).toBe(true);
+        expect(pastCloseDate(null, 'America/Bogota')).toBe(false);
+    });
+
+    it('archivos: tipos bloqueados siempre y tipos por pregunta', () => {
+        expect(formFileAllowed('any', 'cv.pdf', 'application/pdf').ok).toBe(true);
+        expect(formFileAllowed('any', 'virus.EXE', 'application/octet-stream').ok).toBe(false);
+        expect(formFileAllowed('any', 'logo.svg', 'image/svg+xml').ok).toBe(false);
+        expect(formFileAllowed('any', 'raro.bin2', 'text/html').ok).toBe(false);
+        expect(formFileAllowed('images', 'foto.JPG', 'image/jpeg').ok).toBe(true);
+        expect(formFileAllowed('images', 'cv.pdf', 'application/pdf').ok).toBe(false);
+        expect(formFileAllowed('documents', 'informe.docx', 'application/octet-stream').ok).toBe(true);
+    });
+
     it('página: CSP con nonce, sitios permitidos y nada del diseño como HTML', () => {
         expect(formFrameAncestors([])).toBe('*');
         expect(formFrameAncestors(['acme.com', 'https://www.acme.com/x', 'mal dominio<>', '*.acme.co'])).toBe(
@@ -125,6 +146,13 @@ describe('v0.1.275 — formularios (puro)', () => {
         expect(html).toContain('<title>&lt;b&gt;Hola&lt;/b&gt;</title>');
         expect(html).not.toContain('</script><script>alert(1)');
         expect(html).toContain('<script nonce="abc">');
+        // iOS no agranda la página al tocar un campo (≥16px en el teléfono).
+        expect(html).toContain('@media (max-width: 768px) { input, select, textarea { font-size: 16px; } }');
+        // Insertado: avisa su alto y la redirección va a la página entera.
+        expect(html).toContain('imb-form-height');
+        expect(html).toContain('imb-form-redirect');
+        expect(FORM_EMBED_JS).toContain("iframe[data-imagina-form]");
+        expect(FORM_EMBED_JS).toContain('e.origin !== origin');
     });
 });
 
@@ -365,7 +393,10 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
 
     it('archivos: el comprobante ata el archivo a ESTE formulario; los que nadie envió se borran', async () => {
         const { id, token } = await contactForm();
-        const up = await svc.upload(token, IP, { filename: 'cv.pdf', mimetype: 'application/pdf', file: Readable.from([Buffer.from('%PDF-1.4 hola')]) });
+        const up = await svc.upload(token, IP, { stamp: oldStamp(id), field: String(f.adjunto!.id) }, { filename: 'cv.pdf', mimetype: 'application/pdf', file: Readable.from([Buffer.from('%PDF-1.4 hola')]) });
+        // Pendiente hasta que llegue la respuesta: no cuenta para el plan.
+        const [pending] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(attachments).where(eq(attachments.id, Number(up.token.split('.')[0]))));
+        expect(pending!.pendingFormId).toBe(id);
         expect(up.name).toBe('cv.pdf');
         // Un comprobante alterado no adjunta nada.
         const [attId, exp] = up.token.split('.');
@@ -376,14 +407,73 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         await svc.submit(token, IP, { values: { [f.nombre!.id]: 'Ana' }, uploads: { [f.adjunto!.id]: [up.token] }, stamp: oldStamp(id) });
         const [rec] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, listId)));
         expect(rec!.data[`f${f.adjunto!.id}`]).toEqual([Number(attId)]);
+        const [sent] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(attachments).where(eq(attachments.id, Number(attId))));
+        expect(sent!.pendingFormId).toBeNull();
 
         // Uno subido y nunca enviado: el barrido lo borra; el enviado queda.
-        const orphan = await svc.upload(token, IP, { filename: 'olvidado.txt', mimetype: 'text/plain', file: Readable.from([Buffer.from('x')]) });
+        const orphan = await svc.upload(token, IP, { stamp: oldStamp(id), field: String(f.adjunto!.id) }, { filename: 'olvidado.txt', mimetype: 'text/plain', file: Readable.from([Buffer.from('x')]) });
         const removed = await svc.sweepOrphanUploads(Date.now() + 25 * 3600 * 1000);
         expect(removed).toBe(1);
         const left = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: attachments.id }).from(attachments));
         expect(left.map((a) => a.id)).toEqual([Number(attId)]);
         expect(left.map((a) => a.id)).not.toContain(Number(orphan.token.split('.')[0]));
+    });
+
+    it('subidas: piden el sello de la página, la pregunta, un tipo permitido y respetan el presupuesto de bytes', async () => {
+        const { id, token } = await contactForm();
+        const file = (name: string, mimetype: string) => ({ filename: name, mimetype, file: Readable.from([Buffer.from('contenido')]) });
+        const field = String(f.adjunto!.id);
+        // Sin sello (subida "anónima" directa al endpoint) → nada.
+        await expect(svc.upload(token, IP, { stamp: '', field }, file('a.pdf', 'application/pdf'))).rejects.toMatchObject({ response: { code: 'form_stale' } });
+        // Una pregunta que no es de archivos (o no está) → nada.
+        await expect(svc.upload(token, IP, { stamp: oldStamp(id), field: String(f.nombre!.id) }, file('a.pdf', 'application/pdf'))).rejects.toMatchObject({
+            response: { code: 'no_file_field' },
+        });
+        // Programas y páginas, nunca.
+        for (const [name, mime] of [['virus.exe', 'application/x-msdownload'], ['x.svg', 'image/svg+xml'], ['p.html', 'text/html'], ['s.sh', 'application/octet-stream']] as const) {
+            await expect(svc.upload(token, IP, { stamp: oldStamp(id), field }, file(name, mime))).rejects.toMatchObject({
+                response: { code: 'file_type_not_allowed' },
+            });
+        }
+        // Presupuesto de bytes por IP agotado → 429 (aunque queden archivos).
+        const window = 600;
+        const key = `formrl:bytes:${window}:${Math.floor(Date.now() / 1000 / window)}:ip:${IP}:${id}`;
+        await redis.set(key, String(60 * 1024 * 1024));
+        await expect(svc.upload(token, IP, { stamp: oldStamp(id), field }, file('ok.pdf', 'application/pdf'))).rejects.toMatchObject({ status: 429 });
+        // Otra IP sí puede.
+        const ok = await svc.upload(token, '198.51.100.44', { stamp: oldStamp(id), field }, file('ok.pdf', 'application/pdf'));
+        expect(ok.size).toBeGreaterThan(0);
+    });
+
+    it('subidas: una pregunta que pide sólo PDF rechaza otras cosas', async () => {
+        const item = { id: newFormItemId(), type: 'field' as const, field_id: f.adjunto!.id, accept: 'pdf' as const };
+        const dto = await svc.create(tenantId, 0, 'contactos', {
+            name: 'Sólo PDF',
+            config: formConfigSchema.parse({ items: [{ id: newFormItemId(), type: 'field', field_id: f.nombre!.id }, item] }),
+        });
+        await svc.update(tenantId, 'contactos', dto.id, { enabled: true });
+        const token = await tokenOf(dto.id);
+        const meta = await svc.meta(token);
+        const q = meta.items.find((i) => i.type === 'field' && i.field_type === 'file') as { config: { accept?: string; accept_label?: string } };
+        expect(q.config.accept).toBe('.pdf');
+        expect(q.config.accept_label).toBe('PDF');
+        const up = (name: string, mime: string) =>
+            svc.upload(token, IP, { stamp: oldStamp(dto.id), field: String(f.adjunto!.id) }, { filename: name, mimetype: mime, file: Readable.from([Buffer.from('x')]) });
+        await expect(up('foto.png', 'image/png')).rejects.toMatchObject({ response: { code: 'file_type_not_allowed' } });
+        expect((await up('contrato.pdf', 'application/pdf')).name).toBe('contrato.pdf');
+    });
+
+    it('cupo: dos envíos a la vez no pasan los dos el último lugar', async () => {
+        const { id, token } = await contactForm({ max_submissions: 2 });
+        const results = await Promise.allSettled(
+            [1, 2, 3, 4].map((n) =>
+                svc.submit(token, `192.0.2.${n}`, { values: { [f.nombre!.id]: `C${n}` }, uploads: {}, stamp: oldStamp(id) }),
+            ),
+        );
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(2);
+        expect(await countRecords()).toBe(2);
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(forms).where(eq(forms.id, id)));
+        expect(row!.submissionsCount).toBe(2);
     });
 
     it('lista de una tienda online: no recibe formularios', async () => {

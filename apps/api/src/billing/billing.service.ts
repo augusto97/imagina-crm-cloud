@@ -213,7 +213,14 @@ export class BillingService {
         const [st] = await tx
             .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
             .from(attachments)
-            .where(and(eq(attachments.tenantId, tenantId), isNull(attachments.storageConnectionId)));
+            .where(
+                and(
+                    eq(attachments.tenantId, tenantId),
+                    isNull(attachments.storageConnectionId),
+                    // Lo subido a un formulario que todavía no se envió no cuenta.
+                    isNull(attachments.pendingFormId),
+                ),
+            );
         return {
             records: recordCount,
             users: staff,
@@ -262,7 +269,14 @@ export class BillingService {
             const [st] = await tx
                 .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), isNull(attachments.storageConnectionId)));
+                .where(
+                and(
+                    eq(attachments.tenantId, tenantId),
+                    isNull(attachments.storageConnectionId),
+                    // Lo subido a un formulario que todavía no se envió no cuenta.
+                    isNull(attachments.pendingFormId),
+                ),
+            );
             return Number(st?.n ?? 0);
         });
         return limit * 1024 * 1024 - used;

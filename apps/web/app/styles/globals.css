@@ -433,10 +433,12 @@
     select {
         text-transform: none;
     }
+    /* Los atributos van en :where() (especificidad 0): un botón con su propia
+       clase —el «Enviar» del portal— conserva su fondo aunque esta regla base
+       quede después en la hoja (antes `[type='submit']` empataba con la clase
+       y ganaba por orden → botón transparente, invisible). */
     button,
-    [type='button'],
-    [type='reset'],
-    [type='submit'] {
+    :where([type='button'], [type='reset'], [type='submit']) {
         -webkit-appearance: button;
         appearance: button;
         background-color: transparent;
