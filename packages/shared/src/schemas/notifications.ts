@@ -54,7 +54,7 @@ export interface NotificationsPage {
 
 export const listNotificationsQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(30),
-    before: z.coerce.number().int().positive().optional(),
+    before: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     unread: z
         .union([z.literal('1'), z.literal('0'), z.literal('true'), z.literal('false')])
         .optional()

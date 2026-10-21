@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema, isoDateTimeSchema } from './common';
+import { allSafeIds, idSchema, isoDateTimeSchema, queryIdSchema } from './common';
 import { filterTreeSchema } from './filter';
 
 /**
@@ -69,7 +69,7 @@ export const sortDirSchema = z.enum(['asc', 'desc']);
  * necesitan las saved views y llega en F2; aquí el orden canónico es por id.
  */
 export const listRecordsQuerySchema = z.object({
-    cursor: z.coerce.number().int().positive().optional(),
+    cursor: queryIdSchema.optional(),
     limit: z.coerce.number().int().positive().max(MAX_RECORDS_LIMIT).default(DEFAULT_RECORDS_LIMIT),
     sort_dir: sortDirSchema.default('asc'),
     /**
@@ -96,7 +96,7 @@ export const listRecordsQuerySchema = z.object({
      *  - `parent=<id>`: devuelve las subtareas de ese registro.
      *  - `include_subtasks=1`: devuelve todo plano (lo usa el export).
      */
-    parent: z.coerce.number().int().positive().optional(),
+    parent: queryIdSchema.optional(),
     include_subtasks: z.coerce.boolean().optional(),
     /**
      * Paginación por PÁGINA (v0.1.187): `page` (desde 1) reinterpreta el
@@ -116,6 +116,7 @@ export const listRecordsQuerySchema = z.object({
     ids: z
         .string()
         .regex(/^\d+(,\d+){0,199}$/)
+        .refine((v) => allSafeIds(v), 'Id fuera de rango')
         .optional(),
     /**
      * v0.1.209 — Registros VINCULADOS a otro: `<id del campo relation>:<id
@@ -126,6 +127,7 @@ export const listRecordsQuerySchema = z.object({
     related_to: z
         .string()
         .regex(/^\d+:\d+$/)
+        .refine((v) => allSafeIds(v, ':'), 'Id fuera de rango')
         .optional(),
 });
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;

@@ -264,6 +264,16 @@ describe('FieldsService (Postgres real + RLS)', () => {
         ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('doble envío: altas simultáneas con el mismo slug → una se crea y el resto es slug_taken (409)', async () => {
+        const results = await Promise.allSettled(
+            [1, 2, 3, 4].map(() => service.create(tenantA, 'clientes', { label: 'Teléfono', type: 'text', slug: 'telefono' })),
+        );
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        for (const r of results) {
+            if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(ConflictException);
+        }
+    });
+
     it('conversión de tipo por lotes: muchas filas, una sentencia por lote, nada se pierde', async () => {
         const cant = await service.create(tenantA, 'clientes', { label: 'Cantidad', type: 'text' });
         const otro = await service.create(tenantA, 'clientes', { label: 'Otro', type: 'text' });

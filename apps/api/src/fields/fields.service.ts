@@ -29,6 +29,7 @@ import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { lists, memberships, records, users } from '../db/schema';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import type { Tx } from '../db/client';
+import { pgErrorCode } from '../common/http-exception.filter';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
@@ -302,19 +303,25 @@ export class FieldsService {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
-            return this.repo.insert(tx, {
-                tenantId,
-                listId,
-                slug,
-                label: input.label,
-                type: input.type,
-                config,
-                isRequired: input.is_required ?? false,
-                isUnique: input.is_unique ?? false,
-                isIndexed: input.is_indexed ?? false,
-                description: input.description ?? null,
-                position,
-            });
+            return this.repo
+                .insert(tx, {
+                    tenantId,
+                    listId,
+                    slug,
+                    label: input.label,
+                    type: input.type,
+                    config,
+                    isRequired: input.is_required ?? false,
+                    isUnique: input.is_unique ?? false,
+                    isIndexed: input.is_indexed ?? false,
+                    description: input.description ?? null,
+                    position,
+                })
+                .catch((err: unknown) => {
+                    // Doble envío: dos altas simultáneas con el mismo slug pasan
+                    // el chequeo previo y la segunda choca con el índice único.
+                    throw pgErrorCode(err) === '23505' ? slugConflict(slug) : err;
+                });
         });
         this.realtime.fields(tenantId, listId);
         // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
