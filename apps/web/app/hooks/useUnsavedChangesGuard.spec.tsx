@@ -2,7 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { useUnsavedChangesGuard } from './useUnsavedChangesGuard';
+import { installUnsavedChangesGuard, useUnsavedChangesGuard } from './useUnsavedChangesGuard';
 
 /** Sin ConfirmProvider el hook cae a `window.confirm`: se controla desde el test. */
 describe('useUnsavedChangesGuard', () => {
@@ -59,7 +59,10 @@ describe('useUnsavedChangesGuard', () => {
     });
 
     it('Atrás del navegador: se deshace el paso, se pregunta y el router no lo ve si se cancela', async () => {
-        // El router registra su listener ANTES que el editor (sin captura).
+        // Como en la app: el guard global se instala en el punto de entrada,
+        // ANTES que el router (Chrome corre los listeners de window en orden
+        // de registro); el editor se monta después.
+        installUnsavedChangesGuard();
         const routerSaw = vi.fn();
         window.addEventListener('popstate', routerSaw);
         renderHook(() => useUnsavedChangesGuard(true));

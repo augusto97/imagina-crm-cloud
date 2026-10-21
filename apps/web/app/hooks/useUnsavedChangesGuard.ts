@@ -25,16 +25,67 @@ import { __ } from '@/lib/i18n';
  * «data router») y ahí `useBlocker` no existe. Este hook funciona con
  * cualquier router y sin router.
  *
+ * IMPORTANTE para (3): el listener de `popstate` tiene que registrarse ANTES
+ * que el del router — Chrome dispara los listeners de `window` en orden de
+ * registro, sin importar la fase de captura. Por eso el punto de entrada de
+ * la app llama a `installUnsavedChangesGuard()` antes de montar el router;
+ * el hook sólo anota/borra su guardia en el registro global.
+ *
  * Lo que NO cubre: una navegación programática (`navigate()` en un botón).
  * Para esos casos está `confirmLeave()`: `if (await confirmLeave()) navigate(…)`.
  *
  * Usa el diálogo de la app (`ConfirmProvider`); fuera de él, `window.confirm`.
  */
+
+interface PopGuard {
+    /** URL y `history.state` del editor, para deshacer un «Atrás». */
+    url: string;
+    state: unknown;
+    ask: () => Promise<boolean>;
+}
+
+/** Guardias activas (editores con cambios), la última es la que manda. */
+const popGuards: PopGuard[] = [];
+let installed = false;
+/** El «Atrás» que el propio guard re-ejecuta tras confirmar. */
+let bypassNextPop = false;
+
+function onPopState(e: PopStateEvent): void {
+    if (bypassNextPop) {
+        bypassNextPop = false;
+        return;
+    }
+    const guard = popGuards[popGuards.length - 1];
+    if (!guard) return;
+    // El navegador ya cambió la URL: se corta antes del router y se vuelve
+    // al editor con el mismo `history.state` (el router no se entera).
+    e.stopImmediatePropagation();
+    window.history.pushState(guard.state, '', guard.url);
+    void guard.ask().then((ok) => {
+        if (!ok) return;
+        // Tras el pushState, la entrada anterior ES el destino.
+        bypassNextPop = true;
+        window.history.back();
+    });
+}
+
+/**
+ * Registra el listener global de `popstate`. Llamarla en el punto de entrada
+ * ANTES de montar el router (idempotente). Si no se llamó, el hook la llama
+ * al montarse (funciona igual para enlaces y `beforeunload`; para «Atrás»
+ * depende de que el navegador corra la captura primero).
+ */
+export function installUnsavedChangesGuard(): void {
+    if (installed || typeof window === 'undefined') return;
+    installed = true;
+    window.addEventListener('popstate', onPopState, true);
+}
+
 export function useUnsavedChangesGuard(dirty: boolean, message?: string): { confirmLeave: () => Promise<boolean> } {
     const confirm = useOptionalConfirm();
     const text = message ?? __('Tienes cambios sin guardar. Si sales ahora, se pierden.');
-    // Un clic o un «Atrás» que el propio hook re-ejecuta tras confirmar.
-    const bypass = useRef(false);
+    // Un clic que el propio hook re-ejecuta tras confirmar.
+    const bypassClick = useRef(false);
     const dirtyRef = useRef(dirty);
     dirtyRef.current = dirty;
 
@@ -71,7 +122,7 @@ export function useUnsavedChangesGuard(dirty: boolean, message?: string): { conf
     useEffect(() => {
         if (!dirty) return;
         const onClick = (e: MouseEvent): void => {
-            if (bypass.current || e.defaultPrevented) return;
+            if (bypassClick.current || e.defaultPrevented) return;
             // Abrir en otra pestaña / ventana no pierde nada.
             if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             const target = e.target instanceof Element ? e.target : null;
@@ -90,11 +141,11 @@ export function useUnsavedChangesGuard(dirty: boolean, message?: string): { conf
             e.stopPropagation();
             void ask().then((ok) => {
                 if (!ok) return;
-                bypass.current = true;
+                bypassClick.current = true;
                 try {
                     anchor.click();
                 } finally {
-                    bypass.current = false;
+                    bypassClick.current = false;
                 }
             });
         };
@@ -102,30 +153,17 @@ export function useUnsavedChangesGuard(dirty: boolean, message?: string): { conf
         return () => document.removeEventListener('click', onClick, true);
     }, [dirty, ask]);
 
-    // 3. Atrás / Adelante / cambio de hash. Un listener de CAPTURA en `window`
-    //    corre antes que el del router (que escucha `popstate` sin captura):
-    //    se corta la propagación y se restaura la URL del editor con el mismo
-    //    `history.state` (el router no se entera del paso).
+    // 3. Atrás / Adelante / cambio de hash: la guardia se anota en el registro
+    //    global (ver `installUnsavedChangesGuard`).
     useEffect(() => {
         if (!dirty) return;
-        const guardUrl = window.location.href;
-        const guardState: unknown = window.history.state;
-        const onPop = (e: PopStateEvent): void => {
-            if (bypass.current) {
-                bypass.current = false;
-                return;
-            }
-            e.stopImmediatePropagation();
-            window.history.pushState(guardState, '', guardUrl);
-            void ask().then((ok) => {
-                if (!ok) return;
-                // Tras el pushState, la entrada anterior ES el destino.
-                bypass.current = true;
-                window.history.back();
-            });
+        installUnsavedChangesGuard();
+        const guard: PopGuard = { url: window.location.href, state: window.history.state as unknown, ask };
+        popGuards.push(guard);
+        return () => {
+            const i = popGuards.indexOf(guard);
+            if (i >= 0) popGuards.splice(i, 1);
         };
-        window.addEventListener('popstate', onPop, true);
-        return () => window.removeEventListener('popstate', onPop, true);
     }, [dirty, ask]);
 
     return { confirmLeave };
