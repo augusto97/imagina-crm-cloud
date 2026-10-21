@@ -826,7 +826,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             .select({ id: fields.id, type: fields.type, config: fields.config })
             .from(fields)
             .where(and(eq(fields.tenantId, tenantId), eq(fields.listId, link.listId), inArray(fields.id, ids)));
-        const record = await this.recordsRepo.findById(tx, tenantId, link.listId, link.recordId);
+        // Con lock: se mezcla en JS y se reescribe el `data` entero (ver findByIdForUpdate).
+        const record = await this.recordsRepo.findByIdForUpdate(tx, tenantId, link.listId, link.recordId);
         if (!record) return null;
         const before = record.data as Record<string, unknown>;
         const after = { ...before };

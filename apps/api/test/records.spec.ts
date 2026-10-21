@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fields, lists, records, tenants, users } from '../src/db/schema';
+import { activity, fields, lists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -533,6 +533,29 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         await expect(
             service.update(tenantA, admin, 'clientes', rec.id, { data: { [`f${total.id}`]: 99 } }),
         ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('ediciones simultáneas de campos distintos NO se pisan (lost update)', async () => {
+        await listsService.create(tenantA, { name: 'Concurrente' });
+        const fs: Field[] = [];
+        for (let i = 0; i < 8; i++) {
+            fs.push(await fieldsService.create(tenantA, 'concurrente', { label: `Campo ${i}`, type: 'text', slug: `c${i}` }));
+        }
+        const rec = await service.create(tenantA, admin, 'concurrente', { data: {} });
+        // 8 PATCH en paralelo, cada uno sobre su propio campo: antes leían el
+        // mismo `data`, mezclaban en JS y el último en escribir pisaba al resto.
+        await Promise.all(
+            fs.map((f, i) => service.update(tenantA, admin, 'concurrente', rec.id, { data: { [`f${f.id}`]: `v${i}` } })),
+        );
+        const after = await service.get(tenantA, admin, 'concurrente', rec.id);
+        for (const [i, f] of fs.entries()) expect(after.data[`f${f.id}`]).toBe(`v${i}`);
+        // Y la actividad registra cada cambio con SU campo (el diff sigue exacto).
+        const log = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ action: activity.action, diff: activity.diff }).from(activity).where(eq(activity.recordId, rec.id)),
+        );
+        const updates = log.filter((l) => l.action === 'record_updated');
+        expect(updates).toHaveLength(8);
+        for (const u of updates) expect(Object.keys(u.diff as Record<string, unknown>)).toHaveLength(1);
     });
 
     it('aislamiento RLS: los records no cruzan de tenant', async () => {

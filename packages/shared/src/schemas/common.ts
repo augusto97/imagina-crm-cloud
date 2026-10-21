@@ -1,8 +1,20 @@
 import { z } from 'zod';
 
 /** ID numérico canónico. El slug es etiqueta humana; el ID es la verdad. */
-export const idSchema = z.number().int().positive();
+export const idSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export type Id = z.infer<typeof idSchema>;
+
+/**
+ * Id que llega por QUERY STRING (texto → número). Tope en el entero seguro de
+ * JS: más allá, `Number("9223372036854775808")` ya no es exacto y la base
+ * respondía «out of range for type bigint» (500); ahora es un 400.
+ */
+export const queryIdSchema = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+
+/** "1,2,3" → cada parte es un id seguro (ver `queryIdSchema`). */
+export function allSafeIds(csv: string, sep = ','): boolean {
+    return csv.split(sep).every((x) => Number.isSafeInteger(Number(x)));
+}
 
 /** Fechas SIEMPRE UTC/ISO en storage y en el API; el cliente formatea. */
 export const isoDateTimeSchema = z.string().datetime({ offset: true });

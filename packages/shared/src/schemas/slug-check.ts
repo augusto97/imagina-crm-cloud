@@ -5,7 +5,7 @@ import { z } from 'zod';
  * + unicidad. Para `field` es obligatorio `list_id` (unicidad por lista).
  * Llega por query string, así que los ids se coercionan desde string.
  */
-const queryId = z.coerce.number().int().positive();
+const queryId = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 export const slugCheckQuerySchema = z
     .object({

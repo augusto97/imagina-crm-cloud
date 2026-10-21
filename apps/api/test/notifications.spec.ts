@@ -15,7 +15,7 @@ import { AutomationDispatcher, type TriggerEvent } from '../src/automations/auto
 import { CommentsRepository } from '../src/comments/comments.repository';
 import { CommentsService } from '../src/comments/comments.service';
 import { loadEnv } from '../src/config/env';
-import { memberships, notifications, recordFollows, records, reminders, tenants, users } from '../src/db/schema';
+import { lists as listsTable, memberships, notifications, recordFollows, records, reminders, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -345,6 +345,47 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         expect(work.lists_with_assignee).toBe(1);
         // Sigue lo que le asignaron (incluida la terminada).
         expect(work.following).toHaveLength(3);
+    });
+
+    it('«Mi trabajo»: el vencido más viejo entra aunque haya cientos de registros antes (orden por vencimiento, no por id)', async () => {
+        // 150 asignados SIN fecha (ids bajos) y, al final, uno vencido: antes
+        // se tomaban los primeros 100 por id de cada lista y el vencido quedaba afuera.
+        const rows = Array.from({ length: 150 }, (_, i) => ({
+            tenantId,
+            listId,
+            data: { [`f${f.titulo!.id}`]: `Sin fecha ${i}`, [`f${f.resp!.id}`]: beto },
+            createdBy: ana,
+        }));
+        await withTenant(pg.db, tenantId, (tx) => tx.insert(records).values(rows));
+        const viejo = await create({ [`f${f.titulo!.id}`]: 'Vencido hace años', [`f${f.resp!.id}`]: beto, [`f${f.vence!.id}`]: '2020-01-01' });
+        const work = await svc.myWork(tenantId, manager());
+        expect(work.assigned[0]).toMatchObject({ record_id: viejo, due: '2020-01-01' });
+        expect(work.assigned).toHaveLength(151);
+        expect(work.truncated).toBe(false);
+    });
+
+    it('«Mi trabajo» respeta el ACL de la lista: alcance del rol y campo persona oculto', async () => {
+        // Agente con alcance «sólo lo suyo»: lo que otro creó y le asignó no lo ve.
+        await create({ [`f${f.titulo!.id}`]: 'De Ana para Caro', [`f${f.resp!.id}`]: caro });
+        const propio = await create({ [`f${f.titulo!.id}`]: 'De Caro', [`f${f.resp!.id}`]: caro }, { userId: caro, role: 'agent' });
+        expect((await svc.myWork(tenantId, { userId: caro, role: 'agent' })).assigned.map((i) => i.record_id)).toEqual([propio]);
+
+        // Si el campo persona está oculto para el rol, no cuenta (antes el filtro
+        // se descartaba y salían TODOS los registros visibles como asignados).
+        await create({ [`f${f.titulo!.id}`]: 'Para Beto', [`f${f.resp!.id}`]: beto });
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: listsTable.settings }).from(listsTable).where(eq(listsTable.id, listId)));
+        const before = (row?.settings ?? {}) as Record<string, unknown>;
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .update(listsTable)
+                .set({ settings: { ...before, permissions: { permissions: { manager: { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: ['responsable'] } } } } })
+                .where(eq(listsTable.id, listId)),
+        );
+        try {
+            expect((await svc.myWork(tenantId, manager())).assigned).toHaveLength(0);
+        } finally {
+            await withTenant(pg.db, tenantId, (tx) => tx.update(listsTable).set({ settings: before }).where(eq(listsTable.id, listId)));
+        }
     });
 
     it('resumen diario: a su hora, una vez por día, y nada si no hay nada', async () => {

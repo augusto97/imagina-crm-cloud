@@ -9,7 +9,7 @@ import { billingSubscriptions, memberships, tenants, users } from '../db/schema'
 import { escapeHtml } from '../legal/legal-page';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 
 export type ReminderKind = 'soon' | 'expired' | 'read_only';
 
@@ -165,7 +165,7 @@ export class BillingRemindersBootstrap implements OnModuleInit, OnApplicationShu
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(QUEUE, { connection: conn() });
+            this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de avisos de cobro con error: ${err.message}`));
             this.worker = new Worker(QUEUE, async () => this.reminders.tick(), { connection: conn() });
             this.worker.on('failed', (_job, err) => this.logger.error(`Avisos de vencimiento fallaron: ${err.message}`));

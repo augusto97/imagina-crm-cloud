@@ -81,6 +81,37 @@ export class BillingService {
     }
 
     /**
+     * Tope de registros del plan (null = ilimitado). Se lee FUERA de la
+     * transacción de alta — ver `assertRecordRoomInTx`.
+     */
+    async recordLimit(tenantId: number): Promise<{ limit: number; plan: Plan } | null> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_records;
+        return limit === null ? null : { limit, plan };
+    }
+
+    /**
+     * El chequeo del tope DENTRO de la transacción que va a insertar, con las
+     * altas de la empresa en fila (lock de transacción por empresa): sin eso,
+     * N altas simultáneas con la empresa a uno del tope pasaban todas el conteo
+     * (cada una veía el mismo número) y el plan quedaba superado en N-1. El
+     * lock se suelta con el commit, así la siguiente ya cuenta la fila nueva.
+     * El tope se pide antes con `recordLimit`: leerlo aquí abriría una segunda
+     * conexión con ésta ocupada (y con el pool lleno, se trancarían).
+     */
+    async assertRecordRoomInTx(tx: Tx, tenantId: number, cap: { limit: number; plan: Plan }): Promise<void> {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`records-limit:${tenantId}`}, 0))`);
+        const count = await this.countRecords(tx, tenantId);
+        if (count >= cap.limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `Alcanzaste el límite de ${cap.limit} registros del plan ${cap.plan}`,
+                data: { status: 403, errors: { plan: 'límite de registros' } },
+            });
+        }
+    }
+
+    /**
      * Igual que `assertCanCreateRecord` pero para un LOTE (SEC-09): verifica que
      * crear `additional` registros no supere el tope del plan. El import antes
      * solo comprobaba que "cabía uno más" y luego insertaba hasta 10 000 →

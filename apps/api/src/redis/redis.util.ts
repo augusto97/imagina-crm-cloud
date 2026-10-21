@@ -26,3 +26,11 @@ export function guardRedis(client: Redis, logger: Logger, label = 'redis'): Redi
     });
     return client;
 }
+
+/**
+ * Retención de jobs terminados para TODA cola de BullMQ (`defaultJobOptions`).
+ * Sin esto, los jobs de las tareas programadas (`upsertJobScheduler`) nunca
+ * se borraban: miles de hashes por día acumulándose en Redis. Un `add` con sus
+ * propias opciones las sigue pisando.
+ */
+export const QUEUE_JOB_RETENTION = { removeOnComplete: 100, removeOnFail: 500 } as const;
