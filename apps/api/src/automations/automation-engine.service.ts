@@ -3,23 +3,41 @@ import { ModuleRef } from '@nestjs/core';
 import {
     bulkOperationSchema,
     filterTreeSchema,
+    flowBranch,
+    flowNodeAt,
+    flowPathKey,
+    formatEmailFieldValue,
     jsonbKeyForField,
+    parseFlowPath,
     readStoreListMarker,
+    readWaitConfig,
+    resolveTitleFieldId,
     storeCellAccess,
     storeValueError,
     tenantFormatSchema,
+    waitResumeAt,
     zonedToday,
     FALLBACK_TIME_ZONE,
+    FOR_EACH_MAX_ITEMS,
+    RESPONSE_BODY_MAX_BYTES,
+    RESPONSE_NAME_RE,
+    SCHEDULED_EACH_BATCH,
+    SCHEDULED_EACH_MAX,
     type ActionLogEntry,
     type ActionSpec,
     type AutomationRunStatus,
+    type ConditionCheck,
     type ConditionData,
+    type FilterGroup,
+    type FlowBranch,
+    type FlowPath,
+    type ListRecordsQuery,
     type StoreListMarker,
     type TenantFormat,
 } from '@imagina-base/shared';
 import { and, asc, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
-import { safeWebhookFetch } from '../common/safe-fetch';
-import { redactValues, type ConnectionParts } from '../connectors/connection-parts';
+import { safeWebhookFetch, type SafeFetchResult } from '../common/safe-fetch';
+import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
     buildIntegrationRequest,
@@ -31,7 +49,7 @@ import { buildWebhookRequest, type MergeFn } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
-import { lists, memberships, records, tenants, users } from '../db/schema';
+import { automationRuns, documentTemplates, lists, memberships, records, tenants, users } from '../db/schema';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
@@ -53,7 +71,7 @@ import {
     type AutomationChain,
     type TriggerEvent,
 } from './automation-dispatcher.service';
-import { evaluateCondition, type ConditionOptions } from './condition-evaluator';
+import { evaluateCondition, explainCondition, type ConditionOptions } from './condition-evaluator';
 import { EmailComposer } from './email-composer';
 import { coerceFieldValue, READ_ONLY_TYPES, type CoercibleField } from './field-coercion';
 import {
@@ -132,7 +150,110 @@ interface RunContext {
     people?: Map<number, PersonInfo | null>;
     /** Marca de tienda por lista, leída una vez por corrida. */
     storeMarkers?: Map<number, StoreListMarker | null>;
+    /**
+     * v0.1.288 — la respuesta del ÚLTIMO webhook/conector (`{{webhook.status}}`,
+     * `{{webhook.body.x}}`) y las guardadas con nombre
+     * (`{{respuestas.<nombre>.body.x}}`). Viajan en el contexto de una espera.
+     */
+    webhook?: ResponseInfo;
+    responses?: Record<string, ResponseInfo>;
+    /**
+     * v0.1.288 — el registro vinculado en curso dentro de «Repetir por cada
+     * registro vinculado» (`{{item.slug}}`, `{{item.record.id}}`).
+     */
+    item?: ItemContext;
+    /** v0.1.288 — «Probar»: simulación sin efectos (ver `simulate`). */
+    sim?: SimulationState;
 }
+
+/** v0.1.288 — una respuesta HTTP guardada para los pasos siguientes. */
+interface ResponseInfo {
+    status: number;
+    /** JSON ya leído (o el texto, si no era JSON o llegó recortado). */
+    body: unknown;
+    truncated?: boolean;
+    /** «Probar» sin ejecutarla de verdad: no hay respuesta real. */
+    simulated?: boolean;
+}
+
+/** v0.1.288 — el registro vinculado en curso dentro de un bucle. */
+interface ItemContext {
+    listId: number;
+    listName: string;
+    recordId: number;
+    data: Record<string, unknown>;
+    slugToKey: Map<string, string>;
+    fieldsBySlug: Map<string, LabelFieldLike>;
+}
+
+/** v0.1.288 — estado de una simulación («Probar»). */
+interface SimulationState {
+    /** Rutas de los webhooks/conectores que se ejecutan DE VERDAD. */
+    realSteps: Set<string>;
+    /** Cuerpos de las respuestas reales (por ruta), para sugerir variables. */
+    responses: Record<string, unknown>;
+    /** Variables de respuestas que quedaron vacías por no ejecutarse de verdad. */
+    unknownTokens: Set<string>;
+}
+
+/** v0.1.288 — una pausa en un «Esperar»: cuándo y desde dónde se sigue. */
+interface Pause {
+    at: Date;
+    waitPath: FlowPath;
+    /** El paso que sigue a la espera (puede apuntar más allá del final de su rama). */
+    resumePath: FlowPath;
+    /** La config de la espera en el momento de pausar (su condición y su fecha). */
+    wait: Record<string, unknown>;
+    /** El campo de fecha de un «hasta una fecha» (para recalcular si cambia). */
+    waitField: { key: string; label: string } | null;
+}
+
+/** v0.1.288 — lo que devuelve recorrer pasos: el log y, si hubo, una pausa o un corte. */
+interface Flow {
+    log: ActionLogEntry[];
+    pause?: Pause;
+    /** La corrida termina aquí (la espera no se pudo calcular, la condición no se cumple…). */
+    stop?: boolean;
+}
+
+/**
+ * v0.1.288 — lo que se persiste de una corrida en espera (`resume_state`):
+ * el puntero, la espera y el contexto acumulado. Los mapas de campos y la
+ * zona se vuelven a leer al reanudar (pueden haber cambiado).
+ */
+export interface ResumeState {
+    v: 1;
+    wait_path: FlowPath;
+    resume_path: FlowPath;
+    wait: Record<string, unknown>;
+    wait_field: { key: string; label: string } | null;
+    had_fail: boolean;
+    ctx: {
+        data: Record<string, unknown>;
+        before?: Record<string, unknown>;
+        payload?: Record<string, unknown>;
+        pago?: Record<string, unknown>;
+        form?: { id: number; name: string };
+        pdf?: Record<string, unknown>;
+        webhook?: ResponseInfo;
+        responses?: Record<string, ResponseInfo>;
+        chain?: AutomationChain;
+    };
+}
+
+/** v0.1.288 — el resultado de una simulación (lo mapea el servicio). */
+export interface SimulationResult {
+    record: { id: number; title: string } | null;
+    trigger: { matches: boolean; message: string; checks: ConditionCheck[]; notes: string[] };
+    log: ActionLogEntry[];
+    responses: Record<string, unknown>;
+}
+
+/** Lo mínimo de una automatización que el motor necesita (una guardada o la que se está editando). */
+export type RunnableAutomation = Pick<
+    AutomationRow,
+    'id' | 'listId' | 'name' | 'triggerType' | 'triggerConfig' | 'actions' | 'isActive' | 'createdAt'
+>;
 
 /**
  * Motor de automatizaciones (paridad plugin). Ejecuta el modelo flexible:
@@ -161,6 +282,8 @@ const ACTION_NAMES: Record<string, string> = {
     generate_pdf: 'Generar PDF',
     bulk_edit: 'Editar en lote',
     if_else: 'Condición',
+    wait: 'Esperar',
+    for_each_linked: 'Repetir por cada vinculado',
     engine: 'Motor de automatizaciones',
 };
 
@@ -280,7 +403,102 @@ export class AutomationEngine {
             return { auto, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
         });
         if (!prep) return;
+        // v0.1.288 — «Ejecutar para cada registro que cumpla…»: una corrida
+        // por registro, en tandas encoladas.
+        if (prep.auto.triggerConfig.for_each_record === true) {
+            await this.runScheduledEach(prep.auto);
+            return;
+        }
         await this.runOne({ tenantId, listId: prep.auto.listId, recordId: null, data: {}, ...prep.maps }, prep.auto);
+    }
+
+    /**
+     * v0.1.288 — Programado «para cada registro»: busca los registros que
+     * cumplen el filtro (con el MISMO motor de filtros de la tabla, fechas
+     * relativas en la zona de la empresa), hasta `SCHEDULED_EACH_MAX`, y
+     * encola tandas de `SCHEDULED_EACH_BATCH` (cada tanda corre aparte: un
+     * disparo de mil registros con correos no retiene un hueco de la cola
+     * durante minutos). Lo que pasa del tope queda como problema a la vista.
+     */
+    private async runScheduledEach(auto: AutomationRow): Promise<void> {
+        const svc = this.records();
+        if (!svc) {
+            this.logger.warn(`Automatización ${auto.id}: «para cada registro» sin servicio de registros.`);
+            return;
+        }
+        let filter: FilterGroup | undefined;
+        if (auto.triggerConfig.records_filter) {
+            const parsed = filterTreeSchema.safeParse(auto.triggerConfig.records_filter);
+            if (!parsed.success) {
+                this.incidents?.report({
+                    tenantId: auto.tenantId,
+                    key: `automation:${auto.id}`,
+                    source: 'automation',
+                    sourceId: auto.id,
+                    listId: auto.listId,
+                    title: `Falló la automatización «${auto.name}»`,
+                    message: 'El filtro «para cada registro» del horario está mal configurado: revísalo en el editor.',
+                });
+                return;
+            }
+            filter = parsed.data;
+        }
+        const ids: number[] = [];
+        let cursor: number | undefined;
+        while (ids.length <= SCHEDULED_EACH_MAX) {
+            const page = await svc.list(auto.tenantId, SYSTEM_ACTOR, String(auto.listId), {
+                limit: 200,
+                sort_dir: 'asc',
+                ...(cursor !== undefined ? { cursor } : {}),
+                ...(filter ? { filter_tree: filter } : {}),
+            } as ListRecordsQuery);
+            for (const r of page.data) ids.push(r.id);
+            const next = page.meta.next_cursor;
+            if (!next) break;
+            cursor = Number(next);
+        }
+        const over = ids.length > SCHEDULED_EACH_MAX;
+        const picked = ids.slice(0, SCHEDULED_EACH_MAX);
+        if (over) {
+            this.incidents?.report({
+                tenantId: auto.tenantId,
+                key: `automation:${auto.id}:each-limit`,
+                source: 'automation',
+                sourceId: auto.id,
+                listId: auto.listId,
+                title: `«${auto.name}»: más de ${SCHEDULED_EACH_MAX} registros cumplían el filtro`,
+                message: `En este disparo se procesaron los primeros ${SCHEDULED_EACH_MAX} (por antigüedad). Acota el filtro para que entren todos.`,
+            });
+        } else {
+            this.incidents?.resolve(auto.tenantId, `automation:${auto.id}:each-limit`);
+        }
+        for (let i = 0; i < picked.length; i += SCHEDULED_EACH_BATCH) {
+            const batch = picked.slice(i, i + SCHEDULED_EACH_BATCH);
+            const queued = this.dispatcher?.dispatchScheduledBatch({ tenantId: auto.tenantId, automationId: auto.id, recordIds: batch }) ?? false;
+            if (!queued) await this.runScheduledBatch(auto.tenantId, auto.id, batch);
+        }
+    }
+
+    /** v0.1.288 — una tanda de «para cada registro»: una corrida por registro. */
+    async runScheduledBatch(tenantId: number, automationId: number, recordIds: number[]): Promise<void> {
+        const ids = recordIds.filter((n) => Number.isInteger(n) && n > 0).slice(0, SCHEDULED_EACH_BATCH);
+        if (ids.length === 0) return;
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if (await tenantIsReadOnly(tx, tenantId)) return null;
+            const auto = await this.automations.findById(tx, tenantId, automationId);
+            if (!auto || !auto.isActive || auto.triggerType !== 'scheduled') return null;
+            const rows = await tx
+                .select({ id: records.id, data: records.data })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, auto.listId), inArray(records.id, ids), isNull(records.deletedAt)))
+                .orderBy(asc(records.id));
+            return { auto, rows, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
+        });
+        if (!prep) return;
+        for (const rec of prep.rows) {
+            await this.runOne({ tenantId, listId: prep.auto.listId, recordId: rec.id, data: rec.data, ...prep.maps }, prep.auto);
+        }
     }
 
     /**
@@ -421,6 +639,295 @@ export class AutomationEngine {
         }
     }
 
+    /**
+     * v0.1.288 — Reanuda una corrida que estaba en un «Esperar» (el reloj de
+     * las esperas ya la pasó a `running`). Antes de seguir revisa que todo
+     * siga en pie: la automatización existe y está activa, la empresa no está
+     * en solo-lectura (SEC-34), el paso de espera sigue en su lugar y el
+     * registro no se borró — si algo falla, la corrida queda `cancelled` con
+     * el motivo. El registro se RELEE (la foto de hace días no sirve) y, en una
+     * espera «hasta una fecha», si la fecha se movió más adelante la espera se
+     * re-programa. Después, la condición de «continuar sólo si…».
+     */
+    async resumeRun(tenantId: number, runId: number): Promise<void> {
+        const loaded = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [run] = await tx
+                .select()
+                .from(automationRuns)
+                .where(and(eq(automationRuns.tenantId, tenantId), eq(automationRuns.id, runId)))
+                .limit(1);
+            if (!run || run.status !== 'running' || !run.resumeState) return null;
+            const auto = await this.automations.findById(tx, tenantId, run.automationId);
+            const readOnly = await tenantIsReadOnly(tx, tenantId);
+            const maps = auto ? await this.fieldMaps(tx, tenantId, auto.listId) : null;
+            const record = auto && run.recordId !== null ? await this.recordsRepo.findById(tx, tenantId, auto.listId, run.recordId) : null;
+            return { run, auto, readOnly, maps, record };
+        });
+        if (!loaded) return;
+        const { run, auto, readOnly, maps, record } = loaded;
+        const cancel = (reason: string): Promise<void> => this.cancelResumed(tenantId, runId, run.actionsLog ?? [], reason);
+        const state = readResumeState(run.resumeState);
+        if (!auto || !maps) return cancel('La automatización ya no existe.');
+        if (!auto.isActive) return cancel('La automatización está pausada: la espera no siguió.');
+        if (readOnly) return cancel('La empresa estaba en solo-lectura (pago pendiente) cuando tocaba seguir: la espera no siguió.');
+        if (!state || flowNodeAt(auto.actions, state.wait_path)?.type !== 'wait') {
+            return cancel('La automatización cambió mientras esperaba: el paso «Esperar» ya no está en el mismo lugar.');
+        }
+        if (run.recordId !== null && !record) return cancel('El registro se eliminó mientras esperaba.');
+
+        const ctx: RunContext = {
+            tenantId,
+            listId: auto.listId,
+            recordId: run.recordId,
+            data: record ? record.data : state.ctx.data,
+            ...maps,
+            ...(state.ctx.before ? { before: state.ctx.before } : {}),
+            ...(state.ctx.payload ? { payload: state.ctx.payload } : {}),
+            ...(state.ctx.pago ? { pago: state.ctx.pago } : {}),
+            ...(state.ctx.form ? { form: state.ctx.form } : {}),
+            ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
+            ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
+            ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
+            ...(state.ctx.chain ? { chain: state.ctx.chain } : {}),
+            automation: { id: auto.id, name: auto.name },
+        };
+        const prior = run.actionsLog ?? [];
+        const now = new Date();
+        const waitKey = flowPathKey(state.wait_path);
+
+        // «Hasta una fecha»: con el registro releído, ¿la fecha se movió?
+        if (state.wait_field) {
+            const target = waitResumeAt(state.wait, {
+                now,
+                timeZone: ctx.timeZone,
+                field: { label: state.wait_field.label, value: ctx.data[state.wait_field.key] },
+            });
+            if (!target.ok) {
+                const entry = skip('wait', `${target.message} La automatización no siguió.`);
+                return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail);
+            }
+            if (target.at.getTime() > now.getTime() + 30_000) {
+                await this.tenantDb.withTenant(tenantId, (tx) =>
+                    this.automations.pauseRun(tx, tenantId, runId, {
+                        actionsLog: prior,
+                        resumeAt: target.at,
+                        resumeState: run.resumeState as Record<string, unknown>,
+                        error: run.error ?? null,
+                    }),
+                );
+                return;
+            }
+        }
+        // «Continuar sólo si…»: sobre el registro de AHORA.
+        const cond = state.wait.resume_condition as ConditionData | undefined;
+        if (cond && !evaluateCondition(cond, this.accessor(ctx), this.condOpts(ctx))) {
+            const entry = skip('wait', 'Al terminar la espera, el registro ya no cumplía la condición: la automatización no siguió.');
+            return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail);
+        }
+        const resumed = ok('wait', 'Terminó la espera: siguió con los pasos siguientes.', { path: waitKey });
+        let flow: Flow;
+        try {
+            flow = await this.resumeFrom(ctx, auto.actions, state.resume_path, [], 0);
+        } catch (err) {
+            flow = { log: [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }] };
+        }
+        const log = [...prior, resumed, ...flow.log];
+        await this.finalize(ctx, auto, runId, log, flow.pause ?? null, state.had_fail || flow.log.some((l) => l.status === 'failed'));
+    }
+
+    private async cancelResumed(tenantId: number, runId: number, prior: ActionLogEntry[], reason: string): Promise<void> {
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.automations.finishRun(tx, tenantId, runId, {
+                status: 'cancelled',
+                actionsLog: [...prior, skip('wait', reason)],
+                error: reason,
+                finishedAt: new Date(),
+            }),
+        );
+    }
+
+    /**
+     * v0.1.288 — «Probar» paso a paso. Corre la automatización (tal como se está
+     * editando) contra un registro real con el MISMO código que una corrida de
+     * verdad, en modo simulación: no escribe, no envía, no llama ni emite
+     * números de documento. Lo que sí se ejecuta de verdad es lo que la
+     * persona marcó (`realSteps`: webhooks/conectores, para ver la respuesta).
+     * No abre corrida ni toca el historial.
+     */
+    async simulate(input: {
+        tenantId: number;
+        auto: RunnableAutomation;
+        recordId?: number;
+        realSteps: string[];
+        /** Para un webhook entrante: los datos de la última captura. */
+        payload?: Record<string, unknown> | null;
+    }): Promise<SimulationResult> {
+        const { tenantId, auto } = input;
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const fieldRows = await this.fields.listByList(tx, tenantId, auto.listId);
+            const [list] = await tx
+                .select({ settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, auto.listId)))
+                .limit(1);
+            const where = input.recordId
+                ? and(eq(records.tenantId, tenantId), eq(records.listId, auto.listId), eq(records.id, input.recordId), isNull(records.deletedAt))
+                : and(eq(records.tenantId, tenantId), eq(records.listId, auto.listId), isNull(records.deletedAt));
+            const [rec] = await tx.select({ id: records.id, data: records.data }).from(records).where(where).orderBy(sql`${records.id} desc`).limit(1);
+            return { fieldRows, settings: (list?.settings ?? {}) as Record<string, unknown>, rec: rec ?? null, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
+        });
+        // Sin registro: un horario «normal» y un webhook entrante corren así de verdad.
+        const usesRecord = !(auto.triggerType === 'incoming_webhook' || (auto.triggerType === 'scheduled' && auto.triggerConfig.for_each_record !== true));
+        const rec = usesRecord ? prep.rec : null;
+        const data: Record<string, unknown> = rec ? { ...rec.data } : {};
+        const payload = auto.triggerType === 'incoming_webhook' ? (input.payload ?? {}) : undefined;
+        if (payload) {
+            for (const [k, v] of Object.entries(payload)) {
+                const key = prep.maps.slugToKey.get(k);
+                if (key !== undefined) data[key] = v;
+            }
+        }
+        const sim: SimulationState = { realSteps: new Set(input.realSteps), responses: {}, unknownTokens: new Set() };
+        const ctx: RunContext = {
+            tenantId,
+            listId: auto.listId,
+            recordId: rec?.id ?? null,
+            data,
+            ...prep.maps,
+            ...(payload ? { payload } : {}),
+            automation: { id: auto.id, name: auto.name },
+            sim,
+        };
+        const trigger = await this.explainTrigger(auto, ctx, { hasRecord: rec !== null, usesRecord, hasPayload: Object.keys(payload ?? {}).length > 0 });
+        let log: ActionLogEntry[];
+        try {
+            log = (await this.runSteps(ctx, auto.actions, [], 0, 0)).log;
+        } catch (err) {
+            log = [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }];
+        }
+        if (sim.unknownTokens.size > 0) {
+            trigger.notes.push(
+                `Estas variables quedarían vacías en la prueba porque su webhook no se ejecutó de verdad: ${[...sim.unknownTokens].map((t) => `{{${t}}}`).join(', ')}. Marca «Ejecutar de verdad» en ese paso para usarlas.`,
+            );
+        }
+        let record: SimulationResult['record'] = null;
+        if (rec) {
+            const titleId = resolveTitleFieldId(prep.fieldRows.map((f) => ({ id: f.id, type: f.type as never })), prep.settings);
+            const raw = titleId !== null ? rec.data[jsonbKeyForField(titleId)] : null;
+            record = { id: rec.id, title: typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : `Registro #${rec.id}` };
+        }
+        return { record, trigger, log, responses: sim.responses };
+    }
+
+    /**
+     * v0.1.288 — ¿El disparador coincidiría con este registro? Con la MISMA
+     * evaluación de las condiciones, regla por regla, y notas de lo que una
+     * prueba no puede saber (el valor anterior, la fecha de un horario).
+     */
+    private async explainTrigger(
+        auto: RunnableAutomation,
+        ctx: RunContext,
+        info: { hasRecord: boolean; usesRecord: boolean; hasPayload: boolean },
+    ): Promise<SimulationResult['trigger']> {
+        const cfg = auto.triggerConfig ?? {};
+        const notes: string[] = [];
+        const reasons: string[] = [];
+        const fv = this.accessor(ctx);
+        const ex = explainCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx));
+        const checks = this.labelChecks(ctx, ex.checks);
+        if (!ex.matched) reasons.push('el registro no cumple los filtros del disparador');
+        if (info.usesRecord && !info.hasRecord) {
+            return { matches: false, message: 'La lista no tiene registros para probar.', checks, notes };
+        }
+        const label = (slug: string): string => ctx.fieldsBySlug.get(slug)?.label ?? slug;
+        switch (auto.triggerType) {
+            case 'record_updated': {
+                const changed = normalizeChangedFields(cfg);
+                if (changed.length > 0) notes.push(`En la prueba se asume que cambió ${changed.map((c) => `«${label(c)}»`).join(' o ')}.`);
+                break;
+            }
+            case 'field_changed': {
+                const slug = typeof cfg.field === 'string' ? cfg.field : '';
+                const key = ctx.slugToKey.get(slug);
+                if (key && cfg.to_value !== undefined && cfg.to_value !== null && cfg.to_value !== '') {
+                    const okTo = changeEndMatches(ctx.fieldsBySlug.get(slug), ctx.data[key], cfg.to_value);
+                    checks.push({ field: slug, label: label(slug), op: 'eq', expected: cfg.to_value, actual: ctx.data[key] ?? null, ok: okTo });
+                    if (!okTo) reasons.push(`«${label(slug)}» no tiene el valor «a» del disparador`);
+                }
+                notes.push(
+                    cfg.from_value !== undefined && cfg.from_value !== null && cfg.from_value !== ''
+                        ? `En una prueba no hay valor anterior: se asume que «${label(slug)}» venía de «${String(cfg.from_value)}».`
+                        : `En la prueba se asume que «${label(slug)}» acaba de cambiar.`,
+                );
+                break;
+            }
+            case 'due_date_reached': {
+                const slug = typeof cfg.due_field === 'string' ? cfg.due_field : '';
+                const key = ctx.slugToKey.get(slug);
+                const raw = key ? ctx.data[key] : undefined;
+                const offset = Number(cfg.offset_minutes ?? 0) || 0;
+                const minutes = Math.abs(offset);
+                const target = waitResumeAt(
+                    { mode: 'until_field', date_field: slug, offset_amount: minutes, offset_unit: 'minutes', offset_direction: offset < 0 ? 'before' : 'after' },
+                    { now: new Date(), timeZone: ctx.timeZone, field: { label: label(slug), value: raw } },
+                );
+                if (!target.ok) {
+                    reasons.push(target.message.replace(/\.$/, ''));
+                } else if (target.at.getTime() > Date.now()) {
+                    reasons.push(`todavía no llegó: dispararía el ${this.formatInstant(ctx, target.at)}`);
+                } else {
+                    notes.push(`El momento de disparo de este registro (${this.formatInstant(ctx, target.at)}) ya pasó.`);
+                }
+                break;
+            }
+            case 'scheduled': {
+                if (cfg.for_each_record === true) {
+                    notes.push('Corre una vez por cada registro que cumpla el filtro; la prueba usa uno.');
+                    if (cfg.records_filter && ctx.recordId !== null) {
+                        const svc = this.records();
+                        const parsed = filterTreeSchema.safeParse(cfg.records_filter);
+                        if (!parsed.success) {
+                            reasons.push('el filtro «para cada registro» está mal configurado');
+                        } else if (svc) {
+                            const page = await svc.list(ctx.tenantId, SYSTEM_ACTOR, String(ctx.listId), {
+                                limit: 1,
+                                sort_dir: 'asc',
+                                ids: String(ctx.recordId),
+                                filter_tree: parsed.data,
+                            } as ListRecordsQuery);
+                            if (page.data.length === 0) reasons.push('este registro no cumple el filtro «para cada registro»');
+                        }
+                    }
+                } else {
+                    notes.push('Corre en su horario, sin un registro: las variables de campos quedan vacías.');
+                }
+                break;
+            }
+            case 'incoming_webhook':
+                notes.push(
+                    info.hasPayload
+                        ? 'Se usan los datos del último pedido que llegó al webhook.'
+                        : 'Todavía no llegó ningún dato al webhook: las variables {{payload.x}} quedan vacías.',
+                );
+                break;
+            case 'payment_received':
+                notes.push('En la prueba no hay un pago real: las variables {{pago.x}} quedan vacías.');
+                break;
+            case 'form_submitted':
+                notes.push('Se asume que este registro llegó por el formulario.');
+                break;
+            default:
+                break;
+        }
+        const matches = reasons.length === 0;
+        return {
+            matches,
+            message: matches ? 'El disparador coincidiría con este registro.' : `En la realidad no se dispararía: ${reasons.join('; ')}.`,
+            checks,
+            notes,
+        };
+    }
+
     /** slug → f{id}, slug → {type, config}, zona y formato regional de la empresa. */
     private async fieldMaps(
         tx: Tx,
@@ -501,6 +1008,16 @@ export class AutomationEngine {
                 return opts.isoNow ? now : now.slice(0, 19).replace('T', ' ');
             }
             if (token === 'date.today') return zonedToday(ctx.timeZone ?? FALLBACK_TIME_ZONE);
+            // v0.1.288 — el registro vinculado en curso de un bucle.
+            if (token.startsWith('item.')) return this.itemValue(ctx, token.slice('item.'.length));
+            // v0.1.288 — la respuesta del último webhook / conector y las guardadas con nombre.
+            if (token === 'webhook' || token.startsWith('webhook.')) {
+                return this.responseValue(ctx, token, ctx.webhook, token.slice('webhook.'.length));
+            }
+            if (token.startsWith('respuestas.')) {
+                const [name = '', ...rest] = token.slice('respuestas.'.length).split('.');
+                return this.responseValue(ctx, token, ctx.responses?.[name], rest.join('.'));
+            }
             // Un campo Persona guarda el id: `.email` y `.nombre` lo hacen útil
             // en un correo («Para: {{responsable.email}}»).
             const person = /^(before\.)?([a-zA-Z0-9_]+)\.(email|nombre)$/.exec(token);
@@ -543,11 +1060,52 @@ export class AutomationEngine {
         };
     }
 
+    /**
+     * v0.1.288 — `{{item.slug}}`: el valor del registro vinculado en curso;
+     * `{{item.record.id}}` su id; `{{item.responsable.email}}` de una persona.
+     */
+    private itemValue(ctx: RunContext, rest: string): unknown {
+        const item = ctx.item;
+        if (!item) return undefined;
+        if (rest === 'record.id') return item.recordId;
+        const person = /^([a-zA-Z0-9_]+)\.(email|nombre)$/.exec(rest);
+        if (person && item.fieldsBySlug.get(person[1]!)?.type === 'user') {
+            const key = item.slugToKey.get(person[1]!);
+            const id = Number(key !== undefined ? item.data[key] : undefined);
+            const info = Number.isInteger(id) && id > 0 ? ctx.people?.get(id) : undefined;
+            if (!info) return '';
+            return person[2] === 'email' ? info.email : info.name;
+        }
+        const key = item.slugToKey.get(rest);
+        return key !== undefined ? item.data[key] : undefined;
+    }
+
+    /**
+     * v0.1.288 — `{{webhook.status}}`, `{{webhook.body}}`, `{{webhook.body.a.0.b}}`
+     * (rutas anidadas con índices). Un objeto o una lista de objetos sale como
+     * JSON (un `[object Object]` no le sirve a nadie); una lista de valores
+     * simples, como lista (se une por coma en un texto).
+     */
+    private responseValue(ctx: RunContext, token: string, info: ResponseInfo | undefined, rest: string): unknown {
+        if (!info || info.simulated) {
+            if (ctx.sim) ctx.sim.unknownTokens.add(token);
+            return undefined;
+        }
+        if (rest === 'status') return info.status;
+        if (rest === '' || rest === 'body') return serializeResponseValue(info.body);
+        if (!rest.startsWith('body.')) return undefined;
+        const body = info.body;
+        if (body === null || typeof body !== 'object') return undefined;
+        return serializeResponseValue(getPath(body as Record<string, unknown>, rest.slice('body.'.length)));
+    }
+
     /** `merge` (valores crudos) y `mergeHtml` (valores escapados) con etiquetas y formato regional. */
     private mergers(ctx: RunContext, fv = this.accessor(ctx)): { merge: MergeFn; mergeHtml: (s: unknown) => string } {
         // v0.1.178 — `{{campo|label}}` traduce el value a la etiqueta de la opción.
-        const labels = labelResolverFor(ctx.fieldsBySlug);
-        const formatter = regionalFormatterFor(ctx.fieldsBySlug, ctx.format ?? DEFAULT_FORMAT, ctx.timeZone ?? FALLBACK_TIME_ZONE);
+        // v0.1.288 — dentro de un bucle, `{{item.estado|label}}` usa los campos del vinculado.
+        const fieldsBySlug = withItemFields(ctx);
+        const labels = labelResolverFor(fieldsBySlug);
+        const formatter = regionalFormatterFor(fieldsBySlug, ctx.format ?? DEFAULT_FORMAT, ctx.timeZone ?? FALLBACK_TIME_ZONE);
         const merge: MergeFn = (s, escapeValue) =>
             applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, escapeValue, labels, formatter);
         // SEC-08: variante que escapa los valores interpolados para contexto HTML.
@@ -561,18 +1119,29 @@ export class AutomationEngine {
      * que apunta a un campo Persona. Sólo miembros del equipo y activos.
      */
     private async ensurePeople(ctx: RunContext): Promise<void> {
-        const keys: string[] = [];
-        for (const [slug, f] of ctx.fieldsBySlug) {
-            if (f.type !== 'user') continue;
-            const key = ctx.slugToKey.get(slug);
-            if (key) keys.push(key);
+        const userKeys = (fieldsBySlug: Map<string, LabelFieldLike>, slugToKey: Map<string, string>): string[] => {
+            const out: string[] = [];
+            for (const [slug, f] of fieldsBySlug) {
+                if (f.type !== 'user') continue;
+                const key = slugToKey.get(slug);
+                if (key) out.push(key);
+            }
+            return out;
+        };
+        // Las personas del registro que disparó y (v0.1.288) las del vinculado en curso.
+        const sources: Array<{ keys: string[]; data: Record<string, unknown> }> = [];
+        const own = userKeys(ctx.fieldsBySlug, ctx.slugToKey);
+        if (own.length > 0) sources.push({ keys: own, data: ctx.data }, { keys: own, data: ctx.before ?? {} });
+        if (ctx.item) {
+            const itemKeys = userKeys(ctx.item.fieldsBySlug, ctx.item.slugToKey);
+            if (itemKeys.length > 0) sources.push({ keys: itemKeys, data: ctx.item.data });
         }
-        if (keys.length === 0) return;
+        if (sources.length === 0) return;
         ctx.people ??= new Map();
         const ids = new Set<number>();
-        for (const source of [ctx.data, ctx.before ?? {}]) {
-            for (const key of keys) {
-                const id = Number(source[key]);
+        for (const source of sources) {
+            for (const key of source.keys) {
+                const id = Number(source.data[key]);
                 if (Number.isInteger(id) && id > 0 && !ctx.people.has(id)) ids.add(id);
             }
         }
@@ -595,7 +1164,7 @@ export class AutomationEngine {
         for (const r of rows) ctx.people.set(r.id, { name: r.name ?? '', email: r.email });
     }
 
-    private async runOne(ctx: RunContext, auto: AutomationRow): Promise<void> {
+    private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<void> {
         ctx.automation = { id: auto.id, name: auto.name };
         const startedAt = new Date();
         let runId: number | null = null;
@@ -610,42 +1179,83 @@ export class AutomationEngine {
         }
         if (runId === null) return;
 
-        const log: ActionLogEntry[] = [];
-        let hadFail = false;
+        let flow: Flow;
         try {
-            for (const spec of auto.actions) {
-                for (const result of await this.executeStep(ctx, spec, 0)) {
-                    log.push(result);
-                    if (result.status === 'failed') hadFail = true;
-                }
-            }
+            flow = await this.runSteps(ctx, auto.actions, [], 0, 0);
         } catch (err) {
-            hadFail = true;
-            log.push({ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} });
+            flow = { log: [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }] };
             this.logger.error(`Automatización ${auto.id} falló: ${String(err)}`);
         }
+        await this.finalize(ctx, auto, runId, flow.log, flow.pause ?? null, flow.log.some((l) => l.status === 'failed'));
+    }
 
-        const status: AutomationRunStatus = hadFail ? 'failed' : 'success';
+    /**
+     * Cierra una corrida (o la deja en espera). Una pausa guarda el puntero
+     * y el contexto en `resume_state`: la reanudación la toma de ahí (Postgres
+     * es la fuente de verdad, no un job de Redis que podría perderse).
+     */
+    private async finalize(
+        ctx: RunContext,
+        auto: RunnableAutomation,
+        runId: number,
+        log: ActionLogEntry[],
+        pause: Pause | null,
+        hadFail: boolean,
+    ): Promise<void> {
+        const firstFail = log.find((l) => l.status === 'failed')?.message ?? 'Falló una acción';
         try {
             await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
-                this.automations.finishRun(tx, ctx.tenantId, runId!, {
-                    status,
-                    actionsLog: log,
-                    error: hadFail ? (log.find((l) => l.status === 'failed')?.message ?? 'Falló una acción') : null,
-                    finishedAt: new Date(),
-                }),
+                pause
+                    ? this.automations.pauseRun(tx, ctx.tenantId, runId, {
+                          actionsLog: capLog(log),
+                          resumeAt: pause.at,
+                          resumeState: this.resumeStateOf(ctx, pause, hadFail) as unknown as Record<string, unknown>,
+                          error: hadFail ? firstFail : null,
+                      })
+                    : this.automations.finishRun(tx, ctx.tenantId, runId, {
+                          status: (hadFail ? 'failed' : 'success') satisfies AutomationRunStatus,
+                          actionsLog: capLog(log),
+                          error: hadFail ? firstFail : null,
+                          finishedAt: new Date(),
+                      }),
             );
         } catch (err) {
             this.logger.error(`No se pudo cerrar la corrida ${runId} de la automatización ${auto.id}: ${errorText(err)}`);
         }
+        // Una pausa no es éxito ni falla: sólo se avisa si ya falló algo antes.
+        if (pause && !hadFail) return;
         this.reportRun(ctx, auto, hadFail ? log : null);
+    }
+
+    /** Lo que se persiste de una corrida en espera (ver `ResumeState`). */
+    private resumeStateOf(ctx: RunContext, pause: Pause, hadFail: boolean): ResumeState {
+        return {
+            v: 1,
+            wait_path: pause.waitPath,
+            resume_path: pause.resumePath,
+            wait: pause.wait,
+            wait_field: pause.waitField,
+            had_fail: hadFail,
+            ctx: {
+                // Con registro, al reanudar se RELEE: la foto sólo hace falta sin él.
+                data: ctx.recordId === null ? ctx.data : {},
+                ...(ctx.before ? { before: ctx.before } : {}),
+                ...(ctx.payload ? { payload: ctx.payload } : {}),
+                ...(ctx.pago ? { pago: ctx.pago } : {}),
+                ...(ctx.form ? { form: ctx.form } : {}),
+                ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
+                ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
+                ...(ctx.responses ? { responses: ctx.responses } : {}),
+                ...(ctx.chain ? { chain: ctx.chain } : {}),
+            },
+        };
     }
 
     /**
      * v0.1.285 (ADR-S44) — Una corrida fallida abre (o suma) el problema de esa
      * automatización y avisa a los admins; una corrida buena lo cierra.
      */
-    private reportRun(ctx: RunContext, auto: AutomationRow, failedLog: ActionLogEntry[] | null): void {
+    private reportRun(ctx: RunContext, auto: RunnableAutomation, failedLog: ActionLogEntry[] | null): void {
         const key = `automation:${auto.id}`;
         if (!failedLog) {
             this.incidents?.resolve(ctx.tenantId, key);
@@ -666,32 +1276,83 @@ export class AutomationEngine {
     }
 
     /**
-     * Ejecuta un step: gate por condición de la acción → if_else recursivo →
-     * acción concreta. Devuelve uno o más ActionLogEntry (if_else emite el
-     * summary + los de la rama ejecutada).
+     * v0.1.288 — Recorre una secuencia de pasos desde `from`. Devuelve el log
+     * y, si algún paso pausó (un «Esperar») o cortó la corrida, se detiene ahí:
+     * la pausa ya trae el puntero al paso que sigue.
      */
-    private async executeStep(ctx: RunContext, spec: ActionSpec, depth: number): Promise<ActionLogEntry[]> {
+    private async runSteps(ctx: RunContext, actions: readonly ActionSpec[], base: FlowPath, from: number, depth: number): Promise<Flow> {
+        const log: ActionLogEntry[] = [];
+        for (let i = from; i < actions.length; i++) {
+            const spec = normalizeSpec(actions[i]);
+            if (!spec) continue;
+            const flow = await this.runStep(ctx, spec, [...base, i], depth);
+            log.push(...flow.log);
+            if (flow.pause || flow.stop) return { log, ...(flow.pause ? { pause: flow.pause } : {}), ...(flow.stop ? { stop: true } : {}) };
+        }
+        return { log };
+    }
+
+    /**
+     * v0.1.288 — Retoma una corrida en el paso que sigue a una espera. La ruta
+     * puede entrar a una rama de un si/sino: se corre lo que falta de la rama
+     * (sin volver a evaluar la condición: ya se eligió) y después lo que sigue
+     * al si/sino en la secuencia de afuera.
+     */
+    private async resumeFrom(ctx: RunContext, actions: readonly ActionSpec[], resumePath: FlowPath, base: FlowPath, depth: number): Promise<Flow> {
+        if (resumePath.length === 1) return this.runSteps(ctx, actions, base, resumePath[0] as number, depth);
+        const idx = resumePath[0] as number;
+        const branch = resumePath[1] as FlowBranch;
+        const node = actions[idx];
+        if (!node || node.type !== 'if_else' || (branch !== 'then' && branch !== 'else')) {
+            throw new Error('La automatización cambió mientras esperaba: no se encontró dónde seguir.');
+        }
+        const inner = await this.resumeFrom(ctx, flowBranch(node, branch) as ActionSpec[], resumePath.slice(2), [...base, idx, branch], depth + 1);
+        if (inner.pause || inner.stop) return inner;
+        const rest = await this.runSteps(ctx, actions, base, idx + 1, depth);
+        return { log: [...inner.log, ...rest.log], ...(rest.pause ? { pause: rest.pause } : {}), ...(rest.stop ? { stop: true } : {}) };
+    }
+
+    /**
+     * Ejecuta un paso: gate por condición de la acción → contenedores (si/sino,
+     * bucle), esperar → acción concreta. Cada entrada del log lleva la ruta del
+     * paso (`details.path`): el historial y «Probar» la usan para ubicarlo.
+     */
+    private async runStep(ctx: RunContext, spec: ActionSpec, path: FlowPath, depth: number): Promise<Flow> {
+        const pathKey = flowPathKey(path);
+        const tag = (entries: ActionLogEntry[]): ActionLogEntry[] =>
+            entries.map((e) => (e.details && 'path' in e.details ? e : { ...e, details: { ...(e.details ?? {}), path: pathKey } }));
         await this.ensurePeople(ctx);
         const fv = this.accessor(ctx);
-        if (spec.condition && !evaluateCondition(spec.condition, fv, this.condOpts(ctx))) {
-            return [{ action: spec.type, status: 'skipped', message: 'Condición de ejecución no cumplida.', details: {} }];
+        if (spec.condition) {
+            // La misma evaluación que decide el motor, regla por regla en «Probar».
+            const ex = explainCondition(spec.condition, fv, this.condOpts(ctx));
+            if (!ex.matched) {
+                const entry = skip(spec.type, 'Condición de ejecución no cumplida.');
+                if (ctx.sim) entry.details = { checks: this.labelChecks(ctx, ex.checks) };
+                return { log: tag([entry]) };
+            }
         }
 
-        if (spec.type === 'if_else') {
-            return this.executeIfElse(ctx, spec.config ?? {}, depth);
+        if (spec.type === 'if_else') return this.executeIfElse(ctx, spec.config ?? {}, path, depth);
+        if (spec.type === 'for_each_linked') return this.executeLoop(ctx, spec.config ?? {}, path, depth);
+        if (spec.type === 'wait') {
+            const flow = this.executeWait(ctx, spec.config ?? {}, path);
+            return { ...flow, log: tag(flow.log) };
         }
 
         // Escribir registros: por RecordsService (abre y confirma su propia
         // transacción, con actividad, tiempo real y automatizaciones).
         if (spec.type === 'update_field' || spec.type === 'create_record') {
             try {
-                return [
-                    spec.type === 'update_field'
-                        ? await this.updateField(ctx, spec.config ?? {})
-                        : await this.createRecord(ctx, spec.config ?? {}),
-                ];
+                return {
+                    log: tag([
+                        spec.type === 'update_field'
+                            ? await this.updateField(ctx, spec.config ?? {})
+                            : await this.createRecord(ctx, spec.config ?? {}),
+                    ]),
+                };
             } catch (err) {
-                return [{ action: spec.type, status: 'failed', message: explainError(err), details: {} }];
+                return { log: tag([{ action: spec.type, status: 'failed', message: explainError(err), details: {} }]) };
             }
         }
 
@@ -700,42 +1361,270 @@ export class AutomationEngine {
         let out: ActionLogEntry | null = null;
         try {
             await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
-                out = await this.execAction(tx, ctx, spec);
+                out = await this.execAction(tx, ctx, spec, pathKey);
             });
-            return [out!];
+            return { log: tag([out!]) };
         } catch (err) {
             const done = out as ActionLogEntry | null;
-            if (done?.status === 'failed') return [done];
+            if (done?.status === 'failed') return { log: tag([done]) };
             const message = done ? `Se deshizo por un error de la base de datos: ${errorText(err)}` : errorText(err, 2000);
-            return [{ action: spec.type, status: 'failed', message, details: {} }];
+            return { log: tag([{ action: spec.type, status: 'failed', message, details: {} }]) };
         }
     }
 
-    private async executeIfElse(ctx: RunContext, config: Record<string, unknown>, depth: number): Promise<ActionLogEntry[]> {
+    private async executeIfElse(ctx: RunContext, config: Record<string, unknown>, path: FlowPath, depth: number): Promise<Flow> {
         const fv = this.accessor(ctx);
-        const matched = evaluateCondition(config.condition as ConditionData | undefined, fv, this.condOpts(ctx));
-        const branch = matched ? config.then_actions : config.else_actions;
-        const list: ActionSpec[] = Array.isArray(branch) ? (branch as ActionSpec[]) : [];
+        const ex = explainCondition(config.condition as ConditionData | undefined, fv, this.condOpts(ctx));
+        const matched = ex.matched;
+        const branch: FlowBranch = matched ? 'then' : 'else';
+        const list = flowBranch({ config }, branch) as ActionSpec[];
 
-        const out: ActionLogEntry[] = [
-            {
-                action: 'if_else',
-                status: 'success',
-                message: matched ? 'Se cumplió la condición → rama «Sí»' : 'No se cumplió la condición → rama «No»',
-                details: { branch: matched ? 'then' : 'else', count: list.length },
+        const summary: ActionLogEntry = {
+            action: 'if_else',
+            status: 'success',
+            message: matched ? 'Se cumplió la condición → rama «Sí»' : 'No se cumplió la condición → rama «No»',
+            details: {
+                branch,
+                count: list.length,
+                path: flowPathKey(path),
+                ...(ctx.sim ? { _sim: 'info', checks: this.labelChecks(ctx, ex.checks) } : {}),
             },
-        ];
-        if (depth >= MAX_IF_ELSE_DEPTH) return out;
-        for (const nested of list) {
-            if (!nested || typeof nested !== 'object' || typeof nested.type !== 'string') continue;
-            const step: ActionSpec = {
-                type: nested.type,
-                config: (nested.config as Record<string, unknown>) ?? {},
-                condition: nested.condition ?? null,
-            };
-            out.push(...(await this.executeStep(ctx, step, depth + 1)));
+        };
+        if (depth >= MAX_IF_ELSE_DEPTH) return { log: [summary] };
+        const inner = await this.runSteps(ctx, list, [...path, branch], 0, depth + 1);
+        return { log: [summary, ...inner.log], ...(inner.pause ? { pause: inner.pause } : {}), ...(inner.stop ? { stop: true } : {}) };
+    }
+
+    /**
+     * v0.1.288 — «Esperar». Calcula cuándo seguir (la MISMA función que
+     * muestra el editor) y devuelve una pausa: la corrida queda en `waiting`
+     * con el puntero al paso siguiente. Si la hora ya pasó, sigue sin esperar.
+     * Si la fecha del campo está vacía o no se puede leer, la corrida termina
+     * aquí: seguir de inmediato mandaría «1 día antes» un aviso de una fecha
+     * que no existe.
+     */
+    private executeWait(ctx: RunContext, config: Record<string, unknown>, path: FlowPath): Flow {
+        if (ctx.item) {
+            return { log: [skip('wait', 'No se puede esperar dentro de «Repetir por cada registro vinculado»: se saltó la espera.')] };
         }
-        return out;
+        const w = readWaitConfig(config);
+        let waitField: Pause['waitField'] = null;
+        let value: unknown;
+        if (w.mode === 'until_field') {
+            const key = ctx.slugToKey.get(w.dateField);
+            const def = ctx.fieldsBySlug.get(w.dateField);
+            if (!key || !def) {
+                return { log: [fail('wait', `El campo de fecha «${w.dateField}» ya no existe: revisa la espera en el editor.`)], stop: true };
+            }
+            if (def.type !== 'date' && def.type !== 'datetime') {
+                return { log: [fail('wait', `«${def.label ?? w.dateField}» no es un campo de fecha.`)], stop: true };
+            }
+            waitField = { key, label: def.label ?? w.dateField };
+            value = ctx.data[key];
+        }
+        const now = new Date();
+        const target = waitResumeAt(config, {
+            now,
+            timeZone: ctx.timeZone,
+            ...(waitField ? { field: { label: waitField.label, value } } : {}),
+        });
+        if (!target.ok) {
+            if (target.reason === 'empty' || target.reason === 'invalid') {
+                return { log: [skip('wait', `${target.message} La automatización no siguió.`)], stop: true };
+            }
+            return { log: [fail('wait', target.message)], stop: true };
+        }
+        const when = this.formatInstant(ctx, target.at);
+        const resumeCond = config.resume_condition as ConditionData | undefined;
+        if (ctx.sim) {
+            const ex = resumeCond ? explainCondition(resumeCond, this.accessor(ctx), this.condOpts(ctx)) : null;
+            const past = target.at.getTime() <= now.getTime();
+            return {
+                log: [
+                    ok('wait', past ? `La hora de la espera ya pasó (${when}): seguiría sin esperar.` : `Esperaría hasta ${when}; los pasos siguientes correrían después.`, {
+                        _sim: 'would_run',
+                        resume_at: target.at.toISOString(),
+                        ...(ex ? { checks: this.labelChecks(ctx, ex.checks), resume_condition_now: ex.matched } : {}),
+                    }),
+                ],
+            };
+        }
+        // Un margen chico: con la hora encima, esperar un tick de reloj no tiene sentido.
+        if (target.at.getTime() <= now.getTime() + 5_000) {
+            return { log: [ok('wait', `La hora de la espera ya pasó (${when}): siguió sin esperar.`)] };
+        }
+        const last = path[path.length - 1] as number;
+        return {
+            log: [ok('wait', `En espera hasta ${when}.`, { resume_at: target.at.toISOString() })],
+            pause: {
+                at: target.at,
+                waitPath: path,
+                resumePath: [...path.slice(0, -1), last + 1],
+                wait: config,
+                waitField,
+            },
+        };
+    }
+
+    /**
+     * v0.1.288 — «Repetir por cada registro vinculado». Trae los vinculados por
+     * la relación (en cualquier sentido), con el filtro de la otra lista, y
+     * corre las acciones anidadas una vez por cada uno (tope
+     * `FOR_EACH_MAX_ITEMS`). El log NO lleva cada acción de cada ítem —con 200
+     * vinculados explotaría—: una entrada resumen con el estado por ítem y el
+     * detalle del primero y de hasta 3 que fallaron.
+     */
+    private async executeLoop(ctx: RunContext, config: Record<string, unknown>, path: FlowPath, depth: number): Promise<Flow> {
+        const pathKey = flowPathKey(path);
+        const done = (entry: ActionLogEntry): Flow => ({ log: [{ ...entry, details: { ...entry.details, path: pathKey } }] });
+        if (ctx.item) return done(skip('for_each_linked', 'No se puede repetir dentro de otra repetición.'));
+        if (ctx.recordId === null) return done(skip('for_each_linked', 'Repetir por los vinculados necesita un registro (este disparo no tiene uno).'));
+        const inner = Array.isArray(config.actions) ? (config.actions as ActionSpec[]) : [];
+        const linked = await this.linkedItems(ctx, Number(config.relation_field_id), config.filter_tree);
+        if ('error' in linked) return done(fail('for_each_linked', linked.error));
+        const { other, items, total, maps } = linked;
+        if (items.length === 0) {
+            return done(
+                ok('for_each_linked', `Ningún registro vinculado de «${other.name}»${config.filter_tree ? ' cumplía el filtro' : ''}: no repitió nada.`, {
+                    total: 0,
+                    ...(ctx.sim ? { _sim: 'info' } : {}),
+                }),
+            );
+        }
+        const summary = {
+            list: other.name,
+            total,
+            processed: 0,
+            ok: 0,
+            failed: 0,
+            skipped: 0,
+            truncated: total > items.length,
+            items: [] as Array<{ id: number; status: string; message: string }>,
+            samples: {} as Record<string, ActionLogEntry[]>,
+        };
+        let failSamples = 0;
+        let firstLog: ActionLogEntry[] = [];
+        const saved = ctx.item;
+        try {
+            for (const [i, rec] of items.entries()) {
+                // «Probar» detalla el primero; el resto sólo se cuenta.
+                if (ctx.sim && i > 0) break;
+                ctx.item = { listId: other.id, listName: other.name, recordId: rec.id, data: rec.data, ...maps };
+                const flow = await this.runSteps(ctx, inner, [...path, 'each'], 0, depth + 1);
+                const failedEntry = flow.log.find((l) => l.status === 'failed');
+                const status = failedEntry ? 'failed' : flow.log.length > 0 && flow.log.every((l) => l.status === 'skipped') ? 'skipped' : 'success';
+                summary.processed++;
+                if (status === 'failed') summary.failed++;
+                else if (status === 'skipped') summary.skipped++;
+                else summary.ok++;
+                const message = (failedEntry?.message ?? flow.log.map((l) => l.message).filter(Boolean).join(' · ')).slice(0, 160);
+                summary.items.push({ id: rec.id, status, message });
+                if (i === 0) firstLog = flow.log;
+                if (i === 0 || (status === 'failed' && failSamples < 3)) {
+                    if (status === 'failed' && i !== 0) failSamples++;
+                    summary.samples[String(rec.id)] = flow.log.map((l) => ({ ...l, message: (l.message ?? '').slice(0, 300) }));
+                }
+            }
+        } finally {
+            ctx.item = saved;
+        }
+        if (ctx.sim) {
+            const more = items.length - 1;
+            const entry = ok(
+                'for_each_linked',
+                `Repetiría para ${total} ${total === 1 ? 'registro vinculado' : 'registros vinculados'} de «${other.name}»${summary.truncated ? ` (sólo los primeros ${FOR_EACH_MAX_ITEMS})` : ''}. Abajo, la simulación del primero (#${items[0]!.id})${more > 0 ? `; los otros ${more} correrían igual` : ''}.`,
+                { _sim: 'info', total, path: pathKey, items: items.slice(0, 20).map((r) => r.id) },
+            );
+            return { log: [entry, ...firstLog] };
+        }
+        const parts = [`Repitió para ${summary.processed} de ${total} ${total === 1 ? 'registro vinculado' : 'registros vinculados'} de «${other.name}»`];
+        if (summary.truncated) parts.push(`(tope de ${FOR_EACH_MAX_ITEMS}: ${total - items.length} sin procesar)`);
+        const tally = [`${summary.ok} bien`, ...(summary.failed > 0 ? [`${summary.failed} con fallas`] : []), ...(summary.skipped > 0 ? [`${summary.skipped} omitidos`] : [])];
+        const message = `${parts.join(' ')}: ${tally.join(', ')}.`;
+        const entry = summary.failed > 0 ? fail('for_each_linked', message, summary) : ok('for_each_linked', message, summary);
+        return { log: [{ ...entry, details: { ...entry.details, path: pathKey } }] };
+    }
+
+    /**
+     * v0.1.288 — Los registros vinculados al del run por una relación, en
+     * cualquiera de los dos sentidos (la relación vive en esta lista o en la
+     * otra y apunta aquí), con el filtro de la otra lista. Pasa por
+     * `RecordsService.list`: el mismo whitelist de filtros que la tabla.
+     */
+    private async linkedItems(
+        ctx: RunContext,
+        relationFieldId: number,
+        rawFilter: unknown,
+    ): Promise<
+        | { error: string }
+        | {
+              other: { id: number; name: string };
+              items: Array<{ id: number; data: Record<string, unknown> }>;
+              total: number;
+              maps: Pick<ItemContext, 'slugToKey' | 'fieldsBySlug'>;
+          }
+    > {
+        const svc = this.records();
+        if (!svc) return { error: 'El servicio de registros no está disponible en este servidor.' };
+        if (!Number.isInteger(relationFieldId) || relationFieldId <= 0) return { error: 'Elige la relación por la que se repite.' };
+        const rel = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const f = await this.fields.findAnyById(tx, ctx.tenantId, relationFieldId);
+            if (!f || f.type !== 'relation') return null;
+            const target = Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0);
+            let direction: 'forward' | 'reverse';
+            let otherId: number;
+            if (f.listId === ctx.listId) {
+                direction = 'forward';
+                otherId = target;
+            } else if (target === ctx.listId) {
+                direction = 'reverse';
+                otherId = f.listId;
+            } else {
+                return null;
+            }
+            const [other] = await tx
+                .select({ id: lists.id, name: lists.name })
+                .from(lists)
+                .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, otherId)))
+                .limit(1);
+            if (!other) return null;
+            const maps = await this.fieldMaps(tx, ctx.tenantId, other.id);
+            return { direction, other, maps: { slugToKey: maps.slugToKey, fieldsBySlug: maps.fieldsBySlug } };
+        });
+        if (!rel) return { error: 'La relación del bucle ya no existe o no conecta con esta lista: revísala en el editor.' };
+        let filter: FilterGroup | undefined;
+        if (rawFilter) {
+            const parsed = filterTreeSchema.safeParse(rawFilter);
+            if (!parsed.success) return { error: 'El filtro de los vinculados está mal configurado: revísalo en el editor.' };
+            filter = parsed.data;
+        }
+        const page = await svc.list(
+            ctx.tenantId,
+            SYSTEM_ACTOR,
+            String(rel.other.id),
+            { limit: FOR_EACH_MAX_ITEMS, sort_dir: 'asc', with_total: true, ...(filter ? { filter_tree: filter } : {}) } as ListRecordsQuery,
+            { related: { fieldId: relationFieldId, recordId: ctx.recordId!, direction: rel.direction } },
+        );
+        return {
+            other: rel.other,
+            items: page.data.map((r) => ({ id: r.id, data: r.data })),
+            total: typeof page.meta.total === 'number' ? page.meta.total : page.data.length,
+            maps: rel.maps,
+        };
+    }
+
+    /** Las reglas de una condición con la etiqueta de cada campo (para «Probar»). */
+    private labelChecks(ctx: RunContext, checks: Array<{ field: string; op: string; expected: unknown; actual: unknown; ok: boolean }>): ConditionCheck[] {
+        const all = withItemFields(ctx);
+        return checks.map((c) => ({ ...c, label: all.get(c.field.replace(/^before\./, ''))?.label ?? c.field }));
+    }
+
+    /** Un instante en el formato y la zona de la empresa («21/10/2026 14:30»). */
+    private formatInstant(ctx: RunContext, at: Date): string {
+        return formatEmailFieldValue({ type: 'datetime', config: {} }, at.toISOString(), {
+            ...(ctx.format ?? DEFAULT_FORMAT),
+            timezone: ctx.timeZone ?? FALLBACK_TIME_ZONE,
+        });
     }
 
     /**
@@ -771,16 +1660,27 @@ export class AutomationEngine {
      * `data` completo desde la foto del evento y pisaba lo que otra persona
      * hubiera cambiado mientras tanto) y cada valor pasa por el validador del
      * campo: lo que no se puede convertir se saltea con el motivo en el log.
+     *
+     * v0.1.288 — dentro de un bucle, `target: 'item'` escribe en el registro
+     * VINCULADO en curso (con los campos de su lista); sin eso, en el que
+     * disparó. En «Probar» se calcula todo igual y en vez de escribir se
+     * devuelve el antes → después (y se aplica en memoria, para que los pasos
+     * siguientes lo vean como en una corrida real).
      */
     private async updateField(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
-        if (ctx.recordId === null) return skip('update_field', 'Sin registro en contexto.');
+        const onItem = cfg.target === 'item';
+        if (onItem && !ctx.item) return skip('update_field', '«El registro vinculado» sólo existe dentro de «Repetir por cada registro vinculado».');
+        const target = onItem
+            ? { listId: ctx.item!.listId, recordId: ctx.item!.recordId as number | null, slugToKey: ctx.item!.slugToKey, fieldsBySlug: ctx.item!.fieldsBySlug }
+            : { listId: ctx.listId, recordId: ctx.recordId, slugToKey: ctx.slugToKey, fieldsBySlug: ctx.fieldsBySlug };
+        if (target.recordId === null) return skip('update_field', 'Sin registro en contexto.');
         const values = (cfg.values as Record<string, unknown>) ?? {};
         const patch: Record<string, unknown> = {};
         const applied: Record<string, unknown> = {};
         const invalid: string[] = [];
         for (const [slug, raw] of Object.entries(values)) {
-            const key = ctx.slugToKey.get(slug);
-            const field = ctx.fieldsBySlug.get(slug);
+            const key = target.slugToKey.get(slug);
+            const field = target.fieldsBySlug.get(slug);
             if (!key || !field) {
                 invalid.push(`${slug} (el campo ya no existe)`);
                 continue;
@@ -810,9 +1710,11 @@ export class AutomationEngine {
         }
 
         const current = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
-            this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, ctx.recordId!),
+            this.recordsRepo.findById(tx, ctx.tenantId, target.listId, target.recordId!),
         );
         if (!current) return skip('update_field', 'El registro ya no existe.');
+        // En «Probar» los pasos anteriores pudieron cambiar el registro EN MEMORIA.
+        const currentData = ctx.sim ? (onItem ? ctx.item!.data : ctx.data) : current.data;
 
         // v0.1.213 — en una lista de tienda, una automatización respeta
         // las MISMAS reglas que una persona: lo que la tienda no
@@ -820,15 +1722,15 @@ export class AutomationEngine {
         // motivo en el log, en vez de escribir un valor que la próxima
         // sincronización pisaría en silencio.
         const storeSkipped: string[] = [];
-        const marker = await this.storeMarkerOf(ctx, ctx.listId);
+        const marker = await this.storeMarkerOf(ctx, target.listId);
         if (marker) {
-            const merged = { ...current.data, ...patch };
+            const merged = { ...currentData, ...patch };
             const row = (packSlug: string): unknown => {
                 const id = marker.fields[packSlug];
                 return id ? merged[`f${id}`] : undefined;
             };
             for (const slug of Object.keys(applied)) {
-                const key = ctx.slugToKey.get(slug)!;
+                const key = target.slugToKey.get(slug)!;
                 const fieldId = Number(key.slice(1));
                 const access = storeCellAccess(marker, fieldId, row);
                 const err =
@@ -846,31 +1748,49 @@ export class AutomationEngine {
 
         // Lo que ya tenía ese valor no se re-escribe (ni dispara nada).
         for (const [slug, value] of Object.entries(applied)) {
-            const key = ctx.slugToKey.get(slug)!;
-            if (ctx.fieldsBySlug.get(slug)?.type === 'relation') continue;
-            if (sameValue(current.data[key], value)) {
+            const key = target.slugToKey.get(slug)!;
+            if (target.fieldsBySlug.get(slug)?.type === 'relation') continue;
+            if (sameValue(currentData[key], value)) {
                 delete patch[key];
                 delete applied[slug];
             }
         }
 
         const notes = [...storeSkipped, ...invalid];
+        const where = onItem ? ` (registro vinculado #${target.recordId})` : '';
         if (Object.keys(patch).length === 0) {
             // Nada válido que escribir por valores que no convierten: la
             // automatización está mal configurada y se tiene que ver.
             if (invalid.length > 0 && storeSkipped.length === 0) {
-                return fail('update_field', `No se pudo escribir ningún valor: ${invalid.join('; ')}.`);
+                return fail('update_field', `No se pudo escribir ningún valor${where}: ${invalid.join('; ')}.`);
             }
-            if (notes.length > 0) return skip('update_field', `Nada que cambiar: ${notes.join('; ')}`);
-            return skip('update_field', 'Los campos ya tenían esos valores.');
+            if (notes.length > 0) return skip('update_field', `Nada que cambiar${where}: ${notes.join('; ')}`);
+            return skip('update_field', `Los campos ya tenían esos valores${where}.`);
         }
 
-        const after = await this.writeUpdate(ctx, patch, current.data);
-        ctx.data = after; // acciones posteriores ven el valor actualizado.
         const count = Object.keys(applied).length;
         const note = notes.length > 0 ? ` Omitidos: ${notes.join('; ')}.` : '';
-        return ok('update_field', `Actualizó ${count} campo(s).${note}`, {
+        if (ctx.sim) {
+            const changes = Object.entries(applied).map(([slug, value]) => {
+                const key = target.slugToKey.get(slug)!;
+                return { field: slug, label: target.fieldsBySlug.get(slug)?.label ?? slug, before: currentData[key] ?? null, after: value };
+            });
+            const next = { ...currentData, ...patch };
+            if (onItem) ctx.item!.data = next;
+            else ctx.data = next;
+            return ok('update_field', `Cambiaría ${count} campo(s)${where}.${note}`, {
+                _sim: 'would_run',
+                changes,
+                ...(notes.length > 0 ? { warnings: notes } : {}),
+            });
+        }
+
+        const after = await this.writeUpdate(ctx, target, patch, current.data);
+        if (onItem) ctx.item!.data = after;
+        else ctx.data = after; // acciones posteriores ven el valor actualizado.
+        return ok('update_field', `Actualizó ${count} campo(s)${where}.${note}`, {
             values: applied,
+            ...(onItem ? { record_id: target.recordId } : {}),
             ...(notes.length > 0 ? { warnings: notes } : {}),
         });
     }
@@ -970,8 +1890,27 @@ export class AutomationEngine {
             if (!filled) skipped.push(`«${f.label}» quedó vacío y es obligatorio`);
         }
 
-        const created = await this.writeCreate(ctx, targetList, data, relations.filter((r) => r.ids.length > 0));
         const note = skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : '';
+        if (ctx.sim) {
+            // v0.1.288 — «Probar»: los valores ya resueltos y validados, sin crear nada.
+            const byId = new Map(pre.fields.map((f) => [jsonbKeyForField(f.id), f]));
+            const shown = [
+                ...Object.entries(data).map(([k, v]) => ({ field: byId.get(k)?.slug ?? k, label: byId.get(k)?.label ?? k, value: v })),
+                ...relations
+                    .filter((r) => r.ids.length > 0)
+                    .map((r) => ({ field: `f${r.fieldId}`, label: r.label, value: r.ids })),
+            ];
+            const [tl] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                tx.select({ name: lists.name }).from(lists).where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, targetList))).limit(1),
+            );
+            return ok('create_record', `Crearía un registro en «${tl?.name ?? `lista ${targetList}`}» con ${shown.length} valor(es).${note}`, {
+                _sim: 'would_run',
+                list: tl?.name ?? null,
+                values: shown,
+                ...(skipped.length > 0 ? { warnings: skipped } : {}),
+            });
+        }
+        const created = await this.writeCreate(ctx, targetList, data, relations.filter((r) => r.ids.length > 0));
         return ok('create_record', `Creó registro #${created.id} en lista ${targetList}.${note}`, {
             record_id: created.id,
             ...(skipped.length > 0 ? { warnings: skipped } : {}),
@@ -984,27 +1923,37 @@ export class AutomationEngine {
      * lista, con la cadena para cortar loops. Sin él: escritura atómica
      * (`data || patch`) y el aviso de cambio.
      */
-    private async writeUpdate(ctx: RunContext, patch: Record<string, unknown>, before: Record<string, unknown>): Promise<Record<string, unknown>> {
+    private async writeUpdate(
+        ctx: RunContext,
+        target: { listId: number; recordId: number | null; slugToKey: Map<string, string>; fieldsBySlug: Map<string, LabelFieldLike> },
+        patch: Record<string, unknown>,
+        before: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
         const chain = nextChain(ctx.chain, ctx.automation?.id ?? 0);
         const dispatchOpts = chain.depth > MAX_AUTOMATION_CHAIN_DEPTH ? { noAutomations: true } : { automationChain: chain };
+        const recordId = target.recordId!;
         const svc = this.records();
         if (svc) {
-            const dto = await svc.update(ctx.tenantId, SYSTEM_ACTOR, String(ctx.listId), ctx.recordId!, { data: patch }, dispatchOpts);
+            const dto = await svc.update(ctx.tenantId, SYSTEM_ACTOR, String(target.listId), recordId, { data: patch }, dispatchOpts);
             return dto.data;
         }
-        const relationKeys = Object.keys(patch).filter((k) => ctx.fieldsBySlug.get(slugOf(ctx, k) ?? '')?.type === 'relation');
+        const slugOfKey = (key: string): string | undefined => {
+            for (const [slug, k] of target.slugToKey) if (k === key) return slug;
+            return undefined;
+        };
+        const relationKeys = Object.keys(patch).filter((k) => target.fieldsBySlug.get(slugOfKey(k) ?? '')?.type === 'relation');
         const dataPatch = Object.fromEntries(Object.entries(patch).filter(([k]) => !relationKeys.includes(k)));
         const after = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
-            const row = await patchRecordData(tx, ctx.tenantId, ctx.listId, ctx.recordId!, dataPatch);
+            const row = await patchRecordData(tx, ctx.tenantId, target.listId, recordId, dataPatch);
             for (const key of relationKeys) {
-                await this.relationsRepo.sync(tx, ctx.tenantId, Number(key.slice(1)), ctx.recordId!, patch[key] as number[]);
+                await this.relationsRepo.sync(tx, ctx.tenantId, Number(key.slice(1)), recordId, patch[key] as number[]);
             }
             return row;
         });
         if (!after) throw new Error('El registro ya no existe.');
-        this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId!, before, after, actorId: SYSTEM_USER });
+        this.changes?.emit({ tenantId: ctx.tenantId, listId: target.listId, recordId, before, after, actorId: SYSTEM_USER });
         if (!('noAutomations' in dispatchOpts)) {
-            this.dispatcher?.dispatch({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId!, trigger: 'record_updated', after, before, chain });
+            this.dispatcher?.dispatch({ tenantId: ctx.tenantId, listId: target.listId, recordId, trigger: 'record_updated', after, before, chain });
         }
         return after;
     }
@@ -1056,10 +2005,15 @@ export class AutomationEngine {
         return limitRecipients(merge(withPeople));
     }
 
-    private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec): Promise<ActionLogEntry> {
+    private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec, pathKey = ''): Promise<ActionLogEntry> {
         const fv = this.accessor(ctx);
         const { merge, mergeHtml } = this.mergers(ctx, fv);
         const cfg = spec.config ?? {};
+        // v0.1.288 — «Probar»: todo se resuelve con el MISMO código; los efectos
+        // (enviar, llamar, escribir) se reemplazan por la descripción de lo que
+        // harían. Un webhook/conector marcado por la persona se ejecuta de verdad.
+        const sim = ctx.sim;
+        const realCall = !sim || sim.realSteps.has(pathKey);
 
         switch (spec.type) {
             case 'bulk_edit': {
@@ -1078,6 +2032,32 @@ export class AutomationEngine {
                     const f = filterTreeSchema.safeParse(cfg.filter_tree);
                     if (!f.success) return fail('bulk_edit', 'El filtro de la acción está mal configurado.');
                     filter = f.data;
+                }
+                if (sim) {
+                    const svc = this.records();
+                    const page = svc
+                        ? await svc.list(
+                              ctx.tenantId,
+                              SYSTEM_ACTOR,
+                              String(ctx.listId),
+                              {
+                                  limit: 1,
+                                  sort_dir: 'asc',
+                                  with_total: true,
+                                  ...(filter ? { filter_tree: filter as FilterGroup } : {}),
+                                  ...(typeof cfg.search === 'string' && cfg.search.trim() !== '' ? { search: cfg.search.trim() } : {}),
+                              } as ListRecordsQuery,
+                              { tx },
+                          )
+                        : null;
+                    const n = typeof page?.meta.total === 'number' ? page.meta.total : null;
+                    return ok(
+                        'bulk_edit',
+                        n === null
+                            ? `Editaría en lote ${filter ? 'los registros que cumplen el filtro' : 'toda la lista'} (${parsed.length} ${parsed.length === 1 ? 'cambio' : 'cambios'}).`
+                            : `Editaría ${n} ${n === 1 ? 'registro' : 'registros'} (${parsed.length} ${parsed.length === 1 ? 'cambio' : 'cambios'}) si corriera ahora.`,
+                        { _sim: 'would_run', count: n, operations: parsed.length },
+                    );
                 }
                 const queued = this.dispatcher?.dispatchBulkEdit({
                     tenantId: ctx.tenantId,
@@ -1123,21 +2103,41 @@ export class AutomationEngine {
                 if (!req.url) return skip('call_webhook', 'URL vacía.');
                 // Guard anti-SSRF (SEC-03): bloquea metadata/loopback/red interna
                 // y pinea la IP resuelta (anti DNS-rebinding) + timeout.
+                const hide = connection?.redact ?? [];
+                const shownUrl = redactValues(req.url, hide);
+                const shownRequest = {
+                    method: req.method,
+                    url: shownUrl,
+                    headers: connection ? maskHeaders(req.headers) : req.headers,
+                    body: req.body !== undefined ? redactValues(req.body, hide) : null,
+                };
+                if (!realCall) {
+                    this.rememberResponse(ctx, cfg, null, pathKey);
+                    return ok('call_webhook', `Llamaría ${req.method} ${shownUrl}.`, { _sim: 'would_run', request: shownRequest });
+                }
+                // v0.1.288 — se retiene hasta RESPONSE_BODY_MAX_BYTES (64 KB) de
+                // la respuesta: los pasos siguientes pueden leerla con
+                // {{webhook.body.x}}. Antes se guardaban 2 KB, sólo para el
+                // mensaje de error; más de 64 KB inflaría el contexto que viaja
+                // en una espera.
                 const res = await safeWebhookFetch(req.url, {
                     method: req.method,
                     headers: req.headers,
                     body: req.body,
                     captureBody: true,
-                    maxCaptureBytes: 2048,
+                    maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
                 });
-                const shownUrl = redactValues(req.url, connection?.redact ?? []);
+                this.rememberResponse(ctx, cfg, res, pathKey, hide);
+                const shownResponse = sim ? { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } : undefined;
                 // Un 4xx/5xx NO es éxito: antes quedaba «→ 500» como corrida
                 // exitosa y nadie se enteraba de que el destino rechazaba todo.
                 if (res.status < 200 || res.status >= 300) {
-                    return httpFail('call_webhook', `${req.method} ${shownUrl}`, res.status, res.body);
+                    const failed = httpFail('call_webhook', `${req.method} ${shownUrl}`, res.status, redactValues(res.body ?? '', hide));
+                    return sim ? { ...failed, details: { ...failed.details, request: shownRequest, response: shownResponse } } : failed;
                 }
                 return ok('call_webhook', `${req.method} ${shownUrl} → ${res.status}`, {
                     status: res.status,
+                    ...(sim ? { _sim: 'ran', request: shownRequest, response: shownResponse } : {}),
                 });
             }
             case 'connector_action': {
@@ -1190,6 +2190,15 @@ export class AutomationEngine {
                         throw new Error(`${resolved.action.label}: el monto «${v.amount ?? ''}» no es un número.`);
                     }
                     const days = Number(v.expires_days ?? '');
+                    if (sim) {
+                        // Nunca de verdad en una prueba: crearía un cobro real a nombre de la empresa.
+                        ctx.pago = { link: '(se crea al correr)', monto: amount, titulo: v.title ?? '' };
+                        return ok('connector_action', `Crearía un link de pago «${v.title ?? ''}» por ${amount} ${v.currency ?? 'COP'}${v.payer_email ? ` para ${v.payer_email}` : ''}.`, {
+                            _sim: 'would_run',
+                            action: resolved.action.key,
+                            integration: resolved.integration.key,
+                        });
+                    }
                     const created = await this.collections.createLinkInTx(tx, ctx.tenantId, {
                         connectionId: connId,
                         listId: ctx.listId,
@@ -1221,18 +2230,41 @@ export class AutomationEngine {
                         return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
                     }
                     const req = buildIntegrationRequest(integ.key, resolved.action.key, compiled, integ.creds);
+                    const hide = [integ.creds.secret, integ.creds.accessToken].filter((x) => typeof x === 'string' && x.length >= 4);
+                    const shownRequest = {
+                        method: req.method,
+                        url: redactValues(req.url, hide),
+                        headers: maskHeaders(req.headers),
+                        body: req.body !== undefined ? redactValues(req.body, hide) : null,
+                    };
+                    if (!realCall) {
+                        this.rememberResponse(ctx, cfg, null, pathKey);
+                        return ok('connector_action', `${resolved.name} → ${resolved.action.label} (sin ejecutar).`, {
+                            _sim: 'would_run',
+                            action: resolved.action.key,
+                            integration: integ.key,
+                            request: shownRequest,
+                        });
+                    }
                     const res = await safeWebhookFetch(req.url, {
                         method: req.method,
                         headers: req.headers,
                         body: req.body,
                         captureBody: true,
+                        maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
                     });
+                    this.rememberResponse(ctx, cfg, res, pathKey, hide);
                     const problem = checkIntegrationResponse(integ.key, res.status, res.body ?? '');
                     if (problem) throw new Error(`${resolved.action.label}: ${problem}`);
                     return ok(
                         'connector_action',
                         `${resolved.name} → ${resolved.action.label}: ${res.status}`,
-                        { status: res.status, action: resolved.action.key, integration: integ.key },
+                        {
+                            status: res.status,
+                            action: resolved.action.key,
+                            integration: integ.key,
+                            ...(sim ? { _sim: 'ran', request: shownRequest, response: { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } } : {}),
+                        },
                     );
                 }
                 const call = compileConnectorCall(resolved.action, values, merge);
@@ -1254,26 +2286,44 @@ export class AutomationEngine {
                 if (!req.url) {
                     return skip('connector_action', 'La acción no tiene URL ni ruta.');
                 }
+                const hide = resolved.parts.redact;
+                const shownRequest = {
+                    method: req.method,
+                    url: redactValues(req.url, hide),
+                    headers: maskHeaders(req.headers),
+                    body: req.body !== undefined ? redactValues(req.body, hide) : null,
+                };
+                if (!realCall) {
+                    this.rememberResponse(ctx, cfg, null, pathKey);
+                    return ok('connector_action', `${resolved.name} → ${resolved.action.label} (sin ejecutar).`, {
+                        _sim: 'would_run',
+                        action: resolved.action.key,
+                        request: shownRequest,
+                    });
+                }
                 const res = await safeWebhookFetch(req.url, {
                     method: req.method,
                     headers: req.headers,
                     body: req.body,
                     captureBody: true,
-                    maxCaptureBytes: 2048,
+                    maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
                 });
+                this.rememberResponse(ctx, cfg, res, pathKey, hide);
+                const shownResponse = sim ? { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } : undefined;
                 // Un 4xx/5xx es una falla (abre el problema de la automatización).
                 if (res.status < 200 || res.status >= 300) {
-                    return httpFail(
+                    const failed = httpFail(
                         'connector_action',
                         `${resolved.name} → ${resolved.action.label}`,
                         res.status,
-                        redactValues(res.body ?? '', resolved.parts.redact),
+                        redactValues(res.body ?? '', hide),
                     );
+                    return sim ? { ...failed, details: { ...failed.details, request: shownRequest, response: shownResponse } } : failed;
                 }
                 return ok(
                     'connector_action',
                     `${resolved.name} → ${resolved.action.label}: ${res.status}`,
-                    { status: res.status, action: resolved.action.key },
+                    { status: res.status, action: resolved.action.key, ...(sim ? { _sim: 'ran', request: shownRequest, response: shownResponse } : {}) },
                 );
             }
             case 'generate_pdf': {
@@ -1285,6 +2335,16 @@ export class AutomationEngine {
                 if (ctx.recordId === null) return skip('generate_pdf', 'Un PDF necesita un registro.');
                 const templateId = Number(cfg.document_template_id);
                 if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elige la plantilla del documento.');
+                if (sim) {
+                    const name = await this.templateName(tx, ctx.tenantId, templateId);
+                    ctx.pdf = { nombre: `${name ?? 'documento'}.pdf`, link: '(se genera al correr)', kb: 0, numero: '(se asigna al generar)' };
+                    const save = typeof cfg.save_field === 'string' && cfg.save_field !== '' ? cfg.save_field : '';
+                    return ok(
+                        'generate_pdf',
+                        `Generaría el PDF «${name ?? `plantilla #${templateId}`}»${save ? ` y lo guardaría en «${ctx.fieldsBySlug.get(save)?.label ?? save}»` : ''}. En la prueba no se arma: le asignaría un número de documento.`,
+                        { _sim: 'would_run', template: name },
+                    );
+                }
                 const doc = await this.pdfFor(tx, ctx, templateId, typeof cfg.filename === 'string' ? merge(cfg.filename) : '');
                 const kb = Math.max(1, Math.round(doc.buffer.length / 1024));
                 // v0.1.268 — sin guardarlo, `{{pdf.link}}` es un enlace firmado
@@ -1364,6 +2424,24 @@ export class AutomationEngine {
                 // v0.1.266 — PDFs adjuntos (cuenta de cobro, recibo…). Un PDF que
                 // no se puede armar FALLA el envío con el motivo: mandar el correo
                 // sin el documento que promete sería peor.
+                if (sim) {
+                    const ids = pdfTemplateIds(cfg);
+                    const names: string[] = [];
+                    for (const id of ids) names.push(`${(await this.templateName(tx, ctx.tenantId, id)) ?? `plantilla #${id}`}.pdf`);
+                    return ok('send_email', `Enviaría un correo a ${to}: «${subject}».`, {
+                        _sim: 'would_run',
+                        email: {
+                            to,
+                            cc: cc || null,
+                            bcc: bcc || null,
+                            subject,
+                            html: composed.html ?? null,
+                            text: composed.text ?? null,
+                            attachments: names,
+                            signature_note: composed.signatureNote ?? null,
+                        },
+                    });
+                }
                 const attachments = await this.emailAttachments(tx, ctx, cfg);
                 await this.mail.sendNow({
                     tenantId: ctx.tenantId,
@@ -1393,6 +2471,43 @@ export class AutomationEngine {
             default:
                 return skip(spec.type, 'Acción no reconocida.');
         }
+    }
+
+    /**
+     * v0.1.288 — Guarda la respuesta para los pasos siguientes: la del último
+     * webhook (`{{webhook.x}}`) y, si el paso tiene nombre, con su nombre
+     * (`{{respuestas.<nombre>.x}}`). `null` = «Probar» sin ejecutarla.
+     */
+    private rememberResponse(ctx: RunContext, cfg: Record<string, unknown>, res: SafeFetchResult | null, pathKey: string, hide: string[] = []): void {
+        const info: ResponseInfo =
+            res === null
+                ? { status: 0, body: null, simulated: true }
+                : {
+                      status: res.status,
+                      body: parseResponseBody(hide.length > 0 ? redactValues(res.body ?? '', hide) : (res.body ?? ''), res.truncated === true),
+                      ...(res.truncated ? { truncated: true } : {}),
+                  };
+        ctx.webhook = info;
+        const name = typeof cfg.response_name === 'string' ? cfg.response_name.trim() : '';
+        if (RESPONSE_NAME_RE.test(name)) {
+            const next = { ...(ctx.responses ?? {}) };
+            delete next[name];
+            next[name] = info;
+            // Con muchos pasos con nombre, se conservan las 10 más recientes.
+            const names = Object.keys(next);
+            for (const old of names.slice(0, Math.max(0, names.length - 10))) delete next[old];
+            ctx.responses = next;
+        }
+        if (ctx.sim && res !== null) ctx.sim.responses[pathKey] = info.body;
+    }
+
+    private async templateName(tx: Tx, tenantId: number, templateId: number): Promise<string | null> {
+        const [row] = await tx
+            .select({ name: documentTemplates.name })
+            .from(documentTemplates)
+            .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, templateId)))
+            .limit(1);
+        return row?.name ?? null;
     }
 
     /**
@@ -1434,9 +2549,7 @@ export class AutomationEngine {
 
     /** Los PDF que `send_email` adjunta (`pdf_templates`: ids de plantillas). */
     private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<MailAttachment[]> {
-        const ids = Array.isArray(cfg.pdf_templates)
-            ? [...new Set(cfg.pdf_templates.map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 5)
-            : [];
+        const ids = pdfTemplateIds(cfg);
         if (ids.length === 0) return [];
         if (ctx.recordId === null) throw new Error('Los PDF adjuntos necesitan un registro.');
         const out: MailAttachment[] = [];
@@ -1571,12 +2684,6 @@ function sameValue(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** El slug de una clave `f{id}` en el contexto del run. */
-function slugOf(ctx: RunContext, key: string): string | undefined {
-    for (const [slug, k] of ctx.slugToKey) if (k === key) return slug;
-    return undefined;
-}
-
 /**
  * Escritura ATÓMICA de sólo las claves que cambian: `data || patch` (y las
  * que se vacían, fuera). Lo que otra persona cambió entre el evento y esta
@@ -1683,4 +2790,87 @@ export function parseAmount(raw: string): number | null {
     }
     const n = Number(t);
     return Number.isFinite(n) ? n : null;
+}
+
+/** Los ids de las plantillas PDF que adjunta un «Enviar email» (hasta 5). */
+function pdfTemplateIds(cfg: Record<string, unknown>): number[] {
+    return Array.isArray(cfg.pdf_templates)
+        ? [...new Set(cfg.pdf_templates.map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 5)
+        : [];
+}
+
+/** v0.1.288 — un paso del árbol con su forma normal (o null si no es un paso). */
+function normalizeSpec(raw: unknown): ActionSpec | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as { type?: unknown; config?: unknown; condition?: unknown };
+    if (typeof r.type !== 'string' || r.type === '') return null;
+    return {
+        type: r.type,
+        config: r.config && typeof r.config === 'object' ? (r.config as Record<string, unknown>) : {},
+        condition: (r.condition as ConditionData | null | undefined) ?? null,
+    };
+}
+
+/** v0.1.288 — los campos del run + los del vinculado en curso como `item.<slug>`. */
+function withItemFields(ctx: RunContext): Map<string, LabelFieldLike> {
+    if (!ctx.item) return ctx.fieldsBySlug;
+    const out = new Map(ctx.fieldsBySlug);
+    for (const [slug, f] of ctx.item.fieldsBySlug) out.set(`item.${slug}`, f);
+    return out;
+}
+
+/** v0.1.288 — el cuerpo de una respuesta: JSON si se puede leer, si no el texto. */
+function parseResponseBody(text: string, truncated: boolean): unknown {
+    const t = text.trim();
+    if (t === '') return '';
+    if (!truncated && (t.startsWith('{') || t.startsWith('['))) {
+        try {
+            return JSON.parse(t) as unknown;
+        } catch {
+            return text;
+        }
+    }
+    return text;
+}
+
+/** Un valor de una respuesta para un texto: objetos como JSON, listas simples como lista. */
+function serializeResponseValue(v: unknown): unknown {
+    if (v === null || v === undefined) return v;
+    if (Array.isArray(v)) return v.every((x) => x === null || typeof x !== 'object') ? v : JSON.stringify(v);
+    if (typeof v === 'object') return JSON.stringify(v);
+    return v;
+}
+
+/**
+ * v0.1.288 — el log de una corrida con un tope de entradas: una corrida larga
+ * (muchas esperas y pasos) no infla la fila del historial sin límite.
+ */
+function capLog(log: ActionLogEntry[]): ActionLogEntry[] {
+    const MAX = 300;
+    if (log.length <= MAX) return log;
+    return [
+        ...log.slice(0, MAX - 21),
+        { action: 'engine', status: 'skipped', message: `(${log.length - MAX + 1} pasos intermedios no se muestran)`, details: {} },
+        ...log.slice(-20),
+    ];
+}
+
+/** v0.1.288 — lee el `resume_state` de una corrida en espera (null si no se entiende). */
+function readResumeState(raw: unknown): ResumeState | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const waitPath = parseFlowPath(r.wait_path);
+    const resumePath = parseFlowPath(r.resume_path);
+    if (!waitPath || !resumePath || waitPath.length !== resumePath.length) return null;
+    const ctx = r.ctx && typeof r.ctx === 'object' ? (r.ctx as ResumeState['ctx']) : { data: {} };
+    const wf = r.wait_field as { key?: unknown; label?: unknown } | null | undefined;
+    return {
+        v: 1,
+        wait_path: waitPath,
+        resume_path: resumePath,
+        wait: r.wait && typeof r.wait === 'object' ? (r.wait as Record<string, unknown>) : {},
+        wait_field: wf && typeof wf.key === 'string' ? { key: wf.key, label: typeof wf.label === 'string' ? wf.label : wf.key } : null,
+        had_fail: r.had_fail === true,
+        ctx: { ...ctx, data: ctx.data && typeof ctx.data === 'object' ? ctx.data : {} },
+    };
 }

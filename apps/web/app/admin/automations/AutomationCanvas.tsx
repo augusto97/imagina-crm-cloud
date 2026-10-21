@@ -23,7 +23,6 @@ import {
     branchOf,
     duplicateAt,
     getNode,
-    ifElseDepth,
     insertAt,
     pathKey,
     removeAt,
@@ -41,9 +40,12 @@ import {
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import {
     ActionConfigEditor,
+    excludedActionsAt,
     helpForTrigger,
     TriggerConfigEditor,
+    useAutomationListId,
 } from './config-editors';
+import { LoopItemProvider, StepScope } from './flowContext';
 import { ActionTypeSelect } from './ActionTypeSelect';
 import { actionTitle } from './actionTypeOptions';
 
@@ -69,7 +71,9 @@ const GHOST_W = 190;
 const GHOST_H = 44;
 const GAP_Y = 76;
 const GAP_X = 56;
-const MAX_IF_DEPTH = 4;
+/** v0.1.288 — margen del marco de una repetición alrededor de sus pasos. */
+const FRAME_PAD = 22;
+const FRAME_HEAD = 34;
 
 interface LNode {
     id: string;
@@ -86,13 +90,15 @@ interface LNode {
     spec?: ActionSpec;
 }
 
+type EdgeLabel = 'si' | 'no' | 'cada';
+
 interface LEdge {
     id: string;
     sx: number;
     sy: number;
     tx: number;
     ty: number;
-    label?: 'si' | 'no';
+    label?: EdgeLabel;
     insertSeqPath: SeqPath;
     insertIndex: number;
 }
@@ -102,17 +108,28 @@ interface Exit {
     y: number;
     insertSeqPath: SeqPath;
     insertIndex: number;
-    label?: 'si' | 'no';
+    label?: EdgeLabel;
+}
+
+/** v0.1.288 — el marco de una repetición (sus pasos van adentro). */
+interface LFrame {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
 }
 
 interface Layout {
     nodes: LNode[];
     edges: LEdge[];
+    frames: LFrame[];
     width: number;
     height: number;
 }
 
 function widthOfSpec(spec: ActionSpec): number {
+    if (spec.type === 'for_each_linked') return Math.max(NODE_W, widthOfSeq(branchOf(spec, 'each')) + FRAME_PAD * 2);
     if (spec.type !== 'if_else') return NODE_W;
     return widthOfSeq(branchOf(spec, 'then')) + GAP_X + widthOfSeq(branchOf(spec, 'else'));
 }
@@ -235,6 +252,67 @@ function layoutSeq(
             }
             cursorY = maxBottom + GAP_Y;
             incoming = mergedExits;
+        } else if (spec.type === 'for_each_linked') {
+            // v0.1.288 — «Repetir por cada vinculado»: los pasos de adentro
+            // van en un marco debajo del nodo; lo que sigue sale del marco.
+            const body = branchOf(spec, 'each');
+            const bodyPath: SeqPath = [...nodePath, 'each'];
+            const bodyW = widthOfSeq(body);
+            const frameTop = cursorY + NODE_H + 18;
+            const childY = frameTop + FRAME_HEAD;
+            let bodyBottom: number;
+            if (body.length === 0) {
+                out.nodes.push({
+                    id: `g:${pathKey(bodyPath)}`,
+                    kind: 'ghost',
+                    x: cx - GHOST_W / 2,
+                    y: childY,
+                    w: GHOST_W,
+                    h: GHOST_H,
+                    insertSeqPath: bodyPath,
+                    insertIndex: 0,
+                });
+                out.edges.push({
+                    id: `e:g:${pathKey(bodyPath)}`,
+                    sx: bottomAnchor.x,
+                    sy: bottomAnchor.y,
+                    tx: cx,
+                    ty: childY,
+                    label: 'cada',
+                    insertSeqPath: bodyPath,
+                    insertIndex: 0,
+                });
+                bodyBottom = childY + GHOST_H;
+            } else {
+                const res = layoutSeq(
+                    body,
+                    bodyPath,
+                    cx,
+                    childY,
+                    [{ x: bottomAnchor.x, y: bottomAnchor.y, insertSeqPath: bodyPath, insertIndex: 0, label: 'cada' }],
+                    out,
+                );
+                bodyBottom = res.bottom;
+                // El final de los pasos de adentro: su «+» agrega al final del cuerpo.
+                const endY = bodyBottom + FRAME_PAD - 4;
+                for (const from of res.exits) {
+                    out.edges.push({
+                        id: `e:end:${pathKey(bodyPath)}:${from.x},${from.y}`,
+                        sx: from.x,
+                        sy: from.y,
+                        tx: cx,
+                        ty: endY,
+                        label: from.label,
+                        insertSeqPath: from.insertSeqPath,
+                        insertIndex: from.insertIndex,
+                    });
+                }
+            }
+            const frameBottom = bodyBottom + FRAME_PAD;
+            const frameW = Math.max(bodyW + FRAME_PAD * 2, NODE_W);
+            out.frames.push({ id: `f:${pathKey(nodePath)}`, x: cx - frameW / 2, y: frameTop, w: frameW, h: frameBottom - frameTop });
+            cursorY = frameBottom + GAP_Y;
+            incoming = [{ x: cx, y: frameBottom, insertSeqPath: seqPath, insertIndex: i + 1 }];
         } else {
             cursorY = cursorY + NODE_H + GAP_Y;
             incoming = [
@@ -252,7 +330,7 @@ function layoutSeq(
 }
 
 function buildLayout(actions: ActionSpec[]): Layout {
-    const out: Layout = { nodes: [], edges: [], width: 0, height: 0 };
+    const out: Layout = { nodes: [], edges: [], frames: [], width: 0, height: 0 };
     const rootW = Math.max(widthOfSeq(actions), NODE_W);
     const cx = rootW / 2;
 
@@ -311,6 +389,8 @@ export interface AutomationCanvasProps {
     actionsCatalog: ActionMeta[];
     fields: FieldEntity[];
     lists: ListSummary[];
+    /** v0.1.288 — para nombrar la lista vinculada de una repetición. */
+    relationPaths?: Array<{ relation_field_id: number; relation_label: string; other_list_name: string }>;
 }
 
 type Selection = { kind: 'trigger' } | { kind: 'action'; path: NodePath };
@@ -326,8 +406,10 @@ export function AutomationCanvas({
     actionsCatalog,
     fields,
     lists,
+    relationPaths,
 }: AutomationCanvasProps): JSX.Element {
     const layout = useMemo(() => buildLayout(actions), [actions]);
+    const listId = useAutomationListId();
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const [view, setView] = useState({ x: 60, y: 32, z: 1 });
@@ -473,6 +555,18 @@ export function AutomationCanvas({
                     height: layout.height,
                 }}
             >
+                {layout.frames.map((f) => (
+                    <div
+                        key={f.id}
+                        className="imcrm-pointer-events-none imcrm-absolute imcrm-rounded-2xl imcrm-border imcrm-border-dashed imcrm-border-info/40 imcrm-bg-info/5"
+                        style={{ left: f.x, top: f.y, width: f.w, height: f.h }}
+                        data-testid="imcrm-canvas-loop-frame"
+                    >
+                        <span className="imcrm-absolute imcrm-right-3 imcrm-top-2 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wide imcrm-text-[hsl(var(--imcrm-info-ink))]">
+                            {__('Por cada vinculado')}
+                        </span>
+                    </div>
+                ))}
                 <svg
                     className="imcrm-pointer-events-none imcrm-absolute imcrm-overflow-visible"
                     style={{ left: 0, top: 0, width: layout.width, height: layout.height }}
@@ -496,7 +590,7 @@ export function AutomationCanvas({
                 {layout.edges.map((e) => {
                     const midX = (e.sx + e.tx) / 2;
                     const midY = (e.sy + e.ty) / 2;
-                    const excludeIf = ifElseDepth(e.insertSeqPath) >= MAX_IF_DEPTH ? ['if_else'] : [];
+                    const excludeIf = excludedActionsAt(e.insertSeqPath);
                     return (
                         <div key={`ov:${e.id}`}>
                             {e.label && (
@@ -505,15 +599,18 @@ export function AutomationCanvas({
                                         'imcrm-absolute imcrm-z-10 imcrm-rounded-full imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wide',
                                         e.label === 'si'
                                             ? 'imcrm-border-success/30 imcrm-bg-success/10 imcrm-text-success'
-                                            : 'imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-text-warning',
+                                            : e.label === 'cada'
+                                              ? 'imcrm-border-info/30 imcrm-bg-info/10 imcrm-text-[hsl(var(--imcrm-info-ink))]'
+                                              : 'imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-text-warning',
                                     )}
                                     style={{
-                                        left: e.sx + (e.tx - e.sx) * 0.28,
-                                        top: e.sy + (e.ty - e.sy) * 0.28,
+                                        // «Cada uno» va pegado al nodo, por encima del marco.
+                                        left: e.sx + (e.tx - e.sx) * (e.label === 'cada' ? 0.14 : 0.28),
+                                        top: e.sy + (e.ty - e.sy) * (e.label === 'cada' ? 0.14 : 0.28),
                                         transform: 'translate(-50%, -50%)',
                                     }}
                                 >
-                                    {e.label === 'si' ? __('Sí') : __('No')}
+                                    {e.label === 'si' ? __('Sí') : e.label === 'cada' ? __('Cada uno') : __('No')}
                                 </span>
                             )}
                             <div
@@ -557,7 +654,7 @@ export function AutomationCanvas({
                         );
                     }
                     if (n.kind === 'ghost') {
-                        const excludeIf = ifElseDepth(n.insertSeqPath ?? []) >= MAX_IF_DEPTH ? ['if_else'] : [];
+                        const excludeIf = excludedActionsAt(n.insertSeqPath ?? []);
                         return (
                             <div
                                 key={n.id}
@@ -584,15 +681,16 @@ export function AutomationCanvas({
                     const spec = n.spec!;
                     const meta = actionMetaFor(spec.type);
                     const isIf = spec.type === 'if_else';
+                    const isLoop = spec.type === 'for_each_linked';
                     const condCount = actionConditionCount(spec);
                     return (
                         <CanvasNode
                             key={n.id}
                             node={n}
-                            tone={isIf ? 'branch' : 'neutral'}
-                            overline={isIf ? __('Condición') : __(meta.title)}
+                            tone={isIf || isLoop ? 'branch' : 'neutral'}
+                            overline={isIf ? __('Condición') : isLoop ? __('Repetir') : __(meta.title)}
                             icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
-                            title={summarizeAction(spec, fields, lists, actionsCatalog)}
+                            title={summarizeAction(spec, fields, lists, actionsCatalog, relationPaths)}
                             badge={condCount > 0 ? sprintf(__('%d cond.'), condCount) : undefined}
                             selected={
                                 selected?.kind === 'action' && pathKey(selected.path) === pathKey(n.path!)
@@ -677,15 +775,20 @@ export function AutomationCanvas({
                     )}
 
                     {selected?.kind === 'action' && selectedSpec !== undefined && (
-                        <NodeConfigPanel
-                            key={pathKey(selected.path)}
-                            spec={selectedSpec}
-                            onChange={(next) =>
-                                onActionsChange(updateNode(actions, selected.path, next))
-                            }
-                            actionsCatalog={actionsCatalog}
-                            fields={fields}
-                        />
+                        <LoopScope actions={actions} path={selected.path} listId={listId}>
+                            <StepScope path={selected.path}>
+                                <NodeConfigPanel
+                                    key={pathKey(selected.path)}
+                                    spec={selectedSpec}
+                                    onChange={(next) =>
+                                        onActionsChange(updateNode(actions, selected.path, next))
+                                    }
+                                    actionsCatalog={actionsCatalog}
+                                    fields={fields}
+                                    exclude={excludedActionsAt(selected.path.slice(0, -1))}
+                                />
+                            </StepScope>
+                        </LoopScope>
                     )}
                 </SheetContent>
             </Sheet>
@@ -802,20 +905,49 @@ function CanvasNode({
 
 /* ── Panel de configuración por nodo ──────────────────────────────── */
 
+/**
+ * v0.1.288 — Un paso DENTRO de una repetición edita con el vinculado de esa
+ * vuelta a mano (variables `{{item.…}}`, «el vinculado» en Actualizar).
+ */
+function LoopScope({
+    actions,
+    path,
+    listId,
+    children,
+}: {
+    actions: ActionSpec[];
+    path: NodePath;
+    listId: number | undefined;
+    children: React.ReactNode;
+}): JSX.Element {
+    const at = path.lastIndexOf('each');
+    if (at < 0) return <>{children}</>;
+    const loop = getNode(actions, path.slice(0, at));
+    return (
+        <LoopItemProvider listId={listId} relationFieldId={Number(loop?.config.relation_field_id) || 0}>
+            {children}
+        </LoopItemProvider>
+    );
+}
+
 function NodeConfigPanel({
     spec,
     onChange,
     actionsCatalog,
     fields,
+    exclude = [],
 }: {
     spec: ActionSpec;
     onChange: (next: ActionSpec) => void;
     actionsCatalog: ActionMeta[];
     fields: FieldEntity[];
+    /** Lo que no se puede elegir en esta posición (dentro de una repetición…). */
+    exclude?: string[];
 }): JSX.Element {
     const meta = actionMetaFor(spec.type);
     const label = actionTitle(spec, actionsCatalog, meta.title);
     const isIf = spec.type === 'if_else';
+    const isLoop = spec.type === 'for_each_linked';
 
     return (
         <>
@@ -825,7 +957,9 @@ function NodeConfigPanel({
                     <SheetDescription>
                         {isIf
                             ? __('Define la condición. Las ramas Sí / No se editan directamente en el lienzo.')
-                            : __(meta.description)}
+                            : isLoop
+                              ? __('Elige la relación y, si quieres, un filtro. Los pasos que se repiten se arman dentro del marco, en el lienzo.')
+                              : __(meta.description)}
                     </SheetDescription>
                 </div>
                 <SheetCloseButton aria-label={__('Cerrar')} />
@@ -844,13 +978,21 @@ function NodeConfigPanel({
                             'Si el registro cumple TODAS las condiciones se ejecuta la rama Sí; si no, la rama No.',
                         )}
                     />
+                ) : isLoop ? (
+                    <ActionConfigEditor
+                        spec={spec}
+                        onChange={onChange}
+                        fields={fields}
+                        actionsCatalog={actionsCatalog}
+                        nestedInline={false}
+                    />
                 ) : (
                     <>
                         <ActionTypeSelect
                             spec={spec}
                             actionsCatalog={actionsCatalog}
                             onChange={onChange}
-                            exclude={['if_else']}
+                            exclude={[...new Set(['if_else', 'for_each_linked', ...exclude])]}
                         />
                         <ActionConfigEditor
                             spec={spec}
