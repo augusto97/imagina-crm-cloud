@@ -85,4 +85,16 @@ describe('operatorsForType — campos derivados (v0.1.200)', () => {
     it('un rollup sigue comparándose como número', () => {
         expect(operatorsForType('rollup').map((o) => o.op)).toEqual(expect.arrayContaining(['gt', 'lt']));
     });
+
+    it('v0.1.286 — relación: tiene / no tiene / vinculado a (el backend ya lo filtraba)', () => {
+        expect(operatorsForType('relation').map((o) => o.op)).toEqual(['in', 'nin', 'is_not_null', 'is_null']);
+    });
+
+    it('v0.1.286 — un calculado numérico se filtra como número; uno de texto o fecha, no', () => {
+        expect(operatorsForType('computed', { config: { operation: 'product' } }).map((o) => o.op)).toEqual(
+            expect.arrayContaining(['gt', 'lte']),
+        );
+        expect(operatorsForType('computed', { config: { operation: 'concat' } })).toEqual([]);
+        expect(operatorsForType('computed')).toEqual([]);
+    });
 });

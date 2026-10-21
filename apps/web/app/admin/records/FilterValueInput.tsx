@@ -1,4 +1,5 @@
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
+import { RelationPicker } from '@/components/fields/RelationPicker';
 import { AutocompleteInput } from '@/components/ui/autocomplete-input';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -14,6 +15,7 @@ import {
 } from './dateRangePresets';
 import { extractFieldOptions } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
+import { datetimeFilterToInput, datetimeInputToFilter } from './filterDatetime';
 import { FilterUserPicker } from './FilterUserPicker';
 import { isMultiValueOperator, toValueList } from './filterValue';
 
@@ -98,6 +100,16 @@ export function FilterValueInput({
     const multi = isMultiValueOperator(op);
 
     switch (field.type) {
+        case 'relation':
+            // v0.1.286 — se ELIGE el registro con el buscador de la lista
+            // destino (el mismo selector de la celda), no se tipea un id.
+            return (
+                <RelationPicker
+                    field={field}
+                    value={toValueList(value).map(Number).filter((n) => Number.isInteger(n) && n > 0)}
+                    onChange={(ids) => onChange(ids)}
+                />
+            );
         case 'select':
         case 'multi_select': {
             const options = extractFieldOptions(field);
@@ -162,11 +174,13 @@ export function FilterValueInput({
                 />
             );
         case 'datetime':
+            // v0.1.286 — viaja con zona (antes el servidor leía la hora local
+            // como UTC); «es» abarca el minuto elegido.
             return (
                 <Input
                     type="datetime-local"
-                    value={typeof value === 'string' ? value : ''}
-                    onChange={(e) => onChange(e.target.value)}
+                    value={datetimeFilterToInput(value)}
+                    onChange={(e) => onChange(datetimeInputToFilter(e.target.value))}
                 />
             );
         case 'number':
@@ -174,6 +188,7 @@ export function FilterValueInput({
         case 'percent':
         case 'duration':
         case 'rollup':
+        case 'computed':
             // v0.1.158 — percent/duration son números: el filtro compara el
             // VALOR guardado (0-100, minutos).
             return (

@@ -2,6 +2,7 @@ import { Calendar, Check, Paperclip, Star } from 'lucide-react';
 
 import { chipSoftStyle } from '@/components/ui/color-picker';
 import { __ } from '@/lib/i18n';
+import { formatDateStr, formatDateTime, formatNumber } from '@/lib/tenantFormat';
 import type { FieldTypeSlug } from '@/types/field';
 
 /**
@@ -52,9 +53,12 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                 </div>
             );
         case 'number':
-            return <Row><span className="imcrm-tabular-nums">1.250</span></Row>;
+            // v0.1.286 — los ejemplos con el formato regional de la empresa
+            // (antes «1.250» fijo: en una empresa con coma de miles se leía
+            // como uno coma veinticinco).
+            return <Row><span className="imcrm-tabular-nums">{formatNumber(1250)}</span></Row>;
         case 'currency':
-            return <Row><span className="imcrm-tabular-nums">$ 1.250,00</span></Row>;
+            return <Row><span className="imcrm-tabular-nums">$ {formatNumber(1250, { minFrac: 2, maxFrac: 2 })}</span></Row>;
         case 'select':
             return (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -73,14 +77,14 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
             return (
                 <Row>
                     <Calendar className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" aria-hidden />
-                    <span>31/12/2026</span>
+                    <span>{formatDateStr('2026-12-31')}</span>
                 </Row>
             );
         case 'datetime':
             return (
                 <Row>
                     <Calendar className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" aria-hidden />
-                    <span>31/12/2026 14:30</span>
+                    <span>{formatDateTime(new Date(2026, 11, 31, 14, 30))}</span>
                 </Row>
             );
         case 'checkbox':
@@ -152,7 +156,7 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
         case 'computed':
             return (
                 <Row>
-                    <span className="imcrm-tabular-nums">3.750</span>
+                    <span className="imcrm-tabular-nums">{formatNumber(3750)}</span>
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(calculado)')}</span>
                 </Row>
             );
@@ -173,7 +177,7 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
         case 'rollup':
             return (
                 <Row>
-                    <span className="imcrm-tabular-nums">$ 1.250.000</span>
+                    <span className="imcrm-tabular-nums">$ {formatNumber(1250000)}</span>
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(3 facturas)')}</span>
                 </Row>
             );

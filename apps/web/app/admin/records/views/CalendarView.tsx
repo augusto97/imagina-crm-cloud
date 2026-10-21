@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 
 import { colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { Button } from '@/components/ui/button';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useRecords } from '@/hooks/useRecords';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
-import type { RecordEntity } from '@/types/record';
+import type { FilterTree, RecordEntity, RecordsQuery } from '@/types/record';
 import { parseUtcDate } from '@/lib/utcDate';
 
 /**
@@ -27,11 +29,18 @@ import { parseUtcDate } from '@/lib/utcDate';
  *   pantallas).
  */
 interface CalendarViewProps {
+    /** id o slug de la lista: el calendario pide SUS registros (los del mes). */
+    listId: number | string;
     fields: FieldEntity[];
-    records: RecordEntity[];
     dateField: FieldEntity;
+    /** Filtros y búsqueda de la vista (se combinan con el rango del mes). */
+    filterTree?: FilterTree;
+    search?: string;
     onCardClick: (record: RecordEntity) => void;
 }
+
+/** Tope de registros por mes (el máximo de una página del listado). */
+const RANGE_LIMIT = 200;
 
 interface CalendarCell {
     iso: string; // YYYY-MM-DD en local
@@ -50,9 +59,11 @@ function capitalizeFirst(s: string): string {
 }
 
 export function CalendarView({
+    listId,
     fields,
-    records,
     dateField,
+    filterTree,
+    search,
     onCardClick,
 }: CalendarViewProps): JSX.Element {
     const [cursor, setCursor] = useState<Date>(() => {
@@ -63,6 +74,22 @@ export function CalendarView({
     const cells = useMemo<CalendarCell[]>(() => buildMonthCells(cursor), [cursor]);
     // Día con la lista completa desplegada ("+N más").
     const [expandedDay, setExpandedDay] = useState<string | null>(null);
+    // v0.1.286 — en el teléfono cada celda mide ~50 px: los eventos quedaban
+    // en «C..». Ahí la grilla muestra puntos y el día elegido se lista abajo.
+    const compact = useMediaQuery('(max-width: 639px)');
+    const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+    // v0.1.286 — se piden los registros del RANGO visible (la grilla, con los
+    // días del mes anterior/siguiente), no «los primeros 200 de la lista»:
+    // antes un registro de un mes cualquiera no aparecía si su id no estaba
+    // entre los 200 primeros. Cambiar de mes vuelve a pedir.
+    const query = useMemo<RecordsQuery>(
+        () => calendarRangeQuery(dateField, cells[0]!.iso, cells[cells.length - 1]!.iso, filterTree, search),
+        [dateField, cells, filterTree, search],
+    );
+    const range = useRecords(listId, query);
+    const records = range.data?.data ?? EMPTY_RECORDS;
+    const totalInRange = range.data?.meta.total ?? records.length;
 
     // Indexa records por día local (YYYY-MM-DD).
     const recordsByDay = useMemo(() => {
@@ -127,6 +154,9 @@ export function CalendarView({
         0,
     );
 
+    const agendaDay = selectedDay ?? (cells.some((c) => c.isToday) ? toLocalIso(new Date()) : null);
+    const agendaRecords = compact && agendaDay !== null ? (recordsByDay.get(agendaDay) ?? []) : [];
+
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
@@ -134,6 +164,9 @@ export function CalendarView({
                     <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
                         {monthLabel}
                     </h2>
+                    {range.isFetching && (
+                        <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin imcrm-text-muted-foreground" aria-label={__('Cargando…')} />
+                    )}
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">
                         {sprintf(
                             /* translators: %d: records in the visible month */
@@ -190,6 +223,53 @@ export function CalendarView({
                         const expanded = expandedDay === cell.iso;
                         const visible = expanded ? dayRecords : dayRecords.slice(0, MAX_VISIBLE_PER_DAY);
                         const isWeekend = idx % 7 >= 5;
+                        if (compact) {
+                            const selected = agendaDay === cell.iso;
+                            return (
+                                <button
+                                    type="button"
+                                    key={cell.iso}
+                                    onClick={() => setSelectedDay(cell.iso)}
+                                    aria-pressed={selected}
+                                    aria-label={sprintf(
+                                        /* translators: 1: day number, 2: number of records */
+                                        _n('Día %1$d, %2$d registro', 'Día %1$d, %2$d registros', dayRecords.length),
+                                        cell.day,
+                                        dayRecords.length,
+                                    )}
+                                    className={cn(
+                                        'imcrm-flex imcrm-min-h-[52px] imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-border-b imcrm-border-r imcrm-border-border/70 imcrm-py-1.5',
+                                        idx % 7 === 6 && 'imcrm-border-r-0',
+                                        idx >= cells.length - 7 && 'imcrm-border-b-0',
+                                        cell.inCurrentMonth ? 'imcrm-bg-card' : 'imcrm-bg-muted/40 imcrm-text-muted-foreground',
+                                        selected && 'imcrm-bg-accent',
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            'imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-text-[12px] imcrm-font-semibold',
+                                            cell.isToday && 'imcrm-bg-primary imcrm-text-primary-foreground',
+                                        )}
+                                    >
+                                        {cell.day}
+                                    </span>
+                                    {dayRecords.length > 0 && (
+                                        <span className="imcrm-flex imcrm-items-center imcrm-gap-0.5" aria-hidden>
+                                            {dayRecords.slice(0, 3).map((r) => (
+                                                <span
+                                                    key={r.id}
+                                                    className="imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full"
+                                                    style={{ backgroundColor: colorVar(optionColor(r)) ?? 'hsl(var(--imcrm-primary))' }}
+                                                />
+                                            ))}
+                                            {dayRecords.length > 3 && (
+                                                <span className="imcrm-text-[9px] imcrm-font-semibold imcrm-text-muted-foreground">+</span>
+                                            )}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        }
                         return (
                             <div
                                 key={cell.iso}
@@ -287,7 +367,51 @@ export function CalendarView({
                 </div>
             </div>
 
-            {monthCount === 0 && (
+            {/* v0.1.286 — en el teléfono, la lista del día elegido (título entero). */}
+            {compact && agendaDay !== null && (
+                <section className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" aria-label={__('Registros del día')}>
+                    <h3 className="imcrm-text-sm imcrm-font-semibold">
+                        {capitalizeFirst(
+                            new Date(`${agendaDay}T12:00:00`).toLocaleDateString(CALENDAR_LOCALE, { weekday: 'long', day: 'numeric', month: 'long' }),
+                        )}
+                    </h3>
+                    {agendaRecords.length === 0 ? (
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Sin registros este día.')}</p>
+                    ) : (
+                        agendaRecords.map((r) => {
+                            const solid = colorVar(optionColor(r));
+                            return (
+                                <button
+                                    type="button"
+                                    key={r.id}
+                                    onClick={() => onCardClick(r)}
+                                    className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-sm"
+                                >
+                                    <span
+                                        aria-hidden
+                                        className="imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full"
+                                        style={{ backgroundColor: solid ?? 'hsl(var(--imcrm-primary))' }}
+                                    />
+                                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-words">{titleString(r, titleField)}</span>
+                                </button>
+                            );
+                        })
+                    )}
+                </section>
+            )}
+
+            {totalInRange > records.length && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-view-partial-notice">
+                    {sprintf(
+                        /* translators: 1: records shown, 2: records in the visible range */
+                        __('Hay más: se muestran %1$d de %2$d registros de este mes. Usa filtros para acotar la vista.'),
+                        records.length,
+                        totalInRange,
+                    )}
+                </p>
+            )}
+
+            {monthCount === 0 && !range.isFetching && (
                 <p className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
                     <CalendarDays className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Ningún registro cae en este mes.')}
@@ -295,6 +419,41 @@ export function CalendarView({
             )}
         </div>
     );
+}
+
+const EMPTY_RECORDS: RecordEntity[] = [];
+
+/**
+ * Query del listado para el rango visible: los filtros de la vista AND fecha
+ * entre el primer y el último día de la grilla, ordenado por la fecha (así el
+ * tope de 200 se queda con lo primero del mes). Para un campo fecha y hora,
+ * un valor de sólo-fecha cubre el día entero en la zona de la empresa
+ * (servidor, v0.1.286).
+ */
+export function calendarRangeQuery(
+    dateField: Pick<FieldEntity, 'id'>,
+    fromIso: string,
+    toIso: string,
+    filterTree: FilterTree | undefined,
+    search: string | undefined,
+): RecordsQuery {
+    const tree: FilterTree = {
+        type: 'group',
+        logic: 'and',
+        children: [
+            ...(filterTree && filterTree.children.length > 0 ? [filterTree] : []),
+            { type: 'condition', field_id: dateField.id, op: 'gte', value: fromIso },
+            { type: 'condition', field_id: dateField.id, op: 'lte', value: toIso },
+        ],
+    };
+    const q: RecordsQuery = {
+        page: 1,
+        per_page: RANGE_LIMIT,
+        filter_tree: JSON.stringify(tree),
+        sort: `field_${dateField.id}:asc`,
+    };
+    if (search !== undefined && search.trim() !== '') q.search = search.trim();
+    return q;
 }
 
 function buildMonthCells(cursor: Date): CalendarCell[] {

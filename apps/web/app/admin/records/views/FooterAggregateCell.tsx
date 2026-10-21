@@ -40,6 +40,38 @@ export type AggregateKind =
     | 'date_max'
     | 'date_range';
 
+const NUMERIC_TYPES = new Set(['number', 'currency', 'rating', 'percent', 'duration']);
+/** Operaciones de `computed` con valor numérico en SQL (espejo de `computed-sql.ts`). */
+const NUMERIC_COMPUTED_OPS = new Set(['sum', 'product', 'subtract', 'divide', 'abs']);
+
+/**
+ * v0.1.286 — ¿la columna se suma/promedia? Además de los tipos numéricos,
+ * un `computed` numérico (el backend lo compila a SQL desde v0.1.229) y un
+ * `rollup` que da un número (contar/sumar/promediar, o mín/máx de un número).
+ */
+export function footerIsNumeric(field: Pick<FieldEntity, 'type' | 'config' | 'through'>): boolean {
+    if (NUMERIC_TYPES.has(field.type)) return true;
+    const op = (field.config as { operation?: unknown } | null | undefined)?.operation;
+    if (field.type === 'computed') return typeof op === 'string' && NUMERIC_COMPUTED_OPS.has(op);
+    if (field.type === 'rollup') {
+        if (op === 'count' || op === 'sum' || op === 'avg') return true;
+        const target = field.through?.target_field?.type;
+        return (op === 'min' || op === 'max') && target !== undefined && NUMERIC_TYPES.has(target);
+    }
+    return false;
+}
+
+/**
+ * v0.1.286 — columnas que el pie puede calcular: todo lo que vive en el
+ * registro salvo relación y lookup (listas de valores); de los `computed`,
+ * sólo los numéricos (los demás no tienen valor en SQL: el pie mentía).
+ */
+export function footerIsAggregatable(field: Pick<FieldEntity, 'type' | 'config' | 'through'>): boolean {
+    if (field.type === 'relation' || field.type === 'lookup') return false;
+    if (field.type === 'computed') return footerIsNumeric(field);
+    return true;
+}
+
 interface FooterAggregateCellProps {
     field: FieldEntity | null;
     /** Total de records (para porcentajes). */
@@ -164,12 +196,9 @@ export function FooterAggregateCell({
                 </DropdownMenuSub>
 
                 {/* Categoría: Numéricos — solo number / currency */}
-                {(field.type === 'number'
-                    || field.type === 'currency'
-                    // v0.1.158 — sumar/promediar estrellas, avance y horas.
-                    || field.type === 'rating'
-                    || field.type === 'percent'
-                    || field.type === 'duration') && (
+                {/* v0.1.158 — estrellas, avance y horas; v0.1.286 — también
+                    calculados y rollups numéricos. */}
+                {footerIsNumeric(field) && (
                     <DropdownMenuSub>
                         <DropdownMenuSubTrigger>{__('Números')}</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>

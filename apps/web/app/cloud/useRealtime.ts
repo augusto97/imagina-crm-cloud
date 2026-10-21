@@ -13,7 +13,13 @@ import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
 import { activityKeys } from '@/hooks/useActivity';
 import { commentsKeys } from '@/hooks/useComments';
 import { descriptionKeys } from '@/hooks/useRecordDescription';
-import { invalidateForList, isRecentLocalRecordsChange, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
+import {
+    AGGREGATES_NS,
+    invalidateForList,
+    isRecentLocalRecordsChange,
+    listIdentifiersFor,
+    recordsKeys,
+} from '@/hooks/useRecords';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { notificationKeys } from '@/hooks/useNotifications';
@@ -105,7 +111,12 @@ export function useRealtime(): void {
                                     && ids.has(q.queryKey[2]),
                             });
                         }
-                    } else void qc.invalidateQueries({ queryKey: recordsKeys.all });
+                    } else {
+                        void qc.invalidateQueries({ queryKey: recordsKeys.all });
+                        // v0.1.286 — y los totales del pie de la tabla (con
+                        // lista, `invalidateForList` de records ya los incluye).
+                        void qc.invalidateQueries({ queryKey: [AGGREGATES_NS] });
+                    }
                     // v0.1.230 — los gráficos y vinculados de una ficha abierta
                     // leen OTRAS listas: un cambio en cualquiera puede moverlos.
                     void qc.invalidateQueries({ queryKey: layoutDataKeys.all });

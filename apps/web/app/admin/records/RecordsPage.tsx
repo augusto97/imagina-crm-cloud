@@ -213,6 +213,10 @@ export function RecordsPage(): JSX.Element {
         && activeViewType !== 'cards'
         && state.groupByFieldId !== null
         && !state.spreadsheet;
+    // v0.1.286 — el calendario pide los registros de SU rango (el mes visible):
+    // el listado plano no se usa ahí.
+    const calendarMode = activeViewType === 'calendar'
+        && Boolean(views.data?.find((x) => x.id === activeViewId)?.config.date_field_id);
     const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
         total: null,
         fetching: false,
@@ -239,7 +243,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied && !groupedMode ? listSlug : undefined,
+        viewApplied && !groupedMode && !calendarMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -267,7 +271,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch && !groupedMode ? listSlug : undefined,
+        useServerSearch && !groupedMode && !calendarMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -458,6 +462,8 @@ export function RecordsPage(): JSX.Element {
         setCreateDefaults(prefillForGroup(groupField, bucketValue));
         setCreateOpen(true);
     });
+    const onGroupedSortChange = useEventCallback((fieldId: number, multi: boolean) => handleSortChange(fieldId, multi));
+    const onGroupedSortSet = useEventCallback((fieldId: number, dir: 'asc' | 'desc') => handleSortSet(fieldId, dir));
     const onGroupedCreateSubtask = useEventCallback((record: RecordEntity) => {
         setCreateDefaults(undefined);
         setCreateParentId(record.id);
@@ -620,6 +626,18 @@ const applyView = (view: SavedViewEntity | null): void => {
         setSearchParams(next, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [list.data?.id, searchParams]);
+
+    // v0.1.286 — la selección es de lo que se VE: al cambiar el filtro, la
+    // búsqueda, la vista o la agrupación se vacía. Antes sobrevivía y una
+    // acción masiva («Eliminar», «Editar en lote») caía sobre registros que
+    // ya no estaban en pantalla.
+    const selectionScope = `${activeViewId ?? ''}|${JSON.stringify(state.filterTree)}|${debouncedSearch.trim()}|${state.groupByFieldId ?? ''}`;
+    const selectionScopeRef = useRef(selectionScope);
+    useEffect(() => {
+        if (selectionScopeRef.current === selectionScope) return;
+        selectionScopeRef.current = selectionScope;
+        setSelectedIds((prev) => (prev.length === 0 ? prev : []));
+    }, [selectionScope]);
 
     const setFilterTree = (filterTree: import('@/types/record').FilterTree): void => {
         setState((s) => ({ ...s, filterTree, page: 1 }));
@@ -1065,6 +1083,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                     listId={list.data.id}
                     listSlug={list.data.slug}
                     filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    sort={state.sort.map((x) => `field_${x.field_id}:${x.dir}`).join(',')}
                     open={exportOpen}
                     onOpenChange={setExportOpen}
                     hideTrigger
@@ -1296,12 +1316,16 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
                                     titleFieldId={activeView?.config.kanban_title_field_id ?? null}
                                     metaFieldIds={activeView?.config.kanban_meta_field_ids ?? null}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                 />
                             ) : isCalendar && dateField ? (
                                 <CalendarView
+                                    listId={list.data.id}
                                     fields={fields.data}
-                                    records={records.data?.data ?? []}
                                     dateField={dateField}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
                                 />
                             ) : isCards ? (
@@ -1341,6 +1365,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={onGroupedFooterAggregates}
                                     onStatusChange={setGroupedStatus}
+                                    sort={state.sort}
+                                    onSortChange={onGroupedSortChange}
+                                    onSortSet={onGroupedSortSet}
                                 />
                             ) : (
                                 <TableView
@@ -1367,6 +1394,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, columnOrder: next }))
                                     }
                                     filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                     onAddRecord={!canCreateRecords ? undefined : () => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);

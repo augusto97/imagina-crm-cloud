@@ -29,6 +29,9 @@ export interface CsvExportOptions {
     delimiter: ',' | ';';
     withBom: boolean;
     filterTree?: FilterGroup;
+    /** v0.1.286 — la búsqueda y el orden de la vista (mismo formato que el listado). */
+    search?: string;
+    sort?: string;
 }
 
 /**
@@ -112,6 +115,10 @@ export class ExportService {
                 limit: 200,
                 sort_dir: 'asc',
                 filter_tree: opts.filterTree,
+                search: opts.search,
+                // Con orden por campo el cursor del listado es un OFFSET
+                // (opaco): se avanza igual con `next_cursor`.
+                sort: opts.sort,
                 include_subtasks: true,
             });
             await labeler.prime(page.data);

@@ -159,6 +159,67 @@ export class RecordsRepository {
     }
 
     /**
+     * v0.1.286 — las primeras `perGroup` filas de PRIMER NIVEL de cada grupo
+     * (vista agrupada) en dos consultas: una ventana `row_number()` particionada
+     * por la clave del grupo elige los ids, y después se leen esas filas con las
+     * columnas del listado. Devuelve las filas en orden (grupo, posición).
+     */
+    async listPerGroup(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        opts: { where?: SQL; groupExpr: SQL; keys: Array<string | null>; orderBy: SQL[]; perGroup: number },
+    ): Promise<Array<{ group: string | null; row: RecordListRow }>> {
+        if (opts.keys.length === 0) return [];
+        const base = and(
+            eq(records.tenantId, tenantId),
+            eq(records.listId, listId),
+            isNull(records.deletedAt),
+            isNull(records.parentId),
+            opts.where,
+        );
+        // La clave del grupo se calcula UNA vez por fila: la subconsulta va con
+        // `OFFSET 0` (no se aplana) y se llama "records", así el orden por campo
+        // —que apunta a `"records"."data"`— sigue valiendo sin tocarlo. Sin eso
+        // la expresión (cara en un multi_select) se repetía en el filtro, en la
+        // partición y en el SELECT.
+        const grp = sql`${sql.identifier('records')}.${sql.identifier('grp')}`;
+        const values = opts.keys.filter((k): k is string => k !== null);
+        const keyParts: SQL[] = [];
+        if (values.length > 0) keyParts.push(sql`${grp} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
+        if (opts.keys.includes(null)) keyParts.push(sql`${grp} IS NULL`);
+        const order = sql.join([...opts.orderBy, sql`${records.id} ASC`], sql`, `);
+        const picked = await tx.execute(sql`
+            SELECT t.id, t.grp FROM (
+                SELECT ${records.id} AS id, ${grp} AS grp,
+                       row_number() OVER (PARTITION BY ${grp} ORDER BY ${order}) AS rn
+                FROM (
+                    SELECT ${records}.*, (${opts.groupExpr})::text AS grp
+                    FROM ${records}
+                    WHERE ${base}
+                    OFFSET 0
+                ) AS ${sql.identifier('records')}
+                WHERE ${sql.join(keyParts, sql` OR `)}
+            ) t
+            WHERE t.rn <= ${opts.perGroup}
+            ORDER BY t.grp, t.rn`);
+        const picks = (picked.rows as Array<{ id: string | number; grp: string | null }>).map((r) => ({
+            id: Number(r.id),
+            group: r.grp === null || r.grp === undefined ? null : String(r.grp),
+        }));
+        if (picks.length === 0) return [];
+        const rows = await tx
+            .select(LIST_COLUMNS)
+            .from(records)
+            .where(and(eq(records.tenantId, tenantId), inArray(records.id, picks.map((o) => o.id))));
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        return picks.flatMap((o) => {
+            const row = byId.get(o.id);
+            return row ? [{ group: o.group, row }] : [];
+        });
+    }
+
+    /**
      * Cuántos registros matchean el MISMO where/scope del listado (v0.1.187,
      * para `meta.total` de la paginación por página). Una query aparte a
      * propósito: sumarle `count(*) over()` a la página encarecería CADA

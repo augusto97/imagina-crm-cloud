@@ -5,7 +5,7 @@ import { Check, Loader2, Plus, Search, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFields } from '@/hooks/useFields';
-import { relationIds, relationTarget, useRelationTitles, type RelationTitles } from '@/hooks/useRelationTitles';
+import { isPendingRelationTitles, relationIds, relationTarget, useRelationTitles, type RelationTitles } from '@/hooks/useRelationTitles';
 import { api } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { titleFieldOf } from '@/lib/recordTitle';
@@ -66,10 +66,16 @@ export function RelationPicker({
 }: RelationPickerProps): JSX.Element {
     const target = relationTarget(field);
     const ids = relationIds(value);
-    const missing = knownTitles ? ids.filter((i) => knownTitles[i] === undefined) : ids;
+    // Con el lote de la columna en vuelo no se pide nada por celda (v0.1.286).
+    const missing = isPendingRelationTitles(knownTitles)
+        ? []
+        : knownTitles
+          ? ids.filter((i) => knownTitles[i] === undefined)
+          : ids;
     const titles = useRelationTitles(target, missing);
     const label = (i: number): string => {
         const t = knownTitles?.[i] ?? titles.data?.[i];
+        if (t === undefined && isPendingRelationTitles(knownTitles)) return '…';
         return t && t !== '' ? t : `#${i}`;
     };
     const [open, setOpen] = useState(false);

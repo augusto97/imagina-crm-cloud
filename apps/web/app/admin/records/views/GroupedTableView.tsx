@@ -39,13 +39,15 @@ import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { orderByCatalog, parseMultiBucket } from '@/lib/multiBucket';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
-import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
+import { FooterAggregateCell, footerIsAggregatable, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup, type HScrollGroup } from './hscrollGroup';
 import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTop';
 import { isImageUrlField } from '@/lib/imageProxy';
 import { useMainVirtualRows } from './useMainVirtualRows';
-import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
+import { SortIndicator } from './SortIndicator';
+import type { ActiveSort } from '../recordsState';
+import { FloatingAddColumn, tableMinWidth, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 
 /**
  * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
@@ -135,6 +137,13 @@ interface GroupedTableViewProps {
     density?: RowDensity | null;
     /** Tamaño de letra (v0.1.141). */
     fontSize?: RowFontSize | null;
+    /**
+     * v0.1.286 — orden de las filas DENTRO de cada grupo (el mismo de la vista
+     * plana): click en la cabecera cicla, el menú fija la dirección.
+     */
+    sort?: ActiveSort[];
+    onSortChange?: (fieldId: number, multi: boolean) => void;
+    onSortSet?: (fieldId: number, dir: 'asc' | 'desc') => void;
 }
 
 /**
@@ -183,7 +192,11 @@ function GroupedTableViewImpl({
     wrapText = false,
     density = null,
     fontSize = null,
+    sort = EMPTY_SORT,
+    onSortChange,
+    onSortSet,
 }: GroupedTableViewProps): JSX.Element {
+    const sortParam = sort.length > 0 ? sort.map((x) => `field_${x.field_id}:${x.dir}`).join(',') : undefined;
     const filterTreeParam = useMemo(
         () => (filterTree.children.length === 0 ? undefined : filterTree),
         [filterTree],
@@ -236,7 +249,7 @@ function GroupedTableViewImpl({
     // todos los buckets agregan las mismas columnas.
     const aggregateFieldIds = useMemo(
         () => fields
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
+            .filter(footerIsAggregatable)
             .map((f) => f.id),
         [fields],
     );
@@ -256,6 +269,7 @@ function GroupedTableViewImpl({
         collapsed: collapsedRaw,
         filterTree: filterTreeParam,
         search,
+        sort: sortParam,
         aggregateFieldIds,
     });
 
@@ -442,6 +456,10 @@ function GroupedTableViewImpl({
                                 }
                                 footerAggregates={footerAggregates}
                                 onFooterAggregatesChange={onFooterAggregatesChange}
+                                sort={sort}
+                                sortParam={sortParam}
+                                onSortChange={onSortChange}
+                                onSortSet={onSortSet}
                             />
                         );
                     })}
@@ -484,6 +502,13 @@ function GroupedTableViewImpl({
        </RecordUpdaterProvider>
         </RecurrencesBatchProvider>
     );
+}
+
+const EMPTY_SORT: ActiveSort[] = [];
+
+/** Tipos que el backend no ordena (ver `NON_SORTABLE` en records.service). */
+function isSortableField(field: FieldEntity): boolean {
+    return field.type !== 'relation' && field.type !== 'file';
 }
 
 interface ColumnDef {
@@ -609,6 +634,11 @@ interface GroupBucketSectionProps {
     fontSize?: RowFontSize | null;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
+    sort: ActiveSort[];
+    /** `field_{id}:{dir},…` — lo que viaja al backend (también en "Ver más"). */
+    sortParam?: string;
+    onSortChange?: (fieldId: number, multi: boolean) => void;
+    onSortSet?: (fieldId: number, dir: 'asc' | 'desc') => void;
 }
 
 /**
@@ -648,6 +678,10 @@ function GroupBucketSection({
     fontSize = null,
     footerAggregates,
     onFooterAggregatesChange,
+    sort,
+    sortParam,
+    onSortChange,
+    onSortSet,
 }: GroupBucketSectionProps): JSX.Element {
     const [page, setPage] = useState(1);
     const perPage = 50;
@@ -699,8 +733,9 @@ function GroupBucketSection({
             q.filter_tree = JSON.stringify(bucketTree);
         }
         if (search.trim() !== '') q.search = search.trim();
+        if (sortParam !== undefined) q.sort = sortParam;
         return q;
-    }, [bucketTree, page, search]);
+    }, [bucketTree, page, search, sortParam]);
 
     // Mientras el bundle está en vuelo NO se pide grupo por grupo: la
     // respuesta ya trae las filas de todos los abiertos (v0.1.224 — antes,
@@ -840,7 +875,11 @@ function GroupBucketSection({
     // `width: 100%` + `minWidth: tableWidth`: la tabla llena el contenedor
     // (sin vacío a la derecha) y todos los buckets comparten el mismo
     // min-width para que las columnas queden alineadas.
-    const tableStyle: React.CSSProperties = { tableLayout: 'fixed', width: '100%', minWidth: tableWidth };
+    const tableStyle: React.CSSProperties = {
+        tableLayout: 'fixed',
+        width: '100%',
+        minWidth: tableMinWidth(tableWidth, columns.length + 1, Boolean(onAddColumn)),
+    };
     // Ver TableView: sin `<colgroup>` la columna de la casilla se estira
     // con el sobrante. Se rinde en las DOS tablas (cabecera y cuerpo).
     const colGroup = (
@@ -1008,14 +1047,38 @@ function GroupBucketSection({
                                                 )}
                                             >
                                                 <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5">
-                                                    {c.isPrimary && (
-                                                        <KeyRound
-                                                            className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-primary"
-                                                            aria-hidden="true"
-                                                        />
+                                                    {c.field !== null && onSortChange !== undefined && isSortableField(c.field) ? (
+                                                        // v0.1.286 — ordenar también en la vista
+                                                        // agrupada: el orden aplica DENTRO de cada grupo.
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => onSortChange(c.field!.id, e.shiftKey)}
+                                                            className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-rounded hover:imcrm-text-foreground"
+                                                            aria-label={sprintf(__('Ordenar por %s'), c.label)}
+                                                        >
+                                                            {c.isPrimary && (
+                                                                <KeyRound className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-primary" aria-hidden="true" />
+                                                            )}
+                                                            <span className="imcrm-truncate">{c.label}</span>
+                                                            <StoreColumnBadge fieldId={c.field.id} />
+                                                            <SortIndicator
+                                                                dir={sort.find((x) => x.field_id === c.field!.id)?.dir ?? null}
+                                                                index={sort.findIndex((x) => x.field_id === c.field!.id)}
+                                                                multiCount={sort.length}
+                                                            />
+                                                        </button>
+                                                    ) : (
+                                                        <>
+                                                            {c.isPrimary && (
+                                                                <KeyRound
+                                                                    className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-primary"
+                                                                    aria-hidden="true"
+                                                                />
+                                                            )}
+                                                            <span className="imcrm-truncate">{c.label}</span>
+                                                            {c.field && <StoreColumnBadge fieldId={c.field.id} />}
+                                                        </>
                                                     )}
-                                                    <span className="imcrm-truncate">{c.label}</span>
-                                                    {c.field && <StoreColumnBadge fieldId={c.field.id} />}
                                                     {c.field !== null && onEditField !== undefined && (
                                                         <FieldHeaderMenu
                                                             listId={listId}
@@ -1024,6 +1087,7 @@ function GroupBucketSection({
                                                             fields={allFields}
                                                             onEdit={onEditField}
                                                             onHide={onHideColumn}
+                                                            onSort={onSortSet && isSortableField(c.field) ? (f, dir) => onSortSet(f.id, dir) : undefined}
                                                         />
                                                     )}
                                                 </span>
