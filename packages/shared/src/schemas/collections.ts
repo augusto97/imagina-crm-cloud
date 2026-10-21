@@ -121,6 +121,11 @@ export const collectionConnectionSchema = z.object({
     account_label: z.string().nullable(),
     /** Credencial de prueba (sandbox): los pagos no son dinero real. */
     test_mode: z.boolean(),
+    /**
+     * v0.1.289 — conexión del EQUIPO (no privada de una persona): la única
+     * que puede usar el botón «Pagar» del portal del cliente.
+     */
+    shared: z.boolean().default(true),
 });
 export type CollectionConnection = z.infer<typeof collectionConnectionSchema>;
 

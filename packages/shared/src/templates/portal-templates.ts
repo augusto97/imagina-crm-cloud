@@ -64,6 +64,12 @@ export interface PortalTemplateInput {
     linked?: readonly PortalLinkedList[];
     /** El portal automático: nada editable ni conversación. */
     readOnly?: boolean;
+    /**
+     * v0.1.289 — conexión de cobro del EQUIPO (Mercado Pago / Wompi). Con una,
+     * «Estado de cuenta» suma el bloque «Pagos»: sus links de pago y, si el
+     * registro tiene un campo de saldo, el botón para pagarlo.
+     */
+    payments?: { connection_id: number } | null;
 }
 
 // ── Reconocer los campos ────────────────────────────────────────────────
@@ -84,6 +90,8 @@ const ORDER_RE = /pedido|orden|order|compra|venta/i;
 const LINES_RE = /l[ií]nea|item|[ií]tem|producto|detalle/i;
 
 const PENDING_RE = /pend|venc|mora|por pagar|por cobrar|sin pagar|impag|abiert|unpaid|overdue|deud|atras/i;
+const BALANCE_RE = /saldo|balance|deud|pendiente|por pagar|adeud|a pagar/i;
+const PAYABLE_TYPES: readonly FieldType[] = ['currency', 'number', 'rollup', 'computed'];
 const PAID_RE = /pagad|cobrad|paid|abonad|saldad|liquidad|al[ _-]?d[ií]a|cancelad/i;
 const CLOSED_RE = /cerr|resuel|solucion|finaliz|complet|closed|resolved|done|terminad|entregad|cancel|archiv/i;
 
@@ -382,6 +390,27 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
     const band = (id: string, blocks: LayoutBlock[], tone: 'accent' | 'muted' = 'accent', widths?: number[]): LayoutSection | null =>
         blocks.length === 0 ? null : { id, columns: widths ?? evenColumns(blocks.length), blocks: blocks.map((b) => [b]), style: { tone } };
     const lower = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1);
+    /**
+     * v0.1.289 — el bloque «Pagos» (sólo con una conexión de cobro del equipo):
+     * los links de pago del cliente (también los de `linkedListId`) y, si hay
+     * un campo de saldo, el botón para pagarlo por ese monto.
+     */
+    const paymentsBlock = (linkedListId: number | null): LayoutBlock | null => {
+        if (!input.payments) return null;
+        const balance = all.find((f) => PAYABLE_TYPES.includes(f.type) && BALANCE_RE.test(hay(f)));
+        return {
+            id: 'payments',
+            type: 'payments',
+            title: 'Tus pagos',
+            config: {
+                show_links: true,
+                linked_list_ids: linkedListId !== null ? [linkedListId] : [],
+                pay_button: balance
+                    ? { enabled: true, connection_id: input.payments.connection_id, amount_field_id: balance.id, concept: '', label: 'Pagar mi saldo' }
+                    : { enabled: false },
+            },
+        };
+    };
 
     const sections: LayoutSection[] = [];
     let subtitle: LayoutFieldLite[] = [];
@@ -396,7 +425,9 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
             chips = chipsFrom(ofType('select'), 2);
             cover = 'color';
             if (!bill) {
+                const pay = paymentsBlock(null);
                 sections.push({ id: 'empty', columns: [12], blocks: [[notice('no-billing', 'Vincula una lista con importes (por ejemplo, Facturas) para mostrar el estado de cuenta.', 'info')]] });
+                if (pay) sections.push({ id: 'payments', columns: [12], blocks: [[pay]] });
                 break;
             }
             const a = anatomy(bill);
@@ -412,6 +443,8 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
             ]);
             const b = band('summary', band1.slice(0, 4));
             if (b) sections.push(b);
+            const pay = paymentsBlock(bill.list_id);
+            if (pay) sections.push({ id: 'payments', columns: [12], blocks: [[pay]] });
             const charts = compact<LayoutBlock>([
                 a.status
                     ? {

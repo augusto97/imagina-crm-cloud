@@ -323,7 +323,7 @@ describe('Cobros de las empresas — Mercado Pago y Wompi (v0.1.251)', () => {
         expect(JSON.stringify(row!.secrets)).not.toContain('APP_USR-buena');
         const conns = await svc.connectionsFor(tenantId, admin);
         expect(conns).toEqual([
-            { id, name: expect.stringContaining('Mercado Pago'), provider: 'mercadopago', account_label: 'TIENDA_ACME', test_mode: false },
+            { id, name: expect.stringContaining('Mercado Pago'), provider: 'mercadopago', account_label: 'TIENDA_ACME', test_mode: false, shared: true },
         ]);
     });
 

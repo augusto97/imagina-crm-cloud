@@ -50,6 +50,8 @@ export const PORTAL_LAYOUT_BLOCK_TYPES: readonly LayoutBlockType[] = [
     'embed',
     'divider',
     'spacer',
+    // v0.1.289 — los links de pago del cliente y el botón para pagar.
+    'payments',
 ];
 
 /** Tipos que el cliente puede editar en un bloque `editable` (los demás se ven). */

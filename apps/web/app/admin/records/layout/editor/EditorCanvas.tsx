@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowDown, ArrowUp, Columns3, Copy, GripVertical, Plus, Trash2 } from 'lucide-react';
-import type { LayoutBlock, LayoutSection } from '@imagina-base/shared';
+import { PORTAL_LAYOUT_BLOCK_TYPES, type LayoutBlock, type LayoutSection } from '@imagina-base/shared';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { __ } from '@/lib/i18n';
@@ -335,7 +335,9 @@ function DropZone({ sectionId, col, index, grow = false }: { sectionId: string; 
 function AddBlockMenu({ sectionId, col, index, compact }: { sectionId: string; col: number; index: number; compact: boolean }): JSX.Element {
     const ed = useEditor();
     const [open, setOpen] = useState(false);
-    const categories = Object.keys(CATEGORY_LABEL) as CatalogCategory[];
+    // En el portal sólo los bloques que el portal dibuja (como en la biblioteca).
+    const pool = ed.catalog.target === 'portal' ? BLOCK_CATALOG.filter((e) => PORTAL_LAYOUT_BLOCK_TYPES.includes(e.type)) : BLOCK_CATALOG;
+    const categories = (Object.keys(CATEGORY_LABEL) as CatalogCategory[]).filter((cat) => pool.some((e) => e.category === cat));
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
@@ -354,7 +356,7 @@ function AddBlockMenu({ sectionId, col, index, compact }: { sectionId: string; c
                 {categories.map((cat) => (
                     <div key={cat} className="imcrm-mb-1">
                         <p className="imcrm-px-2 imcrm-pb-1 imcrm-pt-1.5 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{CATEGORY_LABEL[cat]}</p>
-                        {BLOCK_CATALOG.filter((e) => e.category === cat).map((e) => (
+                        {pool.filter((e) => e.category === cat).map((e) => (
                             <button
                                 key={e.key}
                                 type="button"

@@ -30,6 +30,7 @@ import {
     type PortalLayoutData,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalPayResult,
     type PortalAccessCheck,
     type PortalAccessList,
     type PortalAccounts,
@@ -52,6 +53,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { contentDispositionHeader } from '../files/safe-content-type';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { openPortalSession } from './portal-cookie';
 import { PortalService, type PortalActor } from './portal.service';
 
 const portalPreviewSchema = layoutDataRequestSchema.extend({ record_id: idSchema });
@@ -188,7 +190,7 @@ export class PortalController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(portalRequestAccessSchema)) input: PortalRequestAccessInput,
     ): Promise<{ ok: true }> {
-        await this.portal.requestAccess(input.email, req.host);
+        await this.portal.requestAccess(input.email, req.host, input.empresa);
         return { ok: true };
     }
 
@@ -205,23 +207,7 @@ export class PortalController {
             ip: req.ip,
             host: req.host,
         });
-        // v0.1.241 — el navegador cambia de sesión del portal: la anterior se
-        // cierra (si no, quedaba viva 30 días sin que nadie la usara).
-        const previous = req.cookies?.[PORTAL_SESSION_COOKIE];
-        if (previous && previous !== sessionToken) {
-            const old = await this.sessions.peek(previous);
-            if (old?.portalTenantId !== undefined) await this.sessions.destroy(previous);
-        }
-        // v0.1.241 — cookie PROPIA del portal: abrir un portal ya no cierra la
-        // sesión de trabajo de la app en el mismo navegador.
-        reply.setCookie(PORTAL_SESSION_COOKIE, sessionToken, {
-            httpOnly: true,
-            // SEC-14: en producción SIEMPRE Secure.
-            secure: this.env.COOKIE_SECURE || this.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/',
-            maxAge: this.env.SESSION_TTL_SECONDS,
-        });
+        await openPortalSession(req, reply, sessionToken, { sessions: this.sessions, env: this.env });
         return { ok: true };
     }
 
@@ -330,6 +316,17 @@ export class PortalController {
         return { data: await this.portal.createRecord(portalActor(req), Number(listId) || 0, input) };
     }
 
+    /**
+     * v0.1.289 — «Pagar» en un bloque «Pagos»: crea (o reusa) un link de pago
+     * por el monto que el SERVIDOR lee del registro y devuelve el checkout.
+     */
+    @Post('portal/me/payments/:blockId/pay')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    pay(@Req() req: FastifyRequest, @Param('blockId') blockId: string): Promise<PortalPayResult> {
+        return this.portal.payFromPortal(portalActor(req), String(blockId).slice(0, 80));
+    }
+
     /** v0.1.267 — PDF publicado en el portal, del registro del cliente. */
     @Get('portal/me/documents/:id')
     @UseGuards(SessionGuard)
@@ -354,7 +351,7 @@ export class PortalController {
  * v0.1.241 — más el acceso con el que entró y el que eligió en el portal
  * (`X-Portal-Account`, validado contra SUS vínculos en `requireLink`).
  */
-function portalActor(req: FastifyRequest): PortalActor {
+export function portalActor(req: FastifyRequest): PortalActor {
     const raw = req.headers['x-portal-account'];
     const requested = Number(Array.isArray(raw) ? raw[0] : raw);
     return {

@@ -526,6 +526,13 @@
       "when": 1784200000080,
       "tag": "0074_automation_waits_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1784200000090,
+      "tag": "0075_form_confirmations_portal_passwords",
+      "breakpoints": true
     }
   ]
 }

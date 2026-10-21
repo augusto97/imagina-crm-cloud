@@ -739,10 +739,27 @@ export function AlignControl({ value, onChange }: { value: EmailAlign; onChange:
     );
 }
 
-export function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }): JSX.Element {
+export function Check({
+    label,
+    checked,
+    onChange,
+    disabled,
+    testId,
+}: {
+    label: string;
+    checked: boolean;
+    onChange: (v: boolean) => void;
+    disabled?: boolean;
+    testId?: string;
+}): JSX.Element {
     return (
-        <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-gap-2 imcrm-text-xs">
-            <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <label
+            className={cn(
+                'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs',
+                disabled ? 'imcrm-cursor-not-allowed imcrm-opacity-60' : 'imcrm-cursor-pointer',
+            )}
+        >
+            <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
             {label}
         </label>
     );

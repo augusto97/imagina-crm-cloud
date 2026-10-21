@@ -26,6 +26,7 @@ import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformTransfersCard } from './PlatformTransfersCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
+import { CaptchaKeysCard } from '@/cloud/components/CaptchaKeysCard';
 import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
 import { BackupsPanel } from '@/cloud/components/BackupsPanel';
@@ -193,7 +194,13 @@ export function PlatformPage(): JSX.Element {
             {tab === 'dominios' && <PlatformDomainsCard />}
             {tab === 'cobros' && <PlatformPaymentsCard />}
             {tab === 'ai' && <PlatformAiCard />}
-            {tab === 'integraciones' && <PlatformIntegrationsCard />}
+            {tab === 'integraciones' && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
+                    <PlatformIntegrationsCard />
+                    {/* v0.1.289 — llaves de captcha para los formularios de todas las empresas. */}
+                    <CaptchaKeysCard scope="platform" />
+                </div>
+            )}
             {tab === 'updates' && <SystemUpdatesPanel />}
             {tab === 'backups' && <BackupsPanel />}
             {tab === 'transfers' && <PlatformTransfersCard />}
