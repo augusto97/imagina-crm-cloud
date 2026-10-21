@@ -56,6 +56,11 @@ export class ViewsRepository {
         listId: number,
         exceptId?: number,
     ): Promise<void> {
+        // Dos pedidos simultáneos que marcan una vista por defecto (doble clic)
+        // se encolan aquí: sin el lock, ninguno veía el default del otro (aún
+        // sin commit) y el segundo chocaba con el índice único → 500. Con él,
+        // el segundo espera, ve el default del primero, lo baja y gana.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`views-default:${tenantId}:${listId}`}, 0))`);
         await tx
             .update(savedViews)
             .set({ isDefault: false, updatedAt: sql`now()` })

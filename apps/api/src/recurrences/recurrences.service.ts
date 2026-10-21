@@ -317,7 +317,9 @@ export class RecurrencesService {
 
     private async fireInTx(tx: Tx, rec: RecurrenceRow): Promise<FireOutcome | null> {
         const tenantId = rec.tenantId;
-        const record = await this.recordsRepo.findById(tx, tenantId, rec.listId, rec.recordId);
+        // Con lock: lee → rueda la fecha → reescribe el `data` entero; sin él,
+        // una edición simultánea de otro campo del registro se perdía.
+        const record = await this.recordsRepo.findByIdForUpdate(tx, tenantId, rec.listId, rec.recordId);
         if (!record) return null;
         const fields = await this.fields.listByListIdWithinTx(tx, tenantId, rec.listId);
         const dateField = fields.find((f) => f.id === rec.dateFieldId);

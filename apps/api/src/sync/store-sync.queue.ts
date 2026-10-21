@@ -3,7 +3,7 @@ import type { StoreSyncResource } from '@imagina-base/shared';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 
 export const STORE_SYNC_QUEUE = 'store-sync';
 const TICK_JOB = 'tick';
@@ -127,7 +127,7 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(STORE_SYNC_QUEUE, { connection: conn() });
+            this.queue = new Queue(STORE_SYNC_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de sincronización con error: ${err.message}`));
             this.worker = new Worker(
                 STORE_SYNC_QUEUE,

@@ -13,6 +13,14 @@ const envSchema = z.object({
         .url()
         .default('postgres://imagina:imagina@localhost:5432/imagina_base'),
     REDIS_URL: z.string().url().default('redis://localhost:6379'),
+    /**
+     * Tope por comando del cliente Redis PRINCIPAL (sesiones, caches, freno
+     * por cuenta). Sin él, con Redis colgado (pausado, sin responder pero con
+     * el socket abierto) cada pedido con sesión y `/health/ready` quedaban
+     * esperando para siempre. Las colas de BullMQ usan sus propias conexiones
+     * (necesitan comandos bloqueantes) y no lo heredan.
+     */
+    REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
     SESSION_TTL_SECONDS: z.coerce
         .number()
         .int()

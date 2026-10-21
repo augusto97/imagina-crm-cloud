@@ -45,6 +45,25 @@ export class ApiExceptionFilter implements ExceptionFilter {
                     data: { status },
                 };
             }
+        } else if (pgErrorResponse(exception) !== null) {
+            // Errores de Postgres que son del DATO recibido o de una carrera
+            // entre dos pedidos, no del servidor: un valor que la base no
+            // acepta (400), un duplicado por doble envío (409), una consulta
+            // que superó el tiempo máximo (503). Antes todos salían 500.
+            const mapped = pgErrorResponse(exception)!;
+            status = mapped.status;
+            body = { code: mapped.code, message: mapped.message, data: { status } };
+            const req = host.switchToHttp().getRequest<FastifyRequest | undefined>();
+            this.logger.warn(`${req?.method ?? ''} ${(req?.url ?? '').split('?')[0]} → ${status} (Postgres ${pgErrorCode(exception)})`);
+            if (status >= 500) {
+                recordServerError({
+                    source: 'database',
+                    method: req?.method ?? null,
+                    path: (req?.url ?? '').split('?')[0] || null,
+                    message: errorMessage(exception),
+                    detail: null,
+                });
+            }
         } else if (clientErrorStatus(exception) !== null) {
             // v0.1.252 — errores de CLIENTE que vienen de Fastify/plugins y no
             // son HttpException (el rate limit, un body demasiado grande, un
@@ -78,6 +97,70 @@ export function clientErrorStatus(exception: unknown): number | null {
     if (typeof exception !== 'object' || exception === null) return null;
     const code = (exception as { statusCode?: unknown }).statusCode;
     return typeof code === 'number' && Number.isInteger(code) && code >= 400 && code < 500 ? code : null;
+}
+
+/**
+ * Código SQLSTATE de un error de Postgres. drizzle lo envuelve
+ * (`DrizzleQueryError` → `cause` = el `DatabaseError` de pg): se recorre la
+ * cadena de `cause` hasta encontrarlo.
+ */
+export function pgErrorCode(exception: unknown): string | null {
+    let cur: unknown = exception;
+    for (let i = 0; i < 5 && typeof cur === 'object' && cur !== null; i++) {
+        const code = (cur as { code?: unknown }).code;
+        if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && 'severity' in cur) return code;
+        cur = (cur as { cause?: unknown }).cause;
+    }
+    return null;
+}
+
+/** Datos que la base no acepta: texto con NUL, JSON con escapes inválidos, número/fecha fuera de rango. */
+const INVALID_INPUT_CODES = new Set([
+    '22P02', // invalid_text_representation (bigint/numeric/json mal formado)
+    '22P05', // untranslatable_character (\u0000 en jsonb)
+    '22021', // character_not_in_repertoire (0x00 en texto)
+    '22003', // numeric_value_out_of_range (id más allá de bigint)
+    '22007', // invalid_datetime_format
+    '22008', // datetime_field_overflow
+    '22001', // string_data_right_truncation
+]);
+
+/** Respuesta para un error de Postgres que NO es del servidor; null si lo es. */
+export function pgErrorResponse(exception: unknown): { status: number; code: string; message: string } | null {
+    const code = pgErrorCode(exception);
+    if (code === null) return null;
+    if (INVALID_INPUT_CODES.has(code)) {
+        return {
+            status: 400,
+            code: 'invalid_input',
+            message: 'Algún dato enviado no es válido (un carácter no admitido o un valor fuera de rango).',
+        };
+    }
+    if (code === '23505') {
+        return {
+            status: 409,
+            code: 'conflict',
+            message: 'Ya existe un elemento con esos datos (quizá se envió dos veces). Recarga y vuelve a intentarlo.',
+        };
+    }
+    if (code === '57014') {
+        return {
+            status: 503,
+            code: 'timeout',
+            message: 'La operación tardó demasiado y se canceló. Inténtalo de nuevo en un momento o acota lo que pides.',
+        };
+    }
+    return null;
+}
+
+/** Mensaje del error de Postgres (no el «Failed query: …» de drizzle, que trae la consulta y sus parámetros). */
+function errorMessage(exception: unknown): string {
+    let cur: unknown = exception;
+    for (let i = 0; i < 5 && cur instanceof Error; i++) {
+        if ('severity' in cur) return cur.message;
+        cur = (cur as { cause?: unknown }).cause;
+    }
+    return exception instanceof Error ? exception.message : String(exception);
 }
 
 function isApiError(value: unknown): value is ApiError {

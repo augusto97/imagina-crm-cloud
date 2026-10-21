@@ -904,8 +904,10 @@ export class AutomationEngine {
             return skip('create_record', 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.');
         }
         // El límite de registros del plan vale también para lo que crea
-        // una automatización (si no, sería la forma de saltearlo).
-        if (this.billing) {
+        // una automatización (si no, sería la forma de saltearlo). Con
+        // RecordsService lo verifica el alta DENTRO de su transacción (sin
+        // carrera entre altas simultáneas); sin él, aquí.
+        if (this.billing && !this.records()) {
             try {
                 await this.billing.assertCanCreateRecords(ctx.tenantId, 1);
             } catch (err) {
@@ -1020,7 +1022,6 @@ export class AutomationEngine {
             const input = { data: { ...data } as Record<string, unknown> };
             for (const r of relations) input.data[jsonbKeyForField(r.fieldId)] = r.ids;
             const dto = await svc.create(ctx.tenantId, SYSTEM_ACTOR, String(listId), input, {
-                planChecked: true,
                 lenientRequired: true,
                 ...(chain.depth > MAX_AUTOMATION_CHAIN_DEPTH ? {} : { automationChain: chain }),
             });

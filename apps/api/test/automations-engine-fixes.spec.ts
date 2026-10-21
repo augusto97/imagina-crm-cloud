@@ -116,6 +116,7 @@ describe('Automatizaciones — auditoría del motor', () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             billing,
         );
         mailbox = new CapturingMail();
