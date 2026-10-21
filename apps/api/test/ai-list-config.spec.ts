@@ -338,7 +338,9 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
 
     it('propose_configure_record_layout con `design`: ficha v3 con pestañas, formas por tipo y gráficos de vinculados (v0.1.232)', async () => {
         const schema = json(await call('get_list_schema', { list: 'clientes' }));
-        expect(schema.linked_lists).toEqual([{ slug: 'facturas', name: 'Facturas', via: 'Cliente', direction: 'esa lista apunta a ésta' }]);
+        expect(schema.linked_lists).toEqual([
+            { slug: 'facturas', name: 'Facturas', via: 'Cliente', direction: 'esa lista apunta a ésta', relation_field_id: expect.any(Number) },
+        ]);
 
         const design = {
             theme: { preset: 'fresh' },
@@ -552,6 +554,56 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         });
         expect(isError(noFilter)).toBe(true);
         expect(json(noFilter).error).toMatch(/TODA la lista/);
+    });
+
+    it('v0.1.289 — esperar, repetir por los vinculados, respuestas de webhook y «para cada registro», por slug', async () => {
+        const created = json(await call('propose_create_automation', {
+            list: 'clientes',
+            name: 'Seguimiento de facturas',
+            trigger_type: 'scheduled',
+            trigger_config: { frequency: 'weekly', weekday: 1, hour: 8, for_each_record: true, records_filters: [{ field: 'estado', op: 'eq', value: 'Activo' }] },
+            actions: [
+                { type: 'call_webhook', config: { url: 'https://erp.example.com/clientes', response_name: 'erp' } },
+                { type: 'wait', config: { mode: 'duration', amount: 2, unit: 'days', resume_condition: [{ field: 'estado', op: 'eq', value: 'activo' }] } },
+                {
+                    type: 'for_each_linked',
+                    config: {
+                        relation: 'facturas',
+                        filters: [{ field: 'monto', op: 'gt', value: 0 }],
+                        actions: [{ type: 'update_field', config: { target: 'item', values: { numero: '{{item.numero}} · {{respuestas.erp.body.id}}' } } }],
+                    },
+                },
+            ],
+        }));
+        expect(String((created.proposal as { summary: string }).summary)).toMatch(/Espera 2 días → Repetir por cada registro vinculado/);
+        await apply(created.proposal_id);
+        const auto = (await automations.list(tenantId, 'clientes')).find((a) => a.name === 'Seguimiento de facturas')!;
+        const facturasFields = await fields.listByListId(tenantId, (await lists.get(tenantId, 'facturas')).id);
+        const byslug = new Map(facturasFields.map((f) => [f.slug, f]));
+        expect(auto.trigger_config.records_filter).toMatchObject({ type: 'group' });
+        expect(auto.trigger_config.records_filters).toBeUndefined();
+        const loop = (auto.actions[2] as { config: Record<string, unknown> }).config;
+        expect(loop.relation_field_id).toBe(byslug.get('cliente')!.id);
+        expect(loop.filter_tree).toMatchObject({ children: [{ field_id: byslug.get('monto')!.id, op: 'gt' }] });
+        expect(loop.relation).toBeUndefined();
+        // Errores corregibles.
+        const bad = async (actions: unknown[]): Promise<string> => {
+            const res = await call('propose_create_automation', { list: 'clientes', name: 'Mal', trigger_type: 'record_created', actions });
+            expect(isError(res)).toBe(true);
+            return String(json(res).error);
+        };
+        expect(
+            await bad([{ type: 'for_each_linked', config: { relation: 'facturas', actions: [{ type: 'wait', config: { mode: 'duration', amount: 1, unit: 'days' } }] } }]),
+        ).toMatch(/No se puede esperar dentro/);
+        expect(await bad([{ type: 'for_each_linked', config: { relation: 'gastos', actions: [{ type: 'update_field', config: { values: { nombre: 'x' } } }] } }])).toMatch(
+            /no está vinculada/,
+        );
+        expect(
+            await bad([{ type: 'for_each_linked', config: { relation: 'facturas', actions: [{ type: 'update_field', config: { target: 'item', values: { inventado: 'x' } } }] } }]),
+        ).toMatch(/no es un campo de «Facturas»/);
+        expect(await bad([{ type: 'wait', config: { mode: 'until_field', date_field: 'nombre' } }])).toMatch(/no es un campo de fecha/);
+        expect(await bad([{ type: 'call_webhook', config: { url: 'https://x.test', response_name: 'Mal Nombre' } }])).toMatch(/nombre de la respuesta/);
+        await automations.remove(tenantId, 'clientes', auto.id);
     });
 
     it('vistas: renombrar, marcar por defecto, reemplazar filtros y borrar', async () => {

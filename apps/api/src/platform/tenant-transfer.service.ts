@@ -43,6 +43,7 @@ import {
     automationHooks,
     automationRuns,
     automations,
+    automationVersions,
     comments,
     connections,
     connectionSyncs,
@@ -280,6 +281,8 @@ export class TenantTransferService {
             await dump('forms', await this.byTenant(forms, tenantId));
             await dump('saved_filters', await this.byTenant(savedFilters, tenantId));
             await dump('automations', await this.byTenant(automations, tenantId));
+            // v0.1.289 — historial de versiones (fotos sin secretos).
+            await dump('automation_versions', await this.byTenant(automationVersions, tenantId));
             await dump('dashboards', await this.byTenant(dashboards, tenantId));
             await dump('recurrences', await this.byTenant(recurrences, tenantId));
             await dump('portal_links', await this.byTenant(portalLinks, tenantId));
@@ -951,20 +954,47 @@ export class TenantTransferService {
         counts.automation_runs = await this.streamInsert(rows('automation_runs'), async (batch) => {
             const values = batch
                 .filter((r) => autoMap.has(Number(r.automationId)))
-                .map((r) => ({
-                    tenantId,
-                    automationId: autoMap.get(Number(r.automationId))!,
-                    recordId: mapId(maps.record, r.recordId),
-                    status: String(r.status),
-                    actionsLog: r.actionsLog ?? [],
-                    error: (r.error as string | null) ?? null,
-                    startedAt: this.date(r.startedAt),
-                    finishedAt: this.date(r.finishedAt),
-                    createdAt: this.date(r.createdAt) ?? new Date(),
-                }));
+                .map((r) => {
+                    // v0.1.289 — una corrida EN ESPERA no se migra viva: su
+                    // contexto guarda datos y punteros de la instancia de
+                    // origen. Llega cancelada, con el motivo.
+                    const waiting = String(r.status) === 'waiting' || String(r.status) === 'running';
+                    const reason = 'Migrada desde otro servidor: la espera no se conserva.';
+                    return {
+                        tenantId,
+                        automationId: autoMap.get(Number(r.automationId))!,
+                        recordId: mapId(maps.record, r.recordId),
+                        status: waiting ? 'cancelled' : String(r.status),
+                        actionsLog: r.actionsLog ?? [],
+                        error: waiting ? reason : ((r.error as string | null) ?? null),
+                        startedAt: this.date(r.startedAt),
+                        finishedAt: waiting ? new Date() : this.date(r.finishedAt),
+                        createdAt: this.date(r.createdAt) ?? new Date(),
+                    };
+                });
             if (!values.length) return 0;
             await this.insertValues(tx, automationRuns, values);
             return values.length;
+        });
+
+        // v0.1.289 — versiones: las mismas traducciones de ids que la automatización.
+        counts.automation_versions = await this.insertPlain(tx, rows('automation_versions'), automationVersions, (v) => {
+            const automationId = mapId(autoMap, v.automationId);
+            if (automationId === null) return null;
+            const { triggerConfig, actions } = remapAutomation((v.triggerConfig as Row | null) ?? {}, v.actions ?? [], maps);
+            return {
+                tenantId,
+                automationId,
+                name: String(v.name),
+                description: (v.description as string | null) ?? null,
+                triggerType: String(v.triggerType),
+                triggerConfig,
+                actions,
+                isActive: Boolean(v.isActive),
+                authorId: mapId(maps.user, v.authorId),
+                note: (v.note as string | null) ?? null,
+                createdAt: this.date(v.createdAt) ?? new Date(),
+            };
         });
 
         counts.dashboards = await this.insertPlain(tx, rows('dashboards'), dashboards, (d) => ({

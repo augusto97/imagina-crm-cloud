@@ -50,7 +50,7 @@ export type BulkOpSpec = z.infer<typeof bulkOpSpec>;
 export const bulkOpsSpec = z.array(bulkOpSpec).min(1).max(BULK_EDIT_MAX_OPERATIONS);
 
 type Opt = { value: string; label: string };
-function optionValue(f: Field, raw: string): string {
+export function optionValue(f: Field, raw: string): string {
     const opts = (f.config as { options?: Opt[] }).options ?? [];
     if (opts.some((o) => o.value === raw)) return raw;
     const byLabel = opts.find((o) => typeof o.label === 'string' && o.label.trim().toLowerCase() === raw.trim().toLowerCase());

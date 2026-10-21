@@ -10,6 +10,7 @@ import {
     createAutomationSchema,
     createDashboardSchema,
     createViewSchema,
+    describeWait,
     crmTemplateIdSchema,
     fieldSlugSchema,
     filterOperatorSchema,
@@ -87,6 +88,7 @@ import {
     type PortalBuildContext,
 } from './list-config';
 import { translateBulkEditActions } from './bulk-ops';
+import { assertFlowIssues, translateFlowActions, translateScheduledEach, type FlowTranslateCtx } from './automation-flow-ai';
 import {
     DOC_DESIGN_DOC,
     DOC_DESIGN_GUIDE,
@@ -260,6 +262,7 @@ const automationSpec = z.object({
             'record_updated: {changed_fields: [slugs], field_filters: [{field, op, value}]}. ' +
                 'due_date_reached: {due_field: slug, offset_minutes: n (negativo = antes; 1440 = 1 día), field_filters}. ' +
                 'scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour 0-23, minute, weekday 0-6 (domingo=0), day 1-28} (o {cron: "0 9 * * 1"}); la hora es la de la ZONA de la empresa — sólo pon tz (IANA, ej. "America/Bogota") si la persona pide otra. ' +
+                'Con for_each_record: true + records_filters: [{field, op, value}] corre las acciones UNA VEZ POR CADA registro que cumpla (con sus {{slug}}; hasta 1.000 por disparo; fechas relativas en la zona de la empresa) — ej. «cada lunes, a cada cliente con saldo pendiente, un correo». ' +
                 'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}.',
@@ -277,7 +280,10 @@ const automationSpec = z.object({
                 'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
-                'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
+                'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
+                'wait {mode: "duration", amount, unit: minutes|hours|days} o {mode: "until_field", date_field: slug de un campo date/datetime, offset_amount?, offset_unit?: minutes|hours|days, offset_direction?: before|after, at_time?: "09:00"} + resume_condition?: [{field, op, value}] — PAUSA la corrida y sigue sola con los pasos siguientes (máx. 366 días; se reanuda con el registro releído y sólo si cumple resume_condition); puede ir dentro de if_else, NO dentro de for_each_linked | ' +
+                'for_each_linked {relation: slug de la lista vinculada (linked_lists de get_list_schema; o relation_field_id), via?: nombre de la relación si hay varias, filters?: [{field, op, value}] por slug de ESA lista, actions: [...]} — repite las acciones por cada registro vinculado (tope 200); adentro {{item.slug}} y {{item.record.id}} leen el vinculado, y update_field {target: "item", values: {slug de esa lista: valor}} lo cambia (sin target cambia el registro que disparó). ' +
+                'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
         ),
@@ -820,6 +826,8 @@ export class StructureTools implements AiProposalApplier {
                     slug: listById.get(p.other_list_id)?.slug ?? null,
                     name: p.other_list_name,
                     via: p.relation_label,
+                    // v0.1.289 — para for_each_linked (repetir por los vinculados).
+                    relation_field_id: p.relation_field_id,
                     direction: p.direction === 'forward' ? 'esta lista apunta a esa' : 'esa lista apunta a ésta',
                 })),
                 portal: {
@@ -1343,6 +1351,21 @@ export class StructureTools implements AiProposalApplier {
         });
     }
 
+    /** v0.1.289 — lo que necesita traducir las acciones de flujo (relaciones y campos de la otra lista). */
+    private async flowCtx(ctx: AiToolContext, list: { id: number; name: string }, fields: Field[]): Promise<FlowTranslateCtx> {
+        const [paths, all] = await Promise.all([
+            this.fields.relationPaths(ctx.tenantId, String(list.id)).catch(() => []),
+            this.lists.list(ctx.tenantId),
+        ]);
+        const slugOf = new Map(all.map((l) => [l.id, l.slug]));
+        return {
+            listName: list.name,
+            fields,
+            paths: paths.map((p) => ({ ...p, other_list_slug: slugOf.get(p.other_list_id) ?? null })),
+            fieldsOf: (id) => this.fields.listByListId(ctx.tenantId, id),
+        };
+    }
+
     private async proposeCreateAutomation(ctx: AiToolContext, input: AutomationSpec): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
         const fields = await this.fields.listByListId(ctx.tenantId, list.id);
@@ -1359,6 +1382,11 @@ export class StructureTools implements AiProposalApplier {
         if (!parsed.success) throw new AiToolError(zodIssues(parsed.error));
         // v0.1.222 — «Editar en lote» llega por slug: se traduce a ids.
         translateBulkEditActions(parsed.data.actions as unknown[], fields, list.name);
+        // v0.1.289 — esperar, repetir por vinculados y el horario «para cada registro».
+        await translateFlowActions(parsed.data.actions as unknown[], await this.flowCtx(ctx, list, fields));
+        parsed.data.trigger_config ??= {};
+        translateScheduledEach(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
+        assertFlowIssues({ trigger_type: parsed.data.trigger_type, trigger_config: parsed.data.trigger_config, actions: parsed.data.actions });
         // v0.1.281 — correos diseñados: vocabulario del modelo → diseño del editor.
         translateEmailDesignActions(parsed.data.actions as unknown[], { fields: designFields(fields), brandColor: await this.brandColor(ctx) });
         const slugs = new Set(fields.map((f) => f.slug));
@@ -1804,6 +1832,13 @@ export class StructureTools implements AiProposalApplier {
             });
             if (!merged.success) throw new AiToolError(zodIssues(merged.error));
             translateBulkEditActions(merged.data.actions as unknown[], fields, list.name);
+            // v0.1.289 — esperar, repetir por vinculados y el horario «para cada registro».
+            if (input.actions !== undefined) await translateFlowActions(merged.data.actions as unknown[], await this.flowCtx(ctx, list, fields));
+            merged.data.trigger_config ??= {};
+            translateScheduledEach(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
+            if (input.actions !== undefined || input.trigger_config !== undefined) {
+                assertFlowIssues({ trigger_type: merged.data.trigger_type, trigger_config: merged.data.trigger_config, actions: merged.data.actions });
+            }
             if (input.actions !== undefined) {
                 translateEmailDesignActions(merged.data.actions as unknown[], { fields: designFields(fields), brandColor: await this.brandColor(ctx) });
             }
@@ -2066,7 +2101,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'create_automation': {
-                const auto = await this.automations.create(ctx.tenantId, String(payload.listId), payload.input);
+                const auto = await this.automations.create(ctx.tenantId, String(payload.listId), payload.input, { actorId: ctx.userId, note: 'Creada desde el asistente' });
                 return {
                     message: `Automatización «${auto.name}» creada${auto.is_active ? ' y activa' : ' (pausada)'}.`,
                     links: [{ label: 'Abrir la automatización', href: `/lists/${payload.listSlug}/automations/${auto.id}` }],
@@ -2117,7 +2152,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'update_automation': {
-                const auto = await this.automations.update(ctx.tenantId, String(payload.listId), payload.automationId, payload.patch);
+                const auto = await this.automations.update(ctx.tenantId, String(payload.listId), payload.automationId, payload.patch, { actorId: ctx.userId, note: 'Cambio desde el asistente' });
                 return {
                     message: `Automatización «${auto.name}» actualizada${payload.patch.is_active !== undefined ? (auto.is_active ? ' y activa' : ' (pausada)') : ''}.`,
                     links: [{ label: 'Abrir la automatización', href: `/lists/${payload.listSlug}/automations/${auto.id}` }],
@@ -2749,6 +2784,10 @@ export class StructureTools implements AiProposalApplier {
                     walk((cfg.else_actions as unknown[] | undefined) ?? [], `${where}.no.`);
                     return;
                 }
+                if (type === 'for_each_linked') {
+                    walk((cfg.actions as unknown[] | undefined) ?? [], `${where}.cada.`);
+                    return;
+                }
                 if (type !== 'connector_action') return;
                 const conn = connections.find((c) => c.id === Number(cfg.connection_id));
                 if (!conn) {
@@ -2793,7 +2832,8 @@ export class StructureTools implements AiProposalApplier {
     ): void {
         const bad = new Set<string>();
         const check = (s: unknown): void => {
-            if (typeof s === 'string' && s && !slugs.has(s) && !/^f\d+$/.test(s)) bad.add(s);
+            // `item.slug` (el vinculado de un bucle) se valida contra SU lista en translateFlowActions.
+            if (typeof s === 'string' && s && !s.startsWith('item.') && !slugs.has(s) && !/^f\d+$/.test(s)) bad.add(s);
         };
         const checkCondition = (c: unknown): void => {
             if (Array.isArray(c)) for (const r of c) check((r as { field?: string; slug?: string }).field ?? (r as { slug?: string }).slug);
@@ -2820,9 +2860,17 @@ export class StructureTools implements AiProposalApplier {
                 switch (act.type) {
                     case 'update_field':
                         for (const [k, v] of Object.entries((cfg.values as Record<string, unknown>) ?? {})) {
-                            check(k);
+                            // v0.1.289 — sobre el vinculado de un bucle: claves de la otra lista.
+                            if (cfg.target !== 'item') check(k);
                             checkTags(v);
                         }
+                        break;
+                    case 'wait':
+                        if (cfg.mode === 'until_field') check(cfg.date_field);
+                        checkCondition(cfg.resume_condition);
+                        break;
+                    case 'for_each_linked':
+                        walk((cfg.actions as unknown[]) ?? []);
                         break;
                     case 'create_record': {
                         const target = cfg.target_list ?? cfg.list_id;
@@ -3134,7 +3182,7 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return `${when.charAt(0).toUpperCase() + when.slice(1)} «${label(cfg.due_field)}»`;
         }
         case 'scheduled':
-            return `Programada (${String(cfg.cron ?? '')})`;
+            return `Programada (${String(cfg.cron ?? cfg.frequency ?? '')})${cfg.for_each_record === true ? ', para cada registro que cumpla el filtro' : ''}`;
         case 'incoming_webhook':
             return 'Al recibir un webhook';
         case 'payment_received':
@@ -3171,6 +3219,12 @@ function describeActions(
                 return connectorLabel(cfg);
             case 'if_else':
                 return 'Condicional sí / no';
+            case 'wait':
+                return describeWait(cfg);
+            case 'for_each_linked': {
+                const n = Array.isArray(cfg.actions) ? cfg.actions.length : 0;
+                return `Repetir por cada registro vinculado (${n} ${n === 1 ? 'acción' : 'acciones'})`;
+            }
             default:
                 return a.type;
         }
