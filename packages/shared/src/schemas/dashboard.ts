@@ -107,5 +107,48 @@ export type CreateDashboardInput = z.infer<typeof createDashboardSchema>;
 export const updateDashboardSchema = createDashboardSchema.partial();
 export type UpdateDashboardInput = z.infer<typeof updateDashboardSchema>;
 
+/** v0.1.286 — Reordenar los tableros del menú (posición = índice). */
+export const reorderDashboardsSchema = z.object({
+    ids: z.array(idSchema).min(1).max(500),
+});
+export type ReorderDashboardsInput = z.infer<typeof reorderDashboardsSchema>;
+
+/**
+ * v0.1.286 — Filtros a nivel TABLERO (Responsable, Estado, "Yo"…). El tablero
+ * declara en `settings.filters` qué campos se pueden filtrar
+ * (`dashboardFilterDefSchema`); quien mira elige un valor y viaja en el body
+ * del bundle (como el período global). Cada valor se aplica a TODOS los
+ * widgets cuya lista tiene ese campo — los ids de campo son únicos, así que el
+ * campo ya dice a qué lista pertenece.
+ */
+export const dashboardFilterDefSchema = z.object({
+    list_id: idSchema,
+    field_id: idSchema,
+});
+export type DashboardFilterDef = z.infer<typeof dashboardFilterDefSchema>;
+
+/** Valor especial de un filtro por persona: quien está mirando. */
+export const DASHBOARD_FILTER_ME = 'me';
+
+export const dashboardFilterValueSchema = z.object({
+    field_id: idSchema,
+    /** Valor de la opción, id de persona (o `"me"`), true/false o texto. */
+    value: z.union([z.string().max(500), z.number(), z.boolean(), z.array(z.string().max(500)).max(50)]),
+});
+export type DashboardFilterValue = z.infer<typeof dashboardFilterValueSchema>;
+
+/** Body del bundle de un tablero (POST /dashboards/:id/widgets/data). */
+export const dashboardBundleRequestSchema = z.object({
+    period_preset: z.string().max(64).optional(),
+    filters: z.array(dashboardFilterValueSchema).max(10).optional(),
+});
+export type DashboardBundleRequest = z.infer<typeof dashboardBundleRequestSchema>;
+
+/** v0.1.286 — Vista previa de un widget SIN guardar (el diálogo de edición). */
+export const widgetPreviewRequestSchema = dashboardBundleRequestSchema.extend({
+    widget: widgetSpecSchema,
+});
+export type WidgetPreviewRequest = z.infer<typeof widgetPreviewRequestSchema>;
+
 /** Métrica de widget = mismas del footer de agregados. */
 export const widgetMetricSchema = aggregateMetricSchema;

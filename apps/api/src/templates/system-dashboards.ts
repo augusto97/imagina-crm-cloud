@@ -34,6 +34,11 @@ const role = (key: string, label: string, types: FieldType[], required = true): 
     required,
 });
 const ref = (key: string) => ({ $field: key });
+/**
+ * v0.1.286 — "De hoy en adelante" sobre un rol de fecha: las tablas de
+ * próximos vencimientos/cierres listaban primero lo más VIEJO ya vencido.
+ */
+const fromToday = (key: string) => ({ field_id: ref(key), preset: 'from_today' });
 const MAIN = { $list: 'main' };
 
 const w = (
@@ -116,7 +121,7 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
             w('chart_bar', 'Monto por etapa', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('etapa') }, 6, 2, 6, 5),
             w('chart_bar', 'Monto por responsable', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('responsable'), hide_zero_groups: true }, 0, 7, 6, 4),
             w('chart_line', 'Cierres por mes', { metric: 'sum', metric_field_id: ref('monto'), date_field_id: ref('cierre'), time_bucket: 'month' }, 6, 7, 6, 4),
-            w('table', 'Próximos cierres', { limit: 8, sort_field_id: ref('cierre'), sort_dir: 'asc' }, 0, 11, 12, 4),
+            w('table', 'Próximos cierres', { limit: 8, sort_field_id: ref('cierre'), sort_dir: 'asc', period: fromToday('cierre') }, 0, 11, 12, 4),
         ],
     ),
     dash(
@@ -134,7 +139,7 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
             w('stat_delta', 'Facturado (30 días)', { metric: 'sum', metric_field_id: ref('monto'), date_field_id: ref('vencimiento'), period_days: 30 }, 9, 0, 3, 2),
             w('chart_pie', 'Por estado de pago', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('estado'), center_label: 'Total' }, 0, 2, 6, 4),
             w('chart_bar', 'Vencimientos por mes', { metric: 'sum', metric_field_id: ref('monto'), date_field_id: ref('vencimiento'), time_bucket: 'month' }, 6, 2, 6, 4),
-            w('table', 'Próximos vencimientos', { limit: 10, sort_field_id: ref('vencimiento'), sort_dir: 'asc' }, 0, 6, 12, 5),
+            w('table', 'Próximos vencimientos', { limit: 10, sort_field_id: ref('vencimiento'), sort_dir: 'asc', period: fromToday('vencimiento') }, 0, 6, 12, 5),
         ],
     ),
     dash(
@@ -152,7 +157,7 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
             w('chart_bar', 'Por responsable', { metric: 'count', group_by_field_id: ref('responsable'), hide_zero_groups: true }, 0, 2, 6, 5),
             w('chart_pie', 'Por estado', { metric: 'count', group_by_field_id: ref('estado') }, 6, 2, 3, 5),
             w('chart_pie', 'Por prioridad', { metric: 'count', group_by_field_id: ref('prioridad') }, 9, 2, 3, 5),
-            w('table', 'Vence pronto', { limit: 8, sort_field_id: ref('fecha'), sort_dir: 'asc' }, 0, 7, 12, 4),
+            w('table', 'Vence pronto', { limit: 8, sort_field_id: ref('fecha'), sort_dir: 'asc', period: fromToday('fecha') }, 0, 7, 12, 4),
         ],
     ),
     dash(
@@ -199,7 +204,9 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
             kpi('Productos', { icon: 'package' }, 0, 0),
             kpi('Unidades en stock', { metric: 'sum', metric_field_id: ref('stock'), icon: 'layers' }, 3, 0),
             kpi('Precio promedio', { metric: 'avg', metric_field_id: ref('precio'), prefix: '$', icon: 'tag' }, 6, 0),
-            kpi('Sin stock', { metric: 'count', filter_tree: { type: 'condition', field_id: ref('stock'), op: 'lte', value: 0 }, icon: 'flag' }, 9, 0),
+            // v0.1.286 — la raíz del filtro es un GRUPO (una condición suelta
+            // no la entendía el editor del widget y al guardarlo se perdía).
+            kpi('Sin stock', { metric: 'count', filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: ref('stock'), op: 'lte', value: 0 }] }, icon: 'flag' }, 9, 0),
             w('chart_bar', 'Stock por categoría', { metric: 'sum', metric_field_id: ref('stock'), group_by_field_id: ref('categoria') }, 0, 2, 6, 4),
             w('chart_pie', 'Productos por categoría', { metric: 'count', group_by_field_id: ref('categoria') }, 6, 2, 6, 4),
             w('table', 'Menos stock', { limit: 10, sort_field_id: ref('stock'), sort_dir: 'asc' }, 0, 6, 12, 4),
