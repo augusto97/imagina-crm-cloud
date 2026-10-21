@@ -22,7 +22,7 @@ import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
 import { useMainVirtualRows } from './useMainVirtualRows';
 import { SortIndicator } from './SortIndicator';
-import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
+import { ADD_COLUMN_GUTTER, FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
@@ -530,7 +530,11 @@ export function TableView({
     // (las columnas estiran proporcionalmente, sin vacío a la derecha) y
     // conserva el scroll horizontal cuando la suma de anchos supera el
     // viewport.
-    const tableStyle: React.CSSProperties = { tableLayout: 'fixed', width: '100%', minWidth: table.getCenterTotalSize() };
+    const tableStyle: React.CSSProperties = {
+        tableLayout: 'fixed',
+        width: '100%',
+        minWidth: table.getCenterTotalSize() + (onAddColumn ? ADD_COLUMN_GUTTER : 0),
+    };
     // v0.1.142 — `table-layout: fixed` + `width: 100%` reparte el espacio
     // sobrante ENTRE TODAS las columnas, así que la de la casilla se
     // estiraba a ~44px por más que se le pidieran 32 (reporte del usuario,

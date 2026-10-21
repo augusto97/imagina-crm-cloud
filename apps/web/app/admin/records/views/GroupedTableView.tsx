@@ -47,7 +47,7 @@ import { isImageUrlField } from '@/lib/imageProxy';
 import { useMainVirtualRows } from './useMainVirtualRows';
 import { SortIndicator } from './SortIndicator';
 import type { ActiveSort } from '../recordsState';
-import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
+import { ADD_COLUMN_GUTTER, FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 
 /**
  * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
@@ -875,7 +875,11 @@ function GroupBucketSection({
     // `width: 100%` + `minWidth: tableWidth`: la tabla llena el contenedor
     // (sin vacío a la derecha) y todos los buckets comparten el mismo
     // min-width para que las columnas queden alineadas.
-    const tableStyle: React.CSSProperties = { tableLayout: 'fixed', width: '100%', minWidth: tableWidth };
+    const tableStyle: React.CSSProperties = {
+        tableLayout: 'fixed',
+        width: '100%',
+        minWidth: tableWidth + (onAddColumn ? ADD_COLUMN_GUTTER : 0),
+    };
     // Ver TableView: sin `<colgroup>` la columna de la casilla se estira
     // con el sobrante. Se rinde en las DOS tablas (cabecera y cuerpo).
     const colGroup = (

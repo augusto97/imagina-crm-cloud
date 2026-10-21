@@ -30,6 +30,13 @@ export function FloatingAddColumn({ onClick }: { onClick: () => void }): JSX.Ele
     );
 }
 
+/**
+ * v0.1.286 — ancho que la tabla le RESERVA al "+" flotante al final (la
+ * columna de relleno nunca baja de esto): sin eso, al llegar al final del
+ * scroll el botón tapaba la etiqueta de la última columna («Avance» cortado).
+ */
+export const ADD_COLUMN_GUTTER = 44;
+
 /** ¿Quedan columnas por ver a la derecha? (scroll horizontal no al final) */
 export function useOverflowsRight(ref: RefObject<HTMLElement>, deps: unknown[] = []): boolean {
     const [overflows, setOverflows] = useState(false);

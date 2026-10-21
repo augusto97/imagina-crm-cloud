@@ -150,7 +150,7 @@ export function SaveViewDialog({
                                 {__('Guardar como vista')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Captura los filtros, sort y búsqueda actuales en una vista nombrada.')}
+                                {__('Captura los filtros, el orden y la búsqueda actuales en una vista nombrada.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
