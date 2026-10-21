@@ -8202,6 +8202,62 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 12/12, 17/17, 30/30, 12/12 y 5/5 en la rama del trabajo y
         10/10 sobre la integración.
 
+  - [x] **Portal y formularios (v0.1.289, ADR-S48, tercera entrega del «hazlo
+        todo»)**: (a) **formularios por páginas** — elemento «Salto de página»
+        con título opcional; la página pública muestra un paso por vez con
+        «Paso X de N» y barra de progreso, Anterior/Siguiente, valida cada
+        página antes de avanzar (foco y scroll al primer error), salta las
+        páginas sin preguntas visibles (el total cambia con las condiciones) y
+        el servidor revalida TODO al enviar —un error del servidor lleva a su
+        página—; la vista previa del constructor navega páginas. (b)
+        **Captcha** por formulario (Cloudflare Turnstile recomendado, hCaptcha
+        y reCAPTCHA v2) con llaves de la plataforma (Plataforma →
+        Integraciones, `platform:captcha`) o de la empresa (Ajustes → **Portal
+        y formularios**, sección nueva; ganan las de la empresa), secreto
+        cifrado que nunca vuelve, `siteverify` por el guard anti-SSRF, token de
+        un solo uso y CSP de la página que suma SÓLO el proveedor elegido; sin
+        llaves la opción se ve deshabilitada con el motivo. Si las llaves
+        desaparecen de un formulario que ya las pedía, sigue aceptando
+        respuestas y abre un Problema (no se pierden inscripciones). Guía en
+        `docs/runbook-captcha.md`. (c) **Confirmación del correo con un clic**
+        (doble opt-in): la respuesta queda pendiente en
+        `form_pending_submissions` (RLS, token hasheado, 48 h, archivos
+        retenidos), llega un correo con la marca de la empresa y el enlace abre
+        una página que confirma por POST (los antivirus de correo abren los
+        enlaces), con consumo atómico; recién ahí se crea el registro, corre
+        «Cuando se envía un formulario» y cuenta el cupo. Freno 3/hora por
+        correo y 10/hora por IP; vencidos se limpian con sus archivos. Además,
+        copia opcional de las respuestas a quien responde. (d) **Entrar al
+        portal con contraseña** POR EMPRESA: `portal_credentials (tenant_id,
+        user_id)` con argon2 y RLS —NO es la contraseña de la cuenta de
+        trabajo, sólo abre la sesión del portal de esa empresa—; la empresa la
+        habilita en Ajustes (con el enlace de entrada `/portal?empresa=slug`
+        para copiar), el cliente la crea o cambia desde su menú (cambiarla
+        cierra sus otras sesiones del portal), la empresa sale del dominio del
+        portal o de `?empresa=` (el dominio gana), respuesta y costo idénticos
+        exista o no la cuenta, frenos por cuenta+empresa e IP, un superadmin
+        nunca entra a un portal, y quitar el último acceso o borrar la cuenta
+        borra la credencial; «Olvidé mi contraseña» = enlace por correo. (e)
+        **Bloque «Pagos»** del portal: los links de pago del registro del
+        cliente y de sus listas vinculadas (relación en cualquier sentido o
+        campo persona) con estado, monto en el formato de la empresa, «Pagar»
+        y «Ver comprobante»; «Pagar mi saldo» cobra el monto que el SERVIDOR lee
+        de un campo del registro —jamás uno del navegador—, sólo con conexiones
+        de cobro del equipo, reusando el link pendiente vigente por el mismo
+        monto (lock por registro); el portal se refresca solo hasta que llega
+        el aviso del proveedor. «Estado de cuenta» lo incluye si hay cobros
+        conectados. Migración 0075. Asistente/MCP (`propose_configure_portal`
+        con el bloque `payments`; `get_list_schema` describe páginas, captcha
+        y confirmación de cada formulario). Las respuestas pendientes y las
+        contraseñas del portal NO viajan al migrar una empresa (credenciales de
+        la instalación; el import lo avisa). De paso: en la última página se
+        veían «Siguiente» y «Enviar» a la vez, y el «+ Bloque» del portal
+        ofrecía bloques que el portal no dibuja. 33 tests de API nuevos
+        (`forms-advanced`, `portal-password`, `portal-payments`), front y
+        shared en verde + E2E en navegador 48/48 con SMTP, Mercado Pago,
+        siteverify y Turnstile simulados (formulario de 3 páginas en celular,
+        confirmación por correo, portal con contraseña, pago marcado solo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

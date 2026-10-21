@@ -3261,6 +3261,41 @@ empresa, las corridas en espera llegan canceladas con el motivo. Fuera de
 alcance: plantillas del sistema que usen esperas o bucles (la infraestructura
 ya lo soporta).
 
+
+### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
+
+**Contexto.** Tercera entrega del «hazlo todo» (carencias de ADR-S45):
+formularios por páginas, captcha, confirmación del correo con un clic, entrar al
+portal con contraseña y pagar desde el portal. Tres de ellas tocan credenciales
+o dinero y necesitan reglas propias.
+
+**Decisión.**
+1. **La contraseña del portal NO es la de la cuenta**: vive en
+   `portal_credentials (tenant_id, user_id)` (argon2, RLS) y sólo abre la sesión
+   del portal de ESA empresa (cookie propia, ADR-S28). La empresa la habilita
+   (`settings.portal_auth.password_enabled`); la empresa de la pantalla de
+   entrar sale del dominio del portal o de `?empresa=` (el dominio gana). No
+   viaja en la migración de empresa y se borra con el último acceso.
+2. **El monto de «Pagar» lo decide el servidor**: un campo del diseño del
+   portal leído del registro, sólo con conexiones de cobro del equipo. Se reusa
+   el link pendiente vigente por el mismo monto con un advisory lock por
+   registro y conexión.
+3. **Captcha por formulario**, con llaves de la plataforma o de la empresa
+   (ganan las de la empresa), secreto cifrado y token de un solo uso. Si faltan
+   llaves, el formulario falla ABIERTO con un Problema (ADR-S44): perder
+   inscripciones es peor que dejar pasar un robot un rato.
+4. **Doble confirmación**: la respuesta ya validada espera en una tabla con RLS
+   con búsqueda por hash del token (como `forms.token`); el enlace abre una
+   página que confirma por POST —los antivirus de correo abren los enlaces—,
+   con consumo atómico; si la confirmación falla, vuelve a quedar pendiente. El
+   registro, la automatización y el cupo ocurren recién al confirmar.
+
+**Consecuencias.** Migración 0075 (`form_pending_submissions`,
+`portal_credentials`). Las respuestas pendientes y las contraseñas del portal no
+viajan al migrar una empresa. El formulario público sigue sin modo oscuro (es
+una superficie que diseña la empresa) y el link de pago que queda obsoleto por
+un cambio de saldo vence solo (7 días); el botón crea uno nuevo.
+
 ---
 
-**Versión del documento:** 1.86.0 (esperas durables y simulación de automatizaciones — ADR-S47)
+**Versión del documento:** 1.87.0 (portal con contraseña, pagos del cliente y formularios verificados — ADR-S48)

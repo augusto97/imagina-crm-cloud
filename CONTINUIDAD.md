@@ -352,7 +352,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.288** (automatizaciones con esperas, bucles, prueba paso a paso y versiones, ADR-S47), en `main`.
+versión publicada: **v0.1.289** (portal con contraseña y pagos, formularios por páginas con captcha y confirmación, ADR-S48), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -362,7 +362,7 @@ versión publicada: **v0.1.288** (automatizaciones con esperas, bucles, prueba p
   **automatizaciones** (hecha, v0.1.288: esperar, repetir por vinculados, probar paso a paso,
   respuesta de webhook, programado por registro, duplicar, versiones), ficha
   (historial por campo con restaurar, reacciones e hilos, vista previa de
-  adjuntos, registro de tiempo), portal y formularios (varias páginas, captcha,
+  adjuntos, registro de tiempo), **portal y formularios** (hecha, v0.1.289: varias páginas, captcha,
   confirmación por correo, contraseña del portal, pagar desde el portal),
   tableros (barras apiladas, enlace público, exportar widget, envío programado,
   tabla dinámica) y PDF (cotización/factura con IVA y descuento, ítems
@@ -574,6 +574,16 @@ versión publicada: **v0.1.288** (automatizaciones con esperas, bucles, prueba p
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.289** — **Portal y formularios** (ADR-S48), tercera
+  entrega del «hazlo todo». Formularios por páginas con validación por paso;
+  captcha (Turnstile/hCaptcha/reCAPTCHA v2) con llaves de la plataforma o de la
+  empresa (Ajustes → Portal y formularios, sección nueva); confirmación del
+  correo con un clic (la respuesta espera 48 h y recién al confirmar se crea el
+  registro) y copia de las respuestas; entrar al portal con contraseña POR
+  EMPRESA (no es la de la cuenta, enlace de entrada `?empresa=`); bloque «Pagos»
+  del portal con «Pagar mi saldo» por el monto que lee el servidor. Migración
+  0075 (era 0077 en la rama del trabajo). Pendiente del lado del usuario: cargar
+  las llaves de captcha (guía `docs/runbook-captcha.md`) cuando quiera usarlo.
 - **2026-10-21 · v0.1.288** — **Automatizaciones con pasos de verdad**
   (ADR-S47), segunda entrega del «hazlo todo». «Esperar» minutos/horas/días o
   hasta una fecha del registro, durable en Postgres (migración 0074) con un
