@@ -267,6 +267,10 @@ export function normalizeDateString(
         if (type === 'date') return date;
         const tail = (iso[4] ?? '').trim();
         if (tail === '') return zonedInstant(date, tz).toISOString();
+        // Ya en UTC y en forma ISO (`2026-10-01T19:05:00Z`): tal cual. Re-escribirlo
+        // le agregaba milisegundos y la sincronización desde SQL —que compara
+        // texto contra lo guardado— veía TODA fila con fecha y hora como cambiada.
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/.test(value)) return value;
         // Con zona explícita: el instante tal cual (ISO válido para el validador).
         if (/^T?\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(tail)) {
             const t = Date.parse(`${date}T${tail.replace(/^T/i, '')}`);
