@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { formatDuration } from '@imagina-base/shared';
 
 import {
     DropdownMenu,
@@ -275,6 +276,8 @@ function formatAggregate(
         n === null || n === undefined ? '—' : formatNumber(n, { maxFrac: 0 });
     const num = (n: number | null | undefined, extra = 0): string => {
         if (n === null || n === undefined) return '—';
+        // v0.1.288 — minutos (Duración / Tiempo registrado): «12h 30m», no «750».
+        if (field.type === 'duration' || field.type === 'time_tracked') return formatDuration(Math.round(n)) || '0m';
         const p = fieldPrecision(field);
         return formatNumber(n, {
             minFrac: field.type === 'currency' ? p : 0,

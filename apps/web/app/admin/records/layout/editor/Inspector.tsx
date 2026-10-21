@@ -89,7 +89,7 @@ function HeadButton({ label, onClick, danger = false, children }: { label: strin
 
 // ── Bloque ───────────────────────────────────────────────────────────────
 
-const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed']);
+const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed', 'time_tracking']);
 
 function BlockInspector({ block }: { block: LayoutBlock }): JSX.Element {
     const ed = useEditor();
@@ -199,6 +199,8 @@ function BlockForm(props: FormProps): JSX.Element | null {
             return <InfoForm text={__('Las subtareas del registro con su estado y una fila para agregar otra. Si el registro es una subtarea, muestra el vínculo a su padre.')} />;
         case 'payments':
             return <InfoForm text={__('Los links de pago del registro (Mercado Pago o Wompi), si ya pagó, y el botón «Cobrar». Necesita una conexión de cobro en Integraciones.')} />;
+        case 'time_tracking':
+            return <InfoForm text={__('El cronómetro del registro (uno en curso por persona), las horas cargadas a mano y el total por persona. Para sumarlo en tablas y tableros, agrega a la lista un campo «Tiempo registrado».')} />;
         default:
             return null;
     }

@@ -450,6 +450,21 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         void monto;
     });
 
+    it('v0.1.288 — crea «Tiempo registrado» (sin config) y el esquema lo describe como de sólo lectura', async () => {
+        const list = await lists.create(tenantId, { name: 'Proyectos IA' });
+        await fields.create(tenantId, String(list.id), { label: 'Nombre', type: 'text' });
+        const res = await registry.execute(ctx, 'propose_add_fields', { list: list.slug, fields: [{ label: 'Horas', type: 'time_tracked' }] });
+        expect(res.isError).toBeFalsy();
+        const proposalId = JSON.stringify(res.content).match(/"proposal_id\\?":\\?"([^"\\]+)/)?.[1];
+        expect(proposalId).toBeDefined();
+        await proposals.apply(ctx, proposalId!);
+        const fs = await fields.listByListId(tenantId, list.id);
+        expect(fs.find((f) => f.slug === 'horas')).toMatchObject({ type: 'time_tracked' });
+        const schema = await registry.execute(ctx, 'get_list_schema', { list: list.slug });
+        expect(JSON.stringify(schema.content)).toContain('time_tracked');
+        expect(JSON.stringify(schema.content)).toContain('minutos registrados');
+    });
+
     it('la automatización con un slug inexistente se rechaza con la lista de slugs válidos', async () => {
         const list = await lists.create(tenantId, { name: 'Tareas' });
         await fields.create(tenantId, String(list.id), { label: 'Título', type: 'text' });

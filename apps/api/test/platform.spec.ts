@@ -11,6 +11,7 @@ import {
     attachments,
     auditLog,
     automations,
+    commentReactions,
     comments,
     connections,
     fields,
@@ -24,6 +25,7 @@ import {
     recurrences,
     templates,
     tenants,
+    timeEntries,
     users,
 } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
@@ -348,8 +350,13 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
             frequency: 'monthly',
         });
         await pg.db.insert(auditLog).values({ tenantId: id, action: 'list.create', targetLabel: 'X' });
+        // v0.1.288 — reacciones y registro de tiempo.
+        await pg.db.insert(commentReactions).values({ tenantId: id, commentId: comment!.id, userId: owner!.id, emoji: '👍' });
+        await pg.db.insert(timeEntries).values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, workDate: '2026-10-20', seconds: 60 });
 
         await platform.deleteTenant(id);
+        expect(await pg.db.select().from(commentReactions).where(eq(commentReactions.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(timeEntries).where(eq(timeEntries.tenantId, id))).toHaveLength(0);
         await expect(platform.getTenant(id)).rejects.toBeInstanceOf(NotFoundException);
         expect(await pg.db.select().from(attachments).where(eq(attachments.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(connections).where(eq(connections.tenantId, id))).toHaveLength(0);

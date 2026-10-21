@@ -142,6 +142,8 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
         expect(reminderCalls).toContain(cli.id);
         // La pieza rota viaja en null y el resto se ve igual.
         expect(asAdmin.payments).toBeNull();
+        // v0.1.288 — el registro de tiempo viaja en el mismo bundle.
+        expect(asAdmin.time).toMatchObject({ total_seconds: 0, entries: [], my_running: null, can_manage_all: true });
         // «Vinculados»: la relación que vive en Facturas y apunta a Clientes.
         expect(asAdmin.relation_paths?.some((p) => p.direction === 'reverse')).toBe(true);
         expect(asAdmin.backlinks).toHaveLength(1);

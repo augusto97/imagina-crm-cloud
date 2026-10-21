@@ -12,6 +12,7 @@ import {
     auditLog,
     automationHooks,
     automations,
+    commentReactions,
     comments,
     connections,
     dashboards,
@@ -28,6 +29,7 @@ import {
     relations,
     savedViews,
     tenants,
+    timeEntries,
     users,
 } from '../src/db/schema';
 import { LocalFileStorage } from '../src/files/file-storage';
@@ -260,6 +262,22 @@ describe('Migración de empresa (v0.1.197)', () => {
             body: 'listo',
             parentId: comentario!.id,
         });
+        // v0.1.288 — reacción y registro de tiempo (un cronómetro en curso
+        // llega al destino DETENIDO, con lo que llevaba).
+        await pg.db.insert(commentReactions).values({ tenantId: tenantA, commentId: comentario!.id, userId: carlosId, emoji: '🎉' });
+        await pg.db.insert(timeEntries).values([
+            { tenantId: tenantA, listId: clientesId, recordId: clienteRecId, userId: anaId, source: 'manual', workDate: '2026-10-20', seconds: 5400, note: 'diseño' },
+            {
+                tenantId: tenantA,
+                listId: clientesId,
+                recordId: clienteRecId,
+                userId: carlosId,
+                source: 'timer',
+                workDate: '2026-10-21',
+                startedAt: new Date(Date.now() - 600_000),
+                seconds: 0,
+            },
+        ]);
         await pg.db.insert(mentions).values({
             tenantId: tenantA,
             commentId: comentario!.id,
@@ -490,6 +508,17 @@ describe('Migración de empresa (v0.1.197)', () => {
         const hijo = newComments.find((c) => c.parentId !== null)!;
         expect(hijo.parentId).toBe(raiz.id);
         expect(hijo.recordId).toBe(newCliente.id);
+        const newReactions = await pg.db.select().from(commentReactions).where(eq(commentReactions.tenantId, tenantB));
+        expect(newReactions).toHaveLength(1);
+        expect(newReactions[0]).toMatchObject({ commentId: raiz.id, emoji: '🎉' });
+        expect(newReactions[0]!.userId).not.toBe(carlosId);
+        const newTime = await pg.db.select().from(timeEntries).where(eq(timeEntries.tenantId, tenantB));
+        expect(newTime).toHaveLength(2);
+        expect(newTime.every((t) => t.recordId === newCliente.id)).toBe(true);
+        expect(newTime.find((t) => t.source === 'manual')).toMatchObject({ userId: anaId, seconds: 5400, note: 'diseño' });
+        const timer = newTime.find((t) => t.source === 'timer')!;
+        expect(timer.endedAt).not.toBeNull();
+        expect(timer.seconds).toBeGreaterThanOrEqual(600);
         const newMentions = await pg.db.select().from(mentions).where(eq(mentions.tenantId, tenantB));
         expect(newMentions[0]!.commentId).toBe(raiz.id);
         expect(newMentions[0]!.authorUserId).toBe(anaId);

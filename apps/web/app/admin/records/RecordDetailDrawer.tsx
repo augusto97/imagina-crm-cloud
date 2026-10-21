@@ -52,6 +52,7 @@ import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordSubtasks } from './RecordSubtasks';
+import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, useStoreRules } from './storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
@@ -584,6 +585,13 @@ export function RecordDetailDrawer({
                                             onOpenRecord={openOther}
                                             className="imcrm-mt-5"
                                         />
+                                    )}
+
+                                    {/* v0.1.288 — registro de tiempo (cronómetro + cargas a mano). */}
+                                    {view.ready && (
+                                        <div className="imcrm-mt-5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+                                            <TimeTrackingPanel listId={listId} listKey={listSlug ?? String(listId)} recordId={record.id} />
+                                        </div>
                                     )}
 
                                     {/* Acceso al portal del cliente (magic link) —

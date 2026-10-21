@@ -1,3 +1,4 @@
+import { ActiveTimerChip } from '@/admin/layout/ActiveTimerChip';
 import { Menu, Search, Sparkles } from 'lucide-react';
 
 import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assistantPanelStore';
@@ -89,6 +90,9 @@ export function Topbar({
             </div>
 
             <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 sm:imcrm-gap-2">
+                {/* v0.1.288 — el cronómetro en curso (registro de tiempo). */}
+                <ActiveTimerChip />
+
                 {/* v0.1.285 — algo que corre solo dejó de funcionar. */}
                 <IncidentsPill />
 

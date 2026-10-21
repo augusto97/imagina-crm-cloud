@@ -26,6 +26,7 @@ import {
     TriangleAlert,
     User,
     type LucideIcon,
+    Timer,
 } from 'lucide-react';
 import {
     CHART_KIND_WIDGET,
@@ -44,6 +45,7 @@ import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsP
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
+import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
 import { CommentsThreadBlock } from '@/portal/blocks/CommentsThreadBlock';
 import { PortalPreviewContext } from '@/portal/PreviewContext';
@@ -91,6 +93,7 @@ const TYPE_ICONS: Partial<Record<string, LucideIcon>> = {
     comments: MessageSquare,
     record_stats: BarChart3,
     files: Paperclip,
+    time_tracking: Timer,
     description: AlignLeft,
 };
 
@@ -215,6 +218,8 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
             return __('Comentarios');
         case 'record_stats':
             return __('Resumen');
+        case 'time_tracking':
+            return __('Tiempo registrado');
         default:
             return null;
     }
@@ -299,6 +304,10 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
         case 'payments':
             if (ctx.mode === 'portal') return null;
             return <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} showEmptyHint />;
+        case 'time_tracking':
+            // v0.1.288 — el tiempo es del equipo: el portal no lo muestra.
+            if (ctx.mode === 'portal') return null;
+            return <TimeTrackingPanel listId={ctx.list.id} listKey={ctx.list.slug} recordId={ctx.record.id} compact />;
         case 'subtasks':
             if (ctx.mode === 'portal') return null;
             return (

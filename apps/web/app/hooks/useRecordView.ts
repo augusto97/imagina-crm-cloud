@@ -1,3 +1,4 @@
+import { timeKeys } from '@/hooks/useTimeTracking';
 import { useEffect, useState } from 'react';
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -81,6 +82,8 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.documents) qc.setQueryData(documentKeys.forList(listId), normalizeDates(b.documents));
     if (b.payments) qc.setQueryData(['record-payments', listId, recordId], b.payments);
     if (b.relation_paths) qc.setQueryData(['relation-paths', lid], b.relation_paths);
+    // v0.1.288 — registro de tiempo: viaja en el mismo bundle (sin otra request).
+    if (b.time) qc.setQueryData(timeKeys.forRecord(lid, recordId), b.time);
     if (b.comments) {
         const rows = normalizeDates(b.comments) as Array<Parameters<typeof fromApiComment>[0]>;
         qc.setQueryData(commentsKeys.forRecord(listId, recordId), rows.map(fromApiComment));
