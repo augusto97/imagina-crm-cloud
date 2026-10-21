@@ -47,7 +47,8 @@ describe('normalizeDateString', () => {
             '2026-10-21T19:30:00.000Z',
         );
         expect(normalizeDateString('2026-10-21 2:30 p. m.', 'datetime', { timeZone: 'UTC' })).toBe('2026-10-21T14:30:00.000Z');
-        expect(normalizeDateString('2026-10-21T14:30:00Z', 'datetime')).toBe('2026-10-21T14:30:00.000Z');
+        // Ya canónico: no se re-escribe (sin milisegundos de más).
+        expect(normalizeDateString('2026-10-21T14:30:00Z', 'datetime')).toBe('2026-10-21T14:30:00Z');
     });
 });
 
