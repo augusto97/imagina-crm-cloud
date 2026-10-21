@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { passwordSchema } from './auth';
+import { paymentLinkStatusSchema } from './collections';
 import { idSchema } from './common';
+import { publicBootSchema } from './domains';
 import { fieldSchema } from './field';
 import { recordSchema } from './record';
 import { recordLayoutV3Schema } from './record-layout';
@@ -134,8 +137,144 @@ export const portalBootSchema = z.object({
     creatable_lists: z.array(portalCreatableListSchema).default([]),
     /** El cliente recibe un correo cuando el equipo le responde (opt-out). */
     notify_email: z.boolean().default(true),
+    /**
+     * v0.1.290 — entrar con contraseña: si la empresa lo permite (`enabled`)
+     * y si este cliente ya creó la suya en ESTA empresa (`has_password`).
+     */
+    password: z.object({ enabled: z.boolean(), has_password: z.boolean() }).default({ enabled: false, has_password: false }),
+    /**
+     * v0.1.290 — datos de los bloques «Pagos» del diseño (por id de bloque):
+     * los links de pago de los registros del cliente y si se le ofrece pagar.
+     */
+    payments: z.record(z.lazy(() => portalPaymentsBlockDataSchema)).default({}),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
+
+// ─────────────────── Entrar con contraseña (v0.1.290) ───────────────────
+
+/**
+ * Cómo entran los clientes al portal de ESTA empresa (Ajustes → Portal y
+ * formularios). La contraseña del portal es POR EMPRESA y no es la de la
+ * cuenta: un cliente de dos empresas tiene dos contraseñas independientes.
+ */
+export const portalAuthSettingsSchema = z.object({
+    password_enabled: z.boolean(),
+    /**
+     * Enlace para compartir con los clientes: abre la pantalla de entrar con
+     * la marca de la empresa (y la opción de contraseña si está permitida).
+     */
+    entry_url: z.string(),
+});
+export type PortalAuthSettings = z.infer<typeof portalAuthSettingsSchema>;
+
+export const updatePortalAuthSchema = z.object({ password_enabled: z.boolean() });
+export type UpdatePortalAuthInput = z.infer<typeof updatePortalAuthSchema>;
+
+/**
+ * La pantalla de entrar del portal (sin sesión): la marca de la empresa del
+ * dominio —o la del parámetro `?empresa=` del enlace de entrada— y si se puede
+ * entrar con contraseña. En el dominio de la plataforma sin empresa: portal
+ * neutro y sólo enlace por correo.
+ */
+export const portalLoginOptionsSchema = z.object({
+    tenant: publicBootSchema.shape.tenant,
+    password: z.boolean(),
+});
+export type PortalLoginOptions = z.infer<typeof portalLoginOptionsSchema>;
+
+export const portalPasswordLoginSchema = z.object({
+    email: z.string().trim().toLowerCase().email().max(255),
+    password: z.string().min(1).max(128),
+    /** Slug de la empresa (del enlace de entrada) cuando no se entra por su dominio. */
+    empresa: z
+        .string()
+        .trim()
+        .toLowerCase()
+        .regex(/^[a-z0-9_-]{1,63}$/)
+        .optional(),
+});
+export type PortalPasswordLoginInput = z.infer<typeof portalPasswordLoginSchema>;
+
+/** Crear o cambiar la contraseña del portal (con la sesión del portal abierta). */
+export const portalSetPasswordSchema = z.object({ password: passwordSchema });
+export type PortalSetPasswordInput = z.infer<typeof portalSetPasswordSchema>;
+
+// ─────────────────── Pagar desde el portal (v0.1.290) ───────────────────
+
+/**
+ * Configuración del bloque «Pagos» del portal (`config` del bloque
+ * `payments`). Todo por ID: la conexión de cobro, el campo del monto y las
+ * listas vinculadas cuyos links también se muestran.
+ */
+export const portalPaymentsBlockConfigSchema = z
+    .object({
+        /** Mostrar los links de pago de sus registros. */
+        show_links: z.boolean().default(true),
+        /**
+         * Listas vinculadas al cliente cuyos links también se muestran (las
+         * facturas de su cuenta). Se acotan con el mismo scope del portal.
+         */
+        linked_list_ids: z.array(idSchema).max(4).default([]),
+        /** Botón «Pagar» por un monto leído del registro del cliente. */
+        pay_button: z
+            .object({
+                enabled: z.boolean().default(false),
+                connection_id: idSchema.nullable().default(null),
+                /** Campo numérico/moneda del registro con el monto (p. ej. el saldo). */
+                amount_field_id: idSchema.nullable().default(null),
+                /** Concepto del pago (vacío = el título del registro). */
+                concept: z.string().max(200).default(''),
+                label: z.string().max(60).default('Pagar ahora'),
+            })
+            .default({}),
+    })
+    .passthrough();
+export type PortalPaymentsBlockConfig = z.infer<typeof portalPaymentsBlockConfigSchema>;
+
+/** Lee la config de un bloque «Pagos» sin lanzar (lo inválido cae al default). */
+export function readPortalPaymentsConfig(config: unknown): PortalPaymentsBlockConfig {
+    const parsed = portalPaymentsBlockConfigSchema.safeParse(config ?? {});
+    return parsed.success ? parsed.data : portalPaymentsBlockConfigSchema.parse({});
+}
+
+/** Un link de pago tal como lo ve el CLIENTE (nada interno). */
+export const portalPaymentLinkSchema = z.object({
+    id: idSchema,
+    title: z.string(),
+    amount: z.number(),
+    currency: z.string(),
+    status: paymentLinkStatusSchema,
+    /** URL del checkout del proveedor (sólo si se puede pagar todavía). */
+    url: z.string().nullable(),
+    created_at: z.string(),
+    expires_at: z.string().nullable(),
+    paid_at: z.string().nullable(),
+    paid_amount: z.number().nullable(),
+    method: z.string().nullable(),
+    /** Referencia del pago en el proveedor (para el comprobante). */
+    payment_id: z.string().nullable(),
+    /** De qué registro es (el del cliente o uno vinculado). */
+    record_title: z.string(),
+});
+export type PortalPaymentLink = z.infer<typeof portalPaymentLinkSchema>;
+
+export const portalPaymentsBlockDataSchema = z.object({
+    links: z.array(portalPaymentLinkSchema),
+    /** El botón «Pagar» por el monto del registro (null = no se ofrece). */
+    pay: z
+        .object({
+            label: z.string(),
+            amount: z.number(),
+            currency: z.string(),
+            concept: z.string(),
+            provider: z.enum(['mercadopago', 'wompi']),
+        })
+        .nullable(),
+});
+export type PortalPaymentsBlockData = z.infer<typeof portalPaymentsBlockDataSchema>;
+
+export const portalPayResultSchema = z.object({ url: z.string(), reused: z.boolean() });
+export type PortalPayResult = z.infer<typeof portalPayResultSchema>;
 
 /** POST /portal/lists/:id/records — el cliente crea un registro (por id de campo). */
 export const portalCreateRecordSchema = z.object({
@@ -207,6 +346,16 @@ export type MagicLinkResult = z.infer<typeof magicLinkResultSchema>;
  */
 export const portalRequestAccessSchema = z.object({
     email: z.string().trim().toLowerCase().email().max(255),
+    /**
+     * v0.1.290 — slug de la empresa del enlace de entrada (`?empresa=`): acota
+     * el envío a ESA empresa cuando no se entra por su dominio.
+     */
+    empresa: z
+        .string()
+        .trim()
+        .toLowerCase()
+        .regex(/^[a-z0-9_-]{1,63}$/)
+        .optional(),
 });
 export type PortalRequestAccessInput = z.infer<typeof portalRequestAccessSchema>;
 
@@ -231,6 +380,13 @@ export type PortalAccessUser = z.infer<typeof portalAccessUserSchema>;
 
 export const portalAccessListSchema = z.object({
     users: z.array(portalAccessUserSchema),
+    /**
+     * v0.1.290 — el enlace de ENTRADA al portal de la empresa (para pegarlo en
+     * un correo o en el sitio): abre la pantalla de entrar con su marca.
+     */
+    entry_url: z.string().nullable().default(null),
+    /** v0.1.290 — los clientes pueden entrar con contraseña (además del enlace por correo). */
+    password_enabled: z.boolean().default(false),
 });
 export type PortalAccessList = z.infer<typeof portalAccessListSchema>;
 

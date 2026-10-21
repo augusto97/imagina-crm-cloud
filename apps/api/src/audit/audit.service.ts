@@ -32,6 +32,13 @@ export type AuditAction =
     | 'form.unpublish'
     | 'form.regenerate_link'
     | 'form.delete'
+    // v0.1.290 — verificación anti-robots de un formulario y de la empresa,
+    // y la contraseña del portal de clientes.
+    | 'form.captcha_on'
+    | 'form.captcha_off'
+    | 'workspace.captcha_change'
+    | 'workspace.portal_password_on'
+    | 'workspace.portal_password_off'
     | 'field.delete'
     | 'field.type_change'
     | 'member.add'

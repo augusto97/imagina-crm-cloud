@@ -519,6 +519,13 @@
       "when": 1784200000070,
       "tag": "0073_comment_visibility_form_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1784200000110,
+      "tag": "0077_form_confirmations_portal_passwords",
+      "breakpoints": true
     }
   ]
 }

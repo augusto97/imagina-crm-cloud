@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreateFormInput, FormDto, UpdateFormInput } from '@imagina-base/shared';
+import type { CaptchaAvailability, CreateFormInput, FormDto, UpdateFormInput } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -18,6 +18,19 @@ export function useForms(listId: number | undefined) {
         queryFn: async () => (await api.get<FormDto[]>(`/lists/${listId}/forms`)).data,
         enabled: listId !== undefined && listId > 0,
         staleTime: 15_000,
+    });
+}
+
+/**
+ * v0.1.290 — ¿Se puede pedir captcha en los formularios de esta lista, y con
+ * qué llaves (las de la empresa o las de la plataforma)?
+ */
+export function useCaptchaAvailability(listId: number | undefined) {
+    return useQuery({
+        queryKey: ['forms-captcha', listId ?? 0],
+        queryFn: async () => (await api.get<CaptchaAvailability>(`/lists/${listId}/forms/captcha`)).data,
+        enabled: listId !== undefined && listId > 0,
+        staleTime: 60_000,
     });
 }
 

@@ -182,6 +182,12 @@ const envSchema = z.object({
      */
     WOMPI_API_URL: z.string().default(''),
     WOMPI_CHECKOUT_URL: z.string().default(''),
+    /**
+     * v0.1.290 — sólo desarrollo/pruebas: verificación de captcha SIMULADA
+     * (Turnstile/hCaptcha/reCAPTCHA no alcanzan el entorno de pruebas). En
+     * producción se ignora: los tokens se verifican siempre con el proveedor.
+     */
+    CAPTCHA_SITEVERIFY_URL: z.string().default(''),
 
     // --- Superadmins de plataforma (no de workspace): emails separados por coma.
     // Único rol que puede operar la auto-actualización del servidor.

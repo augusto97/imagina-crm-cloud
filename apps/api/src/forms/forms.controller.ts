@@ -18,6 +18,7 @@ import {
     createFormSchema,
     submitFormSchema,
     updateFormSchema,
+    type CaptchaAvailability,
     type CreateFormInput,
     type FormDto,
     type FormUploadResult,
@@ -34,8 +35,9 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ListsService } from '../lists/lists.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, newNonce, renderFormPage } from './form-page';
-import { FormsService } from './forms.service';
+import { CaptchaService } from './captcha.service';
+import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, newNonce, renderFormNoticePage, renderFormPage } from './form-page';
+import { FormsService, type ConfirmOutcome } from './forms.service';
 
 /**
  * v0.1.275 (ADR-S39) — Formularios de una lista. Armarlos es de quien arma
@@ -49,12 +51,24 @@ export class FormsController {
         private readonly forms: FormsService,
         private readonly lists: ListsService,
         private readonly audit: AuditService,
+        private readonly captcha: CaptchaService,
     ) {}
 
     @Get()
     @RequireCapability('manage_lists', 'manage_automations')
     async list(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: FormDto[] }> {
         return { data: await this.forms.list(req.tenant!.tenantId, list) };
+    }
+
+    /**
+     * v0.1.290 — ¿Se puede pedir captcha en los formularios de esta empresa?
+     * (llaves de la empresa o de la plataforma; sin llaves, el constructor
+     * muestra la opción deshabilitada con el motivo).
+     */
+    @Get('captcha')
+    @RequireCapability('manage_lists')
+    captchaAvailability(@Req() req: FastifyRequest): Promise<CaptchaAvailability> {
+        return this.captcha.availability(req.tenant!.tenantId, req.tenant!.role);
     }
 
     @Get(':id')
@@ -83,8 +97,20 @@ export class FormsController {
         @Body(new ZodValidationPipe(updateFormSchema)) input: UpdateFormInput,
     ): Promise<FormDto> {
         const tenantId = req.tenant!.tenantId;
-        const before = input.enabled !== undefined || input.regenerate_token ? await this.forms.get(tenantId, list, id) : null;
+        const before =
+            input.enabled !== undefined || input.regenerate_token || input.config !== undefined ? await this.forms.get(tenantId, list, id) : null;
         const doc = await this.forms.update(tenantId, list, id, input);
+        // v0.1.290 — prender o apagar la verificación anti-robots queda en la bitácora.
+        if (before && before.config.settings.captcha !== doc.config.settings.captcha) {
+            await this.audit.log({
+                tenantId,
+                userId: req.authUserId ?? null,
+                action: doc.config.settings.captcha ? 'form.captcha_on' : 'form.captcha_off',
+                targetType: 'form',
+                targetLabel: doc.name,
+                meta: { list, form_id: doc.id },
+            });
+        }
         // Publicar deja que cualquiera con el enlace escriba en la lista: es de
         // lo que importa poder auditar después (igual que la lista pública).
         if (before && (before.enabled !== doc.enabled || input.regenerate_token)) {
@@ -202,6 +228,62 @@ export class PublicFormPageController {
             .send(FORM_EMBED_JS);
     }
 
+    /**
+     * v0.1.290 — El enlace del correo de confirmación (doble opt-in). NO
+     * confirma: los escáneres de correo abren los enlaces con GET para
+     * revisarlos y confirmarían solos. Devuelve una página que se envía sola
+     * por POST (con un botón si no hay JavaScript).
+     */
+    @Get('confirm/:token')
+    async confirmLanding(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
+        const nonce = newNonce();
+        const peek = await this.forms.peekConfirmation(token);
+        const html = peek.ok
+            ? renderFormNoticePage({
+                  nonce,
+                  brand: peek.brand ?? NEUTRAL_BRAND,
+                  title: 'Confirmando tu respuesta…',
+                  message: 'Un momento: estamos guardando tu respuesta.',
+                  tone: 'info',
+                  confirmAction: `/api/v1/public/f/confirm/${encodeURIComponent(token)}`,
+              })
+            : renderFormNoticePage({
+                  nonce,
+                  brand: NEUTRAL_BRAND,
+                  title: 'Este enlace ya no sirve',
+                  message: 'Ya se usó o venció (vale 48 horas). Si ya lo abriste antes, tu respuesta quedó registrada; si no, vuelve a completar el formulario.',
+                  tone: 'error',
+              });
+        this.sendNotice(reply, nonce, html, peek.ok ? 200 : 404);
+    }
+
+    @Post('confirm/:token')
+    async confirm(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
+        const nonce = newNonce();
+        const out: ConfirmOutcome = await this.forms.confirm(token);
+        const html = renderFormNoticePage({
+            nonce,
+            brand: out.brand ?? NEUTRAL_BRAND,
+            title: out.title,
+            message: out.message,
+            tone: out.status === 'confirmed' ? 'ok' : out.status === 'closed' ? 'info' : 'error',
+            continueUrl: out.continueUrl,
+        });
+        this.sendNotice(reply, nonce, html, out.status === 'confirmed' ? 200 : out.status === 'invalid' ? 404 : out.status === 'closed' ? 410 : 503);
+    }
+
+    private sendNotice(reply: FastifyReply, nonce: string, html: string, status: number): void {
+        reply
+            .status(status)
+            .header('Content-Security-Policy', formPageCsp(nonce, "'none'"))
+            .header('X-Robots-Tag', 'noindex')
+            .header('Cache-Control', 'no-store')
+            // El token va en la ruta: que no se filtre a la página de destino.
+            .header('Referrer-Policy', 'no-referrer')
+            .type('text/html; charset=utf-8')
+            .send(html);
+    }
+
     @Get(':token')
     async page(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
         const info = await this.forms.pageInfo(token);
@@ -216,7 +298,8 @@ export class PublicFormPageController {
             return;
         }
         reply
-            .header('Content-Security-Policy', formPageCsp(nonce, formFrameAncestors(info.allowed_domains)))
+            // v0.1.290 — con captcha entran a la CSP SÓLO los dominios de ese proveedor.
+            .header('Content-Security-Policy', formPageCsp(nonce, formFrameAncestors(info.allowed_domains), info.captcha?.provider ?? null))
             .header('X-Robots-Tag', 'noindex')
             // El sello anti-robots viaja en la página: nunca se cachea.
             .header('Cache-Control', 'no-store')
@@ -225,6 +308,8 @@ export class PublicFormPageController {
             .send(renderFormPage({ nonce, title: info.title, meta: info.meta, token }));
     }
 }
+
+const NEUTRAL_BRAND = { company: '', accent: '#475467', logoUrl: null };
 
 function notAvailablePage(): string {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Formulario no disponible</title>

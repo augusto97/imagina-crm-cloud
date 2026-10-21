@@ -167,10 +167,26 @@ export const formTextItemSchema = z.object({
     show_if: formConditionSchema.nullable().default(null),
 });
 
+/**
+ * v0.1.290 — Salto de página: lo que viene después se muestra en un paso
+ * aparte («Paso 2 de 4»). No tiene condición propia: una página cuyas
+ * preguntas están todas escondidas se salta sola. `show_if` existe sólo para
+ * que todos los ítems compartan la forma (siempre `null`).
+ */
+export const formPageBreakItemSchema = z.object({
+    id: itemIdSchema,
+    type: z.literal('page_break'),
+    /** Título de la página que EMPIEZA aquí (opcional). */
+    title: z.string().max(200).default(''),
+    show_if: formConditionSchema.nullable().default(null),
+});
+export type FormPageBreakItem = z.infer<typeof formPageBreakItemSchema>;
+
 export const formItemSchema = z.discriminatedUnion('type', [
     formFieldItemSchema,
     formHeadingItemSchema,
     formTextItemSchema,
+    formPageBreakItemSchema,
 ]);
 export type FormItem = z.infer<typeof formItemSchema>;
 
@@ -204,6 +220,24 @@ export const formSettingsSchema = z.object({
     /** Deja de recibir respuestas al llegar a este número. */
     max_submissions: z.number().int().min(1).max(1_000_000).nullable().default(null),
     closed_message: z.string().max(1000).default('Este formulario ya no está recibiendo respuestas.'),
+    /**
+     * v0.1.290 — Pedir verificación anti-robots (captcha). El proveedor y las
+     * llaves NO viven aquí: salen de la empresa o, si no tiene, de la
+     * plataforma (`resolveCaptcha`). Sin llaves en ningún lado, no se pide.
+     */
+    captcha: z.boolean().default(false),
+    /**
+     * v0.1.290 — La pregunta de tipo email con el correo de quien responde
+     * (para confirmar el correo y para mandarle la copia). Id del CAMPO.
+     */
+    respondent_email_field_id: z.number().int().positive().nullable().default(null),
+    /**
+     * Doble opt-in: la respuesta queda PENDIENTE hasta que la persona abre el
+     * enlace que le llega al correo; recién ahí se crea el registro.
+     */
+    confirm_email: z.boolean().default(false),
+    /** Mandarle a quien responde una copia de sus respuestas. */
+    send_copy: z.boolean().default(false),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -293,7 +327,14 @@ export interface PublicFormFieldItem {
 export type PublicFormItem =
     | PublicFormFieldItem
     | { id: string; type: 'heading'; text: string; show_if: FormCondition | null }
-    | { id: string; type: 'text'; text: string; show_if: FormCondition | null };
+    | { id: string; type: 'text'; text: string; show_if: FormCondition | null }
+    | { id: string; type: 'page_break'; title: string; show_if: null };
+
+/** v0.1.290 — Lo que la página pública necesita para dibujar el captcha. */
+export interface PublicFormCaptcha {
+    provider: 'turnstile' | 'hcaptcha' | 'recaptcha';
+    site_key: string;
+}
 
 export interface PublicFormMeta {
     title: string;
@@ -315,6 +356,10 @@ export interface PublicFormMeta {
     /** Sello de carga (anti-robots): el envío tiene que traerlo. */
     stamp: string;
     max_upload_bytes: number;
+    /** v0.1.290 — verificación anti-robots a dibujar antes de enviar (null = no se pide). */
+    captcha?: PublicFormCaptcha | null;
+    /** v0.1.290 — la respuesta se confirma desde el correo (doble opt-in). */
+    confirm_email?: boolean;
 }
 
 export const submitFormSchema = z.object({
@@ -325,12 +370,20 @@ export const submitFormSchema = z.object({
     stamp: z.string().max(200),
     /** Campo trampa: una persona nunca lo ve ni lo llena. */
     hp: z.string().max(500).optional(),
+    /** v0.1.290 — el token del captcha (si el formulario lo pide). */
+    captcha: z.string().max(4096).optional(),
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 
 export interface SubmitFormResult {
     ok: true;
     redirect_url: string | null;
+    /**
+     * v0.1.290 — doble opt-in: la respuesta quedó PENDIENTE y se mandó el
+     * correo para confirmarla. `email_hint` = el correo enmascarado.
+     */
+    pending_confirmation?: boolean;
+    email_hint?: string;
 }
 
 export interface FormUploadResult {
@@ -536,9 +589,67 @@ export function buildPublicFormItems(config: FormConfig, fields: ReadonlyArray<F
             out.push({ id: item.id, type: item.type, text: item.text, show_if: item.show_if });
             continue;
         }
+        if (item.type === 'page_break') {
+            out.push({ id: item.id, type: 'page_break', title: item.title, show_if: null });
+            continue;
+        }
         const field = byId.get(item.field_id);
         if (!field || !isFormFieldType(field.type)) continue;
         out.push(publicField(item, field));
     }
     return out;
+}
+
+// ─────────────────────── Varias páginas (v0.1.290) ───────────────────────
+
+/** Una página del formulario: los ítems entre dos saltos de página. */
+export interface FormPage<T> {
+    /** Id del salto de página que la abre (null = la primera, antes de cualquier salto). */
+    break_id: string | null;
+    title: string;
+    items: T[];
+}
+
+/**
+ * Parte los ítems en páginas por los saltos. Un salto al principio, al final
+ * o dos seguidos no dejan páginas vacías: una página sin ítems no existe.
+ * Sin saltos hay UNA página (el formulario de siempre).
+ */
+export function splitFormPages<T extends { id: string; type: string; title?: string }>(items: readonly T[]): Array<FormPage<T>> {
+    const pages: Array<FormPage<T>> = [];
+    let current: FormPage<T> = { break_id: null, title: '', items: [] };
+    for (const item of items) {
+        if (item.type === 'page_break') {
+            if (current.items.length > 0) pages.push(current);
+            current = { break_id: item.id, title: typeof item.title === 'string' ? item.title : '', items: [] };
+            continue;
+        }
+        current.items.push(item);
+    }
+    if (current.items.length > 0 || pages.length === 0) pages.push(current);
+    return pages;
+}
+
+/**
+ * ¿Se muestra esta página con las respuestas actuales? Una página con
+ * preguntas se muestra si al menos una está a la vista (no oculta y con su
+ * condición cumplida); una página sólo de títulos/textos, si alguno se ve.
+ * Así una página cuyas preguntas dependen de una respuesta anterior se salta
+ * sola cuando no aplica. Acepta los ítems guardados (`field_id`) y los
+ * públicos (`key`, el id del campo como texto).
+ */
+export function formPageVisible(
+    page: { items: ReadonlyArray<{ type: string; hidden?: boolean; field_id?: number; key?: string; show_if: FormCondition | null }> },
+    allItems: ReadonlyArray<{ type: string; field_id?: number; key?: string; show_if: FormCondition | null }>,
+    values: Record<string, unknown>,
+): boolean {
+    const norm = allItems.map((i) => ({ ...i, field_id: i.field_id ?? (i.key !== undefined ? Number(i.key) : undefined) }));
+    const questions = page.items.filter((i) => i.type === 'field');
+    if (questions.length > 0) return questions.some((i) => !i.hidden && formItemVisible(i, norm, values));
+    return page.items.some((i) => formItemVisible(i, norm, values));
+}
+
+/** ¿El formulario tiene más de una página? */
+export function formHasPages(items: ReadonlyArray<{ id: string; type: string }>): boolean {
+    return splitFormPages(items).length > 1;
 }

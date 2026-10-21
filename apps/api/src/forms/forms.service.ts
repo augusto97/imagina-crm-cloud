@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import {
     BadRequestException,
@@ -36,16 +36,17 @@ import {
     type UpdateFormInput,
     readStoreListMarker,
     addDaysYmd,
+    formatEmailFieldValue,
     formFileAllowed,
     resolveTimeZone,
     zonedInstant,
     type FormFieldItem,
 } from '@imagina-base/shared';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, forms, tenants, type FormRow } from '../db/schema';
+import { attachments, formPendingSubmissions, forms, tenants, type FormPendingRow, type FormRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -53,9 +54,13 @@ import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
+import { MailService } from '../mail/mail.service';
+import { senderName, type PortalEmailBrand } from '../portal/portal-email';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { CaptchaService } from './captcha.service';
+import { formConfirmEmail, formCopyEmail, type FormAnswerLine } from './form-email';
 
 /** El sistema crea el registro: no hay persona del equipo detrás del envío. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
@@ -96,6 +101,37 @@ export const UPLOAD_BYTE_LIMITS = [
     { scope: 'ip', window: 600, max: 60 * 1024 * 1024 },
     { scope: 'form', window: 3600, max: 1024 * 1024 * 1024 },
 ] as const;
+
+/** v0.1.290 — el enlace para confirmar el correo vale 48 horas. */
+export const CONFIRM_TTL_MS = 48 * 3600 * 1000;
+/**
+ * Correos a QUIEN RESPONDE (confirmación y copia): un formulario público no
+ * puede ser un cañón de correos hacia direcciones ajenas. Por dirección y por
+ * IP, en Redis (compartido entre nodos).
+ */
+export const RESPONDENT_MAIL_LIMITS = [
+    { scope: 'email', window: 3600, max: 3 },
+    { scope: 'ip', window: 3600, max: 10 },
+] as const;
+
+/** `ana@gmail.com` → `an***@gmail.com` (para decir a dónde salió el correo). */
+function maskEmail(email: string): string {
+    const [local = '', domain = ''] = email.split('@');
+    return `${local.slice(0, Math.min(2, local.length))}***@${domain}`;
+}
+
+function hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+}
+
+/** Resultado del enlace de confirmación (lo dibuja el controller con la marca). */
+export interface ConfirmOutcome {
+    status: 'confirmed' | 'invalid' | 'closed' | 'failed';
+    title: string;
+    message: string;
+    brand: { company: string; accent: string; logoUrl: string | null } | null;
+    continueUrl: string | null;
+}
 
 const notFound = () => new NotFoundException({ code: 'not_found', message: 'Este formulario no existe', data: { status: 404 } });
 
@@ -142,14 +178,21 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.285 (ADR-S44) — una respuesta que no se pudo guardar avisa a la empresa.
         @Optional() private readonly incidents?: IncidentHub,
         @Optional() private readonly domains?: DomainsService,
+        // v0.1.290 — verificación anti-robots y correos a quien responde.
+        @Optional() private readonly captcha?: CaptchaService,
+        @Optional() private readonly mail?: MailService,
     ) {}
 
     onModuleInit(): void {
         // Archivos subidos a un formulario que nunca se envió: no tienen que
         // quedar ocupando espacio. Cada nodo barre; ZREM decide quién borra.
+        // v0.1.290 — y las respuestas que nadie confirmó en 48 h (con sus archivos).
         this.sweeper = setInterval(() => {
             this.sweepOrphanUploads().catch((err: unknown) => {
                 this.logger.warn(`Barrido de archivos de formularios: ${String(err)}`);
+            });
+            this.sweepExpiredPending().catch((err: unknown) => {
+                this.logger.warn(`Barrido de respuestas sin confirmar: ${String(err)}`);
             });
         }, 20 * 60 * 1000);
         this.sweeper.unref?.();
@@ -299,7 +342,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * publicar dan el MISMO 404: a quien prueba direcciones no se le
      * confirma nada.
      */
-    private async resolve(token: string): Promise<ResolvedForm> {
+    private async resolve(token: string, opts: { allowDisabled?: boolean } = {}): Promise<ResolvedForm> {
         if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) throw notFound();
         const [hit] = await this.db
             .select({
@@ -315,7 +358,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             .innerJoin(tenants, eq(tenants.id, forms.tenantId))
             .where(eq(forms.token, token))
             .limit(1);
-        if (!hit || !hit.form.enabled || hit.archivedAt !== null) throw notFound();
+        // v0.1.290 — una respuesta enviada mientras estaba publicado se puede
+        // confirmar aunque después lo hayan despublicado (`allowDisabled`).
+        if (!hit || (!hit.form.enabled && !opts.allowDisabled) || hit.archivedAt !== null) throw notFound();
         return {
             row: hit.form,
             config: readConfig(hit.form.config),
@@ -342,8 +387,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return null;
     }
 
-    /** CSP `frame-ancestors` de la página: los sitios que pueden insertarlo. */
-    async pageInfo(token: string): Promise<{ title: string; allowed_domains: string[]; meta: PublicFormMeta } | null> {
+    /**
+     * CSP `frame-ancestors` de la página (los sitios que pueden insertarlo) y,
+     * v0.1.290, el proveedor de captcha cuyos dominios entran a la CSP.
+     */
+    async pageInfo(
+        token: string,
+    ): Promise<{ title: string; allowed_domains: string[]; meta: PublicFormMeta; captcha: PublicFormMeta['captcha'] } | null> {
         let f: ResolvedForm;
         try {
             f = await this.resolve(token);
@@ -351,7 +401,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             return null;
         }
         const meta = await this.buildMeta(f);
-        return { title: meta.title || f.row.name, allowed_domains: f.config.settings.allowed_domains, meta };
+        return { title: meta.title || f.row.name, allowed_domains: f.config.settings.allowed_domains, meta, captcha: meta.captcha ?? null };
     }
 
     async meta(token: string): Promise<PublicFormMeta> {
@@ -365,6 +415,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const b = branding.success ? branding.data : brandingSchema.parse({});
         const format = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
         const ts = Date.now();
+        const keys = config.settings.captcha && this.captcha ? await this.captcha.resolve(row.tenantId, f.tenantSettings) : null;
         return {
             title: config.settings.title || row.name,
             description: config.settings.description,
@@ -385,6 +436,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             closed: this.closedReason(f),
             stamp: `${ts}.${this.files.signParts('formstamp', row.id, ts)}`,
             max_upload_bytes: this.env.MAX_UPLOAD_BYTES,
+            captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
+            confirm_email: config.settings.confirm_email,
         };
     }
 
@@ -467,11 +520,45 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
         const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
         const byId = new Map(fields.map((x) => [x.id, x]));
+        // v0.1.290 — el servidor valida TODO el formulario, también las páginas
+        // que el navegador pudo saltarse: las páginas son sólo cómo se muestra.
         const { data, errors, attachmentIds } = this.collect(f, byId, input);
+        const s = f.config.settings;
+        const emailKey = s.respondent_email_field_id !== null ? jsonbKeyForField(s.respondent_email_field_id) : null;
+        const respondentEmail = emailKey && typeof data[emailKey] === 'string' ? (data[emailKey] as string) : null;
+        // Doble opt-in: sin correo no hay a quién pedirle la confirmación.
+        if (s.confirm_email && emailKey && !respondentEmail) {
+            const item = f.config.items.find((i) => i.type === 'field' && i.field_id === s.respondent_email_field_id);
+            if (item && !errors[item.id]) errors[item.id] = 'Necesitamos tu correo para confirmar la respuesta.';
+        }
         if (Object.keys(errors).length > 0) {
             throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors });
         }
 
+        // v0.1.290 — verificación anti-robots. Va DESPUÉS de revisar las
+        // respuestas: un dato mal escrito no le quema el token a la persona.
+        await this.checkCaptcha(f, input.captcha, ip);
+
+        if (s.confirm_email && respondentEmail) {
+            return this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip);
+        }
+
+        await this.finalize(f, fields, data, attachmentIds);
+        if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip);
+        return { ok: true, redirect_url: f.config.settings.redirect_url };
+    }
+
+    /**
+     * Crea el registro de una respuesta ya validada (envío directo o al
+     * confirmar el correo): reserva el lugar del cupo, crea, saca los archivos
+     * de "pendientes" y avisa a las automatizaciones.
+     */
+    private async finalize(
+        f: ResolvedForm,
+        fields: Field[],
+        data: Record<string, unknown>,
+        attachmentIds: number[],
+    ): Promise<{ id: number; data: Record<string, unknown> }> {
         // Cupo: se RESERVA el lugar antes de crear el registro con un UPDATE
         // condicional (antes se contaba y se sumaba después: dos envíos a la
         // vez pasaban los dos el último lugar).
@@ -539,7 +626,390 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             after: created.data,
             form: { id: f.row.id, name: f.row.name },
         });
-        return { ok: true, redirect_url: f.config.settings.redirect_url };
+        return { id: created.id, data: created.data };
+    }
+
+    // ─────────────────── Captcha (v0.1.290) ───────────────────
+
+    /**
+     * Si el formulario pide verificación anti-robots, el token tiene que ser
+     * válido y usarse UNA vez. Sin llaves en la empresa ni en la plataforma
+     * (las quitaron después de activarlo), el formulario sigue recibiendo
+     * respuestas —con la trampa, el sello y los límites— y la empresa se
+     * entera por Problemas en vez de quedarse sin respuestas.
+     */
+    private async checkCaptcha(f: ResolvedForm, token: string | undefined, ip: string): Promise<void> {
+        if (!f.config.settings.captcha || !this.captcha) return;
+        const keys = await this.captcha.resolve(f.row.tenantId, f.tenantSettings);
+        const incidentKey = `form-captcha:${f.row.id}`;
+        if (!keys) {
+            this.incidents?.report({
+                tenantId: f.row.tenantId,
+                key: incidentKey,
+                source: 'form',
+                sourceId: f.row.id,
+                listId: f.row.listId,
+                ownerId: f.row.createdBy ?? null,
+                title: `El formulario «${f.row.name}» pide verificación anti-robots pero no hay llaves`,
+                message:
+                    'Las respuestas siguen llegando sin la verificación. Carga las llaves en Ajustes → Portal y formularios (o pídele al operador que las cargue en la plataforma), o apaga la opción en el formulario.',
+            });
+            return;
+        }
+        this.incidents?.resolve(f.row.tenantId, incidentKey);
+        const verdict = await this.captcha.verify(keys, token, ip);
+        if (verdict.ok) return;
+        if (verdict.reason === 'unavailable') {
+            throw new HttpException(
+                {
+                    code: 'captcha_unavailable',
+                    message: 'No pudimos comprobar la verificación en este momento. Prueba de nuevo en un rato.',
+                    data: { status: 503 },
+                },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        throw badRequest(
+            'captcha_failed',
+            verdict.reason === 'reused'
+                ? 'La verificación ya se usó. Complétala de nuevo para enviar.'
+                : 'Completa la verificación para enviar.',
+        );
+    }
+
+    // ─────────────────── Confirmación del correo (v0.1.290) ───────────────────
+
+    /**
+     * Doble opt-in: guarda la respuesta YA validada como pendiente y le manda a
+     * la persona el enlace para confirmarla. Ni registro, ni automatizaciones,
+     * ni cupo hasta que confirme. Los archivos quedan con la respuesta (fuera
+     * del barrido de huérfanos) y se borran con ella si vence.
+     */
+    private async holdForConfirmation(
+        f: ResolvedForm,
+        data: Record<string, unknown>,
+        attachmentIds: number[],
+        email: string,
+        ip: string,
+    ): Promise<SubmitFormResult> {
+        if (!this.mail) {
+            throw new HttpException(
+                { code: 'form_unavailable', message: 'No pudimos recibir tu respuesta en este momento. Prueba de nuevo más tarde.', data: { status: 503 } },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        if (!(await this.allowRespondentMail(email, ip))) {
+            throw new HttpException(
+                {
+                    code: 'rate_limited',
+                    message: 'Ya enviamos varios correos de confirmación a esta dirección. Revisa tu bandeja (y la carpeta de spam) o prueba en un rato.',
+                    data: { status: 429 },
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+        const token = randomBytes(24).toString('base64url');
+        const [pending] = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+            tx
+                .insert(formPendingSubmissions)
+                .values({
+                    tenantId: f.row.tenantId,
+                    formId: f.row.id,
+                    tokenHash: hashToken(token),
+                    email,
+                    data,
+                    attachmentIds,
+                    ip: ip.slice(0, 64),
+                    expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
+                })
+                .returning({ id: formPendingSubmissions.id }),
+        );
+        // Los archivos esperan con la respuesta: el barrido de huérfanos (24 h)
+        // no los tiene que borrar antes de que venza la confirmación (48 h).
+        if (attachmentIds.length > 0) {
+            await this.redis
+                .zrem(PENDING_UPLOADS_KEY, ...attachmentIds.map((id) => `${f.row.tenantId}:${id}`))
+                .catch(() => undefined);
+        }
+
+        const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
+        const brand = await this.emailBrand(f, base);
+        const message = formConfirmEmail(brand, `${base}/api/v1/public/f/confirm/${token}`, {
+            formTitle: f.config.settings.title || f.row.name,
+        });
+        try {
+            await this.mail.sendNow({
+                tenantId: f.row.tenantId,
+                to: email,
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+                ...(brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
+            });
+        } catch (err) {
+            // Sin el correo la respuesta no se puede confirmar nunca: se descarta
+            // la pendiente (los archivos vuelven al barrido) y se dice.
+            await this.tenantDb
+                .withTenant(f.row.tenantId, (tx) => tx.delete(formPendingSubmissions).where(eq(formPendingSubmissions.id, pending!.id)))
+                .catch(() => undefined);
+            if (attachmentIds.length > 0) {
+                await this.redis
+                    .zadd(PENDING_UPLOADS_KEY, ...attachmentIds.flatMap((id) => [Date.now() + ORPHAN_AFTER_S * 1000, `${f.row.tenantId}:${id}`]))
+                    .catch(() => undefined);
+            }
+            const reason = err instanceof Error ? err.message : String(err);
+            this.logger.warn(`Formulario ${f.row.id}: el correo de confirmación no salió: ${reason}`);
+            this.incidents?.report({
+                tenantId: f.row.tenantId,
+                key: `form-confirm:${f.row.id}`,
+                source: 'form',
+                sourceId: f.row.id,
+                listId: f.row.listId,
+                ownerId: f.row.createdBy ?? null,
+                title: `El formulario «${f.row.name}» no puede mandar el correo de confirmación`,
+                message: `Alguien respondió y no le pudimos mandar el enlace para confirmar: ${reason} Mientras tanto esas respuestas se pierden. Revisa el correo de la empresa en Ajustes → Correo, o apaga «Confirmar el correo» en el formulario.`,
+            });
+            throw new HttpException(
+                {
+                    code: 'form_unavailable',
+                    message: 'No pudimos enviarte el correo para confirmar tu respuesta. Prueba de nuevo más tarde.',
+                    data: { status: 503 },
+                },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        this.incidents?.resolve(f.row.tenantId, `form-confirm:${f.row.id}`);
+        return { ok: true, redirect_url: null, pending_confirmation: true, email_hint: maskEmail(email) };
+    }
+
+    /** ¿El enlace de confirmación existe y sigue vigente? (sin consumirlo) */
+    async peekConfirmation(token: string): Promise<{ ok: boolean; brand: ConfirmOutcome['brand'] }> {
+        if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return { ok: false, brand: null };
+        const [row] = await this.db
+            .select({ formId: formPendingSubmissions.formId, tenantId: formPendingSubmissions.tenantId })
+            .from(formPendingSubmissions)
+            .where(and(eq(formPendingSubmissions.tokenHash, hashToken(token)), gt(formPendingSubmissions.expiresAt, new Date())))
+            .limit(1);
+        if (!row) return { ok: false, brand: null };
+        const f = await this.resolveById(row.formId);
+        return { ok: true, brand: f ? this.noticeBrand(f) : null };
+    }
+
+    /**
+     * Abre el enlace del correo: consume la pendiente (UN solo uso: el DELETE
+     * … RETURNING es atómico, dos clics a la vez no crean dos registros) y
+     * recién ahí crea el registro, corre «Cuando se envía un formulario» y
+     * cuenta para el cupo.
+     */
+    async confirm(token: string): Promise<ConfirmOutcome> {
+        const invalid: ConfirmOutcome = {
+            status: 'invalid',
+            title: 'Este enlace ya no sirve',
+            message: 'Ya se usó o venció (vale 48 horas). Si ya lo abriste antes, tu respuesta quedó registrada; si no, vuelve a completar el formulario.',
+            brand: null,
+            continueUrl: null,
+        };
+        if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return invalid;
+        const [pending] = await this.db
+            .delete(formPendingSubmissions)
+            .where(and(eq(formPendingSubmissions.tokenHash, hashToken(token)), gt(formPendingSubmissions.expiresAt, new Date())))
+            .returning();
+        if (!pending) return invalid;
+
+        const f = await this.resolveById(pending.formId);
+        if (!f) {
+            await this.discardFiles(pending);
+            return invalid;
+        }
+        const brand = this.noticeBrand(f);
+        // La empresa dejó de recibir respuestas (solo-lectura, fecha o cupo):
+        // la respuesta no entra, y se dice con su mensaje.
+        const closed = this.closedReason(f);
+        if (closed) {
+            await this.discardFiles(pending);
+            return { status: 'closed', title: 'El formulario ya no recibe respuestas', message: closed, brand, continueUrl: null };
+        }
+        const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
+        const attachmentIds = (pending.attachmentIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+        try {
+            await this.finalize(f, fields, pending.data, attachmentIds);
+        } catch (err) {
+            if (err instanceof ForbiddenException) {
+                await this.discardFiles(pending);
+                return { status: 'closed', title: 'El formulario ya no recibe respuestas', message: f.config.settings.closed_message, brand, continueUrl: null };
+            }
+            // Algo de la empresa (el plan lleno, un campo nuevo obligatorio): la
+            // pendiente vuelve a quedar como estaba, así el mismo enlace sirve
+            // para reintentar cuando lo arreglen.
+            await this.db
+                .insert(formPendingSubmissions)
+                .values({
+                    tenantId: pending.tenantId,
+                    formId: pending.formId,
+                    tokenHash: pending.tokenHash,
+                    email: pending.email,
+                    data: pending.data,
+                    attachmentIds: pending.attachmentIds,
+                    ip: pending.ip,
+                    expiresAt: pending.expiresAt,
+                })
+                .onConflictDoNothing()
+                .catch(() => undefined);
+            return {
+                status: 'failed',
+                title: 'No pudimos guardar tu respuesta',
+                message: 'Algo falló de nuestro lado. Prueba abrir el mismo enlace de nuevo en un rato.',
+                brand,
+                continueUrl: null,
+            };
+        }
+        if (f.config.settings.send_copy) this.sendCopyLater(f, fields, pending.data, pending.email, pending.ip ?? '');
+        return {
+            status: 'confirmed',
+            title: '¡Listo! Tu respuesta quedó confirmada',
+            message: f.config.settings.success_message || 'Recibimos tu respuesta.',
+            brand,
+            continueUrl: f.config.settings.redirect_url,
+        };
+    }
+
+    /** Borra las respuestas sin confirmar que vencieron, con sus archivos. */
+    async sweepExpiredPending(now = new Date()): Promise<number> {
+        const doomed = await this.db
+            .delete(formPendingSubmissions)
+            .where(
+                inArray(
+                    formPendingSubmissions.id,
+                    this.db
+                        .select({ id: formPendingSubmissions.id })
+                        .from(formPendingSubmissions)
+                        .where(lt(formPendingSubmissions.expiresAt, now))
+                        .limit(200),
+                ),
+            )
+            .returning();
+        for (const p of doomed) await this.discardFiles(p);
+        return doomed.length;
+    }
+
+    private async discardFiles(p: Pick<FormPendingRow, 'tenantId' | 'attachmentIds'>): Promise<void> {
+        for (const id of p.attachmentIds ?? []) {
+            if (Number.isInteger(id) && id > 0) await this.files.remove(p.tenantId, id).catch(() => undefined);
+        }
+    }
+
+    /** Formulario por id (el de una respuesta pendiente), con el estado de su empresa. */
+    private async resolveById(formId: number): Promise<ResolvedForm | null> {
+        const [hit] = await this.db.select({ token: forms.token }).from(forms).where(eq(forms.id, formId)).limit(1);
+        if (!hit) return null;
+        try {
+            return await this.resolve(hit.token, { allowDisabled: true });
+        } catch {
+            return null;
+        }
+    }
+
+    private noticeBrand(f: ResolvedForm): NonNullable<ConfirmOutcome['brand']> {
+        const parsed = brandingSchema.safeParse(f.tenantSettings.branding ?? {});
+        const b = parsed.success ? parsed.data : brandingSchema.parse({});
+        return {
+            company: b.app_name || f.tenantName,
+            accent: f.config.settings.accent_color ?? b.primary_color ?? '#0e7490',
+            logoUrl: b.logo_file_id !== null ? this.files.signedUrl(f.row.tenantId, b.logo_file_id, 3600) : null,
+        };
+    }
+
+    /** La marca de la empresa para los correos (logo por URL absoluta firmada). */
+    private async emailBrand(f: ResolvedForm, base: string): Promise<PortalEmailBrand> {
+        const parsed = brandingSchema.safeParse(f.tenantSettings.branding ?? {});
+        const b = parsed.success ? parsed.data : brandingSchema.parse({});
+        return {
+            name: b.app_name ?? f.tenantName,
+            color: f.config.settings.accent_color ?? b.primary_color,
+            logoUrl: b.logo_file_id !== null ? `${base}${this.files.signedUrl(f.row.tenantId, b.logo_file_id, 30 * 24 * 3600)}` : null,
+        };
+    }
+
+    /** Freno a los correos hacia quien responde (por dirección y por IP). */
+    private async allowRespondentMail(email: string, ip: string): Promise<boolean> {
+        const now = Math.floor(Date.now() / 1000);
+        for (const { scope, window, max } of RESPONDENT_MAIL_LIMITS) {
+            const who = scope === 'email' ? `email:${email.toLowerCase()}` : `ip:${ip}`;
+            const key = `formmail:${window}:${Math.floor(now / window)}:${who}`;
+            try {
+                const res = await this.redis.multi().incr(key).expire(key, window).exec();
+                if (Number(res?.[0]?.[1] ?? 0) > max) return false;
+            } catch {
+                return true;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Copia de las respuestas a quien respondió. No demora la respuesta del
+     * envío ni la tumba si el correo falla: es una cortesía.
+     */
+    private sendCopyLater(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, email: string, ip: string): void {
+        void this.sendCopy(f, fields, data, email, ip).catch((err: unknown) =>
+            this.logger.warn(`Formulario ${f.row.id}: la copia a ${maskEmail(email)} no salió: ${err instanceof Error ? err.message : String(err)}`),
+        );
+    }
+
+    private async sendCopy(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, email: string, ip: string): Promise<boolean> {
+        if (!this.mail) return false;
+        if (!(await this.allowRespondentMail(email, ip))) return false;
+        const answers = await this.answerLines(f, fields, data);
+        const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
+        const brand = await this.emailBrand(f, base);
+        const message = formCopyEmail(brand, { formTitle: f.config.settings.title || f.row.name, answers });
+        await this.mail.sendNow({
+            tenantId: f.row.tenantId,
+            to: email,
+            subject: message.subject,
+            text: message.text,
+            html: message.html,
+            ...(brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
+        });
+        return true;
+    }
+
+    /** Las respuestas como las lee una persona: la pregunta y el valor legible (etiquetas, Sí/No, formato de la empresa). */
+    private async answerLines(f: ResolvedForm, fields: Field[], data: Record<string, unknown>): Promise<FormAnswerLine[]> {
+        const byId = new Map(fields.map((x) => [x.id, x]));
+        const format = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
+        const fmt = { ...(format.success ? format.data : tenantFormatSchema.parse({})), timezone: f.timeZone };
+        // Los archivos se muestran por su nombre (una sola consulta).
+        const fileIds = f.config.items.flatMap((i) => {
+            if (i.type !== 'field' || byId.get(i.field_id)?.type !== 'file') return [];
+            const v = data[jsonbKeyForField(i.field_id)];
+            return Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : [];
+        });
+        const names = new Map<number, string>();
+        if (fileIds.length > 0) {
+            const rows = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+                tx
+                    .select({ id: attachments.id, title: attachments.filename })
+                    .from(attachments)
+                    .where(and(eq(attachments.tenantId, f.row.tenantId), inArray(attachments.id, fileIds))),
+            );
+            for (const r of rows) names.set(r.id, r.title);
+        }
+        const out: FormAnswerLine[] = [];
+        for (const item of f.config.items) {
+            if (item.type !== 'field' || item.hidden) continue;
+            const field = byId.get(item.field_id);
+            if (!field) continue;
+            const key = jsonbKeyForField(field.id);
+            if (!(key in data)) continue;
+            const value = data[key];
+            const answer =
+                field.type === 'file'
+                    ? (Array.isArray(value) ? value : []).map((id) => names.get(Number(id)) ?? 'archivo').join(', ')
+                    : formatEmailFieldValue(field, value, fmt);
+            out.push({ question: item.label.trim() || field.label, answer });
+        }
+        return out;
     }
 
     private checkStamp(formId: number, stamp: string, opts: { minFill?: boolean } = {}): void {
@@ -755,6 +1225,7 @@ function readConfig(raw: unknown): FormConfig {
  */
 export function sanitizeConfig(config: FormConfig, fields: ReadonlyArray<{ id: number; type: string }>): FormConfig {
     const askable = new Set(fields.filter((f) => isFormFieldType(f.type)).map((f) => f.id));
+    const typeOf = new Map(fields.map((f) => [f.id, f.type]));
     const seen = new Set<number>();
     const items = config.items.filter((i) => {
         if (i.type !== 'field') return true;
@@ -765,9 +1236,36 @@ export function sanitizeConfig(config: FormConfig, fields: ReadonlyArray<{ id: n
     const inForm = new Set(items.flatMap((i) => (i.type === 'field' ? [i.field_id] : [])));
     const seenIds = new Set<string>();
     const unique = items.filter((i) => (seenIds.has(i.id) ? false : (seenIds.add(i.id), true)));
+
+    // v0.1.290 — el correo de quien responde: una pregunta de tipo email que
+    // esté en el formulario. Sin ella, ni confirmación ni copia.
+    const s = config.settings;
+    const emailId =
+        s.respondent_email_field_id !== null && inForm.has(s.respondent_email_field_id) && typeOf.get(s.respondent_email_field_id) === 'email'
+            ? s.respondent_email_field_id
+            : null;
+    const confirm = s.confirm_email && emailId !== null;
+    const settings = {
+        ...s,
+        respondent_email_field_id: emailId,
+        confirm_email: confirm,
+        send_copy: s.send_copy && emailId !== null,
+    };
+
     return formConfigSchema.parse({
-        settings: config.settings,
-        items: unique.map((i) => (i.show_if && !inForm.has(i.show_if.field_id) ? { ...i, show_if: null } : i)),
+        settings,
+        items: unique.map((i) => {
+            // Un salto de página nunca tiene condición propia.
+            if (i.type === 'page_break') return { ...i, show_if: null };
+            let out = i.show_if && !inForm.has(i.show_if.field_id) ? { ...i, show_if: null } : i;
+            // Doble opt-in: sin el correo no hay a quién pedirle la confirmación,
+            // así que esa pregunta queda obligatoria, visible y sin condición
+            // (si no, la respuesta no podría guardarse nunca).
+            if (confirm && out.type === 'field' && out.field_id === emailId) {
+                out = { ...out, required: true, hidden: false, show_if: null };
+            }
+            return out;
+        }),
     });
 }
 
