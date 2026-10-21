@@ -1,4 +1,5 @@
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
+import { RelationPicker } from '@/components/fields/RelationPicker';
 import { AutocompleteInput } from '@/components/ui/autocomplete-input';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -77,6 +78,16 @@ export function FilterValueInput({
     const multi = isMultiValueOperator(op);
 
     switch (field.type) {
+        case 'relation':
+            // v0.1.286 — se ELIGE el registro con el buscador de la lista
+            // destino (el mismo selector de la celda), no se tipea un id.
+            return (
+                <RelationPicker
+                    field={field}
+                    value={toValueList(value).map(Number).filter((n) => Number.isInteger(n) && n > 0)}
+                    onChange={(ids) => onChange(ids)}
+                />
+            );
         case 'select':
         case 'multi_select': {
             const options = extractFieldOptions(field);
@@ -155,6 +166,7 @@ export function FilterValueInput({
         case 'percent':
         case 'duration':
         case 'rollup':
+        case 'computed':
             // v0.1.158 — percent/duration son números: el filtro compara el
             // VALOR guardado (0-100, minutos).
             return (

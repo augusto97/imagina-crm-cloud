@@ -212,6 +212,10 @@ export function RecordsPage(): JSX.Element {
         && activeViewType !== 'cards'
         && state.groupByFieldId !== null
         && !state.spreadsheet;
+    // v0.1.286 — el calendario pide los registros de SU rango (el mes visible):
+    // el listado plano no se usa ahí.
+    const calendarMode = activeViewType === 'calendar'
+        && Boolean(views.data?.find((x) => x.id === activeViewId)?.config.date_field_id);
     const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
         total: null,
         fetching: false,
@@ -238,7 +242,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied && !groupedMode ? listSlug : undefined,
+        viewApplied && !groupedMode && !calendarMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -266,7 +270,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch && !groupedMode ? listSlug : undefined,
+        useServerSearch && !groupedMode && !calendarMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -1000,6 +1004,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                     listId={list.data.id}
                     listSlug={list.data.slug}
                     filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    sort={state.sort.map((x) => `field_${x.field_id}:${x.dir}`).join(',')}
                     open={exportOpen}
                     onOpenChange={setExportOpen}
                     hideTrigger
@@ -1231,12 +1237,16 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
                                     titleFieldId={activeView?.config.kanban_title_field_id ?? null}
                                     metaFieldIds={activeView?.config.kanban_meta_field_ids ?? null}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                 />
                             ) : isCalendar && dateField ? (
                                 <CalendarView
+                                    listId={list.data.id}
                                     fields={fields.data}
-                                    records={records.data?.data ?? []}
                                     dateField={dateField}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
                                 />
                             ) : isCards ? (

@@ -15,6 +15,10 @@ interface ExportButtonProps {
     listSlug: string;
     /** Filtros activos — se aplican al export (mismo subset que la vista). */
     filterTree?: FilterTree;
+    /** v0.1.286 — búsqueda y orden activos: el archivo trae lo que se ve. */
+    search?: string;
+    /** `field_{id}:{dir},…` (vacío = sin orden). */
+    sort?: string;
     /** Si pasas IDs, son los pre-seleccionados en el dialog. */
     fieldIds?: number[];
     disabled?: boolean;
@@ -49,6 +53,8 @@ export function ExportButton({
     listId,
     listSlug,
     filterTree,
+    search,
+    sort,
     fieldIds: initialFieldIds,
     disabled,
     open: controlledOpen,
@@ -66,21 +72,17 @@ export function ExportButton({
     const fields = useFields(listId);
 
     // Cuando abre el dialog, si no había selección previa
-    // pre-seleccionamos todos los fields no-relation.
+    // pre-seleccionamos todos los campos. v0.1.286 — las relaciones también:
+    // el CSV las exporta con el TÍTULO del vinculado desde v0.1.200 (el
+    // diálogo las seguía dejando afuera).
     useEffect(() => {
         if (! open || ! fields.data) return;
         if (selectedIds.size === 0) {
-            const defaults = fields.data
-                .filter((f) => f.type !== 'relation')
-                .map((f) => f.id);
-            setSelectedIds(new Set(defaults));
+            setSelectedIds(new Set(fields.data.map((f) => f.id)));
         }
     }, [open, fields.data, selectedIds.size]);
 
-    const exportableFields = useMemo(
-        () => (fields.data ?? []).filter((f) => f.type !== 'relation'),
-        [fields.data],
-    );
+    const exportableFields = useMemo(() => fields.data ?? [], [fields.data]);
 
     const toggleField = (id: number): void => {
         setSelectedIds((prev) => {
@@ -107,6 +109,8 @@ export function ExportButton({
             if (filterTree && filterTree.children.length > 0) {
                 params.set('filter_tree', JSON.stringify(filterTree));
             }
+            if (search !== undefined && search.trim() !== '') params.set('search', search.trim());
+            if (sort !== undefined && sort !== '') params.set('sort', sort);
             // Mantenemos el orden original de fields del schema, no del
             // orden de toggle. Esto evita columnas barajadas en el CSV
             // si el user clickea en distinto orden.

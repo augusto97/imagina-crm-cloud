@@ -1,13 +1,20 @@
 import { useMemo, useState } from 'react';
-import { GripVertical } from 'lucide-react';
+import { ArrowRightLeft, GripVertical, MoreHorizontal } from 'lucide-react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { chipSoftStyle, colorVar, type OptionColor } from '@/components/ui/color-picker';
-import { useUpdateRecord } from '@/hooks/useRecords';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useRecordGroups, useUpdateRecord } from '@/hooks/useRecords';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
-import type { RecordEntity } from '@/types/record';
+import type { FilterTree, RecordEntity } from '@/types/record';
 
 /**
  * Vista Kanban: tablero de columnas derivadas de las options del campo
@@ -37,6 +44,13 @@ interface KanbanViewProps {
      */
     titleFieldId?: number | null;
     metaFieldIds?: number[] | null;
+    /**
+     * v0.1.286 — filtros y búsqueda de la vista: los CONTADORES de cada
+     * columna los da el servidor (todos los registros), no las tarjetas
+     * cargadas (máx. 200).
+     */
+    filterTree?: FilterTree;
+    search?: string;
 }
 
 interface SelectOption {
@@ -55,8 +69,22 @@ export function KanbanView({
     onCardClick,
     titleFieldId,
     metaFieldIds,
+    filterTree,
+    search,
 }: KanbanViewProps): JSX.Element {
     const update = useUpdateRecord(listId);
+    const groups = useRecordGroups(listId, {
+        groupBy: groupByField.id,
+        filterTree: filterTree && filterTree.children.length > 0 ? filterTree : undefined,
+        search: search !== undefined && search.trim() !== '' ? search.trim() : undefined,
+    });
+    const serverCounts = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const b of groups.data?.data ?? []) {
+            m.set(b.value === null || b.value === '' ? UNCATEGORIZED_KEY : b.value, b.count);
+        }
+        return m;
+    }, [groups.data]);
     const [draggingId, setDraggingId] = useState<number | null>(null);
     const [dropTarget, setDropTarget] = useState<string | null>(null);
     const [moveError, setMoveError] = useState<string | null>(null);
@@ -114,8 +142,16 @@ export function KanbanView({
     const handleDrop = async (targetValue: string): Promise<void> => {
         setDropTarget(null);
         if (draggingId === null) return;
+        await moveRecord(draggingId, targetValue);
+    };
 
-        const record = records.find((r) => r.id === draggingId);
+    /**
+     * Mueve una tarjeta a otra columna. Lo usan el arrastre (mouse) y el menú
+     * «Mover a…» de la tarjeta (v0.1.286): en el TELÉFONO no hay drag HTML5,
+     * así que mover una tarjeta era imposible.
+     */
+    const moveRecord = async (recordId: number, targetValue: string): Promise<void> => {
+        const record = records.find((r) => r.id === recordId);
         if (!record) {
             setDraggingId(null);
             return;
@@ -123,7 +159,7 @@ export function KanbanView({
 
         const currentValue = record.fields[groupByField.slug];
         const newValue = targetValue === UNCATEGORIZED_KEY ? null : targetValue;
-        if (currentValue === newValue) {
+        if (currentValue === newValue || (currentValue === undefined && newValue === null)) {
             setDraggingId(null);
             return;
         }
@@ -183,6 +219,8 @@ export function KanbanView({
             <div className="imcrm-flex imcrm-gap-3 imcrm-overflow-x-auto imcrm-pb-2">
             {allColumns.map((col) => {
                 const colRecords = grouped.get(col.key) ?? [];
+                // Contador real del servidor (si todavía no llegó, lo cargado).
+                const colCount = Math.max(serverCounts.get(col.key) ?? 0, colRecords.length);
                 const isTarget = dropTarget === col.key;
                 const colSolid = colorVar(col.color as OptionColor | undefined);
                 const colTint =
@@ -236,7 +274,7 @@ export function KanbanView({
                                     {col.label}
                                 </span>
                                 <span className="imcrm-shrink-0 imcrm-rounded-full imcrm-bg-card imcrm-px-2 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-shadow-imcrm-sm">
-                                    {colRecords.length}
+                                    {colCount}
                                 </span>
                             </div>
                         </header>
@@ -261,8 +299,20 @@ export function KanbanView({
                                             setDropTarget(null);
                                         }}
                                         onClick={() => onCardClick(record)}
+                                        moveTargets={allColumns.filter((c) => c.key !== col.key)}
+                                        onMove={(target) => void moveRecord(record.id, target)}
                                     />
                                 ))
+                            )}
+                            {colCount > colRecords.length && (
+                                <p className="imcrm-px-1 imcrm-text-center imcrm-text-[11px] imcrm-text-muted-foreground">
+                                    {sprintf(
+                                        /* translators: 1: cards shown, 2: records in the column */
+                                        __('Se muestran %1$d de %2$d — usa filtros para acotar.'),
+                                        colRecords.length,
+                                        colCount,
+                                    )}
+                                </p>
                             )}
                         </div>
                     </div>
@@ -282,6 +332,9 @@ interface KanbanCardProps {
     onDragStart: () => void;
     onDragEnd: () => void;
     onClick: () => void;
+    /** Columnas a las que se puede mover la tarjeta (todas menos la suya). */
+    moveTargets: Array<{ key: string; label: string; color?: string }>;
+    onMove: (targetKey: string) => void;
 }
 
 function KanbanCard({
@@ -293,6 +346,8 @@ function KanbanCard({
     onDragStart,
     onDragEnd,
     onClick,
+    moveTargets,
+    onMove,
 }: KanbanCardProps): JSX.Element {
     const titleValue = titleField ? record.fields[titleField.slug] : undefined;
     const title =
@@ -336,6 +391,41 @@ function KanbanCard({
                     <h4 className="imcrm-line-clamp-2 imcrm-flex-1 imcrm-text-sm imcrm-font-semibold imcrm-leading-snug imcrm-text-foreground">
                         {String(title)}
                     </h4>
+                    {moveTargets.length > 0 && (
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    onClick={(e) => e.stopPropagation()}
+                                    aria-label={sprintf(__('Mover «%s» a otra columna'), String(title))}
+                                    className="imcrm--mr-1 imcrm--mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground imcrm-opacity-60 hover:imcrm-bg-accent hover:imcrm-text-foreground group-hover:imcrm-opacity-100 [@media(hover:hover)]:imcrm-opacity-0 [@media(hover:hover)]:group-hover:imcrm-opacity-100 focus-visible:imcrm-opacity-100"
+                                    data-testid="imcrm-kanban-card-menu"
+                                >
+                                    <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                                align="end"
+                                className="imcrm-max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] imcrm-overflow-y-auto"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <DropdownMenuLabel className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                    <ArrowRightLeft className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Mover a…')}
+                                </DropdownMenuLabel>
+                                {moveTargets.map((t) => (
+                                    <DropdownMenuItem key={t.key} onSelect={() => onMove(t.key)}>
+                                        <span
+                                            aria-hidden
+                                            className="imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full"
+                                            style={{ backgroundColor: colorVar(t.color as OptionColor | undefined) ?? 'hsl(var(--imcrm-muted-foreground) / 0.4)' }}
+                                        />
+                                        {t.label}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
                 </div>
 
                 {metaFields.length > 0 && (

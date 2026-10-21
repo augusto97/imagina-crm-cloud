@@ -88,13 +88,37 @@ const FILE_LIKE: OperatorMeta[] = [
 ];
 
 /**
+ * v0.1.286 — una relación se filtra por sus VÍNCULOS (el backend lo compila a
+ * un `EXISTS` sobre la tabla de relaciones desde v0.1.252): tiene / no tiene /
+ * vinculado a un registro elegido con el buscador de la lista destino.
+ */
+const RELATION_LIKE: OperatorMeta[] = [
+    { op: 'in', label: __('vinculado a') },
+    { op: 'nin', label: __('no vinculado a') },
+    { op: 'is_not_null', label: __('tiene vínculos'), nullary: true },
+    { op: 'is_null', label: __('sin vínculos'), nullary: true },
+];
+
+/** Operaciones de `computed` con valor numérico en SQL (espejo de `computed-sql.ts`). */
+const NUMERIC_COMPUTED_OPS = new Set(['sum', 'product', 'subtract', 'divide', 'abs']);
+
+/** ¿El calculado da un número que el servidor puede filtrar (v0.1.229)? */
+export function isNumericComputedField(field?: { config?: unknown } | null): boolean {
+    const op = (field?.config as { operation?: unknown } | null | undefined)?.operation;
+    return typeof op === 'string' && NUMERIC_COMPUTED_OPS.has(op);
+}
+
+/**
  * v0.1.200 — un campo derivado se filtra por la expresión SQL que el motor
  * arma para él (`through-fields`), no por `data`. El único que NO la tiene es
  * el lookup cuyo destino es un `computed`: ése se evalúa en JS sobre la fila
  * del otro lado y no hay forma de expresarlo en SQL — sin operadores, en vez
  * de ofrecer un filtro que el backend descartaría en silencio.
  */
-export function operatorsForType(type: FieldTypeSlug, field?: { through?: ThroughInfo | null }): OperatorMeta[] {
+export function operatorsForType(
+    type: FieldTypeSlug,
+    field?: { through?: ThroughInfo | null; config?: unknown },
+): OperatorMeta[] {
     if (type === 'lookup') {
         const target = field?.through?.target_field;
         // Sin `through` resuelto tampoco hay expresión.
@@ -134,14 +158,12 @@ export function operatorsForType(type: FieldTypeSlug, field?: { through?: Throug
         case 'file':
             return FILE_LIKE;
         case 'relation':
-            // No filtrable en MVP (CLAUDE.md §9.4 — relation vive en wp_imcrm_relations).
-            return [];
+            return RELATION_LIKE;
         case 'computed':
-            // No filtrable: no tiene columna SQL, su valor lo deriva
-            // el backend en cada lectura. El QueryBuilder rechazaría
-            // cualquier filtro contra este field por whitelist de
-            // columnas físicas.
-            return [];
+            // v0.1.229 — un calculado NUMÉRICO (suma, resta, producto,
+            // división, absoluto) se compila a SQL y se filtra como número;
+            // el resto (fechas, concatenar) no tiene expresión y no se ofrece.
+            return isNumericComputedField(field) ? NUMERIC : [];
 
         case 'rollup':
             // v0.1.170 — el backend compila el rollup a una subconsulta

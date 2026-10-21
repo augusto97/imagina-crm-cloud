@@ -35,9 +35,9 @@ export function FilterRow({
     // v0.1.200 — un lookup ya se filtra (el motor le da expresión SQL), salvo
     // el que apunta a un `computed`: ése no tiene operadores y por eso se cae
     // solo de la lista.
-    const filterableFields = fields.filter(
-        (f) => f.type !== 'relation' && operatorsForType(f.type, f).length > 0,
-    );
+    // v0.1.286 — también relaciones (tiene / no tiene / vinculado a) y
+    // calculados numéricos: el backend los filtraba y la interfaz no los ofrecía.
+    const filterableFields = fields.filter((f) => operatorsForType(f.type, f).length > 0);
     const selected = fields.find((f) => f.id === condition.field_id) ?? null;
     const operators = selected ? operatorsForType(selected.type, selected) : [];
 
