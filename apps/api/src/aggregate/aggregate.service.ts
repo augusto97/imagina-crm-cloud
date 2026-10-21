@@ -19,6 +19,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
+import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { withComputedExprs } from '../records/computed-sql';
@@ -226,6 +227,7 @@ export class AggregateService {
                         : isThroughField(groupField.type) || groupField.type === 'computed'
                             ? throughGroupExpr(groupField, fieldsById)
                             : fieldTextExpr(groupField.id);
+            if (groupKeyHasSubquery(groupField.type)) await disableJitForTx(tx);
             if (opts.top) {
                 return {
                     metric: req.metric,
@@ -491,9 +493,10 @@ export class AggregateService {
                 // multi_select, derivados por su expresión): antes un pie por
                 // grupo de multi_select nunca encontraba su grupo.
                 const groupExpr = groupKeyExpr(gf, fieldsById);
-                const res = await this.tenantDb.withTenant(tenantId, (tx) =>
-                    tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`),
-                );
+                const res = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                    if (groupKeyHasSubquery(gf.type)) await disableJitForTx(tx);
+                    return tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`);
+                });
                 groups = (res.rows as Record<string, unknown>[]).map((rec) => {
                     const grp = rec.grp;
                     return {
@@ -650,7 +653,23 @@ export interface FooterAggregates {
  */
 function multiSelectSetExpr(fieldId: number): SQL {
     const col = sql`(${records.data} -> ${jsonbKeyForField(fieldId)})`;
-    return sql`(CASE WHEN jsonb_typeof(${col}) = 'array' AND jsonb_array_length(${col}) > 0 THEN (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e) ELSE NULL END)`;
+    // Atajo para lo habitual (1-2 opciones de texto): la subconsulta con
+    // `jsonb_agg` se paga por FILA y era lo más caro de agrupar por un
+    // multi_select. Da EXACTAMENTE la misma clave que el camino general: la
+    // salida de texto de un array jsonb de strings es la misma que la de
+    // `jsonb_agg(text)`, y `<=` sobre `->>` usa la misma collation que el
+    // `ORDER BY e` (los repetidos se conservan, como en `jsonb_agg`). Un array
+    // con elementos que no son texto va por el camino general, que los pasa a
+    // texto. `IS DISTINCT FROM` deja un NULL (clave ausente) en NULL sin
+    // llamar a `jsonb_array_length`, que falla con lo que no es un array.
+    return sql`(CASE
+        WHEN jsonb_typeof(${col}) IS DISTINCT FROM 'array' THEN NULL
+        WHEN jsonb_array_length(${col}) = 0 THEN NULL
+        WHEN jsonb_array_length(${col}) = 1 AND jsonb_typeof(${col} -> 0) = 'string' THEN ${col}::text
+        WHEN jsonb_array_length(${col}) = 2 AND jsonb_typeof(${col} -> 0) = 'string' AND jsonb_typeof(${col} -> 1) = 'string'
+            THEN CASE WHEN (${col} ->> 0) <= (${col} ->> 1) THEN ${col}::text ELSE jsonb_build_array(${col} -> 1, ${col} -> 0)::text END
+        ELSE (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e)
+    END)`;
 }
 
 /**

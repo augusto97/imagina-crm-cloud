@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
-import { AggregateService } from '../src/aggregate/aggregate.service';
+import { AggregateService, groupKeyExpr } from '../src/aggregate/aggregate.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { fields, lists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -192,6 +192,52 @@ describe('Búsqueda, orden y vista agrupada (v0.1.286)', () => {
         expect(hit.buckets).toEqual([{ value: 'pendiente', count: 1 }]);
         expect(hit.expanded.pendiente?.records.data.map((r) => r.fields.nombre)).toEqual(['p2']);
         expect(hit.expanded.pendiente?.aggregates?.totals.monto?.sum).toBe(20);
+    });
+
+    it('multi_select: el atajo de 1-2 opciones da la MISMA clave que el camino general', async () => {
+        const [list] = await pg.db.select({ id: lists.id }).from(lists).where(eq(lists.tenantId, tenantId));
+        const fieldId = 987_654;
+        const k = `f${fieldId}`;
+        const cases: unknown[] = [
+            ['b'],
+            ['a', 'b'],
+            ['b', 'a'],
+            ['a', 'a'],
+            ['B', 'a'],
+            ['Ñu', 'nu'],
+            ['ab', 'a'],
+            ['c', 'a', 'b'],
+            ['x"q', 'y\\z'],
+            [1],
+            [1, 'a'],
+            ['a', null],
+            [],
+            null,
+            'suelto',
+            { a: 1 },
+        ];
+        await withTenant(pg.db, tenantId, async (tx) => {
+            for (const v of cases) {
+                await tx.insert(records).values({ tenantId, listId: list!.id, createdBy: zoe, data: { [k]: v } });
+            }
+            await tx.insert(records).values({ tenantId, listId: list!.id, createdBy: zoe, data: {} });
+        });
+        const field = { id: fieldId, type: 'multi_select', config: {} } as unknown as Parameters<typeof groupKeyExpr>[0];
+        const col = sql`(${records.data} -> ${k})`;
+        const slow = sql`(CASE WHEN jsonb_typeof(${col}) = 'array' AND jsonb_array_length(${col}) > 0 THEN (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e) ELSE NULL END)`;
+        const rows = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .select({ raw: sql<string | null>`${col}::text`, fast: sql<string | null>`${groupKeyExpr(field, new Map())}`, slow: sql<string | null>`${slow}` })
+                .from(records)
+                .where(eq(records.listId, list!.id)),
+        );
+        expect(rows).toHaveLength(cases.length + 1);
+        for (const r of rows) expect({ raw: r.raw, key: r.fast }).toEqual({ raw: r.raw, key: r.slow });
+        const byRaw = new Map(rows.map((r) => [r.raw, r.fast]));
+        expect(byRaw.get('["b", "a"]')).toBe('["a", "b"]');
+        expect(byRaw.get('["a", "a"]')).toBe('["a", "a"]');
+        expect(byRaw.get('[]')).toBeNull();
+        expect(byRaw.get('"suelto"')).toBeNull();
     });
 
     it('orden de grupos: catálogo, números como números y «sin valor» al final', () => {

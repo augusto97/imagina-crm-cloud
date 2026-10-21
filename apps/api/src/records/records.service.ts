@@ -32,6 +32,7 @@ import {
 import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
+import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
 import { memberships, mentions, records } from '../db/schema';
 import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
 import {
@@ -397,6 +398,7 @@ export class RecordsService {
             const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
             const groupField = ctx.fields.find((f) => f.id === opts.groupFieldId);
             if (!groupField || ctx.hiddenIds.has(groupField.id)) return out;
+            if (groupKeyHasSubquery(groupField.type)) await disableJitForTx(tx);
             const picked = await this.repo.listPerGroup(tx, tenantId, ctx.list.id, {
                 where: this.readWhere(ctx, { filter_tree: opts.filter_tree, search: opts.search }),
                 groupExpr: opts.groupKeyExpr(groupField, ctx.fieldsById),
