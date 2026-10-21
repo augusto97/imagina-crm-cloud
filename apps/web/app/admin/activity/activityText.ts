@@ -21,7 +21,16 @@ export interface FieldChange {
     field: FieldEntity | undefined;
     from: unknown;
     to: unknown;
+    /**
+     * El cambio es de la DESCRIPCIÓN del registro (el documento), no de un
+     * campo: se lee "editó la descripción" con un adelanto del texto, nunca
+     * como "cambió description de X a Y".
+     */
+    description?: boolean;
 }
+
+/** Clave del diff que usa el backend para la descripción del registro. */
+export const DESCRIPTION_KEY = 'description';
 
 /** Los cambios de una entrada, ya resueltos contra el catálogo de campos. */
 export function changesOf(entry: ActivityEntity, fields: FieldEntity[]): FieldChange[] {
@@ -32,6 +41,18 @@ export function changesOf(entry: ActivityEntity, fields: FieldEntity[]): FieldCh
     const out: FieldChange[] = [];
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
         if (value === null || typeof value !== 'object') continue;
+        if (key === DESCRIPTION_KEY) {
+            // `{from,to}` desde v0.1.286; `{old,new}` en las entradas viejas.
+            const d = value as { from?: unknown; to?: unknown; old?: unknown; new?: unknown };
+            out.push({
+                label: __('Descripción'),
+                field: undefined,
+                from: d.from ?? d.old ?? null,
+                to: d.to ?? d.new ?? null,
+                description: true,
+            });
+            continue;
+        }
         const pair = value as { from?: unknown; to?: unknown; before?: unknown; after?: unknown };
         // `from/to` es el shape del backend cloud; `before/after` quedó del
         // plugin y se acepta por si alguna entrada vieja lo trae.
@@ -95,6 +116,7 @@ export function formatActivityValue(field: FieldEntity | undefined, value: unkno
         return value.map((v) => formatActivityValue(field, v) ?? String(v)).join(', ');
     }
     if (field === undefined) {
+        if (typeof value === 'number') return formatNumber(value, { maxFrac: 6 });
         return typeof value === 'object' ? JSON.stringify(value) : String(value);
     }
     switch (field.type) {
@@ -105,10 +127,14 @@ export function formatActivityValue(field: FieldEntity | undefined, value: unkno
         case 'datetime':
             return typeof value === 'string' ? formatDateTimeStr(value) : String(value);
         case 'currency':
-        case 'number':
-            return typeof value === 'number'
-                ? formatFieldNumber(field, value)
+        case 'number': {
+            // Con el formato de número de la empresa («150.000», no «150000»);
+            // un número que llegó como texto también se formatea.
+            const n = typeof value === 'number' ? value : Number(String(value).trim());
+            return Number.isFinite(n) && String(value).trim() !== ''
+                ? formatFieldNumber(field, n)
                 : String(value);
+        }
         case 'select':
         case 'multi_select': {
             const opts = (field.config as { options?: Array<{ value?: string; label?: string }> })
@@ -156,6 +182,10 @@ export function changeSentence(change: FieldChange): {
     from: string | null;
     to: string | null;
 } {
+    if (change.description) {
+        const to = typeof change.to === 'string' && change.to.trim() !== '' ? change.to.trim() : null;
+        return { verb: to === null ? __('vació') : __('editó'), from: null, to };
+    }
     const from = formatActivityValue(change.field, change.from);
     const to = formatActivityValue(change.field, change.to);
     if (from === null && to !== null) return { verb: __('estableció'), from: null, to };
@@ -177,8 +207,11 @@ export function relativeTime(iso: string): string {
     if (days === 1) return __('ayer');
     if (days < 30) return sprintf(/* translators: %d: days */ __('hace %d días'), days);
     const months = Math.round(days / 30);
-    if (months < 12) return sprintf(/* translators: %d: months */ __('hace %d meses'), months);
-    return sprintf(/* translators: %d: years */ __('hace %d años'), Math.round(months / 12));
+    if (months < 12) {
+        return months === 1 ? __('hace 1 mes') : sprintf(/* translators: %d: months */ __('hace %d meses'), months);
+    }
+    const years = Math.round(months / 12);
+    return years === 1 ? __('hace 1 año') : sprintf(/* translators: %d: years */ __('hace %d años'), years);
 }
 
 /**
@@ -192,6 +225,7 @@ export function summarizeActivity(entry: ActivityEntity, fields: FieldEntity[]):
     const verb = actionText(entry, changes.length);
     if (changes.length === 0) return `${actor} ${verb}`.trim();
     const parts = changes.map((c) => {
+        if (c.description) return descriptionSentence(c);
         const s = changeSentence(c);
         if (s.from !== null && s.to !== null) {
             return sprintf(
@@ -215,4 +249,10 @@ export function summarizeActivity(entry: ActivityEntity, fields: FieldEntity[]):
         return sprintf(/* translators: 1: verb, 2: field */ __('%1$s %2$s'), s.verb, c.label);
     });
     return `${actor} ${parts.join('; ')}`;
+}
+
+/** "editó la descripción" / "vació la descripción". */
+export function descriptionSentence(change: FieldChange): string {
+    const { to } = changeSentence(change);
+    return to === null ? __('vació la descripción') : __('editó la descripción');
 }

@@ -112,4 +112,25 @@ describe('activityText', () => {
         expect(formatActivityValue(field({ id: 4, slug: 'nota', type: 'rating', config: { max: 5 } }), 4)).toBe('4 de 5');
         expect(formatActivityValue(field({ id: 5, slug: 'tel', type: 'phone' }), '+573001112233')).not.toBe('+573001112233');
     });
+
+    it('la descripción se lee "editó la descripción", con las dos formas del diff', () => {
+        const [c] = changesOf(entry({ changes: { description: { from: '', to: 'Plan de la mudanza' } } }), FIELDS);
+        expect(c!.description).toBe(true);
+        expect(changeSentence(c!)).toEqual({ verb: 'editó', from: null, to: 'Plan de la mudanza' });
+        expect(summarizeActivity(entry({ changes: { description: { from: '', to: 'x' } } }), FIELDS)).toBe(
+            'Augusto Peralta editó la descripción',
+        );
+        // Las entradas viejas ({old,new}) también dejan de verse vacías.
+        const [old] = changesOf(entry({ changes: { description: { old: '…', new: '' } } }), FIELDS);
+        expect(old!.description).toBe(true);
+        expect(summarizeActivity(entry({ changes: { description: { old: '…', new: '' } } }), FIELDS)).toBe(
+            'Augusto Peralta vació la descripción',
+        );
+    });
+
+    it('los números llevan separador de miles, también si llegaron como texto', () => {
+        const cantidad = field({ id: 9, slug: 'cantidad', type: 'number' });
+        expect(formatActivityValue(cantidad, 150000)).toBe('150,000');
+        expect(formatActivityValue(cantidad, '150000')).toBe('150,000');
+    });
 });
