@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { useFields } from '@/hooks/useFields';
+import { withAffixes } from '@/lib/affixes';
 import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
@@ -118,9 +119,9 @@ function Gauge({
                     className="imcrm-fill-muted-foreground"
                     style={{ fontSize: 6.5, fontWeight: 500 }}
                 >
-                    {prefix}{fmt(value)}{suffix}
+                    {withAffixes(fmt(value), prefix, suffix)}
                     {' / '}
-                    {prefix}{fmt(goal)}{suffix}
+                    {withAffixes(fmt(goal), prefix, suffix)}
                 </text>
             </svg>
         </div>

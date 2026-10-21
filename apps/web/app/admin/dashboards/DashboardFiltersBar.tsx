@@ -107,7 +107,7 @@ function FilterControl({
                         setPicking(false);
                         onChange(v === '' ? null : 'me');
                     }}
-                    className="imcrm-h-9 imcrm-w-auto"
+                    className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
                     aria-label={field.label}
                 >
                     <option value="">{label(__('todos'))}</option>
@@ -130,7 +130,7 @@ function FilterControl({
                 <Select
                     value={value === true || value === 'true' ? 'true' : value === false || value === 'false' ? 'false' : ''}
                     onChange={(e) => onChange(e.target.value === '' ? null : e.target.value === 'true')}
-                    className="imcrm-h-9 imcrm-w-auto"
+                    className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
                     aria-label={field.label}
                 >
                     <option value="">{label(__('todos'))}</option>
@@ -148,7 +148,7 @@ function FilterControl({
             <Select
                 value={typeof value === 'string' ? value : ''}
                 onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
-                className="imcrm-h-9 imcrm-w-auto"
+                className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
                 aria-label={field.label}
             >
                 <option value="">{label(__('todos'))}</option>

@@ -6,7 +6,7 @@ import type { FieldEntity } from '@/types/field';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { activeFilterValues, readDashboardFilterDefs } from './DashboardFiltersBar';
-import { decodeWidgetFilters, listOptionLabel, presentationDefaults } from './WidgetFormDialog';
+import { decodeWidgetFilters, listOptionLabel, presentationDefaults, widgetPreviewHint } from './WidgetFormDialog';
 import { inkOn, sortChartRows } from './widgets/useChartColors';
 import { bucketRange, segmentFilterTree } from './widgets/useSegmentNav';
 import { formatBucketLabel, formatMetricValue, groupDisplayLabels } from './widgets/widgetFormat';
@@ -151,5 +151,19 @@ describe('v0.1.286 — diálogo del widget y tablero', () => {
         const defs = readDashboardFilterDefs({ filters: [{ list_id: 1, field_id: 2 }, { list_id: 'x' }, { list_id: 1, field_id: 3 }] });
         expect(defs).toEqual([{ list_id: 1, field_id: 2 }, { list_id: 1, field_id: 3 }]);
         expect(activeFilterValues(defs, { '2': 'abierto', '3': '', '9': 'x' })).toEqual([{ field_id: 2, value: 'abierto' }]);
+    });
+});
+
+describe('v0.1.287 — vista previa del widget', () => {
+    it('un gráfico sin «Agrupar por» explica qué falta en vez de quedar en blanco', () => {
+        expect(widgetPreviewHint({ type: 'chart_bar', config: { group_by_field_id: 0 } })).toMatch(/agrupar/);
+        expect(widgetPreviewHint({ type: 'chart_pie', config: {} })).toMatch(/agrupar/);
+        expect(widgetPreviewHint({ type: 'chart_bar', config: { group_by_field_id: 7 } })).toBeNull();
+    });
+
+    it('líneas y comparación piden el campo de fecha; el KPI no pide nada', () => {
+        expect(widgetPreviewHint({ type: 'chart_line', config: { date_field_id: 0 } })).toMatch(/fecha/);
+        expect(widgetPreviewHint({ type: 'chart_area', config: { date_field_id: 3 } })).toBeNull();
+        expect(widgetPreviewHint({ type: 'kpi', config: {} })).toBeNull();
     });
 });

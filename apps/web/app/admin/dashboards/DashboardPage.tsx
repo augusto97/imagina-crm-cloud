@@ -400,8 +400,8 @@ function DashboardView({ id }: { id: number }): JSX.Element {
             )}
             style={chromeStyle}
         >
-            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-flex-wrap sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-x-4">
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1 sm:imcrm-min-w-[12rem] sm:imcrm-flex-1 sm:imcrm-basis-0">
                     <Button
                         asChild
                         variant="ghost"
@@ -434,7 +434,12 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">{d.description}</p>
                     )}
                 </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                {/* v0.1.287 — barra COMPACTA (h-8, 13 px) que no se parte: a
+                    1440 px «Añadir widget» caía a un segundo renglón y el
+                    selector de período se cortaba. Si no entra junto al
+                    título, la barra entera baja a su propio renglón (el
+                    título nunca queda aplastado en una columna angosta). */}
+                <div className="imcrm-flex imcrm-max-w-full imcrm-flex-wrap imcrm-items-center imcrm-gap-2 sm:imcrm-flex-none">
                     {/* v0.1.105 — en modo presentación se OCULTA el chrome de
                       * edición: queda el período y un botón para SALIR. */}
                     {/* v0.1.100 — período global: pisa el período de los
@@ -451,7 +456,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 changeGlobalPeriod(v);
                             }
                         }}
-                        className="imcrm-h-9 imcrm-w-auto"
+                        className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
                         aria-label={__('Período global')}
                         title={__('Período para todo el tablero: pisa el período de cada widget con campo de fecha')}
                     >
@@ -468,7 +473,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 value={customFrom}
                                 onChange={(e) => applyCustom(e.target.value, customTo)}
                                 aria-label={__('Desde')}
-                                className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                                className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-[13px]"
                             />
                             <span className="imcrm-text-xs imcrm-text-muted-foreground">→</span>
                             <input
@@ -476,7 +481,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 value={customTo}
                                 onChange={(e) => applyCustom(customFrom, e.target.value)}
                                 aria-label={__('Hasta')}
-                                className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                                className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-[13px]"
                             />
                         </span>
                     )}
@@ -495,7 +500,8 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                     {tvMode ? (
                         <Button
                             variant="outline"
-                            className="imcrm-gap-2"
+                            size="sm"
+                            className="imcrm-gap-1.5"
                             onClick={exitTv}
                             title={__('Salir del modo presentación')}
                         >
@@ -505,7 +511,8 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                     ) : (
                         <Button
                             variant="outline"
-                            className="imcrm-gap-2"
+                            size="sm"
+                            className="imcrm-gap-1.5"
                             onClick={enterTv}
                             title={__('Modo presentación (pantalla completa + refresco automático)')}
                         >
@@ -523,6 +530,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                     <Button
                                         variant="outline"
                                         size="icon"
+                                        className="imcrm-h-8 imcrm-w-8"
                                         aria-label={__('Más acciones')}
                                         title={__('Más acciones')}
                                         data-testid="imcrm-dashboard-more"
@@ -564,7 +572,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 </DropdownMenuContent>
                             </DropdownMenu>
                             {canEdit && (
-                                <Button onClick={handleAddWidget} className="imcrm-gap-2">
+                                <Button size="sm" onClick={handleAddWidget} className="imcrm-gap-1.5 imcrm-whitespace-nowrap">
                                     <Plus className="imcrm-h-4 imcrm-w-4" />
                                     {__('Añadir widget')}
                                 </Button>

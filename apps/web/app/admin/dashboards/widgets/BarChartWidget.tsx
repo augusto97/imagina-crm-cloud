@@ -196,7 +196,7 @@ function BarRows({
                                 <span className="imcrm-font-semibold imcrm-text-foreground">
                                     {format(row.value)}
                                 </span>
-                                <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground/80">
+                                <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground">
                                     {sharePct.toFixed(0)}%
                                 </span>
                             </span>

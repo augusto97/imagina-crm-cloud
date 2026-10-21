@@ -37,6 +37,7 @@ import {
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { useFields } from '@/hooks/useFields';
+import { withAffixes } from '@/lib/affixes';
 import { __ } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -217,7 +218,7 @@ function Body({
                             : 'imcrm-text-amber-600 dark:imcrm-text-amber-400',
                 )}
             >
-                {prefix}{formatted}{suffix}
+                {withAffixes(formatted, prefix, suffix)}
             </span>
 
             {goal !== undefined && pct !== null && (
@@ -232,7 +233,7 @@ function Body({
                         />
                     </div>
                     <span className="imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">
-                        {pct.toFixed(0)}% {__('de la meta')} ({prefix}{field ? formatMetricValue(goal, metric, field, { withSymbol: prefix === '' }) : formatNumber(goal)}{suffix})
+                        {pct.toFixed(0)}% {__('de la meta')} ({withAffixes(field ? formatMetricValue(goal, metric, field, { withSymbol: prefix === '' }) : formatNumber(goal), prefix, suffix)})
                     </span>
                 </div>
             )}

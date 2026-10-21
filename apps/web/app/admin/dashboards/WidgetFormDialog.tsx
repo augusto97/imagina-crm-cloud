@@ -769,8 +769,16 @@ export function WidgetFormDialog({
                             </label>
                         )}
 
-                        {open && dashboardId !== undefined && dashboardId > 0 && ! isContentWidget(type) && canSubmit && (
-                            <WidgetPreview dashboardId={dashboardId} widget={buildWidget()} scope={scope ?? { period: '', filters: [] }} />
+                        {/* v0.1.287 — la vista previa aparece apenas hay lista: lo
+                            que falte (agrupar, fecha, campo a calcular) se dice
+                            DENTRO del recuadro en vez de dejarlo vacío. */}
+                        {open && dashboardId !== undefined && dashboardId > 0 && ! isContentWidget(type) && listId > 0 && (
+                            <WidgetPreview
+                                dashboardId={dashboardId}
+                                widget={buildWidget()}
+                                scope={scope ?? { period: '', filters: [] }}
+                                blockedHint={canSubmit ? null : __('Completa los datos del widget para ver la vista previa.')}
+                            />
                         )}
 
                         {/* v0.1.98 — capa de estilo del card (misma del editor
@@ -1640,6 +1648,22 @@ export function listOptionLabel(
 }
 
 /**
+ * v0.1.287 — ¿Le falta algo al widget para que la vista previa dibuje algo?
+ * Un gráfico de barras sin «Agrupar por» salía en blanco, sin pista de por
+ * qué. Devuelve el texto a mostrar en su lugar, o `null` si ya se puede.
+ */
+export function widgetPreviewHint(widget: Pick<WidgetSpec, 'type' | 'config'>): string | null {
+    const id = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0)) || 0;
+    if (widget.type === 'chart_bar' || widget.type === 'chart_pie' || widget.type === 'funnel') {
+        return id(widget.config.group_by_field_id) > 0 ? null : __('Elige cómo agrupar para ver el gráfico.');
+    }
+    if (widget.type === 'chart_line' || widget.type === 'chart_area' || widget.type === 'stat_delta') {
+        return id(widget.config.date_field_id) > 0 ? null : __('Elige el campo de fecha para ver el gráfico.');
+    }
+    return null;
+}
+
+/**
  * v0.1.286 — Vista previa EN VIVO del widget que se está configurando: el
  * mismo componente del tablero con datos reales (mismo período y filtros del
  * tablero), recalculada medio segundo después del último cambio.
@@ -1648,10 +1672,13 @@ function WidgetPreview({
     dashboardId,
     widget,
     scope,
+    blockedHint = null,
 }: {
     dashboardId: number;
     widget: WidgetSpec;
     scope: DashboardBundleScope;
+    /** Motivo por el que todavía no se puede calcular (formulario incompleto). */
+    blockedHint?: string | null;
 }): JSX.Element {
     const sig = JSON.stringify(widget);
     const [debounced, setDebounced] = useState<WidgetSpec>(widget);
@@ -1659,7 +1686,8 @@ function WidgetPreview({
         const t = window.setTimeout(() => setDebounced(JSON.parse(sig) as WidgetSpec), 450);
         return () => window.clearTimeout(t);
     }, [sig]);
-    const preview = useWidgetPreview(dashboardId, debounced, scope);
+    const hint = widgetPreviewHint(debounced) ?? blockedHint;
+    const preview = useWidgetPreview(dashboardId, hint === null ? debounced : null, scope);
     const override = useMemo<WidgetDataOverride>(
         () => ({
             get: () => ({
@@ -1674,11 +1702,17 @@ function WidgetPreview({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="imcrm-widget-preview">
             <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Vista previa')}</Label>
             <div className="imcrm-h-60 imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4">
-                <DashboardBundleContext.Provider value={scope}>
-                    <WidgetDataOverrideContext.Provider value={override}>
-                        <WidgetRenderer dashboardId={dashboardId} widget={debounced} />
-                    </WidgetDataOverrideContext.Provider>
-                </DashboardBundleContext.Provider>
+                {hint !== null ? (
+                    <div className="imcrm-flex imcrm-h-full imcrm-items-center imcrm-justify-center imcrm-px-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-widget-preview-hint">
+                        {hint}
+                    </div>
+                ) : (
+                    <DashboardBundleContext.Provider value={scope}>
+                        <WidgetDataOverrideContext.Provider value={override}>
+                            <WidgetRenderer dashboardId={dashboardId} widget={debounced} />
+                        </WidgetDataOverrideContext.Provider>
+                    </DashboardBundleContext.Provider>
+                )}
             </div>
         </div>
     );

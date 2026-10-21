@@ -5,6 +5,7 @@ import { formatDuration, resolveDisplay } from '@imagina-base/shared';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { FieldValueDisplay } from '@/admin/records/crm/FieldValueDisplay';
+import { effectiveAffixes, withAffixes } from '@/lib/affixes';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __ } from '@/lib/i18n';
 import { formatDateStr, formatNumber } from '@/lib/tenantFormat';
@@ -152,7 +153,7 @@ export function formatFieldValueText(field: FieldEntity, value: unknown): string
 }
 
 function numberLabel(field: FieldEntity, value: unknown, p: FieldDisplayProps): string {
-    return `${p.prefix ?? ''}${formatFieldValueText(field, value)}${p.suffix ?? ''}`;
+    return withAffixes(formatFieldValueText(field, value), p.prefix ?? '', p.suffix ?? '');
 }
 
 function BigValue({ field, value, prefix, suffix, size = 'lg' }: FieldDisplayProps): JSX.Element {
@@ -170,11 +171,13 @@ function BigValue({ field, value, prefix, suffix, size = 'lg' }: FieldDisplayPro
         ? formatFieldValueText(field, value)
         : null;
     if (text !== null) {
+        // «70 %» con sufijo «%» configurado no se repite (v0.1.287).
+        const affix = effectiveAffixes(text, prefix ?? '', suffix ?? '');
         return (
             <span className={cn(cls, 'imcrm-font-semibold imcrm-leading-none imcrm-tracking-tight imcrm-tabular-nums imcrm-text-foreground')}>
-                {prefix}
+                {affix.prefix}
                 {text}
-                {suffix && <span className="imcrm-ml-0.5 imcrm-text-[0.55em] imcrm-font-medium imcrm-text-muted-foreground">{suffix}</span>}
+                {affix.suffix && <span className="imcrm-ml-0.5 imcrm-text-[0.55em] imcrm-font-medium imcrm-text-muted-foreground">{affix.suffix}</span>}
             </span>
         );
     }

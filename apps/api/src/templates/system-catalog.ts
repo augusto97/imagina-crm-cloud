@@ -1221,7 +1221,7 @@ pipelineVentas.blueprint.dashboards.push(
 proyectos.blueprint.dashboards.push(
     dashboard('Avance del proyecto', 'Tareas por estado, prioridad y responsable.', [
         kpi('tareas', 'Tareas', { icon: 'clipboard' }, 0, 0, 4),
-        kpi('tareas', 'Avance promedio', { metric: 'avg', metric_field_id: ref('avance'), suffix: '%', icon: 'target' }, 4, 0, 4),
+        kpi('tareas', 'Avance promedio', { metric: 'avg', metric_field_id: ref('avance'), icon: 'target' }, 4, 0, 4),
         kpi('tareas', 'Horas estimadas', { metric: 'sum', metric_field_id: ref('estimacion'), icon: 'clock' }, 8, 0, 4),
         widget('chart_pie', 'tareas', 'Por estado', { metric: 'count', group_by_field_id: ref('estado') }, 0, 2, 4, 4),
         widget('chart_bar', 'tareas', 'Por prioridad', { metric: 'count', group_by_field_id: ref('prioridad') }, 4, 2, 4, 4),

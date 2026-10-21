@@ -349,7 +349,7 @@ function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap
                                     <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-font-semibold imcrm-text-foreground">
                                         {format(row.value)}
                                     </span>
-                                    <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground/80">
+                                    <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground">
                                         {isHidden ? '—' : `${pct.toFixed(0)}%`}
                                     </span>
                                 </button>
