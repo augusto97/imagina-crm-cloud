@@ -235,7 +235,7 @@ export class AuthController {
     @Get('me')
     @UseGuards(SessionGuard)
     me(@Req() req: FastifyRequest): Promise<AuthSession> {
-        return this.auth.me(req.authUserId as number, req.impersonatedBy);
+        return this.auth.me(req.authUserId as number, req.impersonatedBy, req.sessionVia ?? null);
     }
 
     /**

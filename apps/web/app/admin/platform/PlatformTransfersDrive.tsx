@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useStatusTransition } from '@/hooks/useStatusTransition';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RemoteTransfer } from '@imagina-base/shared';
 import { Cloud, CloudDownload, Trash2 } from 'lucide-react';
@@ -50,11 +51,12 @@ export function PlatformTransfersDrive({ onFetched }: { onFetched: () => void })
     const refresh = () => void qc.invalidateQueries({ queryKey: TRANSFERS_DRIVE_KEY });
 
     const runStatus = s?.run?.status;
-    useEffect(() => {
-        // Al terminar una descarga, el archivo aparece en la lista de arriba.
-        if (runStatus === 'success' || runStatus === 'failed') onFetched();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [runStatus]);
+    // Al terminar una descarga, el archivo aparece en la lista de arriba.
+    // v0.1.286 — sólo en la TRANSICIÓN: al abrir la pestaña con la última
+    // descarga ya terminada se volvían a pedir transferencias y estadísticas.
+    useStatusTransition(runStatus, (st) => {
+        if (st === 'success' || st === 'failed') onFetched();
+    });
 
     const fetchM = useMutation({
         mutationFn: () => api.transferFromDrive(target!.id, pass),

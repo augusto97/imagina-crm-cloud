@@ -118,8 +118,11 @@ export function AdminCloudApp(): JSX.Element {
     if (membershipCount === 0) return <NoWorkspaceScreen email={user.email} />;
     if (!booted) return <LoadingScreen />;
 
+    // v0.1.286 — `key` por empresa: al cambiar de workspace se remonta TODO el
+    // árbol de la app (shell, páginas, realtime), así nada queda con estado o
+    // suscripciones de la empresa anterior (ver `switchWorkspace`).
     return (
-        <HashRouter>
+        <HashRouter key={activeTenantId ?? 0}>
             <Suspense fallback={<LoadingScreen />}>
                 <App />
             </Suspense>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreatedPersonalToken, PersonalTokenScope } from '@imagina-base/shared';
 import { AlertTriangle, Check, CheckCircle2, Copy, KeyRound, Loader2, Plug, RefreshCw, Trash2 } from 'lucide-react';
@@ -240,30 +240,34 @@ export function PersonalTokensCard(): JSX.Element {
  * MCP authorization". Se prueba desde el navegador (mismo origen) y se dice
  * en lenguaje claro qué pasa.
  */
+async function probeDiscovery(url: string): Promise<boolean> {
+    try {
+        const r = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' });
+        if (!r.ok) return false;
+        const j = (await r.json()) as { issuer?: unknown; resource?: unknown };
+        return typeof j.issuer === 'string' || typeof j.resource === 'string';
+    } catch {
+        return false;
+    }
+}
+
+async function runDiscoveryCheck(): Promise<'ok' | 'bad' | 'api-bad'> {
+    const base = api.mcpUrl().replace(/\/mcp$/, '');
+    const apiOk = await probeDiscovery(`${base}/oauth/.well-known/oauth-protected-resource`);
+    const rootOk = apiOk && (await probeDiscovery(`${window.location.origin}/.well-known/oauth-authorization-server`));
+    return !apiOk ? 'api-bad' : rootOk ? 'ok' : 'bad';
+}
+
 function DiscoveryCheck(): JSX.Element | null {
-    const [state, setState] = useState<'checking' | 'ok' | 'bad' | 'api-bad'>('checking');
-    useEffect(() => {
-        let cancelled = false;
-        const probe = async (url: string): Promise<boolean> => {
-            try {
-                const r = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' });
-                if (!r.ok) return false;
-                const j = (await r.json()) as { issuer?: unknown; resource?: unknown };
-                return typeof j.issuer === 'string' || typeof j.resource === 'string';
-            } catch {
-                return false;
-            }
-        };
-        void (async () => {
-            const base = api.mcpUrl().replace(/\/mcp$/, '');
-            const apiOk = await probe(`${base}/oauth/.well-known/oauth-protected-resource`);
-            const rootOk = apiOk && (await probe(`${window.location.origin}/.well-known/oauth-authorization-server`));
-            if (!cancelled) setState(!apiOk ? 'api-bad' : rootOk ? 'ok' : 'bad');
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+    // v0.1.286 — por react-query (una vez cada 5 min, compartido): con un
+    // `useEffect` se pedía dos veces por visita (StrictMode / remontes).
+    const check = useQuery({
+        queryKey: ['oauth-discovery-check'],
+        queryFn: runDiscoveryCheck,
+        staleTime: 5 * 60_000,
+        retry: false,
+    });
+    const state = check.data ?? 'checking';
     if (state === 'checking') return null;
     if (state === 'ok') {
         return (

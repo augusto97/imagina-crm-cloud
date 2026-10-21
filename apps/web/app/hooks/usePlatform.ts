@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
     AddMemberInput,
@@ -20,7 +21,7 @@ import type {
 } from '@imagina-base/shared';
 
 import { useSession } from '@/cloud/session';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
 
 /**
  * Consola de PLATAFORMA (operador SaaS). Endpoints gateados por SuperadminGuard:
@@ -33,43 +34,40 @@ import { api, ApiError } from '@/lib/api';
  */
 export const platformKeys = {
     all: ['platform'] as const,
-    is: () => [...platformKeys.all, 'is-superadmin'] as const,
     stats: () => [...platformKeys.all, 'stats'] as const,
     tenants: () => [...platformKeys.all, 'tenants'] as const,
     users: () => [...platformKeys.all, 'users'] as const,
     plans: () => [...platformKeys.all, 'plans'] as const,
 };
 
-export function useIsSuperadmin() {
-    // v0.1.254 — mientras el operador impersona, la app es la de OTRA persona:
-    // no hay consola que mostrar, así que ni se pregunta. Antes el sondeo
-    // recibía `reauth_required`, cerraba la sesión y la impersonación terminaba
-    // en el login apenas empezaba.
-    const impersonating = useSession((s) => s.impersonating !== null && s.impersonating !== undefined);
-    return useQuery({
-        queryKey: [...platformKeys.is(), impersonating],
-        enabled: !impersonating,
-        queryFn: async (): Promise<boolean> => {
-            try {
-                await api.get<PlatformStats>('/platform/stats');
-                return true;
-            } catch (err) {
-                // SEC-24 (v0.1.225): la consola exige una sesión abierta con
-                // contraseña. Una sesión anterior al fix no trae esa marca: se
-                // cierra y se vuelve al login UNA vez (si no, el operador
-                // simplemente dejaría de ver "Plataforma" sin saber por qué).
-                if (err instanceof ApiError && err.code === 'reauth_required') {
-                    await api.post('/auth/logout', {}).catch(() => undefined);
-                    window.location.reload();
-                    return false;
-                }
-                if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return false;
-                throw err;
-            }
-        },
-        staleTime: 5 * 60 * 1000,
-        retry: false,
-    });
+/**
+ * ¿Mostrar la consola de Plataforma? v0.1.286 — sale de `/auth/me`
+ * (`is_superadmin`, mismo criterio que el SuperadminGuard), ya no de sondear
+ * `/platform/stats` en cada arranque: ese endpoint cuenta todos los registros
+ * y recorre todas las empresas, y lo pagaba hasta quien no es operador.
+ *
+ * v0.1.254 — mientras el operador impersona, la app es la de OTRA persona: el
+ * backend ya responde `false`.
+ *
+ * SEC-24 (v0.1.225): la consola exige una sesión abierta con contraseña. Una
+ * sesión de superadmin sin esa marca (`platform_reauth`) se cierra y vuelve al
+ * login UNA vez — si no, el operador dejaría de ver "Plataforma" sin saber
+ * por qué. (Antes lo detectaba el sondeo al recibir `reauth_required`.)
+ */
+let reauthStarted = false;
+
+export function useIsSuperadmin(): boolean {
+    const isSuperadmin = useSession((s) => s.isSuperadmin);
+    const platformReauth = useSession((s) => s.platformReauth);
+    useEffect(() => {
+        if (!platformReauth || reauthStarted) return;
+        reauthStarted = true;
+        void api
+            .post('/auth/logout', {})
+            .catch(() => undefined)
+            .finally(() => window.location.reload());
+    }, [platformReauth]);
+    return isSuperadmin;
 }
 
 export function usePlatformStats() {

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
@@ -751,9 +752,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                     >
                         {__('Listas')}
                     </Link>
-                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
+                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground">
                         /
                     </span>
+                    <ListFolderCrumb groupId={list.data.group_id} />
                     <h1 className="imcrm-truncate imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight">
                         {list.data.name}
                     </h1>

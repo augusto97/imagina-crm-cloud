@@ -9,6 +9,7 @@ import { AdminShell } from '@/admin/layout/AdminShell';
 // el first-paint no descargue su código si el user nunca las visita.
 import { ListsIndexPage } from '@/admin/lists/ListsIndexPage';
 import { RecordsPage } from '@/admin/records/RecordsPage';
+import { PlatformGate } from '@/admin/platform/PlatformGate';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { useTimeZoneAutoSetup } from '@/cloud/useTimeZoneAutoSetup';
 import { useRealtime } from '@/cloud/useRealtime';
@@ -117,7 +118,7 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><CollectionsPage /></Suspense>
                 } />
                 <Route path="platform" element={
-                    <Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense>
+                    <PlatformGate><Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense></PlatformGate>
                 } />
                 <Route path="*" element={<Navigate to="/lists" replace />} />
             </Route>
