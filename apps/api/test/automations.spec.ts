@@ -648,11 +648,6 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
                         values: { monto: '{{monto}}', estado: 'nueva' },
                     },
                 },
-                {
-                    type: 'call_webhook',
-                    // Sin URL → skipped (no importa aquí; probamos que el run corre).
-                    config: {},
-                },
             ],
         });
 
@@ -990,7 +985,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             name: 'Lunes',
             trigger_type: 'scheduled',
             trigger_config: { frequency: 'weekly', weekday: 1, hour: 7, minute: 30, tz: 'America/Bogota' },
-            actions: [{ type: 'update_field', config: { values: {} } }],
+            actions: [{ type: 'update_field', config: { values: { nota: 'x' } } }],
         });
         expect(upserts.at(-1)).toEqual({ id: `sched:${auto.id}`, repeat: { pattern: '30 7 * * 1', tz: 'America/Bogota' } });
         // Una zona inválida no rompe: corre en UTC (explícito desde v0.1.263,
@@ -1003,7 +998,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(upserts.some((u) => u.id === `sched:${auto.id}`)).toBe(true);
         // «Ejecutar ahora»: sólo para programadas.
         expect(await svc.runNow(tenantId, 'deals', auto.id)).toEqual({ queued: true });
-        const other = await svc.create(tenantId, 'deals', { name: 'Alta', trigger_type: 'record_created', actions: [{ type: 'update_field', config: { values: {} } }] });
+        const other = await svc.create(tenantId, 'deals', { name: 'Alta', trigger_type: 'record_created', actions: [{ type: 'update_field', config: { values: { nota: 'x' } } }] });
         await expect(svc.runNow(tenantId, 'deals', other.id)).rejects.toThrow(/horario/);
     });
 
@@ -1012,7 +1007,9 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         const auto = await automationsService.create(tenantId, 'deals', {
             name: 'Marcar vencidos',
             trigger_type: 'due_date_reached',
-            trigger_config: { field_id: vence.id, offset_minutes: 0 },
+            // `include_past`: fechas anteriores al alta de la automatización
+            // (por defecto, una automatización nueva no dispara por el pasado).
+            trigger_config: { field_id: vence.id, offset_minutes: 0, include_past: true },
             actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
         });
 
@@ -1043,6 +1040,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             trigger_config: {
                 due_field: 'emitida',
                 offset_minutes: 20 * 1440,
+                include_past: true,
                 field_filters: [{ slug: 'estado', op: 'eq', value: 'nueva' }],
             },
             actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],

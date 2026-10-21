@@ -1,4 +1,5 @@
 import { connectorActionSchema, type ConnectorAction } from '@imagina-base/shared';
+import { rawBodyEscaper, WEBHOOK_CONTENT_TYPES, type WebhookContentType } from '../automations/webhook-request';
 
 /**
  * Acciones con NOMBRE de un conector (v0.1.198, ADR-S22 fase 2).
@@ -53,11 +54,12 @@ export function findConnectorAction(
 function fillPlaceholders(
     template: string,
     values: Map<string, string>,
-    encode: boolean,
+    encode: boolean | ((s: string) => string),
 ): string {
     return template.replace(/\{([A-Za-z0-9_.\-[\]]+)\}/g, (whole, key: string) => {
         const value = values.get(key);
         if (value === undefined) return whole;
+        if (typeof encode === 'function') return encode(value);
         return encode ? encodeURIComponent(value) : value;
     });
 }
@@ -100,10 +102,17 @@ export function compileConnectorCall(
     }
 
     const url = fillPlaceholders(action.path, resolved, true);
+    // Cuerpo crudo JSON/XML: cada valor se escapa (un dato con comillas no
+    // rompe el formato ni inyecta claves).
+    const escaper = rawBodyEscaper(
+        (WEBHOOK_CONTENT_TYPES as readonly string[]).includes(String(action.content_type))
+            ? (action.content_type as WebhookContentType)
+            : 'json',
+    );
     const bodyTemplate =
         action.body_template === ''
             ? ''
-            : fillPlaceholders(action.body_template, resolved, false);
+            : fillPlaceholders(action.body_template, resolved, escaper ?? false);
 
     return {
         missing,

@@ -363,7 +363,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         await automationsService.create(tenantA, String(src.id), {
             name: 'A',
             trigger_type: 'record_created',
-            actions: [{ type: 'update_field', config: { values: {} } }],
+            actions: [{ type: 'update_field', config: { values: { nota: 'x' } } }],
         });
         const { lists: created } = await templates.duplicate(tenantA, actor, String(src.id), {
             include: { views: false, automations: false, settings: false, records: false },

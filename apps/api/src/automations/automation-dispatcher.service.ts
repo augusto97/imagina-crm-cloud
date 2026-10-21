@@ -2,6 +2,31 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
 
+/**
+ * Cadena de automatizaciones: un registro que escribe una automatización
+ * vuelve a disparar las de su lista (la receta de facturación depende de eso:
+ * «al crear la factura → avisar»), pero con un tope de profundidad y sin que
+ * una automatización se re-dispare a sí misma dentro de su propia cadena.
+ */
+export interface AutomationChain {
+    /** 1 = el cambio lo hizo una automatización disparada por una persona. */
+    depth: number;
+    /** Las automatizaciones que ya corrieron en esta cadena. */
+    automation_ids: number[];
+}
+
+/** Profundidad máxima de una cadena de automatizaciones (A → B → C). */
+export const MAX_AUTOMATION_CHAIN_DEPTH = 3;
+
+/** La cadena del cambio que hace `automationId` corriendo dentro de `parent`. */
+export function nextChain(parent: AutomationChain | undefined, automationId: number): AutomationChain {
+    const ids = parent?.automation_ids ?? [];
+    return {
+        depth: (parent?.depth ?? 0) + 1,
+        automation_ids: ids.includes(automationId) ? ids : [...ids, automationId],
+    };
+}
+
 /** Evento de trigger que se encola para el worker de automatizaciones. */
 export interface TriggerEvent {
     tenantId: number;
@@ -22,6 +47,8 @@ export interface TriggerEvent {
      * `form_submitted`): `{{formulario.nombre}}` y el filtro por formulario.
      */
     form?: { id: number; name: string };
+    /** El cambio lo hizo una automatización (ver `AutomationChain`). */
+    chain?: AutomationChain;
 }
 
 /** v0.1.221 — la acción «Editar en lote» de una automatización, lista para el worker. */
@@ -38,8 +65,9 @@ export interface BulkEditJob {
 /**
  * Encola eventos de trigger para el motor de automatizaciones. Igual patrón
  * que RealtimeService: si la cola no está seteada (tests unitarios), es no-op.
- * El dispatch NO pasa por RecordsService, así las acciones update_field/
- * create_record no re-disparan triggers (evita loops).
+ * Lo que escriben `update_field`/`create_record` pasa por RecordsService y
+ * SÍ dispara las automatizaciones de la lista destino, con la cadena en el
+ * evento (`chain`): tope de profundidad y sin auto-disparo (evita loops).
  */
 @Injectable()
 export class AutomationDispatcher {

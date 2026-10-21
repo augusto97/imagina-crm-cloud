@@ -459,7 +459,7 @@ function textArray(values: string[]): SQL {
 
 // --- Presets de rango relativo (se resuelven contra `now` en cada query) ---
 
-interface Range {
+export interface Range {
     from: string;
     to: string;
 }
@@ -527,6 +527,23 @@ function computePresetRange(preset: DateRangePreset, type: FieldType, clock: Que
     // Un datetime cubre los días completos en el reloj de la empresa.
     if (type === 'datetime') return dayRangeInstants(from, to, clock.timeZone);
     return { from, to };
+}
+
+/**
+ * El rango de un `between_relative` (preset «este mes» o rango fijo
+ * `{from, to}`) en el reloj de la empresa: fechas YYYY-MM-DD para un campo
+ * fecha, instantes ISO para un fecha-hora. `null` si el valor no es válido.
+ * Lo comparten el SQL de los filtros y el evaluador de condiciones de las
+ * automatizaciones (que evalúa en memoria): así «este mes» es el mismo mes.
+ */
+export function relativeDateRange(value: unknown, type: 'date' | 'datetime', clock: QueryClock): Range | null {
+    try {
+        const custom = asCustomRange(value);
+        if (custom !== null) return type === 'datetime' ? dayRangeInstants(custom.from, custom.to, clock.timeZone) : custom;
+        return computePresetRange(asPreset(value), type, clock);
+    } catch {
+        return null;
+    }
 }
 
 /** De las 00:00 de `from` a las 23:59:59.999 de `to`, en `tz`, como instantes ISO. */

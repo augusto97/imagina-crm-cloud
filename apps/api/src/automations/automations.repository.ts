@@ -77,6 +77,35 @@ export class AutomationsRepository {
         await tx.insert(automationRuns).values(values);
     }
 
+    /**
+     * Abre la corrida en `running` ANTES de ejecutar (se confirma aparte): un
+     * escaneo de vencimientos que llega mientras corre no la vuelve a lanzar,
+     * y si el proceso se cae a mitad queda a la vista (el mantenimiento la
+     * marca como interrumpida). Devuelve null si la automatización ya no existe.
+     */
+    async startRun(
+        tx: Tx,
+        values: { tenantId: number; automationId: number; recordId: number | null; startedAt: Date },
+    ): Promise<number | null> {
+        const [row] = await tx
+            .insert(automationRuns)
+            .values({ ...values, status: 'running', actionsLog: [] })
+            .returning({ id: automationRuns.id });
+        return row?.id ?? null;
+    }
+
+    async finishRun(
+        tx: Tx,
+        tenantId: number,
+        runId: number,
+        values: Pick<typeof automationRuns.$inferInsert, 'status' | 'actionsLog' | 'error' | 'finishedAt'>,
+    ): Promise<void> {
+        await tx
+            .update(automationRuns)
+            .set(values)
+            .where(and(eq(automationRuns.tenantId, tenantId), eq(automationRuns.id, runId)));
+    }
+
     listRuns(
         tx: Tx,
         tenantId: number,

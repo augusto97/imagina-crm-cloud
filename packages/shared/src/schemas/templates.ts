@@ -178,13 +178,15 @@ const SLUG_KEYS: ReadonlySet<string> = new Set(['slug', 'field', 'due_field', 'd
 // v0.1.265 — `slugs`: el bloque «Datos del registro» de un correo diseñado.
 const SLUG_ARRAY_KEYS: ReadonlySet<string> = new Set(['changed_fields', 'slugs']);
 const SLUG_MAP_KEYS: ReadonlySet<string> = new Set(['values', 'field_filters']);
-const MERGE_TAG_RE = /\{\{\s*(before\.)?([A-Za-z0-9_]+)((?:\|[^}]*)?)\s*\}\}/g;
+// `{{responsable.email}}` / `{{responsable.nombre}}`: el slug de un campo
+// Persona con su propiedad (se remapea el slug, la propiedad queda).
+const MERGE_TAG_RE = /\{\{\s*(before\.)?([A-Za-z0-9_]+)((?:\.(?:email|nombre))?)((?:\|[^}]*)?)\s*\}\}/g;
 
 function walkAutomationSlugs(value: unknown, onSlug: (slug: string) => string | undefined): unknown {
     const mapString = (s: string): string =>
-        s.replace(MERGE_TAG_RE, (whole, before: string | undefined, slug: string, mods: string) => {
+        s.replace(MERGE_TAG_RE, (whole, before: string | undefined, slug: string, prop: string, mods: string) => {
             const next = onSlug(slug);
-            return next === undefined ? whole : `{{${before ?? ''}${next}${mods}}}`;
+            return next === undefined ? whole : `{{${before ?? ''}${next}${prop}${mods}}}`;
         });
     const walk = (v: unknown, key: string | null): unknown => {
         if (typeof v === 'string') {
