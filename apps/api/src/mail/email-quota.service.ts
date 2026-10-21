@@ -100,6 +100,41 @@ export class EmailQuotaService {
             });
     }
 
+    /**
+     * Reserva `count` correos del mes ANTES de enviar, de forma atómica: el
+     * UPSERT sólo suma si no se pasa del tope (la fila queda bloqueada mientras
+     * tanto), así dos envíos simultáneos con la cuota a uno del final no pasan
+     * los dos — con "chequear y después sumar" pasaban todos los que chequeaban
+     * a la vez. Devuelve true si reservó (hay que liberar con `release` si el
+     * envío falla) y false si el plan no tiene tope (se cuenta después con
+     * `record`). Lanza `EmailQuotaExceededError` si no entra.
+     */
+    async reserve(tenantId: number, count = 1, now: Date = new Date()): Promise<boolean> {
+        const limit = await this.limitFor(tenantId);
+        if (limit === null) return false;
+        const period = periodOf(now);
+        const n = Math.max(1, Math.floor(count));
+        const res = await this.db.execute<{ sent: number }>(sql`
+            INSERT INTO email_usage (tenant_id, period, sent, updated_at)
+            SELECT ${tenantId}, ${period}, ${n}, now() WHERE ${n} <= ${limit}
+            ON CONFLICT (tenant_id, period) DO UPDATE
+                SET sent = email_usage.sent + EXCLUDED.sent, updated_at = now()
+                WHERE email_usage.sent + EXCLUDED.sent <= ${limit}
+            RETURNING sent`);
+        const rows = (res as unknown as { rows?: unknown[] }).rows ?? (res as unknown as unknown[]);
+        if (rows.length === 0) throw new EmailQuotaExceededError(await this.usedThisMonth(tenantId, now), limit);
+        return true;
+    }
+
+    /** Devuelve una reserva cuyo envío falló (un correo que no salió no se cobra). */
+    async release(tenantId: number, count = 1, now: Date = new Date()): Promise<void> {
+        const n = Math.max(1, Math.floor(count));
+        await this.db
+            .update(emailUsage)
+            .set({ sent: sql`GREATEST(${emailUsage.sent} - ${n}, 0)`, updatedAt: new Date() })
+            .where(and(eq(emailUsage.tenantId, tenantId), eq(emailUsage.period, periodOf(now))));
+    }
+
     /** Uso + límite para el resumen de facturación y la consola de operador. */
     async summary(tenantId: number, now: Date = new Date()): Promise<{ used: number; limit: number | null }> {
         const [limit, used] = await Promise.all([this.limitFor(tenantId), this.usedThisMonth(tenantId, now)]);

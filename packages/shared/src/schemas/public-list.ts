@@ -96,7 +96,7 @@ export interface PublicRecordsPage {
 
 /** Query pública de records (validada; el resto se ignora). */
 export const publicRecordsQuerySchema = z.object({
-    cursor: z.coerce.number().int().positive().optional(),
+    cursor: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
     search: z.string().max(200).optional(),
     sort: z.string().max(120).optional(), // "slug:asc" | "slug:desc"

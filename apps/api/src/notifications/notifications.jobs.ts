@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleIn
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
-import { guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { NotificationsService } from './notifications.service';
 
 const QUEUE = 'notifications';
@@ -33,7 +33,7 @@ export class NotificationsJobs implements OnModuleInit, OnApplicationShutdown {
                 this.connections.push(c);
                 return c;
             };
-            this.queue = new Queue(QUEUE, { connection: conn() });
+            this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de avisos con error: ${err.message}`));
             this.worker = new Worker(
                 QUEUE,

@@ -29,6 +29,7 @@ import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { lists, memberships, records, users } from '../db/schema';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import type { Tx } from '../db/client';
+import { pgErrorCode } from '../common/http-exception.filter';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
@@ -207,6 +208,23 @@ export class FieldsService {
         return rows.map(toField);
     }
 
+    /**
+     * Los campos de TODAS las listas de la empresa, agrupados por lista, en
+     * una sola consulta (quien recorre muchas listas a la vez — «Mi trabajo» —
+     * no hace una lectura por lista).
+     */
+    async listByTenantGrouped(tenantId: number): Promise<Map<number, Field[]>> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) => this.repo.listByTenant(tx, tenantId));
+        const out = new Map<number, Field[]>();
+        for (const row of rows) {
+            const f = toField(row);
+            const arr = out.get(f.list_id);
+            if (arr) arr.push(f);
+            else out.set(f.list_id, [f]);
+        }
+        return out;
+    }
+
     /** Igual que listByListId pero DENTRO de un tx ya abierto (PERF-02). */
     async listByListIdWithinTx(tx: Tx, tenantId: number, listId: number): Promise<Field[]> {
         const rows = await this.repo.listByList(tx, tenantId, listId);
@@ -293,19 +311,25 @@ export class FieldsService {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
-            return this.repo.insert(tx, {
-                tenantId,
-                listId,
-                slug,
-                label: input.label,
-                type: input.type,
-                config,
-                isRequired: input.is_required ?? false,
-                isUnique: input.is_unique ?? false,
-                isIndexed: input.is_indexed ?? false,
-                description: input.description ?? null,
-                position,
-            });
+            return this.repo
+                .insert(tx, {
+                    tenantId,
+                    listId,
+                    slug,
+                    label: input.label,
+                    type: input.type,
+                    config,
+                    isRequired: input.is_required ?? false,
+                    isUnique: input.is_unique ?? false,
+                    isIndexed: input.is_indexed ?? false,
+                    description: input.description ?? null,
+                    position,
+                })
+                .catch((err: unknown) => {
+                    // Doble envío: dos altas simultáneas con el mismo slug pasan
+                    // el chequeo previo y la segunda choca con el índice único.
+                    throw pgErrorCode(err) === '23505' ? slugConflict(slug) : err;
+                });
         });
         this.realtime.fields(tenantId, listId);
         // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
@@ -689,7 +713,7 @@ function assertConvertible(from: FieldType, to: FieldType): void {
     }
 }
 
-const CONVERT_BATCH = 500;
+const CONVERT_BATCH = 1000;
 
 /** Destinos donde el valor se guarda como el TEXTO que el usuario leía. */
 const TEXTUAL_TARGETS: readonly FieldType[] = ['text', 'long_text', 'select', 'multi_select'];
@@ -751,8 +775,9 @@ async function migrateFieldData(
     const spec = { type: toType, config, is_required: false };
     let cursor = 0;
     for (;;) {
+        // Sólo el valor de ESTE campo (no el `data` entero de cada fila).
         const batch = await tx
-            .select({ id: records.id, data: records.data })
+            .select({ id: records.id, raw: sql<unknown>`${records.data} -> ${key}` })
             .from(records)
             .where(
                 and(
@@ -766,9 +791,10 @@ async function migrateFieldData(
             .orderBy(records.id)
             .limit(CONVERT_BATCH);
         if (batch.length === 0) break;
+        const changes: Array<{ id: number; del: boolean; val?: unknown }> = [];
         for (const row of batch) {
             cursor = row.id;
-            const raw = (row.data as Record<string, unknown>)[key];
+            const raw = row.raw;
             if (raw === null || raw === undefined) continue;
             const bridged = bridgeValue(fromType, toType, raw, bridge);
             const result = validateFieldValue(spec, bridged);
@@ -777,20 +803,17 @@ async function migrateFieldData(
             // compatibles —ej. text→select con options de los valores— no
             // tocan ninguna fila).
             if (JSON.stringify(next) === JSON.stringify(raw)) continue;
-            if (next === null) {
-                await tx
-                    .update(records)
-                    .set({ data: sql`data - ${key}`, updatedAt: sql`now()` })
-                    .where(and(eq(records.tenantId, tenantId), eq(records.id, row.id)));
-            } else {
-                await tx
-                    .update(records)
-                    .set({
-                        data: sql`jsonb_set(data, ${sql.raw(`'{${key}}'`)}, ${JSON.stringify(next)}::jsonb)`,
-                        updatedAt: sql`now()`,
-                    })
-                    .where(and(eq(records.tenantId, tenantId), eq(records.id, row.id)));
-            }
+            changes.push(next === null ? { id: row.id, del: true } : { id: row.id, del: false, val: next });
+        }
+        // UNA sentencia por lote (antes, un UPDATE por fila: 100k registros
+        // eran 100k idas a la base y la conversión tardaba minutos).
+        if (changes.length > 0) {
+            await tx.execute(sql`
+                UPDATE records AS r
+                SET data = CASE WHEN v.del THEN r.data - ${key}::text ELSE jsonb_set(r.data, ARRAY[${key}::text], v.val) END,
+                    updated_at = now()
+                FROM jsonb_to_recordset(${JSON.stringify(changes)}::jsonb) AS v(id bigint, del boolean, val jsonb)
+                WHERE r.tenant_id = ${tenantId} AND r.list_id = ${listId} AND r.id = v.id`);
         }
         if (batch.length < CONVERT_BATCH) break;
     }
