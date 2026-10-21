@@ -16,6 +16,8 @@ interface FilterRowProps {
     condition: FilterCondition;
     onChange: (next: FilterCondition) => void;
     onRemove: () => void;
+    /** v0.1.287 — texto del botón de quitar (la fila también se usa en las reglas de color). */
+    removeLabel?: string;
 }
 
 /**
@@ -31,6 +33,7 @@ export function FilterRow({
     condition,
     onChange,
     onRemove,
+    removeLabel,
 }: FilterRowProps): JSX.Element {
     // v0.1.200 — un lookup ya se filtra (el motor le da expresión SQL), salvo
     // el que apunta a un `computed`: ése no tiene operadores y por eso se cae
@@ -121,7 +124,7 @@ export function FilterRow({
                 type="button"
                 onClick={onRemove}
                 className="imcrm-rounded imcrm-p-1.5 imcrm-text-muted-foreground hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
-                aria-label={__('Quitar filtro')}
+                aria-label={removeLabel ?? __('Quitar filtro')}
             >
                 <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
             </button>

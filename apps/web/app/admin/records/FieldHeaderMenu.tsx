@@ -9,7 +9,10 @@ import {
     EyeOff,
     Hash,
     Lock,
+    Paintbrush,
     Pencil,
+    Pin,
+    PinOff,
     Sigma,
     TextCursorInput,
     Trash2,
@@ -64,8 +67,12 @@ interface FieldHeaderMenuProps {
     field: FieldEntity;
     /** Todos los campos visibles, en su orden actual (para mover). */
     fields?: FieldEntity[];
-    /** Abre el editor del campo (lo gestiona RecordsPage). */
-    onEdit: (field: FieldEntity) => void;
+    /**
+     * Abre el editor del campo (lo gestiona RecordsPage). Sin él (quien no
+     * administra la lista) el menú sólo trae lo de la VISTA: ordenar,
+     * calcular, ocultar, fijar y colorear — nada que cambie el campo.
+     */
+    onEdit?: (field: FieldEntity) => void;
     /** Ordenar por esta columna. Sin esto el item no se renderiza. */
     onSort?: (field: FieldEntity, dir: 'asc' | 'desc') => void;
     /** Ocultar la columna en la vista actual. */
@@ -74,6 +81,12 @@ interface FieldHeaderMenuProps {
     onCalculate?: (field: FieldEntity) => void;
     /** La vista sincroniza SU orden de columnas tras mover el campo. */
     onReorderColumns?: (fieldIdsInOrder: number[]) => void;
+    /** v0.1.287 — "Fijar hasta esta columna" (columnas fijas a la izquierda). */
+    onFreeze?: (field: FieldEntity) => void;
+    /** v0.1.287 — "Dejar de fijar" (sólo si la vista tiene columnas fijadas). */
+    onUnfreeze?: () => void;
+    /** v0.1.287 — Atajo a "Colorear filas" con una regla sobre esta columna. */
+    onColor?: (field: FieldEntity) => void;
 }
 
 export function FieldHeaderMenu({
@@ -86,6 +99,9 @@ export function FieldHeaderMenu({
     onHide,
     onCalculate,
     onReorderColumns,
+    onFreeze,
+    onUnfreeze,
+    onColor,
 }: FieldHeaderMenuProps): JSX.Element {
     const create = useCreateField(listId);
     const del = useDeleteField(listId);
@@ -219,24 +235,48 @@ export function FieldHeaderMenu({
                     </>
                 )}
 
-                <DropdownMenuItem onSelect={() => onEdit(field)}>
-                    <Pencil className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                    {__('Modificar el campo')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onEdit(field)}>
-                    <TextCursorInput className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                    {__('Cambiar el nombre')}
-                </DropdownMenuItem>
-                {listSlug !== undefined && (
-                    <DropdownMenuItem onSelect={() => navigate(`/lists/${listSlug}/edit?s=permisos`)}>
-                        <Lock className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                        {__('Privacidad y permisos')}
-                    </DropdownMenuItem>
+                {onEdit && (
+                    <>
+                        <DropdownMenuItem onSelect={() => onEdit(field)}>
+                            <Pencil className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            {__('Modificar el campo')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => onEdit(field)}>
+                            <TextCursorInput className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            {__('Cambiar el nombre')}
+                        </DropdownMenuItem>
+                        {listSlug !== undefined && (
+                            <DropdownMenuItem onSelect={() => navigate(`/lists/${listSlug}/edit?s=permisos`)}>
+                                <Lock className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                {__('Privacidad y permisos')}
+                            </DropdownMenuItem>
+                        )}
+
+                        <DropdownMenuSeparator />
+                    </>
                 )}
 
-                <DropdownMenuSeparator />
+                {onFreeze && (
+                    <DropdownMenuItem onSelect={() => onFreeze(field)}>
+                        <Pin className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Fijar hasta esta columna')}
+                    </DropdownMenuItem>
+                )}
+                {onUnfreeze && (
+                    <DropdownMenuItem onSelect={() => onUnfreeze()}>
+                        <PinOff className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Dejar de fijar')}
+                    </DropdownMenuItem>
+                )}
+                {onColor && (
+                    <DropdownMenuItem onSelect={() => onColor(field)}>
+                        <Paintbrush className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Colorear filas según esta columna…')}
+                    </DropdownMenuItem>
+                )}
+                {(onFreeze || onUnfreeze || onColor) && <DropdownMenuSeparator />}
 
-                {canMove && (
+                {onEdit && canMove && (
                     <>
                         <DropdownMenuItem
                             disabled={reorder.isPending}
@@ -260,7 +300,7 @@ export function FieldHeaderMenu({
                         {__('Calcular')}
                     </DropdownMenuItem>
                 )}
-                {listSlug !== undefined && storeKind !== 'store_locked' && (
+                {onEdit && listSlug !== undefined && storeKind !== 'store_locked' && (
                     <DropdownMenuItem
                         onSelect={() =>
                             // Con el campo en la URL, el editor abre con la
@@ -286,18 +326,20 @@ export function FieldHeaderMenu({
 
                 <DropdownMenuSeparator />
 
-                <DropdownMenuItem
-                    disabled={create.isPending}
-                    onSelect={() => void handleDuplicate()}
-                >
-                    <Copy className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                    {__('Duplicar')}
-                </DropdownMenuItem>
+                {onEdit && (
+                    <DropdownMenuItem
+                        disabled={create.isPending}
+                        onSelect={() => void handleDuplicate()}
+                    >
+                        <Copy className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Duplicar')}
+                    </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onSelect={() => void handleCopyId()}>
                     <Hash className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                     {__('Copiar ID de campo')}
                 </DropdownMenuItem>
-                {!isStoreField && (
+                {onEdit && !isStoreField && (
                     <DropdownMenuItem
                         danger
                         disabled={del.isPending}

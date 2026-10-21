@@ -1075,6 +1075,70 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 }
 
 /*
+ * v0.1.287 — Colores condicionales de la vista ("Colorear filas").
+ *
+ * El color de la regla se MEZCLA con el fondo del tema (`color-mix`), así
+ * la misma paleta funciona en claro y en oscuro sin que el texto pierda
+ * contraste: en claro queda un tinte pálido, en oscuro uno hundido. La
+ * mezcla es opaca a propósito: las columnas fijas tapan lo que pasa por
+ * detrás al scrollear en horizontal.
+ *
+ * La celda pintada va como `background-image` (una capa encima del fondo):
+ * así convive con el color de la fila sin pelear por especificidad.
+ */
+.imcrm-records-table tbody tr.imcrm-tinted-row > td {
+    background-color: color-mix(in srgb, var(--imcrm-row-color) 14%, hsl(var(--imcrm-background)));
+}
+.imcrm-records-table tbody tr.imcrm-tinted-row:hover > td {
+    background-color: color-mix(in srgb, var(--imcrm-row-color) 22%, hsl(var(--imcrm-background)));
+}
+.imcrm-records-table tbody td.imcrm-tinted-cell {
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--imcrm-cell-color) 26%, transparent),
+        color-mix(in srgb, var(--imcrm-cell-color) 26%, transparent)
+    );
+}
+[data-imcrm-theme='dark'] .imcrm-records-table tbody tr.imcrm-tinted-row > td {
+    background-color: color-mix(in srgb, var(--imcrm-row-color) 22%, hsl(var(--imcrm-background)));
+}
+[data-imcrm-theme='dark'] .imcrm-records-table tbody tr.imcrm-tinted-row:hover > td {
+    background-color: color-mix(in srgb, var(--imcrm-row-color) 30%, hsl(var(--imcrm-background)));
+}
+[data-imcrm-theme='dark'] .imcrm-records-table tbody td.imcrm-tinted-cell {
+    background-image: linear-gradient(
+        color-mix(in srgb, var(--imcrm-cell-color) 34%, transparent),
+        color-mix(in srgb, var(--imcrm-cell-color) 34%, transparent)
+    );
+}
+
+/*
+ * v0.1.287 — Rango de celdas (copiar/pegar/rellenar): mientras se arrastra
+ * el mouse sobre la tabla no se selecciona TEXTO (el navegador marcaba
+ * media página en azul).
+ */
+body.imcrm-grid-selecting,
+body.imcrm-grid-selecting * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+body.imcrm-grid-selecting {
+    cursor: cell;
+}
+
+/* El asa de relleno: el cuadradito de la esquina del rango (como Excel). */
+.imcrm-fill-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 7px;
+    height: 7px;
+    background: hsl(var(--imcrm-primary));
+    box-shadow: 0 0 0 1px hsl(var(--imcrm-background));
+    cursor: crosshair;
+    z-index: 2;
+}
+
+/*
  * Modo hoja de cálculo: separadores verticales entre columnas — el look
  * de Excel que tiene la vista Tabla de ClickUp.
  */

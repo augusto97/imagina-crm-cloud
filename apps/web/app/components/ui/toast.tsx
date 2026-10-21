@@ -25,12 +25,22 @@ import { cn } from '@/lib/utils';
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info';
 
+/**
+ * v0.1.287 — Un botón dentro del aviso («Rehacer», «Deshacer»): ejecuta la
+ * acción y cierra el aviso.
+ */
+export interface ToastAction {
+    label: string;
+    onClick: () => void;
+}
+
 interface ToastSpec {
     id: number;
     title: string;
     description?: string;
     variant: ToastVariant;
     duration: number;
+    action?: ToastAction;
 }
 
 interface ShowArgs {
@@ -38,6 +48,7 @@ interface ShowArgs {
     description?: string;
     variant?: ToastVariant;
     duration?: number;
+    action?: ToastAction;
 }
 
 interface ToastContextValue {
@@ -78,6 +89,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }): JSX.
                 description: args.description,
                 variant: args.variant ?? 'info',
                 duration: args.duration ?? DEFAULT_DURATION,
+                ...(args.action ? { action: args.action } : {}),
             };
             setToasts((prev) => [...prev, spec]);
             if (spec.duration > 0) {
@@ -176,6 +188,19 @@ function ToastItem({
                     </p>
                 )}
             </div>
+            {toast.action && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="imcrm-h-7 imcrm-shrink-0 imcrm-px-2.5 imcrm-text-xs"
+                    onClick={() => {
+                        toast.action?.onClick();
+                        onDismiss(toast.id);
+                    }}
+                >
+                    {toast.action.label}
+                </Button>
+            )}
             <Button
                 variant="ghost"
                 size="icon"

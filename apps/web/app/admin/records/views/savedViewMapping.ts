@@ -1,3 +1,5 @@
+import type { ViewColorRule } from '@imagina-base/shared';
+
 import { type FilterOperator, type FilterTree } from '@/types/record';
 import type { SavedViewConfig } from '@/types/view';
 
@@ -72,6 +74,16 @@ export function stateToViewConfig(state: RecordsState): SavedViewConfig {
     if (state.fontSize !== null) {
         config.font_size = state.fontSize;
     }
+    // v0.1.287 — el segundo nivel sólo tiene sentido con el primero.
+    if (state.groupByFieldId !== null && state.subGroupByFieldId !== null && state.subGroupByFieldId !== state.groupByFieldId) {
+        config.sub_group_by_field_id = state.subGroupByFieldId;
+    }
+    if (state.frozenColumns !== null && state.frozenColumns >= 1) {
+        config.frozen_columns = state.frozenColumns;
+    }
+    if (state.colorRules.length > 0) {
+        config.color_rules = state.colorRules;
+    }
     return config;
 }
 
@@ -134,6 +146,15 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
             config.font_size === 'sm' || config.font_size === 'md' || config.font_size === 'lg'
                 ? config.font_size
                 : null,
+        subGroupByFieldId:
+            typeof config.sub_group_by_field_id === 'number' && config.group_by_field_id
+                ? config.sub_group_by_field_id
+                : null,
+        frozenColumns:
+            typeof config.frozen_columns === 'number' && config.frozen_columns >= 1
+                ? Math.min(20, Math.floor(config.frozen_columns))
+                : null,
+        colorRules: readColorRules(config.color_rules),
     };
 }
 
@@ -155,6 +176,33 @@ export function hasChangesVsView(state: RecordsState, config: SavedViewConfig): 
     const a = stableStringify(stateToViewConfig(state));
     const b = stableStringify(stateToViewConfig(viewConfigToState(config, state.perPage)));
     return a !== b;
+}
+
+/**
+ * Las reglas de color guardadas, tolerante: una regla a medias (sin
+ * condición o sin color) se descarta en vez de romper la vista. Los
+ * defaults del schema (`enabled`, `target`) se completan aquí para que la
+ * comparación de "cambios sin guardar" no los cuente como diferencia.
+ */
+function readColorRules(raw: unknown): ViewColorRule[] {
+    if (!Array.isArray(raw)) return [];
+    const out: ViewColorRule[] = [];
+    for (const r of raw) {
+        if (r === null || typeof r !== 'object') continue;
+        const rule = r as Partial<ViewColorRule>;
+        const cond = rule.condition;
+        if (!cond || typeof cond !== 'object' || typeof cond.field_id !== 'number' || typeof rule.color !== 'string') continue;
+        const target = rule.target === 'cell' ? 'cell' : 'row';
+        out.push({
+            id: typeof rule.id === 'string' && rule.id !== '' ? rule.id : `r${out.length + 1}`,
+            enabled: rule.enabled !== false,
+            condition: cond,
+            color: rule.color,
+            target,
+            ...(target === 'cell' && typeof rule.cell_field_id === 'number' ? { cell_field_id: rule.cell_field_id } : {}),
+        });
+    }
+    return out;
 }
 
 /** JSON.stringify con claves de objeto ordenadas, recursivo (orden-estable). */

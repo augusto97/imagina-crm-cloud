@@ -1,3 +1,5 @@
+import type { ViewColorRule } from '@imagina-base/shared';
+
 export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards';
 
 export interface SavedViewConfig {
@@ -64,6 +66,21 @@ export interface SavedViewConfig {
      *   tipos válidos: select, multi_select, user, checkbox, date, datetime).
      */
     group_by_field_id?: number;
+    /**
+     * v0.1.287 — Sólo tablas agrupadas: segundo nivel («Y luego por»). Cada
+     * grupo se parte en subgrupos por este campo.
+     */
+    sub_group_by_field_id?: number;
+    /**
+     * v0.1.287 — Cuántas de las primeras columnas visibles quedan fijas a la
+     * izquierda al scrollear en horizontal. Sin valor = sólo la primera.
+     */
+    frozen_columns?: number;
+    /**
+     * v0.1.287 — Colores condicionales: cada regla pinta la fila o la celda
+     * de una columna cuando el registro cumple su condición.
+     */
+    color_rules?: ViewColorRule[];
     /** Sólo para vistas tipo `calendar`: id del campo `date`/`datetime` que ubica cada record. */
     date_field_id?: number;
     /**
