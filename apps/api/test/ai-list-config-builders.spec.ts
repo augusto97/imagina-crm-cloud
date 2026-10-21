@@ -194,4 +194,32 @@ describe('buildRecordLayoutV3 (v0.1.232)', () => {
         const r = buildRecordLayoutV3(page([{ type: 'button', label: 'Sitio', field: 'web' }]) as never, ctx);
         expect(r.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toEqual({ label: 'Sitio', action: 'url', target_source: 'field', target_field_id: 3 });
     });
+
+    it('v0.1.290 — «Pagos» en el portal: conexión por nombre, monto numérico y listas vinculadas al cliente', async () => {
+        const { buildRecordLayoutV3, describeRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
+        const withSaldo = { ...ctx, fields: [...ctx.fields, { id: 4, slug: 'saldo', label: 'Saldo', type: 'currency' }] };
+        const portal = { ...withSaldo, portal: { userLists: [] }, collections: [{ id: 7, name: 'Mercado Pago', provider: 'mercadopago' }] };
+        const pay = { type: 'payments', linked_lists: ['pedidos'], pay_button: { connection: 'mercado pago', amount_field: 'saldo' } };
+        // Dos relaciones con «pedidos»: cualquiera la vincula al cliente (sólo hace falta la lista).
+        const r = buildRecordLayoutV3(page([pay]) as never, portal);
+        const b = r.layout.pages[0]!.sections[0]!.blocks[0]![0]!;
+        expect(b).toMatchObject({
+            type: 'payments',
+            title: 'Pagos',
+            config: { show_links: true, linked_list_ids: [20], pay_button: { enabled: true, connection_id: 7, amount_field_id: 4, label: 'Pagar ahora' } },
+        });
+        expect(describeRecordLayoutV3(r.layout, withSaldo.fields)[0]!.blocks[0]).toContain('botón «Pagar ahora» por saldo');
+        // El monto tiene que ser numérico.
+        expect(() => buildRecordLayoutV3(page([{ ...pay, pay_button: { connection: '7', amount_field: 'nombre' } }]) as never, portal)).toThrow(/se esperaba/);
+        // Una conexión inexistente se dice con las que hay.
+        expect(() => buildRecordLayoutV3(page([{ ...pay, pay_button: { connection: 'Stripe', amount_field: 'saldo' } }]) as never, portal)).toThrow(/Mercado Pago \(#7\)/);
+        // Sin conexión de cobro del equipo no se agrega (el cliente no lo vería).
+        expect(() => buildRecordLayoutV3(page([pay]) as never, { ...portal, collections: [] })).toThrow(/conexión de cobro/);
+        // Una lista que no está vinculada al cliente.
+        expect(() => buildRecordLayoutV3(page([{ ...pay, linked_lists: ['otra'] }]) as never, portal)).toThrow(/no está vinculada al cliente/);
+        // En la ficha del equipo: el panel de cobros, sin botón del cliente (aviso).
+        const record = buildRecordLayoutV3(page([pay]) as never, withSaldo);
+        expect(record.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toEqual({});
+        expect(record.warnings.join(' ')).toContain('sólo aplican al portal');
+    });
 });

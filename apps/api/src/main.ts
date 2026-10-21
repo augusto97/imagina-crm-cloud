@@ -52,6 +52,9 @@ async function bootstrap(): Promise<void> {
         '/auth/forgot-password',
         '/auth/reset-password',
         '/portal/consume',
+        // v0.1.290 — entrar al portal con contraseña y pedir un enlace.
+        '/portal/login',
+        '/portal/request-access',
     ];
     // SEC-28 (v0.1.225): las decisiones se toman sobre el PATH, nunca sobre
     // `req.url` entero — trae la query string, y `POST /auth/register?/health`

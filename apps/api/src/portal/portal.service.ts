@@ -21,6 +21,7 @@ import {
     portalEditableFieldIds,
     readPortalConfig,
     readPortalLayoutV3,
+    readPortalPaymentsConfig,
     readStoreListMarker,
     sanitizePortalLayout,
     tenantFormatSchema,
@@ -37,6 +38,10 @@ import {
     type RecordLayoutV3,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalPaymentLink,
+    type PortalPaymentsBlockConfig,
+    type PortalPaymentsBlockData,
+    type PortalPayResult,
     type PortalAccessCheck,
     type PortalAccessList,
     type PortalAccounts,
@@ -50,19 +55,20 @@ import {
     type PortalCreatableList,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ActivityRepository } from '../activity/activity.repository';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { SessionService } from '../auth/session.service';
+import { CollectionsService } from '../collections/collections.service';
 import { CommentsRepository } from '../comments/comments.repository';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { DocumentsService } from '../documents/documents.service';
 import { DomainsService } from '../domains/domains.service';
 import { RecordLayoutDataService } from '../dashboards/record-layout-data.service';
-import { fields, lists, memberships, portalLinks, records, users, tenants } from '../db/schema';
+import { fields, lists, memberships, paymentLinks, portalCredentials, portalLinks, records, relations, users, tenants } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
@@ -147,6 +153,9 @@ function firstName(name: string | null | undefined): string {
 /** Un aviso de respuesta por registro y cliente cada 15 minutos (no un correo por mensaje). */
 const REPLY_EMAIL_WINDOW_S = 15 * 60;
 
+/** v0.1.290 — campos del registro que sirven como monto del botón «Pagar». */
+const PAYABLE_AMOUNT_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'computed', 'rollup']);
+
 @Injectable()
 export class PortalService implements OnModuleInit {
     private readonly inFlight = new Set<Promise<void>>();
@@ -178,6 +187,8 @@ export class PortalService implements OnModuleInit {
         // El cliente crea registros (abre un ticket) por el MISMO camino que
         // la app: validación, límite del plan, actividad, automatizaciones.
         @Optional() private readonly records_?: RecordsService,
+        // v0.1.290 — el bloque «Pagos»: links de pago del cliente y «Pagar».
+        @Optional() private readonly collections?: CollectionsService,
     ) {}
 
     onModuleInit(): void {
@@ -515,7 +526,7 @@ export class PortalService implements OnModuleInit {
      * por usuario+tenant): se manda un enlace por cada una, con el nombre de
      * la empresa en el asunto.
      */
-    async requestAccess(email: string, host?: string): Promise<void> {
+    async requestAccess(email: string, host?: string, empresa?: string): Promise<void> {
         // Freno de abuso por email (compartido entre nodos): 3 pedidos cada
         // 15 min. El rate limit por IP de `main.ts` es la otra mitad.
         const rlKey = `portalreq:${email}`;
@@ -533,15 +544,28 @@ export class PortalService implements OnModuleInit {
         // white-label): sólo esa empresa reparte enlaces. Un cliente que entra
         // por el portal de Acme no tiene por qué recibir correos de otras
         // empresas (ni enterarse de cuáles usan la misma herramienta).
+        // v0.1.290 — lo mismo desde el enlace de entrada de una empresa
+        // (`?empresa=` en el dominio de la plataforma): sólo esa empresa.
         const job = (async () => {
             const scoped = await this.domains.resolveHost(host);
-            await this.deliverAccess(email, scoped.tenant?.id ?? null);
+            const tenantId = scoped.tenant?.id ?? (empresa ? await this.tenantIdBySlug(empresa) : null);
+            await this.deliverAccess(email, tenantId);
         })()
             .catch((err: unknown) =>
                 this.logger.warn(`No se pudo reenviar el acceso al portal: ${err instanceof Error ? err.message : String(err)}`),
             )
             .finally(() => this.inFlight.delete(job));
         this.inFlight.add(job);
+    }
+
+    /** v0.1.290 — empresa (no archivada) por su slug; -1 si no existe (no reparte nada). */
+    private async tenantIdBySlug(slug: string): Promise<number> {
+        const [t] = await this.db
+            .select({ id: tenants.id, archivedAt: tenants.archivedAt })
+            .from(tenants)
+            .where(eq(tenants.slug, slug.toLowerCase()))
+            .limit(1);
+        return t && t.archivedAt === null ? t.id : -1;
     }
 
     /** Espera los envíos de acceso que quedaron corriendo (tests y apagado ordenado). */
@@ -984,6 +1008,45 @@ export class PortalService implements OnModuleInit {
         throw disabled();
     }
 
+    /**
+     * v0.1.290 — El acceso con el que abre una sesión NUEVA del portal de esta
+     * empresa (entrar con contraseña): el primero que sigue en pie, de un
+     * registro no borrado y de una lista con el portal encendido. null = la
+     * persona ya no tiene nada que ver en este portal.
+     */
+    async openableLink(userId: number, tenantId: number): Promise<number | null> {
+        const rows = await this.db
+            .select({ id: portalLinks.id, listId: portalLinks.listId, recordId: portalLinks.recordId })
+            .from(portalLinks)
+            .where(and(eq(portalLinks.userId, userId), eq(portalLinks.tenantId, tenantId)))
+            .orderBy(portalLinks.id)
+            .limit(100);
+        const live = await this.liveRecordIds(tenantId, rows.map((r) => r.recordId));
+        for (const r of rows) {
+            if (!live.has(r.recordId)) continue;
+            if (await this.portalSwitchedOff(tenantId, r.listId)) continue;
+            return r.id;
+        }
+        return null;
+    }
+
+    /**
+     * v0.1.290 — El enlace de ENTRADA al portal de la empresa: por su dominio
+     * del portal si responde (ADR-S28) y con `?empresa=` para que en el dominio
+     * de la plataforma la pantalla de entrar sepa de qué empresa es (su marca y
+     * la opción de contraseña).
+     */
+    async entryUrl(tenantId: number): Promise<string> {
+        const [t] = await this.db.select({ slug: tenants.slug }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const base = await this.domains.baseUrlFor(tenantId, 'portal');
+        return `${base}/portal?empresa=${encodeURIComponent(t?.slug ?? '')}`;
+    }
+
+    /** v0.1.290 — registra que el cliente entró (también al entrar con contraseña). */
+    async markAccess(linkId: number): Promise<void> {
+        await this.touchAccess(linkId);
+    }
+
     /** Los registros (de esa empresa) que existen y NO están borrados. */
     private async liveRecordIds(tenantId: number, ids: readonly number[]): Promise<Set<number>> {
         const unique = [...new Set(ids)].filter((n) => Number.isInteger(n) && n > 0);
@@ -1359,6 +1422,23 @@ export class PortalService implements OnModuleInit {
         return (m?.settings as { portal_notify?: unknown } | undefined)?.portal_notify !== false;
     }
 
+    /** v0.1.290 — ¿la empresa permite contraseña en el portal y este cliente ya creó la suya? */
+    private async passwordStatus(
+        tx: Tx,
+        tenantId: number,
+        userId: number,
+        tenantSettings: Record<string, unknown>,
+    ): Promise<{ enabled: boolean; has_password: boolean }> {
+        const enabled = portalPasswordEnabled(tenantSettings);
+        if (!enabled) return { enabled: false, has_password: false };
+        const [cred] = await tx
+            .select({ userId: portalCredentials.userId })
+            .from(portalCredentials)
+            .where(and(eq(portalCredentials.tenantId, tenantId), eq(portalCredentials.userId, userId)))
+            .limit(1);
+        return { enabled: true, has_password: cred !== undefined };
+    }
+
     /** El nombre con el que la empresa se presenta al cliente (su app o su razón social). */
     private async companyName(tx: Tx, tenantId: number): Promise<string> {
         const [t] = await tx.select({ name: tenants.name, settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
@@ -1392,7 +1472,10 @@ export class PortalService implements OnModuleInit {
                 ),
             )
             .orderBy(portalLinks.createdAt);
+        const [t] = await this.db.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
         return {
+            entry_url: await this.entryUrl(tenantId),
+            password_enabled: portalPasswordEnabled((t?.settings ?? {}) as Record<string, unknown>),
             users: rows.map((r) => ({
                 user_id: r.userId,
                 email: r.email,
@@ -1451,6 +1534,11 @@ export class PortalService implements OnModuleInit {
                     eq(memberships.role, 'client'),
                 ),
             );
+        // v0.1.290 — sin acceso no hay contraseña del portal que valga: se borra
+        // (si vuelve a ser cliente, crea una nueva desde su menú).
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.delete(portalCredentials).where(and(eq(portalCredentials.tenantId, tenantId), eq(portalCredentials.userId, userId))),
+        );
         // Sólo las sesiones del portal de ESTA empresa: la misma persona puede
         // ser cliente de otra y ahí sigue adentro.
         await this.sessions.destroyPortalSessions(userId, tenantId);
@@ -1582,7 +1670,11 @@ export class PortalService implements OnModuleInit {
                   )
                 : Promise.resolve(null),
         ]);
-        const base: PortalBoot = { ...boot, account_id: link.id, accounts, comments };
+        const payments = await this.paymentsFor(link, ctx, actor.userId).catch((err: unknown) => {
+            this.logger.warn(`Pagos del portal: ${err instanceof Error ? err.message : String(err)}`);
+            return {};
+        });
+        const base: PortalBoot = { ...boot, account_id: link.id, accounts, comments, payments };
         // v0.1.233 — los gráficos y tablas del diseño viajan en el MISMO
         // request (regla de oro nº 8), ya acotados al cliente.
         const blocks = layoutBlocks(ctx.layout)
@@ -1597,6 +1689,293 @@ export class PortalService implements OnModuleInit {
             (fileId) => this.files.signedUrl(link.tenantId, fileId, 3600),
         );
         return { ...base, layout_data: layoutData };
+    }
+
+    // ─────────────── Pagos desde el portal (v0.1.290) ───────────────
+
+    /**
+     * Los datos de los bloques «Pagos» del diseño: los links de pago de SUS
+     * registros (el de su acceso y, si el bloque lo pide, los de listas
+     * vinculadas a él por el mismo scope del portal) y si se le ofrece pagar.
+     * Sin ninguna conexión de cobro del equipo el bloque no se ofrece (no
+     * viaja nada y el portal no lo dibuja).
+     */
+    private async paymentsFor(
+        link: { tenantId: number; listId: number; recordId: number },
+        ctx: PortalCtx,
+        userId: number,
+    ): Promise<Record<string, PortalPaymentsBlockData>> {
+        const blocks = layoutBlocks(ctx.layout).filter((b) => b.type === 'payments').slice(0, 6);
+        if (blocks.length === 0 || !this.collections) return {};
+        const conns = await this.collections.teamConnections(link.tenantId);
+        if (conns.length === 0) return {};
+        const out: Record<string, PortalPaymentsBlockData> = {};
+        const linksCache = new Map<string, Promise<PortalPaymentLink[]>>();
+        for (const b of blocks) {
+            const cfg = readPortalPaymentsConfig(b.config);
+            let links: PortalPaymentLink[] = [];
+            if (cfg.show_links) {
+                const key = [...cfg.linked_list_ids].sort((x, y) => x - y).join(',');
+                let hit = linksCache.get(key);
+                if (!hit) {
+                    hit = this.clientPaymentLinks(link, ctx, cfg.linked_list_ids, userId);
+                    linksCache.set(key, hit);
+                }
+                links = await hit;
+            }
+            const offer = await this.payOffer(link, ctx, cfg, conns);
+            out[b.id] = {
+                links,
+                pay: offer
+                    ? { label: offer.label, amount: offer.amount, currency: offer.currency, concept: offer.concept, provider: offer.provider }
+                    : null,
+            };
+        }
+        return out;
+    }
+
+    /**
+     * Los links de pago que el cliente puede ver: los de su registro y los de
+     * los registros de `linkedListIds` que son SUYOS (relación hacia su
+     * registro o campo persona = él; sin vínculo, nada — fail-closed). Lo
+     * anulado por la empresa no se muestra.
+     */
+    private async clientPaymentLinks(
+        link: { tenantId: number; listId: number; recordId: number },
+        ctx: PortalCtx,
+        linkedListIds: readonly number[],
+        userId: number,
+    ): Promise<PortalPaymentLink[]> {
+        return this.tenantDb.withTenant(link.tenantId, async (tx) => {
+            const scopes = [and(eq(paymentLinks.listId, link.listId), eq(paymentLinks.recordId, link.recordId))];
+            const titleFieldOf = new Map<number, number | null>([[link.listId, ctx.titleFieldId]]);
+            for (const listId of [...new Set(linkedListIds)].slice(0, 4)) {
+                if (listId === link.listId) continue;
+                const ids = await this.clientRecordIdsIn(tx, link.tenantId, link.listId, link.recordId, listId, userId);
+                if (ids.length === 0) continue;
+                scopes.push(and(eq(paymentLinks.listId, listId), inArray(paymentLinks.recordId, ids)));
+                const [l] = await tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1);
+                const lf = await this.fields.listByListIdWithinTx(tx, link.tenantId, listId);
+                titleFieldOf.set(
+                    listId,
+                    resolveTitleFieldId(lf.map((f) => ({ id: f.id, type: f.type })), (l?.settings ?? {}) as Record<string, unknown>),
+                );
+            }
+            const rows = await tx
+                .select()
+                .from(paymentLinks)
+                .where(and(eq(paymentLinks.tenantId, link.tenantId), ne(paymentLinks.status, 'cancelled'), or(...scopes)))
+                .orderBy(desc(paymentLinks.createdAt))
+                .limit(50);
+            if (rows.length === 0) return [];
+            const recs = await tx
+                .select({ id: records.id, listId: records.listId, data: records.data })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, link.tenantId),
+                        inArray(records.id, [...new Set(rows.map((r) => r.recordId))]),
+                        isNull(records.deletedAt),
+                    ),
+                );
+            const titleOf = new Map<number, string>();
+            for (const r of recs) {
+                const tf = titleFieldOf.get(r.listId) ?? null;
+                const v = tf !== null ? (r.data as Record<string, unknown>)[jsonbKeyForField(tf)] : null;
+                titleOf.set(r.id, typeof v === 'string' || typeof v === 'number' ? String(v) : `#${r.id}`);
+            }
+            const now = Date.now();
+            return rows
+                .filter((r) => titleOf.has(r.recordId))
+                .map((r): PortalPaymentLink => {
+                    const live = r.status === 'pending' && (r.expiresAt === null || r.expiresAt.getTime() > now);
+                    return {
+                        id: r.id,
+                        title: r.title,
+                        amount: Number(r.amount),
+                        currency: r.currency,
+                        status: (r.status === 'pending' && !live ? 'expired' : r.status) as PortalPaymentLink['status'],
+                        url: live ? r.url : null,
+                        created_at: r.createdAt.toISOString(),
+                        expires_at: r.expiresAt?.toISOString() ?? null,
+                        paid_at: r.paidAt?.toISOString() ?? null,
+                        paid_amount: r.paidAmount === null ? null : Number(r.paidAmount),
+                        method: r.method,
+                        payment_id: r.paymentId,
+                        record_title: titleOf.get(r.recordId) ?? '',
+                    };
+                });
+        });
+    }
+
+    /**
+     * Los registros de OTRA lista que son del cliente: la relación de esa
+     * lista que apunta a la del portal (vinculados a SU registro) o, si no
+     * hay, su campo persona igual a él. El mismo criterio que los gráficos y
+     * tablas del portal. Sin vínculo → ninguno.
+     */
+    private async clientRecordIdsIn(
+        tx: Tx,
+        tenantId: number,
+        portalListId: number,
+        clientRecordId: number,
+        listId: number,
+        userId: number,
+    ): Promise<number[]> {
+        const other = [...(await this.fields.listByListIdWithinTx(tx, tenantId, listId))].sort((a, b) => a.position - b.position);
+        const rel = other.find(
+            (f) => f.type === 'relation' && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === portalListId,
+        );
+        if (rel) {
+            const rows = await tx
+                .select({ id: relations.sourceRecordId })
+                .from(relations)
+                .innerJoin(records, eq(records.id, relations.sourceRecordId))
+                .where(
+                    and(
+                        eq(relations.tenantId, tenantId),
+                        eq(relations.fieldId, rel.id),
+                        eq(relations.targetRecordId, clientRecordId),
+                        eq(records.listId, listId),
+                        isNull(records.deletedAt),
+                    ),
+                )
+                .limit(500);
+            return rows.map((r) => r.id);
+        }
+        const userField = other.find((f) => f.type === 'user');
+        if (!userField || userId <= 0) return [];
+        const rows = await tx
+            .select({ id: records.id })
+            .from(records)
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    isNull(records.deletedAt),
+                    sql`(${records.data} ->> ${jsonbKeyForField(userField.id)}) = ${String(userId)}`,
+                ),
+            )
+            .limit(500);
+        return rows.map((r) => r.id);
+    }
+
+    /**
+     * ¿Se le ofrece pagar? Sólo con el botón encendido, una conexión del equipo
+     * y un monto mayor a cero leído del registro (número, moneda, calculado o
+     * resumen). El monto y la moneda los decide el servidor.
+     */
+    private async payOffer(
+        link: { tenantId: number; listId: number; recordId: number },
+        ctx: PortalCtx,
+        cfg: PortalPaymentsBlockConfig,
+        conns: ReadonlyArray<{ id: number; provider: 'mercadopago' | 'wompi' }>,
+    ): Promise<{
+        label: string;
+        amount: number;
+        currency: string;
+        concept: string;
+        provider: 'mercadopago' | 'wompi';
+        connectionId: number;
+    } | null> {
+        const pb = cfg.pay_button;
+        if (!pb.enabled || pb.connection_id === null || pb.amount_field_id === null) return null;
+        const conn = conns.find((c) => c.id === pb.connection_id);
+        const field = ctx.fields.find((f) => f.id === pb.amount_field_id);
+        if (!conn || !field || !PAYABLE_AMOUNT_TYPES.has(field.type)) return null;
+        const data = await this.recordValues(link);
+        if (!data) return null;
+        const raw = data[jsonbKeyForField(field.id)];
+        const amount = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+        if (!Number.isFinite(amount) || amount <= 0) return null;
+        const fieldCurrency = (field.config as { currency?: unknown }).currency;
+        const currency =
+            conn.provider === 'wompi'
+                ? 'COP'
+                : typeof fieldCurrency === 'string' && /^[A-Za-z]{3}$/.test(fieldCurrency)
+                  ? fieldCurrency.toUpperCase()
+                  : 'COP';
+        const titleRaw = ctx.titleFieldId !== null ? data[jsonbKeyForField(ctx.titleFieldId)] : null;
+        const title = typeof titleRaw === 'string' || typeof titleRaw === 'number' ? String(titleRaw).trim() : '';
+        return {
+            label: pb.label.trim() || 'Pagar ahora',
+            amount: Math.round(amount * 100) / 100,
+            currency,
+            concept: (pb.concept.trim() || title || 'Pago').slice(0, 200),
+            provider: conn.provider,
+            connectionId: conn.id,
+        };
+    }
+
+    /** Los valores del registro del cliente CON calculados y resúmenes. */
+    private async recordValues(link: { tenantId: number; listId: number; recordId: number }): Promise<Record<string, unknown> | null> {
+        if (this.records_) {
+            const rec = await this.records_
+                .get(link.tenantId, { userId: 0, role: 'admin' }, String(link.listId), link.recordId)
+                .catch(() => null);
+            return rec ? (rec.data as Record<string, unknown>) : null;
+        }
+        const [row] = await this.tenantDb.withTenant(link.tenantId, (tx) =>
+            tx
+                .select({ data: records.data })
+                .from(records)
+                .where(and(eq(records.id, link.recordId), eq(records.listId, link.listId), isNull(records.deletedAt)))
+                .limit(1),
+        );
+        return row ? (row.data as Record<string, unknown>) : null;
+    }
+
+    /**
+     * El cliente toca «Pagar» en un bloque «Pagos» de su portal: se crea (o se
+     * reusa) un link de pago por el monto del registro y se le devuelve la URL
+     * del checkout. Nada de lo que manda el navegador decide el monto: sólo
+     * el id del bloque, que tiene que existir en el diseño vigente.
+     */
+    async payFromPortal(actor: PortalActor, blockId: string): Promise<PortalPayResult> {
+        const link = await this.requireLink(actor);
+        const unavailable = (): NotFoundException =>
+            new NotFoundException({ code: 'portal_block_not_found', message: 'Ese pago no está disponible', data: { status: 404 } });
+        if (!this.collections) throw unavailable();
+        const ctx = await this.tenantDb.withTenant(link.tenantId, async (tx) => {
+            // ADR-S09: una empresa en solo-lectura no genera cobros nuevos.
+            await this.assertWritable(tx, link.tenantId);
+            return this.portalCtx(tx, link.tenantId, link.listId);
+        });
+        const block = layoutBlocks(ctx.layout).find((b) => b.id === blockId && b.type === 'payments');
+        if (!block) throw unavailable();
+        const offer = await this.payOffer(
+            link,
+            ctx,
+            readPortalPaymentsConfig(block.config),
+            await this.collections.teamConnections(link.tenantId),
+        );
+        if (!offer) {
+            throw new BadRequestException({
+                code: 'portal_nothing_to_pay',
+                message: 'No hay nada para pagar en este momento.',
+                data: { status: 400 },
+            });
+        }
+        // Freno por cliente: cada «Pagar» sin link vigente llama al proveedor.
+        const rl = `portalpay:${link.tenantId}:${actor.userId}`;
+        const n = await this.redis.incr(rl);
+        if (n === 1) await this.redis.expire(rl, 600);
+        if (n > 10) {
+            throw new HttpException(
+                { code: 'too_many_attempts', message: 'Demasiados intentos de pago seguidos. Prueba en unos minutos.', data: { status: 429 } },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+        const [u] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, actor.userId)).limit(1);
+        return this.collections.payForPortal(link.tenantId, {
+            connectionId: offer.connectionId,
+            listId: link.listId,
+            recordId: link.recordId,
+            title: offer.concept,
+            amount: offer.amount,
+            currency: offer.currency,
+            payerEmail: u?.email ?? null,
+        });
     }
 
     /**
@@ -1827,6 +2206,9 @@ export class PortalService implements OnModuleInit {
                     comments: null,
                     creatable_lists: await this.creatableLists(tx, link.tenantId, ctx),
                     notify_email: await this.notifyEmailPref(tx, link.tenantId, userId),
+                    // v0.1.290 — «Crear / cambiar contraseña» en su menú.
+                    password: await this.passwordStatus(tx, link.tenantId, userId, (tenantRow?.settings ?? {}) as Record<string, unknown>),
+                    payments: {},
                 },
             };
         });
@@ -1965,6 +2347,12 @@ function extractPortalPage(raw: unknown): Record<string, unknown> | null {
         return (raw as { page: Record<string, unknown> }).page;
     }
     return null;
+}
+
+/** v0.1.290 — `tenants.settings.portal_auth.password_enabled` (tolerante). */
+export function portalPasswordEnabled(tenantSettings: Record<string, unknown> | null | undefined): boolean {
+    const raw = (tenantSettings ?? {}).portal_auth;
+    return raw !== null && typeof raw === 'object' && (raw as { password_enabled?: unknown }).password_enabled === true;
 }
 
 function portalGone(): NotFoundException {

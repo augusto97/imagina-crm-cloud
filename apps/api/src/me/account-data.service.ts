@@ -8,6 +8,7 @@ import { verifyAccountPassword } from '../auth/password-check';
 import { SessionService } from '../auth/session.service';
 import { DRIZZLE, type Db } from '../db/client';
 import {
+    portalCredentials,
     activity,
     attachments,
     comments,
@@ -246,6 +247,10 @@ export class AccountDataService {
                 await tx.delete(notifications).where(and(eq(notifications.tenantId, tenantId), eq(notifications.userId, userId)));
                 await tx.delete(recordFollows).where(and(eq(recordFollows.tenantId, tenantId), eq(recordFollows.userId, userId)));
                 await tx.delete(reminders).where(and(eq(reminders.tenantId, tenantId), eq(reminders.userId, userId)));
+                // v0.1.290 — su contraseña del portal de esa empresa.
+                await tx
+                    .delete(portalCredentials)
+                    .where(and(eq(portalCredentials.tenantId, tenantId), eq(portalCredentials.userId, userId)));
                 await tx
                     .delete(memberships)
                     .where(

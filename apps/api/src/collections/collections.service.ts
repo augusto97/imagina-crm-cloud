@@ -33,7 +33,7 @@ import {
     type Role,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
@@ -178,6 +178,111 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             .map((r) => toConnection(r));
     }
 
+    /**
+     * v0.1.290 — Las conexiones de cobro del EQUIPO (no las privadas): las
+     * únicas que puede usar el portal del cliente, que no tiene una persona
+     * del equipo detrás.
+     */
+    async teamConnections(tenantId: number): Promise<CollectionConnection[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    id: connections.id,
+                    name: connections.name,
+                    provider: connections.provider,
+                    config: connections.config,
+                    visibility: connections.visibility,
+                })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])))
+                .orderBy(connections.name),
+        );
+        return rows.filter((r) => r.visibility !== 'private').map((r) => toConnection(r));
+    }
+
+    /**
+     * v0.1.290 — El cliente toca «Pagar» en su portal. El monto lo decide el
+     * SERVIDOR (lo leyó del registro el que llama), nunca el navegador. Si ya
+     * hay un link pendiente vigente de ese registro, por esa conexión y por
+     * ESE monto, se reusa (tocar «Pagar» dos veces no crea dos cobros); si el
+     * saldo cambió, nace uno nuevo. Un lock por registro+conexión evita que
+     * dos clics simultáneos creen dos links.
+     */
+    async payForPortal(
+        tenantId: number,
+        opts: {
+            connectionId: number;
+            listId: number;
+            recordId: number;
+            title: string;
+            amount: number;
+            currency: string;
+            payerEmail: string | null;
+        },
+    ): Promise<{ url: string; reused: boolean }> {
+        const amount = Math.round(opts.amount * 100) / 100;
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`portalpay:${tenantId}:${opts.recordId}:${opts.connectionId}`}))`);
+            // Vigente = sin vencimiento o con al menos una hora por delante
+            // (mandar al cliente a un checkout que vence en dos minutos no sirve).
+            const [existing] = await tx
+                .select({ url: paymentLinks.url })
+                .from(paymentLinks)
+                .where(
+                    and(
+                        eq(paymentLinks.tenantId, tenantId),
+                        eq(paymentLinks.listId, opts.listId),
+                        eq(paymentLinks.recordId, opts.recordId),
+                        eq(paymentLinks.connectionId, opts.connectionId),
+                        eq(paymentLinks.status, 'pending'),
+                        eq(paymentLinks.amount, amount),
+                        or(isNull(paymentLinks.expiresAt), gt(paymentLinks.expiresAt, new Date(Date.now() + 60 * 60 * 1000))),
+                    ),
+                )
+                .orderBy(desc(paymentLinks.createdAt))
+                .limit(1);
+            if (existing) return { url: existing.url, reused: true as const, created: null };
+            try {
+                const created = await this.createLinkInTx(tx, tenantId, {
+                    connectionId: opts.connectionId,
+                    listId: opts.listId,
+                    recordId: opts.recordId,
+                    title: opts.title,
+                    amount,
+                    currency: opts.currency,
+                    payerEmail: opts.payerEmail,
+                    expiresDays: 7,
+                    userId: null,
+                });
+                return { url: created.link.url, reused: false as const, created };
+            } catch (err) {
+                if (err instanceof CollectionError) {
+                    throw new BadRequestException({ code: 'payment_link_failed', message: err.message, data: { status: 400 } });
+                }
+                throw err;
+            }
+        });
+        if (result.created) {
+            this.afterWrite(tenantId, result.created.write);
+            await this.audit.log({
+                tenantId,
+                userId: null,
+                action: 'payment_link.create',
+                targetType: 'record',
+                targetId: opts.recordId,
+                targetLabel: result.created.link.title,
+                meta: {
+                    provider: result.created.link.provider,
+                    amount: result.created.link.amount,
+                    currency: result.created.link.currency,
+                    list_id: opts.listId,
+                    via: 'portal',
+                },
+            });
+        }
+        return { url: result.url, reused: result.reused };
+    }
+
     /** URL a la que el proveedor manda los avisos de una conexión (se crea la primera vez). */
     async hookUrlFor(tenantId: number, connectionId: number, provider: CollectionProvider): Promise<string> {
         const token = await this.ensureHook(tenantId, connectionId, provider);
@@ -225,6 +330,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                     provider: connections.provider,
                     config: connections.config,
                     secrets: connections.secrets,
+                    visibility: connections.visibility,
                 })
                 .from(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
@@ -260,6 +366,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                     name: conn?.name ?? editable.name,
                     provider,
                     config: (conn?.config ?? {}) as Record<string, unknown>,
+                    visibility: conn?.visibility,
                 }),
                 hook_url: hookUrl,
                 hook_needs_setup: provider === 'wompi',
@@ -900,7 +1007,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
 
 // ── Helpers puros ───────────────────────────────────────────────────────
 
-function toConnection(r: { id: number; name: string; provider: string; config: Record<string, unknown> }): CollectionConnection {
+function toConnection(r: { id: number; name: string; provider: string; config: Record<string, unknown>; visibility?: string }): CollectionConnection {
     const f = (r.config.fields ?? {}) as Record<string, unknown>;
     return {
         id: r.id,
@@ -908,6 +1015,7 @@ function toConnection(r: { id: number; name: string; provider: string; config: R
         provider: r.provider as CollectionProvider,
         account_label: typeof r.config.account_label === 'string' ? r.config.account_label : null,
         test_mode: f.test_mode === 'true',
+        shared: r.visibility !== 'private',
     };
 }
 

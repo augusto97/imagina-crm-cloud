@@ -98,6 +98,24 @@ export const recordBlockSpec = z.discriminatedUnion('type', [
         url: z.string().max(2000).optional().describe('Destino fijo (https://, mailto:, tel:)'),
         field: slug.optional().describe('O el campo url/email/phone del registro'),
     }),
+    z.object({
+        type: z.literal('payments'),
+        title: z.string().max(120).optional(),
+        linked_lists: z
+            .array(listRef)
+            .max(4)
+            .optional()
+            .describe('Sólo PORTAL: slugs de listas vinculadas al cliente cuyos links de pago también ve (p. ej. "facturas")'),
+        pay_button: z
+            .object({
+                connection: z.string().min(1).max(120).describe('Nombre (o id) de la conexión de cobro del equipo (Mercado Pago o Wompi)'),
+                amount_field: slug.describe('Campo numérico/moneda/calculado/resumen del registro con el monto (p. ej. el saldo)'),
+                concept: z.string().max(200).optional().describe('Concepto del pago; vacío = el título del registro'),
+                label: z.string().max(60).optional().describe('Texto del botón (default «Pagar ahora»)'),
+            })
+            .optional()
+            .describe('Sólo PORTAL: botón para que el cliente pague el monto que el SERVIDOR lee del registro'),
+    }),
 ]);
 export type RecordBlockSpec = z.infer<typeof recordBlockSpec>;
 
@@ -179,6 +197,11 @@ export interface DesignContext {
      * que el servidor acota a lo suyo). Habilita `editable`.
      */
     portal?: { userLists: Array<{ list_id: number; slug: string; name: string; fields: DesignField[] }> };
+    /**
+     * v0.1.290 — conexiones de cobro del EQUIPO (Mercado Pago / Wompi): las que
+     * puede usar el botón «Pagar» del bloque `payments` del portal.
+     */
+    collections?: Array<{ id: number; name: string; provider: string }>;
 }
 
 const NOT_IN_PORTAL = new Set(['description', 'record_stats', 'subtasks', 'portal_access']);
@@ -369,6 +392,61 @@ export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext):
                         : { label: b.label, action, target_source: 'literal', target: (b.url ?? '').replace(/^(mailto:|tel:)/i, '') },
                 };
             }
+            case 'payments': {
+                if (!ctx.portal) {
+                    if (b.pay_button || b.linked_lists?.length) {
+                        warnings.push('En la ficha del equipo «Pagos» muestra los cobros del registro y el botón «Cobrar»; `pay_button` y `linked_lists` sólo aplican al portal.');
+                    }
+                    preview.push({ type: 'payments', label: b.title ?? 'Cobros', detail: null });
+                    return { id: id('pay'), type: 'payments', ...t(b.title), config: {} };
+                }
+                const conns = ctx.collections ?? [];
+                if (conns.length === 0) {
+                    throw new AiToolError(
+                        `${where}: no hay ninguna conexión de cobro del equipo (Mercado Pago o Wompi). Sin una, el bloque «Pagos» no se le muestra al cliente: conéctala en Integraciones y vuelve a proponer.`,
+                    );
+                }
+                const linkedIds = (b.linked_lists ?? []).map((ls) => {
+                    const viaRelation = ctx.relations.find((r) => r.other_list_slug === ls && r.direction === 'reverse');
+                    if (viaRelation) return viaRelation.other_list_id;
+                    const viaUser = ctx.portal?.userLists.find((l) => l.slug === ls);
+                    if (viaUser) return viaUser.list_id;
+                    const ok = [
+                        ...new Set([
+                            ...ctx.relations.filter((r) => r.direction === 'reverse').map((r) => r.other_list_slug),
+                            ...(ctx.portal?.userLists.map((l) => l.slug) ?? []),
+                        ]),
+                    ];
+                    throw new AiToolError(
+                        `${where}: la lista «${ls}» no está vinculada al cliente (hace falta una relación de esa lista hacia ésta, o un campo persona). Vinculables: ${ok.join(', ') || 'ninguna'}.`,
+                    );
+                });
+                let payButton: Record<string, unknown> = { enabled: false };
+                let detail = linkedIds.length ? `también ${linkedIds.length} lista(s) vinculada(s)` : null;
+                if (b.pay_button) {
+                    const wanted = b.pay_button.connection.trim().toLowerCase();
+                    const conn = conns.find((c) => String(c.id) === wanted || c.name.trim().toLowerCase() === wanted);
+                    if (!conn) {
+                        throw new AiToolError(`${where}: la conexión de cobro «${b.pay_button.connection}» no existe. Conexiones: ${conns.map((c) => `${c.name} (#${c.id})`).join(', ')}.`);
+                    }
+                    const f = ownField(b.pay_button.amount_field, `${where}.pay_button.amount_field`, ['number', 'currency', 'computed', 'rollup']);
+                    payButton = {
+                        enabled: true,
+                        connection_id: conn.id,
+                        amount_field_id: f.id,
+                        concept: b.pay_button.concept ?? '',
+                        label: b.pay_button.label ?? 'Pagar ahora',
+                    };
+                    detail = `«${payButton.label as string}» por «${f.label}» con ${conn.name}${linkedIds.length ? ` · ${detail}` : ''}`;
+                }
+                preview.push({ type: 'payments', label: b.title ?? 'Pagos', detail });
+                return {
+                    id: id('pay'),
+                    type: 'payments',
+                    title: b.title ?? 'Pagos',
+                    config: { show_links: true, linked_list_ids: linkedIds, pay_button: payButton },
+                };
+            }
             default:
                 preview.push({ type: b.type, label: b.title ?? b.type, detail: null });
                 return { id: id(b.type.slice(0, 3)), type: b.type, ...t(b.title), config: b.type === 'activity' ? { mode: 'all' } : {} };
@@ -429,6 +507,11 @@ export function describeRecordLayoutV3(layout: RecordLayoutV3, fields: DesignFie
         if (b.type === 'related') return `vinculados ${String(c.view ?? 'table')}${b.title ? ` «${b.title}»` : ''}`;
         if (b.type === 'stages') return `etapas ${f?.slug ?? '?'}`;
         if (b.type === 'heading') return `título «${String(c.text ?? '')}»`;
+        if (b.type === 'payments') {
+            const pb = (c.pay_button ?? {}) as Record<string, unknown>;
+            const amount = byId.get(Number(pb.amount_field_id));
+            return `pagos${b.title ? ` «${b.title}»` : ''}${pb.enabled === true ? ` (botón «${String(pb.label ?? 'Pagar ahora')}» por ${amount?.slug ?? '?'}, conexión #${String(pb.connection_id ?? '?')})` : ''}`;
+        }
         return b.title ? `${b.type} «${b.title}»` : b.type;
     };
     return layout.pages.map((p) => ({ page: p.name, blocks: p.sections.flatMap((s) => s.blocks.flat().map(label)) }));

@@ -98,20 +98,47 @@ export class DomainsService {
             }
         }
         if (!row || row.archivedAt !== null) return { tenant: null };
+        return { tenant: this.bootTenant(row, row.portalDomain === host ? 'portal' : 'app') };
+    }
 
-        const parsed = brandingSchema.safeParse((row.settings as Record<string, unknown>)?.branding ?? {});
+    /**
+     * v0.1.290 — La empresa de la pantalla de entrar del portal: la del dominio
+     * (si se entró por uno de sus dominios) o, en el dominio de la plataforma,
+     * la del parámetro `?empresa=` del enlace de entrada. El dominio SIEMPRE
+     * gana: en el dominio de Acme un `?empresa=otra` no cambia de empresa.
+     */
+    async resolvePortalTenant(rawHost: string | undefined, slug?: string | null): Promise<PublicBoot> {
+        const byHost = await this.resolveHost(rawHost);
+        if (byHost.tenant || !slug) return byHost;
+        // En el dominio propio de una empresa que no se resolvió (archivada,
+        // por ejemplo) no se acepta otra por parámetro.
+        if (await this.isCustomDomainHost(rawHost)) return { tenant: null };
+        const clean = slug.trim().toLowerCase();
+        if (!/^[a-z0-9_-]{1,63}$/.test(clean)) return { tenant: null };
+        const [row] = await this.db
+            .select({ id: tenants.id, slug: tenants.slug, name: tenants.name, settings: tenants.settings, archivedAt: tenants.archivedAt })
+            .from(tenants)
+            .where(eq(tenants.slug, clean))
+            .limit(1);
+        if (!row || row.archivedAt !== null) return { tenant: null };
+        return { tenant: this.bootTenant(row, 'portal') };
+    }
+
+    private bootTenant(
+        row: { id: number; slug: string; name: string; settings: unknown },
+        surface: 'app' | 'portal',
+    ): NonNullable<PublicBoot['tenant']> {
+        const parsed = brandingSchema.safeParse((row.settings as Record<string, unknown> | null)?.branding ?? {});
         const b = parsed.success ? parsed.data : brandingSchema.parse({});
         return {
-            tenant: {
-                id: row.id,
-                slug: row.slug,
-                name: row.name,
-                app_name: b.app_name,
-                primary_color: b.primary_color,
-                // URL firmada: el visitante todavía no tiene sesión.
-                logo_url: b.logo_file_id !== null ? this.files.signedUrl(row.id, b.logo_file_id, 3600) : null,
-                surface: row.portalDomain === host ? 'portal' : 'app',
-            },
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            app_name: b.app_name,
+            primary_color: b.primary_color,
+            // URL firmada: el visitante todavía no tiene sesión.
+            logo_url: b.logo_file_id !== null ? this.files.signedUrl(row.id, b.logo_file_id, 3600) : null,
+            surface,
         };
     }
 
