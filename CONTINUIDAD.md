@@ -574,7 +574,7 @@ versión publicada: **v0.1.286** (auditoría integral II: decenas de fallas real
   portal, formularios blindados contra abuso de subidas. En la verificación
   final apareció y se corrigió una falla que tumbaba el proceso si Postgres
   cortaba una conexión dentro de una transacción. Verificado: 1212 pruebas del
-  servidor, 339 del front, 202 de shared, y un segundo recorrido en el navegador
+  servidor, 352 del front, 202 de shared, y un segundo recorrido en el navegador
   (claro, oscuro, celular) con 0 errores de consola, 0 pedidos fallidos y 0
   desbordes. Migración 0073 (visibilidad de comentarios y subidas de
   formularios). Variables nuevas opcionales: `DB_STATEMENT_TIMEOUT_MS`,
