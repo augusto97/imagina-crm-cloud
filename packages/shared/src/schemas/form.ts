@@ -74,6 +74,62 @@ export type FormCondition = z.infer<typeof formConditionSchema>;
 
 const itemIdSchema = z.string().regex(/^[a-z0-9]{4,24}$/);
 
+/**
+ * Qué archivos acepta una pregunta de archivos. Sea cual sea la elección,
+ * los ejecutables y lo que un navegador interpretaría como página (`.exe`,
+ * `.html`, `.svg`, scripts…) se rechazan siempre: un formulario público es
+ * una puerta abierta a cualquiera.
+ */
+export const FORM_FILE_ACCEPTS = ['any', 'images', 'pdf', 'images_pdf', 'documents'] as const;
+export type FormFileAccept = (typeof FORM_FILE_ACCEPTS)[number];
+
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'avif', 'bmp'];
+const DOC_EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'txt', 'csv', 'rtf'];
+
+export const FORM_FILE_ACCEPT_INFO: Record<FormFileAccept, { label: string; extensions: readonly string[] | null }> = {
+    any: { label: 'Cualquier archivo (salvo programas)', extensions: null },
+    images: { label: 'Imágenes', extensions: IMAGE_EXTS },
+    pdf: { label: 'PDF', extensions: ['pdf'] },
+    images_pdf: { label: 'Imágenes o PDF', extensions: [...IMAGE_EXTS, 'pdf'] },
+    documents: { label: 'Documentos (PDF, Word, Excel, texto)', extensions: DOC_EXTS },
+};
+
+/** Extensiones que un formulario público nunca recibe. */
+export const FORM_BLOCKED_EXTENSIONS: readonly string[] = [
+    'exe', 'msi', 'msp', 'mst', 'bat', 'cmd', 'com', 'scr', 'pif', 'cpl', 'dll', 'sys', 'drv', 'ocx',
+    'ps1', 'psm1', 'vbs', 'vbe', 'js', 'mjs', 'jse', 'wsf', 'wsh', 'hta', 'jar', 'class', 'apk', 'aab',
+    'app', 'dmg', 'pkg', 'deb', 'rpm', 'sh', 'bash', 'zsh', 'csh', 'ksh', 'run', 'bin', 'so', 'dylib',
+    'lnk', 'reg', 'gadget', 'inf', 'iso', 'img', 'vhd', 'vhdx', 'html', 'htm', 'xhtml', 'shtml', 'svg',
+    'svgz', 'php', 'phtml', 'asp', 'aspx', 'jsp', 'cgi', 'pl', 'py', 'rb', 'xap', 'appx', 'msix',
+];
+
+const BLOCKED_MIME = /(x-msdownload|x-msdos-program|x-executable|x-sh|x-shellscript|javascript|ecmascript|html|svg|x-php|java-archive|vnd\.android\.package-archive|x-apple-diskimage)/i;
+
+function extensionOf(filename: string): string {
+    const base = filename.trim().toLowerCase().split(/[\\/]/).pop() ?? '';
+    const dot = base.lastIndexOf('.');
+    return dot > 0 ? base.slice(dot + 1) : '';
+}
+
+/** ¿Este archivo entra en esta pregunta? (por extensión y tipo declarado). */
+export function formFileAllowed(accept: FormFileAccept, filename: string, mime: string): { ok: true } | { ok: false; reason: string } {
+    const ext = extensionOf(filename);
+    if (FORM_BLOCKED_EXTENSIONS.includes(ext) || BLOCKED_MIME.test(mime)) {
+        return { ok: false, reason: 'Ese tipo de archivo no se puede enviar por un formulario.' };
+    }
+    const allowed = FORM_FILE_ACCEPT_INFO[accept].extensions;
+    if (allowed && !allowed.includes(ext)) {
+        return { ok: false, reason: `Este campo sólo acepta: ${FORM_FILE_ACCEPT_INFO[accept].label}.` };
+    }
+    return { ok: true };
+}
+
+/** Atributo `accept` del selector de archivos (vacío = cualquiera). */
+export function formAcceptAttribute(accept: FormFileAccept): string {
+    const exts = FORM_FILE_ACCEPT_INFO[accept].extensions;
+    return exts ? exts.map((e) => `.${e}`).join(',') : '';
+}
+
 export const formFieldItemSchema = z.object({
     id: itemIdSchema,
     type: z.literal('field'),
@@ -91,6 +147,8 @@ export const formFieldItemSchema = z.object({
     hidden: z.boolean().default(false),
     /** Selección: botones de opción, lista desplegable o casillas. */
     display: z.enum(['auto', 'radio', 'dropdown']).default('auto'),
+    /** Archivos: qué tipos acepta esta pregunta. */
+    accept: z.enum(FORM_FILE_ACCEPTS).default('any'),
     show_if: formConditionSchema.nullable().default(null),
 });
 export type FormFieldItem = z.infer<typeof formFieldItemSchema>;
@@ -165,6 +223,13 @@ export interface FormDto {
     config: FormConfig;
     /** Dirección pública relativa (`/api/v1/public/f/:token`), con o sin publicar. */
     public_path: string;
+    /**
+     * La dirección ABSOLUTA para compartir e insertar: por el dominio propio
+     * de la empresa si lo tiene y responde (si no, el de la plataforma).
+     */
+    public_url?: string;
+    /** El origen de esa dirección (para el script que ajusta el alto al insertarlo). */
+    public_origin?: string;
     submissions_count: number;
     last_submitted_at: string | null;
     created_at: string;
@@ -218,6 +283,9 @@ export interface PublicFormFieldItem {
         currency?: string;
         default_country?: string;
         max_length?: number;
+        /** Archivos: atributo `accept` del selector y su descripción. */
+        accept?: string;
+        accept_label?: string;
     };
     show_if: FormCondition | null;
 }
@@ -433,6 +501,10 @@ function publicField(item: FormFieldItem, field: FormFieldLike): PublicFormField
     if (max_length !== undefined) config.max_length = max_length;
     if (typeof cfg.currency === 'string') config.currency = cfg.currency;
     if (typeof cfg.default_country === 'string') config.default_country = cfg.default_country;
+    if (type === 'file') {
+        config.accept = formAcceptAttribute(item.accept);
+        config.accept_label = FORM_FILE_ACCEPT_INFO[item.accept].label;
+    }
     return {
         id: item.id,
         type: 'field',

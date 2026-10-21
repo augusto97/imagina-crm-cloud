@@ -159,7 +159,7 @@ export class PlatformService {
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
             this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'))).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(inArray(automations.tenantId, ids)).groupBy(automations.tenantId)),
-            this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(and(inArray(attachments.tenantId, ids), isNull(attachments.storageConnectionId))).groupBy(attachments.tenantId)),
+            this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(and(inArray(attachments.tenantId, ids), isNull(attachments.storageConnectionId), isNull(attachments.pendingFormId))).groupBy(attachments.tenantId)),
             // Correos de plataforma del mes en curso (ADR-S18): lookup por PK,
             // acotado a los ids de ESTA página (mismo criterio de v0.1.115).
             this.countByTenant(
@@ -332,7 +332,7 @@ export class PlatformService {
             .from(attachments)
             // v0.1.268 (ADR-S36) — sólo lo del servidor de la plataforma: lo
             // que está en el bucket PROPIO de la empresa es suyo, no se toca.
-            .where(and(eq(attachments.tenantId, id), isNull(attachments.storageConnectionId)));
+            .where(and(eq(attachments.tenantId, id), isNull(attachments.storageConnectionId), isNull(attachments.pendingFormId)));
 
         await this.db.transaction(async (tx: Tx) => {
             // Orden por dependencias, hijas primero. La lista es EXPLÍCITA (no

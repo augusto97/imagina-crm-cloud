@@ -35,12 +35,18 @@ import {
     type SubmitFormResult,
     type UpdateFormInput,
     readStoreListMarker,
+    addDaysYmd,
+    formFileAllowed,
+    resolveTimeZone,
+    zonedInstant,
+    type FormFieldItem,
 } from '@imagina-base/shared';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { forms, tenants, type FormRow } from '../db/schema';
+import { attachments, forms, tenants, type FormRow } from '../db/schema';
+import { DomainsService } from '../domains/domains.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
@@ -81,6 +87,15 @@ const UPLOAD_LIMITS = [
     { scope: 'ip', window: 600, max: 30 },
     { scope: 'form', window: 3600, max: 400 },
 ] as const;
+/**
+ * Presupuesto de BYTES subidos: además de cuántos archivos, cuánto pesan. Sin
+ * esto 30 archivos de 20 MB por IP cada 10 minutos llenaban el almacenamiento
+ * del plan de la empresa en un rato.
+ */
+export const UPLOAD_BYTE_LIMITS = [
+    { scope: 'ip', window: 600, max: 60 * 1024 * 1024 },
+    { scope: 'form', window: 3600, max: 1024 * 1024 * 1024 },
+] as const;
 
 const notFound = () => new NotFoundException({ code: 'not_found', message: 'Este formulario no existe', data: { status: 404 } });
 
@@ -88,11 +103,15 @@ function badRequest(code: string, message: string, extra: Record<string, unknown
     return new BadRequestException({ code, message, data: { status: 400, ...extra } });
 }
 
-/** ¿El formulario ya pasó su fecha de cierre? (vale hasta el final de ese día). */
-function pastCloseDate(closesAt: string | null, now = new Date()): boolean {
-    if (!closesAt) return false;
-    const end = Date.parse(`${closesAt}T23:59:59.999Z`);
-    return Number.isFinite(end) && now.getTime() > end;
+/**
+ * ¿El formulario ya pasó su fecha de cierre? Vale hasta el final de ese día
+ * en la ZONA HORARIA de la empresa (antes, en UTC: en Colombia cerraba a las
+ * 7 p. m. del día elegido).
+ */
+export function pastCloseDate(closesAt: string | null, timeZone: string, now = new Date()): boolean {
+    if (!closesAt || !/^\d{4}-\d{2}-\d{2}$/.test(closesAt)) return false;
+    const end = zonedInstant(addDaysYmd(closesAt, 1), timeZone);
+    return now.getTime() >= end.getTime();
 }
 
 interface ResolvedForm {
@@ -101,6 +120,7 @@ interface ResolvedForm {
     readOnly: boolean;
     tenantSettings: Record<string, unknown>;
     tenantName: string;
+    timeZone: string;
 }
 
 @Injectable()
@@ -121,6 +141,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly billing?: BillingService,
         // v0.1.285 (ADR-S44) — una respuesta que no se pudo guardar avisa a la empresa.
         @Optional() private readonly incidents?: IncidentHub,
+        @Optional() private readonly domains?: DomainsService,
     ) {}
 
     onModuleInit(): void {
@@ -140,14 +161,16 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
     // ─────────────────────────── Administración ───────────────────────────
 
-    private toDto(row: FormRow): FormDto {
+    private toDto(row: FormRow, base?: string): FormDto {
+        const path = `/api/v1/public/f/${row.token}`;
         return {
             id: row.id,
             list_id: row.listId,
             name: row.name,
             enabled: row.enabled,
             config: readConfig(row.config),
-            public_path: `/api/v1/public/f/${row.token}`,
+            public_path: path,
+            ...(base ? { public_url: `${base}${path}`, public_origin: base } : {}),
             submissions_count: row.submissionsCount,
             last_submitted_at: row.lastSubmittedAt ? row.lastSubmittedAt.toISOString() : null,
             created_at: row.createdAt.toISOString(),
@@ -164,12 +187,26 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 .where(and(eq(forms.tenantId, tenantId), eq(forms.listId, list.id)))
                 .orderBy(asc(forms.id)),
         );
-        return rows.map((r) => this.toDto(r));
+        const base = await this.publicBase(tenantId);
+        return rows.map((r) => this.toDto(r, base));
     }
 
     async get(tenantId: number, listIdOrSlug: string, id: number): Promise<FormDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        return this.toDto(await this.load(tenantId, list.id, id));
+        return this.toDto(await this.load(tenantId, list.id, id), await this.publicBase(tenantId));
+    }
+
+    /**
+     * El origen por el que se comparte el formulario: el dominio propio de la
+     * empresa si lo tiene y RESPONDE (ADR-S17), si no el de la plataforma.
+     */
+    private async publicBase(tenantId: number): Promise<string | undefined> {
+        if (!this.domains) return undefined;
+        try {
+            return await this.domains.baseUrlFor(tenantId, 'app');
+        } catch {
+            return undefined;
+        }
     }
 
     private async load(tenantId: number, listId: number, id: number): Promise<FormRow> {
@@ -208,7 +245,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 })
                 .returning(),
         );
-        return this.toDto(row!);
+        return this.toDto(row!, await this.publicBase(tenantId));
     }
 
     async update(tenantId: number, listIdOrSlug: string, id: number, input: UpdateFormInput): Promise<FormDto> {
@@ -230,7 +267,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.update(forms).set(patch).where(and(eq(forms.tenantId, tenantId), eq(forms.id, current.id))).returning(),
         );
-        return this.toDto(row!);
+        return this.toDto(row!, await this.publicBase(tenantId));
     }
 
     async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<{ name: string }> {
@@ -290,6 +327,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             }),
             tenantSettings: (hit.tenantSettings as Record<string, unknown> | null) ?? {},
             tenantName: hit.tenantName,
+            timeZone: resolveTimeZone(
+                ((hit.tenantSettings as Record<string, unknown> | null)?.format as { timezone?: unknown } | undefined)?.timezone,
+            ),
         };
     }
 
@@ -297,7 +337,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private closedReason(f: ResolvedForm): string | null {
         const s = f.config.settings;
         if (f.readOnly) return s.closed_message;
-        if (pastCloseDate(s.closes_at)) return s.closed_message;
+        if (pastCloseDate(s.closes_at, f.timeZone)) return s.closed_message;
         if (s.max_submissions !== null && f.row.submissionsCount >= s.max_submissions) return s.closed_message;
         return null;
     }
@@ -348,28 +388,57 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         };
     }
 
-    /** Sube UN archivo para un campo de archivos del formulario. */
+    /**
+     * Sube UN archivo para una pregunta de archivos del formulario. Exige el
+     * sello de la página (como el envío: no se sube nada sin haberla cargado),
+     * que el archivo sea de un tipo que esa pregunta acepta (y nunca un
+     * programa), y respeta el presupuesto de archivos y de BYTES por IP y por
+     * formulario. El archivo queda «pendiente» —fuera de la cuota del plan—
+     * hasta que llega con su respuesta; si nunca llega, el barrido lo borra.
+     */
     async upload(
         token: string,
         ip: string,
+        input: { stamp: string; field: string },
         part: { filename: string; mimetype: string; file: Readable & { truncated?: boolean } },
     ): Promise<{ token: string; name: string; size: number }> {
         const f = await this.resolve(token);
         if (this.closedReason(f)) throw new ForbiddenException({ code: 'form_closed', message: f.config.settings.closed_message, data: { status: 403 } });
+        this.checkStamp(f.row.id, input.stamp, { minFill: false });
         const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
         const fileIds = new Set(fields.filter((x) => x.type === 'file').map((x) => x.id));
-        if (!f.config.items.some((i) => i.type === 'field' && fileIds.has(i.field_id))) {
-            throw badRequest('no_file_field', 'Este formulario no pide archivos.');
+        const item = f.config.items.find(
+            (i): i is FormFieldItem => i.type === 'field' && fileIds.has(i.field_id) && !i.hidden && String(i.field_id) === input.field,
+        );
+        if (!item) throw badRequest('no_file_field', 'Esta pregunta no pide archivos.');
+        const filename = part.filename || 'archivo';
+        const mime = part.mimetype || 'application/octet-stream';
+        const allowed = formFileAllowed(item.accept, filename, mime);
+        if (!allowed.ok) {
+            part.file.resume();
+            throw badRequest('file_type_not_allowed', allowed.reason);
         }
         await this.enforce(UPLOAD_LIMITS, f.row.id, ip, 'archivos');
-        const dto = await this.files.upload(f.row.tenantId, 0, part.filename || 'archivo', part.mimetype || 'application/octet-stream', part.file);
+        await this.enforceBytes(f.row.id, ip);
+        const dto = await this.files.upload(f.row.tenantId, 0, filename, mime, part.file);
         if (part.file.truncated) {
             await this.files.remove(f.row.tenantId, dto.id).catch(() => undefined);
             throw badRequest('file_too_large', 'El archivo es demasiado grande.');
         }
+        await this.addBytes(f.row.id, ip, dto.size_bytes);
+        // Pendiente hasta que llegue la respuesta: no ocupa la cuota del plan
+        // (si no, cinco archivos sin enviar trababan las subidas del equipo).
+        await this.tenantDb
+            .withTenant(f.row.tenantId, (tx) =>
+                tx
+                    .update(attachments)
+                    .set({ pendingFormId: f.row.id })
+                    .where(and(eq(attachments.tenantId, f.row.tenantId), eq(attachments.id, dto.id))),
+            )
+            .catch(() => undefined);
         if (!dto.external && this.billing) {
             try {
-                await this.billing.assertCanUpload(f.row.tenantId, 0);
+                await this.billing.assertCanUpload(f.row.tenantId, dto.size_bytes);
             } catch {
                 await this.files.remove(f.row.tenantId, dto.id).catch(() => undefined);
                 throw badRequest('storage_full', 'No se pudo recibir el archivo en este momento.');
@@ -403,10 +472,18 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors });
         }
 
+        // Cupo: se RESERVA el lugar antes de crear el registro con un UPDATE
+        // condicional (antes se contaba y se sumaba después: dos envíos a la
+        // vez pasaban los dos el último lugar).
+        if (!(await this.reserveSlot(f))) {
+            throw new ForbiddenException({ code: 'form_closed', message: f.config.settings.closed_message, data: { status: 403 } });
+        }
+
         let created;
         try {
             created = await this.records.create(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), { data });
         } catch (err) {
+            await this.releaseSlot(f);
             // Lo que el visitante puede corregir (un dato inválido) vuelve con
             // su motivo; lo demás —el plan lleno, un campo obligatorio de la
             // lista que el formulario no pregunta— es de la empresa, no de él.
@@ -440,17 +517,18 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         }
 
         this.incidents?.resolve(f.row.tenantId, `form:${f.row.id}`);
-        await this.tenantDb
-            .withTenant(f.row.tenantId, (tx) =>
-                tx
-                    .update(forms)
-                    .set({ submissionsCount: sql`${forms.submissionsCount} + 1`, lastSubmittedAt: new Date() })
-                    .where(and(eq(forms.tenantId, f.row.tenantId), eq(forms.id, f.row.id))),
-            )
-            .catch(() => undefined);
         if (attachmentIds.length > 0) {
             await this.redis
                 .zrem(PENDING_UPLOADS_KEY, ...attachmentIds.map((id) => `${f.row.tenantId}:${id}`))
+                .catch(() => undefined);
+            // Llegaron con su respuesta: desde ahora cuentan para el plan.
+            await this.tenantDb
+                .withTenant(f.row.tenantId, (tx) =>
+                    tx
+                        .update(attachments)
+                        .set({ pendingFormId: null })
+                        .where(and(eq(attachments.tenantId, f.row.tenantId), inArray(attachments.id, attachmentIds))),
+                )
                 .catch(() => undefined);
         }
         this.dispatcher.dispatch({
@@ -464,15 +542,85 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return { ok: true, redirect_url: f.config.settings.redirect_url };
     }
 
-    private checkStamp(formId: number, stamp: string): void {
-        const [tsRaw, sig] = stamp.split('.');
+    private checkStamp(formId: number, stamp: string, opts: { minFill?: boolean } = {}): void {
+        const [tsRaw, sig] = (stamp ?? '').split('.');
         const ts = Number(tsRaw);
         if (!sig || !Number.isFinite(ts) || !this.files.verifyParts(sig, 'formstamp', formId, ts)) {
             throw badRequest('form_stale', 'La página del formulario venció: recárgala y vuelve a enviar.');
         }
         const age = Date.now() - ts;
         if (age > STAMP_TTL_MS) throw badRequest('form_stale', 'La página del formulario venció: recárgala y vuelve a enviar.');
-        if (age < MIN_FILL_MS) throw badRequest('form_too_fast', 'Espera un momento y vuelve a enviar.');
+        if (opts.minFill !== false && age < MIN_FILL_MS) throw badRequest('form_too_fast', 'Espera un momento y vuelve a enviar.');
+    }
+
+    /** Reserva un lugar del cupo (o sólo cuenta, si no hay cupo). false = lleno. */
+    private async reserveSlot(f: ResolvedForm): Promise<boolean> {
+        const max = f.config.settings.max_submissions;
+        const rows = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+            tx
+                .update(forms)
+                .set({ submissionsCount: sql`${forms.submissionsCount} + 1`, lastSubmittedAt: new Date() })
+                .where(
+                    and(
+                        eq(forms.tenantId, f.row.tenantId),
+                        eq(forms.id, f.row.id),
+                        ...(max !== null ? [sql`${forms.submissionsCount} < ${max}`] : []),
+                    ),
+                )
+                .returning({ id: forms.id }),
+        );
+        return rows.length > 0;
+    }
+
+    /** Devuelve el lugar reservado cuando el registro no se pudo crear. */
+    private async releaseSlot(f: ResolvedForm): Promise<void> {
+        await this.tenantDb
+            .withTenant(f.row.tenantId, (tx) =>
+                tx
+                    .update(forms)
+                    .set({ submissionsCount: sql`greatest(${forms.submissionsCount} - 1, 0)` })
+                    .where(and(eq(forms.tenantId, f.row.tenantId), eq(forms.id, f.row.id))),
+            )
+            .catch(() => undefined);
+    }
+
+    /** Presupuesto de bytes por IP y por formulario (Redis caído → no frena). */
+    private async enforceBytes(formId: number, ip: string): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+        for (const { scope, window, max } of UPLOAD_BYTE_LIMITS) {
+            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const key = `formrl:bytes:${window}:${Math.floor(now / window)}:${who}`;
+            let used = 0;
+            try {
+                used = Number((await this.redis.get(key)) ?? 0);
+            } catch {
+                return;
+            }
+            if (used >= max) {
+                throw new HttpException(
+                    {
+                        code: 'rate_limited',
+                        message: 'Se subieron demasiados archivos en poco tiempo. Espera un rato y vuelve a intentar.',
+                        data: { status: 429 },
+                    },
+                    HttpStatus.TOO_MANY_REQUESTS,
+                );
+            }
+        }
+    }
+
+    private async addBytes(formId: number, ip: string, bytes: number): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+        for (const { scope, window } of UPLOAD_BYTE_LIMITS) {
+            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const key = `formrl:bytes:${window}:${Math.floor(now / window)}:${who}`;
+            await this.redis
+                .multi()
+                .incrby(key, Math.max(0, Math.trunc(bytes)))
+                .expire(key, window)
+                .exec()
+                .catch(() => undefined);
+        }
     }
 
     /**
