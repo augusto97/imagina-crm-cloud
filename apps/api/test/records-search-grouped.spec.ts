@@ -124,6 +124,9 @@ describe('Búsqueda, orden y vista agrupada (v0.1.286)', () => {
         // Teléfono: con o sin separadores.
         expect(await search('300-111-2233')).toEqual(['Pedro Muñoz']);
         expect(await search('3001112233')).toEqual(['Pedro Muñoz']);
+        expect(await search('(300) 111-2233')).toEqual(['Pedro Muñoz']);
+        // Un código con signos es UNA palabra (no «p» y «1» sueltas).
+        expect(await search('pérez-x')).toEqual([]);
         // Sin letras ni números: la cadena tal cual (no revienta).
         expect(await search('%%')).toEqual([]);
 

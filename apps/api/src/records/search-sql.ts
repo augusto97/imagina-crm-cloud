@@ -1,7 +1,6 @@
 import {
     jsonbKeyForField,
     SEARCHABLE_FIELD_TYPES,
-    searchTokenDigits,
     searchTokenPattern,
     searchTokens,
     type Field,
@@ -14,8 +13,8 @@ import { records } from '../db/schema';
  * la tabla, edición masiva, export). Misma regla que la búsqueda in-memory del
  * navegador (`searchTokens` en shared):
  *
- *  - las palabras se exigen TODAS (AND), cada una en cualquier campo buscable
- *    o en la descripción del registro (v0.1.188);
+ *  - las palabras (separadas por espacios) se exigen TODAS (AND), cada una en
+ *    cualquier campo buscable o en la descripción del registro (v0.1.188);
  *  - sin distinguir acentos ni mayúsculas: «alvaro» encuentra «Álvaro».
  *
  * Cómo: se juntan los textos buscables de la fila en UNA cadena y se compara
@@ -39,7 +38,7 @@ export function compileSearch(fields: readonly Field[], search: string | undefin
 
     const parts: SQL[] = targets.map((f) => sql`(${records.data} ->> ${jsonbKeyForField(f.id)})`);
     parts.push(sql`${records.descriptionText}`);
-    if (tokens.some((t) => searchTokenDigits(t) !== '')) {
+    if (tokens.some((t) => /\d/.test(t))) {
         for (const f of targets) {
             if (f.type !== 'phone') continue;
             parts.push(sql`regexp_replace(${records.data} ->> ${jsonbKeyForField(f.id)}, '[^0-9]+', '', 'g')`);
