@@ -5,6 +5,7 @@ import {
     CalendarClock,
     CheckSquare,
     CircleDollarSign,
+    Clock,
     Eye,
     GitBranch,
     Hash,
@@ -56,6 +57,7 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     lookup: Eye,
     rollup: Calculator,
     ai: Sparkles,
+    time_tracked: Clock,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */

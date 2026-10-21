@@ -352,7 +352,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.290** (cotización/factura con IVA, ítems editables en la ficha y documentos congelados, addendum ADR-S35), en `main`.
+versión publicada: **v0.1.291** (ficha con historial por campo, reacciones e hilos, visor de adjuntos y registro de tiempo, ADR-S49), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -360,8 +360,8 @@ versión publicada: **v0.1.290** (cotización/factura con IVA, ítems editables 
   Google. Plan: seis entregas trabajadas en paralelo en copias aisladas y
   publicadas en el orden en que terminan — **tabla** (hecha, v0.1.287),
   **automatizaciones** (hecha, v0.1.288: esperar, repetir por vinculados, probar paso a paso,
-  respuesta de webhook, programado por registro, duplicar, versiones), ficha
-  (historial por campo con restaurar, reacciones e hilos, vista previa de
+  respuesta de webhook, programado por registro, duplicar, versiones), **ficha**
+  (hecha, v0.1.291: historial por campo con restaurar, reacciones e hilos, vista previa de
   adjuntos, registro de tiempo), **portal y formularios** (hecha, v0.1.289: varias páginas, captcha,
   confirmación por correo, contraseña del portal, pagar desde el portal),
   tableros (barras apiladas, enlace público, exportar widget, envío programado,
@@ -574,6 +574,16 @@ versión publicada: **v0.1.290** (cotización/factura con IVA, ítems editables 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.291** — **Ficha del registro** (ADR-S49), quinta entrega
+  del «hazlo todo». Historial de un campo con «Restaurar este valor»;
+  reacciones y respuestas en los comentarios (la respuesta hereda la
+  visibilidad del comentario raíz, aviso «respondió»); visor de adjuntos a
+  pantalla completa (imagen, PDF, video, audio, texto) servido por el API para
+  no abrir la CSP; registro de tiempo con cronómetro (uno por persona), cargas a
+  mano, chip en la barra superior y el campo derivado «Tiempo registrado» que
+  filtra, ordena y suma. Migración 0077 (era la 0075 en la rama del trabajo). De
+  paso: la tarjeta de acceso al portal ya no se muestra (ni falla con 403) a
+  quien no tiene `manage_lists`. Queda: tableros (última entrega del plan).
 - **2026-10-21 · v0.1.290** — **Cotización y factura con IVA, ítems editables
   en la ficha y documentos congelados** (addendum ADR-S35), cuarta entrega del
   «hazlo todo» y los tres pendientes de PDF que el usuario dejó a mi criterio.

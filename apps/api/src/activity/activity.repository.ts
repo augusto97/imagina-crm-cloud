@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, lt, type SQL } from 'drizzle-orm';
+import { and, desc, eq, lt, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { activity, users } from '../db/schema';
 
@@ -35,6 +35,48 @@ export class ActivityRepository {
             .update(activity)
             .set({ diff, createdAt: new Date() })
             .where(and(eq(activity.tenantId, tenantId), eq(activity.id, id)));
+    }
+
+    /**
+     * v0.1.291 — Los cambios de UN campo de un registro (`diff ? 'fN'`), de lo
+     * más nuevo a lo más viejo, keyset por id. Recorre el índice
+     * `(tenant_id, record_id, id DESC)` y corta en el LIMIT: no lee el
+     * historial entero del registro.
+     */
+    fieldHistory(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        recordId: number,
+        key: string,
+        opts: { cursor?: number; limit: number },
+    ): Promise<ActivityRow[]> {
+        return tx
+            .select({
+                id: activity.id,
+                tenantId: activity.tenantId,
+                listId: activity.listId,
+                recordId: activity.recordId,
+                userId: activity.userId,
+                action: activity.action,
+                diff: activity.diff,
+                createdAt: activity.createdAt,
+                userName: users.name,
+            })
+            .from(activity)
+            .leftJoin(users, eq(users.id, activity.userId))
+            .where(
+                and(
+                    eq(activity.tenantId, tenantId),
+                    eq(activity.recordId, recordId),
+                    eq(activity.listId, listId),
+                    // `?` de jsonb con la clave bindeada (jamás interpolada).
+                    sql`${activity.diff} ? ${key}`,
+                    opts.cursor !== undefined ? lt(activity.id, opts.cursor) : undefined,
+                ),
+            )
+            .orderBy(desc(activity.id))
+            .limit(opts.limit);
     }
 
     /** Log por lista (o por record si se pasa recordId), keyset desc por id. */

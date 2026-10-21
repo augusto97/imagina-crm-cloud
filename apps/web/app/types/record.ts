@@ -181,6 +181,8 @@ export const GROUPABLE_FIELD_TYPES = [
     // cliente", "los clientes por su saldo").
     'lookup',
     'rollup',
+    // v0.1.291 — el tiempo registrado (minutos) agrupa como número.
+    'time_tracked',
 ] as const;
 
 export type GroupableFieldType = (typeof GROUPABLE_FIELD_TYPES)[number];

@@ -6,6 +6,7 @@ import {
     HttpCode,
     Inject,
     Param,
+    ParseIntPipe,
     Patch,
     Post,
     Query,
@@ -19,6 +20,8 @@ import {
     layoutDataRequestSchema,
     issueMagicLinkSchema,
     portalCommentSchema,
+    toggleCommentReactionSchema,
+    type ToggleCommentReactionInput,
     portalCreateRecordSchema,
     portalPreferencesSchema,
     portalRequestAccessSchema,
@@ -283,6 +286,18 @@ export class PortalController {
         @Body(new ZodValidationPipe(portalCommentSchema)) input: PortalCommentInput,
     ): Promise<{ data: PortalCommentDto }> {
         return { data: await this.portal.createMyComment(portalActor(req), input) };
+    }
+
+    /** v0.1.291 — El cliente reacciona a un comentario que ve (toggle). */
+    @Post('portal/me/comments/:id/reactions')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    async toggleMyReaction(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(toggleCommentReactionSchema)) input: ToggleCommentReactionInput,
+    ): Promise<{ data: { reactions: Array<{ emoji: string; count: number; mine: boolean }> } }> {
+        return { data: await this.portal.toggleMyReaction(portalActor(req), id, input.emoji) };
     }
 
     @Get('portal/me/activity')

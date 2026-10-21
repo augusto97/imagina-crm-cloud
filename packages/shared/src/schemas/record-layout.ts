@@ -83,6 +83,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'portal_access',
     // v0.1.251 — cobros con Mercado Pago / Wompi (links de pago del registro).
     'payments',
+    // v0.1.291 — registro de tiempo (cronómetro, entradas y total por persona).
+    'time_tracking',
 ] as const;
 export const layoutBlockTypeSchema = z.enum(LAYOUT_BLOCK_TYPES);
 export type LayoutBlockType = z.infer<typeof layoutBlockTypeSchema>;
@@ -351,6 +353,11 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
         { key: 'big', label: 'Cifra grande' },
     ],
     duration: [
+        { key: 'number', label: 'Duración' },
+        { key: 'big', label: 'Cifra grande' },
+    ],
+    // v0.1.291 — el tiempo registrado se lee como una duración.
+    time_tracked: [
         { key: 'number', label: 'Duración' },
         { key: 'big', label: 'Cifra grande' },
     ],

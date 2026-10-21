@@ -90,7 +90,7 @@ function HeadButton({ label, onClick, danger = false, children }: { label: strin
 
 // ── Bloque ───────────────────────────────────────────────────────────────
 
-const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed']);
+const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed', 'time_tracking']);
 
 function BlockInspector({ block }: { block: LayoutBlock }): JSX.Element {
     const ed = useEditor();
@@ -201,6 +201,8 @@ function BlockForm(props: FormProps): JSX.Element | null {
         case 'payments':
             // v0.1.289 — en el portal se configura qué ve y paga el cliente.
             return <PaymentsForm {...props} />;
+        case 'time_tracking':
+            return <InfoForm text={__('El cronómetro del registro (uno en curso por persona), las horas cargadas a mano y el total por persona. Para sumarlo en tablas y tableros, agrega a la lista un campo «Tiempo registrado».')} />;
         default:
             return null;
     }

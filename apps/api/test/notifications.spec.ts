@@ -97,7 +97,7 @@ describe('v0.1.276 — avisos (puro)', () => {
 
     it('preferencias: valores por defecto y basura tolerada', () => {
         const p = readNotificationPrefs(undefined);
-        expect(p.email).toEqual({ mention: true, assigned: true, comment: false, update: false, reminder: true, failure: true });
+        expect(p.email).toEqual({ mention: true, assigned: true, comment: false, update: false, reminder: true, failure: true, reply: true });
         expect(p.digest).toBe('off');
         expect(readNotificationPrefs({ digest: 'semanal' }).digest).toBe('off');
     });
@@ -286,6 +286,29 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         const kinds = (await inbox(beto)).map((n) => n.kind);
         expect(kinds).toEqual(['assigned', 'comment', 'mention']);
         expect((await inbox(beto)).at(-1)!.body).toBe('@beto@acme.test ¿lo ves hoy?');
+    });
+
+    it('v0.1.291 — respuestas: avisan «respondió» al autor del raíz y a quienes respondieron (no un «comentó» más)', async () => {
+        const id = await create({ [`f${f.titulo!.id}`]: 'Propuesta' });
+        // Beto (manager) abre el hilo; Ana sigue el registro (lo creó) → «comentó».
+        const root = await comments.create(tenantId, manager(), 'tareas', id, { body: '¿Lo revisamos?', kind: 'note' });
+        await settle();
+        expect((await inbox(ana)).map((n) => n.kind)).toEqual(['comment']);
+        // Ana responde → Beto (autor del raíz) recibe «respondió».
+        await comments.create(tenantId, admin(), 'tareas', id, { body: 'Sí, mañana', kind: 'note', parent_id: root.id });
+        await settle();
+        const b = await inbox(beto);
+        expect(b.map((n) => n.kind)).toEqual(['reply']);
+        expect(b[0]!.title).toBe('Ana respondió en «Propuesta»');
+        // Beto vuelve a responder → Ana, que ya participó del hilo, recibe
+        // «respondió» (no un «comentó» de seguidora), y Beto nada de lo suyo.
+        await comments.create(tenantId, manager(), 'tareas', id, { body: 'Perfecto', kind: 'note', parent_id: root.id });
+        await settle();
+        expect((await inbox(ana)).map((n) => n.kind)).toEqual(['comment', 'reply']);
+        expect((await inbox(beto)).map((n) => n.kind)).toEqual(['reply']);
+        // El agente (no ve el registro) y el cliente: nada.
+        expect(await inbox(caro)).toHaveLength(0);
+        expect(await inbox(cliente)).toHaveLength(0);
     });
 
     it('bandeja: página, sin leer, marcar leídos y aislamiento entre empresas', async () => {

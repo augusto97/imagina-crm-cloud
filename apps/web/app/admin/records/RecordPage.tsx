@@ -25,6 +25,7 @@ import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
+import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { readStoreListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
 import { useRecordDraft } from '@/admin/records/recordDraft';
@@ -371,6 +372,10 @@ export function RecordPage(): JSX.Element {
                                 showTypeIcon
                                 lockedReasons={lockedReasons}
                                 hiddenSlugs={titleField ? [titleField.slug] : undefined}
+                                history={{
+                                    canRestore: canEditRecords,
+                                    onRestored: (slug, v, saved) => draft.markSaved({ [slug]: v }, saved),
+                                }}
                             />
                         )}
 
@@ -383,6 +388,11 @@ export function RecordPage(): JSX.Element {
                                 className="imcrm-mt-4"
                             />
                         )}
+
+                        {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
+                        <div className="imcrm-mt-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+                            <TimeTrackingPanel listId={listInfo.id} listKey={listInfo.slug} recordId={id} />
+                        </div>
 
                         {/* Acceso al portal del cliente — también sin
                             plantilla CRM (se auto-oculta si el portal de

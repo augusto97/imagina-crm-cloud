@@ -53,6 +53,7 @@ import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordSubtasks } from './RecordSubtasks';
+import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, useStoreRules } from './storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
@@ -567,6 +568,11 @@ export function RecordDetailDrawer({
                                             showTypeIcon
                                             lockedReasons={lockedReasons}
                                             hiddenSlugs={titleField ? [titleField.slug] : undefined}
+                                            history={{
+                                                canRestore: canEditRecords,
+                                                // Lo restaurado ya está guardado: el borrador no lo cuenta como cambio.
+                                                onRestored: (slug, v, saved) => draft.markSaved({ [slug]: v }, saved),
+                                            }}
                                         />
                                     )}
 
@@ -580,6 +586,13 @@ export function RecordDetailDrawer({
                                             onOpenRecord={openOther}
                                             className="imcrm-mt-5"
                                         />
+                                    )}
+
+                                    {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
+                                    {view.ready && (
+                                        <div className="imcrm-mt-5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+                                            <TimeTrackingPanel listId={listId} listKey={listSlug ?? String(listId)} recordId={record.id} />
+                                        </div>
                                     )}
 
                                     {/* Acceso al portal del cliente (magic link) —

@@ -1,5 +1,6 @@
 import { COMPUTED_MAX_DEPTH, type Field, type FieldType } from '@imagina-base/shared';
 import { sql, type SQL } from 'drizzle-orm';
+import { records } from '../db/schema';
 import { fieldTypedExpr, type FilterableField } from './query-builder';
 
 /**
@@ -41,12 +42,29 @@ export function withComputedExprs(
 ): Map<number, FilterableField> {
     const byId = new Map(fields.map((f) => [f.id, f]));
     const out = new Map(available);
+    // v0.1.291 — «Tiempo registrado»: la suma de `time_entries` del registro
+    // (antes que los computed: un computed puede usarlo como entrada).
+    for (const f of fields) {
+        if (f.type !== 'time_tracked' || !available.has(f.id)) continue;
+        out.set(f.id, { id: f.id, type: 'time_tracked', expr: timeTrackedExpr(), valueKind: 'numeric' });
+    }
     for (const f of fields) {
         if (f.type !== 'computed' || !available.has(f.id)) continue;
-        const expr = computedExpr(f, byId, available, new Set(), 0);
+        const expr = computedExpr(f, byId, out, new Set(), 0);
         if (expr) out.set(f.id, { id: f.id, type: 'computed', expr, valueKind: 'numeric' });
     }
     return out;
+}
+
+/**
+ * v0.1.291 — Minutos registrados en el registro de la fila (`records.id`):
+ * la subconsulta correlacionada que filtra, ordena, agrupa y suma el campo
+ * `time_tracked`, igual que la de un rollup. Un cronómetro en curso tiene
+ * `seconds = 0`, así que la suma no necesita filtrar; el índice
+ * `(record_id, seconds)` la resuelve sin tocar la tabla.
+ */
+export function timeTrackedExpr(): SQL {
+    return sql`(SELECT round(coalesce(sum(te.seconds), 0) / 60.0) FROM time_entries te WHERE te.record_id = ${records.id})`;
 }
 
 /** ¿El computed tiene una operación que se puede llevar a SQL? (para la UI/asistente). */
@@ -91,8 +109,10 @@ function inputExpr(
 ): SQL | undefined {
     if (input.type === 'computed') return computedExpr(input, byId, available, visiting, depth);
     const ff = available.get(input.id);
-    // Un rollup numérico resuelto entra con su subconsulta.
-    if (input.type === 'rollup') return ff?.expr && ff.valueKind !== 'text' ? sql`(${ff.expr})::numeric` : undefined;
+    // Un rollup numérico resuelto (o el tiempo registrado) entra con su subconsulta.
+    if (input.type === 'rollup' || input.type === 'time_tracked') {
+        return ff?.expr && ff.valueKind !== 'text' ? sql`(${ff.expr})::numeric` : undefined;
+    }
     if (NUMERIC_INPUT_TYPES.includes(input.type)) return fieldTypedExpr({ id: input.id, type: input.type });
     return undefined;
 }

@@ -64,6 +64,17 @@ export const portalCommentDtoSchema = z.object({
     author_name: z.string(),
     /** Lo escribió alguien del equipo de la empresa (no otro cliente). */
     from_team: z.boolean(),
+    /** v0.1.291 — respuesta a otro comentario (hilos de un nivel). */
+    parent_id: idSchema.nullable().default(null),
+    /**
+     * v0.1.291 — reacciones: cuántas por emoji y si una es de quien mira. Sin
+     * nombres: el portal nunca identifica a las personas del equipo.
+     */
+    reactions: z
+        .array(z.object({ emoji: z.string(), count: z.number().int().nonnegative(), mine: z.boolean() }))
+        .default([]),
+    /** v0.1.291 — el raíz se borró pero conserva sus respuestas («Comentario eliminado»). */
+    deleted: z.boolean().default(false),
 });
 export type PortalCommentDto = z.infer<typeof portalCommentDtoSchema>;
 
@@ -301,6 +312,8 @@ export type PortalUpdateMeInput = z.infer<typeof portalUpdateMeSchema>;
 /** POST /portal/me/comments — nota simple del cliente (sin threading). */
 export const portalCommentSchema = z.object({
     content: z.string().trim().min(1).max(5000),
+    /** v0.1.291 — responder a un comentario que el cliente ve. */
+    parent_id: idSchema.optional(),
 });
 export type PortalCommentInput = z.infer<typeof portalCommentSchema>;
 

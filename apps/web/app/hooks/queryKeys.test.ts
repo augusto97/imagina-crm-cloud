@@ -8,6 +8,8 @@ import { listsKeys } from '@/hooks/useLists';
 import { canonicalListId, invalidateForList, joinInflight, keepPreviousForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { descriptionKeys, setHasDescription } from '@/hooks/useRecordDescription';
+import { fieldHistoryKeys } from '@/hooks/fieldHistoryKeys';
+import { runningSeconds, timeKeys } from '@/hooks/useTimeTracking';
 
 /**
  * v0.1.114 — Regresión de la clase de bug MÁS CARA del proyecto.
@@ -55,6 +57,9 @@ describe('contrato de las queryKeys por lista', () => {
             // La descripción salió del namespace de records (cada autoguardado
             // invalidaba la lista entera) pero respeta el mismo contrato.
             descriptionKeys.forRecord(42, 7),
+            // v0.1.291 — historial por campo y registro de tiempo.
+            fieldHistoryKeys.forField(42, 7, 9),
+            timeKeys.forRecord(42, 7),
         ]) {
             expect(key[1]).toBe('42');
         }
@@ -212,5 +217,15 @@ describe('v0.1.286 — cambio de lista y arranque en frío', () => {
         expect(calls).toBe(1);
         // Sin pedido en vuelo, pide normalmente.
         expect(await joinInflight(qc, fieldsKeys.forList('42'), fieldsKeys.forList('clientes'), async () => ['x'])).toEqual(['x']);
+    });
+});
+
+describe('v0.1.291 — cronómetro', () => {
+    it('cuenta los segundos desde el inicio (también con fecha sin zona) y 0 si no corre', () => {
+        const now = Date.parse('2026-10-21T12:00:10Z');
+        expect(runningSeconds({ running: true, started_at: '2026-10-21T12:00:00Z' }, now)).toBe(10);
+        expect(runningSeconds({ running: true, started_at: '2026-10-21 12:00:00' }, now)).toBe(10);
+        expect(runningSeconds({ running: false, started_at: '2026-10-21T12:00:00Z' }, now)).toBe(0);
+        expect(runningSeconds(null, now)).toBe(0);
     });
 });

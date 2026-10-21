@@ -121,6 +121,24 @@ export class S3FileStorage implements PresignableStorage {
         return out;
     }
 
+    /** v0.1.291 — un tramo del objeto (`Range` de S3), para adelantar video/audio. */
+    readRange(key: string, start: number, end: number): Readable {
+        const out = new PassThrough();
+        this.client
+            .send(new GetObjectCommand({ Bucket: this.bucket, Key: this.full(key), Range: `bytes=${start}-${end}` }))
+            .then((res) => {
+                const body = res.Body as Readable | undefined;
+                if (!body) {
+                    out.destroy(new Error(`Objeto vacío en S3: ${key}`));
+                    return;
+                }
+                body.pipe(out);
+                body.on('error', (err) => out.destroy(err));
+            })
+            .catch((err: unknown) => out.destroy(err instanceof Error ? err : new Error(String(err))));
+        return out;
+    }
+
     async delete(key: string): Promise<void> {
         await this.client
             .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.full(key) }))

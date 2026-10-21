@@ -1,8 +1,16 @@
-import { Injectable } from '@nestjs/common';
-import { jsonbKeyForField, type ActivityAction, type ActivityDto, type Role } from '@imagina-base/shared';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+    jsonbKeyForField,
+    type ActivityAction,
+    type ActivityDto,
+    type FieldHistoryEntry,
+    type FieldHistoryPage,
+    type Role,
+} from '@imagina-base/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { activity, fields as fieldsTable, records } from '../db/schema';
+import { rowInScope } from '../lists/list-acl';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -106,6 +114,55 @@ export class ActivityService {
         });
     }
 
+    /**
+     * v0.1.291 — Historial de UN campo de un registro, paginado por cursor.
+     *
+     * El mismo ACL que la ficha: el registro tiene que existir en ESTA lista
+     * y estar al alcance del rol de quien mira, y el campo tiene que ser de la
+     * lista y no estar oculto para él (si no, 404 opaco: no se revela si
+     * existe). La actividad no cuelga del registro con FK, así que un registro
+     * borrado no tiene historial que mostrar.
+     */
+    async fieldHistory(
+        tenantId: number,
+        listIdOrSlug: string,
+        recordId: number,
+        fieldId: number,
+        opts: { cursor?: number; limit?: number; viewer: { role: Role; userId: number } },
+    ): Promise<FieldHistoryPage> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const limit = Math.min(Math.max(Math.trunc(opts.limit ?? HISTORY_DEFAULT_LIMIT) || HISTORY_DEFAULT_LIMIT, 1), HISTORY_MAX_LIMIT);
+        const key = jsonbKeyForField(fieldId);
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [field] = await tx
+                .select({ id: fieldsTable.id, slug: fieldsTable.slug })
+                .from(fieldsTable)
+                .where(and(eq(fieldsTable.id, fieldId), eq(fieldsTable.listId, list.id)))
+                .limit(1);
+            if (!field) throw historyNotFound();
+            const perms = effectivePermissions(list.settings, opts.viewer.role, opts.viewer.userId);
+            if (perms.fields_hidden.includes(field.slug)) throw historyNotFound();
+            const [rec] = await tx
+                .select({ id: records.id, data: records.data, createdBy: records.createdBy })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, recordId), sql`${records.deletedAt} IS NULL`))
+                .limit(1);
+            if (!rec) throw historyNotFound();
+            const assignmentId = resolvePermissions(list.settings).assignment_field_id;
+            const assignmentValue = assignmentId ? (rec.data as Record<string, unknown>)[jsonbKeyForField(assignmentId)] : undefined;
+            if (!rowInScope(perms.view, opts.viewer.userId, { createdBy: rec.createdBy, assignmentValue })) {
+                throw historyNotFound();
+            }
+            return this.repo.fieldHistory(tx, tenantId, list.id, recordId, key, { cursor: opts.cursor, limit: limit + 1 });
+        });
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        return {
+            data: page.map((r) => toHistoryEntry(r, key)),
+            meta: { next_cursor: hasMore ? String(page[page.length - 1]!.id) : null },
+        };
+    }
+
     async list(
         tenantId: number,
         listIdOrSlug: string,
@@ -162,6 +219,31 @@ export class ActivityService {
             meta: { next_cursor: nextCursor },
         };
     }
+}
+
+const HISTORY_DEFAULT_LIMIT = 20;
+const HISTORY_MAX_LIMIT = 100;
+
+function historyNotFound(): NotFoundException {
+    return new NotFoundException({
+        code: 'field_history_not_found',
+        message: 'No se encontró el historial de ese campo',
+        data: { status: 404 },
+    });
+}
+
+function toHistoryEntry(row: ActivityRow, key: string): FieldHistoryEntry {
+    const pair = (row.diff as Record<string, unknown> | null)?.[key];
+    const p = pair && typeof pair === 'object' ? (pair as { from?: unknown; to?: unknown }) : {};
+    return {
+        id: row.id,
+        user_id: row.userId,
+        user_name: row.userName,
+        action: row.action as ActivityAction,
+        from: p.from ?? null,
+        to: p.to ?? null,
+        created_at: row.createdAt.toISOString(),
+    };
 }
 
 function toActivity(row: ActivityRow): ActivityDto {

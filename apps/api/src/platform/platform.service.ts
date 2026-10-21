@@ -39,7 +39,9 @@ import {
     automationRuns,
     automations,
     automationVersions,
+    commentReactions,
     comments,
+    timeEntries,
     dashboards,
     emailUsage,
     aiUsage,
@@ -366,6 +368,9 @@ export class PlatformService {
             // v0.1.288 — historial de versiones (antes que las automatizaciones).
             await tx.delete(automationVersions).where(eq(automationVersions.tenantId, id));
             await tx.delete(automations).where(eq(automations.tenantId, id));
+            // v0.1.291 — antes que comentarios y registros (FK).
+            await tx.delete(commentReactions).where(eq(commentReactions.tenantId, id));
+            await tx.delete(timeEntries).where(eq(timeEntries.tenantId, id));
             await tx.delete(comments).where(eq(comments.tenantId, id));
             await tx.delete(activity).where(eq(activity.tenantId, id));
             await tx.delete(relations).where(eq(relations.tenantId, id));

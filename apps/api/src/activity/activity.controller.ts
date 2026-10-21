@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseIntPipe, Query, Req, UseGuards } from '@nestjs/common';
-import type { ActivityDto } from '@imagina-base/shared';
+import type { ActivityDto, FieldHistoryPage } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -25,6 +25,28 @@ export class ActivityController {
     ): Promise<Page> {
         return this.activity.list(req.tenant!.tenantId, list, {
             cursor: cursor ? Number(cursor) : undefined,
+            limit: limit ? Number(limit) : undefined,
+            viewer: { role: req.tenant!.role, userId: req.authUserId! },
+        });
+    }
+
+    /**
+     * v0.1.291 — Historial de UN campo de un registro (quién, cuándo, de → a),
+     * paginado por cursor. Lo usa «Ver historial» de cada campo de la ficha.
+     */
+    @Get('records/:id/fields/:fieldId/history')
+    @RequireCapability('view_records', 'view_own_records')
+    fieldHistory(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('fieldId', ParseIntPipe) fieldId: number,
+        @Query('cursor') cursor?: string,
+        @Query('limit') limit?: string,
+    ): Promise<FieldHistoryPage> {
+        const c = cursor ? Number(cursor) : undefined;
+        return this.activity.fieldHistory(req.tenant!.tenantId, list, id, fieldId, {
+            cursor: c !== undefined && Number.isSafeInteger(c) && c > 0 ? c : undefined,
             limit: limit ? Number(limit) : undefined,
             viewer: { role: req.tenant!.role, userId: req.authUserId! },
         });

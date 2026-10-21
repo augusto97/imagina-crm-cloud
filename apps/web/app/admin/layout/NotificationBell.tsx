@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Settings2, TriangleAlert, UserPlus, type LucideIcon } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Reply, Settings2, TriangleAlert, UserPlus, type LucideIcon } from 'lucide-react';
 import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -17,6 +17,7 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
     update: PenLine,
     reminder: AlarmClock,
     failure: TriangleAlert,
+    reply: Reply,
 };
 
 /**

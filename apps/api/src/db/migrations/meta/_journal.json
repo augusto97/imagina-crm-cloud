@@ -540,6 +540,13 @@
       "when": 1784200000100,
       "tag": "0076_document_freeze",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1784200000110,
+      "tag": "0077_record_sheet_extras",
+      "breakpoints": true
     }
   ]
 }

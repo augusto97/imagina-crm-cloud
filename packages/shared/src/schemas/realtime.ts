@@ -8,7 +8,8 @@ import { idSchema } from './common';
  * alcance).
  */
 // v0.1.276 — `notifications` va a la sala de UNA persona (su bandeja).
-export const RT_TOPICS = ['lists', 'fields', 'records', 'views', 'notifications'] as const;
+// v0.1.291 — `timer` también: su cronómetro cambió (en otra pestaña o equipo).
+export const RT_TOPICS = ['lists', 'fields', 'records', 'views', 'notifications', 'timer'] as const;
 export const rtTopicSchema = z.enum(RT_TOPICS);
 export type RtTopic = z.infer<typeof rtTopicSchema>;
 

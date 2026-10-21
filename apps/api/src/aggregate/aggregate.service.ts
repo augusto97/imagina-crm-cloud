@@ -761,7 +761,7 @@ function multiSelectSetExpr(fieldId: number): SQL {
  */
 export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableField>): SQL {
     if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
-    if (isThroughField(field.type) || field.type === 'computed') return throughGroupExpr(field, fieldsById);
+    if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') return throughGroupExpr(field, fieldsById);
     return fieldTextExpr(field.id);
 }
 
@@ -818,6 +818,8 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
             : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
     }
     if (type === 'lookup') return [];
+    // v0.1.291 — el tiempo registrado (minutos) se suma y promedia como número.
+    if (type === 'time_tracked') return ff?.expr ? ['count', 'sum', 'avg', 'min', 'max'] : [];
     // v0.1.252 — una relación vive en otra tabla: «vacíos» y «únicos» se
     // calculaban sobre `data` (siempre vacío) y mentían. Sólo el conteo.
     if (type === 'relation' || type === 'file') return ['count'];
