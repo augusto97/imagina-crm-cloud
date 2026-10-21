@@ -467,7 +467,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'gmail',
         name: 'Gmail',
-        tagline: 'Envia correos desde tu propia cuenta de Gmail.',
+        tagline: 'Envía correos desde tu propia cuenta de Gmail.',
         description:
             'Los correos salen desde tu dirección de Gmail o Google Workspace y quedan en tus enviados.',
         category: 'correo',
@@ -571,7 +571,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         name: 'Outlook',
         tagline: 'Correo y calendario de Microsoft 365.',
         description:
-            'Envia correos desde tu cuenta de Outlook y crea eventos en tu calendario de Microsoft 365.',
+            'Envía correos desde tu cuenta de Outlook y crea eventos en tu calendario de Microsoft 365.',
         category: 'correo',
         color: '#0078D4',
         auth: { kind: 'oauth', provider: 'microsoft', scopes: 'Mail.Send Calendars.ReadWrite' },
