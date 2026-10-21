@@ -1246,6 +1246,15 @@ export class TenantTransferService {
                 `El dominio propio «${String(tenantRow.customDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo aquí.`,
             );
         }
+        // v0.1.289 — las contraseñas del portal y las respuestas de formularios
+        // sin confirmar no viajan: son credenciales/enlaces de ESTE servidor
+        // (el correo de confirmación apunta al de origen).
+        const portalAuth = (srcSettings.portal_auth ?? null) as { password_enabled?: unknown } | null;
+        if (portalAuth?.password_enabled === true) {
+            warnings.push(
+                'Las contraseñas del portal de clientes no viajaron: cada cliente entra con un enlace por correo y crea una nueva desde su menú.',
+            );
+        }
         if (tenantRow.portalDomain) {
             warnings.push(
                 `El dominio del portal de clientes «${String(tenantRow.portalDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo aquí.`,
@@ -1445,6 +1454,12 @@ export class TenantTransferService {
             const next = { ...(ai as Row) };
             delete next.api_key_enc;
             out.ai = next;
+        }
+        // v0.1.289 — las llaves de captcha de la empresa: sin su secreto no
+        // verifican nada; se sacan y sus formularios usan las de la plataforma.
+        const captcha = out.captcha;
+        if (captcha !== null && typeof captcha === 'object' && isEncrypted(String((captcha as { secret_enc?: string }).secret_enc ?? ''))) {
+            delete out.captcha;
         }
         return out;
     }

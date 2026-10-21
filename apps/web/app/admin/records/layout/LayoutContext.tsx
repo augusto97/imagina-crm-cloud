@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { PortalPaymentsBlockData } from '@imagina-base/shared';
 
 import type { PortalBootData } from '@/portal/types';
 import type { FieldEntity } from '@/types/field';
@@ -40,6 +41,8 @@ export interface LayoutCtx {
     portalBoot?: PortalBootData;
     /** Portal: de qué lista lee cada bloque de datos (lo dice el servidor). */
     blockLists?: Record<string, number>;
+    /** v0.1.289 — portal: los datos de cada bloque «Pagos» (por id de bloque). */
+    portalPayments?: Record<string, PortalPaymentsBlockData>;
 }
 
 export const LayoutContext = createContext<LayoutCtx | null>(null);

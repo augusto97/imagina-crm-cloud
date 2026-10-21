@@ -31,3 +31,36 @@ export const forms = pgTable(
     (t) => [index('forms_list_ix').on(t.tenantId, t.listId), uniqueIndex('forms_token_ux').on(t.token)],
 );
 export type FormRow = typeof forms.$inferSelect;
+
+/**
+ * v0.1.289 — Respuesta esperando que quien la mandó confirme su correo
+ * (doble opt-in). RLS: datos de la empresa. `data` es la respuesta YA
+ * validada (claves `f{id}`): al confirmar se crea el registro con eso, sin
+ * volver a pedirle nada al navegador. El enlace la busca por `token_hash`
+ * (único) con la conexión base, igual que `forms.token`.
+ */
+export const formPendingSubmissions = pgTable(
+    'form_pending_submissions',
+    {
+        id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        formId: bigint('form_id', { mode: 'number' })
+            .notNull()
+            .references(() => forms.id, { onDelete: 'cascade' }),
+        tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+        email: varchar('email', { length: 320 }).notNull(),
+        data: jsonb('data').$type<Record<string, unknown>>().notNull(),
+        attachmentIds: jsonb('attachment_ids').$type<number[]>().notNull().default([]),
+        ip: varchar('ip', { length: 64 }),
+        expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [
+        uniqueIndex('form_pending_token_ux').on(t.tokenHash),
+        index('form_pending_expires_ix').on(t.expiresAt),
+        index('form_pending_form_ix').on(t.tenantId, t.formId),
+    ],
+);
+export type FormPendingRow = typeof formPendingSubmissions.$inferSelect;

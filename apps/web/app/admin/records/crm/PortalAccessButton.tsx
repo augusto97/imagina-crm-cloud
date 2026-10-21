@@ -60,11 +60,11 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
     const accessKey = ['portal-access', list.id, record.id] as const;
     const access = useQuery({
         queryKey: accessKey,
-        queryFn: async (): Promise<AccessUser[]> => {
-            const res = await api.get<{ users: AccessUser[] }>(
+        queryFn: async (): Promise<{ users: AccessUser[]; entry_url: string | null; password_enabled: boolean }> => {
+            const res = await api.get<{ users: AccessUser[]; entry_url?: string | null; password_enabled?: boolean }>(
                 `/lists/${encodeURIComponent(list.slug)}/portal/access?record_id=${record.id}`,
             );
-            return res.data.users;
+            return { users: res.data.users, entry_url: res.data.entry_url ?? null, password_enabled: res.data.password_enabled === true };
         },
         enabled,
         retry: false,
@@ -207,7 +207,17 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
 
     if (!enabled) return null;
 
-    const users = access.data ?? [];
+    const users = access.data?.users ?? [];
+    const entryUrl = access.data?.entry_url ?? null;
+    const copyEntry = async (): Promise<void> => {
+        if (!entryUrl) return;
+        try {
+            await navigator.clipboard.writeText(entryUrl);
+            toast.success(__('Enlace de entrada al portal copiado.'));
+        } catch {
+            toast.info(__('Enlace de entrada al portal'), entryUrl);
+        }
+    };
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2.5">
@@ -311,8 +321,23 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
                     {__('Copiar el último enlace')}
                 </Button>
             )}
+            {entryUrl && users.length > 0 && (
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    className="imcrm-w-fit imcrm-gap-1.5"
+                    onClick={() => void copyEntry()}
+                    data-testid="portal-access-copy-entry"
+                >
+                    <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Copiar enlace de entrada al portal')}
+                </Button>
+            )}
             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                 {__('El enlace es de un solo uso y vence en 24 h. Una vez que entra, su sesión dura 30 días y se renueva cada vez que vuelve; si se le vence, puede pedirse uno nuevo solo desde la pantalla del portal.')}
+                {access.data?.password_enabled
+                    ? ` ${__('También puede crear una contraseña desde su portal y entrar con el enlace de entrada.')}`
+                    : ''}
             </p>
         </div>
     );

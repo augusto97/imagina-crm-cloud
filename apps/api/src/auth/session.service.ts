@@ -142,14 +142,17 @@ export class SessionService {
         await this.redis.del(this.userKey(userId));
     }
 
-    /** SEC-24 — revoca sólo las sesiones del portal de UNA empresa. */
-    async destroyPortalSessions(userId: number, tenantId: number): Promise<number> {
+    /**
+     * SEC-24 — revoca sólo las sesiones del portal de UNA empresa. v0.1.289 —
+     * `exceptToken` conserva la de quien cambió su contraseña del portal.
+     */
+    async destroyPortalSessions(userId: number, tenantId: number, exceptToken?: string): Promise<number> {
         const tokens = await this.redis.smembers(this.userKey(userId));
         if (tokens.length === 0) return 0;
         const raws = await this.redis.mget(...tokens.map((t) => this.key(t)));
-        const doomed = tokens.filter((_, i) => {
+        const doomed = tokens.filter((t, i) => {
             const raw = raws[i];
-            if (!raw) return false;
+            if (!raw || t === exceptToken) return false;
             return (JSON.parse(raw) as SessionData).portalTenantId === tenantId;
         });
         if (doomed.length > 0) {

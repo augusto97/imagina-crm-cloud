@@ -2,6 +2,7 @@ import {
     formItemSchema,
     isFormFieldType,
     newFormItemId,
+    splitFormPages,
     type FormConfig,
     type FormItem,
     type FormSettings,
@@ -35,13 +36,57 @@ export function addFieldItem(config: FormConfig, fieldId: number, afterId: strin
     return { config: { ...config, items: insertAfter(config.items, item, afterId) }, id: item.id };
 }
 
-export function addContentItem(config: FormConfig, type: 'heading' | 'text', afterId: string | null): { config: FormConfig; id: string } {
-    const item = formItemSchema.parse({
-        id: newFormItemId(),
-        type,
-        text: type === 'heading' ? 'Nueva sección' : '',
-    });
+export function addContentItem(
+    config: FormConfig,
+    type: 'heading' | 'text' | 'page_break',
+    afterId: string | null,
+): { config: FormConfig; id: string } {
+    const item = formItemSchema.parse(
+        type === 'page_break'
+            ? { id: newFormItemId(), type, title: '' }
+            : { id: newFormItemId(), type, text: type === 'heading' ? 'Nueva sección' : '' },
+    );
     return { config: { ...config, items: insertAfter(config.items, item, afterId) }, id: item.id };
+}
+
+/**
+ * v0.1.289 — Número de página (1, 2, 3…) de cada ítem, contando los saltos.
+ * Un salto queda en la página que ABRE. Sirve para el panel de estructura.
+ */
+export function pageNumbers(config: FormConfig): Map<string, number> {
+    const out = new Map<string, number>();
+    let page = 1;
+    let seenContent = false;
+    for (const item of config.items) {
+        if (item.type === 'page_break') {
+            // Un salto al principio (o dos seguidos) no abre una página vacía.
+            if (seenContent) page += 1;
+            seenContent = false;
+            out.set(item.id, page);
+            continue;
+        }
+        seenContent = true;
+        out.set(item.id, page);
+    }
+    return out;
+}
+
+/** Cantidad de páginas del formulario (1 = sin saltos). */
+export function pageCount(config: FormConfig): number {
+    return splitFormPages(config.items).length;
+}
+
+/**
+ * Preguntas de tipo email del formulario (para elegir el correo de quien
+ * responde: confirmación y copia de las respuestas).
+ */
+export function emailQuestions<F extends FieldLike>(fields: readonly F[], config: FormConfig): F[] {
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    return config.items.flatMap((i) => {
+        if (i.type !== 'field') return [];
+        const f = byId.get(i.field_id);
+        return f && f.type === 'email' ? [f] : [];
+    });
 }
 
 export function updateItem(config: FormConfig, id: string, patch: Partial<FormItem>): FormConfig {
@@ -55,8 +100,15 @@ export function updateItem(config: FormConfig, id: string, patch: Partial<FormIt
 export function removeItem(config: FormConfig, id: string): FormConfig {
     const target = config.items.find((i) => i.id === id);
     const fieldId = target?.type === 'field' ? target.field_id : null;
+    // Era la pregunta del correo de quien responde: sin ella no hay a quién
+    // confirmarle ni mandarle la copia.
+    const settings =
+        fieldId !== null && config.settings.respondent_email_field_id === fieldId
+            ? { ...config.settings, respondent_email_field_id: null, confirm_email: false, send_copy: false }
+            : config.settings;
     return {
         ...config,
+        settings,
         items: config.items
             .filter((i) => i.id !== id)
             .map((i) => (fieldId !== null && i.show_if?.field_id === fieldId ? { ...i, show_if: null } : i)),

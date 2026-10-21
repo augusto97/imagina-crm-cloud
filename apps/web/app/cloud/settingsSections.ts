@@ -1,6 +1,7 @@
 import {
     Bell,
     CreditCard,
+    DoorOpen,
     Gauge,
     Globe,
     HardDrive,
@@ -33,6 +34,7 @@ export type SettingsSectionId =
     | 'marca'
     | 'formato'
     | 'correo'
+    | 'portal'
     | 'almacenamiento'
     | 'conectores'
     | 'problemas'
@@ -70,6 +72,8 @@ export function settingsSectionGroups({
                           { id: 'marca', label: 'Marca', icon: Palette },
                           { id: 'formato', label: 'Formato regional', icon: Globe },
                           { id: 'correo', label: 'Correo', icon: Mail },
+                          // v0.1.289 — entrar al portal con contraseña y captcha de formularios.
+                          { id: 'portal', label: 'Portal y formularios', icon: DoorOpen },
                           // v0.1.268 (ADR-S36) — archivos en el bucket propio de la empresa.
                           { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive },
                           // v0.1.181 — asistente IA (ADR-S21): opt-in, clave propia, modelo.

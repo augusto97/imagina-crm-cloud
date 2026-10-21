@@ -80,6 +80,8 @@ import {
     documentNumbers,
     documentTemplates,
     forms,
+    formPendingSubmissions,
+    portalCredentials,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
@@ -369,13 +371,17 @@ export class PlatformService {
             await tx.delete(relations).where(eq(relations.tenantId, id));
             await tx.delete(recurrences).where(eq(recurrences.tenantId, id));
             await tx.delete(portalLinks).where(eq(portalLinks.tenantId, id));
+            // v0.1.289 — contraseñas del portal de esta empresa.
+            await tx.delete(portalCredentials).where(eq(portalCredentials.tenantId, id));
             await tx.delete(publicLists).where(eq(publicLists.tenantId, id));
             await tx.delete(savedFilters).where(eq(savedFilters.tenantId, id));
             await tx.delete(savedViews).where(eq(savedViews.tenantId, id));
             // v0.1.266 — plantillas de documentos PDF.
             await tx.delete(documentNumbers).where(eq(documentNumbers.tenantId, id));
             await tx.delete(documentTemplates).where(eq(documentTemplates.tenantId, id));
-            // v0.1.275 — formularios públicos.
+            // v0.1.275 — formularios públicos. v0.1.289 — y sus respuestas sin
+            // confirmar (antes que el formulario: la FK las ata a él).
+            await tx.delete(formPendingSubmissions).where(eq(formPendingSubmissions.tenantId, id));
             await tx.delete(forms).where(eq(forms.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));

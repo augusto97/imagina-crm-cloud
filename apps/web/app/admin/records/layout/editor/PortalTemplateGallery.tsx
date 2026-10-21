@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { fieldsKeys } from '@/hooks/useFields';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
+import { api as cloudApi } from '@/cloud/session';
 import { api } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -113,6 +114,10 @@ export function PortalTemplateGallery({ open, onOpenChange, list, fields, onAppl
         setChosen(new Set(suggestPortalLinked(kind, linked.items, enabled)));
     }, [open, kind, linked.loading, linked.items, enabled]);
 
+    // v0.1.289 — con una conexión de cobro del equipo, «Estado de cuenta»
+    // suma el bloque «Pagos» (sus links y el botón para pagar el saldo).
+    const conns = useQuery({ queryKey: ['collections-connections'], queryFn: () => cloudApi.collectionConnections(), enabled: open, retry: false, staleTime: 60_000 });
+    const payConn = (conns.data ?? []).find((c) => c.shared !== false) ?? null;
     const selected = linked.items.filter((l) => chosen.has(l.key));
     const fit = portalTemplateFit(kind, { fields: lite, linked: selected });
     const info = PORTAL_TEMPLATE_INFO[kind];
@@ -251,7 +256,7 @@ export function PortalTemplateGallery({ open, onOpenChange, list, fields, onAppl
                             <Button
                                 size="sm"
                                 disabled={!fit.ok || linked.loading}
-                                onClick={() => onApply(portalTemplateLayout(kind, { fields: lite, linked: selected }), kind)}
+                                onClick={() => onApply(portalTemplateLayout(kind, { fields: lite, linked: selected, payments: payConn ? { connection_id: payConn.id } : null }), kind)}
                                 data-testid="portal-template-apply"
                             >
                                 {__('Usar esta plantilla')}
