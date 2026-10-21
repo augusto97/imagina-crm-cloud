@@ -65,7 +65,7 @@ export function useApplyDashboardTemplate() {
             return res.data;
         },
         onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: dashboardsKeys.all });
+            void qc.invalidateQueries({ queryKey: dashboardsKeys.all, exact: true });
         },
     });
 }

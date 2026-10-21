@@ -45,6 +45,11 @@ export const widgetLayoutSchema = z.object({
     y: z.number(),
     w: z.number(),
     h: z.number(),
+    /**
+     * v0.1.286 — alto PROPIO en el celular (apilado a una columna). Sin él,
+     * redimensionar en el teléfono cambiaba el `h` del escritorio.
+     */
+    hm: z.number().int().positive().max(100).optional(),
 });
 
 export const widgetSpecSchema = z.object({

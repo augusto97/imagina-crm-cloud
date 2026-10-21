@@ -318,7 +318,8 @@ async function normalizeCloudResponse<T>(
 
     // Bundle de widgets (PERF-03): `{ [widgetId]: WidgetData }`. Igual que el
     // single-widget, se devuelve tal cual (cada WidgetData chart tiene su `.data`).
-    if (/\/widgets\/data$/.test(path)) {
+    // v0.1.286 — la vista previa de un widget sin guardar, igual.
+    if (/\/widgets\/(data|preview)$/.test(path)) {
         return { data: payload as T };
     }
 
