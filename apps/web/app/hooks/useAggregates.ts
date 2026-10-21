@@ -1,6 +1,6 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { canonicalListId } from '@/hooks/useRecords';
+import { AGGREGATES_NS, canonicalListId } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
 import type { FilterTree } from '@/types/record';
 
@@ -39,6 +39,11 @@ interface UseAggregatesArgs {
     fieldIds: number[];
     filterTree?: FilterTree;
     groupByFieldId?: number | null;
+    /**
+     * v0.1.286 — búsqueda activa de la tabla: el pie suma lo que se VE (antes
+     * ignoraba la búsqueda y sumaba toda la lista filtrada).
+     */
+    search?: string;
 }
 
 /**
@@ -54,6 +59,7 @@ export function useAggregates({
     fieldIds,
     filterTree,
     groupByFieldId,
+    search,
 }: UseAggregatesArgs) {
     const qc = useQueryClient();
     // Key por id numérico canónico (PERF-06); la URL sigue usando el slug.
@@ -61,9 +67,12 @@ export function useAggregates({
     const filterKey = filterTree && filterTree.children.length > 0
         ? JSON.stringify(filterTree)
         : null;
+    const searchKey = search !== undefined && search.trim() !== '' ? search.trim() : null;
 
     return useQuery({
-        queryKey: ['aggregates', keyId, fieldIds.join(','), filterKey, groupByFieldId ?? 0] as const,
+        // Índice 1 = id canónico de la lista: `invalidateForList` con el
+        // namespace de records también refresca estas keys (v0.1.286).
+        queryKey: [AGGREGATES_NS, keyId, fieldIds.join(','), filterKey, groupByFieldId ?? 0, searchKey] as const,
         queryFn: async () => {
             const params = new URLSearchParams();
             params.set('fields', fieldIds.join(','));
@@ -73,12 +82,16 @@ export function useAggregates({
             if (groupByFieldId !== null && groupByFieldId !== undefined) {
                 params.set('group_by', String(groupByFieldId));
             }
+            if (searchKey !== null) params.set('search', searchKey);
             const res = await api.get<AggregatesResponse>(
                 `/lists/${listSlug}/records/aggregates?${params.toString()}`,
             );
             return res.data;
         },
         enabled: listSlug !== undefined && fieldIds.length > 0,
+        // Al cambiar la búsqueda o los filtros, el pie anterior se ve hasta
+        // que llega el nuevo (sin parpadeo a "—").
+        placeholderData: keepPreviousData,
         // 0.36.7: alineado con el resto de hooks (useRecords, useDashboards,
         // useFields → 30s). Antes estaba en 0 y refetcheaba el endpoint
         // pesado de aggregates cada vez que se invalidaba records — en

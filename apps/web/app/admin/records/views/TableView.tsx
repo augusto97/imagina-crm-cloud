@@ -10,7 +10,7 @@ import {
     type ColumnSizingState,
     type VisibilityState,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
+import { GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
@@ -21,6 +21,7 @@ import type { RowDensity, RowFontSize } from '../recordsState';
 import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
 import { useMainVirtualRows } from './useMainVirtualRows';
+import { SortIndicator } from './SortIndicator';
 import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
@@ -38,7 +39,7 @@ import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
 import { storeAccessFor, useStoreRules } from '@/admin/records/storeRules';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
-import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
+import { FooterAggregateCell, footerIsAggregatable, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup } from './hscrollGroup';
 import { usePageStickyTop, useStuckSentinel } from './stickyTop';
@@ -78,6 +79,8 @@ interface TableViewProps {
      * footer respete el filtro visible.
      */
     filterTree?: FilterTree;
+    /** v0.1.286 — búsqueda activa: el pie suma lo que la tabla muestra. */
+    search?: string;
     /** Click en "+ Nueva tarea" al final de la tabla. Si no se pasa, no se renderea. */
     onAddRecord?: () => void;
     /** Click en "+ Agregar columna" al final del header. Si no se pasa, no se renderea. */
@@ -153,6 +156,7 @@ export function TableView({
     columnOrder,
     onColumnOrderChange,
     filterTree,
+    search,
     onAddRecord,
     onAddColumn,
     onEditField,
@@ -317,8 +321,9 @@ export function TableView({
     const aggregatableFieldIds = useMemo(
         () => fields
             // v0.1.170 — rollup SÍ (el backend lo suma por su subconsulta);
-            // lookup no (es una lista de valores).
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
+            // lookup no (es una lista de valores); v0.1.286 — computed
+            // numérico SÍ (se compila a SQL desde v0.1.229).
+            .filter(footerIsAggregatable)
             .filter((f) => columnVisibility[f.slug] !== false)
             .map((f) => f.id),
         [fields, columnVisibility],
@@ -327,6 +332,7 @@ export function TableView({
         listSlug,
         fieldIds: aggregatableFieldIds,
         filterTree,
+        search,
     });
 
     // Las filas de los padres abiertos llevan sus hijos como `subRows`, que
@@ -1139,34 +1145,6 @@ function defaultSizeForType(type: string): number {
         default:
             return 180;
     }
-}
-
-function SortIndicator({
-    dir,
-    index,
-    multiCount,
-}: {
-    dir: 'asc' | 'desc' | null;
-    index: number;
-    multiCount: number;
-}): JSX.Element | null {
-    // El estado de sort ya está expuesto al SR vía aria-sort en el <th>;
-    // los iconos solo son decorativos.
-    if (dir === null) {
-        return <ArrowUpDown className="imcrm-h-3 imcrm-w-3 imcrm-opacity-30" aria-hidden="true" />;
-    }
-    return (
-        <span className="imcrm-flex imcrm-items-center imcrm-gap-0.5" aria-hidden="true">
-            {dir === 'asc' ? (
-                <ArrowUp className="imcrm-h-3 imcrm-w-3 imcrm-text-primary" />
-            ) : (
-                <ArrowDown className="imcrm-h-3 imcrm-w-3 imcrm-text-primary" />
-            )}
-            {multiCount > 1 && (
-                <span className="imcrm-font-mono imcrm-text-[9px] imcrm-text-primary">{index + 1}</span>
-            )}
-        </span>
-    );
 }
 
 export { renderCellValue };

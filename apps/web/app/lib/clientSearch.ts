@@ -1,21 +1,19 @@
+import { foldSearchText, matchesSearchTokens, SEARCHABLE_FIELD_TYPES, searchTokens } from '@imagina-base/shared';
+
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
 /**
  * Filtra una lista de records in-memory según `query`. Pensado para
- * listas chicas (≤ ~500 registros) donde el round-trip al server
- * (~150-300ms de overhead WP bootstrap + RTT) es mucho más caro que
- * filtrar en el browser (~1-5ms en JS).
+ * listas chicas (≤ ~500 registros) donde el round-trip al server es mucho
+ * más caro que filtrar en el browser (~1-5ms en JS).
  *
- * Tokeniza el query igual que el backend (`Tokenizer.php`):
- *   lowercase + ASCII fold + split por whitespace/non-alphanum.
- *
- * Match: cada token del query debe estar contenido en al menos uno
- * de los valores searchables del record (text, long_text, email, url).
- * AND-mode (todos los tokens deben matchear), igual que LIKE %a%b%.
+ * v0.1.286 — la MISMA regla que el servidor (`searchTokens` en shared): las
+ * palabras se pliegan (sin acentos ni mayúsculas) y se exigen TODAS, cada una
+ * en cualquier campo buscable. Antes el servidor hacía un único ILIKE sensible
+ * a los acentos y la misma búsqueda daba resultados distintos según el tamaño
+ * de la lista («alvaro»: 6 en una lista chica, 0 en una grande).
  */
-
-const SEARCHABLE_TYPES = new Set(['text', 'long_text', 'email', 'url', 'phone']);
 
 /**
  * v0.1.188 — ¿se puede buscar esta tanda en el navegador? Sólo si NINGÚN
@@ -28,43 +26,22 @@ export function canSearchClientSide(records: ReadonlyArray<Pick<RecordEntity, 'h
     return records.every((r) => r.has_description !== true);
 }
 
-const ACCENT_MAP: Record<string, string> = {
-    á: 'a', à: 'a', ä: 'a', â: 'a', ã: 'a',
-    é: 'e', è: 'e', ë: 'e', ê: 'e',
-    í: 'i', ì: 'i', ï: 'i', î: 'i',
-    ó: 'o', ò: 'o', ö: 'o', ô: 'o', õ: 'o',
-    ú: 'u', ù: 'u', ü: 'u', û: 'u',
-    ñ: 'n', ç: 'c',
-};
-
-function normalize(text: string): string {
-    let out = text.toLowerCase();
-    out = out.replace(/[áàäâãéèëêíìïîóòöôõúùüûñç]/g, (c) => ACCENT_MAP[c] ?? c);
-    return out;
-}
-
-function tokenize(text: string): string[] {
-    const norm = normalize(text);
-    return norm.split(/[^a-z0-9_]+/).filter((t) => t.length >= 1);
-}
-
 /**
- * Construye el blob de texto buscable de un record (concat de campos
- * searchables). Memoizable a nivel de caller si hace falta.
+ * Texto buscable de un record (los campos buscables juntos, plegado). Un
+ * teléfono entra también SÓLO CON DÍGITOS («3001112233» encuentra un
+ * «300 111 2233» cargado a mano), igual que en el servidor.
  */
 function buildBlob(record: RecordEntity, fields: FieldEntity[]): string {
     const parts: string[] = [];
     for (const f of fields) {
-        if (! SEARCHABLE_TYPES.has(f.type)) continue;
+        if (! SEARCHABLE_FIELD_TYPES.has(f.type)) continue;
         const v = record.fields[f.slug];
         if (v === null || v === undefined || v === '') continue;
-        if (Array.isArray(v)) {
-            parts.push(v.map(String).join(' '));
-        } else {
-            parts.push(String(v));
-        }
+        const text = Array.isArray(v) ? v.map(String).join(' ') : String(v);
+        parts.push(text);
+        if (f.type === 'phone') parts.push(text.replace(/\D+/g, ''));
     }
-    return normalize(parts.join(' '));
+    return foldSearchText(parts.join(' '));
 }
 
 /**
@@ -76,11 +53,12 @@ export function clientSideSearch(
     query: string,
     fields: FieldEntity[],
 ): RecordEntity[] {
-    const tokens = tokenize(query);
-    if (tokens.length === 0) return records;
-
-    return records.filter((r) => {
-        const blob = buildBlob(r, fields);
-        return tokens.every((t) => blob.includes(t));
-    });
+    const tokens = searchTokens(query);
+    if (tokens.length === 0) {
+        // Sin letras ni números (p. ej. «@»): la cadena tal cual.
+        const needle = foldSearchText(query.trim());
+        if (needle === '') return records;
+        return records.filter((r) => buildBlob(r, fields).includes(needle));
+    }
+    return records.filter((r) => matchesSearchTokens(buildBlob(r, fields), tokens));
 }

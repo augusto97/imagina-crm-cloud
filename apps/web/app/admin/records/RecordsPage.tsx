@@ -411,6 +411,8 @@ export function RecordsPage(): JSX.Element {
         setCreateDefaults(prefillForGroup(groupField, bucketValue));
         setCreateOpen(true);
     });
+    const onGroupedSortChange = useEventCallback((fieldId: number, multi: boolean) => handleSortChange(fieldId, multi));
+    const onGroupedSortSet = useEventCallback((fieldId: number, dir: 'asc' | 'desc') => handleSortSet(fieldId, dir));
     const onGroupedCreateSubtask = useEventCallback((record: RecordEntity) => {
         setCreateDefaults(undefined);
         setCreateParentId(record.id);
@@ -555,6 +557,18 @@ const applyView = (view: SavedViewEntity | null): void => {
         setSearchParams(next, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [list.data?.id, searchParams]);
+
+    // v0.1.286 — la selección es de lo que se VE: al cambiar el filtro, la
+    // búsqueda, la vista o la agrupación se vacía. Antes sobrevivía y una
+    // acción masiva («Eliminar», «Editar en lote») caía sobre registros que
+    // ya no estaban en pantalla.
+    const selectionScope = `${activeViewId ?? ''}|${JSON.stringify(state.filterTree)}|${debouncedSearch.trim()}|${state.groupByFieldId ?? ''}`;
+    const selectionScopeRef = useRef(selectionScope);
+    useEffect(() => {
+        if (selectionScopeRef.current === selectionScope) return;
+        selectionScopeRef.current = selectionScope;
+        setSelectedIds((prev) => (prev.length === 0 ? prev : []));
+    }, [selectionScope]);
 
     const setFilterTree = (filterTree: import('@/types/record').FilterTree): void => {
         setState((s) => ({ ...s, filterTree, page: 1 }));
@@ -1262,6 +1276,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={onGroupedFooterAggregates}
                                     onStatusChange={setGroupedStatus}
+                                    sort={state.sort}
+                                    onSortChange={onGroupedSortChange}
+                                    onSortSet={onGroupedSortSet}
                                 />
                             ) : (
                                 <TableView
@@ -1288,6 +1305,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, columnOrder: next }))
                                     }
                                     filterTree={state.filterTree}
+                                    search={debouncedSearch}
                                     onAddRecord={!canCreateRecords ? undefined : () => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);

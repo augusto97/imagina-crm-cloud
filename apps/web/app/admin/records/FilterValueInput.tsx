@@ -13,6 +13,7 @@ import {
 } from './dateRangePresets';
 import { extractFieldOptions } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
+import { datetimeFilterToInput, datetimeInputToFilter } from './filterDatetime';
 import { FilterUserPicker } from './FilterUserPicker';
 import { isMultiValueOperator, toValueList } from './filterValue';
 
@@ -140,11 +141,13 @@ export function FilterValueInput({
                 />
             );
         case 'datetime':
+            // v0.1.286 — viaja con zona (antes el servidor leía la hora local
+            // como UTC); «es» abarca el minuto elegido.
             return (
                 <Input
                     type="datetime-local"
-                    value={typeof value === 'string' ? value : ''}
-                    onChange={(e) => onChange(e.target.value)}
+                    value={datetimeFilterToInput(value)}
+                    onChange={(e) => onChange(datetimeInputToFilter(e.target.value))}
                 />
             );
         case 'number':
