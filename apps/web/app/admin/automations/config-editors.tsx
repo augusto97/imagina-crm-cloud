@@ -2773,7 +2773,7 @@ function ForEachLinkedConfig({
 
             {nestedInline && (
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-rounded-xl imcrm-border imcrm-border-info/30 imcrm-bg-info/5 imcrm-p-3.5">
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                     <Badge variant="default" dot>
                         <Repeat className="imcrm-mr-1 imcrm-inline imcrm-h-3 imcrm-w-3" />
                         {__('Por cada uno')}

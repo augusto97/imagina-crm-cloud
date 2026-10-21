@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, Hourglass, MinusCircle, RotateCw, XCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +42,12 @@ export function AutomationRunsDrawer({
     onOpenChange,
 }: AutomationRunsDrawerProps): JSX.Element {
     const runs = useAutomationRuns(automation.id);
+    // El cajón vive montado con el editor: al ABRIRLO se trae lo último (una
+    // corrida que entró en espera mientras tanto no aparecía hasta recargar).
+    const { refetch } = runs;
+    useEffect(() => {
+        if (open) void refetch();
+    }, [open, refetch]);
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>

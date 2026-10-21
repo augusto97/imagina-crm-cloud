@@ -19,7 +19,6 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useRecords } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import { formatDateTime } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
@@ -261,7 +260,9 @@ function TestResult({
                     {t.matches ? <CheckCircle2 className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-success" /> : <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-warning" />}
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                         <span className="imcrm-text-sm imcrm-font-medium">{t.matches ? __('El disparador coincidiría') : __('El disparador NO coincidiría')}</span>
-                        <span className="imcrm-text-xs imcrm-text-muted-foreground">{t.message}</span>
+                        {!/^El disparador (NO )?coincidir/i.test(t.message) && (
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{t.message}</span>
+                        )}
                     </div>
                 </div>
                 {t.checks.length > 0 && <ChecksTable checks={t.checks} />}
@@ -361,30 +362,16 @@ function StepResult({
             </div>
 
             {Array.isArray(d.checks) && (d.checks as ConditionCheck[]).length > 0 && <ChecksTable checks={d.checks as ConditionCheck[]} />}
-            {typeof d.branch === 'string' && (
-                <p className="imcrm-text-xs">
-                    {d.branch === 'then' ? __('Sigue por la rama «Sí».') : __('Sigue por la rama «No».')}
-                </p>
-            )}
             {d.email !== undefined && <EmailPreview email={d.email as EmailDetails} />}
             {d.request !== undefined && <RequestPreview request={d.request as RequestDetails} response={d.response as ResponseDetails | undefined} />}
             {Array.isArray(d.changes) && <ChangesList changes={d.changes as Array<{ label: string; before: unknown; after: unknown }>} />}
             {Array.isArray(d.values) && <ValuesList values={d.values as Array<{ label: string; value: unknown }>} title={typeof d.list === 'string' ? sprintf(__('Valores del registro nuevo en «%s»'), d.list) : __('Valores del registro nuevo')} />}
-            {typeof d.resume_at === 'string' && (
-                <p className="imcrm-text-xs">
-                    {sprintf(__('Seguiría el %s.'), formatDateTime(new Date(d.resume_at)))}
-                    {typeof d.resume_condition_now === 'boolean' && (
-                        <span className="imcrm-text-muted-foreground">
-                            {' '}
-                            {d.resume_condition_now
-                                ? __('Hoy el registro cumple la condición para continuar.')
-                                : __('Hoy el registro NO cumple la condición para continuar: si sigue así, terminaría ahí.')}
-                        </span>
-                    )}
+            {typeof d.resume_condition_now === 'boolean' && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {d.resume_condition_now
+                        ? __('Hoy el registro cumple la condición para continuar.')
+                        : __('Hoy el registro NO cumple la condición para continuar: si sigue así, terminaría ahí.')}
                 </p>
-            )}
-            {typeof d.count === 'number' && step.action === 'bulk_edit' && (
-                <p className="imcrm-text-xs">{sprintf(__('Cambiaría %d registro(s).'), d.count)}</p>
             )}
             {Array.isArray(d.warnings) && (d.warnings as unknown[]).length > 0 && (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-rounded imcrm-bg-warning/10 imcrm-px-2 imcrm-py-1 imcrm-text-[11px] imcrm-text-[hsl(var(--imcrm-warning-ink))]">
@@ -398,7 +385,7 @@ function StepResult({
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-2">
                     <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs">
                         <input type="checkbox" checked={real} onChange={(e) => onToggleReal(e.target.checked)} data-testid="imcrm-test-real-toggle" />
-                        {__('Ejecutar este paso de verdad')}
+                        {__('Ejecutar de verdad')}
                     </label>
                     {!real && step.status === 'would_run' && (
                         <Button type="button" size="sm" variant="outline" className="imcrm-h-7 imcrm-gap-1" disabled={busy} onClick={onRunReal} data-testid="imcrm-test-run-real">

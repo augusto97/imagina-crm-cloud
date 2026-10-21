@@ -547,9 +547,10 @@ function EditorBody({
                     </div>
 
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                        {/* En el celular el nombre ocupa su propia fila (antes quedaba
-                            aplastado a ~45px al lado de los botones). */}
-                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-basis-full imcrm-flex-col imcrm-gap-0.5 sm:imcrm-basis-0">
+                        {/* El nombre ocupa su propia fila: con Probar, Historial,
+                            Versiones y Duplicar al lado quedaba recortado (antes en el
+                            celular se aplastaba a ~45px). */}
+                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-basis-full imcrm-flex-col imcrm-gap-0.5">
                             <input
                                 value={state.name}
                                 onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
