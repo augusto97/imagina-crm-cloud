@@ -8,7 +8,9 @@ import {
     getNode,
     ifElseDepth,
     insertAt,
+    insideLoop,
     removeAt,
+    stepsBefore,
     updateNode,
 } from './actionsTree';
 
@@ -72,5 +74,35 @@ describe('actionsTree', () => {
         expect(ifElseDepth([])).toBe(0);
         expect(ifElseDepth([1, 'then'])).toBe(1);
         expect(ifElseDepth([1, 'then', 0, 'else'])).toBe(2);
+    });
+});
+
+describe('actionsTree — repetir por cada vinculado (v0.1.289)', () => {
+    const loop = (): ActionSpec[] => [
+        { type: 'call_webhook', config: { url: 'https://a.example', response_name: 'cotizacion' } },
+        {
+            type: 'for_each_linked',
+            config: { relation_field_id: 5, actions: [email('item@x.com')] },
+        },
+        email('fin@x.com'),
+    ];
+
+    it('la rama each apunta a config.actions', () => {
+        const t = loop();
+        expect(getNode(t, [1, 'each', 0])?.config.to).toBe('item@x.com');
+        const ins = insertAt(t, [1, 'each'], 1, email('otro@x.com'));
+        expect(branchOf(ins[1]!, 'each').map((a) => a.config.to)).toEqual(['item@x.com', 'otro@x.com']);
+        expect(branchOf(t[1]!, 'each')).toHaveLength(1);
+        expect(insideLoop([1, 'each'])).toBe(true);
+        expect(insideLoop([1, 'then'])).toBe(false);
+        expect(ifElseDepth([1, 'each'])).toBe(1);
+    });
+
+    it('stepsBefore devuelve los pasos previos (también los anidados)', () => {
+        const t = loop();
+        expect(stepsBefore(t, [0])).toHaveLength(0);
+        expect(stepsBefore(t, [1, 'each', 0]).map((a) => a.spec.type)).toEqual(['call_webhook']);
+        expect(stepsBefore(t, [2]).map((a) => a.spec.type)).toEqual(['call_webhook', 'for_each_linked', 'send_email']);
+        expect(stepsBefore(t, [2]).map((a) => a.path.join('.'))).toEqual(['0', '1', '1.each.0']);
     });
 });

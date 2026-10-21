@@ -1,5 +1,5 @@
-import { createContext, useContext, useState } from 'react';
-import { ChevronRight, Play, Plus, Send, Trash2 } from 'lucide-react';
+import { createContext, useContext, useMemo, useState } from 'react';
+import { ChevronRight, Play, Plus, Repeat, Send, Trash2 } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +21,25 @@ import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import { cronError, scheduleParts, scheduleTimeZone, timeZoneLabel, type Connection, type ConnectorParam } from '@imagina-base/shared';
+import {
+    cronError,
+    describeWait,
+    FOR_EACH_MAX_ITEMS,
+    readWaitConfig,
+    RESPONSE_NAME_RE,
+    SCHEDULED_EACH_MAX,
+    scheduleParts,
+    scheduleTimeZone,
+    timeZoneLabel,
+    WAIT_UNITS,
+    waitConfigProblem,
+    type Connection,
+    type ConnectorParam,
+} from '@imagina-base/shared';
+import { FilterGroupView } from '@/admin/records/FilterGroupView';
+import { emptyTree } from '@/admin/records/filterTree';
+import { useRelationPaths } from '@/hooks/useRelationPaths';
+import type { FilterTree } from '@/types/record';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { browserTimeZone, getTenantTimeZone } from '@/lib/tenantFormat';
 import type {
@@ -36,6 +54,9 @@ import { ActionTypeSelect } from './ActionTypeSelect';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
+import { ActionTypeMenu } from './ActionTypeMenu';
+import { ifElseDepth, insideLoop, type SeqPath } from './actionsTree';
+import { LoopItemProvider, StepScope, useLoopItem, useRememberSample, useStepPath } from './flowContext';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -134,6 +155,11 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
     // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
+    // v0.1.289 — programado «para cada registro que cumpla…».
+    if (c.for_each_record === true) {
+        out.for_each_record = true;
+        if (c.records_filter && typeof c.records_filter === 'object') out.records_filter = c.records_filter;
+    }
     return out;
 }
 
@@ -151,7 +177,7 @@ export function helpForTrigger(triggerType: string): string {
         case 'field_changed':
             return __('Se ejecuta cuando un campo específico cambia, opcionalmente de un valor a otro. Ejemplo: «cuando el estado pasa de Prospecto a Ganado».');
         case 'scheduled':
-            return __('Corre en el horario que elijas, sin un registro en particular: ideal para «Editar en lote» (subir precios cada semana, marcar vencidas cada noche), crear un registro de resumen o avisar por correo.');
+            return __('Corre en el horario que elijas. Sin registro en particular es ideal para «Editar en lote» (subir precios cada semana, marcar vencidas cada noche) o un correo de resumen; con «Ejecutar una vez por cada registro que cumpla…» corre las acciones para cada registro del filtro (recordatorios, seguimientos).');
         case 'due_date_reached':
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: «20 días después del vencimiento» para recordatorios de pago. Si la fecha se cambia, vuelve a dispararse para la fecha nueva.');
         case 'form_submitted':
@@ -190,13 +216,16 @@ export function TriggerConfigEditor({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            <ConditionEditor
-                value={config.field_filters as ConditionRule[] | Record<string, unknown> | undefined}
-                onChange={(next) => onChange({ ...config, field_filters: next })}
-                fields={fields}
-                addLabel={__('Añadir filtro')}
-                helperText={__('La automatización solo se dispara si el registro cumple TODAS estas condiciones.')}
-            />
+            {/* Un horario no tiene registro: su filtro es el de «para cada registro». */}
+            {triggerType !== 'scheduled' && (
+                <ConditionEditor
+                    value={config.field_filters as ConditionRule[] | Record<string, unknown> | undefined}
+                    onChange={(next) => onChange({ ...config, field_filters: next })}
+                    fields={fields}
+                    addLabel={__('Añadir filtro')}
+                    helperText={__('La automatización solo se dispara si el registro cumple TODAS estas condiciones.')}
+                />
+            )}
 
             {triggerType === 'record_updated' && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-border-t imcrm-border-border imcrm-pt-3">
@@ -238,7 +267,7 @@ export function TriggerConfigEditor({
             )}
 
             {triggerType === 'scheduled' && (
-                <ScheduledConfig config={config} onChange={onChange} />
+                <ScheduledConfig config={config} onChange={onChange} fields={fields} />
             )}
 
             {triggerType === 'due_date_reached' && (
@@ -588,9 +617,11 @@ function ChangeEndInput({
 function ScheduledConfig({
     config,
     onChange,
+    fields,
 }: {
     config: TriggerConfig;
     onChange: (next: TriggerConfig) => void;
+    fields: FieldEntity[];
 }): JSX.Element {
     // v0.1.221 — hora, día y zona horaria: antes sólo se elegía la
     // frecuencia y el servidor nunca la registraba (leía un `cron` que nadie
@@ -726,6 +757,74 @@ function ScheduledConfig({
                     <span className="imcrm-text-muted-foreground">{__('Si la completas, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
                 </div>
             </details>
+            <ScheduledEachConfig config={config} onChange={onChange} fields={fields} />
+        </div>
+    );
+}
+
+/**
+ * v0.1.289 — «Ejecutar una vez por cada registro que cumpla…»: el horario
+ * deja de correr «sin registro» y corre las acciones para cada registro del
+ * filtro (con sus variables, como cualquier otro disparo).
+ */
+function ScheduledEachConfig({
+    config,
+    onChange,
+    fields,
+}: {
+    config: TriggerConfig;
+    onChange: (next: TriggerConfig) => void;
+    fields: FieldEntity[];
+}): JSX.Element {
+    const listId = useAutomationListId();
+    const on = config.for_each_record === true;
+    const filter = (config.records_filter as FilterTree | null | undefined) ?? null;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="imcrm-schedule-each">
+            <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                <input
+                    type="checkbox"
+                    className="imcrm-mt-0.5"
+                    checked={on}
+                    onChange={(e) => {
+                        const next: TriggerConfig = { ...config };
+                        if (e.target.checked) {
+                            next.for_each_record = true;
+                            if (!next.records_filter) next.records_filter = emptyTree();
+                        } else {
+                            delete next.for_each_record;
+                            delete next.records_filter;
+                        }
+                        onChange(next);
+                    }}
+                    data-testid="imcrm-schedule-each-toggle"
+                />
+                <span className="imcrm-flex imcrm-flex-col">
+                    <span className="imcrm-font-medium">{__('Ejecutar una vez por cada registro que cumpla…')}</span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Por ejemplo: cada mañana, un recordatorio a cada cliente con la factura vencida. Las acciones usan las variables de cada registro.')}
+                    </span>
+                </span>
+            </label>
+            {on && (
+                <>
+                    <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
+                        <FilterGroupView
+                            root={filter ?? emptyTree()}
+                            path={[]}
+                            fields={fields}
+                            listId={listId}
+                            onRootChange={(next) => onChange({ ...config, records_filter: next })}
+                        />
+                    </div>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {sprintf(
+                            __('Sin condiciones, corre para todos los registros. Procesa hasta %d registros por disparo, en tandas; si hay más, el resto queda para el siguiente y se avisa en Problemas. Las fechas relativas («hoy», «esta semana») se calculan en la zona horaria de la empresa.'),
+                            SCHEDULED_EACH_MAX,
+                        )}
+                    </p>
+                </>
+            )}
         </div>
     );
 }
@@ -881,6 +980,17 @@ interface ActionsEditorProps {
     actionsCatalog: ActionMeta[];
     fields: FieldEntity[];
     error?: string;
+    /** v0.1.289 — ruta de esta secuencia en el árbol (`[2, 'then']`). */
+    seqPath?: SeqPath;
+}
+
+/** Lo que no se puede agregar en una secuencia (anidado máximo, bucle). */
+export function excludedActionsAt(seqPath: SeqPath): string[] {
+    const out: string[] = [];
+    if (ifElseDepth(seqPath) >= 4) out.push('if_else', 'for_each_linked');
+    // Dentro de un bucle no se espera ni se repite otra vez.
+    if (insideLoop(seqPath)) out.push('wait', 'for_each_linked');
+    return [...new Set(out)];
 }
 
 /**
@@ -894,12 +1004,9 @@ export function ActionsEditor({
     actionsCatalog,
     fields,
     error,
+    seqPath = [],
 }: ActionsEditorProps): JSX.Element {
-    const addAction = (): void => {
-        const first = actionsCatalog[0];
-        if (!first) return;
-        onChange([...value, { type: first.slug, config: {} }]);
-    };
+    const exclude = excludedActionsAt(seqPath);
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
@@ -912,8 +1019,8 @@ export function ActionsEditor({
             ) : (
                 <ol className="imcrm-flex imcrm-flex-col imcrm-gap-2.5">
                     {value.map((spec, i) => (
+                        <StepScope key={i} path={[...seqPath, i]}>
                         <li
-                            key={i}
                             data-action-index={i}
                             className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3.5 imcrm-shadow-imcrm-sm"
                         >
@@ -924,6 +1031,7 @@ export function ActionsEditor({
                                 <ActionTypeSelect
                                     spec={spec}
                                     actionsCatalog={actionsCatalog}
+                                    exclude={exclude}
                                     onChange={(picked) => {
                                         const next = [...value];
                                         next[i] = picked;
@@ -953,21 +1061,29 @@ export function ActionsEditor({
                                 actionsCatalog={actionsCatalog}
                             />
                         </li>
+                        </StepScope>
                     ))}
                 </ol>
             )}
 
-            <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={addAction}
-                disabled={actionsCatalog.length === 0}
-                className="imcrm-self-start imcrm-gap-2"
+            <ActionTypeMenu
+                actionsCatalog={actionsCatalog}
+                exclude={exclude}
+                align="start"
+                onPick={(type, config) => onChange([...value, { type, config: config ?? {} }])}
             >
-                <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                {__('Añadir acción')}
-            </Button>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={actionsCatalog.length === 0}
+                    className="imcrm-self-start imcrm-gap-2"
+                    data-testid="imcrm-nested-add-action"
+                >
+                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Añadir acción')}
+                </Button>
+            </ActionTypeMenu>
         </div>
     );
 }
@@ -986,6 +1102,11 @@ export interface ActionConfigEditorPropsExtended extends ActionConfigEditorProps
      * deshabilitan "Añadir acción" — no rompen.
      */
     actionsCatalog?: ActionMeta[];
+    /**
+     * v0.1.289 — false en el lienzo: los pasos de una repetición se arman en
+     * su marco, no dentro del panel.
+     */
+    nestedInline?: boolean;
 }
 
 /**
@@ -999,6 +1120,7 @@ export function ActionConfigEditor({
     onChange,
     fields,
     actionsCatalog,
+    nestedInline = true,
 }: ActionConfigEditorPropsExtended): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
@@ -1023,13 +1145,18 @@ export function ActionConfigEditor({
                     fields={fields}
                     actionsCatalog={actionsCatalog ?? []}
                 />
+            ) : spec.type === 'wait' ? (
+                <WaitConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'for_each_linked' ? (
+                <ForEachLinkedConfig spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
             ) : (
                 <JsonConfigFallback spec={spec} onChange={onChange} />
             )}
 
             {/* La condición a-nivel-acción no aplica a if_else (la lógica
-                 de branch ya vive dentro de su propio config.condition). */}
-            {spec.type !== 'if_else' && (
+                 de branch ya vive dentro de su propio config.condition) ni a
+                 «Esperar», que tiene su «continuar sólo si…». */}
+            {spec.type !== 'if_else' && spec.type !== 'wait' && (
                 <ActionConditionEditor spec={spec} onChange={onChange} fields={fields} />
             )}
         </div>
@@ -1067,6 +1194,8 @@ function IfElseConfig({
     const updateConfig = (patch: Record<string, unknown>): void => {
         onChange({ ...spec, config: { ...spec.config, ...patch } });
     };
+    const stepPath = useStepPath() ?? [];
+    const condFields = useConditionFields(fields);
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
@@ -1083,7 +1212,7 @@ function IfElseConfig({
                 <ConditionEditor
                     value={condition as ConditionRule[] | Record<string, unknown> | undefined}
                     onChange={(next) => updateConfig({ condition: next })}
-                    fields={fields}
+                    fields={condFields}
                 />
             </div>
 
@@ -1102,6 +1231,7 @@ function IfElseConfig({
                     onChange={(next) => updateConfig({ then_actions: next })}
                     actionsCatalog={actionsCatalog}
                     fields={fields}
+                    seqPath={[...stepPath, 'then']}
                 />
             </div>
 
@@ -1120,6 +1250,7 @@ function IfElseConfig({
                     onChange={(next) => updateConfig({ else_actions: next })}
                     actionsCatalog={actionsCatalog}
                     fields={fields}
+                    seqPath={[...stepPath, 'else']}
                 />
             </div>
         </div>
@@ -1145,6 +1276,7 @@ function ActionConditionEditor({
           ? Object.keys(conditionValue).length
           : 0;
     const hasRows = ruleCount > 0;
+    const condFields = useConditionFields(fields);
 
     return (
         <details
@@ -1171,7 +1303,7 @@ function ActionConditionEditor({
                         }
                         onChange({ ...spec, condition: next });
                     }}
-                    fields={fields}
+                    fields={condFields}
                     helperText={__(
                         'Esta acción solo se ejecuta si TODAS las condiciones matchean el registro. Vacío = ejecutar siempre.',
                     )}
@@ -1193,21 +1325,44 @@ function UpdateFieldConfig({
     // El valor se guarda con su tipo: `false` (no «0», que el motor leía
     // como texto verdadero) y una LISTA de opciones en un multi_select.
     const [valueRows, setValueRows] = useState<ValueRow[]>(() => readValueRows(spec.config.values));
+    // v0.1.289 — dentro de «Repetir por cada registro vinculado» se puede
+    // cambiar el registro que disparó o el VINCULADO de esa vuelta.
+    const item = useLoopItem();
+    const onItem = item !== null && spec.config.target === 'item';
+    const targetFields = onItem ? item.fields.filter((f) => f.type !== 'relation') : fields;
 
     const commitValues = (next: ValueRow[]): void => {
         setValueRows(next);
         onChange({ ...spec, config: { ...spec.config, values: valueRowsToConfig(next) } });
     };
+    const setTarget = (target: 'record' | 'item'): void => {
+        setValueRows([]);
+        const config: Record<string, unknown> = { ...spec.config, values: {} };
+        if (target === 'item') config.target = 'item';
+        else delete config.target;
+        onChange({ ...spec, config });
+    };
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+            {item !== null && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="imcrm-update-target">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('¿Qué registro cambia?')}</Label>
+                    <Select value={onItem ? 'item' : 'record'} onChange={(e) => setTarget(e.target.value === 'item' ? 'item' : 'record')}>
+                        <option value="record">{__('El que disparó la automatización')}</option>
+                        <option value="item">{sprintf(__('El vinculado de esta vuelta («%s»)'), item.listName)}</option>
+                    </Select>
+                </div>
+            )}
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Elige qué campos cambiar en el registro que disparó la automatización y su valor nuevo. Acepta variables como {{slug}} o {{record.id}}.')}
+                {onItem
+                    ? __('Elige qué campos cambiar en cada registro vinculado y su valor nuevo. Acepta variables como {{item.slug}} (del vinculado) o {{slug}} (del que disparó).')
+                    : __('Elige qué campos cambiar en el registro que disparó la automatización y su valor nuevo. Acepta variables como {{slug}} o {{record.id}}.')}
             </p>
             {/* Misma estructura de fila que CreateRecordConfig: selector +
                 eliminar arriba, valor a ancho completo abajo. */}
             {valueRows.map((v, i) => {
-                const selectedField = fields.find((f) => f.slug === v.slug);
+                const selectedField = targetFields.find((f) => f.slug === v.slug);
                 return (
                     <div
                         key={i}
@@ -1228,7 +1383,7 @@ function UpdateFieldConfig({
                                 className="imcrm-h-8 imcrm-flex-1"
                             >
                                 <option value="">{__('— Campo —')}</option>
-                                {fields.map((field) => (
+                                {targetFields.map((field) => (
                                     <option key={field.id} value={field.slug}>
                                         {field.label}
                                     </option>
@@ -1783,6 +1938,7 @@ function ConnectorActionConfig({
     const connections = q.data ?? [];
     const connection = connections.find((c) => c.id === connectionId) ?? null;
     const action = connection?.actions.find((a) => a.key === actionKey) ?? null;
+    const remember = useRememberSample();
 
     const setValue = (key: string, next: string): void => {
         onChange({
@@ -1799,7 +1955,10 @@ function ConnectorActionConfig({
             );
             return res.data;
         },
-        onSuccess: (r) => setTest(r),
+        onSuccess: (r) => {
+            setTest(r);
+            if (r.response) remember?.(r.response.body);
+        },
         onError: (err: unknown) =>
             setTest({
                 request: { url: '', method: 'POST', headers: {}, body: null },
@@ -1875,6 +2034,8 @@ function ConnectorActionConfig({
             </div>
 
             {test && <WebhookTestReport result={test} />}
+
+            <ResponseNameInput spec={spec} onChange={onChange} />
         </div>
     );
 }
@@ -2056,6 +2217,7 @@ function CallWebhookConfig({
     const hasBody = method !== 'GET' && method !== 'HEAD';
     const [showRaw, setShowRaw] = useState(rawBody !== '' && bodyRows.length === 0);
     const [test, setTest] = useState<WebhookTestResult | null>(null);
+    const remember = useRememberSample();
 
     const set = (patch: Record<string, unknown>): void => {
         onChange({ ...spec, config: { ...spec.config, ...patch } });
@@ -2069,7 +2231,10 @@ function CallWebhookConfig({
             );
             return res.data;
         },
-        onSuccess: (r) => setTest(r),
+        onSuccess: (r) => {
+            setTest(r);
+            if (r.response) remember?.(r.response.body);
+        },
         onError: (err: unknown) =>
             setTest({
                 request: { url, method, headers: {}, body: null },
@@ -2232,7 +2397,57 @@ function CallWebhookConfig({
             </div>
 
             {test && <WebhookTestReport result={test} />}
+
+            <ResponseNameInput spec={spec} onChange={onChange} />
         </div>
+    );
+}
+
+/**
+ * v0.1.289 — Nombre de la respuesta de un webhook o conector: los pasos
+ * siguientes la leen como `{{respuestas.<nombre>.body.campo}}` aunque en el
+ * medio haya otros webhooks (el último siempre está en `{{webhook…}}`).
+ */
+function ResponseNameInput({ spec, onChange }: { spec: ActionSpec; onChange: (next: ActionSpec) => void }): JSX.Element {
+    const name = typeof spec.config.response_name === 'string' ? spec.config.response_name : '';
+    const invalid = name !== '' && !RESPONSE_NAME_RE.test(name);
+    return (
+        <details className="imcrm-group imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-2 [&[open]]:imcrm-bg-card" open={name !== '' || undefined}>
+            <summary className="imcrm-flex imcrm-cursor-pointer imcrm-list-none imcrm-items-center imcrm-gap-2 imcrm-text-[12px] imcrm-font-medium imcrm-text-foreground/80 [&::-webkit-details-marker]:imcrm-hidden">
+                <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground imcrm-transition-transform group-open:imcrm-rotate-90" />
+                <span>{__('Usar la respuesta en los pasos siguientes')}</span>
+            </summary>
+            <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Los pasos de abajo leen la respuesta de este paso con {{webhook.status}} y {{webhook.body.campo}} (por ejemplo {{webhook.body.data.id}} o {{webhook.body.items.0.precio}}). Si en el medio hay otro webhook, ponle un nombre a éste y úsalo con {{respuestas.nombre.body.campo}}.')}
+                </p>
+                <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Nombre de la respuesta (opcional)')}</Label>
+                <Input
+                    value={name}
+                    placeholder="cotizacion"
+                    onChange={(e) => {
+                        const v = e.target.value.trim().toLowerCase();
+                        const config = { ...spec.config };
+                        if (v === '') delete config.response_name;
+                        else config.response_name = v;
+                        onChange({ ...spec, config });
+                    }}
+                    aria-invalid={invalid || undefined}
+                    className={invalid ? 'imcrm-border-destructive' : undefined}
+                    data-testid="imcrm-response-name"
+                />
+                {invalid ? (
+                    <span className="imcrm-text-[11px] imcrm-text-destructive">
+                        {__('Usa minúsculas, números y guiones bajos, empezando con una letra (máximo 40).')}
+                    </span>
+                ) : name !== '' ? (
+                    <span className="imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">{`{{respuestas.${name}.body…}}`}</span>
+                ) : null}
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Se guardan hasta 64 KB de la respuesta (también si la automatización espera en el medio). Si es más larga se corta, y lo que quede afuera llega vacío.')}
+                </p>
+            </div>
+        </details>
     );
 }
 
@@ -2286,6 +2501,310 @@ function WebhookTestReport({ result }: { result: WebhookTestResult }): JSX.Eleme
     );
 }
 
+
+/**
+ * v0.1.289 — Dentro de un bucle, las condiciones pueden mirar también el
+ * registro VINCULADO de esa vuelta (`item.<slug>`).
+ */
+function useConditionFields(fields: FieldEntity[]): FieldEntity[] {
+    const item = useLoopItem();
+    return useMemo(() => {
+        if (!item) return fields;
+        const extra = item.fields
+            .filter((f) => f.type !== 'relation')
+            .map((f) => ({ ...f, slug: `item.${f.slug}`, label: `${item.listName} · ${f.label}` }));
+        return [...fields, ...extra];
+    }, [fields, item]);
+}
+
+const WAIT_UNIT_LABELS: Record<(typeof WAIT_UNITS)[number], string> = {
+    minutes: 'minutos',
+    hours: 'horas',
+    days: 'días',
+};
+
+/**
+ * v0.1.289 — «Esperar»: un tiempo fijo o hasta una fecha del registro (con
+ * desplazamiento y hora fija en la zona de la empresa). La corrida queda en
+ * pausa y sigue sola; al terminar se vuelve a leer el registro.
+ */
+function WaitConfig({ spec, onChange, fields }: ActionConfigEditorProps): JSX.Element {
+    const cfg = spec.config;
+    const w = readWaitConfig(cfg);
+    const item = useLoopItem();
+    const condFields = useConditionFields(fields);
+    const dateFields = fields.filter((f) => f.type === 'date' || f.type === 'datetime');
+    const set = (patch: Record<string, unknown>): void => {
+        const config = { ...cfg, ...patch };
+        for (const [k, v] of Object.entries(patch)) if (v === undefined) delete config[k];
+        onChange({ ...spec, config });
+    };
+    const fieldLabel = dateFields.find((f) => f.slug === w.dateField)?.label;
+    const problem = waitConfigProblem(cfg);
+    const tz = getTenantTimeZone();
+    const hasTime = typeof cfg.at_time === 'string' && cfg.at_time !== '';
+    const resumeCond = cfg.resume_condition as ConditionRule[] | Record<string, unknown> | undefined;
+    const resumeCount = Array.isArray(resumeCond) ? resumeCond.length : resumeCond ? Object.keys(resumeCond).length : 0;
+
+    if (item !== null) {
+        return (
+            <p className="imcrm-rounded-md imcrm-bg-destructive/10 imcrm-p-2 imcrm-text-xs imcrm-text-destructive">
+                {__('No se puede esperar dentro de «Repetir por cada registro vinculado»: la espera pausaría la vuelta de un solo vinculado. Pon la espera antes o después de la repetición.')}
+            </p>
+        );
+    }
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-wait-config">
+            <div className="imcrm-inline-flex imcrm-w-fit imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-0.5" role="tablist">
+                {(['duration', 'until_field'] as const).map((m) => (
+                    <button
+                        key={m}
+                        type="button"
+                        role="tab"
+                        aria-selected={w.mode === m}
+                        onClick={() => set({ mode: m })}
+                        className={
+                            w.mode === m
+                                ? 'imcrm-rounded-md imcrm-bg-card imcrm-px-2.5 imcrm-py-1 imcrm-text-[12px] imcrm-font-medium imcrm-shadow-imcrm-sm'
+                                : 'imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-[12px] imcrm-text-muted-foreground hover:imcrm-text-foreground'
+                        }
+                        data-testid={`imcrm-wait-mode-${m}`}
+                    >
+                        {m === 'duration' ? __('Un tiempo') : __('Hasta una fecha del registro')}
+                    </button>
+                ))}
+            </div>
+
+            {w.mode === 'duration' ? (
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                    <span>{__('Esperar')}</span>
+                    <Input
+                        type="number"
+                        min={1}
+                        className="imcrm-w-24"
+                        value={typeof cfg.amount === 'number' || typeof cfg.amount === 'string' ? String(cfg.amount) : ''}
+                        onChange={(e) => set({ amount: e.target.value === '' ? undefined : Number(e.target.value) })}
+                        aria-label={__('Cuánto esperar')}
+                        data-testid="imcrm-wait-amount"
+                    />
+                    <Select className="imcrm-w-auto" value={w.unit} onChange={(e) => set({ unit: e.target.value })} aria-label={__('Unidad')} data-testid="imcrm-wait-unit">
+                        {WAIT_UNITS.map((u) => (
+                            <option key={u} value={u}>
+                                {__(WAIT_UNIT_LABELS[u])}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+            ) : (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-text-sm">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                        <Input
+                            type="number"
+                            min={0}
+                            className="imcrm-w-20"
+                            value={typeof cfg.offset_amount === 'number' || typeof cfg.offset_amount === 'string' ? String(cfg.offset_amount) : '0'}
+                            onChange={(e) => set({ offset_amount: e.target.value === '' ? 0 : Number(e.target.value) })}
+                            aria-label={__('Desplazamiento')}
+                            data-testid="imcrm-wait-offset"
+                        />
+                        <Select className="imcrm-w-auto" value={w.offsetUnit} onChange={(e) => set({ offset_unit: e.target.value })} aria-label={__('Unidad del desplazamiento')}>
+                            {WAIT_UNITS.map((u) => (
+                                <option key={u} value={u}>
+                                    {__(WAIT_UNIT_LABELS[u])}
+                                </option>
+                            ))}
+                        </Select>
+                        <Select className="imcrm-w-auto" value={w.offsetDirection} onChange={(e) => set({ offset_direction: e.target.value })} aria-label={__('Antes o después')} data-testid="imcrm-wait-direction">
+                            <option value="before">{__('antes de')}</option>
+                            <option value="after">{__('después de')}</option>
+                        </Select>
+                        <Select className="imcrm-w-auto imcrm-min-w-[10rem]" value={w.dateField} onChange={(e) => set({ date_field: e.target.value })} aria-label={__('Campo de fecha')} data-testid="imcrm-wait-field">
+                            <option value="">{__('— Campo de fecha —')}</option>
+                            {dateFields.map((f) => (
+                                <option key={f.id} value={f.slug}>
+                                    {f.label}
+                                </option>
+                            ))}
+                        </Select>
+                    </div>
+                    {dateFields.length === 0 && (
+                        <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">{__('Esta lista no tiene campos de fecha.')}</p>
+                    )}
+                    <label className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                        <input
+                            type="checkbox"
+                            checked={hasTime}
+                            onChange={(e) => set({ at_time: e.target.checked ? '09:00' : undefined })}
+                            data-testid="imcrm-wait-at-time-toggle"
+                        />
+                        <span>{__('A una hora fija de ese día')}</span>
+                        {hasTime && (
+                            <Input
+                                type="time"
+                                className="imcrm-w-28"
+                                value={String(cfg.at_time)}
+                                onChange={(e) => set({ at_time: e.target.value })}
+                                data-testid="imcrm-wait-at-time"
+                            />
+                        )}
+                    </label>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Si la fecha cambia mientras espera, la espera se mueve sola. Si el campo está vacío, la automatización termina aquí.')}
+                    </p>
+                </div>
+            )}
+
+            <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2 imcrm-text-[12px]" data-testid="imcrm-wait-summary">
+                {problem ?? `${describeWait(cfg, fieldLabel)}.`}{' '}
+                <span className="imcrm-text-muted-foreground">
+                    {tz ? sprintf(__('Las horas son las de %s.'), timeZoneLabel(tz)) : __('La empresa no tiene zona horaria: las horas se toman en UTC.')}
+                </span>
+            </p>
+
+            <details className="imcrm-group imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-2.5 [&[open]]:imcrm-bg-card" open={resumeCount > 0 || undefined}>
+                <summary className="imcrm-flex imcrm-cursor-pointer imcrm-list-none imcrm-items-center imcrm-gap-2 imcrm-text-[12px] imcrm-font-medium imcrm-text-foreground/80 [&::-webkit-details-marker]:imcrm-hidden">
+                    <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground imcrm-transition-transform group-open:imcrm-rotate-90" />
+                    <span>{__('Continuar sólo si… (opcional)')}</span>
+                    {resumeCount > 0 && (
+                        <Badge variant="default" className="imcrm-ml-auto">
+                            {resumeCount}
+                        </Badge>
+                    )}
+                </summary>
+                <div className="imcrm-mt-3">
+                    <ConditionEditor
+                        value={resumeCond}
+                        onChange={(next) => set({ resume_condition: next.length > 0 ? next : undefined })}
+                        fields={condFields}
+                        helperText={__('Al terminar la espera se vuelve a leer el registro: si ya no cumple TODAS estas condiciones (por ejemplo, la factura ya se pagó), la automatización termina ahí.')}
+                    />
+                </div>
+            </details>
+
+            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                {__('Mientras espera, la corrida aparece «En espera» en el historial y se puede cancelar. Si se borra el registro o se pausa la automatización, la espera se cancela (y no se retoma al reactivarla).')}
+            </p>
+        </div>
+    );
+}
+
+/**
+ * v0.1.289 — «Repetir por cada registro vinculado»: la relación (en
+ * cualquier sentido), un filtro opcional sobre la otra lista y los pasos que
+ * corren una vez por cada vinculado.
+ */
+function ForEachLinkedConfig({
+    spec,
+    onChange,
+    fields,
+    actionsCatalog,
+    nestedInline = true,
+}: {
+    spec: ActionSpec;
+    onChange: (next: ActionSpec) => void;
+    fields: FieldEntity[];
+    actionsCatalog: ActionMeta[];
+    nestedInline?: boolean;
+}): JSX.Element {
+    const listId = useAutomationListId();
+    const paths = useRelationPaths(listId);
+    const relId = Number(spec.config.relation_field_id) || 0;
+    const path = paths.data?.find((p) => p.relation_field_id === relId) ?? null;
+    const other = useFields(path?.other_list_id);
+    const filter = (spec.config.filter_tree as FilterTree | null | undefined) ?? null;
+    const inner: ActionSpec[] = Array.isArray(spec.config.actions) ? (spec.config.actions as ActionSpec[]) : [];
+    const stepPath = useStepPath() ?? [];
+    const set = (patch: Record<string, unknown>): void => {
+        const config = { ...spec.config, ...patch };
+        for (const [k, v] of Object.entries(patch)) if (v === undefined) delete config[k];
+        onChange({ ...spec, config });
+    };
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-for-each-config">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Por cada registro vinculado de')}</Label>
+                <Select
+                    value={relId > 0 ? String(relId) : ''}
+                    onChange={(e) => set({ relation_field_id: e.target.value === '' ? undefined : Number(e.target.value), filter_tree: undefined })}
+                    data-testid="imcrm-for-each-relation"
+                >
+                    <option value="">{__('— Elige la relación —')}</option>
+                    {(paths.data ?? []).map((p) => (
+                        <option key={`${p.relation_field_id}`} value={p.relation_field_id}>
+                            {p.direction === 'forward'
+                                ? sprintf(__('%1$s (campo «%2$s» de esta lista)'), p.other_list_name, p.relation_label)
+                                : sprintf(__('%1$s (los que apuntan aquí por «%2$s»)'), p.other_list_name, p.relation_label)}
+                        </option>
+                    ))}
+                </Select>
+                {!paths.isLoading && (paths.data ?? []).length === 0 && (
+                    <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                        {__('Esta lista no está vinculada con ninguna otra: agrega un campo «Relación» para poder repetir por sus registros.')}
+                    </p>
+                )}
+            </div>
+
+            {path && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                        <input
+                            type="checkbox"
+                            checked={filter !== null}
+                            onChange={(e) => set({ filter_tree: e.target.checked ? emptyTree() : undefined })}
+                            data-testid="imcrm-for-each-has-filter"
+                        />
+                        {sprintf(__('Sólo los de «%s» que cumplan…'), path.other_list_name)}
+                    </label>
+                    {filter !== null && (
+                        <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
+                            <FilterGroupView
+                                root={filter}
+                                path={[]}
+                                fields={other.data ?? []}
+                                listId={path.other_list_id}
+                                onRootChange={(next) => set({ filter_tree: next })}
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {nestedInline && (
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-rounded-xl imcrm-border imcrm-border-info/30 imcrm-bg-info/5 imcrm-p-3.5">
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <Badge variant="default" dot>
+                        <Repeat className="imcrm-mr-1 imcrm-inline imcrm-h-3 imcrm-w-3" />
+                        {__('Por cada uno')}
+                    </Badge>
+                    <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                        {path
+                            ? sprintf(__('Estos pasos corren una vez por cada registro de «%s». Usa {{item.campo}} para sus datos.'), path.other_list_name)
+                            : __('Elige la relación para armar los pasos que se repiten.')}
+                    </p>
+                </div>
+                <LoopItemProvider listId={listId} relationFieldId={relId}>
+                    <ActionsEditor
+                        value={inner}
+                        onChange={(next) => set({ actions: next })}
+                        actionsCatalog={actionsCatalog}
+                        fields={fields}
+                        seqPath={[...stepPath, 'each']}
+                    />
+                </LoopItemProvider>
+            </div>
+            )}
+
+            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                {sprintf(
+                    __('Procesa hasta %d vinculados por corrida (si hay más, queda anotado en el historial). Dentro de la repetición no se puede esperar ni repetir otra vez.'),
+                    FOR_EACH_MAX_ITEMS,
+                )}
+            </p>
+        </div>
+    );
+}
 
 function JsonConfigFallback({
     spec,

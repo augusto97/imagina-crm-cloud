@@ -4,9 +4,11 @@ import {
     FileText,
     FilePlus2,
     GitBranch,
+    Hourglass,
     Mail,
     PenLine,
     Plug,
+    Repeat,
     Replace,
     Sparkles,
     Wand2,
@@ -17,7 +19,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 
-import { scheduleParts } from '@imagina-base/shared';
+import { describeWait, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -120,6 +122,17 @@ export const ACTION_META: Record<string, StepMeta> = {
         title: 'Condición Si / Si no',
         description: 'Divide el flujo en dos ramas según una condición sobre el registro.',
     },
+    // v0.1.289 — esperas durables y bucle por los vinculados.
+    wait: {
+        icon: Hourglass,
+        title: 'Esperar',
+        description: 'Pausa el flujo unos minutos, horas o días, o hasta una fecha del registro; después sigue con los pasos de abajo.',
+    },
+    for_each_linked: {
+        icon: Repeat,
+        title: 'Repetir por cada registro vinculado',
+        description: 'Corre los pasos de adentro una vez por cada registro vinculado (las facturas de un cliente, las tareas de un proyecto…).',
+    },
     // v0.1.198 — el título real ("Enviar WhatsApp") lo pone el catálogo del
     // backend por conexión; esto es el fallback cuando no está a mano.
     connector_action: {
@@ -217,8 +230,12 @@ export function summarizeTrigger(
                 ? __('Cuando cambia un campo')
                 : sprintf(__('Cuando cambia «%s»'), fieldLabel(fields, slug));
         }
-        case 'scheduled':
-            return sprintf(__('De forma programada, %s'), describeSchedule(config));
+        case 'scheduled': {
+            const base = sprintf(__('De forma programada, %s'), describeSchedule(config));
+            // v0.1.289 — «para cada registro que cumpla…»: una corrida por registro.
+            if (config.for_each_record !== true) return base;
+            return `${base} · ${config.records_filter ? __('por cada registro que cumpla el filtro') : __('por cada registro de la lista')}`;
+        }
         case 'due_date_reached': {
             const slug = typeof config.due_field === 'string' ? config.due_field : '';
             const offset = typeof config.offset_minutes === 'number' ? config.offset_minutes : 0;
@@ -265,16 +282,42 @@ export function summarizeAction(
      * siendo legible.
      */
     catalog?: ActionMeta[],
+    /**
+     * v0.1.289 — los caminos de relación de la lista: el bucle nombra la lista
+     * vinculada aunque la relación viva en la otra lista (sentido inverso).
+     */
+    relationPaths?: Array<{ relation_field_id: number; relation_label: string; other_list_name: string }>,
 ): string {
     const cfg = spec.config;
     switch (spec.type) {
+        case 'wait': {
+            const slug = typeof cfg.date_field === 'string' ? cfg.date_field : '';
+            return describeWait(cfg, slug !== '' ? fieldLabel(fields, slug) : undefined);
+        }
+        case 'for_each_linked': {
+            const relId = Number(cfg.relation_field_id);
+            const path = (relationPaths ?? []).find((p) => p.relation_field_id === relId);
+            const own = fields.find((f) => f.id === relId);
+            const n = Array.isArray(cfg.actions) ? cfg.actions.length : 0;
+            const name = path?.other_list_name ?? own?.label ?? '';
+            const base = name !== ''
+                ? sprintf(__('Repite por cada registro vinculado de «%s»'), name)
+                : __('Repite por cada registro vinculado');
+            const extra = [
+                ...(cfg.filter_tree ? [__('que cumpla el filtro')] : []),
+                sprintf(_n('%d paso', '%d pasos', n), n),
+            ];
+            return `${base} · ${extra.join(' · ')}`;
+        }
         case 'update_field': {
             const values = cfg.values && typeof cfg.values === 'object' ? Object.keys(cfg.values as object) : [];
-            if (values.length === 0) return __('Actualiza campos del registro');
-            const labels = values.map((s) => `«${fieldLabel(fields, s)}»`);
+            // v0.1.289 — dentro de un bucle puede cambiar el registro VINCULADO.
+            const onItem = cfg.target === 'item';
+            if (values.length === 0) return onItem ? __('Actualiza campos del registro vinculado') : __('Actualiza campos del registro');
+            const labels = values.map((s) => `«${onItem ? s : fieldLabel(fields, s)}»`);
             return sprintf(
                 /* translators: %s: field names */
-                __('Actualiza %s'),
+                onItem ? __('Actualiza %s del registro vinculado') : __('Actualiza %s'),
                 labels.slice(0, 3).join(', ') + (labels.length > 3 ? '…' : ''),
             );
         }
@@ -356,4 +399,89 @@ export function summarizeAction(
 /** Cantidad de condiciones de ejecución de una acción (chip "N cond."). */
 export function actionConditionCount(spec: ActionSpec): number {
     return conditionCount(spec.condition);
+}
+
+// --- v0.1.289: historial de versiones ---
+
+interface VersionLike {
+    name: string;
+    description: string | null;
+    trigger_type: string;
+    trigger_config: Record<string, unknown>;
+    actions: ActionSpec[];
+    is_active: boolean;
+}
+
+/** JSON estable (claves ordenadas): la base de datos reordena las claves de un jsonb. */
+export function stableJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+    if (value && typeof value === 'object') {
+        const entries = Object.entries(value as Record<string, unknown>)
+            .filter(([, v]) => v !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+        return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+    }
+    return JSON.stringify(value ?? null);
+}
+
+/**
+ * Qué cambió entre dos versiones, en lenguaje claro: «Renombró…», «La
+ * pausó», «Cambió el disparador…», «Agregó: Envía un correo a…», «Quitó…»,
+ * «Cambió: …», «Reordenó los pasos». Compara los pasos de primer nivel por
+ * su contenido (un cambio dentro de un si/sino o de un bucle se ve como un
+ * cambio de ese paso).
+ */
+export function describeVersionChanges(
+    prev: VersionLike | null,
+    next: VersionLike,
+    fields: FieldEntity[],
+    lists: ListSummary[],
+    catalog?: ActionMeta[],
+): string[] {
+    if (!prev) return [__('Primera versión guardada.')];
+    const out: string[] = [];
+    if (prev.name !== next.name) out.push(sprintf(__('Cambió el nombre: «%1$s» → «%2$s».'), prev.name, next.name));
+    if ((prev.description ?? '') !== (next.description ?? '')) out.push(__('Cambió la descripción.'));
+    if (prev.is_active !== next.is_active) out.push(next.is_active ? __('La activó.') : __('La pausó.'));
+    if (prev.trigger_type !== next.trigger_type || stableJson(prev.trigger_config) !== stableJson(next.trigger_config)) {
+        out.push(sprintf(__('Cambió el disparador: %s.'), summarizeTrigger(next.trigger_type, next.trigger_config as TriggerConfig, fields)));
+    }
+    const sig = (a: ActionSpec): string => stableJson(a);
+    const prevSigs = prev.actions.map(sig);
+    const nextSigs = next.actions.map(sig);
+    if (prevSigs.join('|') !== nextSigs.join('|')) {
+        // Multiconjuntos: lo que sobra en la nueva se agregó; lo que falta, se quitó.
+        const pool = [...prevSigs];
+        const added: ActionSpec[] = [];
+        next.actions.forEach((a, i) => {
+            const at = pool.indexOf(nextSigs[i]!);
+            if (at >= 0) pool.splice(at, 1);
+            else added.push(a);
+        });
+        const nextPool = [...nextSigs];
+        const removed: ActionSpec[] = [];
+        prev.actions.forEach((a, i) => {
+            const at = nextPool.indexOf(prevSigs[i]!);
+            if (at >= 0) nextPool.splice(at, 1);
+            else removed.push(a);
+        });
+        const describe = (a: ActionSpec): string => summarizeAction(a, fields, lists, catalog);
+        // Un agregado y un quitado del mismo tipo se leen como «cambió».
+        const changed: ActionSpec[] = [];
+        for (const a of [...added]) {
+            const twin = removed.findIndex((r) => r.type === a.type);
+            if (twin >= 0) {
+                removed.splice(twin, 1);
+                added.splice(added.indexOf(a), 1);
+                changed.push(a);
+            }
+        }
+        for (const a of changed) out.push(sprintf(__('Cambió un paso: %s.'), describe(a)));
+        for (const a of added) out.push(sprintf(__('Agregó un paso: %s.'), describe(a)));
+        for (const a of removed) out.push(sprintf(__('Quitó un paso: %s.'), describe(a)));
+        if (changed.length + added.length + removed.length === 0) out.push(__('Reordenó los pasos.'));
+    }
+    if (out.length === 0) return [__('Sin cambios respecto de la versión anterior.')];
+    const MAX = 6;
+    return out.length > MAX ? [...out.slice(0, MAX), sprintf(__('…y %d cambios más.'), out.length - MAX)] : out;
 }

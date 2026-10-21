@@ -5,7 +5,9 @@ import type { ActionSpec } from '@/types/automation';
  * una automatización. El array raíz es una secuencia; una acción
  * `if_else` contiene dos sub-secuencias (`config.then_actions` /
  * `config.else_actions`) que pueden anidar más `if_else` (el backend
- * limita a 4 niveles).
+ * limita a 4 niveles). v0.1.289: una acción `for_each_linked` contiene UNA
+ * sub-secuencia (`config.actions`, rama `'each'`): lo que se repite por cada
+ * registro vinculado.
  *
  * Direccionamiento:
  *  - `SeqPath` apunta a una SECUENCIA: `[]` = raíz; `[2, 'then']` =
@@ -14,11 +16,16 @@ import type { ActionSpec } from '@/types/automation';
  *  - `NodePath` apunta a un NODO: una SeqPath + el índice final,
  *    p. ej. `[2, 'then', 0]`.
  */
-export type BranchKey = 'then' | 'else';
+export type BranchKey = 'then' | 'else' | 'each';
 export type SeqPath = Array<number | BranchKey>;
 export type NodePath = Array<number | BranchKey>;
 
-function branchConfigKey(branch: BranchKey): 'then_actions' | 'else_actions' {
+function isBranch(v: unknown): v is BranchKey {
+    return v === 'then' || v === 'else' || v === 'each';
+}
+
+function branchConfigKey(branch: BranchKey): 'then_actions' | 'else_actions' | 'actions' {
+    if (branch === 'each') return 'actions';
     return branch === 'then' ? 'then_actions' : 'else_actions';
 }
 
@@ -38,7 +45,7 @@ function mapSequence(
     }
     const idx = seqPath[0];
     const branch = seqPath[1];
-    if (typeof idx !== 'number' || (branch !== 'then' && branch !== 'else')) {
+    if (typeof idx !== 'number' || !isBranch(branch)) {
         return actions;
     }
     const node = actions[idx];
@@ -61,7 +68,7 @@ export function getNode(actions: ActionSpec[], path: NodePath): ActionSpec | und
         if (!node) return undefined;
         if (i === path.length - 1) return node;
         const branch = path[i + 1];
-        if (branch !== 'then' && branch !== 'else') return undefined;
+        if (!isBranch(branch)) return undefined;
         seq = branchOf(node, branch);
     }
     return undefined;
@@ -120,7 +127,56 @@ export function pathKey(path: SeqPath | NodePath): string {
     return path.join('.');
 }
 
-/** Profundidad de if_else de una seqPath (para el límite de anidado). */
+/** Profundidad de anidado de una seqPath (para el límite de 4 niveles). */
 export function ifElseDepth(seqPath: SeqPath): number {
-    return seqPath.filter((s) => s === 'then' || s === 'else').length;
+    return seqPath.filter((s) => isBranch(s)).length;
+}
+
+/** ¿La secuencia está DENTRO de un «Repetir por cada registro vinculado»? */
+export function insideLoop(seqPath: SeqPath): boolean {
+    return seqPath.includes('each');
+}
+
+/** Un paso del árbol con su ruta. */
+export interface StepAt {
+    spec: ActionSpec;
+    path: NodePath;
+}
+
+/** Todos los nodos de una secuencia, ramas y bucles incluidos (en orden). */
+function flatten(seq: ActionSpec[], seqPath: SeqPath): StepAt[] {
+    const out: StepAt[] = [];
+    seq.forEach((node, i) => {
+        const path: NodePath = [...seqPath, i];
+        out.push({ spec: node, path });
+        if (node.type === 'if_else') {
+            out.push(...flatten(branchOf(node, 'then'), [...path, 'then']), ...flatten(branchOf(node, 'else'), [...path, 'else']));
+        }
+        if (node.type === 'for_each_linked') out.push(...flatten(branchOf(node, 'each'), [...path, 'each']));
+    });
+    return out;
+}
+
+/**
+ * Los pasos que corren ANTES de `path` (en orden de ejecución): los
+ * anteriores de cada secuencia que lo contiene, recorriendo hacia arriba.
+ * Sirve para ofrecer las respuestas de webhooks previos como variables.
+ * Incluye las ramas de un si/sino previo: pueden haber corrido (si no
+ * corrieron, la variable queda vacía).
+ */
+export function stepsBefore(actions: ActionSpec[], path: NodePath): StepAt[] {
+    const out: StepAt[] = [];
+    let seq = actions;
+    let seqPath: SeqPath = [];
+    for (let i = 0; i < path.length; i += 2) {
+        const idx = path[i];
+        if (typeof idx !== 'number') break;
+        out.push(...flatten(seq.slice(0, Math.max(0, idx)), seqPath));
+        const node = seq[idx];
+        const branch = path[i + 1];
+        if (!node || !isBranch(branch)) break;
+        seqPath = [...seqPath, idx, branch];
+        seq = branchOf(node, branch);
+    }
+    return out;
 }
