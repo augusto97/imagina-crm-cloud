@@ -1,6 +1,8 @@
 import { BadRequestException, HttpException, Injectable, Logger } from '@nestjs/common';
 import {
     CHART_KIND_WIDGET,
+    defaultTotalFieldIds,
+    EDITABLE_TOTAL_TYPES,
     layoutChartConfigSchema,
     layoutRelatedConfigSchema,
     parseLooseAmount,
@@ -397,7 +399,9 @@ export class RecordLayoutDataService {
         rows: RecordDto[],
         total: number,
     ): Promise<Record<string, number | null>> {
-        const ids = (cfg.total_field_ids ?? []).filter((id) => visible.some((f) => f.id === id && SUMMABLE.has(f.type)));
+        // Sin elección: los totales calculados (el «total de la línea») o, si no hay, la moneda.
+        const chosen = cfg.total_field_ids ?? defaultTotalFieldIds(visible);
+        const ids = chosen.filter((id) => visible.some((f) => f.id === id && EDITABLE_TOTAL_TYPES.includes(f.type)));
         const out: Record<string, number | null> = {};
         if (ids.length === 0) return out;
         if (total <= rows.length) {
@@ -429,9 +433,6 @@ export class RecordLayoutDataService {
         return out;
     }
 }
-
-/** Tipos que la fila de totales de una tabla editable puede sumar. */
-const SUMMABLE: ReadonlySet<string> = new Set(['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup']);
 
 function badBlock(message: string): BadRequestException {
     return new BadRequestException({ code: 'invalid_layout_block', message, data: { status: 400 } });

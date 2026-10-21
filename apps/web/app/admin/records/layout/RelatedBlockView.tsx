@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } fr
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, Loader2, Plus } from 'lucide-react';
-import { readStoreListMarker, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
+import { defaultTotalFieldIds, readStoreListMarker, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
 
 import { EditableRelatedTable, type EditableRow } from '@/admin/records/EditableRelatedTable';
 import { RecordCreateDialog } from '@/admin/records/RecordCreateDialog';
@@ -364,7 +364,7 @@ function EditableView({ block, data, titleField }: { block: LayoutBlock; data: R
     }, [block.config.field_ids, data.fields, titleField]);
     const editableIds = idsOf(block.config.editable_field_ids);
     const totalIds = useMemo(
-        () => idsOf(block.config.total_field_ids) ?? columns.filter((f) => f.type === 'currency').map((f) => f.id),
+        () => idsOf(block.config.total_field_ids) ?? defaultTotalFieldIds(columns),
         [block.config.total_field_ids, columns],
     );
     const rows = useMemo<EditableRow[]>(

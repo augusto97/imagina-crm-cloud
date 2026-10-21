@@ -423,6 +423,13 @@ describe('v0.1.292 — documentos congelados, cotización y tabla editable (Post
         expect(rendered.content.items.items!.find((r) => r[0] === 'Soporte')!.at(-1)).toBe('$ 50.000');
         // La línea sin precio queda sin total (no un cero engañoso).
         expect(rendered.content.items.items!.find((r) => r[0] === 'Capacitación')!.at(-1)).toBe('—');
+
+        // Sin elegir qué sumar: la moneda (aquí no hay un total de línea calculado).
+        const noChoice = { ...block, id: 'items_default', config: { ...block.config, total_field_ids: undefined } };
+        const def = (await layoutData.data(tenantId, { userId: 1, role: 'admin' }, 'cotizaciones', cotId, { blocks: [noChoice] })).items_default as {
+            totals: Record<string, number | null>;
+        };
+        expect(Object.keys(def.totals)).toEqual([String(f.precio!.id)]);
     });
 
     it('el ítem vinculado de otra empresa no se ve ni se emite nada cruzado', async () => {

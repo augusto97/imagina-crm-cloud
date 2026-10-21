@@ -6,8 +6,10 @@ import {
     type LayoutFieldLite,
 } from '../templates/record-layout-builders';
 import {
+    defaultTotalFieldIds,
     FIELD_DISPLAYS,
     layoutBlocks,
+    layoutRelatedConfigSchema,
     readRecordLayoutV3,
     recordLayoutV3Schema,
     resolveDisplay,
@@ -206,5 +208,28 @@ describe('plantillas v3 de la ficha', () => {
                   : ((b.config.field_ids as number[] | undefined) ?? []),
         );
         expect(new Set(ids).size).toBe(ids.length);
+    });
+});
+
+describe('tabla editable de vinculados (v0.1.292)', () => {
+    it('la vista «editable» valida con sus columnas a editar y a sumar', () => {
+        const cfg = layoutRelatedConfigSchema.parse({
+            source: { kind: 'related', field_id: 9, direction: 'reverse' },
+            view: 'editable',
+            editable_field_ids: [1, 2],
+            total_field_ids: [3],
+        });
+        expect(cfg.view).toBe('editable');
+        expect(cfg.total_field_ids).toEqual([3]);
+    });
+
+    it('sin elección suma el total de la línea; sin calculados, la moneda', () => {
+        const precio = { id: 1, type: 'currency', config: {} };
+        const cant = { id: 2, type: 'number', config: {} };
+        const total = { id: 3, type: 'computed', config: { operation: 'product', inputs: [1, 2] } };
+        const etiqueta = { id: 4, type: 'computed', config: { operation: 'concat' } };
+        expect(defaultTotalFieldIds([precio, cant, total, etiqueta])).toEqual([3]);
+        expect(defaultTotalFieldIds([precio, cant, etiqueta])).toEqual([1]);
+        expect(defaultTotalFieldIds([cant])).toEqual([]);
     });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
 import { AlertTriangle, ArrowLeft, Calculator, FileSpreadsheet, FileText, Receipt, ReceiptText, X } from 'lucide-react';
 import {
@@ -46,9 +46,14 @@ function Dialog({ open, onOpenChange, children }: { open: boolean; onOpenChange:
         </RDialog.Root>
     );
 }
-function DialogContent({ className, children, ...rest }: { className?: string; children: React.ReactNode; 'data-testid'?: string }): JSX.Element {
+// forwardRef: el portal de Radix le pasa una ref al hijo (sin esto React avisa en cada apertura).
+const DialogContent = forwardRef<HTMLDivElement, { className?: string; children: React.ReactNode; 'data-testid'?: string }>(function DialogContent(
+    { className, children, ...rest },
+    ref,
+) {
     return (
         <RDialog.Content
+            ref={ref}
             {...rest}
             className={cn(
                 'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-flex imcrm-w-[calc(100%-1.5rem)] imcrm--translate-x-1/2 imcrm--translate-y-1/2 imcrm-flex-col imcrm-gap-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5 imcrm-shadow-imcrm-lg',
@@ -63,7 +68,7 @@ function DialogContent({ className, children, ...rest }: { className?: string; c
             {children}
         </RDialog.Content>
     );
-}
+});
 const DialogHeader = ({ children }: { children: React.ReactNode }): JSX.Element => <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-pr-8">{children}</div>;
 const DialogTitle = ({ children, className }: { children: React.ReactNode; className?: string }): JSX.Element => (
     <RDialog.Title className={cn('imcrm-text-base imcrm-font-semibold', className)}>{children}</RDialog.Title>

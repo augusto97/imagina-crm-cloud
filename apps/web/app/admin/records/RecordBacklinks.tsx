@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Link2, Plus, Table2 } from 'lucide-react';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { defaultTotalFieldIds, readStoreListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
@@ -115,7 +115,7 @@ function BacklinkGroup({ path, recordId, baseListId }: { path: RelationPath; rec
         () => rows.map((r) => ({ id: r.id, value: (f: FieldEntity) => (f.type === 'relation' ? r.relations?.[f.slug] ?? [] : r.fields[f.slug]) })),
         [rows],
     );
-    const totalIds = useMemo(() => editColumns.filter((f) => f.type === 'currency').map((f) => f.id), [editColumns]);
+    const totalIds = useMemo(() => defaultTotalFieldIds(editColumns), [editColumns]);
     // Los rollups del registro abierto (el total de la cotización) dependen de los ítems.
     const refreshBase = useCallback(() => invalidateForList(qc, recordsKeys.all, baseListId), [qc, baseListId]);
     const toggleEditable = (): void => {

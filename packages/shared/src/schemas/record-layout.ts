@@ -130,6 +130,22 @@ export const CHART_KIND_WIDGET: Record<LayoutChartKind, string> = {
  */
 export const RELATED_VIEWS = ['table', 'list', 'cards', 'board', 'timeline', 'gallery', 'editable'] as const;
 export const relatedViewSchema = z.enum(RELATED_VIEWS);
+
+/** v0.1.292 — Tipos que la fila de totales de la tabla editable sabe sumar. */
+export const EDITABLE_TOTAL_TYPES: readonly string[] = ['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup'];
+/** Operaciones de un campo calculado que dan un número (las de fecha y concat no). */
+const NUMERIC_COMPUTED_OPS: ReadonlySet<string> = new Set(['sum', 'product', 'subtract', 'divide', 'abs']);
+
+/**
+ * v0.1.292 — Qué columnas suma la tabla editable si nadie eligió: los
+ * calculados numéricos (el «total de la línea») y, si no hay ninguno, las de
+ * moneda. Con un total de línea, sumar el precio unitario sería ruido; y
+ * sumar cantidades o porcentajes por defecto no tiene sentido.
+ */
+export function defaultTotalFieldIds(fields: ReadonlyArray<{ id: number; type: string; config?: Record<string, unknown> | null }>): number[] {
+    const computed = fields.filter((f) => f.type === 'computed' && NUMERIC_COMPUTED_OPS.has(String(f.config?.operation ?? '')));
+    return (computed.length > 0 ? computed : fields.filter((f) => f.type === 'currency')).map((f) => f.id);
+}
 export type RelatedView = z.infer<typeof relatedViewSchema>;
 
 /**

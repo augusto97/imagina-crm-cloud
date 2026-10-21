@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { BarChart3, ChartArea, ChartLine, ChartPie, CircleGauge, Filter, Gauge, Table2, TrendingUp } from 'lucide-react';
-import { FIELD_DISPLAYS, PORTAL_EDITABLE_TYPES, RELATED_VIEWS, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
+import { EDITABLE_TOTAL_TYPES, FIELD_DISPLAYS, PORTAL_EDITABLE_TYPES, RELATED_VIEWS, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
 
 import { KPI_ICON_OPTIONS } from '@/admin/dashboards/widgets/KpiWidget';
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
@@ -480,8 +480,6 @@ const VIEW_LABEL: Record<string, string> = {
     editable: __('Tabla editable'),
 };
 
-/** Tipos que la fila de totales de la tabla editable sabe sumar (los mismos que el servidor). */
-const SUMMABLE: ReadonlySet<string> = new Set(['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup']);
 /** Tipos que se calculan (no se editan en línea). */
 const DERIVED_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai', 'relation', 'file']);
 
@@ -555,12 +553,12 @@ export function RelatedForm({ block, set }: FormProps): JSX.Element {
                                 max={12}
                             />
                         </Row>
-                        <Row label={__('Fila de totales')} hint={__('Vacío: suma las columnas de moneda.')}>
+                        <Row label={__('Fila de totales')} hint={__('Vacío: suma los totales calculados (o, si no hay, las columnas de moneda).')}>
                             <FieldChecklist
                                 fields={fields}
                                 value={ids(c.total_field_ids)}
                                 onChange={(v) => set({ total_field_ids: v.length > 0 ? v : undefined })}
-                                allow={(f) => SUMMABLE.has(f.type)}
+                                allow={(f) => EDITABLE_TOTAL_TYPES.includes(f.type)}
                                 max={12}
                                 addLabel={__('Sumar una columna')}
                             />

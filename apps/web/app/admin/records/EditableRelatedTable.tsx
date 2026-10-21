@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import type { StoreListMarker } from '@imagina-base/shared';
+import { EDITABLE_TOTAL_TYPES, type StoreListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -19,7 +19,7 @@ import { renderCellValue } from './renderCellValue';
 import { storeAccessFor } from './storeRules';
 
 /** Tipos que la fila de totales sabe sumar (los mismos que el servidor). */
-export const SUMMABLE_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup']);
+export const SUMMABLE_TYPES: ReadonlySet<string> = new Set(EDITABLE_TOTAL_TYPES);
 /** Tipos que no se editan en línea (se calculan o necesitan su propio editor). */
 const DERIVED: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai']);
 
@@ -126,7 +126,7 @@ function TotalsRow({ columns, sums, extraCell }: { columns: FieldEntity[]; sums:
                     return (
                         <td
                             key={c.id}
-                            className={cn('imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2', sums.has(c.id) && 'imcrm-text-right imcrm-tabular-nums')}
+                            className={cn('imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2', sums.has(c.id) && 'imcrm-tabular-nums')}
                             data-editable-total={sums.has(c.id) ? c.slug : undefined}
                         >
                             {sums.has(c.id) ? (sum === null || sum === undefined ? '—' : renderCellValue(c, sum)) : i === 0 ? __('Total') : null}
@@ -160,7 +160,7 @@ function ReadOnlyItemsTable(p: EditableRelatedTableProps): JSX.Element {
                     <thead>
                         <tr className="imcrm-text-left imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
                             {p.columns.map((c) => (
-                                <th key={c.id} className={cn('imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-font-medium', SUMMABLE_TYPES.has(c.type) && 'imcrm-text-right')}>
+                                <th key={c.id} className="imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-font-medium">
                                     {c.label}
                                 </th>
                             ))}
@@ -172,7 +172,7 @@ function ReadOnlyItemsTable(p: EditableRelatedTableProps): JSX.Element {
                                 {p.columns.map((c) => (
                                     <td
                                         key={c.id}
-                                        className={cn('imcrm-max-w-[280px] imcrm-truncate imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2', SUMMABLE_TYPES.has(c.type) && 'imcrm-text-right imcrm-tabular-nums')}
+                                        className={cn('imcrm-max-w-[280px] imcrm-truncate imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2', SUMMABLE_TYPES.has(c.type) && 'imcrm-tabular-nums')}
                                         data-editable-cell={c.slug}
                                     >
                                         {renderCellValue(c, r.value(c))}
@@ -282,13 +282,7 @@ function EditableItemsTable(p: EditableRelatedTableProps): JSX.Element {
                         <thead>
                             <tr className="imcrm-text-left imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
                                 {p.columns.map((c) => (
-                                    <th
-                                        key={c.id}
-                                        className={cn(
-                                            'imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-font-medium',
-                                            SUMMABLE_TYPES.has(c.type) && 'imcrm-text-right',
-                                        )}
-                                    >
+                                    <th key={c.id} className="imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-font-medium">
                                         {c.label}
                                     </th>
                                 ))}
@@ -308,7 +302,7 @@ function EditableItemsTable(p: EditableRelatedTableProps): JSX.Element {
                                                 data-editable-cell={c.slug}
                                             >
                                                 {editable(c) ? (
-                                                    <div className="imcrm-min-h-9 [&>*]:imcrm-min-h-9">
+                                                    <div className="imcrm-min-h-9 imcrm-px-2 [&>*]:imcrm-min-h-9">
                                                         <EditableCell
                                                             field={c}
                                                             recordId={r.id}
@@ -319,7 +313,7 @@ function EditableItemsTable(p: EditableRelatedTableProps): JSX.Element {
                                                         />
                                                     </div>
                                                 ) : (
-                                                    <div className={cn('imcrm-flex imcrm-min-h-9 imcrm-items-center imcrm-px-2', SUMMABLE_TYPES.has(c.type) && 'imcrm-justify-end')}>
+                                                    <div className={cn('imcrm-flex imcrm-min-h-9 imcrm-items-center imcrm-px-2', SUMMABLE_TYPES.has(c.type) && 'imcrm-tabular-nums')}>
                                                         {renderCellValue(c, value)}
                                                     </div>
                                                 )}
