@@ -22,6 +22,7 @@ import { ListsService } from '../lists/lists.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TimeTrackingService } from '../time-tracking/time-tracking.service';
 
 /** Piezas que se piden en paralelo, con tope (el pool de conexiones es compartido). */
 const PARALLEL = 4;
@@ -56,6 +57,7 @@ export class RecordViewService {
         private readonly documents: DocumentsService,
         private readonly collections: CollectionsService,
         private readonly layoutData: RecordLayoutDataService,
+        private readonly time: TimeTrackingService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<RecordViewBundle> {
@@ -115,6 +117,12 @@ export class RecordViewService {
                           ),
                       ),
             () => soft('bloques de la ficha', () => this.savedLayoutData(tenantId, actor, list, recordId)),
+            // v0.1.291 — el tiempo registrado (total, por persona, entradas y
+            // el cronómetro de quien mira): el bloque no sale a pedirlo.
+            () =>
+                soft('tiempo', () =>
+                    this.tenantDb.withTenant(tenantId, (tx) => this.time.recordTimeInTx(tx, tenantId, actor, recordId)),
+                ),
         ];
         const [
             fields,
@@ -129,6 +137,7 @@ export class RecordViewService {
             activity,
             subtasks,
             layout,
+            time,
         ] = (await mapLimit(tasks, PARALLEL, (t) => t())) as [
             RecordViewBundle['fields'],
             RecordViewBundle['description'],
@@ -142,6 +151,7 @@ export class RecordViewService {
             RecordViewBundle['activity'],
             RecordViewBundle['subtasks'],
             RecordViewBundle['layout_data'],
+            RecordViewBundle['time'],
         ];
 
         // Lo que depende de las relaciones: las listas del otro lado (cabecera
@@ -196,6 +206,7 @@ export class RecordViewService {
             comments,
             activity,
             layout_data: layout,
+            time,
         };
     }
 

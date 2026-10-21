@@ -29,7 +29,7 @@ export interface FormProps {
     set: (patch: Record<string, unknown>) => void;
 }
 
-const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed']);
+const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked']);
 const isNumeric = (f: FieldEntity): boolean => NUMERIC.has(f.type);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const ids = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);

@@ -117,7 +117,8 @@ function compileCondition(
     // hacia un `computed`— no es filtrable y la condición se descarta.
     // v0.1.229 — también un `computed` numérico (su expresión la arma
     // `withComputedExprs`); sin expresión se descarta como antes.
-    if (isThroughField(field.type) || field.type === 'computed') {
+    // v0.1.291 — y el tiempo registrado (suma de `time_entries`).
+    if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
     }
     // v0.1.252 — una relación vive en la tabla `relations`, no en `data`:

@@ -27,6 +27,11 @@ export type NotifyEvent =
           fromClient?: boolean;
           /** Nombre del cliente que comentó (si `fromClient`). */
           clientName?: string;
+          /**
+           * v0.1.291 — es una RESPUESTA en el hilo de este comentario raíz:
+           * quienes escribieron en el hilo reciben «respondió».
+           */
+          parentId?: number;
       }
     | {
           /**

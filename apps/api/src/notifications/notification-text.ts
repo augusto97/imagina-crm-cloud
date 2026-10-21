@@ -47,6 +47,9 @@ export function notificationTitle(
         case 'update':
             out = `${who(o.actorName)} cambió ${rec}`;
             break;
+        case 'reply':
+            out = `${who(o.actorName)} respondió en ${rec}`;
+            break;
         case 'reminder':
             out = `Recordatorio: ${rec}`;
             break;

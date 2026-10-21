@@ -1149,6 +1149,45 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect(internal.visibility).toBe('internal');
         });
 
+        it('v0.1.291 — hilos y reacciones: el hilo interno jamás llega; el visible sí, con respuestas y reacciones sin nombres', async () => {
+            const hilo = (await recordsService.create(tenantId, admin, 'contratos', { data: { [`f${nombreId}`]: 'Con hilos' } })).id;
+            const uid = await contratoSession('hilos@cliente.test', hilo);
+            const internal = await comments.create(tenantId, admin, 'contratos', hilo, { body: 'Interno', kind: 'note' });
+            // Responder pidiendo «client» a un raíz interno: igual queda interno.
+            await comments.create(tenantId, admin, 'contratos', hilo, { body: 'Respuesta interna', kind: 'note', parent_id: internal.id, visibility: 'client' });
+            const open = await comments.create(tenantId, admin, 'contratos', hilo, { body: 'Hola', kind: 'note', visibility: 'client' });
+            await comments.create(tenantId, admin, 'contratos', hilo, { body: 'Te escribo de nuevo', kind: 'note', parent_id: open.id });
+            await comments.toggleReaction(tenantId, admin, 'contratos', hilo, open.id, '👍');
+            let seen = await portal.myComments(actor(uid));
+            expect(seen.map((c) => [c.body, c.parent_id])).toEqual([
+                ['Hola', null],
+                ['Te escribo de nuevo', open.id],
+            ]);
+            expect(JSON.stringify(seen)).not.toContain('nterna');
+            // La reacción del equipo llega como contador, sin quién (el shape no trae ids ni nombres).
+            expect(seen[0]!.reactions).toEqual([{ emoji: '👍', count: 1, mine: false }]);
+
+            // El cliente responde (a la respuesta → cuelga del raíz) y reacciona.
+            const reply = seen.find((c) => c.body === 'Te escribo de nuevo')!;
+            const mineReply = await portal.createMyComment(actor(uid), { content: 'Gracias', parent_id: reply.id });
+            expect(mineReply.parent_id).toBe(open.id);
+            const r = await portal.toggleMyReaction(actor(uid), open.id, '👍');
+            expect(r.reactions).toEqual([{ emoji: '👍', count: 2, mine: true }]);
+            // Lo interno: ni responder ni reaccionar (404 opaco).
+            await expect(portal.createMyComment(actor(uid), { content: 'x', parent_id: internal.id })).rejects.toBeInstanceOf(NotFoundException);
+            await expect(portal.toggleMyReaction(actor(uid), internal.id, '🎉')).rejects.toBeInstanceOf(NotFoundException);
+
+            // El equipo borra el raíz: el cliente ve «Comentario eliminado» con el hilo.
+            await comments.remove(tenantId, admin, 'contratos', hilo, open.id);
+            seen = await portal.myComments(actor(uid));
+            expect(seen[0]).toMatchObject({ id: open.id, deleted: true, body: '', reactions: [] });
+            expect(seen.filter((c) => c.parent_id === open.id)).toHaveLength(2);
+            // Y puede seguir respondiendo en ese hilo, pero no reaccionar al raíz borrado.
+            const more = await portal.createMyComment(actor(uid), { content: 'Sigo aquí', parent_id: open.id });
+            expect(more.parent_id).toBe(open.id);
+            await expect(portal.toggleMyReaction(actor(uid), open.id, '🔥')).rejects.toBeInstanceOf(NotFoundException);
+        });
+
         it('el comentario y el cambio del cliente avisan (seguidores, automatizaciones, campos con IA)', async () => {
             const uid = await contratoSession('vis4@cliente.test');
             notifyEvents.length = 0;

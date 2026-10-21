@@ -1,3 +1,4 @@
+import { timeKeys } from '@/hooks/useTimeTracking';
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -11,6 +12,7 @@ import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
 import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
 import { activityKeys } from '@/hooks/useActivity';
+import { fieldHistoryKeys } from '@/hooks/fieldHistoryKeys';
 import { commentsKeys } from '@/hooks/useComments';
 import { descriptionKeys } from '@/hooks/useRecordDescription';
 import {
@@ -103,6 +105,9 @@ export function useRealtime(): void {
                             // refrescan las queries montadas).
                             invalidateForList(qc, descriptionKeys.all, ev.listId);
                             invalidateForList(qc, activityKeys.all, ev.listId);
+                            // v0.1.291 — historial por campo y registro de tiempo.
+                            invalidateForList(qc, fieldHistoryKeys.all, ev.listId);
+                            invalidateForList(qc, timeKeys.all, ev.listId);
                             const ids = listIdentifiersFor(qc, ev.listId);
                             void qc.invalidateQueries({
                                 predicate: (q) =>
@@ -132,6 +137,12 @@ export function useRealtime(): void {
                 case 'notifications':
                     // v0.1.276 — llega sólo a la sala de esta persona.
                     void qc.invalidateQueries({ queryKey: notificationKeys.all });
+                    break;
+                case 'timer':
+                    // v0.1.291 — el cronómetro de esta persona cambió en otra
+                    // pestaña o dispositivo (iniciado o detenido).
+                    void qc.invalidateQueries({ queryKey: timeKeys.active });
+                    void qc.invalidateQueries({ queryKey: timeKeys.all });
                     break;
             }
         }

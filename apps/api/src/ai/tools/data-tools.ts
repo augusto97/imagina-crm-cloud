@@ -5,6 +5,7 @@ import {
     TIME_BUCKETS,
     aggregateMetricSchema,
     fieldSlugSchema,
+    formatDuration,
     isDataField,
     jsonbKeyForField,
     timeBucketSchema,
@@ -607,6 +608,11 @@ export class DataTools implements AiProposalApplier {
                 const label = displayValue(f, v);
                 if (label !== String(v)) out[`${f.slug}_label`] = label;
             }
+            // v0.1.291 — el tiempo registrado viaja en minutos y también
+            // legible («12h 30m»), como se lee en la ficha.
+            if ((f.type === 'time_tracked' || f.type === 'duration') && allById.has(f.id)) {
+                out[`${f.slug}_label`] = displayValue(f, v);
+            }
         }
         if (r.parent_id) out.parent_id = r.parent_id;
         return out;
@@ -690,6 +696,7 @@ function optionLabeler(f: Field): (v: unknown) => unknown {
 export function displayValue(f: Field, v: unknown): string {
     if (v === null || v === undefined) return '';
     if (f.type === 'checkbox') return v ? 'Sí' : 'No';
+    if (f.type === 'duration' || f.type === 'time_tracked') return formatDuration(v) || String(v);
     if (f.type === 'select' || f.type === 'multi_select') {
         const label = optionLabeler(f);
         const arr = Array.isArray(v) ? v : [v];

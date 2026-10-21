@@ -44,6 +44,7 @@ import {
     automationRuns,
     automations,
     automationVersions,
+    commentReactions,
     comments,
     connections,
     connectionSyncs,
@@ -68,6 +69,7 @@ import {
     forms,
     templates,
     tenants,
+    timeEntries,
     users,
     syncLinks,
 } from '../db/schema';
@@ -302,6 +304,9 @@ export class TenantTransferService {
             // una empresa con cientos de miles de filas no entran en memoria).
             counts.records = await this.dumpPaged(work, 'records', records, tenantId);
             counts.comments = await this.dumpPaged(work, 'comments', comments, tenantId);
+            // v0.1.291 — reacciones de los comentarios y registro de tiempo.
+            counts.comment_reactions = await this.dumpPaged(work, 'comment_reactions', commentReactions, tenantId);
+            counts.time_entries = await this.dumpPaged(work, 'time_entries', timeEntries, tenantId);
             counts.activity = await this.dumpPaged(work, 'activity', activity, tenantId);
             counts.audit_log = await this.dumpPaged(work, 'audit_log', auditLog, tenantId);
             counts.automation_runs = input.include_runs
@@ -829,6 +834,51 @@ export class TenantTransferService {
                 await tx.update(comments).set({ parentId }).where(eq(comments.id, newId));
             }
             return 0;
+        });
+
+        // v0.1.291 — reacciones (las de una persona que no viajó se descartan:
+        // una reacción sin autor no se puede quitar).
+        counts.comment_reactions = await this.insertPlain(tx, rows('comment_reactions'), commentReactions, (r) => {
+            const commentId = mapId(commentMap, r.commentId);
+            const userId = mapId(maps.user, r.userId);
+            if (commentId === null || userId === null) return null;
+            return {
+                tenantId,
+                commentId,
+                userId,
+                emoji: String(r.emoji ?? ''),
+                createdAt: this.date(r.createdAt) ?? new Date(),
+            };
+        });
+
+        // v0.1.291 — registro de tiempo. Un cronómetro que estaba corriendo en
+        // el origen llega DETENIDO (con lo que llevaba hasta exportar): en el
+        // destino nadie lo inició.
+        counts.time_entries = await this.insertPlain(tx, rows('time_entries'), timeEntries, (t) => {
+            const listId = mapId(maps.list, t.listId);
+            const recordId = mapId(maps.record, t.recordId);
+            if (listId === null || recordId === null) return null;
+            const startedAt = this.date(t.startedAt);
+            const endedAt = this.date(t.endedAt);
+            const wasRunning = t.source === 'timer' && endedAt === null;
+            const exportedAt = new Date();
+            return {
+                tenantId,
+                listId,
+                recordId,
+                userId: mapId(maps.user, t.userId),
+                source: t.source === 'timer' ? 'timer' : 'manual',
+                workDate: String(t.workDate ?? exportedAt.toISOString().slice(0, 10)).slice(0, 10),
+                startedAt,
+                endedAt: wasRunning ? exportedAt : endedAt,
+                seconds:
+                    wasRunning && startedAt
+                        ? Math.max(0, Math.floor((exportedAt.getTime() - startedAt.getTime()) / 1000))
+                        : Math.max(0, Number(t.seconds) || 0),
+                note: String(t.note ?? '').slice(0, 500),
+                createdAt: this.date(t.createdAt) ?? exportedAt,
+                updatedAt: this.date(t.updatedAt) ?? exportedAt,
+            };
         });
 
         counts.mentions = await this.insertPlain(tx, rows('mentions'), mentions, (m) => {

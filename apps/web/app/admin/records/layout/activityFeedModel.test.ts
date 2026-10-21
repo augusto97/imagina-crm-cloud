@@ -25,6 +25,13 @@ describe('feed de actividad de la ficha', () => {
         expect(buildFeed([com(9, 5)], [act(1, 0, 1)], 'changes').map((i) => i.kind)).toEqual(['activity']);
     });
 
+    it('las respuestas no son entradas sueltas: van dentro de su raíz', () => {
+        const reply = { ...com(10, 8), parent_id: 9 };
+        const orphan = { ...com(11, 9), parent_id: 99 };
+        const feed = buildFeed([com(9, 5), reply, orphan], [], 'comments');
+        expect(feed.map((i) => (i.kind === 'comment' ? i.comment.id : 0))).toEqual([11, 9]);
+    });
+
     it('agrupa por día con "Hoy" y "Ayer"', () => {
         const now = Date.UTC(2026, 9, 1, 15, 0);
         expect(dayLabel(now - 3_600_000, now)).toBe('Hoy');

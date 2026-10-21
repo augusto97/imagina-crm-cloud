@@ -34,6 +34,7 @@ import {
     UserRound,
     Wallet,
     Activity,
+    Timer,
     type LucideIcon,
 } from 'lucide-react';
 import type { LayoutBlock, LayoutBlockType, LayoutDataSource } from '@imagina-base/shared';
@@ -260,6 +261,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Links de pago (Mercado Pago / Wompi) y si ya pagó. En el portal, el cliente puede pagar.'),
         icon: Wallet,
         create: () => block('payments'),
+    },
+    {
+        key: 'time_tracking',
+        type: 'time_tracking',
+        category: 'record',
+        label: __('Registro de tiempo'),
+        description: __('Cronómetro, horas cargadas a mano y el total por persona.'),
+        icon: Timer,
+        create: () => block('time_tracking'),
     },
     // Contenido
     { key: 'heading', type: 'heading', category: 'content', label: __('Título'), description: __('Un título de sección.'), icon: Heading, create: () => block('heading', { text: __('Nuevo título'), level: 2 }) },

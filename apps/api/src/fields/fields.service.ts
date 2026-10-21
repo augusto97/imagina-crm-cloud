@@ -629,6 +629,7 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'computed',
     'lookup',
     'rollup',
+    'time_tracked',
     // v0.1.158 — numéricos puros: sugerir "90" no ayuda a nadie (el
     // teléfono SÍ queda con autocomplete: buscar por prefijo es útil).
     'rating',
@@ -701,7 +702,7 @@ function fieldNotFound(idOrSlug: string): NotFoundException {
  * (relation vive en la tabla `relations`, computed jamás se persiste, file
  * son IDs de attachments que dejarían huérfanos silenciosos).
  */
-const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file', 'lookup', 'rollup', 'ai'];
+const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file', 'lookup', 'rollup', 'ai', 'time_tracked'];
 
 function assertConvertible(from: FieldType, to: FieldType): void {
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {

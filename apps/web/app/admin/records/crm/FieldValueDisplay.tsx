@@ -49,6 +49,12 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
     if (field.type === 'rollup') {
         return <FieldValueDisplay field={rollupDisplayField(field)} value={value} />;
     }
+    // v0.1.291 — tiempo registrado (minutos) como duración.
+    if (field.type === 'time_tracked') {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return <span className="imcrm-text-muted-foreground/60">—</span>;
+        return <span className="imcrm-tabular-nums">{formatDuration(n, (field.config as { format?: DurationFormat }).format)}</span>;
+    }
 
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground/60">—</span>;
@@ -293,7 +299,7 @@ function FileDisplay({ value }: { value: unknown }): JSX.Element {
     const ids = items
         .map((v) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN))
         .filter((n) => Number.isInteger(n) && n > 0);
-    if (ids.length > 0) return <FileCell id={ids[0]!} more={ids.length - 1} />;
+    if (ids.length > 0) return <FileCell ids={ids} />;
     const urls = items.filter((v): v is string => typeof v === 'string' && /^(https?:\/\/|\/api\/)/i.test(v.trim()));
     if (urls.length === 0) return <span className="imcrm-text-muted-foreground">—</span>;
     return (

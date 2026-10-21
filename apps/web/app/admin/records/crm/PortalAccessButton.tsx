@@ -10,6 +10,7 @@ import { useFields } from '@/hooks/useFields';
 import { useToast } from '@/components/ui/toast';
 import { api, ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
+import { CAP, useCan } from '@/lib/permissions';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
@@ -51,7 +52,11 @@ interface AccessUser {
  * da. Y un registro puede tener más de una persona con acceso.
  */
 export function PortalAccessButton({ list, record }: Props): JSX.Element | null {
-    const enabled = readPortalEnabled(list.settings);
+    // v0.1.291 — dar y ver accesos al portal exige `manage_lists` (el API
+    // responde 403): sin el permiso la tarjeta ni se muestra, en vez de pedir
+    // y fallar en la consola.
+    const canManage = useCan(CAP.MANAGE_LISTS);
+    const enabled = readPortalEnabled(list.settings) && canManage;
     const fields = useFields(list.id);
     const toast = useToast();
     const confirm = useConfirm();

@@ -4,6 +4,7 @@ import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
 import { useRecordActivity } from '@/hooks/useActivity';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { RestorePreviousButton } from '@/admin/records/history/FieldHistory';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -70,7 +71,7 @@ export function ActivityPanel({ listId, recordId }: ActivityPanelProps): JSX.Ele
     return (
         <ol className="imcrm-flex imcrm-flex-col">
             {activity.data.map((entry) => (
-                <ActivityRow key={entry.id} entry={entry} fields={fields.data ?? []} />
+                <ActivityRow key={entry.id} entry={entry} fields={fields.data ?? []} listId={listId} recordId={recordId} />
             ))}
         </ol>
     );
@@ -79,9 +80,13 @@ export function ActivityPanel({ listId, recordId }: ActivityPanelProps): JSX.Ele
 function ActivityRow({
     entry,
     fields,
+    listId,
+    recordId,
 }: {
     entry: ActivityEntity;
     fields: FieldEntity[];
+    listId: number;
+    recordId: number;
 }): JSX.Element {
     const changes = changesOf(entry, fields);
     const actor = actorOf(entry);
@@ -113,6 +118,9 @@ function ActivityRow({
                     <ChangeLine
                         key={`${c.label}-${i}`}
                         change={c}
+                        listId={listId}
+                        recordId={recordId}
+                        restorable={entry.action === 'record_updated' || entry.action === 'record.updated'}
                         // La hora va en la ÚLTIMA línea del bloque: repetirla
                         // en cada campo cambiado sería ruido (todas comparten
                         // la misma marca de tiempo).
@@ -129,10 +137,17 @@ function ChangeLine({
     change,
     time,
     exact,
+    listId,
+    recordId,
+    restorable,
 }: {
     change: FieldChange;
     time: string | null;
     exact: string;
+    listId: number;
+    recordId: number;
+    /** v0.1.291 — el cambio se puede deshacer («Restaurar» el valor anterior). */
+    restorable: boolean;
 }): JSX.Element {
     const { verb, from, to } = changeSentence(change);
     if (change.description) {
@@ -185,6 +200,12 @@ function ChangeLine({
                     {' · '}
                     {relativeTime(time)}
                 </time>
+            )}
+            {restorable && change.field !== undefined && (
+                <>
+                    {' '}
+                    <RestorePreviousButton listId={listId} recordId={recordId} field={change.field} value={change.from} />
+                </>
             )}
         </p>
     );

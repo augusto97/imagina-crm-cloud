@@ -1,11 +1,14 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FollowStateDto } from '@imagina-base/shared';
+import type { CommentReactionEmoji, CommentReactionSummary, FollowStateDto } from '@imagina-base/shared';
+
+import { toggleReactionLocally } from '@/admin/comments/commentThreads';
 
 import { notificationKeys } from '@/hooks/useNotifications';
 import { markLocalRecordsChange } from '@/hooks/useRecords';
 import { useMemberNames } from '@/hooks/useWpUsers';
 import { api } from '@/lib/api';
+import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import type { CommentEntity, CommentMetadata, CreateCommentInput } from '@/types/comment';
 
@@ -163,6 +166,45 @@ export function useDeleteComment(
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: commentsKeys.forRecord(listId, recordId) });
+            // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
+            markLocalRecordsChange(qc, listId);
+        },
+    });
+}
+
+/**
+ * v0.1.291 — Pone o quita una reacción. Optimista: el contador cambia al
+ * instante y la respuesta del servidor (el resumen real) lo confirma.
+ */
+export function useToggleCommentReaction(listId: string | number, recordId: number) {
+    const qc = useQueryClient();
+    const key = commentsKeys.forRecord(listId, recordId);
+    return useMutation({
+        mutationFn: async ({ commentId, emoji }: { commentId: number; emoji: CommentReactionEmoji }) => {
+            const res = await api.post<{ reactions: CommentReactionSummary[] }>(
+                `/lists/${listId}/records/${recordId}/comments/${commentId}/reactions`,
+                { emoji },
+            );
+            return res.data.reactions;
+        },
+        onMutate: async ({ commentId, emoji }) => {
+            await qc.cancelQueries({ queryKey: key });
+            const prev = qc.getQueryData<CommentEntity[]>(key);
+            const me = getBootData().user;
+            qc.setQueryData<CommentEntity[]>(key, (list) =>
+                list?.map((c) =>
+                    c.id === commentId
+                        ? { ...c, reactions: toggleReactionLocally(c.reactions, emoji, me.id, me.displayName || __('Tú')) }
+                        : c,
+                ),
+            );
+            return { prev };
+        },
+        onError: (_err, _vars, ctx) => {
+            if (ctx?.prev) qc.setQueryData(key, ctx.prev);
+        },
+        onSuccess: (reactions, { commentId }) => {
+            qc.setQueryData<CommentEntity[]>(key, (list) => list?.map((c) => (c.id === commentId ? { ...c, reactions } : c)));
             // El aviso de realtime de este cambio es nuestro (no refrescar dos veces).
             markLocalRecordsChange(qc, listId);
         },

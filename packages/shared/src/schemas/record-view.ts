@@ -9,6 +9,7 @@ import { listSchema } from './list';
 import type { FollowStateDto, ReminderDto } from './notifications';
 import { recordSchema } from './record';
 import { richDocSchema } from './rich-text';
+import { recordTimeSchema } from './time-tracking';
 
 /**
  * Un camino de relación que toca una lista (v0.1.170): sus propias relaciones
@@ -78,5 +79,10 @@ export const recordViewBundleSchema = z.object({
      * con la firma de sus bloques; el front sólo los usa si su firma coincide.
      */
     layout_data: z.object({ sig: z.string(), data: z.record(z.unknown()) }).nullable(),
+    /**
+     * v0.1.291 — el tiempo registrado del registro (total, por persona, las
+     * últimas entradas y el cronómetro en curso de quien mira).
+     */
+    time: recordTimeSchema.nullable().default(null),
 });
 export type RecordViewBundle = z.infer<typeof recordViewBundleSchema>;

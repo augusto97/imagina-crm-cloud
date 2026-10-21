@@ -1,6 +1,7 @@
-import type { LayoutHeader as HeaderSpec } from '@imagina-base/shared';
+import { isDataField, type LayoutHeader as HeaderSpec } from '@imagina-base/shared';
 
 import { CompactFieldRow } from '@/admin/records/crm/CompactFieldRow';
+import { FieldHistoryButton } from '@/admin/records/history/FieldHistory';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -147,7 +148,25 @@ function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
         </>
     );
     const cls = 'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left';
-    if (!editable) return <div className={cls}>{inner}</div>;
+    if (!editable) {
+        // v0.1.291 — quien sólo mira igual puede ver el historial del campo.
+        const withHistory = ctx.mode !== 'portal' && !ctx.preview && isDataField(field.type);
+        return (
+            <div className={cn(cls, withHistory && 'imcrm-group imcrm-relative imcrm-pr-7')}>
+                {inner}
+                {withHistory && (
+                    <FieldHistoryButton
+                        listId={ctx.list.id}
+                        recordId={ctx.record.id}
+                        field={field}
+                        currentValue={value}
+                        canRestore={false}
+                        className="imcrm-absolute imcrm-right-0.5 imcrm-top-1"
+                    />
+                )}
+            </div>
+        );
+    }
     return (
         <Popover>
             <PopoverTrigger asChild>
@@ -168,6 +187,7 @@ function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
                     value={value}
                     onChange={(v) => ctx.setValue(field.slug, v)}
                     error={ctx.errors[field.slug]}
+                    history={ctx.mode === 'portal' || ctx.preview ? null : { canRestore: true }}
                 />
             </PopoverContent>
         </Popover>
