@@ -9,6 +9,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { AppModule } from './app.module';
 import { isBlockedCrossSite } from './common/cross-site';
 import { ApiExceptionFilter } from './common/http-exception.filter';
+import { registerRequestInputHooks } from './common/request-input';
 import { loadEnv } from './config/env';
 import { recordServerError } from './observability/diagnostics';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
@@ -138,6 +139,8 @@ async function bootstrap(): Promise<void> {
         }
         done();
     });
+    // NUL / sustitutos sueltos fuera del cuerpo, query y params; ids imposibles → 404.
+    registerRequestInputHooks(fastify);
     // v0.1.227 — HSTS lo manda el propio API (antes sólo el proxy, y en un panel
     // como ServerAvatar esa cabecera no estaba). El navegador la guarda para
     // TODO el host sin importar qué respuesta la trajo, y la SPA pide al API

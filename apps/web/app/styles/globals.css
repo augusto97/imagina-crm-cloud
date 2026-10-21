@@ -124,6 +124,20 @@
         --imcrm-info: 217 91% 50%;
         --imcrm-info-foreground: 0 0% 100%;
 
+        /* v0.1.286 — TINTA de texto para los semánticos sobre su propio tinte
+         * (badges `bg-x/10 text-x`): el color base sirve de fondo sólido con
+         * texto blanco, pero como texto sobre su tinte quedaba en 2.8-4.1:1
+         * (warning 2.84, success 3.45, primary 4.14). Un escalón más oscuro
+         * del MISMO tono → ≥4.9:1 sin cambiar el look. */
+        --imcrm-success-ink: 152 65% 28%;
+        --imcrm-warning-ink: 28 90% 32%;
+        --imcrm-info-ink: 217 91% 42%;
+        --imcrm-destructive-ink: 0 74% 44%;
+        /* El primario puede ser el color de la MARCA (white-label pisa
+         * `--imcrm-primary` en <html>): su tinta se deriva mezclándolo, así
+         * sigue a cualquier color de empresa. */
+        --imcrm-primary-ink-color: color-mix(in srgb, hsl(var(--imcrm-primary)) 82%, black);
+
         /* Border hairline visible pero liviano — el edge definido con
          * 1px nítido es lo que da el look "crisp" tipo Cloudflare
          * (bordes demasiado fantasma hacían que las cards floten sin
@@ -188,7 +202,10 @@
         --imcrm-accent: 0 0% 17%;
         --imcrm-accent-foreground: 0 0% 96%;
 
-        --imcrm-destructive: 0 72% 55%;
+        /* v0.1.286 — un punto más oscuro: el contador de avisos y los
+         * botones (texto blanco encima) quedaban en 4.37:1. Como TEXTO sobre
+         * el fondo oscuro manda `--imcrm-destructive-ink`, más claro. */
+        --imcrm-destructive: 0 72% 50%;
         --imcrm-destructive-foreground: 0 0% 100%;
 
         --imcrm-border: 0 0% 17%;
@@ -221,6 +238,14 @@
 
         --imcrm-info: 217 91% 62%;
         --imcrm-info-foreground: 0 0% 7%;
+
+        /* Tintas de texto (ver el bloque claro): en oscuro los semánticos ya
+         * son claros; sólo el rojo necesita subir (4.1-4.3:1 como texto). */
+        --imcrm-success-ink: 152 55% 50%;
+        --imcrm-warning-ink: 38 92% 60%;
+        --imcrm-info-ink: 217 91% 68%;
+        --imcrm-destructive-ink: 0 85% 66%;
+        --imcrm-primary-ink-color: color-mix(in srgb, hsl(var(--imcrm-primary)) 88%, white);
 
         /* Tones de los StatTiles: mismos hues, un punto más claros para que
          * no se hundan contra las superficies oscuras. */
@@ -1327,4 +1352,42 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
     grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
     column-gap: 8px;
     row-gap: 4px;
+}
+
+/*
+ * v0.1.286 — piso de contraste para TEXTO (auditoría de navegación):
+ *  - `text-destructive` usa la tinta de texto del rojo (en oscuro el base
+ *    quedaba en 4.1-4.3:1 sobre el fondo);
+ *  - el gris "apagado" con opacidad (`text-muted-foreground/50-70`: «—»,
+ *    separadores de breadcrumb, «Sin descripción», días de otro mes, etiquetas
+ *    de tarjetas) quedaba en 2.5-3.8:1. Se sube lo justo para ≥4.5:1 sobre
+ *    fondo y tarjeta, conservando que se lea más suave que el texto normal.
+ * Especificidad 0,2,0 → gana a la utilidad de Tailwind sin `!important`.
+ */
+:root .imcrm-text-destructive {
+    color: hsl(var(--imcrm-destructive-ink));
+}
+/* Verde y ámbar como TEXTO (avisos «verificado», «pendiente»): el tono base es
+ * para fondos sólidos; como texto chico quedaba en 2.8-3.9:1. */
+:root .imcrm-text-success {
+    color: hsl(var(--imcrm-success-ink));
+}
+:root .imcrm-text-warning {
+    color: hsl(var(--imcrm-warning-ink));
+}
+:root .imcrm-text-info {
+    color: hsl(var(--imcrm-info-ink));
+}
+/* Primario sobre su propio tinte (pastillas tipo «este dispositivo»). */
+:root .imcrm-bg-primary\/10.imcrm-text-primary {
+    color: var(--imcrm-primary-ink-color);
+}
+:root .imcrm-text-muted-foreground\/60,
+:root .imcrm-text-muted-foreground\/70 {
+    color: hsl(var(--imcrm-muted-foreground) / 0.9);
+}
+[data-imcrm-theme='dark'] .imcrm-text-muted-foreground\/50,
+[data-imcrm-theme='dark'] .imcrm-text-muted-foreground\/60,
+[data-imcrm-theme='dark'] .imcrm-text-muted-foreground\/70 {
+    color: hsl(var(--imcrm-muted-foreground) / 0.85);
 }

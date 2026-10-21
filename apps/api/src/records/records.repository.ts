@@ -79,6 +79,38 @@ export class RecordsRepository {
     }
 
     /**
+     * Igual que `findById` pero BLOQUEA la fila hasta el final de la
+     * transacción (`FOR NO KEY UPDATE`, el mismo lock que toma un UPDATE).
+     *
+     * Quien lee → mezcla en JS → reescribe el `data` entero tiene que leer con
+     * esto: sin lock, dos ediciones simultáneas de campos DISTINTOS leían el
+     * mismo `data`, y la que terminaba última pisaba a la otra (auditoría:
+     * 8 PATCH en paralelo → sobrevivían 3). Con el lock la segunda espera a que
+     * la primera haga commit y relee la fila ya cambiada, así el diff de la
+     * actividad y el antes/después de los avisos siguen siendo exactos.
+     *
+     * `NO KEY UPDATE` y no `UPDATE`: no choca con el `KEY SHARE` que toman las
+     * FK (relaciones, actividad) que apuntan a la fila — dos ediciones que se
+     * vinculan entre sí no se trancan.
+     */
+    async findByIdForUpdate(tx: Tx, tenantId: number, listId: number, id: number): Promise<RecordListRow | null> {
+        const [row] = await tx
+            .select(LIST_COLUMNS)
+            .from(records)
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    eq(records.id, id),
+                    isNull(records.deletedAt),
+                ),
+            )
+            .limit(1)
+            .for('no key update');
+        return row ?? null;
+    }
+
+    /**
      * Listado con cursor pagination keyset por `id` (STANDALONE §3.5).
      * Pide `limit + 1` para saber si hay página siguiente sin contar todo.
      */

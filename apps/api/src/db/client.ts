@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { recordServerError } from '../observability/diagnostics';
@@ -34,7 +35,36 @@ function poolMax(): number {
     return Number.isInteger(n) && n >= 2 && n <= 200 ? n : 20;
 }
 
-export function createPool(connectionString: string): Pool {
+/** Milisegundos de una variable de entorno (0 = sin tope); si no es válida, el default. */
+function envMs(name: string, fallback: number): number {
+    const raw = process.env[name];
+    if (raw === undefined || raw.trim() === '') return fallback;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
+
+export interface PoolTimeouts {
+    /** Tope de cada sentencia (0 = sin tope). Default `DB_STATEMENT_TIMEOUT_MS` o 30 s. */
+    statementTimeoutMs?: number;
+    /**
+     * Tope de una transacción abierta SIN hacer nada (0 = sin tope). Default
+     * `DB_IDLE_IN_TX_TIMEOUT_MS` o 120 s — holgado a propósito: el motor de
+     * automatizaciones hace pedidos HTTP y envíos de correo dentro de su
+     * transacción, y esa espera cuenta como "ociosa" para Postgres.
+     */
+    idleInTransactionMs?: number;
+}
+
+/**
+ * Topes de tiempo en la base. Sin ellos, una consulta desbocada
+ * (o una transacción que quedó abierta con locks tomados porque el proceso se
+ * colgó) retenía la conexión y bloqueaba a otros para siempre. Las tareas
+ * administrativas largas (importar/borrar una empresa) los apagan dentro de su
+ * transacción con `withoutTimeouts`; las migraciones abren su pool sin topes.
+ */
+export function createPool(connectionString: string, timeouts: PoolTimeouts = {}): Pool {
+    const statementTimeout = timeouts.statementTimeoutMs ?? envMs('DB_STATEMENT_TIMEOUT_MS', 30_000);
+    const idleInTx = timeouts.idleInTransactionMs ?? envMs('DB_IDLE_IN_TX_TIMEOUT_MS', 120_000);
     const pool = new Pool({
         connectionString,
         // v0.1.252 — configurable (DB_POOL_MAX). 20 por defecto: la API y los
@@ -45,6 +75,9 @@ export function createPool(connectionString: string): Pool {
         keepAlive: true,
         idleTimeoutMillis: 30_000,
         connectionTimeoutMillis: 10_000,
+        // Parámetros de arranque de cada conexión (0 = no se manda: sin tope).
+        ...(statementTimeout > 0 ? { statement_timeout: statementTimeout } : {}),
+        ...(idleInTx > 0 ? { idle_in_transaction_session_timeout: idleInTx } : {}),
     });
     pool.on('error', (err) => {
         logger.warn(`Conexión a Postgres cerrada (se abre otra en la próxima consulta): ${err.message}`);
@@ -55,4 +88,15 @@ export function createPool(connectionString: string): Pool {
 
 export function createDb(pool: Pool): Db {
     return drizzle(pool, { schema });
+}
+
+/**
+ * Apaga los topes de tiempo SÓLO dentro de esta transacción (`SET LOCAL`):
+ * para tareas administrativas que legítimamente tardan (importar o borrar una
+ * empresa entera). Al terminar la transacción vuelven los de la conexión.
+ */
+export async function withoutTimeouts(tx: Tx): Promise<void> {
+    await tx.execute(
+        sql`select set_config('statement_timeout', '0', true), set_config('idle_in_transaction_session_timeout', '0', true)`,
+    );
 }

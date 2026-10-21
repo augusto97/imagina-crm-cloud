@@ -355,6 +355,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.285** (Problemas: avisos de fallas en segundo plano, ADR-S44), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-21 — **Pedido del usuario: auditoría PROFUNDA de toda la app**
+  ("creía que la app ya tenía todo bien pero cada vez hay cosas con errores o
+  que no funcionan de la mejor manera"): validar que todo funcione y sea
+  eficiente, corregir lo que no, y relevar carencias (editor, listas,
+  dashboards, portales, ficha flotante, menús de navegación, toda la
+  interfaz). En curso: relevamiento en 8 frentes en paralelo (tabla y vistas,
+  ficha, tableros, portal/formularios/públicas, navegación, automatizaciones y
+  editores, servidor, recorrido real en el navegador) → corregir lo
+  verificado por lotes → proponer las carencias priorizadas.
 - 2026-10-21 — **Reporte de los clientes: "no se avisa cuando algo falla"**
   (conexiones, APIs, conectores, correos de automatizaciones, cosas que no se
   generan). Confirmado: ninguna falla en segundo plano avisaba a nadie.

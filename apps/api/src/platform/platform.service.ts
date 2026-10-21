@@ -32,7 +32,7 @@ import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'driz
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
 import { ENV, type Env } from '../config/env';
-import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { DRIZZLE, type Db, type Tx, withoutTimeouts } from '../db/client';
 import {
     activity,
     attachments,
@@ -335,6 +335,8 @@ export class PlatformService {
             .where(and(eq(attachments.tenantId, id), isNull(attachments.storageConnectionId), isNull(attachments.pendingFormId)));
 
         await this.db.transaction(async (tx: Tx) => {
+            // Borrar una empresa grande tarda: sin los topes de tiempo de la conexión.
+            await withoutTimeouts(tx);
             // Orden por dependencias, hijas primero. La lista es EXPLÍCITA (no
             // hay cascada desde `tenants`), así que toda tabla con `tenant_id`
             // tiene que estar aquí: la que falte deja la empresa imborrable con

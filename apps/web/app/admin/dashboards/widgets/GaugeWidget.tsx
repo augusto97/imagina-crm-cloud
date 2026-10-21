@@ -1,11 +1,12 @@
 import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
+import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
-import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
+import { formatMetricValue } from './widgetFormat';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface GaugeWidgetProps {
@@ -22,6 +23,10 @@ interface GaugeWidgetProps {
 export function GaugeWidget({ dashboardId, widget }: GaugeWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
     const subtitle = useWidgetSubtitle(widget);
+    const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
+    const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
+    const fmt = (n: number): string => formatMetricValue(n, metric, metricField, { withSymbol: prefix === '' });
     const goal = typeof widget.config.goal === 'number' && widget.config.goal > 0
         ? widget.config.goal
         : 100;
@@ -42,6 +47,7 @@ export function GaugeWidget({ dashboardId, widget }: GaugeWidgetProps): JSX.Elem
                         goal={goal}
                         prefix={prefix}
                         suffix={suffix}
+                        fmt={fmt}
                     />
                 ) : null}
             </div>
@@ -54,11 +60,13 @@ function Gauge({
     goal,
     prefix,
     suffix,
+    fmt,
 }: {
     value: number;
     goal: number;
     prefix: string;
     suffix: string;
+    fmt: (n: number) => string;
 }): JSX.Element {
     const pct = Math.max(0, Math.min(1, value / goal));
     const color = pct >= 1
@@ -110,9 +118,9 @@ function Gauge({
                     className="imcrm-fill-muted-foreground"
                     style={{ fontSize: 6.5, fontWeight: 500 }}
                 >
-                    {prefix}{formatNumber(value, { maxFrac: 2 })}{suffix}
+                    {prefix}{fmt(value)}{suffix}
                     {' / '}
-                    {prefix}{formatNumber(goal)}{suffix}
+                    {prefix}{fmt(goal)}{suffix}
                 </text>
             </svg>
         </div>

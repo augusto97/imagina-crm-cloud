@@ -7,7 +7,8 @@ export const MIGRATIONS_FOLDER = path.join(__dirname, 'migrations');
 
 async function main(): Promise<void> {
     const env = loadEnv();
-    const pool = createPool(env.DATABASE_URL);
+    // Sin topes de tiempo: una migración que reescribe una tabla grande tarda lo que tarda.
+    const pool = createPool(env.DATABASE_URL, { statementTimeoutMs: 0, idleInTransactionMs: 0 });
     try {
         await migrate(createDb(pool), { migrationsFolder: MIGRATIONS_FOLDER });
         console.log('Migraciones aplicadas ✔');

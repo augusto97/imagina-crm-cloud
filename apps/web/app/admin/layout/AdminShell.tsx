@@ -1,20 +1,27 @@
-import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 
 import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
 import { EmailVerifyBanner } from '@/admin/layout/EmailVerifyBanner';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
+import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
 import { ActivePathSync } from './activePath';
+import { RouteTracker } from './RouteTracker';
+import { ShortcutsDialog } from './ShortcutsDialog';
 import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
 import { Topbar } from '@/admin/layout/Topbar';
 import { __ } from '@/lib/i18n';
+import { CHORD_TIMEOUT_MS, isTypingTarget, resolveGoChord } from '@/lib/shortcuts';
 
 export function AdminShell(): JSX.Element {
     const [paletteOpen, setPaletteOpen] = useState(false);
+    const [shortcutsOpen, setShortcutsOpen] = useState(false);
+    const [createListOpen, setCreateListOpen] = useState(false);
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const location = useLocation();
+    const navigate = useNavigate();
 
     // Cerrar el drawer del sidebar al navegar (mobile).
     useEffect(() => {
@@ -33,33 +40,48 @@ export function AdminShell(): JSX.Element {
         return () => document.removeEventListener('keydown', onKey);
     }, [mobileNavOpen]);
 
-    // Cmd/Ctrl+K abre el global command palette. Se desactiva
-    // cuando estamos dentro del editor de plantilla (esa ruta tiene
-    // su propio Cmd+K via EditorCommandPalette) o cuando el foco
-    // está en un input editable (sino interferimos con la edición).
-    // (Fase 15.A)
-    const isInTemplateEditor = location.pathname.includes('/template-editor');
-
+    // Atajos globales (v0.1.286):
+    //  - Ctrl/⌘+K abre la paleta desde CUALQUIER lugar, también con el foco en
+    //    un campo (antes se ignoraba ahí: justo donde más se está).
+    //  - `?` muestra la ayuda; `g` + letra va a una sección. Estos, de una sola
+    //    tecla, se ignoran mientras se escribe o con un diálogo abierto.
+    const pendingG = useRef<number | null>(null);
     useEffect(() => {
-        if (isInTemplateEditor) return;
-
-        const isEditableTarget = (target: EventTarget | null): boolean => {
-            if (! (target instanceof HTMLElement)) return false;
-            const tag = target.tagName;
-            return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
-        };
-
         const onKeyDown = (e: KeyboardEvent): void => {
             const mod = e.metaKey || e.ctrlKey;
-            if (mod && e.key.toLowerCase() === 'k' && ! isEditableTarget(e.target)) {
+            if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
                 e.preventDefault();
-                setPaletteOpen((v) => ! v);
+                setPaletteOpen((v) => !v);
+                return;
             }
+            if (e.defaultPrevented || mod || e.altKey || e.repeat) return;
+            if (isTypingTarget(e.target)) return;
+            if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]')) return;
+            const now = Date.now();
+            const gWindow = pendingG.current !== null && now - pendingG.current < CHORD_TIMEOUT_MS;
+            if (gWindow) {
+                pendingG.current = null;
+                const path = resolveGoChord(true, e.key);
+                if (path) {
+                    e.preventDefault();
+                    navigate(path);
+                }
+                return;
+            }
+            if (e.key === '?') {
+                e.preventDefault();
+                setShortcutsOpen(true);
+                return;
+            }
+            if (e.key === 'g') pendingG.current = now;
         };
-
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
-    }, [isInTemplateEditor]);
+    }, [navigate]);
+
+    const openPalette = useCallback(() => setPaletteOpen(true), []);
+    const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
+    const openCreateList = useCallback(() => setCreateListOpen(true), []);
 
     return (
         <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-overflow-hidden imcrm-bg-background imcrm-text-foreground">
@@ -74,10 +96,15 @@ export function AdminShell(): JSX.Element {
                 />
             )}
             <ActivePathSync />
+            <RouteTracker />
             <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                 <ImpersonationBanner />
-                <Topbar onMenuClick={() => setMobileNavOpen(true)} />
+                <Topbar
+                    onMenuClick={() => setMobileNavOpen(true)}
+                    onSearchClick={openPalette}
+                    onShowShortcuts={openShortcuts}
+                />
                 <EmailVerifyBanner />
                 <main
                     id="imcrm-main"
@@ -93,9 +120,14 @@ export function AdminShell(): JSX.Element {
                     </div>
                 </main>
             </div>
-            {! isInTemplateEditor && (
-                <GlobalCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-            )}
+            <GlobalCommandPalette
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                onCreateList={openCreateList}
+                onShowShortcuts={openShortcuts}
+            />
+            {shortcutsOpen && <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />}
+            {createListOpen && <ListCreateDialog open={createListOpen} onOpenChange={setCreateListOpen} />}
             {/* v0.1.181 — asistente IA (ADR-S21): drawer a la derecha, se abre desde el Topbar. */}
             <AssistantPanel />
         </div>

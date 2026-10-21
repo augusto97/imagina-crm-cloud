@@ -24,11 +24,15 @@ export function IncidentsPill(): JSX.Element | null {
             to="/settings?s=problemas"
             data-testid="incidents-pill"
             title={__('Algo dejó de funcionar: abre los problemas para ver qué y cómo arreglarlo')}
-            className="imcrm-inline-flex imcrm-h-8 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/10 imcrm-px-2.5 imcrm-text-xs imcrm-font-semibold imcrm-text-destructive hover:imcrm-bg-destructive/15"
+            aria-label={label}
+            // v0.1.286 — en el teléfono, compacta (icono + número): la barra
+            // no alcanzaba y se comía el nombre de la empresa. El texto usa la
+            // tinta del rojo (≥4.5:1 sobre el tinte, en claro y en oscuro).
+            className="imcrm-inline-flex imcrm-h-7 imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/10 imcrm-px-1.5 imcrm-text-xs imcrm-font-semibold imcrm-text-destructive hover:imcrm-bg-destructive/15 sm:imcrm-h-8 sm:imcrm-gap-1.5 sm:imcrm-px-2.5"
         >
-            <TriangleAlert className="imcrm-h-3.5 imcrm-w-3.5" />
-            <span className="imcrm-hidden sm:imcrm-inline">{label}</span>
-            <span className="sm:imcrm-hidden">{open}</span>
+            <TriangleAlert className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+            <span className="imcrm-hidden sm:imcrm-inline" aria-hidden>{label}</span>
+            <span className="imcrm-tabular-nums sm:imcrm-hidden" aria-hidden>{open}</span>
         </Link>
     );
 }

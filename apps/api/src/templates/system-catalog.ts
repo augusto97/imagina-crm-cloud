@@ -315,11 +315,16 @@ const proyectos: SystemTemplate = {
                         is_active: true,
                     },
                 ],
+                // v0.1.286 — con fechas RELATIVAS a hoy, responsable (quien
+                // aplica la plantilla) y estimación: antes venían sin fecha ni
+                // responsable y "Entregas" y el tablero arrancaban vacíos.
                 records: [
-                    { key: 't1', data: { tarea: 'Lanzamiento del sitio', estado: 'en_curso', prioridad: 'alta', proyecto: 'Web 2026', avance: 40 } },
-                    { data: { tarea: 'Diseñar la portada', estado: 'hecha', prioridad: 'media', proyecto: 'Web 2026', avance: 100 }, parent_key: 't1' },
-                    { data: { tarea: 'Configurar dominio', estado: 'pendiente', prioridad: 'alta', proyecto: 'Web 2026' }, parent_key: 't1' },
-                    { data: { tarea: 'Campaña de redes', estado: 'pendiente', prioridad: 'baja', proyecto: 'Marketing Q4' } },
+                    { key: 't1', data: { tarea: 'Lanzamiento del sitio', estado: 'en_curso', prioridad: 'alta', proyecto: 'Web 2026', responsable: { $me: true }, fecha_limite: { $days: 10 }, estimacion: 1200, avance: 40, etiquetas: ['desarrollo'] } },
+                    { data: { tarea: 'Diseñar la portada', estado: 'hecha', prioridad: 'media', proyecto: 'Web 2026', responsable: { $me: true }, fecha_limite: { $days: -3 }, estimacion: 360, avance: 100, etiquetas: ['diseno'] }, parent_key: 't1' },
+                    { data: { tarea: 'Configurar dominio', estado: 'pendiente', prioridad: 'alta', proyecto: 'Web 2026', responsable: { $me: true }, fecha_limite: { $days: 2 }, estimacion: 90, avance: 0, etiquetas: ['desarrollo'] }, parent_key: 't1' },
+                    { data: { tarea: 'Revisar textos legales', estado: 'revision', prioridad: 'media', proyecto: 'Web 2026', responsable: { $me: true }, fecha_limite: { $days: 5 }, estimacion: 120, avance: 80 } },
+                    { data: { tarea: 'Migrar el blog', estado: 'en_curso', prioridad: 'media', proyecto: 'Web 2026', responsable: { $me: true }, fecha_limite: { $days: -1 }, estimacion: 600, avance: 60, etiquetas: ['desarrollo'] } },
+                    { data: { tarea: 'Campaña de redes', estado: 'pendiente', prioridad: 'baja', proyecto: 'Marketing Q4', responsable: { $me: true }, fecha_limite: { $days: 21 }, estimacion: 480, avance: 0, etiquetas: ['marketing'] } },
                 ],
             },
         ),
@@ -1221,7 +1226,7 @@ proyectos.blueprint.dashboards.push(
         widget('chart_pie', 'tareas', 'Por estado', { metric: 'count', group_by_field_id: ref('estado') }, 0, 2, 4, 4),
         widget('chart_bar', 'tareas', 'Por prioridad', { metric: 'count', group_by_field_id: ref('prioridad') }, 4, 2, 4, 4),
         widget('chart_bar', 'tareas', 'Por responsable', { metric: 'count', group_by_field_id: ref('responsable'), hide_zero_groups: true }, 8, 2, 4, 4),
-        widget('table', 'tareas', 'Próximas entregas', { limit: 8, sort_field_id: ref('fecha_limite'), sort_dir: 'asc' }, 0, 6, 12, 4),
+        widget('table', 'tareas', 'Próximas entregas', { limit: 8, sort_field_id: ref('fecha_limite'), sort_dir: 'asc', period: { field_id: ref('fecha_limite'), preset: 'from_today' } }, 0, 6, 12, 4),
     ]),
 );
 
@@ -1234,7 +1239,7 @@ soporte.blueprint.dashboards.push(
         widget('chart_pie', 'tickets', 'Por estado', { metric: 'count', group_by_field_id: ref('estado') }, 0, 2, 3, 4),
         widget('chart_bar', 'tickets', 'Por canal', { metric: 'count', group_by_field_id: ref('canal') }, 3, 2, 3, 4),
         widget('chart_bar', 'tickets', 'Por prioridad', { metric: 'count', group_by_field_id: ref('prioridad') }, 6, 2, 3, 4),
-        widget('table', 'tickets', 'Vencen pronto (SLA)', { limit: 8, sort_field_id: ref('vence'), sort_dir: 'asc' }, 0, 6, 12, 4),
+        widget('table', 'tickets', 'Vencen pronto (SLA)', { limit: 8, sort_field_id: ref('vence'), sort_dir: 'asc', period: { field_id: ref('vence'), preset: 'from_today' } }, 0, 6, 12, 4),
     ]),
 );
 

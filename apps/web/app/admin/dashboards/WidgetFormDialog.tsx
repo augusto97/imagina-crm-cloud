@@ -7,8 +7,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
+import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
 import { KPI_ICON_OPTIONS } from '@/admin/dashboards/widgets/KpiWidget';
+import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
+import {
+    DashboardBundleContext,
+    WidgetDataOverrideContext,
+    useWidgetPreview,
+    type DashboardBundleScope,
+    type WidgetDataOverride,
+} from '@/hooks/useDashboards';
 import { BlockStyleEditor } from '@/admin/template-editor-core/BlockStyleEditor';
 import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
 import { hasBlockStyle, readBlockStyle, type BlockStyle } from '@/lib/blockStyle';
@@ -27,6 +36,7 @@ import {
     DATE_RANGE_PRESETS,
     type DateRangePresetId,
 } from '@/admin/records/dateRangePresets';
+import type { ListGroup, ListSummary } from '@/types/list';
 import type { FilterTree } from '@/types/record';
 
 import { FiltersPanel } from '@/admin/records/FiltersPanel';
@@ -40,22 +50,53 @@ interface WidgetFormDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSave: (widget: WidgetSpec) => void;
+    /** v0.1.286 — para la vista previa EN VIVO del widget que se configura. */
+    dashboardId?: number;
+    scope?: DashboardBundleScope;
 }
 
+/**
+ * Tipos por los que se puede agrupar. v0.1.286 — también persona, números
+ * (cada valor es un grupo), calificación, porcentaje y los campos a través de
+ * una relación (lookup/rollup): el motor ya los agrupaba, el diálogo no los
+ * ofrecía.
+ */
 const GROUPABLE_TYPES = [
     'select', 'multi_select',
-    'text', 'email', 'url',
+    'text', 'email', 'url', 'phone',
     'date', 'datetime',
     'checkbox',
+    'user',
+    'number', 'currency', 'rating', 'percent', 'duration',
+    'lookup', 'rollup',
 ];
+
+/**
+ * v0.1.286 — Default REAL de cada interruptor de "Mostrar" por tipo (el que
+ * usa el widget cuando la clave no está). El diálogo arrancaba en `false` y
+ * guardaba sólo los `true`: un interruptor encendido por defecto no se podía
+ * apagar.
+ */
+export function presentationDefaults(type: WidgetType): { average: boolean; labels: boolean; legend: boolean } {
+    return {
+        // La línea de promedio tiene lectura en una TENDENCIA; en categorías es opt-in.
+        average: type === 'chart_line' || type === 'chart_area',
+        // El donut muestra los % y la leyenda salvo que se apaguen.
+        labels: type === 'chart_pie',
+        legend: type === 'chart_pie',
+    };
+}
 
 export function WidgetFormDialog({
     initial,
     open,
     onOpenChange,
     onSave,
+    dashboardId,
+    scope,
 }: WidgetFormDialogProps): JSX.Element {
     const lists = useLists();
+    const groups = useListGroups();
 
     const [title, setTitle] = useState('');
     const [type, setType] = useState<WidgetType>('kpi');
@@ -92,6 +133,10 @@ export function WidgetFormDialog({
     const [periodTo, setPeriodTo] = useState<string>('');
     // v0.1.105 — etiqueta del centro del donut (default "Total").
     const [centerLabel, setCenterLabel] = useState<string>('');
+    // v0.1.286 — contar también las subtareas, orden y tope de categorías.
+    const [includeSubtasks, setIncludeSubtasks] = useState(false);
+    const [chartSort, setChartSort] = useState<string>('');
+    const [topN, setTopN] = useState<number>(0);
     const [filterTree, setFilterTree] = useState<FilterTree>({
         type: 'group',
         logic: 'and',
@@ -167,9 +212,14 @@ export function WidgetFormDialog({
                     : [],
             );
             setHideZeroGroups(Boolean(initial.config.hide_zero_groups));
-            setShowAverageLine(Boolean(initial.config.show_average_line));
-            setShowDataLabels(Boolean(initial.config.show_data_labels));
-            setShowLegend(Boolean(initial.config.show_legend));
+            const defs = presentationDefaults(initial.type);
+            const flag = (v: unknown, def: boolean): boolean => (typeof v === 'boolean' ? v : def);
+            setShowAverageLine(flag(initial.config.show_average_line, defs.average));
+            setShowDataLabels(flag(initial.config.show_data_labels, defs.labels));
+            setShowLegend(flag(initial.config.show_legend, defs.legend));
+            setIncludeSubtasks(initial.config.include_subtasks === true);
+            setChartSort(typeof initial.config.sort === 'string' ? initial.config.sort : '');
+            setTopN(typeof initial.config.top_n === 'number' ? initial.config.top_n : 0);
             setTimeBucket(
                 isTimeBucket(initial.config.time_bucket)
                     ? initial.config.time_bucket
@@ -214,9 +264,12 @@ export function WidgetFormDialog({
             setTableLimit(10);
             setVisibleFieldIds([]);
             setHideZeroGroups(false);
-            setShowAverageLine(false);
+            setShowAverageLine(presentationDefaults('kpi').average);
             setShowDataLabels(false);
             setShowLegend(false);
+            setIncludeSubtasks(false);
+            setChartSort('');
+            setTopN(0);
             setTimeBucket('month');
             setPeriodFieldId(0);
             setPeriodPreset('');
@@ -225,11 +278,23 @@ export function WidgetFormDialog({
             setCenterLabel('');
             setFilterTree({ type: 'group', logic: 'and', children: [] });
         }
+        if (!initial) draftId.current = generateWidgetId();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, initial?.id]);
 
-    const handleSubmit = (e: React.FormEvent): void => {
-        e.preventDefault();
+    // v0.1.286 — al cambiar el TIPO, los interruptores de "Mostrar" vuelven
+    // al default de ese tipo (un donut muestra leyenda; unas barras, no la
+    // línea de promedio).
+    const changeType = (next: WidgetType): void => {
+        setType(next);
+        const defs = presentationDefaults(next);
+        setShowAverageLine(defs.average);
+        setShowDataLabels(defs.labels);
+        setShowLegend(defs.legend);
+    };
+
+    /** El widget tal como quedaría guardado (también alimenta la vista previa). */
+    const buildWidget = (): WidgetSpec => {
         const isContent = isContentWidget(type);
         const config: WidgetSpec['config'] = isContent
             ? ({ ...contentConfig } as WidgetSpec['config'])
@@ -278,8 +343,19 @@ export function WidgetFormDialog({
             if (kpiGoal.trim() !== '' && Number.isFinite(g) && g > 0) config.goal = g;
             if (type === 'kpi' && sparkFieldId > 0) config.spark_field_id = sparkFieldId;
         }
-        const widget: WidgetSpec = {
-            id: initial?.id ?? generateWidgetId(),
+        if (!isContent) {
+            // v0.1.286 — por defecto cuentan el PRIMER nivel (como la tabla).
+            delete config.include_subtasks;
+            if (includeSubtasks) config.include_subtasks = true;
+        }
+        if (type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') {
+            delete config.sort;
+            delete config.top_n;
+            if (chartSort !== '') config.sort = chartSort;
+            if (topN > 0) config.top_n = topN;
+        }
+        return {
+            id: initial?.id ?? draftId.current,
             type,
             list_id: isContent ? 0 : listId,
             title: title.trim(),
@@ -288,7 +364,11 @@ export function WidgetFormDialog({
             // tabla ancha…) y posicionado al FINAL del dashboard.
             layout: initial?.layout ?? defaultLayoutForType(type),
         };
-        onSave(widget);
+    };
+
+    const handleSubmit = (e: React.FormEvent): void => {
+        e.preventDefault();
+        onSave(buildWidget());
         onOpenChange(false);
     };
 
@@ -299,6 +379,8 @@ export function WidgetFormDialog({
     const metricNeedsField = metric !== 'count' || metricFieldId > 0
         ? metricFieldId > 0
         : true;
+
+    const draftId = useRef<string>(generateWidgetId());
 
     const canSubmit = useMemo(() => {
         if (isContentWidget(type)) return true;
@@ -366,7 +448,7 @@ export function WidgetFormDialog({
                                 <Select
                                     id="w-type"
                                     value={type}
-                                    onChange={(e) => setType(e.target.value as WidgetType)}
+                                    onChange={(e) => changeType(e.target.value as WidgetType)}
                                 >
                                     <option value="kpi">{__('KPI · Número')}</option>
                                     <option value="stat_delta">{__('KPI · Delta vs período')}</option>
@@ -375,7 +457,7 @@ export function WidgetFormDialog({
                                     <option value="chart_pie">{__('Gráfico de torta')}</option>
                                     <option value="funnel">{__('Embudo (etapas de pipeline)')}</option>
                                     <option value="chart_line">{__('Línea (tendencia mensual)')}</option>
-                                    <option value="chart_area">{__('Area (tendencia mensual)')}</option>
+                                    <option value="chart_area">{__('Área (tendencia mensual)')}</option>
                                     <option value="table">{__('Tabla · Top N')}</option>
                                     <option value="heading">{__('Contenido · Título de sección')}</option>
                                     <option value="text">{__('Contenido · Texto')}</option>
@@ -402,7 +484,7 @@ export function WidgetFormDialog({
                                     <option value={0}>{__('Elige…')}</option>
                                     {(lists.data ?? []).map((l) => (
                                         <option key={l.id} value={l.id}>
-                                            {l.name}
+                                            {listOptionLabel(l, lists.data ?? [], groups.data ?? [])}
                                         </option>
                                     ))}
                                 </Select>
@@ -543,6 +625,30 @@ export function WidgetFormDialog({
                             />
                         )}
 
+                        {(type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') && (
+                            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3">
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="w-sort">{__('Orden')}</Label>
+                                    <Select id="w-sort" value={chartSort} onChange={(e) => setChartSort(e.target.value)}>
+                                        <option value="">{type === 'funnel' ? __('Etapas del campo (automático)') : __('Automático')}</option>
+                                        <option value="value_desc">{__('Mayor valor primero')}</option>
+                                        <option value="value_asc">{__('Menor valor primero')}</option>
+                                        <option value="label">{__('Alfabético')}</option>
+                                        <option value="options">{__('Orden de las opciones del campo')}</option>
+                                    </Select>
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="w-top">{__('Categorías a mostrar')}</Label>
+                                    <Select id="w-top" value={topN} onChange={(e) => setTopN(Number(e.target.value))}>
+                                        <option value={0}>{__('Hasta 50 (el resto en «Otros»)')}</option>
+                                        <option value={5}>{__('Las 5 mayores')}</option>
+                                        <option value={10}>{__('Las 10 mayores')}</option>
+                                        <option value={20}>{__('Las 20 mayores')}</option>
+                                    </Select>
+                                </div>
+                            </div>
+                        )}
+
                         {type === 'chart_pie' && (
                             <div className="imcrm-grid imcrm-gap-1.5">
                                 <Label htmlFor="pie-center-label" className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -641,9 +747,30 @@ export function WidgetFormDialog({
                                     inline
                                 />
                                 <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                                    {__('Restringen los datos del widget. Soportan AND/OR y grupos anidados; para fechas hay rangos rápidos como "este mes".')}
+                                    {__('Limitan los registros que cuenta el widget. Puedes pedir que se cumplan todas las condiciones o cualquiera de ellas, y agruparlas; para fechas hay rangos rápidos como «este mes».')}
                                 </p>
                             </div>
+                        )}
+
+                        {! isContentWidget(type) && listId > 0 && (
+                            <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-xs">
+                                <input
+                                    type="checkbox"
+                                    checked={includeSubtasks}
+                                    onChange={(e) => setIncludeSubtasks(e.target.checked)}
+                                    className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4"
+                                />
+                                <span>
+                                    <span className="imcrm-font-medium imcrm-text-foreground">{__('Incluir subtareas')}</span>
+                                    <span className="imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground">
+                                        {__('Sin marcar, el widget cuenta lo mismo que la tabla: sólo los registros de primer nivel.')}
+                                    </span>
+                                </span>
+                            </label>
+                        )}
+
+                        {open && dashboardId !== undefined && dashboardId > 0 && ! isContentWidget(type) && canSubmit && (
+                            <WidgetPreview dashboardId={dashboardId} widget={buildWidget()} scope={scope ?? { period: '', filters: [] }} />
                         )}
 
                         {/* v0.1.98 — capa de estilo del card (misma del editor
@@ -1062,7 +1189,7 @@ function TableConfig({
                     </div>
                 )}
                 <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Si no seleccionas ninguna, mostramos las primeras 4 de la lista.')}
+                    {__('Si no eliges ninguna, se muestra el campo del título y los 7 siguientes.')}
                 </p>
             </div>
         </div>
@@ -1233,10 +1360,13 @@ function PresentationToggles({
     onShowLegendChange,
     onHideZeroGroupsChange,
 }: PresentationTogglesProps): JSX.Element {
-    // La línea de promedio sólo aplica a charts numéricos con eje
-    // ordenado (bar/line/area). En pie no hay un "eje Y" donde
-    // pintar una línea, y en el embudo no tiene lectura útil.
-    const supportsAverage = type !== 'chart_pie' && type !== 'funnel';
+    // v0.1.286 — sólo lo que cada gráfico SABE dibujar. La línea de promedio
+    // en barras y tendencias; las etiquetas (los valores sobre el gráfico) en
+    // el donut y las tendencias — las barras y el embudo ya muestran su
+    // número siempre —, y la leyenda sólo en el donut.
+    const supportsAverage = type === 'chart_bar' || type === 'chart_line' || type === 'chart_area';
+    const supportsLabels = type === 'chart_pie' || type === 'chart_line' || type === 'chart_area';
+    const supportsLegend = type === 'chart_pie';
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3">
             <Label className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -1249,16 +1379,20 @@ function PresentationToggles({
                     onChange={onShowAverageLineChange}
                 />
             )}
-            <ToggleRow
-                label={__('Etiquetas de datos')}
-                checked={showDataLabels}
-                onChange={onShowDataLabelsChange}
-            />
-            <ToggleRow
-                label={__('Leyenda')}
-                checked={showLegend}
-                onChange={onShowLegendChange}
-            />
+            {supportsLabels && (
+                <ToggleRow
+                    label={__('Etiquetas de datos')}
+                    checked={showDataLabels}
+                    onChange={onShowDataLabelsChange}
+                />
+            )}
+            {supportsLegend && (
+                <ToggleRow
+                    label={__('Leyenda')}
+                    checked={showLegend}
+                    onChange={onShowLegendChange}
+                />
+            )}
             {(type === 'chart_pie' || type === 'chart_bar' || type === 'funnel') && (
                 // v0.1.102 — condición sobre el RESULTADO del gráfico (no
                 // sobre los registros): los grupos cuya métrica da 0 o vacío
@@ -1370,10 +1504,16 @@ function buildConfig(
         return c;
     };
 
+    // v0.1.286 — booleanos EXPLÍCITOS (también los `false`): guardar sólo los
+    // `true` hacía imposible apagar lo que viene encendido por defecto.
     const presentation = (c: WidgetSpec['config']): WidgetSpec['config'] => {
-        if (state.showAverageLine) c.show_average_line = true;
-        if (state.showDataLabels) c.show_data_labels = true;
-        if (state.showLegend) c.show_legend = true;
+        if (type === 'chart_bar' || type === 'chart_line' || type === 'chart_area') {
+            c.show_average_line = state.showAverageLine;
+        }
+        if (type === 'chart_pie' || type === 'chart_line' || type === 'chart_area') {
+            c.show_data_labels = state.showDataLabels;
+        }
+        if (type === 'chart_pie') c.show_legend = state.showLegend;
         return c;
     };
 
@@ -1443,10 +1583,16 @@ function buildConfig(
  *
  * Si ninguna está, devuelve un árbol vacío.
  */
-function decodeWidgetFilters(config: WidgetSpec['config']): FilterTree {
+export function decodeWidgetFilters(config: WidgetSpec['config']): FilterTree {
     const tree = config.filter_tree;
     if (tree && typeof tree === 'object' && (tree as FilterTree).type === 'group') {
         return tree as FilterTree;
+    }
+    // v0.1.286 — una raíz que es una CONDICIÓN suelta (la guardaban
+    // plantillas viejas): se envuelve en un grupo AND. Antes se descartaba y
+    // al abrir y guardar el widget el filtro se BORRABA.
+    if (tree && typeof tree === 'object' && (tree as { type?: unknown }).type === 'condition') {
+        return { type: 'group', logic: 'and', children: [tree as FilterTree['children'][number]] };
     }
     const flat = config.filters;
     if (flat && typeof flat === 'object') {
@@ -1475,4 +1621,65 @@ function generateWidgetId(): string {
 function isTimeBucket(value: unknown): value is ChartTimeBucket {
     return value === 'day' || value === 'week' || value === 'month'
         || value === 'quarter' || value === 'year';
+}
+
+/**
+ * v0.1.286 — Nombre de una lista en el selector del widget: si hay OTRAS con
+ * el mismo nombre (pasa con plantillas aplicadas varias veces) se distingue
+ * por su carpeta o, sin carpeta, por su nombre interno.
+ */
+export function listOptionLabel(
+    list: Pick<ListSummary, 'id' | 'name' | 'slug' | 'group_id'>,
+    all: ReadonlyArray<Pick<ListSummary, 'id' | 'name'>>,
+    groups: ReadonlyArray<Pick<ListGroup, 'id' | 'name'>>,
+): string {
+    const dup = all.some((l) => l.id !== list.id && l.name.trim().toLowerCase() === list.name.trim().toLowerCase());
+    if (!dup) return list.name;
+    const folder = list.group_id !== null ? groups.find((g) => g.id === list.group_id)?.name : undefined;
+    return `${list.name} · ${folder ?? list.slug}`;
+}
+
+/**
+ * v0.1.286 — Vista previa EN VIVO del widget que se está configurando: el
+ * mismo componente del tablero con datos reales (mismo período y filtros del
+ * tablero), recalculada medio segundo después del último cambio.
+ */
+function WidgetPreview({
+    dashboardId,
+    widget,
+    scope,
+}: {
+    dashboardId: number;
+    widget: WidgetSpec;
+    scope: DashboardBundleScope;
+}): JSX.Element {
+    const sig = JSON.stringify(widget);
+    const [debounced, setDebounced] = useState<WidgetSpec>(widget);
+    useEffect(() => {
+        const t = window.setTimeout(() => setDebounced(JSON.parse(sig) as WidgetSpec), 450);
+        return () => window.clearTimeout(t);
+    }, [sig]);
+    const preview = useWidgetPreview(dashboardId, debounced, scope);
+    const override = useMemo<WidgetDataOverride>(
+        () => ({
+            get: () => ({
+                data: preview.data,
+                isLoading: preview.isLoading,
+                error: preview.error instanceof Error ? preview.error : null,
+            }),
+        }),
+        [preview.data, preview.isLoading, preview.error],
+    );
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="imcrm-widget-preview">
+            <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Vista previa')}</Label>
+            <div className="imcrm-h-60 imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4">
+                <DashboardBundleContext.Provider value={scope}>
+                    <WidgetDataOverrideContext.Provider value={override}>
+                        <WidgetRenderer dashboardId={dashboardId} widget={debounced} />
+                    </WidgetDataOverrideContext.Provider>
+                </DashboardBundleContext.Provider>
+            </div>
+        </div>
+    );
 }

@@ -43,16 +43,27 @@ export class HealthController {
     }
 
     private async probe(): Promise<{ postgres: boolean; redis: boolean }> {
+        // Con tope: una dependencia COLGADA (pausada, sin responder) no puede
+        // dejar a la sonda esperando — el balanceador necesita el 503 ya.
         const [postgres, redis] = await Promise.all([
-            this.db
-                .execute(sql`select 1`)
-                .then(() => true)
-                .catch(() => false),
-            this.redis
-                .ping()
-                .then(() => true)
-                .catch(() => false),
+            withinTimeout(this.db.execute(sql`select 1`), PROBE_TIMEOUT_MS),
+            withinTimeout(this.redis.ping(), PROBE_TIMEOUT_MS),
         ]);
         return { postgres, redis };
+    }
+}
+
+const PROBE_TIMEOUT_MS = 2500;
+
+/** true si la promesa se cumple antes de `ms`; false si falla o tarda más. */
+export async function withinTimeout(p: Promise<unknown>, ms: number): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), ms);
+    });
+    try {
+        return await Promise.race([p.then(() => true, () => false), timeout]);
+    } finally {
+        clearTimeout(timer);
     }
 }
