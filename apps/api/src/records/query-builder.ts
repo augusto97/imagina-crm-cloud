@@ -56,7 +56,7 @@ function keyLit(key: string): SQL {
  *
  * Whitelist estricta (regla de oro nº 4): cada condición referencia un
  * `field_id`; se resuelve al field de la lista y a una expresión JSONB tipada
- * (`(data->>'fN')::numeric`, `::date`, …). El valor JAMÁS se interpola —
+ * (`(data->>'fN')::numeric`, `::date`, …, con cast tolerante). El valor JAMÁS se interpola —
  * siempre viaja como parámetro. Condiciones sobre campos inexistentes o no
  * filtrables se descartan (igual que el plugin).
  */
@@ -322,7 +322,16 @@ export function fieldTypedExpr(field: FilterableField, dataRef: DataRef = record
     return typedExpr(jsonbKeyForField(field.id), field.type, dataRef);
 }
 
-/** Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3). */
+/**
+ * Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3).
+ *
+ * El cast es TOLERANTE: un valor que no se puede convertir (una fecha
+ * «mañana» que escribió una automatización vieja, un número «150.000,5»
+ * importado a mano) da NULL en vez de tirar la consulta entera. Antes un
+ * solo valor basura en una fila hacía que ordenar, filtrar por fecha, los
+ * agregados y el escaneo de vencimientos de TODA la lista respondieran 500.
+ * `pg_input_is_valid` (Postgres 16) valida sin lanzar.
+ */
 function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
     const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
     switch (type) {
@@ -334,14 +343,20 @@ function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
             // v0.1.158 — rating/percent/duration guardan un número (estrellas,
             // 0-100 y minutos): comparan y ordenan con el motor numérico, no
             // como texto (donde '9' > '10').
-            return sql`${asText}::numeric`;
+            return safeCast(asText, 'numeric');
         case 'date':
-            return sql`${asText}::date`;
+            return safeCast(asText, 'date');
         case 'datetime':
-            return sql`${asText}::timestamptz`;
+            return safeCast(asText, 'timestamptz');
         default:
             return asText;
     }
+}
+
+/** `CASE WHEN pg_input_is_valid(x, 'tipo') THEN x::tipo END` — NULL si no convierte. */
+function safeCast(asText: SQL, type: 'numeric' | 'date' | 'timestamptz'): SQL {
+    // El tipo es un literal fijo de esta función (nunca input del usuario).
+    return sql`(CASE WHEN pg_input_is_valid(${asText}, ${sql.raw(`'${type}'`)}) THEN ${asText}::${sql.raw(type)} END)`;
 }
 
 const NUMERIC_FILTER_TYPES: readonly FieldType[] = [
