@@ -1,4 +1,4 @@
-import { createContext, forwardRef, memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, forwardRef, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { DurationFormat } from '@imagina-base/shared';
 
@@ -363,10 +363,37 @@ function UserCellEditor({
 type RecordUpdater = ReturnType<typeof useUpdateRecord>['mutateAsync'];
 const RecordUpdaterContext = createContext<RecordUpdater | null>(null);
 
-/** La mutación de edición que comparten todas las celdas de una tabla. */
-export function RecordUpdaterProvider({ listId, children }: { listId: number; children: ReactNode }): JSX.Element {
+/**
+ * La mutación de edición que comparten todas las celdas de una tabla.
+ *
+ * v0.1.292 — `onSaved`: la tabla EDITABLE de la ficha (los ítems de una
+ * cotización) lee sus filas del bundle de la ficha y no de la lista: al
+ * guardar una celda parchea ese cache y refresca lo que depende (totales,
+ * rollups del registro, el PDF).
+ */
+export function RecordUpdaterProvider({
+    listId,
+    onSaved,
+    children,
+}: {
+    listId: number;
+    onSaved?: (id: number, values: Record<string, unknown>) => void;
+    children: ReactNode;
+}): JSX.Element {
     const update = useUpdateRecord(listId);
-    return <RecordUpdaterContext.Provider value={update.mutateAsync}>{children}</RecordUpdaterContext.Provider>;
+    const { mutateAsync } = update;
+    const updater = useMemo<RecordUpdater>(
+        () =>
+            onSaved
+                ? async (vars, opts) => {
+                      const res = await mutateAsync(vars, opts);
+                      onSaved(vars.id, vars.values);
+                      return res;
+                  }
+                : mutateAsync,
+        [mutateAsync, onSaved],
+    );
+    return <RecordUpdaterContext.Provider value={updater}>{children}</RecordUpdaterContext.Provider>;
 }
 
 /** Fuera de una tabla con proveedor, la celda trae el suyo. */

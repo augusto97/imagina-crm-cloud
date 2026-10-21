@@ -477,7 +477,13 @@ const VIEW_LABEL: Record<string, string> = {
     board: __('Tablero'),
     timeline: __('Línea de tiempo'),
     gallery: __('Galería'),
+    editable: __('Tabla editable'),
 };
+
+/** Tipos que la fila de totales de la tabla editable sabe sumar (los mismos que el servidor). */
+const SUMMABLE: ReadonlySet<string> = new Set(['number', 'currency', 'percent', 'duration', 'rating', 'computed', 'rollup']);
+/** Tipos que se calculan (no se editan en línea). */
+const DERIVED_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai', 'relation', 'file']);
 
 export function RelatedForm({ block, set }: FormProps): JSX.Element {
     const ed = useEditor();
@@ -503,13 +509,14 @@ export function RelatedForm({ block, set }: FormProps): JSX.Element {
             </Group>
             <Group title={__('Visualización')}>
                 <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1.5" role="radiogroup" aria-label={__('Vista')}>
-                    {RELATED_VIEWS.map((v) => (
+                    {RELATED_VIEWS.filter((v) => v !== 'editable' || ed.catalog.target !== 'portal').map((v) => (
                         <button
                             key={v}
                             type="button"
                             role="radio"
                             aria-checked={view === v}
-                            onClick={() => set({ view: v })}
+                            // La tabla editable muestra todos los ítems (hasta 100), no una muestra.
+                            onClick={() => set(v === 'editable' && (num(c.limit) ?? 25) <= 25 ? { view: v, limit: 100 } : { view: v })}
                             className={cn(
                                 'imcrm-rounded-lg imcrm-border imcrm-px-2 imcrm-py-1.5 imcrm-text-[11px]',
                                 view === v ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-font-semibold' : 'imcrm-border-border hover:imcrm-bg-accent',
@@ -533,6 +540,32 @@ export function RelatedForm({ block, set }: FormProps): JSX.Element {
                     <Row label={__('Imagen')}>
                         <FieldSelect fields={fields} value={num(c.image_field_id)} onChange={(id) => set({ image_field_id: id })} allow={(f) => f.type === 'url' || f.type === 'file'} emptyLabel={__('El primer campo de imagen')} />
                     </Row>
+                )}
+                {view === 'editable' && (
+                    <>
+                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            {__('Los registros vinculados se editan en línea, con «Agregar ítem» y una fila de totales. Ideal para los ítems de una cotización o una factura.')}
+                        </p>
+                        <Row label={__('Se pueden editar')} hint={__('Vacío: todas las columnas que se pueden editar.')}>
+                            <FieldChecklist
+                                fields={fields}
+                                value={ids(c.editable_field_ids)}
+                                onChange={(v) => set({ editable_field_ids: v.length > 0 ? v : undefined })}
+                                allow={(f) => !DERIVED_TYPES.has(f.type)}
+                                max={12}
+                            />
+                        </Row>
+                        <Row label={__('Fila de totales')} hint={__('Vacío: suma las columnas de moneda.')}>
+                            <FieldChecklist
+                                fields={fields}
+                                value={ids(c.total_field_ids)}
+                                onChange={(v) => set({ total_field_ids: v.length > 0 ? v : undefined })}
+                                allow={(f) => SUMMABLE.has(f.type)}
+                                max={12}
+                                addLabel={__('Sumar una columna')}
+                            />
+                        </Row>
+                    </>
                 )}
             </Group>
         </>

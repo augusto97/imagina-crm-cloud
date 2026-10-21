@@ -1,13 +1,15 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, Loader2, Plus } from 'lucide-react';
 import { readStoreListMarker, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
 
+import { EditableRelatedTable, type EditableRow } from '@/admin/records/EditableRelatedTable';
 import { RecordCreateDialog } from '@/admin/records/RecordCreateDialog';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { Button } from '@/components/ui/button';
 import { useList } from '@/hooks/useLists';
+import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -52,6 +54,10 @@ export function RelatedBlockView({ block }: { block: LayoutBlock }): JSX.Element
         return typeof v === 'string' && v !== '' ? v : `#${row.id}`;
     };
     const props = { data, rows: data.rows, columns, titleField, titleOf, href, block };
+
+    // v0.1.292 — «Tabla editable»: los ítems se cambian en línea, con su
+    // propio «Agregar ítem» y la fila de totales (no usa la barra de arriba).
+    if (view === 'editable') return <EditableView block={block} data={data} titleField={titleField} />;
 
     return (
         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
@@ -324,6 +330,94 @@ function GalleryView({ data, rows, titleOf, href, block }: ViewProps): JSX.Eleme
                 );
             })}
         </div>
+    );
+}
+
+/** Ids de una clave de la config del bloque (tolerante: números o textos numéricos). */
+function idsOf(raw: unknown): number[] | undefined {
+    if (!Array.isArray(raw)) return undefined;
+    return raw.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/**
+ * v0.1.292 — La vista «Tabla editable» del bloque: las filas llegan en el
+ * bundle de la ficha (ya acotadas al vínculo y con el ACL de quien mira) y se
+ * editan con las celdas de siempre. Al guardar se parchea el cache del bundle
+ * (la celda no parpadea) y se refresca lo que depende: los totales, los
+ * rollups del propio registro y los demás bloques.
+ */
+function EditableView({ block, data, titleField }: { block: LayoutBlock; data: RelatedBlockData; titleField: FieldEntity | undefined }): JSX.Element {
+    const ctx = useLayoutCtx();
+    const qc = useQueryClient();
+    const readOnly = ctx.mode === 'portal' || ctx.preview === true;
+    const otherList = useList(readOnly ? undefined : data.list.id);
+    const source = block.config.source as LayoutDataSource | undefined;
+    const relField = source?.kind === 'related' ? data.fields.find((f) => f.id === source.field_id) : undefined;
+
+    const columns = useMemo(() => {
+        const chosen = idsOf(block.config.field_ids);
+        const picked = chosen && chosen.length > 0
+            ? chosen.map((id) => data.fields.find((f) => f.id === id)).filter((f): f is FieldEntity => f !== undefined)
+            : data.fields.filter((f) => !SKIP.has(f.type) && f.type !== 'relation').slice(0, 6);
+        const rest = picked.filter((f) => f.id !== titleField?.id);
+        return titleField ? [titleField, ...rest] : rest;
+    }, [block.config.field_ids, data.fields, titleField]);
+    const editableIds = idsOf(block.config.editable_field_ids);
+    const totalIds = useMemo(
+        () => idsOf(block.config.total_field_ids) ?? columns.filter((f) => f.type === 'currency').map((f) => f.id),
+        [block.config.total_field_ids, columns],
+    );
+    const rows = useMemo<EditableRow[]>(
+        () => data.rows.map((r) => ({ id: r.id, value: (f: FieldEntity) => valueOf(r, f) })),
+        [data.rows],
+    );
+
+    const refresh = useCallback(() => {
+        void qc.invalidateQueries({ queryKey: layoutDataKeys.all });
+        // Los rollups del registro (el total de la cotización) se recalculan.
+        invalidateForList(qc, recordsKeys.all, ctx.list.id);
+    }, [qc, ctx.list.id]);
+    const onSaved = useCallback(
+        (id: number, values: Record<string, unknown>) => {
+            const bySlug = new Map(data.fields.map((f) => [f.slug, f]));
+            qc.setQueriesData<Record<string, unknown>>({ queryKey: layoutDataKeys.all }, (old) => {
+                const raw = old?.[block.id] as RelatedBlockData | undefined;
+                if (!old || !raw || !Array.isArray(raw.rows)) return old;
+                let touched = false;
+                const nextRows = raw.rows.map((r) => {
+                    if (r.id !== id) return r;
+                    touched = true;
+                    const next = { ...r.data };
+                    for (const [slug, v] of Object.entries(values)) {
+                        const f = bySlug.get(slug);
+                        if (f) next[`f${f.id}`] = v;
+                    }
+                    return { ...r, data: next };
+                });
+                return touched ? { ...old, [block.id]: { ...raw, rows: nextRows } } : old;
+            });
+            refresh();
+        },
+        [qc, block.id, data.fields, refresh],
+    );
+
+    return (
+        <EditableRelatedTable
+            listId={data.list.id}
+            listName={data.list.name}
+            fields={data.fields}
+            columns={columns}
+            editableIds={editableIds}
+            totalIds={totalIds}
+            rows={rows}
+            total={data.total}
+            totals={data.totals}
+            relation={relField && !readOnly ? { field: relField, recordId: ctx.record.id } : null}
+            storeMarker={readOnly ? null : readStoreListMarker(otherList.data?.settings)}
+            onSaved={onSaved}
+            onChanged={refresh}
+            readOnly={readOnly}
+        />
     );
 }
 
