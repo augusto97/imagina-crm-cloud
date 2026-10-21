@@ -1751,7 +1751,7 @@ export class PortalService implements OnModuleInit {
             const titleFieldOf = new Map<number, number | null>([[link.listId, ctx.titleFieldId]]);
             for (const listId of [...new Set(linkedListIds)].slice(0, 4)) {
                 if (listId === link.listId) continue;
-                const ids = await this.clientRecordIdsIn(tx, link.tenantId, link.listId, link.recordId, listId, userId);
+                const ids = await this.clientRecordIdsIn(tx, link.tenantId, link.listId, link.recordId, listId, userId, ctx.fields);
                 if (ids.length === 0) continue;
                 scopes.push(and(eq(paymentLinks.listId, listId), inArray(paymentLinks.recordId, ids)));
                 const [l] = await tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1);
@@ -1810,9 +1810,10 @@ export class PortalService implements OnModuleInit {
 
     /**
      * Los registros de OTRA lista que son del cliente: la relación de esa
-     * lista que apunta a la del portal (vinculados a SU registro) o, si no
-     * hay, su campo persona igual a él. El mismo criterio que los gráficos y
-     * tablas del portal. Sin vínculo → ninguno.
+     * lista que apunta a la del portal (vinculados a SU registro), la
+     * relación de la lista del portal hacia esa (los que SU registro vincula)
+     * o, si no hay ninguna, su campo persona igual a él. El mismo criterio que
+     * los gráficos y tablas del portal. Sin vínculo → ninguno.
      */
     private async clientRecordIdsIn(
         tx: Tx,
@@ -1821,7 +1822,11 @@ export class PortalService implements OnModuleInit {
         clientRecordId: number,
         listId: number,
         userId: number,
+        portalFields: readonly Field[],
     ): Promise<number[]> {
+        const forward = portalFields.find(
+            (f) => f.type === 'relation' && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === listId,
+        );
         const other = [...(await this.fields.listByListIdWithinTx(tx, tenantId, listId))].sort((a, b) => a.position - b.position);
         const rel = other.find(
             (f) => f.type === 'relation' && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === portalListId,
@@ -1836,6 +1841,23 @@ export class PortalService implements OnModuleInit {
                         eq(relations.tenantId, tenantId),
                         eq(relations.fieldId, rel.id),
                         eq(relations.targetRecordId, clientRecordId),
+                        eq(records.listId, listId),
+                        isNull(records.deletedAt),
+                    ),
+                )
+                .limit(500);
+            return rows.map((r) => r.id);
+        }
+        if (forward) {
+            const rows = await tx
+                .select({ id: relations.targetRecordId })
+                .from(relations)
+                .innerJoin(records, eq(records.id, relations.targetRecordId))
+                .where(
+                    and(
+                        eq(relations.tenantId, tenantId),
+                        eq(relations.fieldId, forward.id),
+                        eq(relations.sourceRecordId, clientRecordId),
                         eq(records.listId, listId),
                         isNull(records.deletedAt),
                     ),

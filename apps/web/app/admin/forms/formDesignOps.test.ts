@@ -6,9 +6,12 @@ import {
     addFieldItem,
     availableFields,
     conditionCandidates,
+    emailQuestions,
     missingRequired,
     moveItem,
     moveItemTo,
+    pageCount,
+    pageNumbers,
     removeItem,
     updateItem,
 } from './formDesignOps';
@@ -73,5 +76,29 @@ describe('constructor de formularios', () => {
     it('una condición sólo puede depender de preguntas anteriores', () => {
         expect(conditionCandidates(base(), 'aaaa3').map((c) => c.field_id)).toEqual([1, 2]);
         expect(conditionCandidates(base(), 'aaaa1')).toEqual([]);
+    });
+
+    it('v0.1.290 — saltos de página: numeración, cantidad y sin páginas vacías', () => {
+        const one = addContentItem(base(), 'page_break', 'aaaa1');
+        const two = addContentItem(one.config, 'page_break', 'aaaa2');
+        expect(pageCount(two.config)).toBe(3);
+        const pages = pageNumbers(two.config);
+        expect([pages.get('aaaa1'), pages.get('aaaa2'), pages.get('aaaa3')]).toEqual([1, 2, 3]);
+        // Un salto pegado a otro, o al final, no abre una página vacía.
+        const dup = addContentItem(two.config, 'page_break', one.id);
+        expect(pageCount(dup.config)).toBe(3);
+        const tail = addContentItem(base(), 'page_break', 'aaaa3');
+        expect(pageCount(tail.config)).toBe(1);
+    });
+
+    it('v0.1.290 — el correo de quien responde: sólo preguntas de email; quitarla apaga confirmación y copia', () => {
+        const withEmail = formConfigSchema.parse({
+            items: [...base().items, { id: 'aaaa9', type: 'field', field_id: 9 }],
+            settings: { respondent_email_field_id: 9, confirm_email: true, send_copy: true },
+        });
+        const all = [...fields, { id: 9, label: 'Correo', type: 'email', is_required: false }];
+        expect(emailQuestions(all, withEmail).map((f) => f.id)).toEqual([9]);
+        const removed = removeItem(withEmail, 'aaaa9');
+        expect(removed.settings).toMatchObject({ respondent_email_field_id: null, confirm_email: false, send_copy: false });
     });
 });

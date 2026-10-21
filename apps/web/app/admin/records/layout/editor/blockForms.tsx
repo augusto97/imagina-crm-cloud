@@ -5,6 +5,9 @@ import { FIELD_DISPLAYS, PORTAL_EDITABLE_TYPES, RELATED_VIEWS, type LayoutBlock,
 import { KPI_ICON_OPTIONS } from '@/admin/dashboards/widgets/KpiWidget';
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
 import { GalleryBlockForm, ImageBlockForm, SpacerBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
+import { useQuery } from '@tanstack/react-query';
+
+import { api } from '@/cloud/session';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
@@ -742,3 +745,120 @@ export function InfoForm({ text }: { text: string }): JSX.Element {
     );
 }
 
+// ── Pagos del portal (v0.1.290) ──────────────────────────────────────────
+
+const PAYABLE = new Set(['number', 'currency', 'computed', 'rollup']);
+
+/**
+ * El bloque «Pagos» del PORTAL: qué links ve el cliente (los de su registro y
+ * los de listas vinculadas a él) y el botón para pagar el monto de un campo
+ * del registro. El monto lo lee el servidor; aquí sólo se elige de qué campo.
+ */
+export function PaymentsForm(props: FormProps): JSX.Element {
+    const ed = useEditor();
+    if (ed.catalog.target !== 'portal') {
+        return <InfoForm text={__('Los links de pago del registro (Mercado Pago o Wompi), si ya pagó, y el botón «Cobrar». Necesita una conexión de cobro en Integraciones.')} />;
+    }
+    return <PortalPaymentsForm {...props} />;
+}
+
+function PortalPaymentsForm({ block, set }: FormProps): JSX.Element {
+    const ed = useEditor();
+    const ctx = useLayoutCtx();
+    const c = block.config;
+    const showLinks = c.show_links !== false;
+    const linked = ids(c.linked_list_ids);
+    const pb = (c.pay_button ?? {}) as Record<string, unknown>;
+    const setPay = (patch: Record<string, unknown>): void => set({ pay_button: { ...pb, ...patch } });
+    const conns = useQuery({ queryKey: ['collections-connections'], queryFn: () => api.collectionConnections(), retry: false, staleTime: 60_000 });
+    const shared = (conns.data ?? []).filter((x) => x.shared !== false);
+    // Listas vinculadas al cliente: por relación (en cualquier sentido) o por persona.
+    const linkable = useMemo(() => {
+        const out = new Map<number, string>();
+        for (const p of ed.catalog.paths) if (p.other_list_id !== ed.catalog.listId) out.set(p.other_list_id, p.other_list_name);
+        for (const l of ed.catalog.portalLists ?? []) out.set(l.list_id, l.name);
+        return [...out.entries()].map(([id, name]) => ({ id, name }));
+    }, [ed.catalog]);
+
+    return (
+        <>
+            {!conns.isLoading && shared.length === 0 && (
+                <Group title={__('Conexión de cobro')}>
+                    <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-amber-700 dark:imcrm-text-amber-300" data-testid="payments-form-no-connection">
+                        {__('No hay una conexión de cobro del equipo (Mercado Pago o Wompi). Sin una, tus clientes no ven este bloque. Conéctala en Ajustes → Integraciones.')}
+                    </p>
+                </Group>
+            )}
+            <Group title={__('Sus pagos')}>
+                <Toggle
+                    label={__('Mostrar sus links de pago')}
+                    hint={__('Los de su registro, con el estado de cada uno y el comprobante de los pagados.')}
+                    checked={showLinks}
+                    onChange={(v) => set({ show_links: v })}
+                />
+                {showLinks && linkable.length > 0 && (
+                    <Row label={__('También los de')} hint={__('Sólo los registros de esas listas que son del cliente.')}>
+                        <div className="imcrm-space-y-1">
+                            {linkable.map((l) => (
+                                <label key={l.id} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={linked.includes(l.id)}
+                                        onChange={(e) =>
+                                            set({ linked_list_ids: e.target.checked ? [...linked, l.id].slice(0, 4) : linked.filter((x) => x !== l.id) })
+                                        }
+                                        data-testid={`payments-linked-${l.id}`}
+                                    />
+                                    {l.name}
+                                </label>
+                            ))}
+                        </div>
+                    </Row>
+                )}
+            </Group>
+            <Group title={__('Botón para pagar')}>
+                <Toggle
+                    label={__('Ofrecer «Pagar»')}
+                    hint={__('El cliente paga el monto de un campo de su registro (por ejemplo, el saldo). Si ya hay un link pendiente por ese monto, se reusa.')}
+                    checked={pb.enabled === true}
+                    onChange={(v) => setPay({ enabled: v })}
+                />
+                {pb.enabled === true && (
+                    <>
+                        <Row label={__('Conexión de cobro')}>
+                            <Select
+                                value={typeof pb.connection_id === 'number' ? pb.connection_id : ''}
+                                onChange={(e) => setPay({ connection_id: e.target.value === '' ? null : Number(e.target.value) })}
+                                className="imcrm-h-8 imcrm-text-sm"
+                                aria-label={__('Conexión de cobro')}
+                                data-testid="payments-connection"
+                            >
+                                <option value="">{__('— Elige una conexión —')}</option>
+                                {shared.map((x) => (
+                                    <option key={x.id} value={x.id}>
+                                        {x.name}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Row>
+                        <Row label={__('Monto')} hint={__('Un campo de número, moneda, calculado o resumen del registro.')}>
+                            <FieldSelect
+                                fields={ctx.fields}
+                                value={num(pb.amount_field_id)}
+                                onChange={(id) => setPay({ amount_field_id: id ?? null })}
+                                allow={(f) => PAYABLE.has(f.type)}
+                                ariaLabel={__('Monto')}
+                            />
+                        </Row>
+                        <Row label={__('Concepto')} hint={__('Vacío: el título del registro.')}>
+                            <TextInput value={str(pb.concept)} onChange={(v) => setPay({ concept: v })} placeholder={__('Pago de saldo')} />
+                        </Row>
+                        <Row label={__('Texto del botón')}>
+                            <TextInput value={str(pb.label, 'Pagar ahora')} onChange={(v) => setPay({ label: v })} />
+                        </Row>
+                    </>
+                )}
+            </Group>
+        </>
+    );
+}

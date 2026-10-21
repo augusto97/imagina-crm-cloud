@@ -407,18 +407,18 @@ export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext):
                     );
                 }
                 const linkedIds = (b.linked_lists ?? []).map((ls) => {
-                    const viaRelation = ctx.relations.find((r) => r.other_list_slug === ls && r.direction === 'reverse');
+                    const viaRelation = ctx.relations.find((r) => r.other_list_slug === ls);
                     if (viaRelation) return viaRelation.other_list_id;
                     const viaUser = ctx.portal?.userLists.find((l) => l.slug === ls);
                     if (viaUser) return viaUser.list_id;
                     const ok = [
                         ...new Set([
-                            ...ctx.relations.filter((r) => r.direction === 'reverse').map((r) => r.other_list_slug),
+                            ...ctx.relations.map((r) => r.other_list_slug),
                             ...(ctx.portal?.userLists.map((l) => l.slug) ?? []),
                         ]),
                     ];
                     throw new AiToolError(
-                        `${where}: la lista «${ls}» no está vinculada al cliente (hace falta una relación de esa lista hacia ésta, o un campo persona). Vinculables: ${ok.join(', ') || 'ninguna'}.`,
+                        `${where}: la lista «${ls}» no está vinculada al cliente (hace falta una relación entre las dos listas, o un campo persona). Vinculables: ${ok.join(', ') || 'ninguna'}.`,
                     );
                 });
                 let payButton: Record<string, unknown> = { enabled: false };

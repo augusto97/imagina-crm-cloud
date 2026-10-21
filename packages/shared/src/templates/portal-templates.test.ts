@@ -135,6 +135,23 @@ describe('plantillas del portal (v0.1.237)', () => {
         expect(table.source).toEqual(INVOICES.source);
         expect(st.pages[0]!.sections[0]!.style).toEqual({ tone: 'accent' });
         expect(st.theme.surface).toBe('outlined');
+        // Sin conexión de cobro no hay bloque «Pagos».
+        expect(blocks.some((b) => b.type === 'payments')).toBe(false);
+    });
+
+    it('v0.1.290 — «Estado de cuenta» con conexión de cobro: sus pagos y el botón por el saldo', () => {
+        const st = portalTemplateLayout('statement', { fields: CLIENT, linked: [INVOICES], payments: { connection_id: 7 } });
+        expect(recordLayoutV3Schema.safeParse(st).success).toBe(true);
+        const pay = layoutBlocks(st).find((b) => b.type === 'payments')!;
+        expect(pay.config).toEqual({
+            show_links: true,
+            linked_list_ids: [50],
+            // El saldo es un resumen: el SERVIDOR lo calcula y lee el monto de ahí.
+            pay_button: { enabled: true, connection_id: 7, amount_field_id: 10, concept: '', label: 'Pagar mi saldo' },
+        });
+        // Sin campo de saldo: sólo los links, sin botón.
+        const noBalance = portalTemplateLayout('statement', { fields: CLIENT.filter((f) => f.slug !== 'saldo'), linked: [INVOICES], payments: { connection_id: 7 } });
+        expect((layoutBlocks(noBalance).find((b) => b.type === 'payments')!.config as { pay_button: unknown }).pay_button).toEqual({ enabled: false });
     });
 
     it('«Mis solicitudes»: abiertas = no cerradas, y el tablero por estado', () => {

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, createContext, lazy, useContext, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { CloudApiError } from '@/lib/cloud/client';
@@ -24,16 +24,22 @@ const PortalHome = lazy(loadPortalHome);
  * BrowserRouter + fallback SPA en el server (Caddy en prod).
  */
 export function PortalApp(): JSX.Element {
+    // v0.1.290 — el enlace de ENTRADA de una empresa (`/portal?empresa=acme`)
+    // dice de qué empresa es la pantalla de entrar cuando no se entra por su
+    // dominio. Se recuerda en este navegador para las pantallas siguientes.
+    const [empresa] = useState(rememberEmpresa);
     // v0.1.245 — la marca del DOMINIO por el que se entró (sin sesión). En el
     // dominio de una empresa, las pantallas de entrar ya salen con su logo; en
     // el de la plataforma, un portal neutro (nunca la marca de la plataforma).
+    // v0.1.290 — junto con si la empresa deja entrar con contraseña.
     const host = useQuery({
-        queryKey: ['portal-host-boot'],
-        queryFn: () => portalApi.publicBoot(),
+        queryKey: ['portal-login-options', empresa],
+        queryFn: () => portalApi.portalLoginOptions(empresa),
         retry: 1,
         staleTime: Infinity,
     });
     const hostTenant = host.data?.tenant ?? null;
+    const loginOptions: LoginOptions = { empresa: hostTenant ? empresa : null, password: host.data?.password === true };
     const hostBrand: PortalBrand | null = hostTenant
         ? {
               name: hostTenant.app_name ?? (hostTenant.name || null),
@@ -52,15 +58,44 @@ export function PortalApp(): JSX.Element {
 
     return (
         <HostBrandContext.Provider value={hostBrand}>
-            <PortalBrandSetterContext.Provider value={setSessionBrand}>
-                <Routes>
-                    <Route path="/portal/acceso" element={<AccessPage />} />
-                    <Route path="/portal" element={<PortalPage />} />
-                    <Route path="*" element={<Navigate to="/portal" replace />} />
-                </Routes>
-            </PortalBrandSetterContext.Provider>
+            <LoginOptionsContext.Provider value={loginOptions}>
+                <PortalBrandSetterContext.Provider value={setSessionBrand}>
+                    <Routes>
+                        <Route path="/portal/acceso" element={<AccessPage />} />
+                        <Route path="/portal" element={<PortalPage />} />
+                        <Route path="*" element={<Navigate to="/portal" replace />} />
+                    </Routes>
+                </PortalBrandSetterContext.Provider>
+            </LoginOptionsContext.Provider>
         </HostBrandContext.Provider>
     );
+}
+
+/** v0.1.290 — cómo se puede entrar en esta pantalla (sin sesión). */
+interface LoginOptions {
+    /** Slug de la empresa del enlace de entrada (sólo si existe). */
+    empresa: string | null;
+    /** La empresa deja entrar con correo + contraseña. */
+    password: boolean;
+}
+const LoginOptionsContext = createContext<LoginOptions>({ empresa: null, password: false });
+
+const EMPRESA_KEY = 'imb-portal-empresa';
+
+/**
+ * `?empresa=` del enlace de entrada (y lo recuerda en este navegador: después
+ * de entrar, salir o vencer el enlace, la pantalla sigue siendo la de esa
+ * empresa). Tolerante: sin almacenamiento, sólo vale el de la URL.
+ */
+function rememberEmpresa(): string | null {
+    const valid = (v: string | null): string | null => (v && /^[a-z0-9_-]{1,63}$/.test(v.trim().toLowerCase()) ? v.trim().toLowerCase() : null);
+    const fromUrl = valid(new URLSearchParams(window.location.search).get('empresa'));
+    try {
+        if (fromUrl) window.localStorage.setItem(EMPRESA_KEY, fromUrl);
+        return fromUrl ?? valid(window.localStorage.getItem(EMPRESA_KEY));
+    } catch {
+        return fromUrl;
+    }
 }
 
 function AccessPage(): JSX.Element {
@@ -157,11 +192,15 @@ function PortalPage(): JSX.Element {
  */
 function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
     const [email, setEmail] = useState('');
-    const ask = useMutation({ mutationFn: () => portalApi.portalRequestAccess(email.trim()) });
+    const opts = useContext(LoginOptionsContext);
+    const ask = useMutation({ mutationFn: () => portalApi.portalRequestAccess(email.trim(), opts.empresa) });
     const brand = useHostBrand();
+    // v0.1.290 — con la contraseña permitida, se elige cómo entrar.
+    const [mode, setMode] = useState<'link' | 'password'>('link');
+    const passwordMode = opts.password && mode === 'password';
 
     return (
-        <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-background imcrm-p-6">
+        <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-background imcrm-p-4 sm:imcrm-p-6">
             <div className="imcrm-w-full imcrm-max-w-sm imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6">
                 <BrandMark />
                 <div className="imcrm-space-y-1">
@@ -169,11 +208,44 @@ function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
                         {brand?.name ? `Entrar al portal de ${brand.name}` : 'Entrar a tu portal'}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {note ?? 'Tu enlace de acceso venció o cerraste sesión.'} Escribe tu correo y te
-                        mandamos uno nuevo.
+                        {passwordMode
+                            ? 'Escribe tu correo y la contraseña que creaste en este portal.'
+                            : `${note ?? (opts.password ? 'Elige cómo quieres entrar.' : 'Tu enlace de acceso venció o cerraste sesión.')} ${
+                                  opts.password ? 'Con un enlace, escribe tu correo y te mandamos uno.' : 'Escribe tu correo y te mandamos uno nuevo.'
+                              }`}
                     </p>
                 </div>
-                {ask.isSuccess ? (
+                {opts.password && (
+                    <div
+                        role="tablist"
+                        aria-label="Cómo entrar"
+                        className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1"
+                    >
+                        {(
+                            [
+                                ['link', 'Con un enlace por correo'],
+                                ['password', 'Con contraseña'],
+                            ] as const
+                        ).map(([m, label]) => (
+                            <button
+                                key={m}
+                                type="button"
+                                role="tab"
+                                aria-selected={mode === m}
+                                data-testid={`portal-login-mode-${m}`}
+                                onClick={() => setMode(m)}
+                                className={`imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-transition-colors ${
+                                    mode === m ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground hover:imcrm-text-foreground'
+                                }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {passwordMode ? (
+                    <PasswordLoginForm email={email} setEmail={setEmail} empresa={opts.empresa} onForgot={() => setMode('link')} />
+                ) : ask.isSuccess ? (
                     <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm">
                         Si ese correo tiene acceso, en unos segundos te llega un enlace. Revisa también la carpeta
                         de spam.
@@ -205,6 +277,81 @@ function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
                 )}
             </div>
         </div>
+    );
+}
+
+/**
+ * v0.1.290 — Entrar con correo + la contraseña del portal de ESTA empresa (no
+ * la de ninguna otra cuenta). «¿Olvidaste tu contraseña?» = entrar con un
+ * enlace y crear una nueva desde el menú.
+ */
+function PasswordLoginForm({
+    email,
+    setEmail,
+    empresa,
+    onForgot,
+}: {
+    email: string;
+    setEmail: (v: string) => void;
+    empresa: string | null;
+    onForgot: () => void;
+}): JSX.Element {
+    const [password, setPassword] = useState('');
+    const login = useMutation({
+        mutationFn: () => portalApi.portalLogin({ email: email.trim(), password, empresa }),
+        // Recarga completa: el portal arranca limpio con la sesión nueva.
+        onSuccess: () => window.location.assign('/portal'),
+    });
+    const error = login.error instanceof CloudApiError ? login.error.message : login.isError ? 'No se pudo entrar. Prueba de nuevo.' : null;
+    return (
+        <form
+            className="imcrm-space-y-3"
+            onSubmit={(e) => {
+                e.preventDefault();
+                if (email.includes('@') && password) login.mutate();
+            }}
+        >
+            <input
+                type="email"
+                required
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="tu@email.com"
+                data-testid="portal-login-email"
+                className="imcrm-h-10 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-sm"
+            />
+            <input
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Contraseña"
+                data-testid="portal-login-password"
+                className="imcrm-h-10 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-sm"
+            />
+            {error && (
+                <p role="alert" className="imcrm-text-sm imcrm-text-destructive" data-testid="portal-login-error">
+                    {error}
+                </p>
+            )}
+            <button
+                type="submit"
+                disabled={login.isPending || !email.includes('@') || !password}
+                data-testid="portal-login-submit"
+                className="imcrm-h-10 imcrm-w-full imcrm-rounded-md imcrm-bg-primary imcrm-text-sm imcrm-font-medium imcrm-text-primary-foreground disabled:imcrm-opacity-60"
+            >
+                {login.isPending ? 'Entrando…' : 'Entrar'}
+            </button>
+            <button
+                type="button"
+                onClick={onForgot}
+                className="imcrm-w-full imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline"
+            >
+                ¿Olvidaste tu contraseña? Entra con un enlace por correo y crea una nueva desde tu menú.
+            </button>
+        </form>
     );
 }
 

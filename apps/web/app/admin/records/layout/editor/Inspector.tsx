@@ -22,6 +22,7 @@ import {
     ImageForm,
     InfoForm,
     NoticeForm,
+    PaymentsForm,
     RelatedForm,
     SpacerForm,
     StagesForm,
@@ -198,7 +199,8 @@ function BlockForm(props: FormProps): JSX.Element | null {
         case 'subtasks':
             return <InfoForm text={__('Las subtareas del registro con su estado y una fila para agregar otra. Si el registro es una subtarea, muestra el vínculo a su padre.')} />;
         case 'payments':
-            return <InfoForm text={__('Los links de pago del registro (Mercado Pago o Wompi), si ya pagó, y el botón «Cobrar». Necesita una conexión de cobro en Integraciones.')} />;
+            // v0.1.290 — en el portal se configura qué ve y paga el cliente.
+            return <PaymentsForm {...props} />;
         default:
             return null;
     }

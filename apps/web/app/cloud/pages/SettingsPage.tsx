@@ -24,6 +24,8 @@ import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
 import { IntegrationsPanel } from '@/cloud/components/IntegrationsPanel';
 import { TenantMailPanel } from '@/cloud/components/TenantMailPanel';
+import { CaptchaKeysCard } from '@/cloud/components/CaptchaKeysCard';
+import { PortalAuthCard } from '@/cloud/components/PortalAuthCard';
 import { TenantStoragePanel } from '@/cloud/components/TenantStoragePanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -171,6 +173,12 @@ export function SettingsPage(): JSX.Element {
                 {active === 'formato' && isAdmin && <RegionalFormatPanel />}
 
                 {active === 'correo' && isAdmin && <TenantMailPanel />}
+                {active === 'portal' && isAdmin && (
+                    <div className="imcrm-space-y-4">
+                        <PortalAuthCard />
+                        <CaptchaKeysCard scope="tenant" />
+                    </div>
+                )}
 
                 {/* v0.1.268 (ADR-S36) — dónde se guardan los archivos. */}
                 {active === 'almacenamiento' && isAdmin && <TenantStoragePanel />}

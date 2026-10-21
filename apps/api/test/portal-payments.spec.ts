@@ -377,4 +377,20 @@ describe('v0.1.290 — pagar desde el portal (Postgres + Redis reales)', () => {
         for (let i = 0; i < 10; i++) await portal.payFromPortal(actorOf(ana), 'pagos');
         await expect(portal.payFromPortal(actorOf(ana), 'pagos')).rejects.toMatchObject({ response: { code: 'too_many_attempts' } });
     });
+
+    it('también los de una lista que SU registro vincula (relación hacia afuera)', async () => {
+        await lists.create(tenantId, { name: 'Contratos', slug: 'contratos' });
+        const nombre = await fieldsSvc.create(tenantId, 'contratos', { label: 'Contrato', type: 'text', slug: 'contrato' });
+        const rel = await fieldsSvc.create(tenantId, 'clientes', { label: 'Contratos', type: 'relation', slug: 'contratos', config: { target_list_id: (await lists.get(tenantId, 'contratos')).id } });
+        const c1 = await records.create(tenantId, admin, 'contratos', { data: { [`f${nombre.id}`]: 'Hosting 2026' } });
+        const c2 = await records.create(tenantId, admin, 'contratos', { data: { [`f${nombre.id}`]: 'De otro' } });
+        await records.update(tenantId, admin, 'clientes', ana.recordId, { data: { [`f${rel.id}`]: [c1.id] } });
+        await collections.createForRecord(tenantId, admin, 'contratos', c1.id, { connection_id: connId, title: 'Cuota hosting', amount: 30000, currency: 'COP' });
+        await collections.createForRecord(tenantId, admin, 'contratos', c2.id, { connection_id: connId, title: 'Cuota ajena', amount: 1000, currency: 'COP' });
+        await setPaymentsBlock({ show_links: true, linked_list_ids: [(await lists.get(tenantId, 'contratos')).id] });
+        const titles = (await portal.me(actorOf(ana))).payments.pagos!.links.map((l) => `${l.title} · ${l.record_title}`);
+        expect(titles).toContain('Cuota hosting · Hosting 2026');
+        expect(titles).not.toContain('Cuota ajena · De otro');
+        expect((await portal.me(actorOf(beto))).payments.pagos!.links.map((l) => l.title)).not.toContain('Cuota hosting');
+    });
 });
