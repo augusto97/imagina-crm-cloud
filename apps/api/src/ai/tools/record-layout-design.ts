@@ -58,7 +58,7 @@ export const recordBlockSpec = z.discriminatedUnion('type', [
     }),
     z.object({ type: z.literal('stages'), field: slug.describe('Un campo select: cada opción es una etapa') }),
     z.object({ type: z.literal('files'), title: z.string().max(120).optional(), fields: z.array(slug).max(10).optional() }),
-    z.object({ type: z.enum(['description', 'record_stats', 'subtasks', 'activity', 'comments', 'portal_access', 'divider']), title: z.string().max(120).optional() }),
+    z.object({ type: z.enum(['description', 'record_stats', 'subtasks', 'time_tracking', 'activity', 'comments', 'portal_access', 'divider']), title: z.string().max(120).optional() }),
     z.object({
         type: z.literal('chart'),
         title: z.string().max(120).optional(),
@@ -209,7 +209,7 @@ export interface DesignContext {
     collections?: Array<{ id: number; name: string; provider: string }>;
 }
 
-const NOT_IN_PORTAL = new Set(['description', 'record_stats', 'subtasks', 'portal_access']);
+const NOT_IN_PORTAL = new Set(['description', 'record_stats', 'subtasks', 'time_tracking', 'portal_access']);
 
 export interface DesignBuildResult {
     layout: RecordLayoutV3;
@@ -218,7 +218,7 @@ export interface DesignBuildResult {
 }
 
 const DEFAULT_WIDTHS: Record<number, number[]> = { 1: [12], 2: [6, 6], 3: [4, 4, 4], 4: [3, 3, 3, 3] };
-const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed']);
+const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked']);
 
 export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext): DesignBuildResult {
     const own = new Map(ctx.fields.map((f) => [f.slug, f]));

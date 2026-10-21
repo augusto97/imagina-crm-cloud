@@ -401,7 +401,7 @@ export class ExportService {
 
 /** Derivados que SÍ salen en el CSV (`relation` incluida: se exporta el título). */
 function isExportableDerived(type: string): boolean {
-    return type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation';
+    return type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation' || type === 'time_tracked';
 }
 
 /** Tipo del campo del OTRO lado, para formatear un lookup/rollup como la celda. */
@@ -473,6 +473,8 @@ function stringifyCell(value: unknown, type: string, targetType?: string): strin
     // lee. Sale como la escribió el usuario (`1h 30m`) y el import la vuelve
     // a entender (el parser acepta ese mismo texto), así el round-trip cierra.
     if (type === 'duration') return formatDuration(value);
+    // v0.1.291 — el tiempo registrado, como la duración: `12h 30m`.
+    if (type === 'time_tracked') return formatDuration(value);
     if (type === 'percent') return `${String(value)}%`;
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);

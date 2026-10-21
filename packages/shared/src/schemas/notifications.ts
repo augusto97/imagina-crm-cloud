@@ -17,7 +17,11 @@ import { idSchema } from './common';
  * automatización, el correo, un conector, una sincronización). Sólo le llega a
  * los admins de la empresa y a quien creó lo que falla.
  */
-export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure'] as const;
+/**
+ * v0.1.291 — `reply`: alguien respondió en un hilo de comentarios donde la
+ * persona escribió (el comentario raíz o una respuesta).
+ */
+export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
@@ -27,6 +31,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     update: 'Cambia un registro que sigues',
     reminder: 'Tus recordatorios',
     failure: 'Algo dejó de funcionar (automatizaciones, correo, conectores)',
+    reply: 'Responden a tus comentarios',
 };
 
 export interface NotificationDto {
@@ -82,6 +87,8 @@ export const notificationPrefsSchema = z.object({
             reminder: z.boolean().default(true),
             /** v0.1.285 — encendido: una falla que nadie ve es justo el problema. */
             failure: z.boolean().default(true),
+            /** v0.1.291 — una respuesta a lo que escribiste es directa, como una mención. */
+            reply: z.boolean().default(true),
         })
         .default({}),
     /**
@@ -107,6 +114,7 @@ export const updateNotificationPrefsSchema = z
                 update: z.boolean(),
                 reminder: z.boolean(),
                 failure: z.boolean(),
+                reply: z.boolean(),
             })
             .partial(),
         digest: z.enum(['off', 'daily']),

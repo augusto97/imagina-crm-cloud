@@ -46,7 +46,19 @@ export interface AttachmentDto {
 
 /** Lo que devuelve abrir un archivo: los bytes, o un enlace directo al bucket. */
 export type OpenedFile =
-    | { kind: 'stream'; stream: Readable; filename: string; mime: string; size: number }
+    | {
+          kind: 'stream';
+          stream: Readable;
+          filename: string;
+          mime: string;
+          size: number;
+          /**
+           * v0.1.291 — leer sólo un tramo (si el almacenamiento lo sabe hacer):
+           * el video y el audio de la vista previa piden rangos. Quien sirve
+           * uno descarta `stream` (todavía no empezó a leer).
+           */
+          range?: (start: number, end: number) => Readable;
+      }
     | { kind: 'redirect'; url: string; filename: string; mime: string; size: number };
 
 /** Dónde está guardado un archivo (para leerlo desde otro módulo). */
@@ -233,6 +245,7 @@ export class FilesService {
         tenantId: number,
         exp: number,
         sig: string,
+        opts: { proxy?: boolean; download?: boolean } = {},
     ): Promise<OpenedFile> {
         const now = Math.floor(Date.now() / 1000);
         const expected = this.sign(tenantId, id, exp);
@@ -241,7 +254,7 @@ export class FilesService {
         if (exp < now || a.length !== b.length || !timingSafeEqual(a, b)) {
             throw fileNotFound(id); // 404 opaco: no filtramos si existe.
         }
-        return this.openDownload(tenantId, id);
+        return this.openDownload(tenantId, id, undefined, opts);
     }
 
     private sign(tenantId: number, id: number, exp: number): string {
@@ -448,6 +461,13 @@ export class FilesService {
         tenantId: number,
         id: number,
         actor?: FileActor,
+        /**
+         * v0.1.291 — `proxy`: servirlo SIEMPRE por el servidor, aunque esté en
+         * el bucket de la empresa. La vista previa lo necesita: pdf.js lee con
+         * `fetch` (y la CSP del SPA sólo deja `connect-src 'self'`) y el video
+         * pide rangos; redirigir a otro origen los rompería.
+         */
+        opts: { proxy?: boolean; download?: boolean } = {},
     ): Promise<OpenedFile> {
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
@@ -462,8 +482,8 @@ export class FilesService {
         // v0.1.268 — en el bucket de la empresa el archivo sale DIRECTO de ahí
         // con un enlace de pocos minutos: ni disco ni ancho de banda del
         // servidor. Mismo tipo y disposición que si lo sirviera el API.
-        if (row.storageConnectionId !== null && storage.presignedGet) {
-            const { contentType, disposition } = safeDisposition(row.mime);
+        if (row.storageConnectionId !== null && storage.presignedGet && !opts.proxy) {
+            const { contentType, disposition } = safeDisposition(row.mime, { download: opts.download });
             const url = await storage.presignedGet(row.storageKey, {
                 ttlSeconds: PRESIGN_TTL,
                 contentType,
@@ -478,7 +498,19 @@ export class FilesService {
         if (storage.probe && !(await storage.probe(row.storageKey))) {
             throw fileNotFound(id);
         }
-        return { kind: 'stream', stream: storage.read(row.storageKey) as Readable, ...meta };
+        const key = row.storageKey;
+        // El stream completo se abre RECIÉN cuando alguien lo lee: si se sirve
+        // un tramo (`range`), no se pide el archivo entero al almacenamiento.
+        let whole: Readable | null = null;
+        return {
+            kind: 'stream',
+            get stream(): Readable {
+                whole ??= storage.read(key) as Readable;
+                return whole;
+            },
+            ...meta,
+            ...(storage.readRange ? { range: (start: number, end: number) => storage.readRange!(key, start, end) } : {}),
+        };
     }
 
     async remove(tenantId: number, id: number, actor?: FileActor): Promise<void> {

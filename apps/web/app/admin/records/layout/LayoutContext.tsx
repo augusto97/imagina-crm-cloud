@@ -53,7 +53,7 @@ export function useLayoutCtx(): LayoutCtx {
     return ctx;
 }
 
-const DERIVED: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup']);
+const DERIVED: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai', 'time_tracked']);
 
 /** ¿Este campo se puede editar aquí? Una sola regla para todos los bloques. */
 export function fieldEditable(ctx: LayoutCtx, field: FieldEntity): boolean {

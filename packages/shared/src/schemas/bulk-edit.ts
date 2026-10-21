@@ -214,7 +214,7 @@ export function bulkOpsFor(type: FieldType): readonly BulkOpKind[] {
 }
 
 /** Tipos numéricos (operandos de «calc» y origen de «copiar» entre números). */
-export const BULK_NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'percent', 'duration', 'rating', 'rollup'];
+export const BULK_NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'percent', 'duration', 'rating', 'rollup', 'time_tracked'];
 
 // ── Motor ────────────────────────────────────────────────────────────────
 

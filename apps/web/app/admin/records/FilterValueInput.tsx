@@ -187,6 +187,7 @@ export function FilterValueInput({
         case 'currency':
         case 'percent':
         case 'duration':
+        case 'time_tracked':
         case 'rollup':
         case 'computed':
             // v0.1.158 — percent/duration son números: el filtro compara el

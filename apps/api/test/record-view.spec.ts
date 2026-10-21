@@ -13,6 +13,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { TimeTrackingService } from '../src/time-tracking/time-tracking.service';
 import { RecordViewService } from '../src/record-view/record-view.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
@@ -86,6 +87,7 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
             documents as never,
             collections as never,
             layoutData as never,
+            new TimeTrackingService(tenantDb, lists, fields, recs, rt),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
@@ -140,6 +142,8 @@ describe('Bundle de la ficha del registro (Postgres real)', () => {
         expect(reminderCalls).toContain(cli.id);
         // La pieza rota viaja en null y el resto se ve igual.
         expect(asAdmin.payments).toBeNull();
+        // v0.1.291 — el registro de tiempo viaja en el mismo bundle.
+        expect(asAdmin.time).toMatchObject({ total_seconds: 0, entries: [], my_running: null, can_manage_all: true });
         // «Vinculados»: la relación que vive en Facturas y apunta a Clientes.
         expect(asAdmin.relation_paths?.some((p) => p.direction === 'reverse')).toBe(true);
         expect(asAdmin.backlinks).toHaveLength(1);

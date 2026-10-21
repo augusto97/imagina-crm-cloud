@@ -131,6 +131,13 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
             );
         case 'duration':
             return <Row><span className="imcrm-tabular-nums">1h 30m</span></Row>;
+        case 'time_tracked':
+            return (
+                <Row>
+                    <span className="imcrm-text-primary" aria-hidden>⏱</span>
+                    <span className="imcrm-tabular-nums">12h 30m</span>
+                </Row>
+            );
         case 'user':
             return (
                 <Row>

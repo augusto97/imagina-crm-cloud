@@ -26,7 +26,7 @@ const SAMPLE_SIZE = 20;
 const ERROR_LIST = 50;
 
 /** Tipos que se copian al duplicar (ni calculados, ni vínculos, ni archivos). */
-const NOT_COPIED = new Set(['computed', 'lookup', 'rollup', 'relation', 'file']);
+const NOT_COPIED = new Set(['computed', 'lookup', 'rollup', 'relation', 'file', 'time_tracked']);
 
 type Row = Awaited<ReturnType<RecordsService['bulkRows']>>['rows'][number];
 

@@ -1,3 +1,5 @@
+import type { CommentReactionSummary } from '@imagina-base/shared';
+
 export type CommentKind = 'note' | 'call' | 'email' | 'meeting';
 
 /**
@@ -39,6 +41,10 @@ export interface CommentEntity {
     author_name?: string | null;
     created_at: string;
     updated_at: string;
+    /** v0.1.291 — reacciones con emoji (set curado), con quién reaccionó. */
+    reactions?: CommentReactionSummary[];
+    /** v0.1.291 — raíz borrado que conserva sus respuestas («Comentario eliminado»). */
+    deleted?: boolean;
 }
 
 export interface CreateCommentInput {

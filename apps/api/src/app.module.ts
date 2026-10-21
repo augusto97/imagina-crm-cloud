@@ -48,6 +48,7 @@ import { RecordsModule } from './records/records.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
 import { RedisModule } from './redis/redis.module';
 import { TemplatesModule } from './templates/templates.module';
+import { TimeTrackingModule } from './time-tracking/time-tracking.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ViewsModule } from './views/views.module';
@@ -77,6 +78,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         NotificationsModule,
         IncidentsModule,
         AiFieldsModule,
+        TimeTrackingModule,
         AuthModule,
         WorkspacesModule,
         MeModule,

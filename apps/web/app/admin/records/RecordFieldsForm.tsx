@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
+import type { RecordEntity } from '@/types/record';
 
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 
@@ -67,6 +68,13 @@ interface RecordFieldsFormProps {
      * "Tarea *" abajo).
      */
     hiddenSlugs?: readonly string[];
+    /**
+     * v0.1.291 — «Ver historial» en cada campo (sólo densidad `compact` y con
+     * un registro existente). `canRestore`: quien mira puede escribir el
+     * registro; `onRestored` avisa a la ficha (que tiene borrador) del valor
+     * que quedó guardado.
+     */
+    history?: { canRestore: boolean; onRestored?: (slug: string, value: unknown, saved: RecordEntity | null) => void } | null;
 }
 
 const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
@@ -88,6 +96,7 @@ export function RecordFieldsForm({
     showTypeIcon = false,
     lockedReasons,
     hiddenSlugs,
+    history = null,
 }: RecordFieldsFormProps): JSX.Element {
     const visible = fields
         .filter((f) => (onlyNonInline ? NON_INLINE_TYPES.includes(f.type) : true))
@@ -119,6 +128,14 @@ export function RecordFieldsForm({
                         error={fieldErrors?.[field.slug]}
                         showTypeIcon={showTypeIcon}
                         lockedReason={lockedReasons?.[field.slug] ?? null}
+                        history={
+                            history && recordId !== undefined
+                                ? {
+                                      canRestore: history.canRestore,
+                                      onRestored: (v, saved) => history.onRestored?.(field.slug, v, saved),
+                                  }
+                                : null
+                        }
                     />
                 ))}
             </div>
@@ -341,6 +358,7 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
         case 'computed':
         case 'lookup':
         case 'rollup':
+        case 'time_tracked':
             // Solo lectura: el backend los deriva en cada lectura.
             control = (
                 <div id={id} className="imcrm-min-h-[36px] imcrm-py-1.5 imcrm-text-sm">

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, MessageSquare, Pencil, Send, Trash2 } from 'lucide-react';
 
 import { CommentContent } from '@/admin/comments/CommentContent';
+import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments/CommentThread';
+import { buildThreads } from '@/admin/comments/commentThreads';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { MentionAutocomplete } from '@/admin/comments/MentionAutocomplete';
 import { Button } from '@/components/ui/button';
@@ -51,6 +53,9 @@ export function CommentsPanel({
     const update = useUpdateComment(listId, recordId);
     const remove = useDeleteComment(listId, recordId);
     const authorOf = useCommentAuthors(comments.data);
+    // v0.1.291 — hilos de un nivel: las respuestas van dentro de su raíz.
+    const threads = useMemo(() => buildThreads(comments.data), [comments.data]);
+    const canEditComment = (c: CommentEntity): boolean => isAdmin || c.user_id === currentUserId;
 
     const [draft, setDraft] = useState('');
     // Todo comentario nace INTERNO (sólo el equipo); el cliente ve lo que se marca.
@@ -135,17 +140,28 @@ export function CommentsPanel({
                     <EmptyState />
                 ) : (
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                        {comments.data.map((c) => (
+                        {threads.map(({ root: c, replies }) => (
                             <CommentItem
                                 key={c.id}
                                 comment={c}
                                 authorName={authorOf(c)}
-                                canEdit={isAdmin || c.user_id === currentUserId}
-                                canDelete={isAdmin || c.user_id === currentUserId}
+                                canEdit={canEditComment(c)}
+                                canDelete={canEditComment(c)}
+                                hasReplies={replies.length > 0}
                                 onUpdate={(content) =>
                                     update.mutateAsync({ id: c.id, content })
                                 }
                                 onDelete={() => remove.mutateAsync(c.id)}
+                                footer={
+                                    <CommentThreadFooter
+                                        listId={listId}
+                                        recordId={recordId}
+                                        root={c}
+                                        replies={replies}
+                                        authorOf={authorOf}
+                                        canEdit={canEditComment}
+                                    />
+                                }
                             />
                         ))}
                     </ul>
@@ -239,18 +255,25 @@ interface CommentItemProps {
     authorName: string;
     canEdit: boolean;
     canDelete: boolean;
+    hasReplies: boolean;
     onUpdate: (content: string) => Promise<unknown>;
     onDelete: () => Promise<unknown>;
+    footer: React.ReactNode;
 }
 
 function CommentItem({
     comment,
     authorName,
-    canEdit,
-    canDelete,
+    canEdit: canEditRaw,
+    canDelete: canDeleteRaw,
+    hasReplies,
     onUpdate,
     onDelete,
+    footer,
 }: CommentItemProps): JSX.Element {
+    // Un raíz eliminado (con respuestas vivas) ya no se edita ni se borra.
+    const canEdit = canEditRaw && !comment.deleted;
+    const canDelete = canDeleteRaw && !comment.deleted;
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(comment.content);
     const [error, setError] = useState<string | null>(null);
@@ -278,7 +301,9 @@ function CommentItem({
     const handleDelete = async (): Promise<void> => {
         const ok = await confirm({
             title: __('Eliminar comentario'),
-            description: __('Esta acción no se puede deshacer.'),
+            description: hasReplies
+                ? __('Sus respuestas se conservan: en su lugar quedará «Comentario eliminado».')
+                : __('Esta acción no se puede deshacer.'),
             destructive: true,
             confirmLabel: __('Eliminar'),
         });
@@ -364,9 +389,12 @@ function CommentItem({
                         </Button>
                     </div>
                 </div>
+            ) : comment.deleted ? (
+                <DeletedCommentPlaceholder />
             ) : (
                 <CommentContent content={comment.content} />
             )}
+            {!editing && <div className="imcrm-mt-2">{footer}</div>}
         </li>
     );
 }

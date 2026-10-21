@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
 import { FileText, Loader2, Paperclip, Upload, X } from 'lucide-react';
 
-import { useAttachments, type AttachmentDto } from '@/hooks/useAttachments';
+import { openFilePreview } from '@/components/files/filePreview';
+import { isPlainClick, toPreviewFile } from '@/components/files/openAttachments';
+import { useAttachments, type AttachmentDto, type ResolvedAttachment } from '@/hooks/useAttachments';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -143,6 +145,14 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                                        data-testid="imcrm-file-link"
+                                        onClick={(e) => {
+                                            // v0.1.291 — un click abre el visor; Ctrl/⌘+click, otra pestaña.
+                                            if (!isPlainClick(e)) return;
+                                            e.preventDefault();
+                                            const all = ids.map((x) => attachments.data?.get(x)).filter((a): a is ResolvedAttachment => a !== undefined);
+                                            openFilePreview(all.map(toPreviewFile), Math.max(0, all.findIndex((a) => a.id === fileId)));
+                                        }}
                                     >
                                         {name}
                                     </a>

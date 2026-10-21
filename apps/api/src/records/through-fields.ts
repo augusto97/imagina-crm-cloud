@@ -275,9 +275,13 @@ export class ThroughEngine {
     ): Promise<T[]> {
         const planned = new Set(plans.map((p) => p.field.id));
         const unresolved = allFields.filter((f) => isThroughField(f.type) && !planned.has(f.id));
-        if ((plans.length === 0 && unresolved.length === 0) || rows.length === 0) return rows;
+        // v0.1.291 — «Tiempo registrado»: también se resuelve en cada lectura
+        // (la suma de `time_entries`), en UNA query por página.
+        const timeFields = allFields.filter((f) => f.type === 'time_tracked');
+        if ((plans.length === 0 && unresolved.length === 0 && timeFields.length === 0) || rows.length === 0) return rows;
         const ids = rows.map((r) => r.id);
         const values = new Map<number, Map<number, unknown>>();
+        const minutes = timeFields.length > 0 ? await trackedMinutes(tx, ids) : new Map<number, number>();
 
         // Lookups: una query por relación (varios lookups sobre la misma
         // relación comparten las filas vinculadas).
@@ -315,6 +319,7 @@ export class ThroughEngine {
             for (const f of unresolved) {
                 data[jsonbKeyForField(f.id)] = f.type === 'lookup' ? [] : null;
             }
+            for (const f of timeFields) data[jsonbKeyForField(f.id)] = minutes.get(r.id) ?? 0;
             return { ...r, data };
         });
     }
@@ -417,6 +422,24 @@ export class ThroughEngine {
         const base = sql`rel.tenant_id = ${tenantId} AND rel.field_id = ${p.relationField.id} AND ${anchorCond}`;
         return filter ? sql`${base} AND (${filter})` : base;
     }
+}
+
+/**
+ * v0.1.291 — Minutos registrados por registro de una página (la misma cuenta
+ * que `timeTrackedExpr`: un cronómetro en curso suma 0 hasta detenerse).
+ */
+async function trackedMinutes(tx: Tx, ids: number[]): Promise<Map<number, number>> {
+    const res = await tx.execute(sql`
+        SELECT te.record_id AS id, round(coalesce(sum(te.seconds), 0) / 60.0) AS minutes
+        FROM time_entries te
+        WHERE te.record_id IN (${idList(ids)})
+        GROUP BY te.record_id
+    `);
+    const out = new Map<number, number>();
+    for (const row of res.rows as Array<{ id: unknown; minutes: unknown }>) {
+        out.set(Number(row.id), Number(row.minutes) || 0);
+    }
+    return out;
 }
 
 // ── helpers puros ─────────────────────────────────────────────────────────

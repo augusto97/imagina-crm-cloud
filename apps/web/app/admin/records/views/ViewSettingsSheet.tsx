@@ -22,6 +22,7 @@ import {
     WrapText,
     Zap,
     Wand2,
+    Timer,
 } from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -35,6 +36,7 @@ import {
 } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { useDeleteSavedView, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { downloadTimeCsv } from '@/hooks/useTimeTracking';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -581,6 +583,19 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onExport();
+                                    }}
+                                />
+                            )}
+                            {/* v0.1.291 — las entradas del registro de tiempo (si la lista lo usa). */}
+                            {canExport && fields.some((f) => f.type === 'time_tracked') && (
+                                <RowButton
+                                    icon={Timer}
+                                    label={__('Exportar tiempo registrado')}
+                                    value={__('CSV con cada entrada')}
+                                    onClick={() => {
+                                        void downloadTimeCsv(listSlug).catch((err) =>
+                                            toast.error(__('No se pudo exportar'), err instanceof Error ? err.message : ''),
+                                        );
                                     }}
                                 />
                             )}
