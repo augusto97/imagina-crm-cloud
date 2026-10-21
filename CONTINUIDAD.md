@@ -352,7 +352,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.289** (portal con contraseña y pagos, formularios por páginas con captcha y confirmación, ADR-S48), en `main`.
+versión publicada: **v0.1.290** (cotización/factura con IVA, ítems editables en la ficha y documentos congelados, addendum ADR-S35), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -365,7 +365,7 @@ versión publicada: **v0.1.289** (portal con contraseña y pagos, formularios po
   adjuntos, registro de tiempo), **portal y formularios** (hecha, v0.1.289: varias páginas, captcha,
   confirmación por correo, contraseña del portal, pagar desde el portal),
   tableros (barras apiladas, enlace público, exportar widget, envío programado,
-  tabla dinámica) y PDF (cotización/factura con IVA y descuento, ítems
+  tabla dinámica) y **PDF** (hecha, v0.1.290: cotización/factura con IVA y descuento, ítems
   editables en la ficha, congelar al emitir). Decisión sobre el cliente de
   Google de las copias: se queda el de código de dispositivo como única vía
   (addendum de ADR-S43). **Ojo al integrar**: el migrador de drizzle salta una
@@ -574,6 +574,17 @@ versión publicada: **v0.1.289** (portal con contraseña y pagos, formularios po
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.290** — **Cotización y factura con IVA, ítems editables
+  en la ficha y documentos congelados** (addendum ADR-S35), cuarta entrega del
+  «hazlo todo» y los tres pendientes de PDF que el usuario dejó a mi criterio.
+  Plantillas «Cotización» y «Factura (no electrónica)» con columnas calculadas
+  declarativas (descuento por línea y global, base, IVA o «no responsable»,
+  «Son: … PESOS»); «Tabla editable» de los ítems vinculados en las dos fichas
+  con totales del servidor; «Congelar al emitir» (migración 0076, era la 0079
+  en la rama del trabajo): el PDF de la primera emisión queda guardado y es el
+  que se entrega siempre; «Anular y emitir de nuevo» para admin. De paso: la
+  prueba de correo de una automatización emitía números reales. Sigue sin ser
+  factura electrónica DIAN.
 - **2026-10-21 · v0.1.289** — **Portal y formularios** (ADR-S48), tercera
   entrega del «hazlo todo». Formularios por páginas con validación por paso;
   captcha (Turnstile/hCaptcha/reCAPTCHA v2) con llaves de la plataforma o de la
