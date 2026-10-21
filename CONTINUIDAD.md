@@ -352,18 +352,26 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.285** (Problemas: avisos de fallas en segundo plano, ADR-S44), en `main`.
+versión publicada: **v0.1.286** (auditoría integral II: decenas de fallas reales corregidas en toda la app, ADR-S45), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **Pedido del usuario: auditoría PROFUNDA de toda la app**
-  ("creía que la app ya tenía todo bien pero cada vez hay cosas con errores o
-  que no funcionan de la mejor manera"): validar que todo funcione y sea
-  eficiente, corregir lo que no, y relevar carencias (editor, listas,
-  dashboards, portales, ficha flotante, menús de navegación, toda la
-  interfaz). En curso: relevamiento en 8 frentes en paralelo (tabla y vistas,
-  ficha, tableros, portal/formularios/públicas, navegación, automatizaciones y
-  editores, servidor, recorrido real en el navegador) → corregir lo
-  verificado por lotes → proponer las carencias priorizadas.
+  ("creía que la app ya tenía todo bien pero cada vez hay cosas con errores").
+  Hecho en **v0.1.286** (ADR-S45): 8 relevamientos en paralelo + 7 equipos de
+  corrección en copias aisladas, integrados y re-verificados con un segundo
+  recorrido en el navegador. **Carencias propuestas y NO hechas** (esperando
+  que el usuario elija): automatizaciones — paso «esperar N días», bucle sobre
+  registros vinculados, prueba paso a paso con un registro, usar la respuesta
+  de un webhook en los pasos siguientes, programado «para cada registro que
+  cumpla», duplicar con un clic, historial de versiones; portal/formularios —
+  formularios de varias páginas, captcha, correo de confirmación de un clic,
+  entrar al portal con contraseña, pagar desde el portal; tableros — segunda
+  dimensión (barras apiladas), enlace público, exportar widget, envío
+  programado por correo, tabla dinámica; ficha — historial por campo con
+  restaurar, reacciones e hilos en comentarios, vista previa de adjuntos,
+  seguimiento de tiempo; tabla — copiar/pegar celdas y rellenar hacia abajo,
+  deshacer una edición, congelar columnas, colores condicionales, agrupar por
+  dos campos.
 - 2026-10-21 — **Reporte de los clientes: "no se avisa cuando algo falla"**
   (conexiones, APIs, conectores, correos de automatizaciones, cosas que no se
   generan). Confirmado: ninguna falla en segundo plano avisaba a nadie.
@@ -546,6 +554,35 @@ versión publicada: **v0.1.285** (Problemas: avisos de fallas en segundo plano, 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-21 · v0.1.286** — **Auditoría integral II** (ADR-S45). Pedido
+  del usuario: auditar a fondo toda la app porque seguían apareciendo errores.
+  Ocho relevamientos en paralelo reprodujeron decenas de fallas reales; siete
+  equipos de corrección las arreglaron en copias aisladas y se integraron en la
+  rama. Lo más grave: el **portal** mostraba al cliente comentarios internos y
+  campos ocultos (ahora comentarios internos/visibles para el cliente y el
+  portal sólo recibe lo que el diseño muestra); **ediciones simultáneas** se
+  pisaban (toda escritura bloquea la fila); «Actualizar un campo» guardaba
+  valores sin validar y un solo valor basura tumbaba la lista con 500 (valida,
+  escribe sólo lo que cambia, casts tolerantes); las automatizaciones **por
+  vencimiento** se disparaban por fechas de hace meses; un webhook con error
+  quedaba como éxito; no se podía **adjuntar archivos** desde la ficha; no había
+  forma de **cambiar de empresa**; los tableros no se refrescaban y fallaban en
+  solo-lectura. Además: búsqueda global de registros (Ctrl+K), registro en la
+  URL, ficha con un solo pedido, subtareas y anterior/siguiente en la ficha,
+  filtros de tablero (incluido «Yo»), filtro por relaciones, teclado en la
+  tabla, vista agrupada ~5× más rápida, el cliente crea registros desde el
+  portal, formularios blindados contra abuso de subidas. En la verificación
+  final apareció y se corrigió una falla que tumbaba el proceso si Postgres
+  cortaba una conexión dentro de una transacción. Verificado: 1212 pruebas del
+  servidor, 339 del front, 202 de shared, y un segundo recorrido en el navegador
+  (claro, oscuro, celular) con 0 errores de consola, 0 pedidos fallidos y 0
+  desbordes. Migración 0073 (visibilidad de comentarios y subidas de
+  formularios). Variables nuevas opcionales: `DB_STATEMENT_TIMEOUT_MS`,
+  `DB_IDLE_IN_TX_TIMEOUT_MS`, `DB_JIT`, `REDIS_COMMAND_TIMEOUT_MS`. Conductas que
+  cambian a propósito: tableros cuentan el primer nivel, automatizaciones
+  incompletas o por encima del plan nacen pausadas, las de vencimiento no
+  disparan por fechas anteriores a su alta. Queda: la lista de carencias
+  propuestas en §10.
 - **2026-10-21 · v0.1.285** — **Problemas: lo que corre solo y falla, a la
   vista** (ADR-S44). Reporte de los clientes: no se avisaba cuando algo fallaba
   (conectores, APIs, correos de automatizaciones). Confirmado con un
