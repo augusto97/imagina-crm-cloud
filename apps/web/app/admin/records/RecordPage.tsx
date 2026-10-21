@@ -19,6 +19,7 @@ import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
+import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
@@ -392,6 +393,8 @@ export function RecordPage(): JSX.Element {
                         <div className="imcrm-mt-4">
                             <RecordPaymentsPanel listId={listInfo.id} recordId={id} />
                         </div>
+                        {/* v0.1.290 — documentos emitidos (numerados): congelados, anulados. */}
+                        <IssuedDocumentsSection className="imcrm-mt-4" listId={listInfo.id} listSlug={listInfo.slug} recordId={id} />
                         <RecordBacklinks listId={listInfo.id} recordId={id} />
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

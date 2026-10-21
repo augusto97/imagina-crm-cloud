@@ -55,7 +55,11 @@ function BlockLibrary(): JSX.Element {
     const matches = useMemo(() => {
         const n = normalize(q.trim());
         // El portal no ofrece lo que no tiene sentido para un cliente.
-        const pool = ed.catalog.target === 'portal' ? BLOCK_CATALOG.filter((e) => PORTAL_LAYOUT_BLOCK_TYPES.includes(e.type)) : BLOCK_CATALOG;
+        // (La tabla editable tampoco: el cliente no edita los ítems.)
+        const pool =
+            ed.catalog.target === 'portal'
+                ? BLOCK_CATALOG.filter((e) => PORTAL_LAYOUT_BLOCK_TYPES.includes(e.type) && e.key !== 'related_editable')
+                : BLOCK_CATALOG;
         return n === '' ? pool : pool.filter((e) => normalize(`${e.label} ${e.description}`).includes(n));
     }, [q, ed.catalog.target]);
     return (

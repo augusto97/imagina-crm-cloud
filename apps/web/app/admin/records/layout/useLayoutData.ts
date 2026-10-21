@@ -26,6 +26,8 @@ export interface RelatedBlockData {
         updated_at?: string;
     }>;
     total: number;
+    /** v0.1.290 — Vista «Tabla editable»: la suma de cada columna elegida sobre TODO lo vinculado. */
+    totals?: Record<string, number | null>;
 }
 
 /**

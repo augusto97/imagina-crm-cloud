@@ -3,7 +3,7 @@ import { activitySchema } from './activity';
 import { recordPaymentsSchema } from './collections';
 import { commentSchema } from './comment';
 import { idSchema } from './common';
-import { documentTemplateSummarySchema } from './document-design';
+import { documentTemplateSummarySchema, issuedDocumentSchema } from './document-design';
 import { fieldSchema } from './field';
 import { listSchema } from './list';
 import type { FollowStateDto, ReminderDto } from './notifications';
@@ -55,6 +55,8 @@ export const recordViewBundleSchema = z.object({
     follow: z.custom<FollowStateDto>().nullable(),
     reminders: z.array(z.custom<ReminderDto>()).nullable(),
     documents: z.array(documentTemplateSummarySchema).nullable(),
+    /** v0.1.290 — Documentos emitidos (numerados) del registro, vigentes y anulados. */
+    issued_documents: z.array(issuedDocumentSchema).nullable(),
     payments: recordPaymentsSchema.nullable(),
     relation_paths: z.array(relationPathSchema).nullable(),
     /** Listas del otro lado de cada relación (cabecera y campos). */

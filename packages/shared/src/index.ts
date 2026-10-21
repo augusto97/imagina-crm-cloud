@@ -80,5 +80,6 @@ export * from './schemas/design-style';
 export * from './schemas/email-design';
 export * from './templates/email-templates';
 export * from './schemas/document-design';
+export * from './schemas/document-calc';
 export * from './templates/document-templates';
 export * from './schemas/record-view';
