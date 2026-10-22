@@ -8415,7 +8415,15 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         fuente del texto de un SVG, así que el texto de los gráficos en los PDF
         salía con la fuente anterior y sin negrita; `document-render.ts` la
         registra desde el sistema virtual (Inter regular y negrita embebidas,
-        verificado con `pdffonts`). Tests: `dashboard-sharing` (11, con RLS y el
+        verificado con `pdffonts`). **Encontrado por el CI**: restaurar una
+        copia fallaba si el `pg_restore` del host es más nuevo que el Postgres
+        16 (el runner pasó a traer el cliente 18): desde la 17 manda `SET
+        transaction_timeout = 0`, que un servidor 16 no conoce, y con
+        `--exit-on-error` moría en la primera línea — lo mismo le pasaría a un
+        servidor con `postgresql-client` 17/18 al restaurar o recuperarse
+        (ADR-S20/S43). `snapshot-restore.sh` compara versiones y, si el
+        cliente es más nuevo, restaura como SQL por psql sin esa línea
+        (reproducido y verificado con los clientes 18 y 16). Tests: `dashboard-sharing` (11, con RLS y el
         PDF con sus fuentes), `dashboards-breakdown` (7), casos nuevos en
         `tenant-transfer` y `platform`, `report-email` en shared y
         `dashboardSharing`/`breakdownPivot` en el front — 265 shared, 412 front y

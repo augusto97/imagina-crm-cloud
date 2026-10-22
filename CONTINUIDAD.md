@@ -586,7 +586,9 @@ versión publicada: **v0.1.292** (tableros hacia afuera: enlace público, envío
   programado por correo (diario/semanal/mensual en la zona de la empresa, hasta
   25 destinatarios, PDF opcional, cuota del plan, Problema si falla). Botón
   «Compartir» en el tablero. Migración 0078. De paso: los textos de los gráficos
-  en los PDF usan la fuente embebida. La entrega se cortó por el límite semanal
+  en los PDF usan la fuente embebida; y el CI destapó que restaurar una copia
+  fallaba con un `pg_restore` más nuevo que el Postgres 16 (`transaction_timeout`)
+  — ahora se restaura como SQL en ese caso. La entrega se cortó por el límite semanal
   de uso y se retomó al día siguiente. **Con esto el «hazlo todo» queda
   completo.** Queda afuera: asistente/MCP para publicar o programar, y baja
   automática del destinatario externo.

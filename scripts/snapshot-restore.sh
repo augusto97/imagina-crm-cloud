@@ -242,7 +242,22 @@ CREATE SCHEMA public;
 GRANT USAGE ON SCHEMA public TO imagina_app;
 SQL
 if command -v pg_restore >/dev/null 2>&1; then
-    pg_restore --no-owner --exit-on-error --dbname="$DATABASE_URL" "$PARTS/db.dump"
+    # El pg_restore del host puede ser más NUEVO que el servidor (un host con
+    # postgresql-client 17/18 contra el Postgres 16 del compose): desde la 17
+    # manda `SET transaction_timeout = 0`, que un servidor 16 no conoce, y con
+    # --exit-on-error la restauración muere en esa primera línea. En ese caso
+    # se restaura como SQL por psql, sin esa línea; con versiones iguales, el
+    # camino de siempre.
+    CLIENT_MAJOR="$(pg_restore --version | grep -oE '[0-9]+' | head -1)"
+    SERVER_MAJOR="$(( $(psql_cmd "$DATABASE_URL" -At -c 'show server_version_num') / 10000 ))"
+    if [ "${CLIENT_MAJOR:-0}" -gt "$SERVER_MAJOR" ]; then
+        echo "  · pg_restore $CLIENT_MAJOR contra un servidor $SERVER_MAJOR: restauro como SQL"
+        pg_restore --no-owner --file=- "$PARTS/db.dump" \
+            | sed '/^SET transaction_timeout = /d' \
+            | psql_cmd "$DATABASE_URL" -v ON_ERROR_STOP=1 -q >/dev/null
+    else
+        pg_restore --no-owner --exit-on-error --dbname="$DATABASE_URL" "$PARTS/db.dump"
+    fi
 else
     pg_restore_cmd --no-owner --exit-on-error --dbname="$DATABASE_URL" < "$PARTS/db.dump"
 fi
