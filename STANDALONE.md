@@ -3440,6 +3440,14 @@ sigue con el click que edita. Fuera de alcance: pegar archivos, un rango que
 cruce grupos en la vista agrupada, rellenar hacia arriba o de lado, y crear
 filas al pegar en la vista agrupada (quedarían en otro grupo).
 
+**Addendum (v0.1.295).** El modelo de hoja de cálculo es el default, pero
+«Editar con un click» es una preferencia **de la vista** (`single_click_edit`):
+quien la enciende vuelve al click que edita (v0.1.74) en esa vista, sin tocar
+las demás. Con el modo encendido el click derecho sigue eligiendo sin editar y
+Mayús + clic o arrastrar arman el rango, así copiar y pegar no se pierden. Y
+mientras el menú contextual está abierto la selección se sigue pintando aunque
+el foco esté en el menú: el menú actúa sobre ella y tiene que verse.
+
 ---
 
-**Versión del documento:** 1.91.0 (la tabla elige antes de editar)
+**Versión del documento:** 1.92.0 (editar con un click por vista)

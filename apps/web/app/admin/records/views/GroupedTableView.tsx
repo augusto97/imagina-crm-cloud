@@ -149,6 +149,8 @@ interface GroupedTableViewProps {
     density?: RowDensity | null;
     /** Tamaño de letra (v0.1.141). */
     fontSize?: RowFontSize | null;
+    /** v0.1.295 — un click edita la celda en vez de elegirla. */
+    singleClickEdit?: boolean;
     /**
      * v0.1.286 — orden de las filas DENTRO de cada grupo (el mismo de la vista
      * plana): click en la cabecera cicla, el menú fija la dirección.
@@ -221,6 +223,7 @@ function GroupedTableViewImpl({
     wrapText = false,
     density = null,
     fontSize = null,
+    singleClickEdit = false,
     sort = EMPTY_SORT,
     onSortChange,
     onSortSet,
@@ -519,6 +522,7 @@ function GroupedTableViewImpl({
                             onCreateSubtask,
                             density,
                             fontSize,
+                            singleClickEdit,
                             footerAggregates,
                             onFooterAggregatesChange,
                             sort,
@@ -788,6 +792,7 @@ interface GroupBucketSectionProps {
     onCreateSubtask?: (record: RecordEntity) => void;
     density?: RowDensity | null;
     fontSize?: RowFontSize | null;
+    singleClickEdit?: boolean;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
     sort: ActiveSort[];
@@ -836,6 +841,7 @@ function GroupBucketSection({
     onCreateSubtask,
     density = null,
     fontSize = null,
+    singleClickEdit = false,
     footerAggregates,
     onFooterAggregatesChange,
     sort,
@@ -1034,6 +1040,7 @@ function GroupBucketSection({
         scrollToIndex: windowed.scrollToIndex,
         headBottom: () => headScrollRef.current?.getBoundingClientRect().bottom ?? null,
         frozenCount: decor.frozen.count,
+        singleClickEdit,
     });
     const rowColors = useMemo(() => {
         const out = new Map<number, RowColors>();

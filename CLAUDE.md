@@ -8539,6 +8539,29 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         nombre, enlaces, texto largo, vista agrupada) + celular (un toque
         elige, el segundo edita).
 
+  - [x] **Selección visible con el menú abierto + «Editar con un click» por
+        vista (v0.1.295, addendum ADR-S51, dos pedidos del usuario con
+        capturas)**: (a) **al dar click derecho se perdía la selección**: el
+        menú vive en un portal y se lleva el foco, la tabla "perdía" el foco y
+        dejaba de pintar el rango justo cuando el menú iba a actuar sobre él
+        (también se iba la barra con la suma). Ahora el controlador sostiene la
+        selección mientras el menú está abierto (`menuHold`, se suelta cuando
+        el foco vuelve a la tabla al cerrarlo): el rango, la celda activa y la
+        barra siguen a la vista; un click derecho fuera del rango elige esa
+        celda y la marca. (b) **«Editar con un click»** (`single_click_edit` en
+        el estado común de las vistas — shared, mapeo, panel Personalizar →
+        Mostrar, tabla plana y agrupada): encendido, un click abre el editor de
+        la celda (y un enlace se abre con un click) como antes de v0.1.294;
+        apagado (default) sigue el modelo de hoja de cálculo. Con el modo
+        encendido se eligen celdas para copiar con Mayús + clic, arrastrando o
+        con click derecho (que nunca edita). Se guarda en la vista como
+        cualquier otra preferencia. 2 tests del mapeo (front en verde) + E2E
+        navegador 19/19 en claro y en oscuro (rango que sigue marcado con el
+        menú abierto, barra, foco que vuelve, click derecho fuera del rango,
+        «Copiar» del menú, el modo desde Personalizar, número/selector/texto
+        largo en un click, enlace que se abre, vista guardada con el modo y
+        «Todos» sin él) y las suites de v0.1.294 sin cambios.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

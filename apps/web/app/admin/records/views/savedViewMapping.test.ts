@@ -21,6 +21,7 @@ const baseState: RecordsState = {
     spreadsheet: false,
     density: null,
     fontSize: null,
+    singleClickEdit: false,
     subGroupByFieldId: null,
     frozenColumns: null,
     colorRules: [],
@@ -171,6 +172,20 @@ describe('tamaño de letra (v0.1.141)', () => {
         expect(stateToViewConfig(baseState).font_size).toBeUndefined();
         expect(viewConfigToState({}, 50).fontSize).toBeNull();
         expect(viewConfigToState({ font_size: 'enorme' }, 50).fontSize).toBeNull();
+    });
+});
+
+describe('editar con un click (v0.1.295)', () => {
+    it('viaja a la vista guardada y vuelve', () => {
+        const config = stateToViewConfig({ ...baseState, singleClickEdit: true });
+        expect(config.single_click_edit).toBe(true);
+        expect(viewConfigToState(jsonbRoundTrip(config), 50).singleClickEdit).toBe(true);
+    });
+
+    it('apagado no ensucia la config (el modelo de hoja de cálculo es el default)', () => {
+        expect(stateToViewConfig(baseState).single_click_edit).toBeUndefined();
+        expect(viewConfigToState({}, 50).singleClickEdit).toBe(false);
+        expect(viewConfigToState({ single_click_edit: 'sí' as unknown as boolean }, 50).singleClickEdit).toBe(false);
     });
 });
 
