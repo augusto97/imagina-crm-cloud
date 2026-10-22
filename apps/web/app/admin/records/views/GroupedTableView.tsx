@@ -54,6 +54,10 @@ import { activeColorRules, cellTintStyle, evaluateRowColors, rowTintStyle, type 
 import { computeFrozen, FROZEN_EDGE_SHADOW, type FrozenLayout } from '../grid/frozen';
 import type { GridColumnRef } from '../grid/gridPlan';
 import { useGridController } from '../grid/useGridController';
+import { CellMarkOverlay, ERROR_CELL_SHADOW } from '../grid/CellMarkOverlay';
+import { GridEditContext } from '../grid/editStore';
+import { GridOverlays } from '../grid/GridOverlays';
+import { titleFieldOf } from '@/lib/recordTitle';
 import { useWidth } from '../grid/useWidth';
 import { getTenantTimeZone } from '@/lib/tenantFormat';
 
@@ -1005,12 +1009,25 @@ function GroupBucketSection({
     const gridColumns = useMemo<GridColumnRef[]>(() => columns.map((c) => ({ id: c.id, field: c.field })), [columns]);
     const gridRows = useMemo(() => flatRows.map((r) => r.record), [flatRows]);
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canManageFields = useCan(CAP.MANAGE_FIELDS);
+    const titleField = useMemo(() => titleFieldOf(allFields), [allFields]);
     const grid = useGridController({
         containerRef: bodyScrollRef,
         rows: gridRows,
         columns: gridColumns,
         listId,
         canEdit: canEditRecords,
+        // En la vista agrupada no se crean filas al pegar: no tendrían el
+        // valor del grupo y aparecerían en otro.
+        canCreate: false,
+        hasMoreRows: hasMore,
+        noCreateReason: __('en la vista agrupada no se crean filas al pegar (quedarían en otro grupo). Pégalas en la vista sin agrupar.'),
+        allFields,
+        canManageFields,
+        recordTitle: (r) => {
+            const v = titleField ? r.fields[titleField.slug] : null;
+            return typeof v === 'string' && v.trim() !== '' ? v : `#${r.id}`;
+        },
         locked: storeRules ? (field, record) => lockedReasonOf(storeRules, field, record) : undefined,
         relationTitles,
         onOpenRow: onRowClick,
@@ -1275,6 +1292,7 @@ function GroupBucketSection({
                             aria-label={__('Registros del grupo: usa las flechas para moverte, Mayús para elegir un rango y Ctrl+C o Ctrl+V para copiar y pegar')}
                             {...grid.containerProps}
                         >
+                        <GridEditContext.Provider value={grid.editStore}>
                         <table className={tableClassName} style={tableStyle} aria-label={labelText}>
                             {colGroup}
                             <tbody>
@@ -1293,7 +1311,8 @@ function GroupBucketSection({
                                             ref={windowed.active ? windowed.measureElement : undefined}
                                             onContextMenu={(e) => {
                                                 e.preventDefault();
-                                                setRowMenu({ record, x: e.clientX, y: e.clientY });
+                                                const cell = grid.openContextMenu(e);
+                                                setRowMenu({ record, x: e.clientX, y: e.clientY, cell });
                                             }}
                                             style={rowTintStyle(colors?.row ?? null)}
                                             className={cn(
@@ -1331,6 +1350,8 @@ function GroupBucketSection({
                                                 const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
                                                 const sticky = stickyFor(c.id);
                                                 const shadows = grid.cellShadows(index, ci);
+                                                const mark = grid.cellMark(index, ci);
+                                                if (mark?.error) shadows.unshift(ERROR_CELL_SHADOW);
                                                 const edge = edgeFor(c.id);
                                                 if (edge) shadows.push(edge);
                                                 const cellColor = c.field ? colors?.cells.get(c.field.id) : undefined;
@@ -1350,10 +1371,8 @@ function GroupBucketSection({
                                                         className={cn(
                                                             'imcrm-overflow-hidden imcrm-px-2 imcrm-py-2.5',
                                                             wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
-                                                            sticky && (isSelected
-                                                                ? 'imcrm-bg-primary/5'
-                                                                : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
-                                                            hasHandle && !sticky && 'imcrm-relative',
+                                                            sticky && (isSelected ? 'imcrm-sticky-cell imcrm-sticky-cell-selected' : 'imcrm-sticky-cell'),
+                                                            (hasHandle || mark?.cut) && !sticky && 'imcrm-relative',
                                                             cellColor && 'imcrm-tinted-cell',
                                                             ci === 0 &&
                                                                 onRowClick &&
@@ -1364,6 +1383,7 @@ function GroupBucketSection({
                                                                 ? () => onRowClick(record)
                                                                 : undefined
                                                         }
+                                                        title={mark?.error}
                                                     >
                                                         {ci === 0 ? (
                                                             <RecordNameCell
@@ -1377,6 +1397,7 @@ function GroupBucketSection({
                                                         ) : (
                                                             renderColumnCell(c, record, listId, storeRules)
                                                         )}
+                                                        <CellMarkOverlay mark={mark} />
                                                         {hasHandle && (
                                                             <span
                                                                 data-fill-handle
@@ -1484,6 +1505,7 @@ function GroupBucketSection({
                                 </tfoot>
                             )}
                         </table>
+                        </GridEditContext.Provider>
                         </div>
                         </div>
                     )}
@@ -1527,7 +1549,9 @@ function GroupBucketSection({
                 onCreateSubtask={onCreateSubtask}
                 canCreate={canCreateRecords}
                 canDelete={canDeleteRecords}
+                cellActions={grid.menu}
             />
+            <GridOverlays grid={grid} />
         </section>
         </RelationTitlesContext.Provider>
     );

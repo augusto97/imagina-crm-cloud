@@ -33,6 +33,10 @@ interface UserPickerProps {
      * recién en el primer click (no un popover por celda) y lo abre en el acto.
      */
     defaultOpen?: boolean;
+    /** v0.1.294 — avisa al abrir/cerrar (la tabla devuelve el foco a la celda). */
+    onOpenChange?: (open: boolean) => void;
+    /** v0.1.294 — lo que se tecleó en la celda para abrirlo: va al buscador. */
+    initialQuery?: string;
 }
 
 /**
@@ -56,9 +60,18 @@ export function UserPicker({
     disabled,
     showAssignMe,
     defaultOpen = false,
+    onOpenChange,
+    initialQuery = '',
 }: UserPickerProps): JSX.Element {
     const [open, setOpen] = useState(defaultOpen);
-    const [query, setQuery] = useState('');
+    const [query, setQuery] = useState(initialQuery);
+    const lastOpen = useRef(open);
+    useEffect(() => {
+        if (lastOpen.current === open) return;
+        lastOpen.current = open;
+        onOpenChange?.(open);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
     const [debounced, setDebounced] = useState('');
     const [highlight, setHighlight] = useState(0);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

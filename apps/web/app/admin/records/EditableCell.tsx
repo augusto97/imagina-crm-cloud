@@ -1,8 +1,8 @@
-import { createContext, forwardRef, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, forwardRef, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { RefreshCw } from 'lucide-react';
-import type { DurationFormat } from '@imagina-base/shared';
+import { formatDuration, parseDuration, parseNumberText, validateFieldValue, type DurationFormat } from '@imagina-base/shared';
 
-import { DurationControl } from '@/components/fields/DurationControl';
 import { PhoneControl } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 
@@ -14,12 +14,15 @@ import { UserPicker } from '@/components/ui/user-picker';
 import { useRecurrencesForRecord } from '@/hooks/useRecurrences';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
+import type { GridPickerControl } from '@/lib/gridPicker';
+import { getTenantFormat } from '@/lib/tenantFormat';
 import { parseUtcDate } from '@/lib/utcDate';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
+import { gridCellKey, useCellEditRequest, useGridEditStore, type EditEndReason } from './grid/editStore';
 import { editLabel, useGridHistory } from './grid/history';
 import { isCheckedValue, renderCellValue } from './renderCellValue';
 import { useRelationTitlesFor } from './relationTitlesContext';
@@ -49,21 +52,79 @@ interface EditableCellProps {
 /**
  * Celda con edición inline.
  *
- * - UN click activa modo edición (input apropiado al tipo).
- * - Enter o blur confirma → mutación optimistic.
- * - Escape cancela.
- * - Si el server rechaza, mostramos un tooltip de error sobre la celda
- *   y revertimos al valor previo (la mutación lo hace en `onError`).
+ * Dentro de una TABLA (v0.1.294, como una hoja de cálculo) un click ELIGE la
+ * celda —para copiar, cortar, pegar, borrar o moverse con el teclado— y la
+ * edición se pide aparte: segundo click sobre la celda elegida, doble click,
+ * Enter, F2 o empezar a escribir (lo tecleado reemplaza el valor). La tabla lo
+ * pide por el almacén de edición (`grid/editStore`) y la celda avisa cuando
+ * termina, así el foco vuelve a la tabla y Enter/Tab mueven la selección.
+ * Antes un click abría el editor: el teclado quedaba dentro del input y
+ * copiar/pegar no funcionaba (Ctrl+C copiaba «3000» crudo, en una selección no
+ * copiaba nada y pegar un bloque de Excel no hacía nada).
  *
- * Tipos editables inline en MVP: text, long_text, number, currency,
- * email, url, date, datetime, checkbox, select, multi_select.
- * Tipos NO editables inline: user, file, relation (requieren pickers
- * más complejos — se editan por el RecordDetailDrawer en una iteración
- * posterior).
+ * Fuera de una tabla (la tabla editable de la ficha) no hay almacén y un click
+ * edita, como siempre.
+ *
+ * - Enter o salir confirma → mutación optimista; Escape cancela.
+ * - Si el servidor (o la validación local) rechaza, el error queda sobre la
+ *   celda y el editor sigue abierto para corregir.
  */
-// `computed` se muestra read-only — su valor lo deriva el backend
-// desde otros campos del record, el usuario no lo edita directo.
+// `computed` y compañía se muestran de sólo lectura: los deriva el servidor.
 const NON_INLINE_TYPES = ['user', 'file', 'relation', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked'];
+/** Tipos que no se editan desde la celda en ningún modo. */
+const READ_ONLY_TYPES = ['file', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked'];
+/** Tipos que se editan con un selector (popover). */
+const PICKER_TYPES = ['select', 'multi_select', 'date', 'datetime', 'user', 'relation'];
+const NUMERIC_TEXT_TYPES = ['number', 'currency', 'percent'];
+
+function isEmptyCellValue(v: unknown): boolean {
+    return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+}
+
+/** El texto con el que arranca el editor (números con el decimal de la empresa, sin miles). */
+export function editDraftFor(field: FieldEntity, value: unknown): unknown {
+    if (NUMERIC_TEXT_TYPES.includes(field.type)) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) return value === null || value === undefined ? '' : String(value);
+        const fmt = getTenantFormat().number_format;
+        const s = String(value);
+        return fmt === 'comma_dot' ? s : s.replace('.', ',');
+    }
+    if (field.type === 'duration') {
+        return formatDuration(value, (field.config as { format?: DurationFormat }).format);
+    }
+    return value;
+}
+
+/**
+ * Lo que escribió la persona → el valor del campo, con el MISMO criterio que
+ * el servidor (validador compartido). Los números se leen con el formato de la
+ * empresa («1.500.000» o «1,5»); la duración, «1h 30m», «1:30» o «90».
+ */
+export function parseCellDraft(field: FieldEntity, draft: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
+    // La relación no vive en `data` (el validador no la conoce): son ids.
+    if (field.type === 'relation') return { ok: true, value: Array.isArray(draft) ? draft : [] };
+    let value: unknown = draft;
+    if (typeof draft === 'string' && (NUMERIC_TEXT_TYPES.includes(field.type) || field.type === 'duration')) {
+        const text = draft.trim();
+        if (text === '') {
+            value = null;
+        } else if (field.type === 'duration') {
+            const parsed = parseDuration(text);
+            if (!parsed.ok) return { ok: false, error: __('Escribe una duración: 1h 30m, 1:30 o 90') };
+            value = parsed.value;
+        } else {
+            const n = parseNumberText(field.type === 'percent' ? text.replace(/%/g, '') : text, getTenantFormat().number_format);
+            if (n === null) return { ok: false, error: sprintf(__('«%s» no es un número'), text) };
+            value = n;
+        }
+    }
+    if (field.type === 'text' || field.type === 'long_text' || field.type === 'email' || field.type === 'url') {
+        if (typeof value === 'string' && value.trim() === '') value = null;
+    }
+    const valid = validateFieldValue({ type: field.type, config: field.config, is_required: field.is_required }, value);
+    if (!valid.ok) return { ok: false, error: valid.error };
+    return { ok: true, value: valid.value };
+}
 
 function EditableCellInner({
     field,
@@ -78,12 +139,26 @@ function EditableCellInner({
     // decenas de filas visibles eran cientos de observers montados por nada.
     const updateRecord = useContext(RecordUpdaterContext)!;
     const history = useGridHistory();
+    const store = useGridEditStore();
+    const gridMode = store !== null;
+    const gridKey = gridCellKey(recordId, field.id);
+    const editReq = useCellEditRequest(store, gridKey);
     const [pending, setPending] = useState(false);
     const wrapText = useWrapText();
     const relationTitles = useRelationTitlesFor(field.id);
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<unknown>(value);
     const [error, setError] = useState<string | null>(null);
+    /** En la tabla: el selector abierto por la tabla (y lo tecleado para abrirlo). */
+    const [picker, setPicker] = useState<{ token: number; seed: string | null } | null>(null);
+    /** El último pedido de edición ya atendido (estado, no ref: se lee al dibujar). */
+    const [handledToken, setHandledToken] = useState(0);
+    /** Acciones de un pedido que no son abrir un editor (marcar casilla, poner estrellas). */
+    const [pendingAction, setPendingAction] = useState<{ kind: 'toggle' | 'rate' | 'end'; value?: number | null } | null>(null);
+    const committing = useRef(false);
+    /** El editor arrancó con algo tecleado (reemplaza el valor): el cursor va al final. */
+    const [seeded, setSeeded] = useState(false);
+    const editorBoxRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!editing) {
@@ -97,9 +172,14 @@ function EditableCellInner({
     //  - field.type editable inline (excluye user/file/relation/computed).
     const canEdit = canEditByUser && !NON_INLINE_TYPES.includes(field.type);
 
+    const endGrid = (reason: EditEndReason): void => {
+        store?.end(gridKey, reason);
+    };
+
     const startEdit = (): void => {
         if (!canEdit) return;
-        setDraft(value);
+        setDraft(editDraftFor(field, value));
+        setSeeded(false);
         setError(null);
         setEditing(true);
     };
@@ -108,13 +188,29 @@ function EditableCellInner({
         setDraft(value);
         setError(null);
         setEditing(false);
+        endGrid('escape');
     };
 
-    const commit = async (next: unknown): Promise<void> => {
-        if (next === value) {
-            setEditing(false);
+    /**
+     * `reason`: cómo terminó la edición (Enter, Tab, salir…). Sólo con razón
+     * se le avisa a la tabla — un selector múltiple guarda en cada opción y
+     * sigue abierto.
+     */
+    const commit = async (raw: unknown, reason?: EditEndReason): Promise<void> => {
+        if (committing.current) return;
+        const parsed = parseCellDraft(field, raw);
+        if (!parsed.ok) {
+            setError(parsed.error);
             return;
         }
+        const next = parsed.value;
+        if (next === value || (isEmptyCellValue(next) && isEmptyCellValue(value))) {
+            setEditing(false);
+            setError(null);
+            if (reason) endGrid(reason);
+            return;
+        }
+        committing.current = true;
         setError(null);
         try {
             setPending(true);
@@ -129,6 +225,7 @@ function EditableCellInner({
                     : saved?.fields?.[field.slug] ?? next;
                 history.record({ label: editLabel(field), cells: [{ recordId, field, before: value, after }] });
             }
+            if (reason) endGrid(reason);
         } catch (err) {
             const msg = err instanceof ApiError
                 ? (err.errors[field.slug] ?? err.message)
@@ -139,8 +236,65 @@ function EditableCellInner({
             // Mantenemos el modo edición para que el usuario corrija.
         } finally {
             setPending(false);
+            committing.current = false;
         }
     };
+
+    // v0.1.294 — La tabla pidió editar ESTA celda. Se atiende AL DIBUJAR (no
+    // en un efecto): así el editor queda montado —y enfocado, ver CellEditor—
+    // antes de la tecla siguiente. En un efecto, quien escribe rápido perdía
+    // las primeras letras (caían en la tabla mientras el editor se abría).
+    if (store && editReq && editReq.token !== handledToken) {
+        setHandledToken(editReq.token);
+        const seed = editReq.seed;
+        if (!canEditByUser || READ_ONLY_TYPES.includes(field.type)) {
+            setPendingAction({ kind: 'end' });
+        } else if (field.type === 'checkbox') {
+            // Enter o Espacio la marcan / desmarcan.
+            setPendingAction(seed === null || seed === ' ' ? { kind: 'toggle' } : { kind: 'end' });
+        } else if (field.type === 'rating') {
+            // Un número la pone (0 la vacía); otra tecla no hace nada.
+            setPendingAction(seed !== null && /^\d$/.test(seed) ? { kind: 'rate', value: Number(seed) === 0 ? null : Number(seed) } : { kind: 'end' });
+        } else if (PICKER_TYPES.includes(field.type)) {
+            setPicker({ token: editReq.token, seed });
+        } else {
+            setDraft(seed !== null ? seed : editDraftFor(field, value));
+            setSeeded(seed !== null);
+            setError(null);
+            setEditing(true);
+        }
+    }
+    useEffect(() => {
+        if (!pendingAction) return;
+        setPendingAction(null);
+        if (pendingAction.kind === 'toggle') void commit(!isCheckedValue(value), 'closed');
+        else if (pendingAction.kind === 'rate') void commit(pendingAction.value ?? null, 'closed');
+        else endGrid('closed');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingAction]);
+
+    // Teclas que llegaron antes de que el editor tomara el foco (se escribe
+    // rápido): se suman a lo tecleado.
+    useEffect(() => {
+        if (!editReq || editReq.token !== handledToken || editReq.seed === null) return;
+        if (picker && picker.token === editReq.token) {
+            if (picker.seed !== editReq.seed) setPicker({ token: picker.token, seed: editReq.seed });
+        } else if (editing && seeded) {
+            setDraft(editReq.seed);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editReq?.seed]);
+
+    const gridPicker: GridPickerControl | undefined = gridMode
+        ? {
+              openToken: picker?.token ?? null,
+              seed: picker?.seed ?? null,
+              onClosed: () => {
+                  setPicker(null);
+                  endGrid('closed');
+              },
+          }
+        : undefined;
 
     if (!editing) {
         const isDateField = field.type === 'date' || field.type === 'datetime';
@@ -161,6 +315,9 @@ function EditableCellInner({
                         checked={isCheckedValue(value)}
                         disabled={pending}
                         aria-label={field.label}
+                        // En la tabla la casilla no se lleva el foco: el teclado
+                        // (flechas, Ctrl+C) sigue en la tabla.
+                        tabIndex={gridMode ? -1 : undefined}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => void commit(e.target.checked)}
                     />
@@ -183,6 +340,7 @@ function EditableCellInner({
                             ? (typeof value === 'string' ? value : null)
                             : (Array.isArray(value) ? (value as string[]) : [])
                     }
+                    grid={gridPicker}
                     onChange={(v) => {
                         void commit(field.type === 'select' ? (v ?? null) : (Array.isArray(v) ? v : []));
                     }}
@@ -202,6 +360,7 @@ function EditableCellInner({
                     value={value}
                     knownTitles={relationTitles}
                     disabled={!canEditByUser}
+                    grid={gridPicker}
                     onChange={(ids) => void commit(ids)}
                 />
             );
@@ -216,6 +375,7 @@ function EditableCellInner({
                     field={field}
                     value={value}
                     pending={pending}
+                    grid={gridPicker}
                     onCommit={(id) => void commit(id)}
                 />
             );
@@ -247,6 +407,7 @@ function EditableCellInner({
                     recordId={recordId}
                     field={field}
                     value={typeof value === 'string' ? value : null}
+                    grid={gridPicker}
                     onCommit={(next) => void commit(next)}
                 >
                     <DateCellTrigger
@@ -254,6 +415,7 @@ function EditableCellInner({
                         recordId={recordId}
                         field={field}
                         cellValue={value}
+                        asDisplay={gridMode}
                     />
                 </DateCellEditor>
             );
@@ -269,14 +431,17 @@ function EditableCellInner({
         // celda es un div, no un <button disabled>: un botón deshabilitado se
         // traga los clicks de lo que tiene adentro (el enlace del archivo que
         // abre el visor) y además un enlace dentro de un botón es HTML inválido.
-        if (!canEdit) {
+        // v0.1.294 — en la tabla tampoco es un botón: el click elige la celda
+        // y la edición la pide la tabla (segundo click, doble click, Enter).
+        if (!canEdit || gridMode) {
             return (
                 <div
                     className={cn(
-                        'imcrm-block imcrm-w-full imcrm-text-left imcrm-min-h-[1.5rem] imcrm-cursor-default',
+                        'imcrm-block imcrm-w-full imcrm-text-left imcrm-min-h-[1.5rem]',
+                        !gridMode && 'imcrm-cursor-default',
                         wrapText ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
                     )}
-                    title={lockedReason ?? __('No editable inline')}
+                    title={lockedReason ?? (canEdit ? undefined : __('No editable inline'))}
                 >
                     {renderCellValue(field, value)}
                 </div>
@@ -304,21 +469,60 @@ function EditableCellInner({
     }
 
     return (
-        <div className="imcrm-relative imcrm--mx-1 imcrm--my-0.5">
+        <div ref={editorBoxRef} className="imcrm-relative imcrm--mx-1 imcrm--my-0.5">
             <CellEditor
                 field={field}
                 value={draft}
-                onChange={setDraft}
-                onCommit={(v) => void commit(v)}
+                onChange={(v) => {
+                    setDraft(v);
+                    if (error !== null) setError(null);
+                }}
+                onCommit={(v, reason) => void commit(v, reason)}
                 onCancel={cancel}
                 isPending={pending}
+                gridMode={gridMode}
+                caretAtEnd={gridMode || seeded}
+                invalid={error !== null}
             />
             {error !== null && (
-                <div className="imcrm-absolute imcrm-left-0 imcrm-top-full imcrm-z-10 imcrm-mt-1 imcrm-rounded-md imcrm-border imcrm-border-destructive imcrm-bg-destructive imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-destructive-foreground imcrm-shadow-imcrm-md">
-                    {error}
-                </div>
+                <CellErrorBubble anchor={editorBoxRef} message={error} hint={gridMode ? __('Corrígelo o pulsa Esc para descartar.') : null} />
             )}
         </div>
+    );
+}
+
+/**
+ * v0.1.294 — El motivo de un valor rechazado, debajo de la celda. Va por
+ * portal y con posición fija: la celda recorta lo que se sale (overflow
+ * hidden), y por eso el mensaje antes no se veía.
+ */
+function CellErrorBubble({ anchor, message, hint }: { anchor: React.RefObject<HTMLElement>; message: string; hint: string | null }): JSX.Element | null {
+    const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+    useLayoutEffect(() => {
+        const update = (): void => {
+            const r = anchor.current?.getBoundingClientRect();
+            if (r) setPos({ left: r.left, top: r.bottom + 4 });
+        };
+        update();
+        window.addEventListener('scroll', update, true);
+        window.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('scroll', update, true);
+            window.removeEventListener('resize', update);
+        };
+    }, [anchor, message]);
+    if (!pos) return null;
+    return createPortal(
+        <div
+            role="alert"
+            style={{ position: 'fixed', left: pos.left, top: pos.top }}
+            className="imcrm-z-[70] imcrm-max-w-[18rem] imcrm-rounded-md imcrm-border imcrm-border-destructive imcrm-bg-destructive imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-destructive-foreground imcrm-shadow-imcrm-md"
+            data-testid="imcrm-cell-error"
+        >
+            {message}
+            {hint && <span className="imcrm-mt-0.5 imcrm-block imcrm-opacity-80">{hint}</span>}
+        </div>,
+        document.body,
     );
 }
 
@@ -327,16 +531,26 @@ function UserCellEditor({
     field,
     value,
     pending,
+    grid,
     onCommit,
 }: {
     field: FieldEntity;
     value: unknown;
     pending: boolean;
+    grid?: GridPickerControl;
     onCommit: (id: number | null) => void;
 }): JSX.Element {
     const [armed, setArmed] = useState(false);
     const current = typeof value === 'number' ? value : typeof value === 'string' && value !== '' ? Number(value) : null;
-    if (!armed) {
+    const open = grid ? grid.openToken !== null : armed;
+    if (!open) {
+        if (grid) {
+            return (
+                <div className="imcrm-block imcrm-min-h-[1.5rem] imcrm-w-full imcrm-truncate imcrm-text-left" data-testid={`imcrm-user-cell-${field.slug}`}>
+                    {renderCellValue(field, value)}
+                </div>
+            );
+        }
         return (
             <button
                 type="button"
@@ -358,6 +572,7 @@ function UserCellEditor({
         // el ÁRBOL: sin esto un click adentro abría la ficha del registro.
         <div onClick={(e) => e.stopPropagation()} className="imcrm-min-w-0">
             <UserPicker
+                key={`${grid?.openToken ?? 'armed'}:${grid?.seed ?? ''}`}
                 value={Number.isFinite(current) ? current : null}
                 onChange={(id) => onCommit(id)}
                 flat
@@ -365,6 +580,10 @@ function UserCellEditor({
                 showAssignMe
                 defaultOpen
                 disabled={pending}
+                initialQuery={grid?.seed ?? ''}
+                onOpenChange={(o) => {
+                    if (!o) grid?.onClosed();
+                }}
             />
         </div>
     );
@@ -446,27 +665,43 @@ export const EditableCell = memo(EditableCellWithUpdater, (prev, next) => {
     );
 });
 
+
 interface CellEditorProps {
     field: FieldEntity;
     value: unknown;
     onChange: (value: unknown) => void;
-    onCommit: (value: unknown) => void;
+    /** `reason`: cómo terminó (Enter, Tab, salir) — la tabla mueve la selección con eso. */
+    onCommit: (value: unknown, reason: EditEndReason) => void;
     onCancel: () => void;
     isPending: boolean;
+    /** v0.1.294 — dentro de la tabla: Tab confirma y pasa a la celda de al lado. */
+    gridMode: boolean;
+    /** Cursor al final (tabla, o se empezó tecleando) en vez de todo seleccionado. */
+    caretAtEnd: boolean;
+    invalid: boolean;
 }
 
-function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: CellEditorProps): JSX.Element {
+function CellEditor({ field, value, onChange, onCommit, onCancel, isPending, gridMode, caretAtEnd, invalid }: CellEditorProps): JSX.Element {
     const ref = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null);
 
-    useEffect(() => {
-        ref.current?.focus();
-        if (ref.current && 'select' in ref.current) {
-            try {
-                (ref.current as HTMLInputElement).select();
-            } catch {
-                // ignore
+    // useLayoutEffect: el foco entra al editor en el mismo commit que lo
+    // monta, antes de que llegue la tecla siguiente.
+    useLayoutEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.focus({ preventScroll: true });
+        if (!('setSelectionRange' in el) || el instanceof HTMLSelectElement) return;
+        try {
+            if (caretAtEnd) {
+                const len = el.value.length;
+                el.setSelectionRange(len, len);
+            } else {
+                el.select();
             }
+        } catch {
+            // inputs sin selección (email/number en algunos navegadores)
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleKeyDown = (
@@ -475,21 +710,26 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
         if (e.key === 'Escape') {
             e.preventDefault();
             onCancel();
-        } else if (e.key === 'Enter' && field.type !== 'long_text') {
+        } else if (e.key === 'Enter' && field.type !== 'long_text' && !e.shiftKey) {
             e.preventDefault();
-            onCommit(value);
+            onCommit(value, 'enter');
         } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            onCommit(value);
+            onCommit(value, 'enter');
+        } else if (e.key === 'Tab' && gridMode) {
+            e.preventDefault();
+            onCommit(value, e.shiftKey ? 'shift-tab' : 'tab');
         }
     };
 
     const commonProps = {
         onKeyDown: handleKeyDown,
-        onBlur: () => onCommit(value),
+        onBlur: () => onCommit(value, 'blur'),
         disabled: isPending,
-        className: 'imcrm-h-7 imcrm-text-sm',
+        'aria-invalid': invalid || undefined,
+        className: cn('imcrm-h-7 imcrm-text-sm', invalid && 'imcrm-border-destructive focus-visible:imcrm-ring-destructive'),
     };
+    const text = value === null || value === undefined ? '' : String(value);
 
     switch (field.type) {
         case 'long_text':
@@ -499,9 +739,10 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     value={typeof value === 'string' ? value : ''}
                     onChange={(e) => onChange(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    onBlur={() => onCommit(value)}
+                    onBlur={() => onCommit(value, 'blur')}
                     disabled={isPending}
-                    className="imcrm-min-h-[60px] imcrm-text-sm"
+                    aria-invalid={invalid || undefined}
+                    className={cn('imcrm-min-h-[60px] imcrm-text-sm', invalid && 'imcrm-border-destructive')}
                     rows={3}
                 />
             );
@@ -514,23 +755,30 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     onChange={(e) => {
                         onChange(e.target.checked);
                         // Para checkbox, el commit es inmediato.
-                        onCommit(e.target.checked);
+                        onCommit(e.target.checked, 'closed');
                     }}
                     disabled={isPending}
                 />
             );
         // select / multi_select NO pasan por aquí: en modo lectura la celda
         // ya renderiza el OptionPicker (variant="cell") con popover directo.
+        //
+        // v0.1.294 — números, moneda, porcentaje y duración se escriben en un
+        // input de TEXTO y se leen al confirmar con el formato de la empresa:
+        // el `type="number"` nativo no aceptaba «1.500.000» ni «1,5» (pegarlo
+        // vaciaba la celda) y mostraba flechitas que no aportan.
         case 'number':
         case 'currency':
+        case 'percent':
+        case 'duration':
             return (
                 <Input
                     {...commonProps}
                     ref={ref as React.RefObject<HTMLInputElement>}
-                    type="number"
-                    step="any"
-                    value={value === null || value === undefined ? '' : String(value)}
-                    onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+                    inputMode={field.type === 'duration' ? 'text' : 'decimal'}
+                    placeholder={field.type === 'duration' ? '1h 30m' : undefined}
+                    value={text}
+                    onChange={(e) => onChange(e.target.value)}
                 />
             );
         case 'date':
@@ -554,30 +802,6 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
                 />
             );
-        case 'percent':
-            return (
-                <Input
-                    {...commonProps}
-                    ref={ref as React.RefObject<HTMLInputElement>}
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="any"
-                    value={value === null || value === undefined ? '' : String(value)}
-                    onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-                />
-            );
-        case 'duration':
-            return (
-                <DurationControl
-                    ref={ref as React.RefObject<HTMLInputElement>}
-                    value={typeof value === 'number' ? value : null}
-                    format={(field.config as { format?: DurationFormat }).format}
-                    onCommit={onCommit}
-                    onCancel={onCancel}
-                    disabled={isPending}
-                />
-            );
         case 'phone':
             return (
                 <PhoneControl
@@ -586,7 +810,7 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     config={field.config}
                     onChange={onChange}
                     onKeyDown={handleKeyDown}
-                    onBlur={() => onCommit(value)}
+                    onBlur={() => onCommit(value, 'blur')}
                     disabled={isPending}
                 />
             );
@@ -595,8 +819,9 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                 <Input
                     {...commonProps}
                     ref={ref as React.RefObject<HTMLInputElement>}
-                    type="email"
-                    value={typeof value === 'string' ? value : ''}
+                    type="text"
+                    inputMode="email"
+                    value={text}
                     onChange={(e) => onChange(e.target.value)}
                 />
             );
@@ -605,8 +830,9 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                 <Input
                     {...commonProps}
                     ref={ref as React.RefObject<HTMLInputElement>}
-                    type="url"
-                    value={typeof value === 'string' ? value : ''}
+                    type="text"
+                    inputMode="url"
+                    value={text}
                     onChange={(e) => onChange(e.target.value)}
                 />
             );
@@ -615,7 +841,7 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                 <Input
                     {...commonProps}
                     ref={ref as React.RefObject<HTMLInputElement>}
-                    value={typeof value === 'string' ? value : ''}
+                    value={text}
                     onChange={(e) => onChange(e.target.value)}
                 />
             );
@@ -649,9 +875,11 @@ const DateCellTrigger = forwardRef<
         // Renombrado a `cellValue` para no chocar con el `value` propio
         // de `<button>` en `ButtonHTMLAttributes` (string|number|...).
         cellValue: unknown;
+        /** v0.1.294 — en la tabla es sólo la vista del valor (el click elige la celda). */
+        asDisplay?: boolean;
     } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'value'>
 >(function DateCellTrigger(
-    { listId, recordId, field, cellValue, ...rest },
+    { listId, recordId, field, cellValue, asDisplay = false, ...rest },
     ref,
 ) {
     // Usa el batch context si existe (TableView lo provee con N
@@ -660,6 +888,21 @@ const DateCellTrigger = forwardRef<
     // standalone). Cero N+1 en la tabla.
     const recurrences = useRecurrencesForRecord(listId, recordId);
     const hasRecurrence = (recurrences.data ?? []).some((r) => r.date_field_id === field.id);
+
+    if (asDisplay) {
+        return (
+            <div
+                ref={ref as unknown as React.Ref<HTMLDivElement>}
+                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-1 imcrm-truncate imcrm-text-left imcrm-min-h-[1.5rem]"
+                title={hasRecurrence ? __('Recurrente') : undefined}
+            >
+                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{renderCellValue(field, cellValue)}</span>
+                {hasRecurrence && (
+                    <RefreshCw className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-success" aria-label={__('Recurrente')} />
+                )}
+            </div>
+        );
+    }
 
     return (
         <button

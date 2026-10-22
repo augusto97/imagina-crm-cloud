@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import {
     Popover,
+    PopoverAnchor,
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
@@ -19,6 +20,7 @@ import {
     useUpsertRecurrence,
 } from '@/hooks/useRecurrences';
 import { moduleEnabled } from '@/lib/cloudFeatures';
+import type { GridPickerControl } from '@/lib/gridPicker';
 import { parseUtcDate } from '@/lib/utcDate';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
@@ -46,6 +48,11 @@ interface DateCellEditorProps {
     value: string | null;
     onCommit: (next: string | null) => void;
     children: React.ReactNode;
+    /**
+     * v0.1.294 — En la tabla, el calendario lo abre la tabla (segundo click,
+     * Enter, escribir la fecha); el click sólo elige la celda.
+     */
+    grid?: GridPickerControl;
 }
 
 /**
@@ -77,6 +84,10 @@ if (typeof window !== 'undefined') {
  */
 export function DateCellEditor(props: DateCellEditorProps): JSX.Element {
     const [armed, setArmed] = useState(false);
+    if (props.grid) {
+        if (props.grid.openToken === null) return <>{props.children}</>;
+        return <DateCellEditorPopover key={`${props.grid.openToken}:${props.grid.seed ?? ''}`} {...props} />;
+    }
     if (!armed) {
         return <Slot onClick={() => setArmed(true)}>{props.children}</Slot>;
     }
@@ -90,8 +101,14 @@ function DateCellEditorPopover({
     value,
     onCommit,
     children,
+    grid,
 }: DateCellEditorProps): JSX.Element {
-    const [open, setOpen] = useState(true);
+    const [open, setOpenState] = useState(true);
+    // En la tabla, cerrarse (elegir, Escape, click afuera) se avisa a la tabla.
+    const setOpen = (o: boolean): void => {
+        setOpenState(o);
+        if (!o) grid?.onClosed();
+    };
     // El click que arma el editor desmonta el botón provisorio (el que tenía
     // el foco) y monta éste. Dentro de un diálogo (la ficha del registro, el
     // alta) el FocusScope ve que el foco quedó en <body> y lo lleva al
@@ -100,8 +117,11 @@ function DateCellEditorPopover({
     // commit evita que el foco llegue a perderse.
     const triggerRef = useRef<HTMLButtonElement>(null);
     useLayoutEffect(() => {
+        // En la tabla el foco va al cuadro de la fecha (se puede escribir
+        // directo); fuera de la tabla, al disparador (ver arriba).
+        if (grid) return;
         triggerRef.current?.focus({ preventScroll: true });
-    }, []);
+    }, [grid]);
 
     const isDateTime = field.type === 'datetime';
     const parsed = useMemo(() => parseDateValue(value), [value]);
@@ -177,9 +197,16 @@ function DateCellEditorPopover({
     // `30/07/2026` y no se entendía cuál era el orden.
     const dateFormat = getTenantFormat().date_format;
     const manualFor = (d: Date | undefined): string => (d ? formatManualDate(d, dateFormat) : '');
-    const [manual, setManual] = useState('');
+    // v0.1.294 — lo tecleado en la celda (p. ej. «3») empieza la fecha, y se
+    // conserva hasta que se elige otra fecha. Sin "consumir" un ref en el
+    // efecto: en desarrollo React corre los efectos dos veces al montar y el
+    // segundo pisaba lo tecleado con la fecha actual.
+    const seeded = grid?.seed !== null && grid?.seed !== undefined;
+    const initialPicked = useRef(pickedDate?.getTime());
+    const [manual, setManual] = useState(() => (seeded ? grid!.seed! : manualFor(pickedDate)));
     const [manualError, setManualError] = useState(false);
     useEffect(() => {
+        if (seeded && pickedDate?.getTime() === initialPicked.current) return;
         setManual(manualFor(pickedDate));
         setManualError(false);
     }, [pickedDate?.getTime(), dateFormat]);
@@ -197,7 +224,11 @@ function DateCellEditorPopover({
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild ref={triggerRef}>{children}</PopoverTrigger>
+            {grid ? (
+                <PopoverAnchor asChild>{children}</PopoverAnchor>
+            ) : (
+                <PopoverTrigger asChild ref={triggerRef}>{children}</PopoverTrigger>
+            )}
             <PopoverContent
                 align="start"
                 sideOffset={6}
@@ -217,6 +248,12 @@ function DateCellEditorPopover({
                     <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-2 imcrm-border-l imcrm-border-border imcrm-p-3">
                         {/* Entrada manual rápida (estilo ClickUp). */}
                         <Input
+                            // En la tabla el foco va directo al cuadro (se escribe
+                            // la fecha); `autoFocus` lo hace al montar, sin esperar.
+                            autoFocus={Boolean(grid)}
+                            onFocus={(e) => {
+                                if (grid) e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length);
+                            }}
                             value={manual}
                             onChange={(e) => {
                                 setManual(e.target.value);

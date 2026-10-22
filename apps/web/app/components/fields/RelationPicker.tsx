@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Loader2, Plus, Search, X } from 'lucide-react';
 
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFields } from '@/hooks/useFields';
 import { isPendingRelationTitles, relationIds, relationTarget, useRelationTitles, type RelationTitles } from '@/hooks/useRelationTitles';
 import { api } from '@/lib/api';
+import type { GridPickerControl } from '@/lib/gridPicker';
 import { __ } from '@/lib/i18n';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,8 @@ interface RelationPickerProps {
     knownTitles?: RelationTitles;
     wrap?: boolean;
     id?: string;
+    /** v0.1.294 — en la tabla, el buscador lo abre la tabla (no el click). */
+    grid?: GridPickerControl;
 }
 
 /** Chip de un registro vinculado. */
@@ -63,6 +66,7 @@ export function RelationPicker({
     knownTitles,
     wrap = false,
     id,
+    grid,
 }: RelationPickerProps): JSX.Element {
     const target = relationTarget(field);
     const ids = relationIds(value);
@@ -91,6 +95,29 @@ export function RelationPicker({
     const chips = ids.map((i) => (
         <RelationChip key={i} label={label(i)} onRemove={variant === 'default' && !disabled ? () => toggle(i) : undefined} />
     ));
+
+    if (grid) {
+        const display = (
+            <div
+                className={cn(
+                    'imcrm-flex imcrm-min-h-[1.5rem] imcrm-w-full imcrm-min-w-0 imcrm-items-center imcrm-gap-1 imcrm-text-left',
+                    wrap ? 'imcrm-flex-wrap' : 'imcrm-overflow-hidden',
+                )}
+                data-testid={`imcrm-relation-cell-${field.slug}`}
+            >
+                {ids.length === 0 ? <span className="imcrm-text-muted-foreground">—</span> : chips}
+            </div>
+        );
+        if (grid.openToken === null || disabled) return display;
+        return (
+            <Popover open onOpenChange={(o) => { if (!o) grid.onClosed(); }}>
+                <PopoverAnchor asChild>{display}</PopoverAnchor>
+                <PopoverContent align="start" className="imcrm-w-80 imcrm-p-0" onClick={(e) => e.stopPropagation()}>
+                    <RelationSearch key={grid.seed ?? ''} target={target} selected={ids} onToggle={toggle} initialQuery={grid.seed ?? ''} />
+                </PopoverContent>
+            </Popover>
+        );
+    }
 
     return (
         <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
@@ -145,12 +172,14 @@ export function RelationSearch({
     target,
     selected,
     onToggle,
+    initialQuery = '',
 }: {
     target: number;
     selected: number[];
     onToggle: (id: number) => void;
+    initialQuery?: string;
 }): JSX.Element {
-    const [q, setQ] = useState('');
+    const [q, setQ] = useState(initialQuery);
     const debounced = useDebouncedValue(q.trim(), 250);
     const fields = useFields(target);
     const title = titleFieldOf(fields.data);

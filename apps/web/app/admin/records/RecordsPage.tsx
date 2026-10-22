@@ -616,6 +616,10 @@ const applyView = (view: SavedViewEntity | null): void => {
     // distinto llegó de afuera (un vínculo pegado, un favorito, atrás/adelante)
     // y se aplica aunque la lista ya esté abierta.
     const lastViewParamRef = useRef<string | null>(null);
+    // v0.1.294 — una vista creada después de abrir la lista (en otra pestaña,
+    // por otra persona o por la API) no está en la caché: antes de descartar
+    // el `?view=` se piden las vistas UNA vez.
+    const refetchedForViewRef = useRef<string | null>(null);
     useEffect(() => {
         if (!viewApplied || !views.data) return;
         const param = searchParams.get('view');
@@ -624,6 +628,11 @@ const applyView = (view: SavedViewEntity | null): void => {
             if (linked) {
                 lastViewParamRef.current = param;
                 applyView(linked);
+                return;
+            }
+            if (refetchedForViewRef.current !== param) {
+                refetchedForViewRef.current = param;
+                void views.refetch();
                 return;
             }
         }

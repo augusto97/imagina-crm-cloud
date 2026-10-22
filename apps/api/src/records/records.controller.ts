@@ -14,7 +14,13 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    batchCreateRecordsSchema,
+    batchDeleteRecordsSchema,
     batchUpdateRecordsSchema,
+    type BatchCreateRecordsInput,
+    type BatchCreateRecordsResult,
+    type BatchDeleteRecordsInput,
+    type BatchDeleteRecordsResult,
     type BatchUpdateRecordsInput,
     type BatchUpdateRecordsResult,
     bulkEditApplySchema,
@@ -166,6 +172,33 @@ export class RecordsController {
         @Body(new ZodValidationPipe(batchUpdateRecordsSchema)) input: BatchUpdateRecordsInput,
     ): Promise<BatchUpdateRecordsResult> {
         return this.records.batchUpdate(tenantId(req), actor(req), list, input.items);
+    }
+
+    /**
+     * v0.1.294 — Alta de varias filas (pegar desde Excel más filas de las que
+     * hay en la tabla; rehacer ese pegado). Ruta estática: no choca con `POST /`.
+     */
+    @Post('batch')
+    @HttpCode(200)
+    @RequireCapability('create_records')
+    batchCreate(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(batchCreateRecordsSchema)) input: BatchCreateRecordsInput,
+    ): Promise<BatchCreateRecordsResult> {
+        return this.records.batchCreate(tenantId(req), actor(req), list, input.items);
+    }
+
+    /** v0.1.294 — Deshacer un pegado que creó filas: las borra salvo las que cambiaron. */
+    @Post('batch-delete')
+    @HttpCode(200)
+    @RequireCapability('delete_records', 'delete_own_records')
+    batchDelete(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(batchDeleteRecordsSchema)) input: BatchDeleteRecordsInput,
+    ): Promise<BatchDeleteRecordsResult> {
+        return this.records.batchRemove(tenantId(req), actor(req), list, input.items);
     }
 
     @Get(':id')

@@ -27,6 +27,7 @@ import { detectFieldType } from './field-type-detector';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
 import { effectivePermissions, hiddenFieldsFor } from '../lists/list-acl';
+import { UniqueTracker } from '../records/unique-values';
 import { assertNotStoreManaged } from '../lists/store-guard';
 import { ListsService } from '../lists/lists.service';
 import { RecordsRepository } from '../records/records.repository';
@@ -81,6 +82,8 @@ export class ImportService {
 
         const errors: ImportRowError[] = [];
         const valid: Record<string, unknown>[] = [];
+        // v0.1.294 — «Sin repetidos»: contra la lista y contra el mismo lote.
+        const unique = await this.tenantDb.withTenant(tenantId, (tx) => UniqueTracker.load(tx, tenantId, list.id, fields));
 
         input.rows.forEach((row, index) => {
             const data: Record<string, unknown> = {};
@@ -103,6 +106,13 @@ export class ImportService {
                     rowOk = false;
                 } else if (result.value !== null) {
                     data[key] = result.value;
+                }
+            }
+            if (rowOk && unique.active) {
+                const dup = unique.claim(data);
+                if (dup !== null) {
+                    errors.push({ row: index, field: '', message: dup });
+                    rowOk = false;
                 }
             }
             if (rowOk) valid.push(data);
@@ -322,6 +332,8 @@ export class ImportService {
         const members = [...mapping.values()].some((slug) => bySlug.get(slug)?.type === 'user')
             ? await this.memberLookup(tenantId)
             : undefined;
+        // v0.1.294 — «Sin repetidos»: contra la lista y contra el mismo archivo.
+        const unique = await this.tenantDb.withTenant(tenantId, (tx) => UniqueTracker.load(tx, tenantId, list.id, [...bySlug.values()]));
         rows.forEach((row, idx) => {
             const rowNumber = idx + 2; // +1 header, +1 human-friendly.
             const data: Record<string, unknown> = {};
@@ -359,6 +371,12 @@ export class ImportService {
                 if (result.value !== null) data[jsonbKeyForField(field.id)] = result.value;
             }
             if (!rowOk || Object.keys(data).length === 0) {
+                skipped++;
+                return;
+            }
+            const dup = unique.active ? unique.claim(data) : null;
+            if (dup !== null) {
+                errors.push({ row: rowNumber, message: dup });
                 skipped++;
                 return;
             }

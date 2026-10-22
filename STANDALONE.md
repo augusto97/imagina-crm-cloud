@@ -3402,6 +3402,44 @@ Publicar equivale a mostrar lo que ve quien publica, así que perder acceso apag
 el enlace solo. Pendientes: que un destinatario externo pueda darse de baja él
 mismo, y que el asistente/MCP publique o programe envíos.
 
+### ADR-S51 — Elegir antes de editar: la tabla con el modelo de las hojas de cálculo (v0.1.294)
+
+**Contexto.** ADR-S46 sumó rango, copiar/pegar, rellenar y deshacer, pero dejó
+el click que edita de v0.1.74. El usuario reportó que copiar y pegar "no se
+entiende", que no había menú que dijera que se puede copiar o cortar y que en
+algunos campos daba error sin validación. Reproducido: con el editor abierto al
+primer click, Ctrl+C/V iban al input o al popover (se copiaba el valor crudo,
+un select no copiaba nada y pegar un bloque en un número no hacía nada).
+
+**Decisión.**
+1. **Un click elige; editar es un gesto aparte** (segundo click, doble click,
+   Enter/F2 o escribir, con lo tecleado reemplazando el valor), como Excel,
+   Sheets, Airtable y la vista Tabla de ClickUp. Revierte el «un click edita» de
+   v0.1.74 sólo DENTRO de las tablas de registros: con el portapapeles, el
+   rango y el menú de celda, el click que edita le roba las teclas a la tabla.
+   La casilla, las estrellas y el nombre (abre el registro) conservan su click.
+   Un almacén externo por tabla (`GridEditStore`) decide qué celda edita y cada
+   celda se suscribe por su clave; los selectores (opción, fecha, persona,
+   relación) los abre la tabla y devuelven el foco al cerrarse.
+2. **Pegar se revisa antes de escribir** cuando algo no entra, en vez de
+   aplicar lo que se pueda y callar el resto: diálogo con cada celda y su
+   motivo, crear opciones faltantes (`manage_fields`) y crear registros con las
+   filas sobrantes. Los registros creados al pegar son parte del mismo paso de
+   deshacer, que los borra con `expect` (no pisa lo que alguien cambió).
+3. **Cortar** existe: marca punteada hasta pegar o Esc; el origen se vacía al
+   pegar, en el mismo paso de deshacer.
+4. **«Sin repetidos» lo exige el servidor** en alta, edición e import (un
+   candado de transacción por lista+campo+valor normalizado), no sólo la
+   interfaz: hasta acá era una casilla que nadie validaba.
+5. **Altas y bajas en lote** (`POST /records/batch`, `/batch-delete`): cada
+   fila por `RecordsService`, el límite del plan se consulta para el lote
+   entero, errores por fila sin abortar el resto y un solo evento realtime.
+
+**Consecuencias.** Sin migración. La tabla editable de la ficha (sin almacén)
+sigue con el click que edita. Fuera de alcance: pegar archivos, un rango que
+cruce grupos en la vista agrupada, rellenar hacia arriba o de lado, y crear
+filas al pegar en la vista agrupada (quedarían en otro grupo).
+
 ---
 
-**Versión del documento:** 1.90.0 (superadmins y empresas desde la consola)
+**Versión del documento:** 1.91.0 (la tabla elige antes de editar)

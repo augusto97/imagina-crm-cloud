@@ -4,12 +4,14 @@ import { Check, ChevronDown, Loader2, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
     Popover,
+    PopoverAnchor,
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useAppendFieldOption } from '@/hooks/useFields';
 import { extractFieldOptions, type FieldOption } from '@/admin/records/fieldOptions';
+import type { GridPickerControl } from '@/lib/gridPicker';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -44,6 +46,11 @@ interface OptionPickerProps {
     wrap?: boolean;
     /** v0.1.233 — ofrecer "Crear" (el portal del cliente no puede crear opciones). */
     allowCreate?: boolean;
+    /**
+     * v0.1.294 — En la tabla: el selector lo abre la tabla (segundo click,
+     * Enter, escribir), no el click. Sin esto, un click abre (fuera de tablas).
+     */
+    grid?: GridPickerControl;
 }
 
 /**
@@ -68,6 +75,7 @@ export function OptionPicker({
     variant = 'default',
     wrap = false,
     allowCreate = true,
+    grid,
 }: OptionPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
     // v0.1.259 — el Popover (Radix: ~10 componentes por instancia) se monta
@@ -143,6 +151,42 @@ export function OptionPicker({
             </span>
         );
     })();
+
+    // v0.1.294 — en la tabla, la celda se ve igual pero no es un botón: el
+    // click la ELIGE (copiar, pegar…) y el selector lo abre la tabla.
+    if (grid) {
+        const display = (
+            <div
+                className={cn(
+                    'imcrm-flex imcrm-w-full imcrm-min-h-[1.5rem] imcrm-text-left imcrm-text-sm',
+                    wrap ? 'imcrm-items-start' : 'imcrm-items-center',
+                )}
+            >
+                {triggerContent}
+            </div>
+        );
+        if (grid.openToken === null) return display;
+        return (
+            <Popover open onOpenChange={(o) => { if (!o) grid.onClosed(); }}>
+                <PopoverAnchor asChild>{display}</PopoverAnchor>
+                <PopoverContent align="start" sideOffset={4} className="imcrm-w-64 imcrm-p-0">
+                    <OptionPickerPanel
+                        key={grid.seed ?? ''}
+                        field={field}
+                        listId={listId}
+                        mode={mode}
+                        options={options}
+                        currentSet={currentSet}
+                        currentSingle={currentSingle}
+                        onChange={onChange}
+                        onClose={grid.onClosed}
+                        allowCreate={allowCreate}
+                        initialQuery={grid.seed ?? ''}
+                    />
+                </PopoverContent>
+            </Popover>
+        );
+    }
 
     if (!armed) {
         return (
@@ -237,6 +281,8 @@ interface OptionPickerPanelProps {
     onChange: (next: string | string[] | null) => void;
     onClose: () => void;
     allowCreate: boolean;
+    /** v0.1.294 — lo que se tecleó en la celda para abrir el selector. */
+    initialQuery?: string;
 }
 
 /** Buscador + lista + "Crear": sólo existe mientras el popover está abierto. */
@@ -250,8 +296,9 @@ function OptionPickerPanel({
     onChange,
     onClose,
     allowCreate,
+    initialQuery = '',
 }: OptionPickerPanelProps): JSX.Element {
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(initialQuery);
     const [highlight, setHighlight] = useState(0);
     const [error, setError] = useState<string | null>(null);
 
@@ -332,6 +379,8 @@ function OptionPickerPanel({
                     <Input
                         autoFocus
                         value={search}
+                        // Lo tecleado en la celda llega como búsqueda: el cursor va al final.
+                        onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
                         onChange={(e) => setSearch(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'ArrowDown') {

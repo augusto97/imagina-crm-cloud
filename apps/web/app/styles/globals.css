@@ -1086,6 +1086,23 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
  * La celda pintada va como `background-image` (una capa encima del fondo):
  * así convive con el color de la fila sin pelear por especificidad.
  */
+/*
+ * v0.1.294 — La columna fija (sticky) lleva fondo OPACO también al pasar el
+ * mouse y con la fila elegida: un fondo translúcido dejaba ver, a través de
+ * ella, las columnas que pasan por debajo al scrollear en horizontal (en el
+ * celular se notaba siempre: el último toque deja la fila en "hover").
+ * Especificidad menor que la de las filas coloreadas, que mandan.
+ */
+.imcrm-records-table td.imcrm-sticky-cell {
+    background-color: hsl(var(--imcrm-background));
+}
+.imcrm-records-table td.imcrm-sticky-cell-selected {
+    background-color: color-mix(in srgb, hsl(var(--imcrm-primary)) 5%, hsl(var(--imcrm-background)));
+}
+.imcrm-records-table tr:hover > td.imcrm-sticky-cell {
+    background-color: color-mix(in srgb, hsl(var(--imcrm-muted)) 40%, hsl(var(--imcrm-background)));
+}
+
 .imcrm-records-table tbody tr.imcrm-tinted-row > td {
     background-color: color-mix(in srgb, var(--imcrm-row-color) 14%, hsl(var(--imcrm-background)));
 }

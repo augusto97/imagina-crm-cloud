@@ -166,6 +166,19 @@ describe('ImportService (Postgres real)', () => {
         expect(globex.data[`f${f.estado!.id}`]).toBe('vencido'); // etiqueta → value
     });
 
+    it('run: «Sin repetidos» — no entra un valor que ya está en la lista ni uno repetido en el archivo', async () => {
+        const codigo = await fieldsService.create(tenantId, 'clientes', { label: 'Código', type: 'text', slug: 'codigo', is_unique: true });
+        await recordsService.create(tenantId, admin, 'clientes', { data: { [`f${f.nombre!.id}`]: 'Existente', [`f${codigo.id}`]: 'C-1' } });
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
+            csv: 'Nombre;Código\nUno;c-1\nDos;C-2\nTres;C-2 \nCuatro;C-3\n',
+            mapping: { '0': 'nombre', '1': 'codigo' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(2);
+        expect(res.errors.map((e) => e.row)).toEqual([2, 4]);
+        expect(res.errors.every((e) => e.message.includes('no admite valores repetidos'))).toBe(true);
+    });
+
     it('run: una fila rechazada no deja su opción nueva colgada en el campo', async () => {
         // "Pausado" sólo aparece en una fila que falla por el monto: no se
         // agrega. "Vencido" aparece en una fila que entra: sí.
