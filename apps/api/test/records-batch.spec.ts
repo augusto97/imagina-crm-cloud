@@ -1,5 +1,5 @@
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
-import { batchUpdateRecordsSchema } from '@imagina-base/shared';
+import { batchCreateRecordsSchema, batchDeleteRecordsSchema, batchUpdateRecordsSchema } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { activity, fields, lists, records, tenants, users } from '../src/db/schema';
@@ -189,7 +189,77 @@ describe('RecordsService.batchUpdate (Postgres real)', () => {
         expect(res.updated[0]!.data[key('estado')]).toBe('baja');
     });
 
+    it('v0.1.294 — crea varias filas en una llamada (pegar más filas de las que hay): errores por fila y UN aviso', async () => {
+        rt.recordEvents = 0;
+        const res = await service.batchCreate(tenantA, admin, 'clientes', [
+            { data: { [key('nombre')]: 'Nueva 1', [key('monto')]: 100 } },
+            // Falta el nombre (obligatorio): esa fila sola no se crea.
+            { data: { [key('monto')]: 200 } },
+            { data: { [key('nombre')]: 'Nueva 3', [key('estado')]: 'activo' } },
+        ]);
+        expect(res.created.map((c) => c.index)).toEqual([0, 2]);
+        expect(res.created[0]!.record.data[key('monto')]).toBe(100);
+        expect(res.failed).toHaveLength(1);
+        expect(res.failed[0]!.index).toBe(1);
+        expect(res.failed[0]!.code).toBe('validation_failed');
+        expect(rt.recordEvents).toBe(1);
+        const created = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select().from(activity).where(and(eq(activity.tenantId, tenantA), eq(activity.action, 'record_created'))),
+        );
+        expect(created).toHaveLength(2);
+    });
+
+    it('v0.1.294 — deshacer las filas creadas: borra las que siguen igual y NO las que alguien cambió', async () => {
+        const a = await make('Alpha');
+        const b = await make('Beta');
+        // Otra persona cambió B después de crearla.
+        await service.update(tenantA, admin, 'clientes', b, { data: { [key('monto')]: 77 } });
+        const res = await service.batchRemove(tenantA, admin, 'clientes', [
+            { id: a, expect: { [key('nombre')]: 'Alpha', [key('monto')]: null } },
+            { id: b, expect: { [key('nombre')]: 'Beta', [key('monto')]: null } },
+        ]);
+        expect(res.deleted).toEqual([a]);
+        expect(res.failed).toHaveLength(1);
+        expect(res.failed[0]!.code).toBe('record_changed');
+        expect(res.failed[0]!.changed).toEqual([key('monto')]);
+        const alive = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ id: records.id, deletedAt: records.deletedAt }).from(records).where(eq(records.tenantId, tenantA)),
+        );
+        expect(alive.find((r) => r.id === a)!.deletedAt).not.toBeNull();
+        expect(alive.find((r) => r.id === b)!.deletedAt).toBeNull();
+        // El agente sólo borra lo suyo (ACL de la lista), con o sin `expect`.
+        const others = await service.batchRemove(tenantA, agent, 'clientes', [{ id: b }]);
+        expect(others.deleted).toEqual([]);
+        expect(others.failed[0]!.code).toBe('record_not_found');
+    });
+
+    it('v0.1.294 — «Sin repetidos» se verifica en el servidor: alta, edición y lote', async () => {
+        const codigo = await fieldsService.create(tenantA, 'clientes', { label: 'Código', type: 'text', slug: 'codigo', is_unique: true });
+        const ck = `f${codigo.id}`;
+        const a = (await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Alpha', [ck]: 'C-1' } })).id;
+        // Mismo código con otras mayúsculas y espacios: rechazado.
+        await expect(
+            service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Beta', [ck]: ' c-1 ' } }),
+        ).rejects.toMatchObject({ response: { code: 'validation_failed', data: { errors: { codigo: expect.stringContaining('no admite valores repetidos') } } } });
+        const b = (await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Beta', [ck]: 'C-2' } })).id;
+        // Re-guardar el propio valor no choca consigo mismo.
+        await service.update(tenantA, admin, 'clientes', a, { data: { [ck]: 'C-1' } });
+        // En lote: la celda repetida falla sola y el resto de la fila se escribe.
+        const res = await service.batchUpdate(tenantA, admin, 'clientes', [
+            { id: b, data: { [ck]: 'C-1', [key('monto')]: 5 } },
+        ]);
+        expect(res.cell_errors.map((e) => e.key)).toEqual([ck]);
+        expect(res.updated[0]!.data[key('monto')]).toBe(5);
+        expect(res.updated[0]!.data[ck]).toBe('C-2');
+        // Vacío no cuenta como repetido.
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Sin código 1' } });
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Sin código 2', [ck]: '' } });
+    });
+
     it('el schema limita el tamaño del pedido y exige claves f{id}', () => {
+        expect(batchCreateRecordsSchema.safeParse({ items: Array.from({ length: 501 }, () => ({ data: {} })) }).success).toBe(false);
+        expect(batchCreateRecordsSchema.safeParse({ items: [{ data: { nombre: 'x' } }] }).success).toBe(false);
+        expect(batchDeleteRecordsSchema.safeParse({ items: [{ id: 1, expect: { f1: null } }] }).success).toBe(true);
         const items = Array.from({ length: 501 }, (_, i) => ({ id: i + 1, data: { f1: 1 } }));
         expect(batchUpdateRecordsSchema.safeParse({ items }).success).toBe(false);
         expect(batchUpdateRecordsSchema.safeParse({ items: [{ id: 1, data: { nombre: 'x' } }] }).success).toBe(false);

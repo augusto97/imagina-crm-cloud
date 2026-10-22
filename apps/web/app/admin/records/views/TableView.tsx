@@ -28,6 +28,10 @@ import { activeColorRules, cellTintStyle, evaluateRowColors, rowTintStyle, type 
 import { computeFrozen, FROZEN_EDGE_SHADOW } from '../grid/frozen';
 import type { GridColumnRef } from '../grid/gridPlan';
 import { useGridController } from '../grid/useGridController';
+import { CellMarkOverlay, ERROR_CELL_SHADOW } from '../grid/CellMarkOverlay';
+import { GridEditContext } from '../grid/editStore';
+import { GridOverlays } from '../grid/GridOverlays';
+import { titleFieldOf } from '@/lib/recordTitle';
 import { useWidth } from '../grid/useWidth';
 import { FloatingAddColumn, tableMinWidth, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
@@ -493,12 +497,24 @@ export function TableView({
     );
     const showFrozenEdge = frozenColumns !== null && frozen.count > 0;
 
+    const canManageFields = useCan(CAP.MANAGE_FIELDS);
+    const titleField = useMemo(() => titleFieldOf(fields), [fields]);
     const grid = useGridController({
         containerRef: tableContainerRef,
         rows: gridRows,
         columns: gridColumns,
         listId,
         canEdit: canEditRecords,
+        // v0.1.294 — pegar más filas de las que hay crea las que faltan, salvo
+        // que debajo haya registros de otra página.
+        canCreate: canCreateRecords,
+        hasMoreRows: rowNumberOffset + records.length < (totalCount ?? 0),
+        allFields: fields,
+        canManageFields,
+        recordTitle: (r) => {
+            const v = titleField ? r.fields[titleField.slug] : null;
+            return typeof v === 'string' && v.trim() !== '' ? v : `#${r.id}`;
+        },
         locked: storeRules
             ? (field, record) => {
                 const a = storeAccessFor(storeRules, field, record);
@@ -900,6 +916,7 @@ export function TableView({
                 aria-label={__('Registros: usa las flechas para moverte entre celdas, Mayús para elegir un rango, Ctrl+C y Ctrl+V para copiar y pegar, y Enter para editar')}
                 {...grid.containerProps}
             >
+            <GridEditContext.Provider value={grid.editStore}>
             <table className={tableClassName} style={tableStyle} aria-label={__('Registros de la lista')}>
                 {colGroup}
                 <tbody>
@@ -944,7 +961,8 @@ export function TableView({
                                     ref={virtualActive ? windowed.measureElement : undefined}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
-                                        setRowMenu({ record: row.original, x: e.clientX, y: e.clientY });
+                                        const cell = grid.openContextMenu(e);
+                                        setRowMenu({ record: row.original, x: e.clientX, y: e.clientY, cell });
                                     }}
                                     style={rowTintStyle(colors?.row ?? null)}
                                     className={cn(
@@ -1011,6 +1029,8 @@ export function TableView({
                                         const isOpenerCell = cellIndex === 0;
                                         const cellSticky = stickyStyleFor(cell.column.id);
                                         const shadows = grid.cellShadows(rowIndex, cellIndex);
+                                        const mark = grid.cellMark(rowIndex, cellIndex);
+                                        if (mark?.error) shadows.unshift(ERROR_CELL_SHADOW);
                                         const edge = frozenEdgeFor(cell.column.id);
                                         if (edge) shadows.push(edge);
                                         const cellFieldId = (cell.column.columnDef.meta as { fieldId: number | null } | undefined)?.fieldId ?? null;
@@ -1037,13 +1057,12 @@ export function TableView({
                                                     // necesita escaparse del clip cuando el user clickea.
                                                     'imcrm-overflow-hidden imcrm-px-2 imcrm-py-2.5',
                                                     wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
-                                                    cellSticky && (isSelected
-                                                        ? 'imcrm-bg-primary/5'
-                                                        : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
-                                                    hasHandle && !cellSticky && 'imcrm-relative',
+                                                    cellSticky && (isSelected ? 'imcrm-sticky-cell imcrm-sticky-cell-selected' : 'imcrm-sticky-cell'),
+                                                    (hasHandle || mark?.cut) && !cellSticky && 'imcrm-relative',
                                                     cellColor && 'imcrm-tinted-cell',
                                                     isOpenerCell && onRowClick && 'imcrm-cursor-pointer imcrm-font-medium',
                                                 )}
+                                                title={mark?.error}
                                                 onClick={
                                                     isOpenerCell && onRowClick
                                                         ? () => onRowClick(row.original)
@@ -1051,6 +1070,7 @@ export function TableView({
                                                 }
                                             >
                                                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                <CellMarkOverlay mark={mark} />
                                                 {hasHandle && (
                                                     <span
                                                         data-fill-handle
@@ -1185,6 +1205,7 @@ export function TableView({
                     </tfoot>
                 )}
             </table>
+            </GridEditContext.Provider>
             </div>
         </div>
         {/* Scrollbar horizontal fija al fondo del viewport (estilo
@@ -1214,7 +1235,9 @@ export function TableView({
             onCreateSubtask={onCreateSubtask}
             canCreate={canCreateRecords}
             canDelete={canDeleteRecords}
+            cellActions={grid.menu}
         />
+        <GridOverlays grid={grid} />
        </RelationTitlesContext.Provider>
        </WrapTextContext.Provider>
        </RecordUpdaterProvider>

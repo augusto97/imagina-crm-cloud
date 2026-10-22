@@ -346,13 +346,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 - `TRUST_PROXY` con número falla cerrado en fastify ≥5.12 (v0.1.202).
 - `.env` se lee con `load_env_file`, no `source` (v0.1.180).
 - Los guardias SSRF bloquean loopback: en dev usar `DEV_ALLOW_PRIVATE_EGRESS`.
+- En la tabla (v0.1.294) un click ELIGE y un segundo click sobre la celda ya
+  elegida la EDITA: en un E2E, después de elegir no se vuelve a clickear para
+  pegar (se usa el teclado). Los popovers de Radix van por portal pero sus
+  eventos burbujean por el árbol de React: los handlers de la tabla ignoran lo
+  que no está dentro de su contenedor.
 
 ---
 
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.293** (un superadmin puede volver a tener empresa desde la consola o desde la pantalla «sin empresa»), en `main`.
+versión publicada: **v0.1.294** (la tabla elige antes de editar: copiar/cortar/pegar con menú contextual, revisión del pegado y «Sin repetidos» validado en el servidor), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -577,6 +582,24 @@ versión publicada: **v0.1.293** (un superadmin puede volver a tener empresa des
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-22 · v0.1.294** — **La tabla como hoja de cálculo, rehecha**
+  (ADR-S51; reporte del usuario: copiar y pegar "no se entiende", no había
+  menú que dijera que se puede copiar o cortar, y en algunos campos daba error
+  sin validación). Causa: desde v0.1.74 un click abría el editor, así que
+  Ctrl+C/V caían adentro del input. **Cambio de modelo**: un click ELIGE la
+  celda; se edita con un segundo click, doble click, Enter/F2 o escribiendo
+  (como Excel, Sheets y ClickUp). Menú de click derecho con Cortar/Copiar/
+  Pegar/Borrar/Rellenar/Deshacer y sus atajos; cortar con borde punteado;
+  copiar legible (etiquetas, fechas y números de la empresa, nombres); pegar
+  se revisa antes de escribir (qué no entra y por qué, crear opciones que
+  faltan, crear registros con las filas sobrantes — Ctrl+Z los borra);
+  rellenar continúa series; números en el formato de la empresa con aviso en
+  la celda si no son válidos; barra con suma y promedio de lo elegido; atajos
+  en la ayuda «?». **«Sin repetidos» nunca se validaba en el servidor**: ahora
+  sí (alta, edición e import). De paso: la columna fija dejaba ver lo de abajo
+  en la fila con el mouse encima (en celular, siempre), y un `?view=` a una
+  vista creada hace un momento se descartaba. **Para el usuario**: si prefiere que un
+  click vuelva a editar directo, se puede hacer configurable por vista.
 - **2026-10-22 · v0.1.293** — **Un superadmin puede volver a tener empresa**
   (reporte del usuario: tiene 2 superadmins, le borró la empresa a uno para
   sumarlo a otra y ya no podía ni crearle una ni invitarlo). El correo de un

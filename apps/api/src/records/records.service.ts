@@ -21,6 +21,8 @@ import {
     storeCellAccess,
     storeValueError,
     validateFieldValue,
+    type BatchCreateRecordsResult,
+    type BatchDeleteRecordsResult,
     type BatchUpdateRecordsResult,
     type CreateRecordInput,
     type Field,
@@ -140,7 +142,7 @@ export class RecordsService {
          * `lenientRequired`: una automatización crea aunque falte un campo
          * obligatorio (el motor lo avisa en su log); comportamiento histórico.
          */
-        opts: { planChecked?: boolean; automationChain?: AutomationChain; lenientRequired?: boolean } = {},
+        opts: { planChecked?: boolean; automationChain?: AutomationChain; lenientRequired?: boolean; silent?: boolean } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -164,6 +166,7 @@ export class RecordsService {
 
         const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
+            await this.assertUniqueInTx(tx, tenantId, listId, fields, data, null);
             // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
             // lista y ser de primer nivel — un solo nivel de anidado.
             const parentId = input.parent_id ?? null;
@@ -200,7 +203,8 @@ export class RecordsService {
             // automatizaciones ven los datos persistidos).
             return { row: inserted, enriched: await this.withThrough(tx, tenantId, listId, fields, [inserted]) };
         });
-        this.realtime.records(tenantId, listId);
+        // `silent` (v0.1.294): el alta en lote avisa UNA vez al final.
+        if (!opts.silent) this.realtime.records(tenantId, listId);
         this.automations.dispatch({
             tenantId,
             listId,
@@ -598,6 +602,7 @@ export class RecordsService {
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             const patch = this.validateData(fields, rel.data, { partial: true });
+            await this.assertUniqueInTx(tx, tenantId, listId, fields, patch, id);
             const merged = mergeData(current.data, patch);
             // v0.1.213 — lista de una tienda: sólo lo que WooCommerce acepta.
             this.assertStoreEdit(list, fields, current.data, merged, [
@@ -1142,6 +1147,81 @@ export class RecordsService {
     }
 
     /**
+     * v0.1.294 — Alta de varias filas (pegar desde Excel más filas de las que
+     * hay en la tabla; rehacer ese pegado). Cada una pasa por `create` (ACL,
+     * validación, actividad, automatizaciones); el límite del plan se verifica
+     * para el lote entero ANTES de crear nada (entra todo o nada, SEC-09) y el
+     * realtime avisa una vez. Los errores vuelven por fila sin abortar el resto.
+     */
+    async batchCreate(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        items: Array<{ data: Record<string, unknown> }>,
+    ): Promise<BatchCreateRecordsResult> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        assertNotStoreManaged(list, 'create');
+        if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
+            throw new ForbiddenException({
+                code: 'forbidden_create',
+                message: 'Tu rol no puede crear registros en esta lista',
+                data: { status: 403 },
+            });
+        }
+        if (this.billing) await this.billing.assertCanCreateRecords(tenantId, items.length);
+        const created: BatchCreateRecordsResult['created'] = [];
+        const failed: BatchCreateRecordsResult['failed'] = [];
+        for (const [index, item] of items.entries()) {
+            try {
+                const record = await this.create(tenantId, actor, String(list.id), { data: item.data }, { planChecked: true, silent: true });
+                created.push({ index, record });
+            } catch (err) {
+                const info = describeError(err);
+                failed.push({ index, code: info.code, message: info.message, ...(info.fieldErrors ? { errors: info.fieldErrors } : {}) });
+            }
+        }
+        if (created.length > 0) this.realtime.records(tenantId, list.id);
+        return { created, failed };
+    }
+
+    /**
+     * v0.1.294 — Borrado de varias filas con `expect` por fila: deshacer un
+     * pegado que creó registros los quita, salvo los que alguien cambió
+     * después (conflicto `record_changed`, la fila no se toca). Cada borrado
+     * pasa por `remove` (ACL de borrar, subtareas, vínculos, actividad).
+     */
+    async batchRemove(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        items: Array<{ id: number; expect?: Record<string, unknown> }>,
+    ): Promise<BatchDeleteRecordsResult> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        assertNotStoreManaged(list, 'delete');
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const deleted: number[] = [];
+        const failed: BatchDeleteRecordsResult['failed'] = [];
+        for (const item of items) {
+            try {
+                if (item.expect && Object.keys(item.expect).length > 0) {
+                    await this.tenantDb.withTenant(tenantId, async (tx) => {
+                        const current = await this.repo.findById(tx, tenantId, list.id, item.id);
+                        if (!current) throw recordNotFound(item.id);
+                        await this.assertUnchanged(tx, tenantId, fields, current, item.expect!);
+                    });
+                }
+                await this.remove(tenantId, actor, String(list.id), item.id, { silent: true });
+                deleted.push(item.id);
+            } catch (err) {
+                const info = describeError(err);
+                failed.push({ id: item.id, code: info.code, message: info.message, ...(info.changed ? { changed: info.changed } : {}) });
+            }
+        }
+        if (deleted.length > 0) this.realtime.records(tenantId, list.id);
+        return { deleted, failed };
+    }
+
+    /**
      * v0.1.287 — ¿Los valores que el cliente cree vigentes (`expect`, por
      * `f{id}`) siguen siendo los de la fila? Si no, 409 con las claves que
      * cambiaron. Las relaciones se comparan como conjunto de vínculos; una
@@ -1295,6 +1375,62 @@ export class RecordsService {
      * (relation/computed). En modo `partial` solo procesa las claves dadas;
      * en modo completo aplica los `is_required` de todos los campos de datos.
      */
+    /**
+     * v0.1.294 — «Sin repetidos» (`is_unique`): se ofrecía al configurar el
+     * campo pero el servidor jamás lo verificaba (cualquier alta, pegado o
+     * import dejaba valores repetidos). Se verifica en la MISMA transacción de
+     * la escritura, sólo para los campos que vienen en el cambio, con un lock
+     * por (lista, campo, valor) para que dos altas simultáneas del mismo valor
+     * no pasen las dos. El texto se compara sin mayúsculas ni espacios en los
+     * bordes («C-1» y « c-1 » son el mismo código); los números, por valor.
+     */
+    private async assertUniqueInTx(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        fields: Field[],
+        data: Record<string, unknown>,
+        excludeId: number | null,
+    ): Promise<void> {
+        const errors: Record<string, string> = {};
+        for (const field of fields) {
+            if (!field.is_unique) continue;
+            const key = jsonbKeyForField(field.id);
+            if (!(key in data)) continue;
+            const value = data[key];
+            if (typeof value !== 'string' && typeof value !== 'number') continue;
+            if (typeof value === 'string' && value.trim() === '') continue;
+            const norm = typeof value === 'string' ? value.trim().toLowerCase() : String(value);
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`uniq:${listId}:${field.id}:${norm}`}, 0))`);
+            const same = typeof value === 'string'
+                ? sql`lower(btrim(${records.data}->>${key})) = ${norm}`
+                : sql`${records.data}->${key} = ${JSON.stringify(value)}::jsonb`;
+            const hit = await tx
+                .select({ id: records.id })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, tenantId),
+                        eq(records.listId, listId),
+                        isNull(records.deletedAt),
+                        excludeId !== null ? sql`${records.id} <> ${excludeId}` : undefined,
+                        same,
+                    ),
+                )
+                .limit(1);
+            if (hit.length > 0) {
+                errors[field.slug] = `«${String(value).trim()}» ya está en otro registro: «${field.label}» no admite valores repetidos.`;
+            }
+        }
+        if (Object.keys(errors).length > 0) {
+            throw new BadRequestException({
+                code: 'validation_failed',
+                message: 'Datos del registro inválidos',
+                data: { status: 400, errors },
+            });
+        }
+    }
+
     private validateData(
         fields: Field[],
         rawData: Record<string, unknown>,

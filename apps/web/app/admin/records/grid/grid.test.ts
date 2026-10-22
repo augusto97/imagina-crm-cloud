@@ -151,7 +151,9 @@ describe('pegar un bloque', () => {
 
     it('respeta lo que la tienda bloquea, con el motivo', () => {
         expect(cellWriteBlock(nota, rows[0]!, 'paste', () => 'Lo maneja la tienda')).toBe('Lo maneja la tienda');
-        expect(cellWriteBlock(field(9, 'cliente', 'relation'), rows[0]!, 'paste')).not.toBeNull();
+        // v0.1.294 — los vínculos se pegan por TÍTULO (los archivos no).
+        expect(cellWriteBlock(field(9, 'cliente', 'relation'), rows[0]!, 'paste')).toBeNull();
+        expect(cellWriteBlock(field(9, 'adjunto', 'file'), rows[0]!, 'paste')).not.toBeNull();
         expect(cellWriteBlock(field(9, 'cliente', 'relation'), rows[0]!, 'fill')).toBeNull();
     });
 });

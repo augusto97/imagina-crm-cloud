@@ -1,11 +1,29 @@
 import { useState } from 'react';
-import { Check, Columns3, CopyPlus, Hash, Link2, ListTree, SquareArrowOutUpRight, Trash2 } from 'lucide-react';
+import {
+    ArrowDownToLine,
+    Check,
+    ClipboardPaste,
+    Columns3,
+    Copy,
+    CopyPlus,
+    Eraser,
+    Hash,
+    Link2,
+    ListTree,
+    PencilLine,
+    Redo2,
+    Scissors,
+    SquareArrowOutUpRight,
+    Trash2,
+    Undo2,
+} from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -15,11 +33,15 @@ import { __, sprintf } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
+import { shortcutLabel, type GridMenuActions } from './grid/useGridController';
+
 /** Dónde se abrió el menú y sobre qué registro. */
 export interface RowMenuTarget {
     record: RecordEntity;
     x: number;
     y: number;
+    /** v0.1.294 — el click derecho fue sobre una celda: el menú suma las acciones de celdas. */
+    cell?: boolean;
 }
 
 interface RecordRowMenuProps {
@@ -36,6 +58,13 @@ interface RecordRowMenuProps {
     onCreateSubtask?: (record: RecordEntity) => void;
     canDelete: boolean;
     canCreate: boolean;
+    /** v0.1.294 — acciones de las celdas elegidas (copiar, cortar, pegar…). */
+    cellActions?: GridMenuActions | null;
+}
+
+/** El atajo a la derecha de un ítem del menú. */
+function Shortcut({ children }: { children: string }): JSX.Element {
+    return <span className="imcrm-ml-auto imcrm-pl-6 imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground">{children}</span>;
 }
 
 /**
@@ -62,6 +91,7 @@ export function RecordRowMenu({
     onCreateSubtask,
     canDelete,
     canCreate,
+    cellActions,
 }: RecordRowMenuProps): JSX.Element | null {
     const create = useCreateRecord(listId);
     const remove = useDeleteRecord(listId);
@@ -141,7 +171,71 @@ export function RecordRowMenu({
                     }}
                 />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" sideOffset={2}>
+            <DropdownMenuContent
+                align="start"
+                sideOffset={2}
+                className="imcrm-min-w-[15rem]"
+                data-testid="imcrm-row-menu"
+                // Sobre celdas el foco vuelve a la TABLA (no al disparador
+                // invisible del menú): así Ctrl+V / flechas siguen andando.
+                onCloseAutoFocus={(e) => {
+                    if (!target.cell || !cellActions) return;
+                    e.preventDefault();
+                    cellActions.restoreFocus();
+                }}
+            >
+                {target.cell && cellActions && (
+                    <>
+                        <DropdownMenuLabel className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">{cellActions.summary}</DropdownMenuLabel>
+                        {cellActions.editable && (
+                            <DropdownMenuItem onSelect={cellActions.edit}>
+                                <PencilLine className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Editar celda')}
+                                <Shortcut>Enter</Shortcut>
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onSelect={cellActions.cut} disabled={!cellActions.canEdit}>
+                            <Scissors className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Cortar')}
+                            <Shortcut>{shortcutLabel('X')}</Shortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={cellActions.copy}>
+                            <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Copiar')}
+                            <Shortcut>{shortcutLabel('C')}</Shortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={cellActions.paste} disabled={!cellActions.canEdit && !canCreate}>
+                            <ClipboardPaste className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Pegar')}
+                            <Shortcut>{shortcutLabel('V')}</Shortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={cellActions.clear} disabled={!cellActions.canEdit}>
+                            <Eraser className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Borrar contenido')}
+                            <Shortcut>{__('Supr')}</Shortcut>
+                        </DropdownMenuItem>
+                        {cellActions.multiRow && (
+                            <DropdownMenuItem onSelect={cellActions.fillDown} disabled={!cellActions.canEdit}>
+                                <ArrowDownToLine className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Rellenar hacia abajo')}
+                                <Shortcut>{shortcutLabel('D')}</Shortcut>
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={cellActions.undo} disabled={!cellActions.canUndo}>
+                            <Undo2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Deshacer')}
+                            <Shortcut>{shortcutLabel('Z')}</Shortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={cellActions.redo} disabled={!cellActions.canRedo}>
+                            <Redo2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Rehacer')}
+                            <Shortcut>{shortcutLabel('Y')}</Shortcut>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">{__('Registro')}</DropdownMenuLabel>
+                    </>
+                )}
                 <DropdownMenuItem onSelect={() => onOpen(record)}>
                     <SquareArrowOutUpRight className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Abrir registro')}

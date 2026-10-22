@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { BatchUpdateRecordsResult } from '@imagina-base/shared';
+import type { BatchCreateRecordsResult, BatchDeleteRecordsResult, BatchUpdateRecordsResult } from '@imagina-base/shared';
 
 import { activityKeys } from '@/hooks/useActivity';
 import {
@@ -134,4 +134,57 @@ function applyCells(rec: RecordEntity, cells: BatchCell[]): RecordEntity {
         }
     }
     return { ...rec, fields, relations };
+}
+
+/**
+ * v0.1.294 — Crea varias filas en UNA llamada (`POST …/records/batch`): pegar
+ * desde Excel más filas de las que hay debajo, y rehacer ese pegado. `data`
+ * va por `f{id}`.
+ */
+export function useBatchCreateRecords(listId: number) {
+    const qc = useQueryClient();
+    return useMutation<BatchCreateRecordsResult, Error, Array<Record<string, unknown>>>({
+        mutationFn: async (rows) => {
+            const out: BatchCreateRecordsResult = { created: [], failed: [] };
+            for (let i = 0; i < rows.length; i += MAX_ITEMS) {
+                const slice = rows.slice(i, i + MAX_ITEMS);
+                const res = await api.post<BatchCreateRecordsResult>(`/lists/${listId}/records/batch`, { items: slice.map((data) => ({ data })) });
+                out.created.push(...res.data.created.map((c) => ({ ...c, index: c.index + i })));
+                out.failed.push(...res.data.failed.map((f) => ({ ...f, index: f.index + i })));
+            }
+            return out;
+        },
+        onMutate: () => markLocalRecordsChange(qc, listId),
+        onSettled: () => {
+            markLocalRecordsChange(qc, listId);
+            invalidateForList(qc, recordsKeys.all, listId);
+            invalidateForList(qc, activityKeys.all, listId);
+        },
+    });
+}
+
+/**
+ * v0.1.294 — Borra varias filas (`POST …/records/batch-delete`) con el valor
+ * que se cree vigente en cada una: deshacer un pegado que creó registros nunca
+ * borra uno que alguien cambió después.
+ */
+export function useBatchDeleteRecords(listId: number) {
+    const qc = useQueryClient();
+    return useMutation<BatchDeleteRecordsResult, Error, Array<{ id: number; expect?: Record<string, unknown> }>>({
+        mutationFn: async (items) => {
+            const out: BatchDeleteRecordsResult = { deleted: [], failed: [] };
+            for (let i = 0; i < items.length; i += MAX_ITEMS) {
+                const res = await api.post<BatchDeleteRecordsResult>(`/lists/${listId}/records/batch-delete`, { items: items.slice(i, i + MAX_ITEMS) });
+                out.deleted.push(...res.data.deleted);
+                out.failed.push(...res.data.failed);
+            }
+            return out;
+        },
+        onMutate: () => markLocalRecordsChange(qc, listId),
+        onSettled: () => {
+            markLocalRecordsChange(qc, listId);
+            invalidateForList(qc, recordsKeys.all, listId);
+            invalidateForList(qc, activityKeys.all, listId);
+        },
+    });
 }

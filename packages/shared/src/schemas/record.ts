@@ -194,3 +194,53 @@ export interface BatchUpdateRecordsResult {
     failed: BatchUpdateRowError[];
     cell_errors: BatchUpdateCellError[];
 }
+
+/**
+ * v0.1.294 — Alta de VARIAS filas en una llamada: pegar desde Excel un bloque
+ * con más filas de las que hay debajo crea las que faltan (como Airtable), y
+ * rehacer ese pegado las vuelve a crear. Cada ítem pasa por el mismo camino
+ * que un alta (ACL, validación, actividad, automatizaciones); el límite del
+ * plan se verifica UNA vez para el lote entero (entra todo o nada) y el
+ * realtime avisa una sola vez.
+ */
+export const MAX_BATCH_CREATE_ITEMS = 500;
+export const batchCreateRecordsSchema = z.object({
+    items: z
+        .array(z.object({ data: recordDataSchema }))
+        .min(1)
+        .max(MAX_BATCH_CREATE_ITEMS),
+});
+export type BatchCreateRecordsInput = z.infer<typeof batchCreateRecordsSchema>;
+
+/** Una fila del lote que no se creó (por su posición en `items`). */
+export interface BatchCreateRowError {
+    index: number;
+    code: string;
+    message: string;
+    /** Errores de validación por clave `f{id}` o slug. */
+    errors?: Record<string, string>;
+}
+
+export interface BatchCreateRecordsResult {
+    created: Array<{ index: number; record: RecordDto }>;
+    failed: BatchCreateRowError[];
+}
+
+/**
+ * v0.1.294 — Borrado de varias filas con `expect` por fila: deshacer un
+ * pegado que creó registros los borra, pero NUNCA uno que alguien editó
+ * después (vuelve como conflicto `record_changed`, igual que el batch de
+ * edición).
+ */
+export const batchDeleteRecordsSchema = z.object({
+    items: z
+        .array(z.object({ id: idSchema, expect: recordDataSchema.optional() }))
+        .min(1)
+        .max(MAX_BATCH_UPDATE_ITEMS),
+});
+export type BatchDeleteRecordsInput = z.infer<typeof batchDeleteRecordsSchema>;
+
+export interface BatchDeleteRecordsResult {
+    deleted: number[];
+    failed: BatchUpdateRowError[];
+}

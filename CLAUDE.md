@@ -8469,6 +8469,76 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con «Agregar a una empresa», invitación desde Ajustes rechazada con el
         motivo, celular sin desborde).
 
+  - [x] **La tabla como hoja de cálculo, rehecha (v0.1.294, ADR-S51, reporte
+        del usuario: "copiar y pegar no se entiende, no hay menú contextual que
+        diga que se puede copiar o cortar, en algunos campos da error y no hay
+        validación")**. La causa de fondo era el modelo de interacción de
+        v0.1.74: **un click abría el editor de la celda**, así que Ctrl+C/V
+        caían en el input o en el popover (se copiaba «3000» crudo, un select no
+        copiaba nada, pegar un bloque en un número no hacía nada y nadie decía
+        por qué), y no había cortar ni menú de celda. Ahora es el de Excel,
+        Sheets, Airtable y la vista Tabla de ClickUp:
+        (a) **un click ELIGE la celda**; se edita con un segundo click, doble
+        click, Enter/F2 o **empezando a escribir** (lo tecleado reemplaza el
+        valor: en un select abre el buscador con eso, en una fecha el cuadro de
+        la fecha). La casilla y las estrellas siguen con un click; el nombre
+        sigue abriendo el registro; un enlace en una celda no elegida sólo la
+        elige (Ctrl/⌘+click lo abre). Enter guarda y baja, Tab guarda y va a la
+        derecha, Escape descarta, y al cerrar cualquier selector el foco vuelve
+        a la tabla. `GridEditStore` (un almacén externo con suscripción por
+        celda: abrir un editor no re-dibuja las demás) decide qué celda edita;
+        el pedido se atiende durante el render y el editor toma el foco en un
+        layout effect, así **escribir rápido no pierde teclas**. Fuera de una
+        tabla (la tabla editable de la ficha) sigue el click que edita.
+        (b) **Menú contextual de la celda** (click derecho, también en la
+        agrupada): Editar celda, **Cortar**, Copiar, Pegar, Borrar contenido,
+        Rellenar hacia abajo, Deshacer y Rehacer, cada uno con su atajo, arriba
+        de las acciones del registro. **Cortar** marca lo cortado con borde
+        punteado (como Excel) y al pegar vacía el origen en el MISMO paso de
+        deshacer; Escape lo cancela.
+        (c) **Copiar** deja texto LEGIBLE (etiqueta de la opción, fecha y número
+        en el formato de la empresa, nombre de la persona) + una tabla HTML para
+        Excel/Sheets, y recuerda los valores crudos para pegar dentro de la app
+        sin perder nada.
+        (d) **Pegar revisa antes de aplicar** cuando algo no entra: un diálogo
+        lista celda por celda lo que no se puede pegar y por qué (valor que el
+        campo no acepta, columna que no se escribe a mano, lo que bloquea la
+        tienda, un valor repetido en un campo «Sin repetidos»), ofrece **crear
+        las opciones** que faltan (con `manage_fields`) y **crear registros
+        nuevos** con las filas que no entran (tabla plana en la última página;
+        Ctrl+Z los borra sin pisar lo que alguien cambió después). En la vista
+        agrupada no se crean filas y se explica por qué. Lo que falló queda
+        marcado en rojo con el motivo y un resumen lo cuenta.
+        (e) **Rellenar** (asa y Ctrl+D) continúa series: números con paso,
+        fechas por día, por mes o fin de mes, fecha y hora, y textos que
+        terminan en número («Cuota 1, Cuota 2 → Cuota 3»).
+        (f) **Validación en la celda**: los números se escriben en el formato de
+        la empresa («1.234,5»), un valor inválido se avisa en un globo junto a
+        la celda y no se guarda (Escape descarta).
+        (g) **Barra de la selección** con cuántas celdas, la suma y el promedio
+        de las numéricas, y los atajos. La ayuda «?» suma la sección «En la
+        tabla».
+        (h) **Servidor**: «Sin repetidos» (`is_unique`) **nunca se validaba**
+        del lado del servidor — ahora se exige al crear, al editar (con un
+        candado por valor, así dos altas a la vez no se cuelan) y al importar;
+        endpoints `POST /lists/:l/records/batch` (alta de hasta 500, con el
+        límite del plan para el lote entero) y `/batch-delete` (con `expect`,
+        para deshacer sin pisar).
+        (i) De paso: la columna fija dejaba ver lo que pasaba por debajo al
+        scrollear en horizontal sobre la fila con el mouse encima (en el celular
+        siempre: el último toque la deja así) — ahora su fondo es opaco; y un
+        `?view=` de una vista creada después de abrir la lista se descartaba —
+        ahora se piden las vistas antes de descartarlo.
+        Tests: 3 de API del alta/borrado en lote y «Sin repetidos», 1 del
+        import, y del front el plan de pegado/relleno/corte y las series — 425
+        front, 265 shared y la API completa (1.326) en verde — + E2E navegador 38/38
+        (selección, copiar legible, editar, pegar con revisión y opciones
+        nuevas, filas nuevas y deshacer, menú, cortar, series, «Sin repetidos»,
+        número en formato regional, barra de la selección) y 18/18 (escribir
+        sobre un select o una fecha, Enter en persona, pegar una persona por
+        nombre, enlaces, texto largo, vista agrupada) + celular (un toque
+        elige, el segundo edita).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
