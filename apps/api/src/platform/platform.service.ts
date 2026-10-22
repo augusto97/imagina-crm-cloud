@@ -43,6 +43,8 @@ import {
     comments,
     timeEntries,
     dashboards,
+    dashboardSubscriptions,
+    publicDashboards,
     emailUsage,
     aiUsage,
     billingPayments,
@@ -391,6 +393,9 @@ export class PlatformService {
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));
             await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));
+            // v0.1.292 — enlaces públicos y envíos programados de los tableros.
+            await tx.delete(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, id));
+            await tx.delete(publicDashboards).where(eq(publicDashboards.tenantId, id));
             await tx.delete(dashboards).where(eq(dashboards.tenantId, id));
             await tx.delete(lists).where(eq(lists.tenantId, id));
             await tx.delete(listGroups).where(eq(listGroups.tenantId, id));

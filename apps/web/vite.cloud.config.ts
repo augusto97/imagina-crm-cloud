@@ -163,6 +163,10 @@ export default defineConfig({
             input: {
                 cloud: path.resolve(__dirname, 'cloud/index.html'),
                 portal: path.resolve(__dirname, 'cloud-portal/index.html'),
+                // v0.1.292 (ADR-S50) — la página pública de un tablero. La sirve
+                // el API (`/api/v1/public/d/:token`) leyendo este HTML del build
+                // y agregando su `frame-ancestors`; los assets salen del proxy.
+                public: path.resolve(__dirname, 'cloud-public/index.html'),
             },
             output: {
                 /**

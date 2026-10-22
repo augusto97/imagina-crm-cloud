@@ -5,6 +5,7 @@ import { AiModule } from './ai/ai.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
+import { DashboardSharingModule } from './dashboard-sharing/dashboard-sharing.module';
 import { LegalModule } from './legal/legal.module';
 import { DomainsModule } from './domains/domains.module';
 import { BillingModule } from './billing/billing.module';
@@ -96,6 +97,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AggregateModule,
         AutomationsModule,
         DashboardsModule,
+        // v0.1.292 (ADR-S50) — enlace público y envío programado de tableros.
+        DashboardSharingModule,
         DomainsModule,
         LegalModule,
         PortalModule,

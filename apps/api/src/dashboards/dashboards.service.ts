@@ -70,6 +70,15 @@ function canSee(row: Row, viewer: DashboardViewer): boolean {
     return false; // private de otro usuario
 }
 
+/** v0.1.292 — La misma regla de `canSee`, sobre el DTO (destinatarios de un envío programado). */
+export function dashboardVisibleTo(dash: Pick<Dashboard, 'created_by' | 'visibility' | 'allowed_roles'>, viewer: DashboardViewer): boolean {
+    if (viewer.role === 'admin') return true;
+    if (dash.created_by === viewer.userId) return true;
+    if (dash.visibility === 'workspace') return true;
+    if (dash.visibility === 'roles') return (dash.allowed_roles ?? []).includes(viewer.role);
+    return false;
+}
+
 /**
  * Dashboards del workspace + evaluación de widgets sobre el motor de agregados
  * (AggregateService). CRUD con RLS por tenant; los widgets se guardan como jsonb
@@ -210,6 +219,28 @@ export class DashboardsService {
             message: 'Sólo el creador o un admin pueden modificar este dashboard',
             data: { status: 403 },
         });
+    }
+
+    /**
+     * v0.1.292 — ¿`viewer` puede cambiar este tablero? (creador o admin). Lo
+     * usan Compartir → enlace público y los envíos programados.
+     */
+    assertManageable(tenantId: number, id: number, viewer: DashboardViewer): Promise<void> {
+        return this.assertCanManage(tenantId, id, viewer);
+    }
+
+    /**
+     * v0.1.292 — Todos los widgets de un tablero YA leído, con el acceso de
+     * `viewer` (la página pública y el correo programado: quien publicó o es
+     * dueño del envío). Mismo motor y mismo shape que `widgetsData`.
+     */
+    evaluateDashboard(
+        tenantId: number,
+        dash: Dashboard,
+        viewer: DashboardViewer,
+        body: DashboardBundleRequest = {},
+    ): Promise<Record<string, unknown>> {
+        return this.evaluate(tenantId, viewer, dash.widgets, bundleOptions(body));
     }
 
     /**
@@ -509,7 +540,7 @@ export class DashboardsService {
         const topN = Math.max(1, Math.min(200, Math.floor(Number(cfg.top_n)) || DEFAULT_TOP_N));
         const top = bucketed ? { limit: MAX_GROUPS, byValue: false } : { limit: topN, byValue: true };
 
-        // v0.1.291 — "Desglosar por" un segundo campo: barras apiladas (o lado
+        // v0.1.292 — "Desglosar por" un segundo campo: barras apiladas (o lado
         // a lado) y áreas/líneas por serie. El motor agrupa en dos niveles, con
         // las N series principales y el resto en "Otros".
         const subId = numOrUndef(cfg.sub_group_by_field_id);
@@ -564,7 +595,7 @@ export class DashboardsService {
     }
 
     /**
-     * v0.1.291 — Tabla dinámica: filas = un campo, columnas = otro, la
+     * v0.1.292 — Tabla dinámica: filas = un campo, columnas = otro, la
      * métrica en cada cruce. Una sola consulta del motor en dos niveles con
      * totales: el de cada fila y cada columna sale calculado sobre SUS
      * registros (bien también para promedio, mín/máx o únicos), igual que el
@@ -889,7 +920,7 @@ async function clearDefault(tx: Parameters<Parameters<TenantDb['withTenant']>[1]
 }
 
 /**
- * v0.1.291 — Bucket temporal del SEGUNDO campo (desglose / columnas de una
+ * v0.1.292 — Bucket temporal del SEGUNDO campo (desglose / columnas de una
  * tabla dinámica): sólo si es una fecha; sin elegir, por mes.
  */
 function subBucketFor(cfg: Record<string, unknown>, field: Field | undefined): TimeBucket | undefined {

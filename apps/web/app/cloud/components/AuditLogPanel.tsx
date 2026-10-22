@@ -43,6 +43,13 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'workspace.portal_password_on': { text: 'permitió entrar al portal con contraseña', danger: true },
     'workspace.portal_password_off': { text: 'quitó la entrada al portal con contraseña' },
     'list.public_disable': { text: 'despublicó la lista' },
+    // v0.1.292 (ADR-S50) — tableros hacia afuera.
+    'dashboard.public_enable': { text: 'publicó con un enlace público el tablero', danger: true },
+    'dashboard.public_disable': { text: 'dejó de publicar el tablero' },
+    'dashboard.public_regenerate': { text: 'cambió la dirección pública del tablero' },
+    'dashboard.subscription_create': { text: 'programó un envío por correo del tablero', danger: true },
+    'dashboard.subscription_update': { text: 'cambió un envío por correo del tablero' },
+    'dashboard.subscription_delete': { text: 'eliminó un envío por correo del tablero' },
     'field.delete': { text: 'borró el campo', danger: true },
     'field.type_change': { text: 'cambió el tipo del campo', danger: true },
     'member.add': { text: 'agregó al workspace a' },

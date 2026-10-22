@@ -23,6 +23,7 @@ export * from './portal-links';
 export * from './portal-credentials';
 export * from './app-releases';
 export * from './dashboards';
+export * from './dashboard-sharing';
 export * from './public-lists';
 export * from './plans';
 export * from './impersonation-log';

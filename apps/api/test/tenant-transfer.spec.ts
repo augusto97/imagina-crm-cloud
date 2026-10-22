@@ -18,6 +18,7 @@ import {
     dashboards,
     documentNumbers,
     documentTemplates,
+    dashboardSubscriptions,
     emailUsage,
     fields,
     listGroups,
@@ -25,6 +26,7 @@ import {
     memberships,
     mentions,
     portalLinks,
+    publicDashboards,
     publicLists,
     records,
     recurrences,
@@ -75,6 +77,7 @@ describe('Migración de empresa (v0.1.197)', () => {
     let viewId: number;
     let hookToken: string;
     let publicToken: string;
+    let dashboardAId: number;
 
     // Destino
     let tenantB: number;
@@ -355,15 +358,41 @@ describe('Migración de empresa (v0.1.197)', () => {
             .insert(automationHooks)
             .values({ token: hookToken, tenantId: tenantA, automationId: hookAuto!.id });
 
-        await pg.db.insert(dashboards).values({
+        const [comercial] = await pg.db
+            .insert(dashboards)
+            .values({
+                tenantId: tenantA,
+                name: 'Comercial',
+                createdBy: anaId,
+                widgets: [
+                    { type: 'kpi', list_id: facturasId, metric_field_id: estadoFieldId },
+                    // Widget de contenido: `list_id: 0` significa "sin lista".
+                    { type: 'heading', list_id: 0, config: { text: 'Resumen' } },
+                ],
+                // v0.1.292 — los filtros del tablero apuntan a campos por id.
+                settings: { filters: [{ list_id: facturasId, field_id: estadoFieldId }] },
+            })
+            .returning();
+        dashboardAId = comercial!.id;
+        // v0.1.292 — un enlace público y un envío programado del tablero.
+        await pg.db.insert(publicDashboards).values({
+            token: 'tablero-publico-del-origen',
             tenantId: tenantA,
-            name: 'Comercial',
-            createdBy: anaId,
-            widgets: [
-                { type: 'kpi', list_id: facturasId, metric_field_id: estadoFieldId },
-                // Widget de contenido: `list_id: 0` significa "sin lista".
-                { type: 'heading', list_id: 0, config: { text: 'Resumen' } },
-            ],
+            dashboardId: dashboardAId,
+            publishedBy: anaId,
+            allowedDomains: ['ejemplo.com'],
+            allowPeriod: true,
+        });
+        await pg.db.insert(dashboardSubscriptions).values({
+            tenantId: tenantA,
+            dashboardId: dashboardAId,
+            ownerId: anaId,
+            enabled: true,
+            frequency: 'weekly',
+            weekdays: [1, 4],
+            recipientUserIds: [anaId, carlosId],
+            recipientEmails: ['socio@externo.test'],
+            attachPdf: true,
         });
         await pg.db.insert(recurrences).values({
             tenantId: tenantA,
@@ -602,6 +631,20 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(widgets[0]!.metric_field_id).toBe(newEstado.id);
         // `list_id: 0` del widget de contenido se conserva.
         expect(widgets[1]!.list_id).toBe(0);
+        // v0.1.292 — los filtros del tablero apuntan a lo NUEVO.
+        expect(newDashboards[0]!.settings).toEqual({ filters: [{ list_id: newFacturas.id, field_id: newEstado.id }] });
+        expect(newDashboards[0]!.id).not.toBe(dashboardAId);
+        // El enlace público estrena token; quien publicó sigue siendo Ana.
+        const newPublicDash = await pg.db.select().from(publicDashboards).where(eq(publicDashboards.tenantId, tenantB));
+        expect(newPublicDash).toHaveLength(1);
+        expect(newPublicDash[0]!.token).not.toBe('tablero-publico-del-origen');
+        expect(newPublicDash[0]).toMatchObject({ dashboardId: newDashboards[0]!.id, publishedBy: anaId, allowedDomains: ['ejemplo.com'], allowPeriod: true });
+        // El envío programado llega PAUSADO, con las personas re-apuntadas.
+        const newSubs = await pg.db.select().from(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, tenantB));
+        expect(newSubs).toHaveLength(1);
+        expect(newSubs[0]).toMatchObject({ dashboardId: newDashboards[0]!.id, ownerId: anaId, enabled: false, weekdays: [1, 4], attachPdf: true });
+        expect(newSubs[0]!.recipientUserIds).toEqual([anaId, newMentions[0]!.mentionedUserId]);
+        expect(newSubs[0]!.recipientEmails).toEqual(['socio@externo.test']);
 
         const newRec = await pg.db.select().from(recurrences).where(eq(recurrences.tenantId, tenantB));
         expect(newRec[0]!.recordId).toBe(newCliente.id);

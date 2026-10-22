@@ -105,7 +105,15 @@ export type AuditAction =
     | 'document_template.update'
     | 'document_template.delete'
     // v0.1.290 — «Anular y emitir de nuevo» un documento emitido.
-    | 'document.reissue';
+    | 'document.reissue'
+    // v0.1.292 (ADR-S50) — un tablero hacia afuera: enlace público sin sesión
+    // y envíos programados por correo (también a direcciones externas).
+    | 'dashboard.public_enable'
+    | 'dashboard.public_disable'
+    | 'dashboard.public_regenerate'
+    | 'dashboard.subscription_create'
+    | 'dashboard.subscription_update'
+    | 'dashboard.subscription_delete';
 
 export interface AuditEntryDto {
     id: number;

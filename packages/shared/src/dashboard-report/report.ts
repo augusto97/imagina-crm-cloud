@@ -4,7 +4,7 @@ import { AGGREGATE_OTHERS_KEY } from '../schemas/aggregate';
 import type { TenantFormat } from '../schemas/tenant';
 
 /**
- * v0.1.291 — "Reporte" de un widget de tablero: sus datos ya listos para
+ * v0.1.292 — "Reporte" de un widget de tablero: sus datos ya listos para
  * mostrarse FUERA de la app — la imagen PNG que se descarga, el CSV, el
  * correo programado y el PDF adjunto. Es el MISMO modelo para las cuatro
  * salidas (y en el navegador y en el servidor): etiquetas de opciones,
@@ -422,11 +422,6 @@ const num = (v: unknown): number => {
     return 0;
 };
 
-function idOf(v: unknown): number | undefined {
-    const n = Number(v);
-    return Number.isInteger(n) && n > 0 ? n : undefined;
-}
-
 /**
  * El reporte de UN widget a partir de lo que devolvió el bundle del tablero.
  * `null` para los bloques de contenido o un widget sin datos legibles.
@@ -632,6 +627,48 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
         total,
         totalText: text(total),
     };
+}
+
+/**
+ * Ids de las personas que aparecen en los datos de un widget (para resolver
+ * sus nombres antes de mostrarlos fuera de la app): grupos y series por un
+ * campo persona, y las celdas de las columnas persona de una tabla.
+ */
+export function reportUserIds(widget: Pick<ReportWidget, 'type' | 'config'>, data: unknown, field: (id: unknown) => Pick<ReportField, 'type'> | undefined): number[] {
+    if (typeof data !== 'object' || data === null) return [];
+    const ids = new Set<number>();
+    const add = (v: unknown): void => {
+        const n = Number(v);
+        if (Number.isInteger(n) && n > 0) ids.add(n);
+    };
+    const isUser = (id: unknown): boolean => field(id)?.type === 'user';
+    const cfg = widget.config ?? {};
+    const d = data as Record<string, unknown>;
+    const groupIsUser = isUser(cfg.group_by_field_id);
+    const subIsUser = isUser(cfg.sub_group_by_field_id);
+    if (Array.isArray(d.data)) {
+        for (const row of d.data as Array<{ label?: unknown; segments?: Array<{ series?: unknown }> }>) {
+            if (groupIsUser) add(row.label);
+            if (subIsUser) for (const s of row.segments ?? []) add(s.series);
+        }
+    }
+    if (Array.isArray(d.series) && subIsUser) for (const s of d.series as Array<{ key?: unknown }>) add(s.key);
+    const pivot = d.pivot as { rows?: Array<{ key?: unknown }>; cols?: Array<{ key?: unknown }> } | undefined;
+    if (pivot) {
+        if (groupIsUser) for (const r of pivot.rows ?? []) add(r.key);
+        if (subIsUser) for (const c of pivot.cols ?? []) add(c.key);
+    }
+    if (widget.type === 'table' && Array.isArray(d.columns) && Array.isArray(d.rows)) {
+        const cols = (d.columns as Array<{ slug: string; type: string }>).filter((c) => c.type === 'user');
+        for (const row of d.rows as Array<{ fields?: Record<string, unknown> }>) {
+            for (const c of cols) {
+                const v = row.fields?.[c.slug];
+                if (Array.isArray(v)) v.forEach(add);
+                else add(v);
+            }
+        }
+    }
+    return [...ids];
 }
 
 function defaultTitle(type: string): string {

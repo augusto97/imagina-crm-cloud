@@ -23,6 +23,8 @@ export const INCIDENT_SOURCES = [
     'form',
     'recurrence',
     'collections',
+    // v0.1.292 (ADR-S50) — el envío programado de un tablero.
+    'dashboard',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -36,6 +38,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     form: 'Formulario',
     recurrence: 'Recurrencia',
     collections: 'Cobros',
+    dashboard: 'Tablero',
 };
 
 export interface IncidentDto {
@@ -99,6 +102,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return list ? `${list}/edit?s=formularios` : '/lists';
         case 'recurrence':
             return list ? `${list}/records` : '/lists';
+        case 'dashboard':
+            return i.source_id ? `/dashboards/${i.source_id}?share=email` : '/dashboards';
         default:
             return '/settings?s=problemas';
     }

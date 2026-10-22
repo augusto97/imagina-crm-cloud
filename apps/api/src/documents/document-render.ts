@@ -81,10 +81,41 @@ function fontsDir(): string | null {
     return null;
 }
 
+interface PdfKitFontHost {
+    font(src: unknown, ...rest: unknown[]): unknown;
+    registerFont(name: string, src: Buffer): unknown;
+    virtualfs?: { existsSync(name: string): boolean; readFileSync(name: string): Buffer } | null;
+    _registeredFonts?: Record<string, unknown>;
+}
+
+/**
+ * v0.1.292 — pdfmake 0.3 dibuja el texto de un `svg` con
+ * `doc.font(<nombre del archivo de la fuente>)` y PDFKit busca ese nombre en el
+ * disco REAL, no en el sistema virtual donde viven las fuentes: la letra no se
+ * encontraba (el texto salía con la fuente anterior, sin negrita, y un aviso
+ * por cada texto). Antes de abrirla, ese nombre se REGISTRA en el documento
+ * con los bytes del sistema VIRTUAL —sólo los nombres que existen ahí: el
+ * disco sigue sin acceso—; así PDFKit la incrusta una sola vez por documento.
+ */
+function patchSvgFonts(req: NodeRequire): void {
+    const mod = req('pdfmake/js/PDFDocument') as { default?: { prototype: PdfKitFontHost } };
+    const proto = mod.default?.prototype;
+    if (!proto || typeof proto.font !== 'function' || typeof proto.registerFont !== 'function') return;
+    const original = proto.font;
+    proto.font = function patchedFont(this: PdfKitFontHost, src: unknown, ...rest: unknown[]): unknown {
+        const vfs = this.virtualfs;
+        if (typeof src === 'string' && rest.length === 0 && !this._registeredFonts?.[src] && vfs?.existsSync(src)) {
+            this.registerFont(src, vfs.readFileSync(src));
+        }
+        return original.call(this, src, ...rest);
+    };
+}
+
 function pdfmake(): PdfMakeLike {
     if (pdfmakeInstance) return pdfmakeInstance;
     const req = createRequire(__filename);
     const pm = req('pdfmake') as PdfMakeLike;
+    patchSvgFonts(req);
     const fontDir = path.join(path.dirname(req.resolve('pdfmake/package.json')), 'fonts', 'Roboto');
     for (const f of ['Regular', 'Medium', 'Italic', 'MediumItalic']) {
         pm.virtualfs.writeFileSync(`Roboto-${f}.ttf`, readFileSync(path.join(fontDir, `Roboto-${f}.ttf`)));
@@ -113,6 +144,15 @@ function pdfmake(): PdfMakeLike {
     pm.setLocalAccessPolicy(() => false);
     pdfmakeInstance = pm;
     return pm;
+}
+
+/**
+ * v0.1.292 — Un PDF a partir de una definición de pdfmake ya armada (el
+ * resumen de un tablero del envío programado). Usa el MISMO pdfmake —fuentes
+ * registradas y sin acceso a red ni a disco— que los documentos.
+ */
+export function renderPdfDefinition(def: Record<string, unknown>): Promise<Buffer> {
+    return pdfmake().createPdf(def).getBuffer();
 }
 
 /** La familia del PDF para una tipografía del diseño (Roboto si no está). */

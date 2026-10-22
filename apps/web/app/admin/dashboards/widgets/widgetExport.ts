@@ -2,15 +2,14 @@ import {
     OPTION_COLOR_HEX,
     REPORT_LIGHT_THEME,
     REPORT_PALETTE,
+    reportUserIds,
     type ReportContext,
     type ReportField,
     type ReportSvgTheme,
 } from '@imagina-base/shared';
 
-import type { WidgetSpec } from '@/types/dashboard';
-
 /**
- * v0.1.291 — Piezas del navegador para exportar un widget (la imagen PNG y el
+ * v0.1.292 — Piezas del navegador para exportar un widget (la imagen PNG y el
  * CSV). El dibujo y los datos salen del modelo compartido (`buildWidgetReport`
  * + `widgetReportSvg` / `widgetReportCsv`): lo mismo que usa el correo
  * programado en el servidor.
@@ -89,47 +88,8 @@ export function paletteFrom(el: Element | null): string[] {
     return out.length > 0 ? out : [...REPORT_PALETTE];
 }
 
-/**
- * Ids de las personas que aparecen en los datos de un widget (para resolver
- * sus nombres antes de exportar): grupos y series por un campo persona, y las
- * celdas de las columnas persona de una tabla.
- */
-export function userIdsInData(widget: Pick<WidgetSpec, 'type' | 'config'>, data: unknown, field: (id: unknown) => ReportField | undefined): number[] {
-    if (typeof data !== 'object' || data === null) return [];
-    const ids = new Set<number>();
-    const add = (v: unknown): void => {
-        const n = Number(v);
-        if (Number.isInteger(n) && n > 0) ids.add(n);
-    };
-    const isUser = (id: unknown): boolean => field(id)?.type === 'user';
-    const cfg = widget.config ?? {};
-    const d = data as Record<string, unknown>;
-    const groupIsUser = isUser(cfg.group_by_field_id);
-    const subIsUser = isUser(cfg.sub_group_by_field_id);
-    if (Array.isArray(d.data)) {
-        for (const row of d.data as Array<{ label?: unknown; segments?: Array<{ series?: unknown }> }>) {
-            if (groupIsUser) add(row.label);
-            if (subIsUser) for (const s of row.segments ?? []) add(s.series);
-        }
-    }
-    if (Array.isArray(d.series) && subIsUser) for (const s of d.series as Array<{ key?: unknown }>) add(s.key);
-    const pivot = d.pivot as { rows?: Array<{ key?: unknown }>; cols?: Array<{ key?: unknown }> } | undefined;
-    if (pivot) {
-        if (groupIsUser) for (const r of pivot.rows ?? []) add(r.key);
-        if (subIsUser) for (const c of pivot.cols ?? []) add(c.key);
-    }
-    if (widget.type === 'table' && Array.isArray(d.columns) && Array.isArray(d.rows)) {
-        const cols = (d.columns as Array<{ slug: string; type: string }>).filter((c) => c.type === 'user');
-        for (const row of d.rows as Array<{ fields?: Record<string, unknown> }>) {
-            for (const c of cols) {
-                const v = row.fields?.[c.slug];
-                if (Array.isArray(v)) v.forEach(add);
-                else add(v);
-            }
-        }
-    }
-    return [...ids];
-}
+/** Ids de las personas en los datos de un widget (misma regla que el correo y la página pública). */
+export const userIdsInData = reportUserIds;
 
 /** Contexto del reporte a partir de los campos de la lista y los nombres resueltos. */
 export function reportContext(opts: {

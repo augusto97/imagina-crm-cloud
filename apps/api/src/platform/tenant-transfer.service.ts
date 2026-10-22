@@ -50,6 +50,8 @@ import {
     connectionSyncs,
     sqlSyncs,
     dashboards,
+    dashboardSubscriptions,
+    publicDashboards,
     emailUsage,
     fields,
     listGroups,
@@ -286,6 +288,14 @@ export class TenantTransferService {
             // v0.1.288 — historial de versiones (fotos sin secretos).
             await dump('automation_versions', await this.byTenant(automationVersions, tenantId));
             await dump('dashboards', await this.byTenant(dashboards, tenantId));
+            // v0.1.292 — envíos programados y enlaces públicos de los tableros.
+            // El TOKEN del enlace no viaja (es la credencial de ESTE servidor):
+            // el destino emite uno nuevo, igual que con las listas públicas.
+            await dump('dashboard_subscriptions', await this.byTenant(dashboardSubscriptions, tenantId));
+            await dump(
+                'public_dashboards',
+                (await this.byTenant(publicDashboards, tenantId)).map(({ token: _token, ...rest }) => rest),
+            );
             await dump('recurrences', await this.byTenant(recurrences, tenantId));
             await dump('portal_links', await this.byTenant(portalLinks, tenantId));
             await dump('public_lists', await this.byTenant(publicLists, tenantId));
@@ -1047,19 +1057,51 @@ export class TenantTransferService {
             };
         });
 
-        counts.dashboards = await this.insertPlain(tx, rows('dashboards'), dashboards, (d) => ({
+        // v0.1.292 — con mapa (los envíos programados y los enlaces públicos
+        // apuntan al tablero). `settings` también se re-mapea: sus filtros de
+        // tablero (`filters: [{list_id, field_id}]`) apuntan a campos por id —
+        // antes viajaban con los ids del origen.
+        const dashboardMap = new Map<number, number>();
+        counts.dashboards = await this.insertMapped(tx, await this.readAll(rows('dashboards')), dashboards, dashboardMap, (d) => ({
             tenantId,
             userId: mapId(maps.user, d.userId),
             name: String(d.name),
             description: (d.description as string | null) ?? null,
             widgets: remapJson(d.widgets ?? [], maps),
-            settings: (d.settings as Row | null) ?? {},
+            settings: remapJson((d.settings as Row | null) ?? {}, maps) as Row,
             isDefault: Boolean(d.isDefault),
             position: Number(d.position ?? 0),
             visibility: String(d.visibility ?? 'workspace'),
             allowedRoles: d.allowedRoles ?? [],
             createdBy: mapId(maps.user, d.createdBy) ?? fallbackUser ?? 0,
         }));
+
+        // Los envíos programados llegan PAUSADOS: si no, el servidor de origen y
+        // éste mandarían el mismo resumen mientras dura la mudanza.
+        counts.dashboard_subscriptions = await this.insertPlain(tx, rows('dashboard_subscriptions'), dashboardSubscriptions, (s) => {
+            const dashboardId = mapId(dashboardMap, s.dashboardId);
+            const ownerId = mapId(maps.user, s.ownerId);
+            if (dashboardId === null || ownerId === null) return null;
+            return {
+                tenantId,
+                dashboardId,
+                ownerId,
+                enabled: false,
+                frequency: String(s.frequency ?? 'weekly'),
+                weekdays: Array.isArray(s.weekdays) ? s.weekdays : [1],
+                monthDay: Number(s.monthDay ?? 1),
+                hour: Number(s.hour ?? 8),
+                minute: Number(s.minute ?? 0),
+                timeZone: (s.timeZone as string | null) ?? null,
+                recipientUserIds: (Array.isArray(s.recipientUserIds) ? s.recipientUserIds : [])
+                    .map((id) => mapId(maps.user, id))
+                    .filter((id): id is number => id !== null),
+                recipientEmails: Array.isArray(s.recipientEmails) ? s.recipientEmails : [],
+                subject: String(s.subject ?? ''),
+                message: String(s.message ?? ''),
+                attachPdf: Boolean(s.attachPdf),
+            };
+        });
 
         counts.recurrences = await this.insertPlain(tx, rows('recurrences'), recurrences, (r) => {
             const listId = mapId(maps.list, r.listId);
@@ -1128,6 +1170,27 @@ export class TenantTransferService {
             await tx.insert(publicLists).values({ token, tenantId, listId });
         }
         counts.public_lists = publicTokens.size;
+
+        // v0.1.292 — enlaces públicos de tableros: token NUEVO. Quien publicó
+        // sigue siendo quien publicó (su acceso decide qué se ve); si esa
+        // persona no viajó, el enlace no se recrea.
+        let publicDashboardsCount = 0;
+        for (const p of await this.readAll(rows('public_dashboards'))) {
+            const dashboardId = mapId(dashboardMap, p.dashboardId);
+            const publishedBy = mapId(maps.user, p.publishedBy);
+            if (dashboardId === null || publishedBy === null) continue;
+            await tx.insert(publicDashboards).values({
+                token: randomBytes(24).toString('base64url'),
+                tenantId,
+                dashboardId,
+                publishedBy,
+                expiresAt: (p.expiresAt as string | null) ?? null,
+                allowedDomains: Array.isArray(p.allowedDomains) ? (p.allowedDomains as string[]) : [],
+                allowPeriod: Boolean(p.allowPeriod),
+            });
+            publicDashboardsCount++;
+        }
+        counts.public_dashboards = publicDashboardsCount;
 
         // 10. `lists.settings` al final: recién ahora existen todos los ids que
         //     referencia (campos, vistas, plantillas, otras listas, personas).
@@ -1287,6 +1350,14 @@ export class TenantTransferService {
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
+            );
+        }
+        if (publicDashboardsCount > 0) {
+            warnings.push(`${publicDashboardsCount} tablero(s) público(s) tienen un enlace NUEVO: hay que volver a repartirlo (y a insertarlo en los sitios que lo usan).`);
+        }
+        if ((counts.dashboard_subscriptions ?? 0) > 0) {
+            warnings.push(
+                `${counts.dashboard_subscriptions} envío(s) programado(s) de tableros llegaron PAUSADOS (para no duplicar correos con el servidor anterior): actívalos en cada tablero → Compartir → Envío por correo.`,
             );
         }
         if (formRows.length > 0) {

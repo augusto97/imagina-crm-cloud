@@ -107,6 +107,13 @@ const envSchema = z.object({
     BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
     /** Directorio de archivos subidos (driver local de FileStorage — ADR-S16). */
     UPLOADS_DIR: z.string().default('./data/uploads'),
+    /**
+     * v0.1.292 — Dónde está el build del front (`dist-cloud`): el API sirve
+     * desde ahí la página pública de un tablero (`cloud-public/index.html`).
+     * Vacío = se busca solo (`<release>/web` en producción, `apps/web/dist-cloud`
+     * en el repo). En desarrollo, sin esto, la página carga los módulos de vite.
+     */
+    WEB_DIST_DIR: z.string().default(''),
     /** Tamaño máximo por archivo subido (multipart). */
     MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
     /**
