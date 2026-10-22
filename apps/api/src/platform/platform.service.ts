@@ -235,12 +235,16 @@ export class PlatformService {
         if (input.plan !== undefined && !(await this.plans.exists(input.plan))) {
             throw new BadRequestException({ code: 'unknown_plan', message: `El plan '${input.plan}' no existe`, data: { status: 400, errors: { plan: 'No existe' } } });
         }
-        const { tenantId } = await this.auth.adminCreateTenant({
-            workspace_name: input.workspace_name,
-            admin_email: input.admin_email,
-            admin_name: input.admin_name,
-            plan: input.plan ?? 'trial',
-        });
+        const { tenantId } = await this.auth.adminCreateTenant(
+            {
+                workspace_name: input.workspace_name,
+                admin_email: input.admin_email,
+                admin_name: input.admin_name,
+                plan: input.plan ?? 'trial',
+            },
+            // v0.1.293 — la consola puede crearle una empresa a un superadmin.
+            { allowReserved: true },
+        );
         return this.getTenant(tenantId);
     }
 
@@ -430,7 +434,13 @@ export class PlatformService {
 
     async addTenantMember(tenantId: number, input: AddMemberInput, operatorId: number): Promise<AddMemberResult> {
         await this.getTenant(tenantId); // 404 si no existe.
-        const member = await this.requireMembers().add(tenantId, input, { invitedById: null, enforcePlan: false });
+        // v0.1.293 — la consola puede sumar a un superadmin (`allowReserved`);
+        // desde Ajustes → Miembros de una empresa, no.
+        const member = await this.requireMembers().add(tenantId, input, {
+            invitedById: null,
+            enforcePlan: false,
+            allowReserved: true,
+        });
         await this.logMember(tenantId, operatorId, 'member.add', member, { role: member.role, invited: member.invited });
         return member;
     }

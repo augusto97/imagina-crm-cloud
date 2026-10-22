@@ -37,15 +37,19 @@ export class MembersService {
      * Suma a alguien por email. v0.1.240: si no tiene cuenta, se crea por
      * INVITACIÓN (correo para definir su contraseña) en vez de pedirle que se
      * registre primero. `enforcePlan` = el límite de usuarios del plan; la
-     * consola de plataforma lo saltea (el operador decide).
+     * consola de plataforma lo saltea (el operador decide). `allowReserved`
+     * deja sumar a un superadmin: SÓLO la consola de plataforma (v0.1.293).
      */
     async add(
         tenantId: number,
         input: AddMemberInput,
-        opts: { invitedById?: number | null; enforcePlan?: boolean } = {},
+        opts: { invitedById?: number | null; enforcePlan?: boolean; allowReserved?: boolean } = {},
     ): Promise<AddMemberResult> {
         if (opts.enforcePlan !== false) await this.billing.assertCanAddMember(tenantId);
-        const r = await this.auth.addToTenant(tenantId, input, { invitedById: opts.invitedById ?? null });
+        const r = await this.auth.addToTenant(tenantId, input, {
+            invitedById: opts.invitedById ?? null,
+            allowReserved: opts.allowReserved === true,
+        });
         return {
             user_id: r.user.id,
             name: r.user.name,

@@ -9,6 +9,7 @@ import { useBranding } from '@/hooks/useBranding';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 import { Button } from '@/components/ui/button';
+import { SuperadminWorkspaceSetup } from '@/cloud/components/SuperadminWorkspaceSetup';
 
 /**
  * v0.1.256 — La app (shell, listas, registros, realtime) se carga DESPUÉS del
@@ -44,23 +45,41 @@ function LoadingScreen(): JSX.Element {
  * empresa, o sólo tiene acceso de PORTAL — que ya no cuenta como workspace).
  * Antes quedaba una ruedita girando para siempre.
  */
-function NoWorkspaceScreen({ email }: { email: string }): JSX.Element {
+function NoWorkspaceScreen({
+    email,
+    name,
+    superadmin,
+    needsReauth,
+    onJoined,
+}: {
+    email: string;
+    name: string;
+    superadmin: boolean;
+    needsReauth: boolean;
+    onJoined: () => void;
+}): JSX.Element {
     const [busy, setBusy] = useState(false);
     return (
         <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-canvas imcrm-p-4">
-            <div className="imcrm-w-full imcrm-max-w-sm imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6 imcrm-text-sm imcrm-shadow-sm">
+            <div
+                className={`imcrm-w-full ${superadmin ? 'imcrm-max-w-md' : 'imcrm-max-w-sm'} imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6 imcrm-text-sm imcrm-shadow-sm`}
+            >
                 <h1 className="imcrm-text-base imcrm-font-semibold">Tu cuenta no tiene ninguna empresa</h1>
                 <p className="imcrm-mt-2 imcrm-text-muted-foreground">
                     Entraste como <strong className="imcrm-text-foreground">{email}</strong>, pero esta cuenta no es
-                    miembro del equipo de ninguna empresa. Pídele a un administrador que te invite.
+                    miembro del equipo de ninguna empresa.{superadmin ? '' : ' Pídele a un administrador que te invite.'}
                 </p>
-                <p className="imcrm-mt-2 imcrm-text-muted-foreground">
-                    Si eres cliente de una empresa, entra por su{' '}
-                    <a className="imcrm-text-primary hover:imcrm-underline" href="/portal">
-                        portal de clientes
-                    </a>
-                    .
-                </p>
+                {superadmin ? (
+                    <SuperadminWorkspaceSetup email={email} name={name} needsReauth={needsReauth} onDone={onJoined} />
+                ) : (
+                    <p className="imcrm-mt-2 imcrm-text-muted-foreground">
+                        Si eres cliente de una empresa, entra por su{' '}
+                        <a className="imcrm-text-primary hover:imcrm-underline" href="/portal">
+                            portal de clientes
+                        </a>
+                        .
+                    </p>
+                )}
                 <Button
                     className="imcrm-mt-4 imcrm-w-full"
                     variant="outline"
@@ -82,6 +101,8 @@ export function AdminCloudApp(): JSX.Element {
     const ready = useSession((s) => s.ready);
     const activeTenantId = useSession((s) => s.activeTenantId);
     const membershipCount = useSession((s) => s.memberships.length);
+    const isSuperadmin = useSession((s) => s.isSuperadmin);
+    const platformReauth = useSession((s) => s.platformReauth);
     const setSession = useSession((s) => s.setSession);
     const markReady = useSession((s) => s.markReady);
     const [booted, setBooted] = useState(false);
@@ -115,7 +136,19 @@ export function AdminCloudApp(): JSX.Element {
 
     if (!ready) return <LoadingScreen />;
     if (!user) return <LoginPage />;
-    if (membershipCount === 0) return <NoWorkspaceScreen email={user.email} />;
+    if (membershipCount === 0) {
+        return (
+            <NoWorkspaceScreen
+                email={user.email}
+                name={user.name}
+                // Un superadmin con sesión vieja (sin contraseña) llega con
+                // `is_superadmin` en false y `platform_reauth` en true.
+                superadmin={isSuperadmin || platformReauth}
+                needsReauth={platformReauth}
+                onJoined={() => void me.refetch()}
+            />
+        );
+    }
     if (!booted) return <LoadingScreen />;
 
     // v0.1.286 — `key` por empresa: al cambiar de workspace se remonta TODO el
