@@ -360,6 +360,21 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de click derecho abierto, y «Editar con un click» configurable por vista), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-22 — **Pedido del usuario: estudio de funcionalidades frente a la
+  competencia** (premium y open source: Airtable, ClickUp, Notion, monday,
+  SmartSuite, Smartsheet, Fibery, Attio, Kommo, NocoDB, Baserow, Teable,
+  Grist, NocoBase, Twenty, Odoo). Entregado en
+  `docs/estudio-funcionalidades-2026-10.md`: ~90 opciones con código (A1…J3),
+  valor/esfuerzo, paquetes por tipo de negocio y seis oleadas propuestas.
+  **Esperando que el usuario elija.** Lo más destacado: fórmulas de verdad
+  (A1), papelera (A2), autonumérico + campos de sistema + valores por defecto
+  (A3/A4/A6), botón (A5), Gantt + dependencias (B1/A8), calendario completo
+  (B4), kanban de ventas (B5), equipos/roles/invitados (C1-C3), aprobaciones
+  (C5), plantillas de registro (C6), API pública + n8n/Make (G1/G2), Excel
+  (G6), DIAN vía proveedor (G8), firma electrónica (D6), agenda de citas (D5),
+  WhatsApp oficial sin guardar el hilo (D3), PWA + push (H1), consentimiento
+  Ley 1581 (I10), inglés/portugués (I1) y modo agencia (I3). No recomendados:
+  chat interno, pizarras, correo masivo (ADR-S18), apps generadas con código.
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
   la auditoría II, y dejó a mi criterio los pendientes de PDF y del cliente de
   Google. Plan: seis entregas trabajadas en paralelo en copias aisladas y
