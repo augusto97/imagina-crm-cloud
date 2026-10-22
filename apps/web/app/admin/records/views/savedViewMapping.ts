@@ -74,6 +74,9 @@ export function stateToViewConfig(state: RecordsState): SavedViewConfig {
     if (state.fontSize !== null) {
         config.font_size = state.fontSize;
     }
+    if (state.singleClickEdit) {
+        config.single_click_edit = true;
+    }
     // v0.1.287 — el segundo nivel sólo tiene sentido con el primero.
     if (state.groupByFieldId !== null && state.subGroupByFieldId !== null && state.subGroupByFieldId !== state.groupByFieldId) {
         config.sub_group_by_field_id = state.subGroupByFieldId;
@@ -146,6 +149,7 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
             config.font_size === 'sm' || config.font_size === 'md' || config.font_size === 'lg'
                 ? config.font_size
                 : null,
+        singleClickEdit: config.single_click_edit === true,
         subGroupByFieldId:
             typeof config.sub_group_by_field_id === 'number' && config.group_by_field_id
                 ? config.sub_group_by_field_id

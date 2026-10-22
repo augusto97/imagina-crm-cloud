@@ -113,6 +113,12 @@ export interface GridControllerArgs {
     recordTitle?: (record: RecordEntity) => string;
     /** v0.1.294 — por qué aquí no se crean filas al pegar (la vista agrupada). */
     noCreateReason?: string;
+    /**
+     * v0.1.295 — «Editar con un click» (ajuste de la vista): el primer click
+     * abre el editor de la celda en vez de sólo elegirla, y un enlace se abre
+     * con un click (el modelo de antes de v0.1.294).
+     */
+    singleClickEdit?: boolean;
 }
 
 /** La marca extra de una celda: corte (bordes punteados) o error del último pegado. */
@@ -233,6 +239,10 @@ export function useGridController(args: GridControllerArgs): GridController {
 
     const [range, setRange] = useState<GridRange | null>(null);
     const [focused, setFocused] = useState(false);
+    // v0.1.295 — con el menú de click derecho abierto el foco está en el menú
+    // (un portal), así que la tabla "pierde" el foco; la selección tiene que
+    // seguir pintada: es justo sobre lo que va a actuar el menú.
+    const [menuHold, setMenuHold] = useState(false);
     const [preview, setPreview] = useState<GridRect | null>(null);
     const [review, setReview] = useState<GridReview | null>(null);
     const [result, setResult] = useState<GridResult | null>(null);
@@ -1015,6 +1025,8 @@ export function useGridController(args: GridControllerArgs): GridController {
         // primer click la elige; el segundo (o Ctrl/⌘+click) abre el enlace.
         const link = target.closest('a[href]');
         if (link) {
+            // Con «Editar con un click» el enlace se abre con un click, como antes.
+            if (latest.current.args.singleClickEdit) return;
             if (!press.wasActive && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1025,7 +1037,7 @@ export function useGridController(args: GridControllerArgs): GridController {
         if (target.closest('input[type="checkbox"], button')) return;
         // La primera columna abre el registro (su propio onClick).
         if (pos.col === 0 && latest.current.args.onOpenRow) return;
-        if (press.wasActive) startEdit(pos, null);
+        if (press.wasActive || latest.current.args.singleClickEdit) startEdit(pos, null);
     };
 
     const onDoubleClick = (e: React.MouseEvent<HTMLDivElement>): void => {
@@ -1079,6 +1091,7 @@ export function useGridController(args: GridControllerArgs): GridController {
         const cur = latest.current.range;
         if (!cur || !rectContains(rectOf(cur), pos.row, pos.col)) setRange(SINGLE(pos));
         container.focus({ preventScroll: true });
+        setMenuHold(true);
         return true;
     };
 
@@ -1230,7 +1243,7 @@ export function useGridController(args: GridControllerArgs): GridController {
         const f = columns[col]?.field;
         return rec && f ? `${rec.id}:${f.id}` : null;
     };
-    const showSelection = focused || preview !== null || editStore.isEditing() || review !== null;
+    const showSelection = focused || menuHold || preview !== null || editStore.isEditing() || review !== null;
     const cellShadows = (row: number, col: number): string[] => {
         if (!showSelection) return [];
         // Una celda cortada lleva SÓLO el borde punteado (el sólido de la
@@ -1302,12 +1315,13 @@ export function useGridController(args: GridControllerArgs): GridController {
                 requestAnimationFrame(() => {
                     const el = document.activeElement;
                     if (!el || el === document.body) focusGrid();
+                    setMenuHold(false);
                 }),
         };
     })();
 
     const selectionInfo = useMemo<SelectionInfo | null>(() => {
-        if (!focused || !rect) return null;
+        if (!(focused || menuHold) || !rect) return null;
         const nRows = rect.bottom - rect.top + 1;
         const nCols = rect.right - rect.left + 1;
         if (nRows * nCols < 2) return null;
@@ -1330,7 +1344,7 @@ export function useGridController(args: GridControllerArgs): GridController {
             cols: nCols,
             numeric: count > 0 ? { count, sum, avg: sum / count } : null,
         };
-    }, [focused, rect?.top, rect?.bottom, rect?.left, rect?.right, rows, columns]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [focused, menuHold, rect?.top, rect?.bottom, rect?.left, rect?.right, rows, columns]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return {
         active: showSelection ? active : null,

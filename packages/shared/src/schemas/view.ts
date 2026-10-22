@@ -95,6 +95,13 @@ const viewStateCommon = {
      */
     font_size: z.enum(['sm', 'md', 'lg']).optional(),
     /**
+     * v0.1.295 — «Editar con un click»: un click en una celda abre su editor
+     * (el modelo de antes de v0.1.294). Sin valor, un click ELIGE la celda y
+     * se edita con un segundo click, doble click, Enter o escribiendo, como en
+     * una hoja de cálculo (ADR-S51).
+     */
+    single_click_edit: z.boolean().optional(),
+    /**
      * v0.1.287 — Columnas fijas a la izquierda («Fijar hasta esta columna»):
      * cuántas columnas VISIBLES, contando desde la primera, quedan clavadas
      * al scrollear en horizontal. Sin valor = sólo la primera (como siempre).

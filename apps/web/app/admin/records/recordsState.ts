@@ -95,6 +95,11 @@ export interface RecordsState {
      */
     fontSize: RowFontSize | null;
     /**
+     * v0.1.295 — «Editar con un click»: un click abre el editor de la celda
+     * en vez de elegirla (ADR-S51). `false` = el modelo de hoja de cálculo.
+     */
+    singleClickEdit: boolean;
+    /**
      * v0.1.287 — Segundo nivel de agrupación («Y luego por»): cada grupo se
      * parte en subgrupos por este campo. `null` = un solo nivel.
      */
@@ -143,6 +148,7 @@ export const INITIAL_STATE: RecordsState = {
     spreadsheet: false,
     density: null,
     fontSize: null,
+    singleClickEdit: false,
     subGroupByFieldId: null,
     frozenColumns: null,
     colorRules: [],

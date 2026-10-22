@@ -13,6 +13,7 @@ import {
     Group,
     History,
     Layers,
+    MousePointerClick,
     Paintbrush,
     Pin,
     Settings,
@@ -96,6 +97,9 @@ interface ViewSettingsSheetProps {
     onDensityChange: (next: RowDensity | null) => void;
     fontSize: RowFontSize | null;
     onFontSizeChange: (next: RowFontSize | null) => void;
+    /** v0.1.295 — un click edita la celda (en vez de elegirla). */
+    singleClickEdit?: boolean;
+    onSingleClickEditChange?: (next: boolean) => void;
     onWrapTextChange: (next: boolean) => void;
 
     canManageList: boolean;
@@ -167,6 +171,8 @@ export function ViewSettingsSheet({
     onDensityChange,
     fontSize,
     onFontSizeChange,
+    singleClickEdit = false,
+    onSingleClickEditChange,
     onWrapTextChange,
     canManageList,
     canManageAutomations,
@@ -361,6 +367,19 @@ export function ViewSettingsSheet({
                                     hint={__('Numera las filas y dibuja la cuadrícula.')}
                                     checked={spreadsheet}
                                     onChange={onSpreadsheetChange}
+                                />
+                            )}
+                            {onSingleClickEditChange && (
+                                <ToggleRow
+                                    icon={MousePointerClick}
+                                    label={__('Editar con un click')}
+                                    hint={
+                                        singleClickEdit
+                                            ? __('Un click abre el editor de la celda. Para elegir celdas y copiar, usa Mayús + clic o arrastra.')
+                                            : __('Apagado: un click elige la celda (como en Excel) y se edita con doble click, Enter o escribiendo.')
+                                    }
+                                    checked={singleClickEdit}
+                                    onChange={onSingleClickEditChange}
                                 />
                             )}
                             <ToggleRow

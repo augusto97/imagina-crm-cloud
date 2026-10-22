@@ -1205,6 +1205,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onDensityChange={(next) => setState((s) => ({ ...s, density: next }))}
                     fontSize={state.fontSize}
                     onFontSizeChange={(next) => setState((s) => ({ ...s, fontSize: next }))}
+                    singleClickEdit={state.singleClickEdit}
+                    onSingleClickEditChange={(next) => setState((s) => ({ ...s, singleClickEdit: next }))}
                     canManageList={canManageList}
                     canManageAutomations={canManageAutomations}
                     canImport={canImportRecords}
@@ -1415,6 +1417,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     wrapText={state.wrapText}
                                     density={state.density}
                                     fontSize={state.fontSize}
+                                    singleClickEdit={state.singleClickEdit}
                                     onCreateSubtask={canCreateRecords ? onGroupedCreateSubtask : undefined}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={onGroupedFooterAggregates}
@@ -1468,6 +1471,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     spreadsheet={state.spreadsheet}
                                     density={state.density}
                                     fontSize={state.fontSize}
+                                    singleClickEdit={state.singleClickEdit}
                                     rowNumberOffset={(state.page - 1) * state.perPage}
                                     onCreateSubtask={!canCreateRecords ? undefined : (record) => {
                                         setCreateDefaults(undefined);

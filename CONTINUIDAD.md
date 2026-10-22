@@ -357,7 +357,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.294** (la tabla elige antes de editar: copiar/cortar/pegar con menú contextual, revisión del pegado y «Sin repetidos» validado en el servidor), en `main`.
+versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de click derecho abierto, y «Editar con un click» configurable por vista), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -582,6 +582,15 @@ versión publicada: **v0.1.294** (la tabla elige antes de editar: copiar/cortar/
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-22 · v0.1.295** — **Selección visible con el menú + «Editar con
+  un click» por vista** (pedidos del usuario con capturas: "déjalo
+  configurable" y "al dar click derecho se pierde la selección"). El menú se
+  lleva el foco y la tabla dejaba de pintar el rango; ahora se sostiene
+  mientras el menú está abierto (rango, celda activa y barra con la suma). Y en
+  Personalizar → Mostrar, «Editar con un click» devuelve, en esa vista, el
+  click que edita de antes; apagado (default) sigue el modelo de hoja de
+  cálculo. Para elegir sin editar en ese modo: Mayús + clic, arrastrar o click
+  derecho.
 - **2026-10-22 · v0.1.294** — **La tabla como hoja de cálculo, rehecha**
   (ADR-S51; reporte del usuario: copiar y pegar "no se entiende", no había
   menú que dijera que se puede copiar o cortar, y en algunos campos daba error

@@ -126,6 +126,8 @@ interface TableViewProps {
     density?: RowDensity | null;
     /** Tamaño de letra elegido; `null` = el default de la presentación. */
     fontSize?: RowFontSize | null;
+    /** v0.1.295 — un click edita la celda en vez de elegirla. */
+    singleClickEdit?: boolean;
     /** Índice de la primera fila de la página (para numerar continuo). */
     rowNumberOffset?: number;
     /**
@@ -189,6 +191,7 @@ export function TableView({
     spreadsheet = false,
     density = null,
     fontSize = null,
+    singleClickEdit = false,
     rowNumberOffset = 0,
     frozenColumns = null,
     onFrozenColumnsChange,
@@ -526,6 +529,7 @@ export function TableView({
         scrollToIndex: windowed.scrollToIndex,
         headBottom: () => headScrollRef.current?.getBoundingClientRect().bottom ?? null,
         frozenCount: frozen.count,
+        singleClickEdit,
     });
 
     // Colores condicionales: se evalúan en el navegador con el evaluador

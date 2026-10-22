@@ -35,6 +35,8 @@ export interface SavedViewConfig {
     density?: string;
     /** Tamaño de letra de la tabla: 'sm' | 'md' | 'lg'. */
     font_size?: string;
+    /** v0.1.295 — un click en una celda la edita (sin elegirla antes). */
+    single_click_edit?: boolean;
     /**
      * Cálculo opt-in en el footer de cada columna: map
      * `{column_id: kind_slug}` (ej. `{"valor_cop": "sum"}`). Si la
