@@ -704,7 +704,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         const dash = json(await call('propose_create_dashboard', { name: 'Resumen', widgets: [{ type: 'kpi', title: 'Clientes', list: 'clientes' }] }));
         await apply(dash.proposal_id);
         const listed = json(await call('list_dashboards'));
-        expect((listed.dashboards as Array<{ name: string; widgets: Array<{ type: string; list: string }> }>).map((d) => ({ name: d.name, w: d.widgets[0] }))).toEqual([{ name: 'Resumen', w: { type: 'kpi', title: 'Clientes', list: 'clientes' } }]);
+        expect((listed.dashboards as Array<{ name: string; widgets: Array<{ type: string; list: string }> }>).map((d) => ({ name: d.name, w: d.widgets[0] }))).toEqual([{ name: 'Resumen', w: { type: 'kpi', title: 'Clientes', list: 'clientes', metric: 'count' } }]);
     });
 
     it('propose_delete_list es destructiva, describe lo que se lleva y al aplicar la lista desaparece', async () => {

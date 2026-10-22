@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import {
+    ChartColumn,
     CircleCheck,
     ClipboardList,
     CreditCard,
@@ -36,6 +37,7 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     form: ClipboardList,
     recurrence: Repeat,
     collections: CreditCard,
+    dashboard: ChartColumn,
 };
 
 /**

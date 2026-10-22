@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, BarChart3, CalendarRange, Copy, Filter, LayoutTemplate, Loader2, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ArrowLeft, BarChart3, CalendarRange, Copy, Filter, LayoutTemplate, Loader2, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings, Share2, Trash2 } from 'lucide-react';
 
+import { WidgetExportMenu } from '@/admin/dashboards/widgets/WidgetExportMenu';
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
 import { PortalPageSettingsButton } from '@/admin/lists/portal-template-editor/PortalPageSettings';
@@ -39,12 +40,8 @@ import { CAP, useCan } from '@/lib/permissions';
 import { formatDateStr } from '@/lib/tenantFormat';
 import { ApiError } from '@/lib/api';
 import {
-    blockStyleClass,
-    blockStyleCss,
     hexLuminance,
     pageStyleCss,
-    surfaceInkCss,
-    readBlockStyle,
     readPageSettings,
     type PortalPageSettings,
 } from '@/lib/blockStyle';
@@ -58,6 +55,8 @@ import { activeFilterValues, DashboardFiltersBar, readDashboardFilterDefs } from
 import { DashboardFiltersDialog } from './DashboardFiltersDialog';
 import { DashboardSettingsDialog } from './DashboardSettingsDialog';
 import { SaveDashboardTemplateDialog } from './SaveDashboardTemplateDialog';
+import { ShareDashboardDialog, type ShareTab } from './ShareDashboardDialog';
+import { WidgetCard } from './WidgetCard';
 import { WidgetFormDialog } from './WidgetFormDialog';
 
 /**
@@ -116,6 +115,18 @@ function DashboardView({ id }: { id: number }): JSX.Element {
     const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
     // v0.1.167 — "Guardar como plantilla" (galería de Nuevo dashboard).
     const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+    // v0.1.292 — Compartir hacia afuera (enlace público / envío por correo).
+    // `?share=link|email` lo abre (el aviso de un envío que falló apunta ahí).
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [shareTab, setShareTab] = useState<ShareTab | null>(null);
+    useEffect(() => {
+        const wanted = searchParams.get('share');
+        if (wanted !== 'link' && wanted !== 'email') return;
+        setShareTab(wanted);
+        const next = new URLSearchParams(searchParams);
+        next.delete('share');
+        setSearchParams(next, { replace: true });
+    }, [searchParams, setSearchParams]);
     const qc = useQueryClient();
 
     // v0.1.100 — período GLOBAL del tablero (persistido por dashboard).
@@ -520,6 +531,19 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                             {__('Presentar')}
                         </Button>
                     )}
+                    {! tvMode && canManage && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="imcrm-gap-1.5"
+                            onClick={() => setShareTab(canEdit ? 'link' : 'email')}
+                            title={__('Enlace público o envío programado por correo')}
+                            data-testid="imcrm-dashboard-share"
+                        >
+                            <Share2 className="imcrm-h-4 imcrm-w-4" />
+                            {__('Compartir')}
+                        </Button>
+                    )}
                     {! tvMode && (canEdit || canManage) && (
                         <>
                             {canEdit && <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />}
@@ -588,6 +612,17 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                 onOpenChange={setSettingsDialogOpen}
             />
             <SaveDashboardTemplateDialog dashboard={d} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
+            {shareTab !== null && canManage && (
+                <ShareDashboardDialog
+                    dashboardId={d.id}
+                    dashboardName={d.name}
+                    open
+                    onOpenChange={(open) => !open && setShareTab(null)}
+                    tab={shareTab}
+                    onTabChange={setShareTab}
+                    canPublish={canEdit}
+                />
+            )}
             {filtersDialogOpen && (
                 <DashboardFiltersDialog dashboard={d} open onOpenChange={setFiltersDialogOpen} />
             )}
@@ -609,94 +644,54 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                         editable={editing}
                         onLayoutChange={(layouts) => void handleLayoutChange(layouts)}
                     >
-                        {(widget) => {
-                            // v0.1.98 — capa de estilo por widget (config.style,
-                            // la misma del editor de plantillas): pinta el card
-                            // y re-tiñe sus tokens internos. Los bloques de
-                            // CONTENIDO sin estilo propio van SIN tarjeta.
-                            const style = readBlockStyle(widget.config);
-                            const styled = style.bg !== undefined || style.border !== undefined;
-                            const chromeless = isContentWidget(widget.type) && !styled;
-                            // v0.1.106 — el default de la capa de estilo
-                            // (fondo → padding md 16px INLINE) recortaba los
-                            // títulos con tipografía grande en cards de 1
-                            // fila: sin un pad ELEGIDO, los bloques de
-                            // contenido capan el padding VERTICAL a 6px (el
-                            // horizontal se conserva). Un pad explícito del
-                            // panel Diseño sigue mandando.
-                            const styleCss = {
-                                // Un bloque de contenido SIN estilo propio se
-                                // apoya en el lienzo: su tinta sale de ahí.
-                                ...(chromeless ? surfaceInkCss(dark) : {}),
-                                ...blockStyleCss(style, { dark }),
-                            } as React.CSSProperties;
-                            if (isContentWidget(widget.type) && style.pad === undefined && styleCss.padding !== undefined) {
-                                styleCss.paddingTop = 6;
-                                styleCss.paddingBottom = 6;
-                            }
-                            return (
-                            <article
-                                className={cn(
-                                    'imcrm-group imcrm-relative imcrm-flex imcrm-h-full imcrm-flex-col imcrm-overflow-hidden imcrm-transition-shadow imcrm-duration-200',
-                                    chromeless
-                                        ? 'imcrm-rounded-xl imcrm-px-2 imcrm-py-1'
-                                        // v0.1.105 — los bloques de CONTENIDO con estilo
-                                        // (título de sección pintado) usan menos padding
-                                        // vertical: con p-4 el texto quedaba CORTADO en
-                                        // alturas de 1 fila.
-                                        : isContentWidget(widget.type)
-                                          ? 'imcrm-rounded-xl imcrm-px-4 imcrm-py-1.5'
-                                          : 'imcrm-rounded-xl imcrm-p-4',
-                                    !chromeless && !styled
-                                        && 'imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm hover:imcrm-shadow-imcrm-md hover:imcrm-border-primary/25',
-                                    blockStyleClass(style),
-                                )}
-                                style={styleCss}
+                        {(widget) => (
+                            <WidgetCard
+                                widget={widget}
+                                dark={dark}
+                                dragWhole={editing && isContentWidget(widget.type)}
+                                overlay={
+                                    <>
+                                        <PeriodBadge widget={widget} globalPeriod={globalPeriod} />
+                                        {(editing || (!tvMode && !isContentWidget(widget.type))) && (
+                                            <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100 focus-within:imcrm-opacity-100 [@media(hover:none)]:imcrm-opacity-100">
+                                                {!tvMode && <WidgetExportMenu dashboardId={id} widget={widget} />}
+                                                {editing && (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleEditWidget(widget)}
+                                                            className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                                            aria-label={__('Editar widget')}
+                                                        >
+                                                            <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleDuplicateWidget(widget)}
+                                                            className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                                            aria-label={__('Duplicar widget')}
+                                                            title={__('Duplicar widget')}
+                                                        >
+                                                            <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleDeleteWidget(widget.id)}
+                                                            className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
+                                                            aria-label={__('Eliminar widget')}
+                                                        >
+                                                            <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+                                    </>
+                                }
                             >
-                                <PeriodBadge widget={widget} globalPeriod={globalPeriod} />
-                                {editing && (
-                                <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100">
-                                    <button
-                                        type="button"
-                                        onClick={() => handleEditWidget(widget)}
-                                        className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                                        aria-label={__('Editar widget')}
-                                    >
-                                        <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => void handleDuplicateWidget(widget)}
-                                        className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                                        aria-label={__('Duplicar widget')}
-                                        title={__('Duplicar widget')}
-                                    >
-                                        <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => void handleDeleteWidget(widget.id)}
-                                        className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
-                                        aria-label={__('Eliminar widget')}
-                                    >
-                                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                </div>
-                                )}
-                                {/* v0.1.286 — un bloque de CONTENIDO (imagen, texto
-                                    sin título) no tiene encabezado del que tomarlo:
-                                    al editar, la tarjeta ENTERA es el asa. */}
-                                <div
-                                    className={cn(
-                                        'imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col',
-                                        editing && isContentWidget(widget.type) && 'imcrm-drag-handle imcrm-cursor-grab active:imcrm-cursor-grabbing',
-                                    )}
-                                >
-                                    <WidgetRenderer dashboardId={id} widget={widget} />
-                                </div>
-                            </article>
-                            );
-                        }}
+                                <WidgetRenderer dashboardId={id} widget={widget} />
+                            </WidgetCard>
+                        )}
                     </DashboardGrid>
                 </Suspense>
             )}
@@ -736,7 +731,10 @@ function PeriodBadge({ widget, globalPeriod }: { widget: WidgetSpec; globalPerio
     return (
         <span
             className={cn(
-                'imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-transition-opacity group-hover:imcrm-opacity-0',
+                // v0.1.292 — en pantallas táctiles (sin hover) los botones del
+                // widget quedan siempre visibles arriba: el período baja a la
+                // esquina inferior para no taparlos.
+                'imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-transition-opacity group-hover:imcrm-opacity-0 [@media(hover:none)]:imcrm-top-auto [@media(hover:none)]:imcrm-bottom-2 [@media(hover:none)]:group-hover:imcrm-opacity-100',
                 overridden ? 'imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-bg-muted/60 imcrm-text-muted-foreground',
             )}
             title={overridden ? __('Período del tablero') : __('Período del widget')}

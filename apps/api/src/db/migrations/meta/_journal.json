@@ -547,6 +547,13 @@
       "when": 1784200000110,
       "tag": "0077_record_sheet_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1784200000120,
+      "tag": "0078_dashboard_sharing",
+      "breakpoints": true
     }
   ]
 }

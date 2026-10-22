@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex" />
+        <meta name="color-scheme" content="light dark" />
+        <!-- v0.1.292 (ADR-S50) — la página pública de un tablero (sólo
+             lectura, sin sesión). La sirve el API en /api/v1/public/d/<token>
+             con su propia cabecera CSP (frame-ancestors según los dominios que
+             eligió quien publicó). Nada de la plataforma aquí: el título y el
+             ícono los pinta la marca de la empresa al cargar. -->
+        <title>Tablero</title>
+        <link rel="icon" type="image/svg+xml" href="/portal-favicon.svg" />
+    </head>
+    <body>
+        <div id="root"></div>
+        <script type="module" src="/app/public-dashboard/main.tsx"></script>
+    </body>
+</html>

@@ -14,6 +14,8 @@ import {
     commentReactions,
     comments,
     connections,
+    dashboards,
+    dashboardSubscriptions,
     fields,
     impersonationLog,
     listGroups,
@@ -21,6 +23,7 @@ import {
     lists as listsTable,
     memberships,
     mentions,
+    publicDashboards,
     records,
     recurrences,
     templates,
@@ -353,6 +356,13 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         // v0.1.291 — reacciones y registro de tiempo.
         await pg.db.insert(commentReactions).values({ tenantId: id, commentId: comment!.id, userId: owner!.id, emoji: '👍' });
         await pg.db.insert(timeEntries).values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, workDate: '2026-10-20', seconds: 60 });
+        // v0.1.292 — tablero con enlace público y envío programado.
+        const [dash] = await pg.db
+            .insert(dashboards)
+            .values({ tenantId: id, name: 'Tablero', createdBy: owner!.id, widgets: [] })
+            .returning();
+        await pg.db.insert(publicDashboards).values({ token: `tablero-a-borrar-${id}`, tenantId: id, dashboardId: dash!.id, publishedBy: owner!.id });
+        await pg.db.insert(dashboardSubscriptions).values({ tenantId: id, dashboardId: dash!.id, ownerId: owner!.id, recipientUserIds: [owner!.id] });
 
         await platform.deleteTenant(id);
         expect(await pg.db.select().from(commentReactions).where(eq(commentReactions.tenantId, id))).toHaveLength(0);
@@ -366,6 +376,8 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(await pg.db.select().from(recurrences).where(eq(recurrences.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(auditLog).where(eq(auditLog.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(listSlugHistory).where(eq(listSlugHistory.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(publicDashboards).where(eq(publicDashboards.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, id))).toHaveLength(0);
         // El usuario sigue existiendo: puede estar en otras empresas.
         expect(await pg.db.select().from(users).where(eq(users.email, 'full@t.test'))).toHaveLength(1);
     });

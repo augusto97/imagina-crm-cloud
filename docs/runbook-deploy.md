@@ -190,3 +190,15 @@ deploy/deploy.sh` seguido de `finalize.sh` (o `systemctl restart imagina-api`).
   en el API — no hay worker aparte que administrar.
 - RLS: el pool se conecta como dueño de las tablas pero cada transacción hace
   `SET LOCAL ROLE imagina_app` (no-superuser) para que las policies apliquen.
+- **Tableros publicados** (v0.1.292, ADR-S50): la página pública de un
+  tablero (`/api/v1/public/d/<token>`) la sirve el **API**, no el proxy, para
+  poder mandar su propia cabecera CSP con `frame-ancestors` (los sitios que
+  eligió quien publicó). El HTML es el build `cloud-public/index.html`; el API
+  lo busca en `<release>/web` (el bundle del release ya lo trae) y, si hace
+  falta, en `WEB_DIST_DIR`. Sus JS/CSS salen de `/assets/*`, que el proxy ya
+  sirve. No hay que tocar Caddy ni nginx: `/api/*` ya va al API y la CSP del
+  SPA está acotada a sus `location`. Si el API no encuentra el build, la página
+  responde 503 con el motivo (el paquete de datos sigue funcionando).
+- **Envíos programados de tableros**: cola `dashboard-reports` de BullMQ (un
+  horario por envío, en la zona de la empresa); al arrancar se re-registran
+  todos. Salen por el correo de la empresa y cuentan para su cuota (ADR-S18).

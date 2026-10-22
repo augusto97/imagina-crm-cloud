@@ -351,8 +351,8 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 
 ## 10. Estado actual e hilos abiertos
 
-**Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.291** (ficha con historial por campo, reacciones e hilos, visor de adjuntos y registro de tiempo, ADR-S49), en `main`.
+**Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
+versión publicada: **v0.1.292** (tableros hacia afuera: enlace público, envío programado, barras apiladas, tabla dinámica y descarga de widgets, ADR-S50), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -364,11 +364,14 @@ versión publicada: **v0.1.291** (ficha con historial por campo, reacciones e hi
   (hecha, v0.1.291: historial por campo con restaurar, reacciones e hilos, vista previa de
   adjuntos, registro de tiempo), **portal y formularios** (hecha, v0.1.289: varias páginas, captcha,
   confirmación por correo, contraseña del portal, pagar desde el portal),
-  tableros (barras apiladas, enlace público, exportar widget, envío programado,
-  tabla dinámica) y **PDF** (hecha, v0.1.290: cotización/factura con IVA y descuento, ítems
+  **tableros** (hecha, v0.1.292: barras apiladas, enlace público, exportar
+  widget, envío programado, tabla dinámica) y **PDF** (hecha, v0.1.290: cotización/factura con IVA y descuento, ítems
   editables en la ficha, congelar al emitir). Decisión sobre el cliente de
   Google de las copias: se queda el de código de dispositivo como única vía
-  (addendum de ADR-S43). **Ojo al integrar**: el migrador de drizzle salta una
+  (addendum de ADR-S43). **Las seis entregas están publicadas: el «hazlo todo»
+  quedó completo con v0.1.292.** Lo que quedó afuera a propósito, por si se
+  pide: que el asistente/MCP publique un tablero o programe envíos, y un enlace
+  para que un destinatario externo de un envío programado se dé de baja solo. **Ojo al integrar**: el migrador de drizzle salta una
   migración cuyo `when` sea menor que el de la última aplicada, así que al
   publicar fuera de orden se renumera la migración de cada entrega a la
   siguiente libre.
@@ -574,6 +577,21 @@ versión publicada: **v0.1.291** (ficha con historial por campo, reacciones e hi
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-22 · v0.1.292** — **Tableros hacia afuera + análisis** (ADR-S50),
+  sexta y última entrega del «hazlo todo». Barras apiladas («Desglosar por» en
+  barras, área y línea; al 100 % o lado a lado, con «Otros») y tabla dinámica
+  (filas × columnas, totales, mapa de calor); descargar un widget como PNG o
+  CSV; enlace público de sólo lectura (vencimiento, período opcional, dominios
+  para insertar) calculado con el acceso actual de quien publicó; envío
+  programado por correo (diario/semanal/mensual en la zona de la empresa, hasta
+  25 destinatarios, PDF opcional, cuota del plan, Problema si falla). Botón
+  «Compartir» en el tablero. Migración 0078. De paso: los textos de los gráficos
+  en los PDF usan la fuente embebida; y el CI destapó que restaurar una copia
+  fallaba con un `pg_restore` más nuevo que el Postgres 16 (`transaction_timeout`)
+  — ahora se restaura como SQL en ese caso. La entrega se cortó por el límite semanal
+  de uso y se retomó al día siguiente. **Con esto el «hazlo todo» queda
+  completo.** Queda afuera: asistente/MCP para publicar o programar, y baja
+  automática del destinatario externo.
 - **2026-10-21 · v0.1.291** — **Ficha del registro** (ADR-S49), quinta entrega
   del «hazlo todo». Historial de un campo con «Restaurar este valor»;
   reacciones y respuestas en los comentarios (la respuesta hereda la

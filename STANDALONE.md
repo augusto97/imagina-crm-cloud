@@ -3345,6 +3345,49 @@ valor que alguien escriba en `data`.
 «Comentario eliminado» (borrar lo que otros respondieron no es decisión de quien
 escribió el primer mensaje). Los comentarios siguen sin adjuntos propios.
 
+
+### ADR-S50 — Tableros hacia afuera: enlace público con el acceso de quien publica y envío programado (v0.1.292)
+
+**Contexto.** Última entrega del «hazlo todo» (carencias de ADR-S45): barras
+apiladas, tabla dinámica, descargar un widget, enlace público del tablero y
+envío programado por correo. Hasta acá un tablero sólo se veía con sesión, y se
+pidió mostrarlo fuera del equipo (en un sitio, a un socio) y recibir un resumen
+periódico — sin que eso abra datos que quien comparte no puede ver.
+
+**Decisión.**
+1. **Un solo modelo de reporte** en shared (`dashboard-report/`,
+   `buildWidgetReport`): lo usan el PNG y el CSV del navegador y el correo y el
+   PDF del servidor, así lo que se descarga, lo que se envía y lo que se ve
+   coinciden. La segunda dimensión (series apiladas, tabla dinámica) sale del
+   agrupado en dos niveles de ADR-S46, con tope y «Otros» por eje.
+2. **El enlace público es un token opaco** en una tabla sin RLS (como las
+   listas públicas, ADR-S14). Los datos se calculan con el acceso ACTUAL de
+   quien publicó, re-resuelto en cada pedido: si lo pierde (se va, se
+   desactiva su cuenta, pasa a rol cliente), o el token es desconocido, venció,
+   se regeneró o la empresa está archivada, la respuesta es el mismo 404 opaco.
+   Al tablero público sólo viajan los campos que usan sus widgets; los widgets
+   de tabla exponen filas y la interfaz lo advierte antes de publicar.
+3. **La página pública es una entrada propia de vite** servida por el API con
+   su propia CSP y `frame-ancestors` por dominio (no usa frameGuard: está hecha
+   para insertarse). Reusa los widgets de la app con los datos y las
+   definiciones de campos sembrados en caché, sin tocar la API del equipo. El
+   API lee el HTML del release (`<release>/web/cloud-public/index.html` o
+   `WEB_DIST_DIR`); sus JS/CSS salen de `/assets/*`, que el proxy ya sirve, así
+   que no hay que tocar Caddy ni nginx.
+4. **Envío programado**: un scheduler de BullMQ por suscripción, en la zona
+   propia o la de la empresa (ADR-S33), re-registrado al arrancar y al cambiar
+   la zona. Destinatarios = miembros que ven el tablero + correos externos,
+   tope 25, un correo por persona. Respeta la cuota de correos (ADR-S18) y el
+   solo-lectura (ADR-S09), y una falla es un Problema (ADR-S44). El PDF es
+   vectorial: los SVG del modelo van a pdfmake con las fuentes embebidas.
+5. **Migrar una empresa** no lleva tokens públicos (se emiten nuevos) y los
+   envíos llegan pausados, para no duplicar correos con el servidor de origen.
+
+**Consecuencias.** Migración 0078 (`public_dashboards`, `dashboard_subscriptions`).
+Publicar equivale a mostrar lo que ve quien publica, así que perder acceso apaga
+el enlace solo. Pendientes: que un destinatario externo pueda darse de baja él
+mismo, y que el asistente/MCP publique o programe envíos.
+
 ---
 
-**Versión del documento:** 1.88.0 (visor, tiempo e hilos en la ficha — ADR-S49)
+**Versión del documento:** 1.89.0 (tableros hacia afuera — ADR-S50)

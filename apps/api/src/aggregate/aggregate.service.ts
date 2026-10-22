@@ -211,7 +211,7 @@ export class AggregateService {
                 if (!subField) throw badRequest('sub_group_by_field_id no pertenece a la lista');
                 const subExpr = groupingExpr(subField, req.sub_time_bucket, fieldsById, clock.timeZone);
                 if (groupKeyHasSubquery(subField.type)) await disableJitForTx(tx);
-                return this.twoLevelGroups(tx, baseWhere, groupExpr, subExpr, aggExpr, req.metric, opts.top);
+                return this.twoLevelGroups(tx, baseWhere, groupExpr, subExpr, aggExpr, req.metric, opts);
             }
 
             if (opts.top) {
@@ -248,15 +248,23 @@ export class AggregateService {
      * v0.1.287 — Agrupado en DOS niveles: `(grupo, subgrupo) → métrica` y,
      * además, la métrica de cada GRUPO entero (calculada sobre sus registros,
      * no sumando los subgrupos: así vale también para promedio, mín/máx o
-     * valores únicos). Una sola consulta con `GROUPING SETS ((grp, sub), (grp))`
-     * sobre una subconsulta que calcula las dos claves UNA vez por fila (la
-     * clave de un multi_select o de un derivado es cara) y se llama "records",
+     * valores únicos). Una sola consulta con `GROUPING SETS` sobre una
+     * subconsulta que calcula las dos claves UNA vez por fila (la clave de un
+     * multi_select o de un derivado es cara); la de afuera se llama "records",
      * así la métrica —que apunta a `"records"."data"`— vale sin tocarla.
      *
      * Con `top` (gráficos): los grupos son los de `topGroups` (los N primeros
      * + "Otros") y el desglose de "Otros" se calcula sobre SUS registros.
      * Tope de pares `(grupo, subgrupo)`: `MAX_SUB_GROUP_PAIRS`; los que no
      * entran se informan en `hidden_sub_groups`.
+     *
+     * v0.1.292 — `subTop`: lo mismo para el SEGUNDO nivel (las series de unas
+     * barras apiladas, las columnas de una tabla dinámica): las N primeras y
+     * el resto en "Otros", calculado sobre sus registros. `withTotals`: suma
+     * los conjuntos `(subgrupo)` y `()` — el total de cada subgrupo sobre
+     * TODOS los registros (`sub_totals`) y el total general (`value`), que
+     * una tabla dinámica necesita bien calculados (un promedio por columna no
+     * es la suma de las celdas).
      */
     private async twoLevelGroups(
         tx: Tx,
@@ -265,40 +273,71 @@ export class AggregateService {
         subExpr: SQL,
         aggExpr: SQL,
         metric: AggregateMetric,
-        top: AggregateTop | undefined,
+        opts: AggregateRunOptions,
     ): Promise<AggregateResult> {
+        const { top, subTop, withTotals } = opts;
         const where = baseWhere ?? sql`true`;
+        const K = sql.identifier('k');
+        const R = sql.identifier('records');
+        const kGrp = sql`${K}.${sql.identifier('grp')}`;
+        const kSub = sql`${K}.${sql.identifier('sub')}`;
         let topList: NonNullable<AggregateResult['groups']> | null = null;
-        let bucketCol = sql`${sql.identifier('records')}.${sql.identifier('grp')}`;
+        let bucketCol = kGrp;
         if (top) {
             topList = await this.topGroups(tx, baseWhere, groupExpr, aggExpr, top);
             const kept = topList.filter((g) => g.group !== AGGREGATE_OTHERS_KEY);
             if (kept.length < topList.length) {
                 // Lo que no entró en el tope cae en "Otros" también en el desglose.
-                const values = kept.map((g) => g.group).filter((g): g is string => g !== null);
-                const parts: SQL[] = [];
-                if (values.length > 0) parts.push(sql`${bucketCol} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
-                if (kept.some((g) => g.group === null)) parts.push(sql`${bucketCol} IS NULL`);
-                const inTop = parts.length > 0 ? sql.join(parts, sql` OR `) : sql`false`;
-                bucketCol = sql`(CASE WHEN ${inTop} THEN ${bucketCol} ELSE ${AGGREGATE_OTHERS_KEY} END)`;
+                bucketCol = othersCase(kGrp, kept.map((g) => g.group));
             }
         }
-        const keyed = sql`(SELECT ${records}.*, (${groupExpr})::text AS grp, (${subExpr})::text AS sub FROM ${records} WHERE ${where} OFFSET 0) AS ${sql.identifier('records')}`;
+        // v0.1.292 — las N series principales; el resto, "Otros".
+        let subCol = kSub;
+        let subRank: Map<string | null, number> | null = null;
+        let subOthers = 0;
+        if (subTop) {
+            const limit = Math.max(1, Math.min(MAX_GROUPS, Math.floor(subTop.limit)));
+            const order = subTop.byValue ? sql`val desc nulls last, sub asc nulls last` : sql`sub asc nulls last`;
+            const ranked = await tx.execute(
+                sql`select sub, cnt from (select sub, row_number() over (order by ${order}) as rn, count(*) over () as cnt from (select (${subExpr})::text as sub, ${aggExpr} as val from ${records} where ${where} group by 1) g) r where rn <= ${limit} order by rn`,
+            );
+            const kept = (ranked.rows as Array<{ sub: unknown; cnt: unknown }>).map((r) => keyOf(r.sub));
+            subRank = new Map(kept.map((k, i) => [k, i]));
+            const total = Number((ranked.rows as Array<{ cnt: unknown }>)[0]?.cnt ?? 0);
+            if (total > limit) {
+                subCol = othersCase(kSub, kept);
+                subOthers = total - limit;
+            }
+        }
+        const keyed = sql`(SELECT ${records}.*, (${groupExpr})::text AS grp, (${subExpr})::text AS sub FROM ${records} WHERE ${where} OFFSET 0) AS ${K}`;
+        // Las claves FINALES (con "Otros") como columnas simples: así GROUPING()
+        // las reconoce (con una expresión con parámetros no las matchea).
+        const mid = sql`(SELECT ${K}.*, ${bucketCol} AS bkt, ${subCol} AS sbk FROM ${keyed}) AS ${R}`;
+        const bkt = sql`${R}.${sql.identifier('bkt')}`;
+        const sbk = sql`${R}.${sql.identifier('sbk')}`;
+        const sets = withTotals ? sql`(${bkt}, ${sbk}), (${bkt}), (${sbk}), ()` : sql`(${bkt}, ${sbk}), (${bkt})`;
         const res = await tx.execute(sql`
-            SELECT bucket AS grp, sub, val, gs FROM (
-                SELECT ${bucketCol} AS bucket, ${sql.identifier('records')}.${sql.identifier('sub')} AS sub, ${aggExpr} AS val,
-                       GROUPING(${sql.identifier('records')}.${sql.identifier('sub')}) AS gs
-                FROM ${keyed}
-                GROUP BY GROUPING SETS ((1, 2), (1))
-            ) t
-            ORDER BY grp ASC NULLS LAST, gs DESC, sub ASC NULLS LAST`);
-        const rows = res.rows as Array<{ grp: unknown; sub: unknown; val: unknown; gs: unknown }>;
-        const keyOf = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+            SELECT ${bkt} AS grp, ${sbk} AS sub, ${aggExpr} AS val, GROUPING(${bkt}) AS gg, GROUPING(${sbk}) AS gs
+            FROM ${mid}
+            GROUP BY GROUPING SETS (${sets})
+            ORDER BY gg ASC, grp ASC NULLS LAST, gs DESC, sub ASC NULLS LAST`);
+        const rows = res.rows as Array<{ grp: unknown; sub: unknown; val: unknown; gg: unknown; gs: unknown }>;
         const byGroup = new Map<string | null, { value: number | string | null; subs: Array<{ group: string | null; value: number | string | null }> }>();
         const order: Array<string | null> = [];
+        const subTotals: Array<{ group: string | null; value: number | string | null; others?: number }> = [];
+        let grand: number | string | null = null;
         let pairs = 0;
         let hidden = 0;
         for (const r of rows) {
+            if (Number(r.gg) === 1) {
+                // Totales del segundo nivel (sólo con `withTotals`).
+                if (Number(r.gs) === 1) grand = normalize(r.val);
+                else {
+                    const k = keyOf(r.sub);
+                    subTotals.push({ group: k, value: normalize(r.val), ...(k === AGGREGATE_OTHERS_KEY && subOthers > 0 ? { others: subOthers } : {}) });
+                }
+                continue;
+            }
             const g = keyOf(r.grp);
             let entry = byGroup.get(g);
             if (!entry) {
@@ -322,7 +361,19 @@ export class AggregateService {
         } else {
             groups = order.map((g) => ({ group: g, value: byGroup.get(g)!.value, sub_groups: byGroup.get(g)!.subs }));
         }
-        return { metric, value: null, groups, ...(hidden > 0 ? { hidden_sub_groups: hidden } : {}) };
+        if (subRank !== null) {
+            // Los subtotales en el orden del tope (mayor primero, o por clave); "Otros" al final.
+            const rank = (k: string | null): number => (k === AGGREGATE_OTHERS_KEY ? Number.MAX_SAFE_INTEGER : (subRank!.get(k) ?? Number.MAX_SAFE_INTEGER - 1));
+            subTotals.sort((a, b) => rank(a.group) - rank(b.group));
+        }
+        return {
+            metric,
+            value: withTotals ? grand : null,
+            groups,
+            ...(withTotals ? { sub_totals: subTotals } : {}),
+            ...(subOthers > 0 ? { sub_others: subOthers } : {}),
+            ...(hidden > 0 ? { hidden_sub_groups: hidden } : {}),
+        };
     }
 
     /**
@@ -667,6 +718,21 @@ export const MAX_GROUPS = 1000;
 /** v0.1.287 — Tope de pares (grupo, subgrupo) de un agrupado en dos niveles. */
 export const MAX_SUB_GROUP_PAIRS = 2000;
 
+/** Clave de grupo tal como viaja (null = sin valor). */
+function keyOf(v: unknown): string | null {
+    return v === null || v === undefined ? null : String(v);
+}
+
+/** `col` si es una de las claves que se conservan; si no, "Otros". */
+function othersCase(col: SQL, kept: Array<string | null>): SQL {
+    const values = kept.filter((g): g is string => g !== null);
+    const parts: SQL[] = [];
+    if (values.length > 0) parts.push(sql`${col} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
+    if (kept.includes(null)) parts.push(sql`${col} IS NULL`);
+    const inTop = parts.length > 0 ? sql.join(parts, sql` OR `) : sql`false`;
+    return sql`(CASE WHEN ${inTop} THEN ${col} ELSE ${AGGREGATE_OTHERS_KEY} END)`;
+}
+
 /** v0.1.286 — Agrupado con tope + "Otros". */
 export interface AggregateTop {
     limit: number;
@@ -681,6 +747,13 @@ export interface AggregateRunOptions {
     search?: string;
     /** v0.1.286 — con tope de grupos y "Otros" (gráficos y endpoint). */
     top?: AggregateTop;
+    /** v0.1.292 — tope del SEGUNDO nivel (series / columnas) con "Otros". */
+    subTop?: AggregateTop;
+    /**
+     * v0.1.292 — con segundo nivel: el total de cada subgrupo sobre todos los
+     * registros (`sub_totals`) y el total general (`value`).
+     */
+    withTotals?: boolean;
 }
 
 export interface DeltaOptions {

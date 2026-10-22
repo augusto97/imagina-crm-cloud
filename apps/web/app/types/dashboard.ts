@@ -10,6 +10,8 @@ export type WidgetType =
     | 'funnel'
     /** v0.1.99 — medidor semicircular vs meta (evalúa como KPI). */
     | 'gauge'
+    /** v0.1.292 — tabla dinámica: filas × columnas con totales. */
+    | 'pivot'
     /** v0.1.98 — bloques de CONTENIDO (sin datos): el dashboard se arma como página. */
     | 'heading'
     | 'text'
@@ -92,6 +94,8 @@ export function defaultLayoutForType(type: WidgetType): WidgetLayout {
             return { x: 0, y: 9999, w: 6, h: 4 };
         case 'table':
             return { x: 0, y: 9999, w: 6, h: 5 };
+        case 'pivot':
+            return { x: 0, y: 9999, w: 8, h: 5 };
         case 'heading':
             return { x: 0, y: 9999, w: 12, h: 1 };
         case 'text':
@@ -115,6 +119,7 @@ export function minLayoutForType(type: WidgetType): { minW: number; minH: number
         case 'gauge':
             return { minW: 2, minH: 2 };
         case 'table':
+        case 'pivot':
             return { minW: 3, minH: 3 };
         case 'heading':
         case 'text':
@@ -267,9 +272,39 @@ export interface DashboardFilterValue {
 /** Clave del grupo "Otros" (espejo de `AGGREGATE_OTHERS_KEY`). */
 export const OTHERS_GROUP_KEY = '__others__';
 
+/** v0.1.292 — Un segmento de un grupo desglosado: la serie y su valor. */
+export interface WidgetSegment {
+    series: string;
+    value: number | string;
+}
+
+/** v0.1.292 — Una serie de un desglose: su clave y su total sobre todos los registros. */
+export interface WidgetSeries {
+    key: string;
+    value: number | string;
+    /** Sólo la serie "Otros": cuántas junta. */
+    others?: number;
+}
+
+/** v0.1.292 — Datos de una tabla dinámica (claves crudas; "(sin valor)" y "Otros" incluidos). */
+export interface PivotData {
+    rows: Array<{ key: string; value: number | string | null; others?: number }>;
+    cols: Array<{ key: string; value: number | string | null; others?: number }>;
+    cells: Array<{ row: string; col: string; value: number | string | null }>;
+    total: number | string | null;
+    /** Cruces que existen pero no viajaron (tope). */
+    hidden_cells?: number;
+}
+
 export type WidgetData =
     | { value: number | string; metric: KpiMetric; spark?: number[] }
-    | { data: Array<{ label: string; value: number | string; others?: number }> }
+    | {
+          data: Array<{ label: string; value: number | string; others?: number; segments?: WidgetSegment[] }>;
+          /** v0.1.292 — con «Desglosar por»: las series (en orden) y su total. */
+          series?: WidgetSeries[];
+          hidden_pairs?: number;
+      }
+    | { pivot: PivotData }
     | {
           /** stat_delta — value/previous pueden ser string para min/max de fecha */
           value: number | string;

@@ -22,6 +22,8 @@ import {
 import { formatMetricValue } from './widgetFormat';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
+import { BreakdownBars, useBreakdownModel } from './BreakdownChart';
+import type { BreakdownPayload } from './breakdownModel';
 
 interface BarChartWidgetProps {
     dashboardId: number;
@@ -79,6 +81,35 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
         ? raw
         : sortChartRows(raw, widget.config.sort as ChartSort | undefined, optionOrder, (l) => displayGroupLabel(l, labelMap));
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
+    // v0.1.292 — "Desglosar por" un segundo campo (series apiladas o lado a
+    // lado) y barras verticales.
+    const vertical = widget.config.bar_orientation === 'vertical';
+    const payload = data.data && 'data' in data.data && Array.isArray(data.data.series) ? (data.data as BreakdownPayload) : null;
+    const breakdown = useBreakdownModel(widget, payload);
+    const stacked = widget.config.stack_mode !== 'grouped';
+
+    if (payload !== null) {
+        return (
+            <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
+                <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} />
+                {data.isError ? (
+                    <WidgetError error={data.error} />
+                ) : breakdown.groups.length > 0 ? (
+                    <BreakdownBars
+                        model={breakdown}
+                        orientation={vertical ? 'vertical' : 'horizontal'}
+                        mode={stacked ? 'stacked' : 'grouped'}
+                        percent={stacked && widget.config.stack_percent === true}
+                        format={fmt}
+                        onSegment={onSegment}
+                        showLegend={widget.config.show_legend !== false}
+                    />
+                ) : (
+                    <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">{__('Sin datos.')}</p>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
@@ -99,7 +130,11 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                 ) : data.isError ? (
                     <WidgetError error={data.error} />
                 ) : rows.length > 0 ? (
-                    <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} />
+                    vertical ? (
+                        <ColumnBars rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} />
+                    ) : (
+                        <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} format={fmt} />
+                    )
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Sin datos.')}
@@ -204,6 +239,72 @@ function BarRows({
                     );
                 })}
             </ul>
+        </div>
+    );
+}
+
+/**
+ * v0.1.292 — Barras VERTICALES (una columna por categoría): el valor arriba,
+ * la etiqueta abajo; con muchas categorías, scroll horizontal. Mismo color,
+ * click y línea de promedio que las horizontales.
+ */
+function ColumnBars({
+    rows,
+    showAvg,
+    colorMap,
+    labelMap,
+    onSegment,
+    format,
+}: {
+    rows: Array<{ label: string; value: number; others?: number }>;
+    showAvg: boolean;
+    colorMap: Map<string, string>;
+    labelMap: Map<string, string>;
+    onSegment: ((label: string) => void) | null;
+    format: (n: number) => string;
+}): JSX.Element {
+    const max = Math.max(...rows.map((r) => r.value), 1);
+    const avg = rows.reduce((sum, r) => sum + r.value, 0) / rows.length;
+    return (
+        <div className="imcrm-h-full imcrm-overflow-x-auto" data-testid="imcrm-column-bars">
+            <div className="imcrm-relative imcrm-flex imcrm-h-full imcrm-min-h-[8rem] imcrm-items-stretch imcrm-gap-1.5" style={{ minWidth: rows.length * 34 }}>
+                {rows.map((row, i) => {
+                    const color = categoryColor(colorMap, row.label, i);
+                    const navigable = onSegment !== null && !isOthersGroup(row.label);
+                    const name = othersAwareLabel(row, labelMap);
+                    return (
+                        <div
+                            key={row.label}
+                            className={`imcrm-group/col imcrm-flex imcrm-min-w-[28px] imcrm-flex-1 imcrm-flex-col imcrm-gap-1${navigable ? ' imcrm-cursor-pointer' : ''}`}
+                            title={navigable ? `${name}: ${format(row.value)} — ${__('click para ver los registros')}` : `${name}: ${format(row.value)}`}
+                            onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
+                        >
+                            <span className="imcrm-truncate imcrm-text-center imcrm-text-[10px] imcrm-font-semibold imcrm-tabular-nums imcrm-text-foreground">
+                                {format(row.value)}
+                            </span>
+                            <div className="imcrm-flex imcrm-flex-1 imcrm-items-end imcrm-rounded-t imcrm-bg-muted/30">
+                                <div
+                                    className="imcrm-w-full imcrm-rounded-t imcrm-opacity-80 imcrm-transition-opacity group-hover/col:imcrm-opacity-100"
+                                    style={{ height: `${(Math.max(0, row.value) / max) * 100}%`, backgroundColor: color }}
+                                    aria-hidden
+                                />
+                            </div>
+                            <span className="imcrm-truncate imcrm-text-center imcrm-text-[10px] imcrm-text-muted-foreground">{name}</span>
+                        </div>
+                    );
+                })}
+                {showAvg && (
+                    <div
+                        className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-x-0 imcrm-h-px"
+                        // El área de las columnas va entre el valor (≈18px) y la etiqueta (≈18px).
+                        style={{
+                            bottom: `calc(18px + (100% - 36px) * ${avg / max})`,
+                            backgroundImage: `repeating-linear-gradient(to right, ${AVG_LINE_COLOR} 0 6px, transparent 6px 10px)`,
+                        }}
+                        aria-hidden
+                    />
+                )}
+            </div>
         </div>
     );
 }

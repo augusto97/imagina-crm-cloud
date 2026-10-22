@@ -522,6 +522,46 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         expect(w[4]!.config).toMatchObject({ limit: 5, sort_field_id: fecha.id, sort_dir: 'asc' });
     });
 
+    it('v0.1.292 — tablero con barras desglosadas y tabla dinámica (y sus errores corregibles)', async () => {
+        const list = await lists.create(tenantId, { name: 'Pedidos' });
+        const etapa = await fields.create(tenantId, String(list.id), { label: 'Etapa', type: 'select', config: { options: [{ value: 'a', label: 'A' }] } });
+        const zona = await fields.create(tenantId, String(list.id), { label: 'Zona', type: 'select', config: { options: [{ value: 'n', label: 'Norte' }] } });
+        await fields.create(tenantId, String(list.id), { label: 'Valor', type: 'currency' });
+        const mal = await registry.execute(ctx, 'propose_create_dashboard', {
+            name: 'Mal',
+            widgets: [{ type: 'chart_bar', list: 'pedidos', group_by: 'etapa', breakdown_by: 'zona', metric: 'avg', metric_field: 'valor', stack: 'stacked' }],
+        });
+        expect(mal.isError).toBe(true);
+        expect(JSON.stringify(mal.content)).toContain('stack=');
+        const sinCols = await registry.execute(ctx, 'propose_create_dashboard', { name: 'Mal', widgets: [{ type: 'pivot', list: 'pedidos', group_by: 'etapa' }] });
+        expect(JSON.stringify(sinCols.content)).toContain('breakdown_by');
+        const mismo = await registry.execute(ctx, 'propose_create_dashboard', { name: 'Mal', widgets: [{ type: 'chart_bar', list: 'pedidos', group_by: 'etapa', breakdown_by: 'etapa' }] });
+        expect(JSON.stringify(mismo.content)).toContain('distinto del eje principal');
+
+        const ok = await registry.execute(ctx, 'propose_create_dashboard', {
+            name: 'Pedidos por zona',
+            widgets: [
+                { type: 'chart_bar', list: 'pedidos', title: 'Etapas por zona', group_by: 'etapa', breakdown_by: 'zona', percent: true, orientation: 'vertical' },
+                { type: 'pivot', list: 'pedidos', title: 'Valor', group_by: 'etapa', breakdown_by: 'zona', metric: 'sum', metric_field: 'valor', heatmap: true, columns_limit: 6 },
+            ],
+        });
+        expect(ok.isError).toBeFalsy();
+        await proposals.apply(ctx, ok.proposal!.id);
+        const all = await dashboards.list(tenantId, { userId, role: 'admin' });
+        const dash = all.find((d) => d.name === 'Pedidos por zona')!;
+        expect(dash.widgets[0]!.config).toMatchObject({
+            group_by_field_id: etapa.id,
+            sub_group_by_field_id: zona.id,
+            stack_mode: 'stacked',
+            stack_percent: true,
+            bar_orientation: 'vertical',
+        });
+        expect(dash.widgets[1]).toMatchObject({ type: 'pivot', layout: { w: 8, h: 5 } });
+        expect(dash.widgets[1]!.config).toMatchObject({ group_by_field_id: etapa.id, sub_group_by_field_id: zona.id, heatmap: true, col_top_n: 6 });
+        const listed = await registry.execute(ctx, 'list_dashboards', {});
+        expect(JSON.stringify(listed.content)).toContain('"breakdown_by":"zona"');
+    });
+
     it('el rol manda: un manager no ve las herramientas de estructura y no puede aplicar una propuesta ajena a su rol', async () => {
         const manager: AiToolContext = { ...ctx, role: 'manager' };
         const names = registry.toAnthropicTools('manager').map((t) => t.name);
