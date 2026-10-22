@@ -8359,6 +8359,80 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         visor 29/29, tiempo 19/19) en claro, oscuro, celular y contra el build
         de producción con su CSP.
 
+  - [x] **Tableros hacia afuera + análisis (v0.1.292, ADR-S50, sexta y última
+        entrega del «hazlo todo»)**: (a) **barras apiladas** — «Desglosar por»
+        un segundo campo en barras (horizontales o columnas), área y línea:
+        series apiladas, al 100 % o lado a lado, con tope y «Otros» calculado
+        sobre sus propios registros, leyenda con el color real de cada opción y
+        clic que abre la lista filtrada por el grupo Y la serie; el motor de
+        agregados suma `subTop`/`withTotals` sobre el agrupado en dos niveles de
+        v0.1.287 (`GROUPING SETS`). (b) **Tabla dinámica** (widget `pivot`):
+        filas por un campo, columnas por otro y la métrica en las celdas, con
+        totales por fila/columna/general, top-N con «Otros» en los dos ejes,
+        mapa de calor y cabeceras fijas. El asistente/MCP acepta `breakdown_by`,
+        `stack`, `percent`, `orientation` y `pivot`; plantillas y migración de
+        empresa re-mapean el segundo campo. (c) **Descargar un widget** como
+        PNG (el SVG a un canvas al doble de resolución, con los colores del tema
+        visible) o CSV (números crudos con el decimal de la empresa, `;` si el
+        decimal es coma, BOM y fórmulas neutralizadas), desde un **modelo de
+        reporte compartido** en shared (`dashboard-report/`: `buildWidgetReport`
+        + SVG + CSV + correo) — el mismo que arma el correo y el PDF, así lo que
+        se descarga, lo que se envía y lo que se ve coinciden. (d) **Enlace
+        público del tablero** (`/api/v1/public/d/<token>`, sin sesión): token
+        opaco en `public_dashboards` (sin RLS, como las listas públicas),
+        vencimiento, «permitir cambiar el período» y dominios donde insertarlo
+        (`frame-ancestors`); los datos se calculan con el acceso ACTUAL de quien
+        publicó, re-resuelto en cada pedido, y sólo viajan los campos que usan
+        los widgets. Token desconocido/vencido/regenerado/despublicado, empresa
+        archivada o quien publicó sin acceso (se fue, cuenta desactivada, rol
+        cliente) → el mismo 404 opaco. Página propia (entrada de vite
+        `cloud-public` → `app/public-dashboard/`, sin frameGuard porque está
+        hecha para insertarse) servida por el API con su CSP (`WEB_DIST_DIR`
+        opcional; sin build, 503): reusa los widgets de la app con datos y
+        campos sembrados en caché — cero llamadas a la API del equipo —, se
+        refresca cada 5 min y también descarga PNG/CSV. El panel avisa cuando
+        hay widgets de tabla (muestran filas a cualquiera con el enlace).
+        (e) **Envío programado por correo** (`dashboard_subscriptions`, RLS):
+        diario, semanal o mensual (incluido «el último día») a una hora, en la
+        zona de la empresa o una propia; un scheduler de BullMQ por envío
+        (`dashsub:<id>`, cola `dashboard-reports`) re-registrado al arrancar y al
+        cambiar la zona de la empresa; destinatarios = miembros que pueden ver
+        el tablero + correos externos (tope 25, un correo por persona); HTML
+        para Gmail y Outlook (KPIs y barras con tablas), «Ver el tablero», el
+        enlace público si existe y PDF vectorial opcional (pdfmake). Se calcula
+        con el acceso del dueño, cuenta para la cuota de correos del plan, no
+        sale en solo-lectura (queda `skipped`), una falla abre un Problema
+        (fuente `dashboard`) y hay «Enviarme una prueba ahora». Botón
+        **«Compartir»** en el tablero con las pestañas «Enlace público» y
+        «Envío por correo» (`?share=link|email`); `WidgetCard` se extrajo para
+        reusarlo en la página pública. Bitácora de publicar/despublicar/
+        regenerar y de crear/cambiar/borrar envíos. (f) **Migrar una empresa**:
+        los tableros se insertan con mapa de ids y re-mapean también sus
+        `settings` (los filtros del tablero viajaban con los ids del origen),
+        los envíos llegan **pausados** con las personas re-apuntadas y los
+        enlaces con token nuevo; borrar la empresa limpia las dos tablas.
+        Migración 0078. **De paso**: pdfmake 0.3 buscaba en el disco real la
+        fuente del texto de un SVG, así que el texto de los gráficos en los PDF
+        salía con la fuente anterior y sin negrita; `document-render.ts` la
+        registra desde el sistema virtual (Inter regular y negrita embebidas,
+        verificado con `pdffonts`). Tests: `dashboard-sharing` (11, con RLS y el
+        PDF con sus fuentes), `dashboards-breakdown` (7), casos nuevos en
+        `tenant-transfer` y `platform`, `report-email` en shared y
+        `dashboardSharing`/`breakdownPivot` en el front — 265 shared, 412 front y
+        la suite de la API en verde — + E2E en navegador (Compartir con un SMTP
+        falso 14/14 en claro escritorio y 14/14 en oscuro celular; página
+        pública sin sesión 26/26 con cero llamadas a la API del equipo, barras
+        apiladas, tabla dinámica, descargas, período, 404 de token desconocido y
+        vencido; contra el build de producción 12/12: cero violaciones de CSP,
+        iframe permitido desde el dominio elegido y bloqueado desde otro;
+        exportar en el tablero del equipo 21/21, 9/9 y 6/6). Queda afuera: que
+        el asistente/MCP publique o programe envíos, y que un destinatario
+        externo se dé de baja solo (lo quita quien creó el envío).
+
+        **Con esto queda completo el «hazlo todo» de las carencias de la
+        auditoría II: tabla, automatizaciones, portal y formularios, PDF, ficha
+        y tableros.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
