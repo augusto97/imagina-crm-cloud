@@ -597,7 +597,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         await expect(dashboardTemplates.remove(tenantA, actor, 'sys:inventario')).rejects.toThrow();
     });
 
-    it('v0.1.291 — plantilla de un tablero con barras desglosadas y tabla dinámica: el segundo campo es un rol más', async () => {
+    it('v0.1.292 — plantilla de un tablero con barras desglosadas y tabla dinámica: el segundo campo es un rol más', async () => {
         const src = await listsService.create(tenantA, { name: 'Pedidos A' });
         const etapa = await fieldsService.create(tenantA, String(src.id), { label: 'Etapa', slug: 'etapa', type: 'select', config: { options: [] } });
         const zona = await fieldsService.create(tenantA, String(src.id), { label: 'Zona', slug: 'zona', type: 'select', config: { options: [] } });

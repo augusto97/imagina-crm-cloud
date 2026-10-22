@@ -258,7 +258,7 @@ export class AggregateService {
      * Tope de pares `(grupo, subgrupo)`: `MAX_SUB_GROUP_PAIRS`; los que no
      * entran se informan en `hidden_sub_groups`.
      *
-     * v0.1.291 — `subTop`: lo mismo para el SEGUNDO nivel (las series de unas
+     * v0.1.292 — `subTop`: lo mismo para el SEGUNDO nivel (las series de unas
      * barras apiladas, las columnas de una tabla dinámica): las N primeras y
      * el resto en "Otros", calculado sobre sus registros. `withTotals`: suma
      * los conjuntos `(subgrupo)` y `()` — el total de cada subgrupo sobre
@@ -291,7 +291,7 @@ export class AggregateService {
                 bucketCol = othersCase(kGrp, kept.map((g) => g.group));
             }
         }
-        // v0.1.291 — las N series principales; el resto, "Otros".
+        // v0.1.292 — las N series principales; el resto, "Otros".
         let subCol = kSub;
         let subRank: Map<string | null, number> | null = null;
         let subOthers = 0;
@@ -747,10 +747,10 @@ export interface AggregateRunOptions {
     search?: string;
     /** v0.1.286 — con tope de grupos y "Otros" (gráficos y endpoint). */
     top?: AggregateTop;
-    /** v0.1.291 — tope del SEGUNDO nivel (series / columnas) con "Otros". */
+    /** v0.1.292 — tope del SEGUNDO nivel (series / columnas) con "Otros". */
     subTop?: AggregateTop;
     /**
-     * v0.1.291 — con segundo nivel: el total de cada subgrupo sobre todos los
+     * v0.1.292 — con segundo nivel: el total de cada subgrupo sobre todos los
      * registros (`sub_totals`) y el total general (`value`).
      */
     withTotals?: boolean;

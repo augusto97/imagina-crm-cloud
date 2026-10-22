@@ -1,7 +1,7 @@
 import { OTHERS_GROUP_KEY, type WidgetSegment, type WidgetSeries } from '@/types/dashboard';
 
 /**
- * v0.1.291 — Modelo de un gráfico DESGLOSADO (barras apiladas o lado a lado,
+ * v0.1.292 — Modelo de un gráfico DESGLOSADO (barras apiladas o lado a lado,
  * áreas/líneas por serie): grupos × series con sus valores, ya ordenados, con
  * etiqueta y color. Funciones puras (testeables); los componentes le pasan
  * los mapas de etiquetas/colores que resuelven los hooks.

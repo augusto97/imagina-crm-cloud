@@ -27,7 +27,7 @@ import {
 import type { SegmentNav } from './useSegmentNav';
 
 /**
- * v0.1.291 — El modelo de un gráfico desglosado con las etiquetas y los
+ * v0.1.292 — El modelo de un gráfico desglosado con las etiquetas y los
  * colores REALES: las series toman el color de la opción del campo por el que
  * se desglosa (el mismo de la tabla y el kanban), y las etiquetas de opciones,
  * personas, buckets de fecha y casillas como en el resto de los gráficos.

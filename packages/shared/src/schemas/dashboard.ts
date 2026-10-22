@@ -20,7 +20,7 @@ export const widgetTypeSchema = z.enum([
     // v0.1.99 — medidor semicircular (progreso vs meta). Se evalúa igual
     // que un KPI (la meta vive en config y la aplica el front).
     'gauge',
-    // v0.1.291 — tabla dinámica: filas = un campo, columnas = otro, la
+    // v0.1.292 — tabla dinámica: filas = un campo, columnas = otro, la
     // métrica en cada cruce, con totales por fila, por columna y general.
     'pivot',
     // v0.1.98 — bloques de CONTENIDO (no evalúan datos; el backend devuelve
@@ -35,7 +35,7 @@ export const widgetTypeSchema = z.enum([
 export type WidgetType = z.infer<typeof widgetTypeSchema>;
 
 /**
- * v0.1.291 — Gráficos que aceptan "Desglosar por" un segundo campo
+ * v0.1.292 — Gráficos que aceptan "Desglosar por" un segundo campo
  * (`sub_group_by_field_id`): series apiladas o lado a lado.
  */
 export const BREAKDOWN_WIDGET_TYPES: readonly WidgetType[] = ['chart_bar', 'chart_area', 'chart_line'];
@@ -44,7 +44,7 @@ export const BREAKDOWN_WIDGET_TYPES: readonly WidgetType[] = ['chart_bar', 'char
 export const STACK_MODES = ['stacked', 'grouped'] as const;
 export type StackMode = (typeof STACK_MODES)[number];
 
-/** v0.1.291 — Orientación de las barras: horizontales (filas) o verticales (columnas). */
+/** v0.1.292 — Orientación de las barras: horizontales (filas) o verticales (columnas). */
 export const BAR_ORIENTATIONS = ['horizontal', 'vertical'] as const;
 export type BarOrientation = (typeof BAR_ORIENTATIONS)[number];
 

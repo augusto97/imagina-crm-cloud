@@ -24,7 +24,7 @@ const ctx = (number_format: 'comma_dot' | 'dot_comma' = 'dot_comma'): ReportCont
     listName: () => 'Ventas',
 });
 
-describe('v0.1.291 — reporte de un widget (PNG, CSV, correo y PDF)', () => {
+describe('v0.1.292 — reporte de un widget (PNG, CSV, correo y PDF)', () => {
     it('categorías con la etiqueta y el color real de cada opción, monto con los separadores de la empresa', () => {
         const r = buildWidgetReport(
             { type: 'chart_bar', title: 'Por estado', list_id: 1, config: { metric: 'sum', metric_field_id: 3, group_by_field_id: 1 } },

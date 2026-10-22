@@ -11,7 +11,7 @@ export interface WpUserSummary {
 }
 
 /**
- * v0.1.291 — Directorio de nombres ya resueltos (id → nombre). La página
+ * v0.1.292 — Directorio de nombres ya resueltos (id → nombre). La página
  * pública de un tablero no tiene sesión: los nombres de las personas por las
  * que agrupa un gráfico llegan en su propio paquete y se proveen aquí; con el
  * directorio presente, `useMemberNames`/`useWpUser` no le piden nada a la API.

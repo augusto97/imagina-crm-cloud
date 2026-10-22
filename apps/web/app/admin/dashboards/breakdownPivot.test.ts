@@ -16,7 +16,7 @@ const widget = (config: Record<string, unknown>, type: WidgetSpec['type'] = 'cha
     layout: { x: 0, y: 0, w: 4, h: 4 },
 });
 
-describe('v0.1.291 — barras desglosadas', () => {
+describe('v0.1.292 — barras desglosadas', () => {
     const payload = {
         data: [
             { label: 'pendiente', value: 450, segments: [{ series: 'centro', value: 50 }, { series: 'norte', value: 400 }] },
@@ -105,7 +105,7 @@ describe('v0.1.291 — barras desglosadas', () => {
     });
 });
 
-describe('v0.1.291 — tabla dinámica', () => {
+describe('v0.1.292 — tabla dinámica', () => {
     const data = {
         rows: [{ key: 'hecho', value: 1017 }, { key: 'pendiente', value: 450 }],
         cols: [{ key: 'centro', value: 1050 }, { key: '__others__', value: 417, others: 3 }],

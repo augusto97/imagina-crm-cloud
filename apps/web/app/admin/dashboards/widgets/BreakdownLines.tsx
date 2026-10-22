@@ -12,7 +12,7 @@ const PAD_TOP = 12;
 const PAD_BOTTOM = 6;
 
 /**
- * v0.1.291 — Área/línea DESGLOSADA: una serie por valor del segundo campo.
+ * v0.1.292 — Área/línea DESGLOSADA: una serie por valor del segundo campo.
  * Apiladas (cada banda arriba de la anterior; también al 100 %) o
  * superpuestas (cada serie su línea). SVG a la medida real del contenedor
  * (como la línea simple). Al pasar el mouse, una guía vertical y el desglose

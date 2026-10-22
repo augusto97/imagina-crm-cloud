@@ -39,7 +39,7 @@ import {
 } from './widgetExport';
 
 /**
- * v0.1.291 — «Descargar imagen (PNG)» y «Descargar datos (CSV)» de un widget.
+ * v0.1.292 — «Descargar imagen (PNG)» y «Descargar datos (CSV)» de un widget.
  * La imagen es el MISMO dibujo que va en el correo programado (SVG del modelo
  * compartido), con los colores del tema que se está viendo, el título y la
  * fecha. Funciona igual en la página pública del tablero (los nombres de las

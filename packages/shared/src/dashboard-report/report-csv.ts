@@ -1,7 +1,7 @@
 import type { ReportFormat, WidgetReport } from './report';
 
 /**
- * v0.1.291 — Los datos de un widget como CSV para abrir en Excel o Google
+ * v0.1.292 — Los datos de un widget como CSV para abrir en Excel o Google
  * Sheets.
  *
  * Decisión de formato: las ETIQUETAS van legibles (la opción, la persona, el
@@ -54,7 +54,7 @@ function encodeCell(cell: Cell, d: CsvDialect): string {
 }
 
 function csv(rows: Cell[][], d: CsvDialect): string {
-    return `﻿${rows.map((r) => r.map((c) => encodeCell(c, d)).join(d.delimiter)).join('\r\n')}\r\n`;
+    return `\uFEFF${rows.map((r) => r.map((c) => encodeCell(c, d)).join(d.delimiter)).join('\r\n')}\r\n`;
 }
 
 /** Un valor del reporte: el número si lo es; si no, su texto (fechas ISO). */

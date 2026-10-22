@@ -10,7 +10,7 @@ export type WidgetType =
     | 'funnel'
     /** v0.1.99 — medidor semicircular vs meta (evalúa como KPI). */
     | 'gauge'
-    /** v0.1.291 — tabla dinámica: filas × columnas con totales. */
+    /** v0.1.292 — tabla dinámica: filas × columnas con totales. */
     | 'pivot'
     /** v0.1.98 — bloques de CONTENIDO (sin datos): el dashboard se arma como página. */
     | 'heading'
@@ -272,13 +272,13 @@ export interface DashboardFilterValue {
 /** Clave del grupo "Otros" (espejo de `AGGREGATE_OTHERS_KEY`). */
 export const OTHERS_GROUP_KEY = '__others__';
 
-/** v0.1.291 — Un segmento de un grupo desglosado: la serie y su valor. */
+/** v0.1.292 — Un segmento de un grupo desglosado: la serie y su valor. */
 export interface WidgetSegment {
     series: string;
     value: number | string;
 }
 
-/** v0.1.291 — Una serie de un desglose: su clave y su total sobre todos los registros. */
+/** v0.1.292 — Una serie de un desglose: su clave y su total sobre todos los registros. */
 export interface WidgetSeries {
     key: string;
     value: number | string;
@@ -286,7 +286,7 @@ export interface WidgetSeries {
     others?: number;
 }
 
-/** v0.1.291 — Datos de una tabla dinámica (claves crudas; "(sin valor)" y "Otros" incluidos). */
+/** v0.1.292 — Datos de una tabla dinámica (claves crudas; "(sin valor)" y "Otros" incluidos). */
 export interface PivotData {
     rows: Array<{ key: string; value: number | string | null; others?: number }>;
     cols: Array<{ key: string; value: number | string | null; others?: number }>;
@@ -300,7 +300,7 @@ export type WidgetData =
     | { value: number | string; metric: KpiMetric; spark?: number[] }
     | {
           data: Array<{ label: string; value: number | string; others?: number; segments?: WidgetSegment[] }>;
-          /** v0.1.291 — con «Desglosar por»: las series (en orden) y su total. */
+          /** v0.1.292 — con «Desglosar por»: las series (en orden) y su total. */
           series?: WidgetSeries[];
           hidden_pairs?: number;
       }

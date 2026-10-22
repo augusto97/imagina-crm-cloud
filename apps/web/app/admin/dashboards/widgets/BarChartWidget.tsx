@@ -81,7 +81,7 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
         ? raw
         : sortChartRows(raw, widget.config.sort as ChartSort | undefined, optionOrder, (l) => displayGroupLabel(l, labelMap));
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
-    // v0.1.291 — "Desglosar por" un segundo campo (series apiladas o lado a
+    // v0.1.292 — "Desglosar por" un segundo campo (series apiladas o lado a
     // lado) y barras verticales.
     const vertical = widget.config.bar_orientation === 'vertical';
     const payload = data.data && 'data' in data.data && Array.isArray(data.data.series) ? (data.data as BreakdownPayload) : null;
@@ -244,7 +244,7 @@ function BarRows({
 }
 
 /**
- * v0.1.291 — Barras VERTICALES (una columna por categoría): el valor arriba,
+ * v0.1.292 — Barras VERTICALES (una columna por categoría): el valor arriba,
  * la etiqueta abajo; con muchas categorías, scroll horizontal. Mismo color,
  * click y línea de promedio que las horizontales.
  */

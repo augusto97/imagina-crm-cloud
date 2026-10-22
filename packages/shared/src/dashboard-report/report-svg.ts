@@ -1,7 +1,7 @@
 import type { WidgetReport } from './report';
 
 /**
- * v0.1.291 — Un widget dibujado como SVG autocontenido (sin CSS, sin
+ * v0.1.292 — Un widget dibujado como SVG autocontenido (sin CSS, sin
  * fuentes externas, sin imágenes): la imagen PNG que se descarga desde el
  * tablero (el navegador lo pasa a un canvas) y los gráficos del PDF del envío
  * programado (pdfmake lo dibuja vectorial). Mismo dibujo en los dos lados.

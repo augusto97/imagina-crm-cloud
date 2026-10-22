@@ -36,7 +36,7 @@ type Pivot = {
 };
 
 /**
- * v0.1.291 — Barras apiladas ("Desglosar por") y tabla dinámica: valores
+ * v0.1.292 — Barras apiladas ("Desglosar por") y tabla dinámica: valores
  * exactos sobre Postgres real, con multi_select, «sin valor», un campo
  * calculado como métrica, "Otros" en los dos niveles y el ACL de quien mira.
  */

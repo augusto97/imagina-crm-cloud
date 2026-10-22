@@ -1,7 +1,7 @@
 import type { PivotData } from '@/types/dashboard';
 
 /**
- * v0.1.291 — Modelo de la tabla dinámica (puro, testeable): filas y columnas
+ * v0.1.292 — Modelo de la tabla dinámica (puro, testeable): filas y columnas
  * con etiqueta y total, los cruces indexados, y el rango de valores para el
  * mapa de calor.
  */

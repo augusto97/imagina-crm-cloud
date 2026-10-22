@@ -1386,7 +1386,7 @@ export class StructureTools implements AiProposalApplier {
                 detail.push(`por ${timeBucketLabel(config.time_bucket as string)} de ${d.label}`);
             }
             if (w.type === 'chart_bar' && w.orientation === 'vertical') config.bar_orientation = 'vertical';
-            // v0.1.291 — desglose en series (barras/área/línea) y columnas de la tabla dinámica.
+            // v0.1.292 — desglose en series (barras/área/línea) y columnas de la tabla dinámica.
             if (w.type === 'pivot' && !w.breakdown_by) {
                 throw new AiToolError(`${where}: pivot necesita breakdown_by (el campo de las columnas).`);
             }
@@ -2135,7 +2135,7 @@ export class StructureTools implements AiProposalApplier {
     private async listDashboards(ctx: AiToolContext): Promise<AiToolResult> {
         const [dashboards, lists] = await Promise.all([this.dashboards.list(ctx.tenantId, { userId: ctx.userId, role: ctx.role }), this.lists.list(ctx.tenantId)]);
         const listById = new Map(lists.map((l) => [l.id, l.slug]));
-        // v0.1.291 — también qué agrupa cada gráfico y por qué se desglosa
+        // v0.1.292 — también qué agrupa cada gráfico y por qué se desglosa
         // (slugs): el modelo puede describir o copiar un tablero sin adivinar.
         const usedLists = [...new Set(dashboards.flatMap((d) => d.widgets.map((w) => w.list_id)).filter((id) => id > 0 && listById.has(id)))];
         const slugOf = new Map<number, string>();
@@ -3167,7 +3167,7 @@ const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'pe
 const DATE_TYPES: readonly FieldType[] = ['date', 'datetime'];
 
 /**
- * v0.1.291 — ¿Se puede agrupar (o desglosar) por este campo? Relación y
+ * v0.1.292 — ¿Se puede agrupar (o desglosar) por este campo? Relación y
  * archivo no forman grupos; un calculado, sólo si es aritmético.
  */
 function assertGroupable(where: string, f: Field): void {
@@ -3184,7 +3184,7 @@ const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
     gauge: { w: 3, h: 3 },
     stat_delta: { w: 3, h: 2 },
     chart_bar: { w: 6, h: 4 },
-    // v0.1.291 — tabla dinámica: ancha (filas × columnas).
+    // v0.1.292 — tabla dinámica: ancha (filas × columnas).
     pivot: { w: 8, h: 5 },
     chart_pie: { w: 6, h: 4 },
     chart_line: { w: 6, h: 4 },

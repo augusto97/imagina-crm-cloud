@@ -15,7 +15,7 @@ import { formatMetricValue } from './widgetFormat';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 /**
- * v0.1.291 — Tabla dinámica: filas = un campo, columnas = otro, la métrica en
+ * v0.1.292 — Tabla dinámica: filas = un campo, columnas = otro, la métrica en
  * cada cruce, con el total de cada fila, de cada columna y el general
  * (calculados por el servidor sobre SUS registros: bien también para
  * promedio, mín/máx o únicos). Mapa de calor opcional en un solo tono (el

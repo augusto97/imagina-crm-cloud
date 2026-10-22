@@ -21,7 +21,7 @@ import type { FilterNode, FilterTree } from '@/types/record';
  * encima de la vista y limpia el parámetro).
  */
 /**
- * v0.1.291 — Con un segundo campo (barras apiladas, una celda de la tabla
+ * v0.1.292 — Con un segundo campo (barras apiladas, una celda de la tabla
  * dinámica) el click abre la lista filtrada por los DOS valores: el grupo y
  * la serie / la fila y la columna. `subLabel` es la clave de la serie.
  */
@@ -105,7 +105,7 @@ export function segmentFilterTree(args: {
     period: string;
     filters: DashboardFilterValue[];
     userId: number;
-    /** v0.1.291 — el segundo valor (serie de un desglose, columna de una tabla dinámica). */
+    /** v0.1.292 — el segundo valor (serie de un desglose, columna de una tabla dinámica). */
     sub?: { field: Pick<FieldEntity, 'id' | 'type'>; label: string };
 }): FilterTree | null {
     const { widget, field, label } = args;
@@ -152,7 +152,7 @@ export function segmentFilterTree(args: {
     const seg = segmentCondition(field, label, typeof cfg.time_bucket === 'string');
     if (seg === null) return null;
     children.push(seg);
-    // 5. v0.1.291 — y la de la serie (o la columna). Un segundo campo de
+    // 5. v0.1.292 — y la de la serie (o la columna). Un segundo campo de
     // fecha siempre va por bucket (sin elegir, por mes).
     if (args.sub !== undefined) {
         const subSeg = segmentCondition(args.sub.field, args.sub.label, true);

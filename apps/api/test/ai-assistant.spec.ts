@@ -522,7 +522,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         expect(w[4]!.config).toMatchObject({ limit: 5, sort_field_id: fecha.id, sort_dir: 'asc' });
     });
 
-    it('v0.1.291 — tablero con barras desglosadas y tabla dinámica (y sus errores corregibles)', async () => {
+    it('v0.1.292 — tablero con barras desglosadas y tabla dinámica (y sus errores corregibles)', async () => {
         const list = await lists.create(tenantId, { name: 'Pedidos' });
         const etapa = await fields.create(tenantId, String(list.id), { label: 'Etapa', type: 'select', config: { options: [{ value: 'a', label: 'A' }] } });
         const zona = await fields.create(tenantId, String(list.id), { label: 'Zona', type: 'select', config: { options: [{ value: 'n', label: 'Norte' }] } });

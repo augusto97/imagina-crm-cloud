@@ -137,7 +137,7 @@ export function WidgetFormDialog({
     const [includeSubtasks, setIncludeSubtasks] = useState(false);
     const [chartSort, setChartSort] = useState<string>('');
     const [topN, setTopN] = useState<number>(0);
-    // v0.1.291 — "Desglosar por" un segundo campo (barras/área/línea) y
+    // v0.1.292 — "Desglosar por" un segundo campo (barras/área/línea) y
     // tabla dinámica (filas × columnas).
     const [subGroupByFieldId, setSubGroupByFieldId] = useState<number>(0);
     const [subTimeBucket, setSubTimeBucket] = useState<ChartTimeBucket>('month');
@@ -325,7 +325,7 @@ export function WidgetFormDialog({
         setShowLegend(defs.legend);
     };
 
-    // v0.1.291 — al elegir un desglose, la leyenda de las series se enciende
+    // v0.1.292 — al elegir un desglose, la leyenda de las series se enciende
     // (sin ella no se sabe qué color es cada serie).
     const changeBreakdown = (id: number): void => {
         if (id > 0 && subGroupByFieldId === 0) setShowLegend(true);
@@ -393,7 +393,7 @@ export function WidgetFormDialog({
             if (chartSort !== '') config.sort = chartSort;
             if (topN > 0) config.top_n = topN;
         }
-        // v0.1.291 — desglose por un segundo campo (barras, área, línea).
+        // v0.1.292 — desglose por un segundo campo (barras, área, línea).
         for (const k of ['sub_group_by_field_id', 'sub_time_bucket', 'stack_mode', 'stack_percent', 'series_top_n', 'bar_orientation', 'col_top_n', 'col_sort', 'heatmap', 'show_totals']) {
             delete config[k];
         }
@@ -407,7 +407,7 @@ export function WidgetFormDialog({
             if (seriesTopN > 0) config.series_top_n = seriesTopN;
             config.show_legend = showLegend;
         }
-        // v0.1.291 — tabla dinámica.
+        // v0.1.292 — tabla dinámica.
         if (type === 'pivot') {
             if (subGroupByFieldId > 0) config.sub_group_by_field_id = subGroupByFieldId;
             if (isDateField(fields.data ?? [], subGroupByFieldId)) config.sub_time_bucket = subTimeBucket;
@@ -1495,7 +1495,7 @@ function TimeBucketPicker({ value, onChange }: TimeBucketPickerProps): JSX.Eleme
 
 interface PresentationTogglesProps {
     type: WidgetType;
-    /** v0.1.291 — con desglose: la leyenda de las series. */
+    /** v0.1.292 — con desglose: la leyenda de las series. */
     breakdown?: boolean;
     showAverageLine: boolean;
     showDataLabels: boolean;
@@ -1819,12 +1819,12 @@ export function widgetPreviewHint(widget: Pick<WidgetSpec, 'type' | 'config'>): 
     return null;
 }
 
-/** v0.1.291 — Gráficos que aceptan "Desglosar por" (espejo de `BREAKDOWN_WIDGET_TYPES`). */
+/** v0.1.292 — Gráficos que aceptan "Desglosar por" (espejo de `BREAKDOWN_WIDGET_TYPES`). */
 export function isBreakdownType(type: WidgetType): boolean {
     return type === 'chart_bar' || type === 'chart_area' || type === 'chart_line';
 }
 
-/** v0.1.291 — Métricas que suman (se apilan y van al 100 %; espejo de `STACKABLE_METRICS`). */
+/** v0.1.292 — Métricas que suman (se apilan y van al 100 %; espejo de `STACKABLE_METRICS`). */
 export function isStackableMetric(metric: string): boolean {
     return metric === 'count' || metric === 'count_empty' || metric === 'count_true' || metric === 'count_false' || metric === 'sum';
 }
@@ -1848,7 +1848,7 @@ interface BreakdownConfigProps {
 }
 
 /**
- * v0.1.291 — "Desglosar por" un segundo campo: cada barra (o cada punto del
+ * v0.1.292 — "Desglosar por" un segundo campo: cada barra (o cada punto del
  * área) se parte en series con el color real de cada opción. Apiladas (y al
  * 100 %) sólo con métricas que suman: un promedio apilado no significa nada,
  * así que ahí van lado a lado.
@@ -1958,7 +1958,7 @@ interface PivotConfigProps {
     onTotalsChange: (v: boolean) => void;
 }
 
-/** v0.1.291 — Configuración de la tabla dinámica: métrica, filas, columnas y presentación. */
+/** v0.1.292 — Configuración de la tabla dinámica: métrica, filas, columnas y presentación. */
 function PivotConfig(p: PivotConfigProps): JSX.Element {
     const sortOptions = (
         <>

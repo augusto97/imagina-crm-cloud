@@ -63,7 +63,7 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
                   .map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))
             : [];
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
-    // v0.1.291 — con "Desglosar por": una serie por valor del segundo campo,
+    // v0.1.292 — con "Desglosar por": una serie por valor del segundo campo,
     // apiladas (también al 100 %) o superpuestas.
     const payload = data.data && 'data' in data.data && Array.isArray(data.data.series)
         ? ({ ...data.data, data: data.data.data.filter((r) => r.label !== OTHERS_GROUP_KEY) } as BreakdownPayload)

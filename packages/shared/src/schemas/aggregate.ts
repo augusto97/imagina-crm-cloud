@@ -122,13 +122,13 @@ export const aggregateResultSchema = z.object({
     /** v0.1.287 — con segundo nivel: pares (grupo, subgrupo) que existen pero no viajan (tope). */
     hidden_sub_groups: z.number().int().nonnegative().optional(),
     /**
-     * v0.1.291 — con segundo nivel y totales (tabla dinámica, barras
+     * v0.1.292 — con segundo nivel y totales (tabla dinámica, barras
      * apiladas): la métrica de cada SUBGRUPO sobre todos los registros, en el
      * orden del tope (las mayores primero o por clave) con "Otros" al final.
      * Con totales, `value` es el total general.
      */
     sub_totals: z.array(aggregateSubGroupSchema.extend({ others: z.number().int().nonnegative().optional() })).optional(),
-    /** v0.1.291 — cuántos subgrupos junta el subgrupo "Otros" (tope del segundo nivel). */
+    /** v0.1.292 — cuántos subgrupos junta el subgrupo "Otros" (tope del segundo nivel). */
     sub_others: z.number().int().nonnegative().optional(),
 });
 export type AggregateResult = z.infer<typeof aggregateResultSchema>;
