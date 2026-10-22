@@ -557,6 +557,38 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(all.find((u) => u.email === 'ya@existe.test')?.workspaces).toBe(2);
     });
 
+    it('v0.1.293 — un superadmin sin empresas: la consola le crea una o lo suma a otra (Ajustes → Miembros sigue sin poder)', async () => {
+        // Su cuenta existe (el arranque la pre-crea, SEC-04) y se quedó sin
+        // empresas: le borraron la única.
+        const [boss] = await pg.db
+            .insert(users)
+            .values({ email: SUPERADMIN, passwordHash: 'x', name: 'Operador' })
+            .returning();
+        const [operator] = await pg.db
+            .insert(users)
+            .values({ email: 'otro-op@platform.test', passwordHash: 'x', name: 'Otro' })
+            .returning();
+        sentMail.length = 0;
+
+        // 1) La consola le crea una empresa propia: queda de admin, sin invitación.
+        const own = await platform.createTenant({ workspace_name: 'Empresa del operador', admin_email: SUPERADMIN, admin_name: 'Operador' });
+        expect(own.owner).toMatchObject({ email: SUPERADMIN });
+        expect(sentMail.some((m) => m.to === SUPERADMIN && /invit/i.test(m.subject))).toBe(false);
+
+        // 2) La consola lo suma a una empresa que ya existe.
+        const other = await seedTenant({ name: 'Cliente', ownerEmail: 'admin@cliente.test' });
+        const added = await platform.addTenantMember(other, { email: SUPERADMIN, role: 'admin' }, operator!.id);
+        expect(added).toMatchObject({ email: SUPERADMIN, role: 'admin', invited: false });
+        const ws = await platform.userWorkspaces(boss!.id);
+        expect(ws.map((w) => w.tenant_id).sort()).toEqual([own.id, other].sort());
+
+        // 3) El admin de una empresa (Ajustes → Miembros) sigue sin poder sumarlo.
+        const third = await seedTenant({ name: 'Otra', ownerEmail: 'admin@otra.test' });
+        await expect(auth.addToTenant(third, { email: SUPERADMIN, role: 'agent' })).rejects.toMatchObject({
+            response: expect.objectContaining({ code: 'email_reserved' }),
+        });
+    });
+
     it('createTenant con plan inexistente → 400', async () => {
         await expect(
             platform.createTenant({ workspace_name: 'X', admin_email: 'x@x.test', admin_name: 'X', plan: 'no_existe' }),

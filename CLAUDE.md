@@ -8441,6 +8441,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         auditoría II: tabla, automatizaciones, portal y formularios, PDF, ficha
         y tableros.**
 
+  - [x] **Un superadmin puede volver a tener empresa (v0.1.293, reporte del
+        usuario: "tengo 2 superadmin, a uno le borré la empresa para sumarlo a
+        otra y ahora no puedo crearle una ni invitarlo")**: el correo de un
+        superadmin estaba reservado en TODOS los caminos —registro, «Nuevo
+        usuario», «Nueva empresa», invitaciones de Ajustes → Miembros y de la
+        consola— y la consola escondía «Agregar a una empresa» para él. Peor:
+        sin ninguna empresa, la app muestra «Tu cuenta no tiene ninguna
+        empresa», y como la consola de Plataforma vive DENTRO de la app, ese
+        superadmin quedaba afuera de todo y nadie podía devolverle el acceso.
+        Ahora (a) **la consola de plataforma** suma a un superadmin a una
+        empresa (Usuarios → Editar → «Agregar a una empresa» o el detalle de la
+        empresa) y le crea una («Nueva empresa» con su correo) —
+        `allowReserved` en `addToTenant`/`adminCreateTenant`, que sólo pasan los
+        endpoints `/platform/*`—; (b) la pantalla **sin empresa de un
+        superadmin** le deja **crearse una** o **sumarse como admin** a una
+        existente (buscador), con los mismos endpoints de la consola y sesión
+        de contraseña (con una sesión vieja le pide volver a entrar);
+        (c) **se mantiene el bloqueo** del registro público (SEC-04) y de las
+        invitaciones que hace el admin de una empresa (sumar una cuenta
+        existente no pide permiso y la cuenta del operador no puede quedar en
+        manos de un cliente), y el mensaje ahora dice dónde se hace. 1 test de
+        integración del caso exacto (crearle empresa, sumarlo a otra, y
+        Ajustes → Miembros sigue rechazando; 55 en los specs de plataforma y
+        miembros) + E2E navegador 13/13 con un segundo superadmin sin
+        empresas (sumarse a una existente y crearse una sin recargar, consola
+        con «Agregar a una empresa», invitación desde Ajustes rechazada con el
+        motivo, celular sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

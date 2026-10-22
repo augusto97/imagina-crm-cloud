@@ -352,7 +352,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.292** (tableros hacia afuera: enlace público, envío programado, barras apiladas, tabla dinámica y descarga de widgets, ADR-S50), en `main`.
+versión publicada: **v0.1.293** (un superadmin puede volver a tener empresa desde la consola o desde la pantalla «sin empresa»), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
@@ -577,6 +577,17 @@ versión publicada: **v0.1.292** (tableros hacia afuera: enlace público, envío
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-22 · v0.1.293** — **Un superadmin puede volver a tener empresa**
+  (reporte del usuario: tiene 2 superadmins, le borró la empresa a uno para
+  sumarlo a otra y ya no podía ni crearle una ni invitarlo). El correo de un
+  superadmin estaba reservado en todos los caminos, y sin empresa la app no
+  abre —tampoco la consola de Plataforma, que vive adentro—, así que quedaba
+  afuera de todo. Ahora la consola lo suma a una empresa o le crea una, y la
+  pantalla «sin empresa» de un superadmin le deja crearse una o sumarse a una
+  existente. Siguen bloqueados el registro público y las invitaciones de los
+  admins de las empresas. **Para el usuario**: tras actualizar, el superadmin
+  afectado entra con su contraseña y elige ahí mismo; o el otro superadmin lo
+  suma desde Plataforma → Usuarios → Editar → «Agregar a una empresa».
 - **2026-10-22 · v0.1.292** — **Tableros hacia afuera + análisis** (ADR-S50),
   sexta y última entrega del «hazlo todo». Barras apiladas («Desglosar por» en
   barras, área y línea; al 100 % o lado a lado, con «Otros») y tabla dinámica

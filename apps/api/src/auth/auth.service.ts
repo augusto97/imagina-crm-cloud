@@ -295,14 +295,20 @@ export class AuthService implements OnModuleInit {
      * ya tiene cuenta, lo suma como admin del nuevo workspace; si no, la crea y le
      * manda la invitación. Reusa el patrón RLS de `register`.
      */
-    async adminCreateTenant(input: {
-        workspace_name: string;
-        admin_email: string;
-        admin_name: string;
-        plan: string;
-    }): Promise<{ tenantId: number; invited: boolean }> {
+    async adminCreateTenant(
+        input: {
+            workspace_name: string;
+            admin_email: string;
+            admin_name: string;
+            plan: string;
+        },
+        opts: { allowReserved?: boolean } = {},
+    ): Promise<{ tenantId: number; invited: boolean }> {
         const email = input.admin_email.trim().toLowerCase();
-        if (this.env.PLATFORM_SUPERADMINS.includes(email)) {
+        // v0.1.293 — la consola de plataforma (sólo superadmins) SÍ puede crearle
+        // una empresa a un superadmin: si no, uno que se quedó sin empresas no
+        // tenía forma de volver a tener una (ni de abrir la app).
+        if (!opts.allowReserved && this.env.PLATFORM_SUPERADMINS.includes(email)) {
             throw new ConflictException('Ese email está reservado');
         }
         const [known] = await this.db
@@ -509,7 +515,7 @@ export class AuthService implements OnModuleInit {
     async addToTenant(
         tenantId: number,
         input: { email: string; name?: string; role: 'admin' | 'manager' | 'agent' | 'viewer' },
-        opts: { invitedById?: number | null } = {},
+        opts: { invitedById?: number | null; allowReserved?: boolean } = {},
     ): Promise<{
         user: { id: number; name: string; email: string };
         role: 'admin' | 'manager' | 'agent' | 'viewer';
@@ -518,11 +524,17 @@ export class AuthService implements OnModuleInit {
         notified: boolean;
     }> {
         const email = input.email.trim().toLowerCase();
-        if (this.env.PLATFORM_SUPERADMINS.includes(email)) {
+        // Un admin de una empresa NO puede sumar a un superadmin: sumar una
+        // cuenta existente no le pide permiso a nadie, y la cuenta del operador
+        // no puede quedar en manos de un cliente (menciones, asignaciones,
+        // cambiarle el rol). La consola de plataforma sí (`allowReserved`,
+        // v0.1.293): ahí quien decide es otro superadmin, o él mismo.
+        if (!opts.allowReserved && this.env.PLATFORM_SUPERADMINS.includes(email)) {
             throw new ConflictException({
                 code: 'email_reserved',
-                message: 'Ese email está reservado para la administración de la plataforma',
-                data: { status: 409, errors: { email: 'Reservado' } },
+                message:
+                    'Ese email es de un superadmin de la plataforma: sólo se suma a una empresa desde la consola de Plataforma (Usuarios → Agregar a una empresa).',
+                data: { status: 409, errors: { email: 'Superadmin de la plataforma' } },
             });
         }
         const [tenant] = await this.db

@@ -1045,6 +1045,22 @@ export class CloudClient {
     setupCollectionFields(list: string | number): Promise<CollectionFields> {
         return this.request('POST', `/lists/${list}/collections/setup`, { body: {}, schema: z.custom<CollectionFields>() });
     }
+    /**
+     * v0.1.293 — Lo que necesita la pantalla «sin empresa» de un superadmin
+     * para volver a tener una (no tiene tenant activo: no viaja X-Tenant-Id).
+     */
+    platformTenantsSearch(q: string): Promise<{ id: number; name: string; slug: string }[]> {
+        return this.request('GET', '/platform/tenants', {
+            query: { q: q.trim() || undefined, limit: 8 },
+            schema: z.object({ data: z.array(z.object({ id: z.number(), name: z.string(), slug: z.string() })) }),
+        }).then((r) => r.data);
+    }
+    platformCreateOwnTenant(input: { workspace_name: string; admin_email: string; admin_name: string }): Promise<void> {
+        return this.request('POST', '/platform/tenants', { body: input });
+    }
+    platformJoinTenant(tenantId: number, email: string): Promise<void> {
+        return this.request('POST', `/platform/tenants/${tenantId}/members`, { body: { email, role: 'admin' } });
+    }
     platformIntegrationsGet(): Promise<PlatformIntegrations> {
         return this.request('GET', '/platform/integrations', { schema: platformIntegrationsSchema });
     }

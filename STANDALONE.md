@@ -2036,6 +2036,20 @@ plan: `POST/PATCH/DELETE /platform/tenants/:id/members[/:userId]`,
 `POST /platform/users/:id/resend-invite`; cada acción queda en la bitácora de
 esa empresa con el operador como autor.
 
+**Superadmins y empresas (v0.1.293).** El correo de un superadmin sigue
+reservado (SEC-04) para el registro público y para las invitaciones que hace
+el admin de una empresa —sumar una cuenta existente no le pide permiso a
+nadie, y la cuenta del operador no puede quedar en manos de un cliente—, pero
+la **consola de plataforma** sí puede sumar a un superadmin a una empresa o
+crearle una (`allowReserved` en `addToTenant`/`adminCreateTenant`, que sólo
+pasan los endpoints `/platform/*`): ahí decide otro superadmin, o él mismo.
+Sin eso, un superadmin al que le borraban su única empresa quedaba afuera de
+la app Y de la consola (que vive adentro) sin que nadie pudiera devolverle
+una. Por lo mismo, la pantalla «Tu cuenta no tiene ninguna empresa» de un
+superadmin le deja crearse una o sumarse como admin a una existente, con esos
+mismos endpoints (sesión de contraseña obligatoria; con una sesión vieja pide
+volver a entrar).
+
 **Portal: varios accesos por persona y cuentas de varias empresas
 (v0.1.241).** `portal_links` deja de ser único por (persona, empresa) y pasa a
 único por (persona, **registro**) (migración 0058): dar acceso a otro registro
@@ -3390,4 +3404,4 @@ mismo, y que el asistente/MCP publique o programe envíos.
 
 ---
 
-**Versión del documento:** 1.89.0 (tableros hacia afuera — ADR-S50)
+**Versión del documento:** 1.90.0 (superadmins y empresas desde la consola)
