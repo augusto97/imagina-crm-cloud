@@ -218,6 +218,16 @@ describe('Asistente/MCP + plantillas: dependencias y vista Gantt', () => {
         const noStart = await call('propose_create_view', { list: 'obra', view: { name: 'Sin inicio', type: 'gantt' } });
         expect(isError(noStart)).toBe(true);
         expect(json(noStart).error).toContain('start_field');
+        // Calendario y Gantt comparten color_by/color_field: cada vista acepta sólo lo suyo.
+        const ganttAuto = await call('propose_create_view', { list: 'obra', view: { name: 'G', type: 'gantt', start_field: 'inicio', color_by: 'auto' } });
+        expect(isError(ganttAuto)).toBe(true);
+        expect(json(ganttAuto).error).toContain('field, rules o none');
+        const calRules = await call('propose_create_view', { list: 'obra', view: { name: 'C', type: 'calendar', date_field: 'inicio', color_by: 'rules' } });
+        expect(isError(calRules)).toBe(true);
+        expect(json(calRules).error).toContain('auto, source, field o none');
+        const tableColor = await call('propose_create_view', { list: 'obra', view: { name: 'T', type: 'table', color_field: 'estado' } });
+        expect(isError(tableColor)).toBe(true);
+        expect(json(tableColor).error).toContain('calendario o gantt');
 
         const p = json(
             await call('propose_create_view', {
