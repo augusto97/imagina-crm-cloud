@@ -96,4 +96,5 @@ export * from './dashboard-report/report-csv';
 export * from './dashboard-report/report-email';
 export * from './schemas/trash';
 export * from './schemas/kanban';
+export * from './schemas/calendar';
 export * from './xlsx';
