@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, CheckCircle2, FileSpreadsheet, FileUp, KeyRound, Loader2, Undo2, X } from 'lucide-react';
@@ -22,6 +22,15 @@ import { api, ApiError } from '@/lib/api';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
+
+import { SheetChooser, XlsxNotesBanner } from '../import/SheetChooser';
+import {
+    SPREADSHEET_ACCEPT,
+    tooLargeMessage,
+    useSpreadsheetFile,
+    type PreparedSpreadsheet,
+    type XlsxImportNotes,
+} from '../import/useSpreadsheetFile';
 
 import { BulkRevertDialog } from './BulkRevertDialog';
 
@@ -62,6 +71,9 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [undoOpen, setUndoOpen] = useState(false);
+    // v0.1.299 — una planilla de Excel: la hoja elegida, convertida.
+    const [source, setSource] = useState<'csv' | 'xlsx'>('csv');
+    const [xlsxNotes, setXlsxNotes] = useState<XlsxImportNotes | undefined>(undefined);
 
     useEffect(() => {
         if (!open) return;
@@ -77,6 +89,8 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
         setUpsert(false);
         setClearEmpty(false);
         setUndoOpen(false);
+        setSource('csv');
+        setXlsxNotes(undefined);
     }, [open]);
 
     const writable = useMemo(
@@ -88,57 +102,59 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
         [info],
     );
 
-    const onFile = (file: File): void => {
+    const onReady = useCallback(async (prepared: PreparedSpreadsheet): Promise<void> => {
         setError(null);
-        setFileName(file.name);
-        const reader = new FileReader();
-        reader.onload = async () => {
-            const text = typeof reader.result === 'string' ? reader.result : '';
-            if (text === '') {
-                setError(__('El archivo está vacío o no se pudo leer.'));
-                return;
+        setFileName(prepared.fileName);
+        const text = prepared.csv;
+        setCsv(text);
+        setSource(prepared.source);
+        setXlsxNotes(prepared.xlsx);
+        setBusy(true);
+        try {
+            const res = await api.post<ImportCsvPreviewResult>(`/lists/${listId}/import/preview`, { csv: text, mode: 'update', source: prepared.source });
+            const p = res.data;
+            setInfo(p);
+            // La columna clave: «ID» si el archivo salió del export; si no,
+            // la primera sugerida contra un campo que sirve de clave (SKU, email…).
+            const suggested = p.suggested_mapping ?? {};
+            const idIdx = Object.entries(suggested).find(([, v]) => v === IMPORT_ID_COLUMN)?.[0];
+            const keyTypes = new Set<string>(IMPORT_MATCH_TYPES);
+            const keyIdx = Object.entries(suggested).find(([, slug]) => {
+                const fld = p.fields.find((f) => f.slug === slug);
+                return fld && keyTypes.has(fld.type) && /sku|c[oó]digo|code|ref|email|correo|documento|nit|id/i.test(fld.label + fld.slug);
+            });
+            if (idIdx !== undefined) {
+                setMatchCol(Number(idIdx));
+                setMatchBy(IMPORT_MATCH_BY_ID);
+            } else if (keyIdx) {
+                setMatchCol(Number(keyIdx[0]));
+                setMatchBy(keyIdx[1]);
+            } else {
+                setMatchCol(0);
+                setMatchBy(IMPORT_MATCH_BY_ID);
             }
-            setCsv(text);
-            setBusy(true);
-            try {
-                const res = await api.post<ImportCsvPreviewResult>(`/lists/${listId}/import/preview`, { csv: text, mode: 'update' });
-                const p = res.data;
-                setInfo(p);
-                // La columna clave: «ID» si el archivo salió del export; si no,
-                // la primera sugerida contra un campo que sirve de clave (SKU, email…).
-                const suggested = p.suggested_mapping ?? {};
-                const idIdx = Object.entries(suggested).find(([, v]) => v === IMPORT_ID_COLUMN)?.[0];
-                const keyTypes = new Set<string>(IMPORT_MATCH_TYPES);
-                const keyIdx = Object.entries(suggested).find(([, slug]) => {
-                    const fld = p.fields.find((f) => f.slug === slug);
-                    return fld && keyTypes.has(fld.type) && /sku|c[oó]digo|code|ref|email|correo|documento|nit|id/i.test(fld.label + fld.slug);
-                });
-                if (idIdx !== undefined) {
-                    setMatchCol(Number(idIdx));
-                    setMatchBy(IMPORT_MATCH_BY_ID);
-                } else if (keyIdx) {
-                    setMatchCol(Number(keyIdx[0]));
-                    setMatchBy(keyIdx[1]);
-                } else {
-                    setMatchCol(0);
-                    setMatchBy(IMPORT_MATCH_BY_ID);
-                }
-                const lockedSlugs = new Set(p.fields.filter((f) => isLocked?.(f.id)).map((f) => f.slug));
-                const m: Record<number, string> = {};
-                for (const [k, slug] of Object.entries(suggested)) {
-                    if (slug === IMPORT_ID_COLUMN || slug === IMPORT_PARENT_COLUMN || lockedSlugs.has(slug)) continue;
-                    m[Number(k)] = slug;
-                }
-                setMapping(m);
-                setPhase('setup');
-            } catch (err) {
-                setError(err instanceof ApiError || err instanceof Error ? err.message : __('No se pudo leer el archivo.'));
-            } finally {
-                setBusy(false);
+            const lockedSlugs = new Set(p.fields.filter((f) => isLocked?.(f.id)).map((f) => f.slug));
+            const m: Record<number, string> = {};
+            for (const [k, slug] of Object.entries(suggested)) {
+                if (slug === IMPORT_ID_COLUMN || slug === IMPORT_PARENT_COLUMN || lockedSlugs.has(slug)) continue;
+                m[Number(k)] = slug;
             }
-        };
-        reader.readAsText(file, 'UTF-8');
-    };
+            setMapping(m);
+            setPhase('setup');
+        } catch (err) {
+            setError(
+                err instanceof ApiError && err.status === 413
+                    ? tooLargeMessage()
+                    : err instanceof ApiError || err instanceof Error
+                      ? err.message
+                      : __('No se pudo leer el archivo.'),
+            );
+        } finally {
+            setBusy(false);
+        }
+    }, [listId, isLocked]);
+
+    const sheet = useSpreadsheetFile(onReady);
 
     const body = (extra: Record<string, unknown> = {}) => {
         const clean: Record<string, string> = {};
@@ -149,6 +165,7 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
             match: { column_index: matchCol, by: matchBy },
             mode: upsert ? 'upsert' : 'update',
             clear_empty: clearEmpty,
+            source,
             ...extra,
         };
     };
@@ -236,33 +253,47 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
                     </div>
 
                     <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-5 imcrm-py-4">
-                        {error && (
+                        {(error ?? sheet.error) && (
                             <p className="imcrm-mb-3 imcrm-rounded-md imcrm-bg-destructive/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-text-destructive" role="alert">
-                                {error}
+                                {error ?? sheet.error}
                             </p>
                         )}
 
-                        {phase === 'upload' && (
+                        {phase === 'upload' && sheet.pending !== null && (
+                            <SheetChooser
+                                book={sheet.pending}
+                                busy={busy || sheet.reading}
+                                onChoose={(i) => void sheet.chooseSheet(i)}
+                                onCancel={() => sheet.reset()}
+                            />
+                        )}
+
+                        {phase === 'upload' && sheet.pending === null && (
                             <label
                                 className={cn(
                                     'imcrm-flex imcrm-cursor-pointer imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-10 imcrm-text-center hover:imcrm-bg-muted/40',
-                                    busy && 'imcrm-pointer-events-none imcrm-opacity-60',
+                                    (busy || sheet.reading) && 'imcrm-pointer-events-none imcrm-opacity-60',
                                 )}
                             >
                                 <FileUp className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground" />
-                                <span className="imcrm-text-sm imcrm-font-medium">{__('Elige un archivo CSV')}</span>
+                                <span className="imcrm-text-sm imcrm-font-medium">{__('Elige un archivo Excel (.xlsx) o CSV')}</span>
                                 <span className="imcrm-max-w-md imcrm-text-xs imcrm-text-muted-foreground">
                                     {__('Tiene que tener una columna que identifique cada registro: el ID (la que trae la exportación de esta lista) o un campo único como el SKU o el email. Hasta 5.000 filas.')}
                                 </span>
-                                {busy && <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin imcrm-text-muted-foreground" />}
+                                {(busy || sheet.reading) && <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin imcrm-text-muted-foreground" />}
                                 <input
                                     type="file"
-                                    accept=".csv,text/csv,text/plain"
+                                    accept={SPREADSHEET_ACCEPT}
                                     className="imcrm-sr-only"
-                                    disabled={busy}
+                                    disabled={busy || sheet.reading}
                                     onChange={(e) => {
                                         const f = e.target.files?.[0];
-                                        if (f) onFile(f);
+                                        e.target.value = '';
+                                        if (f) {
+                                            setError(null);
+                                            setFileName(f.name);
+                                            void sheet.openFile(f);
+                                        }
                                     }}
                                     data-testid="imcrm-csv-update-file"
                                 />
@@ -271,6 +302,7 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
 
                         {phase === 'setup' && info && (
                             <div className="imcrm-space-y-4">
+                                {xlsxNotes && <XlsxNotesBanner notes={xlsxNotes} />}
                                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-primary/30 imcrm-bg-primary/5 imcrm-p-3">
                                     <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
                                         <KeyRound className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" />

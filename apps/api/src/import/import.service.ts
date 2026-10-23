@@ -17,8 +17,10 @@ import {
     type ImportResult,
     type ImportRowError,
     type ImportRowsInput,
+    type ImportSource,
     type Role,
     type SelectOption,
+    type TextCoercionOptions,
     coerceTextToFieldValue,
     normalizeDateString as sharedNormalizeDateString,
 } from '@imagina-base/shared';
@@ -33,6 +35,7 @@ import { ListsService } from '../lists/lists.service';
 import { RecordsRepository } from '../records/records.repository';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { readTenantFormat } from '../tenancy/tenant-format';
 import { eq } from 'drizzle-orm';
 import { memberships, users } from '../db/schema';
 
@@ -332,6 +335,7 @@ export class ImportService {
         const members = [...mapping.values()].some((slug) => bySlug.get(slug)?.type === 'user')
             ? await this.memberLookup(tenantId)
             : undefined;
+        const readOpts = await this.readOptions(tenantId, input.source);
         // v0.1.294 — «Sin repetidos»: contra la lista y contra el mismo archivo.
         const unique = await this.tenantDb.withTenant(tenantId, (tx) => UniqueTracker.load(tx, tenantId, list.id, [...bySlug.values()]));
         rows.forEach((row, idx) => {
@@ -343,7 +347,7 @@ export class ImportService {
                 if (!field) continue;
                 const rawCell = row[colIdx] ?? '';
                 const rawTrimmed = rawCell.trim();
-                const coerced = coerceCellValue(rawCell, field, members);
+                const coerced = coerceCellValue(rawCell, field, members, readOpts);
                 if (coerced === null || coerced === '' || (Array.isArray(coerced) && coerced.length === 0)) {
                     if (rawTrimmed !== '') {
                         cellWarnings.push({
@@ -542,6 +546,23 @@ export class ImportService {
         return out;
     }
 
+    /**
+     * v0.1.299 — Cómo se lee el TEXTO de cada celda. Lo que viene de una
+     * planilla de Excel (`source: 'xlsx'`) se lee con el formato regional y la
+     * zona de la empresa: el navegador escribió los números con su decimal y
+     * las fechas y horas en su reloj (las mismas con que se exportan). El CSV
+     * conserva la lectura histórica (sin formato, horas en UTC).
+     */
+    async readOptions(tenantId: number, source: ImportSource | undefined): Promise<TextCoercionOptions> {
+        if (source !== 'xlsx') return {};
+        const format = await readTenantFormat(this.tenantDb, tenantId);
+        return {
+            numberFormat: format.number_format,
+            dateFormat: format.date_format,
+            timeZone: format.timezone ?? undefined,
+        };
+    }
+
     async importableFields(tenantId: number, listId: number): Promise<Field[]> {
         const all = await this.fields.listByListId(tenantId, listId);
         return all.filter((f) => isUserWritableType(f.type));
@@ -725,8 +746,8 @@ function readOptions(field: Field): SelectOption[] {
  * (`coerceTextToFieldValue`): la comparte el PEGAR de la tabla, que convierte
  * en el navegador. Así un valor pegado se lee igual que uno importado.
  */
-export function coerceCellValue(raw: string, field: Field, members?: Map<string, number>): unknown {
-    return coerceTextToFieldValue(raw, field, { members });
+export function coerceCellValue(raw: string, field: Field, members?: Map<string, number>, opts: TextCoercionOptions = {}): unknown {
+    return coerceTextToFieldValue(raw, field, { ...opts, members });
 }
 
 /** Lower-case Unicode-aware ("AL DÍA" ↔ "al día"). */

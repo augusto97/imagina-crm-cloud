@@ -5,17 +5,22 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import type { Actor } from '../records/records.service';
+import { contentDispositionHeader } from '../files/safe-content-type';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ExportService } from './export.service';
 
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 /**
  * Export de una lista. GET → sigue disponible en solo-lectura por impago
- * (ADR-S09). Requiere export_records. Dos formatos:
+ * (ADR-S09). Requiere export_records. Tres formatos:
  *  - default: bundle JSON de intercambio (CONTRACT §11, STANDALONE §16).
  *  - `?format=csv`: CSV con selección de campos/delimiter/filtro — lo que
  *    usa el diálogo "Exportar" del admin. Respeta el ACL por rol.
+ *  - `?format=xlsx` (v0.1.299): la misma vista como planilla de Excel, con
+ *    tipos reales (montos, fechas, porcentajes, duraciones). Mismo ACL.
  *
- * SEC-10: ambos formatos se STREAMEAN (keyset) → sin OOM en listas grandes.
+ * SEC-10: todos se STREAMEAN (keyset) → sin OOM en listas grandes.
  */
 @Controller('lists/:list/export')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
@@ -35,27 +40,65 @@ export class ExportController {
         @Query('filter_tree') rawFilterTree?: string,
         @Query('search') search?: string,
         @Query('sort') sort?: string,
+        @Query('subtasks') subtasks?: string,
+        @Query('sheet') sheet?: string,
+        @Query('with_id') withId?: string,
+        @Query('freeze') freeze?: string,
     ): Promise<void> {
-        if (format === 'csv') {
-            const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role };
-            const fieldIds = (fields ?? '')
-                .split(',')
-                .map((s) => Number(s.trim()))
-                .filter((n) => Number.isInteger(n) && n > 0);
+        const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role };
+        const fieldIds = (fields ?? '')
+            .split(',')
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isInteger(n) && n > 0);
+        // v0.1.299 — `subtasks=0` exporta sólo el primer nivel.
+        const includeSubtasks = subtasks !== '0' && subtasks !== 'false';
+        const view = {
+            fieldIds,
+            filterTree: parseFilterTree(rawFilterTree),
+            // v0.1.286 — el archivo trae lo que se VE: con la búsqueda
+            // y el orden de la vista (el whitelist lo aplica el listado).
+            search: typeof search === 'string' && search.trim() !== '' ? search.slice(0, 200) : undefined,
+            sort: typeof sort === 'string' && sort.length <= 500 ? sort : undefined,
+            includeSubtasks,
+        };
 
+        if (format === 'xlsx') {
+            const freezeCols = Number(freeze);
+            await this.exportService.streamXlsxExport(
+                req.tenant!.tenantId,
+                actor,
+                list,
+                {
+                    ...view,
+                    sheetName: typeof sheet === 'string' && sheet.trim() !== '' ? sheet.slice(0, 200) : undefined,
+                    withId: withId === '1' || withId === 'true',
+                    freezeColumns: Number.isInteger(freezeCols) && freezeCols > 0 ? Math.min(freezeCols, 20) : 0,
+                },
+                (asciiName, displayName) =>
+                    reply.raw.writeHead(200, {
+                        'content-type': XLSX_MIME,
+                        // El nombre con acentos viaja en `filename*` (RFC 5987).
+                        'content-disposition': contentDispositionHeader('attachment', displayName).replace(
+                            /filename="[^"]*"/,
+                            `filename="${asciiName}"`,
+                        ),
+                        'cache-control': 'no-store',
+                    }),
+                (chunk) => writeWithBackpressure(reply.raw, chunk),
+            );
+            reply.raw.end();
+            return;
+        }
+
+        if (format === 'csv') {
             await this.exportService.streamCsvExport(
                 req.tenant!.tenantId,
                 actor,
                 list,
                 {
-                    fieldIds,
+                    ...view,
                     delimiter: delimiter === ';' ? ';' : ',',
                     withBom: withBom === '1' || withBom === 'true',
-                    filterTree: parseFilterTree(rawFilterTree),
-                    // v0.1.286 — el archivo trae lo que se VE: con la búsqueda
-                    // y el orden de la vista (el whitelist lo aplica el listado).
-                    search: typeof search === 'string' && search.trim() !== '' ? search.slice(0, 200) : undefined,
-                    sort: typeof sort === 'string' && sort.length <= 500 ? sort : undefined,
                 },
                 (filename) =>
                     reply.raw.writeHead(200, {
@@ -100,7 +143,7 @@ export class ExportController {
  * (el buffer del cliente está lleno) se espera a `drain`. Sin esto, con un
  * cliente lento el archivo ENTERO quedaba acumulado en la memoria del proceso.
  */
-function writeWithBackpressure(raw: NodeJS.WritableStream & { destroyed?: boolean }, chunk: string): Promise<void> | void {
+function writeWithBackpressure(raw: NodeJS.WritableStream & { destroyed?: boolean }, chunk: string | Uint8Array): Promise<void> | void {
     if (raw.write(chunk)) return;
     if (raw.destroyed) return;
     return new Promise<void>((resolve) => {

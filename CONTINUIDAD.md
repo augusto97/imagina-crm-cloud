@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.298** (autorización de tratamiento de datos personales, Ley 1581, en formularios y portal — tercera entrega de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.299** (Excel: exportar la vista con tipos reales e importar .xlsx eligiendo la hoja — cuarta entrega de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -381,7 +381,7 @@ versión publicada: **v0.1.298** (autorización de tratamiento de datos personal
   del ID automático se sugiere del nombre de la lista. Al terminar las dos
   fases: el usuario prueba y después se sigue con las fases 3-6.
   **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
-  personales (v0.1.298) publicados. Excel terminado (sale como v0.1.299).
+  personales (v0.1.298) y Excel (v0.1.299) publicados.
   Campos en curso; Gantt + dependencias (slot 8) y Calendario (slot 9)
   arrancaron sobre la rama local `integ-base` (lo integrado y todavía no
   publicado). Botón y Fórmulas, cuando Campos esté integrado. Los
@@ -625,6 +625,18 @@ versión publicada: **v0.1.298** (autorización de tratamiento de datos personal
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.299** — **Excel (.xlsx)** (opción G6 del estudio,
+  addendum de ADR-S38). Exportar la vista con tipos reales (montos, fechas en la
+  zona de la empresa, duraciones, etiquetas, nombres), encabezado inmovilizado y
+  con filtro, subtareas y el ID opcional; streaming con tope de 100.000. Importar
+  y «Actualizar desde un archivo» aceptan .xlsx eligiendo la hoja; se lee en el
+  navegador y el servidor lo interpreta con el formato y la zona de la empresa.
+  Lector y escritor propios sobre fflate (sin ExcelJS ni SheetJS). De paso:
+  crear campos teléfono/calificación/porcentaje/duración desde el import, campos
+  ocultos fuera del export, y avisos de dependencias de producción otra vez en 0
+  (SDK de MCP, fastify, dompurify, hono, ip-address). **Regla del entorno**: la
+  carpeta temporal de la sesión es compartida entre agentes, así que cada uno
+  usa nombres de archivo propios.
 - **2026-10-23 · v0.1.298** — **Autorización de datos personales (Ley 1581)**
   (opción I10 del estudio, ADR-S54). Ajustes → Datos personales con plantilla
   sugerida editable (con el aviso de que la revise un abogado), versiones con

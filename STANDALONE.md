@@ -2768,6 +2768,22 @@ que usa tedious en sus mensajes y volcados de paquetes, para un riesgo que no
 existe en nuestro uso); bajar a una versión de tedious sin `sprintf-js` (no
 hay: todas lo usan).
 
+**Addendum (v0.1.299) — Planillas de Excel sin librería de planillas.** Para
+.xlsx no se usa ExcelJS (sin releases desde 2023, arrastra `uuid@8`, `tmp` y
+`unzipper` con avisos y pesa ~1 MB en el navegador), ni SheetJS (el paquete de
+npm está desactualizado y con avisos), ni write/read-excel-file (sin streaming
+real, o con las duraciones leídas como fechas y sin topes). Lector y escritor
+propios en `packages/shared/src/xlsx` sobre **fflate** (MIT, sin
+dependencias): **exportar en el servidor** con un zip por streaming
+(ZipDeflate), estilos y anchos precalculados y filas comprimidas a medida que
+salen del listado; **importar en el navegador**, en un chunk a pedido —el
+archivo nunca llega al servidor, que sólo recibe la hoja convertida al texto
+del import con `source: 'xlsx'`—; y el lector rechaza DTD/entidades, infla por
+tramos con tope por parte descomprimida sin confiar en los tamaños que declara
+el zip, y pone topes de archivo, filas y columnas. Regla: un formato de archivo
+nuevo se resuelve con código propio sobre una primitiva chica y auditada antes
+que con una librería grande sin mantenimiento.
+
 ### ADR-S39 — Formularios públicos que crean registros (v0.1.275)
 
 **Contexto.** El pedido más común de quien arma una base de datos de clientes,
@@ -3553,4 +3569,4 @@ autorización para datos cargados por el equipo y leyes de otros países.
 
 ---
 
-**Versión del documento:** 1.95.0 (datos personales)
+**Versión del documento:** 1.96.0 (excel)

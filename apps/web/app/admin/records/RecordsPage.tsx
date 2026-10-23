@@ -46,6 +46,7 @@ import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
+import { visibleExportFieldIds } from './exportFields';
 import { FieldCreateDialog } from './FieldCreateDialog';
 import { FieldsPanel } from './FieldsPanel';
 import { FiltersPanel } from './FiltersPanel';
@@ -738,6 +739,11 @@ const applyView = (view: SavedViewEntity | null): void => {
         ? views.data?.find((v) => v.id === activeViewId) ?? null
         : null;
     const isKanban = activeView?.type === 'kanban';
+    // v0.1.299 — «Exportar» trae las columnas que la vista muestra, en su orden.
+    const exportFieldIds = useMemo(
+        () => visibleExportFieldIds(fields.data ?? [], state.columnVisibility, state.columnOrder),
+        [fields.data, state.columnVisibility, state.columnOrder],
+    );
     const isCalendar = activeView?.type === 'calendar';
     const isCards = activeView?.type === 'cards';
     const isAlternativeView = isKanban || isCalendar || isCards;
@@ -1142,6 +1148,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                     filterTree={state.filterTree}
                     search={debouncedSearch}
                     sort={state.sort.map((x) => `field_${x.field_id}:${x.dir}`).join(',')}
+                    fieldIds={exportFieldIds}
+                    viewName={activeView?.name ?? list.data.name}
+                    frozenColumns={state.frozenColumns}
                     open={exportOpen}
                     onOpenChange={setExportOpen}
                     hideTrigger

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, FileUp, Loader2, Plus, TriangleAlert, X } from 'lucide-react';
@@ -15,6 +15,18 @@ import { cn } from '@/lib/utils';
 import { CAP, useCan } from '@/lib/permissions';
 
 import { formatNumber } from '@/lib/tenantFormat';
+
+import { SheetChooser, XlsxNotesBanner } from './import/SheetChooser';
+import {
+    SPREADSHEET_ACCEPT,
+    mergeTypeHints,
+    tooLargeMessage,
+    useSpreadsheetFile,
+    type PendingBook,
+    type PreparedSpreadsheet,
+    type XlsxImportNotes,
+} from './import/useSpreadsheetFile';
+
 interface ImportDialogProps {
     listId: number;
     listSlug: string;
@@ -109,12 +121,13 @@ const CREATABLE_TYPES: Array<{ slug: string; label: string }> = [
 type Step = 'upload' | 'map' | 'done';
 
 /**
- * Importa registros desde un CSV (export de ClickUp / Airtable / Excel
- * "Save as CSV" / Google Sheets) hacia una lista de Imagina CRM.
+ * Importa registros desde un CSV (export de ClickUp / Airtable / Google
+ * Sheets) o una planilla de Excel (.xlsx) hacia una lista.
  *
  * Flujo en tres pasos:
- *  1. Upload — el usuario selecciona el archivo. Lo leemos como texto
- *     en el browser (FileReader, no upload binario) y POST a `/preview`.
+ *  1. Upload — el usuario selecciona el archivo. Un CSV se lee como texto;
+ *     un .xlsx se abre en el navegador (v0.1.299), se elige la hoja si hay
+ *     varias y se convierte a ese mismo texto. POST a `/preview`.
  *  2. Map — backend devolvió cabeceras + muestra + sugerencia de
  *     mapping. El usuario ajusta `csv_column_idx → field_slug` y
  *     dispara el run.
@@ -146,6 +159,85 @@ export function ImportDialog({
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<boolean>(false);
     const [result, setResult] = useState<RunResponse | null>(null);
+    // v0.1.299 — de dónde salió el texto (un CSV o una hoja de Excel) y lo
+    // que hay que avisar de la planilla.
+    const [source, setSource] = useState<'csv' | 'xlsx'>('csv');
+    const [xlsxNotes, setXlsxNotes] = useState<XlsxImportNotes | undefined>(undefined);
+
+    const previewFile = useCallback(async (prepared: PreparedSpreadsheet): Promise<void> => {
+        setError(null);
+        setFileName(prepared.fileName);
+        const text = prepared.csv;
+        setCsv(text);
+        setSource(prepared.source);
+        setXlsxNotes(prepared.xlsx);
+        setBusy(true);
+        try {
+            const res = await api.post<PreviewResponse>(
+                `/lists/${listSlug}/import/preview`,
+                { csv: text, source: prepared.source },
+            );
+            if (!res.data || typeof res.data !== 'object' || !Array.isArray(res.data.headers)) {
+                // Defensa: si el backend devuelve algo inesperado,
+                // mostramos algo más útil que un crash silencioso.
+                throw new Error(__('Respuesta inesperada del servidor (sin cabeceras).'));
+            }
+            // Los formatos de la planilla (fecha, moneda, %…) mandan sobre lo
+            // que adivina el texto.
+            res.data.suggested_types = mergeTypeHints(res.data.suggested_types ?? {}, prepared.xlsx);
+            setPreview(res.data);
+            setMapping(
+                Object.fromEntries(
+                    Object.entries(res.data.suggested_mapping ?? {}).map(([k, v]) => [Number(k), v]),
+                ),
+            );
+            // Lista SIN campos (recién creada desde un Excel/CSV): no hay
+            // nada contra qué mapear — pre-marcamos TODAS las columnas
+            // como "Crear campo nuevo" con el tipo detectado, así el
+            // usuario solo revisa y dispara (antes: tenía que elegir
+            // "Crear campo nuevo" columna por columna a mano).
+            if ((res.data.fields ?? []).length === 0 && canCreateFields) {
+                const suggested = res.data.suggested_mapping ?? {};
+                setNewFields(
+                    Object.fromEntries(
+                        res.data.headers
+                            // Las columnas de jerarquía NO son campos: si
+                            // el archivo salió de nuestro export, se
+                            // mapean solas y crear un campo "ID" sería
+                            // basura.
+                            .map((header, idx) => [idx, header] as const)
+                            .filter(([idx]) => {
+                                const s = suggested[String(idx)];
+                                return s !== IMPORT_ID_COLUMN && s !== IMPORT_PARENT_COLUMN;
+                            })
+                            .map(([idx, header]) => [
+                                idx,
+                                {
+                                    label: header || `${__('Columna')} ${idx + 1}`,
+                                    type: res.data.suggested_types?.[String(idx)] ?? 'text',
+                                },
+                            ]),
+                    ),
+                );
+            }
+            setStep('map');
+        } catch (err) {
+            console.error('[imcrm import] preview failed:', err);
+            if (err instanceof ApiError && err.status === 413) {
+                setError(tooLargeMessage());
+            } else if (err instanceof ApiError) {
+                setError(err.message);
+            } else if (err instanceof Error) {
+                setError(err.message);
+            } else {
+                setError(__('No se pudo leer el archivo.'));
+            }
+        } finally {
+            setBusy(false);
+        }
+    }, [listSlug, canCreateFields]);
+
+    const sheet = useSpreadsheetFile(previewFile);
 
     const reset = (): void => {
         setStep('upload');
@@ -156,86 +248,9 @@ export function ImportDialog({
         setNewFields({});
         setError(null);
         setResult(null);
-    };
-
-    const handleFile = (file: File): void => {
-        setError(null);
-        setFileName(file.name);
-        const reader = new FileReader();
-        reader.onload = async () => {
-            const text = typeof reader.result === 'string' ? reader.result : '';
-            if (text === '') {
-                setError(__('El archivo está vacío o no se pudo leer como texto.'));
-                return;
-            }
-            setCsv(text);
-            setBusy(true);
-            try {
-                const res = await api.post<PreviewResponse>(
-                    `/lists/${listSlug}/import/preview`,
-                    { csv: text },
-                );
-                if (!res.data || typeof res.data !== 'object' || !Array.isArray(res.data.headers)) {
-                    // Defensa: si el backend devuelve algo inesperado,
-                    // mostramos algo más útil que un crash silencioso.
-                    throw new Error(__('Respuesta inesperada del servidor (sin cabeceras).'));
-                }
-                setPreview(res.data);
-                setMapping(
-                    Object.fromEntries(
-                        Object.entries(res.data.suggested_mapping ?? {}).map(([k, v]) => [Number(k), v]),
-                    ),
-                );
-                // Lista SIN campos (recién creada desde un Excel/CSV): no hay
-                // nada contra qué mapear — pre-marcamos TODAS las columnas
-                // como "Crear campo nuevo" con el tipo detectado, así el
-                // usuario solo revisa y dispara (antes: tenía que elegir
-                // "Crear campo nuevo" columna por columna a mano).
-                if ((res.data.fields ?? []).length === 0 && canCreateFields) {
-                    const suggested = res.data.suggested_mapping ?? {};
-                    setNewFields(
-                        Object.fromEntries(
-                            res.data.headers
-                                // Las columnas de jerarquía NO son campos: si
-                                // el archivo salió de nuestro export, se
-                                // mapean solas y crear un campo "ID" sería
-                                // basura.
-                                .map((header, idx) => [idx, header] as const)
-                                .filter(([idx]) => {
-                                    const s = suggested[String(idx)];
-                                    return s !== IMPORT_ID_COLUMN && s !== IMPORT_PARENT_COLUMN;
-                                })
-                                .map(([idx, header]) => [
-                                    idx,
-                                    {
-                                        label: header || `${__('Columna')} ${idx + 1}`,
-                                        type: res.data.suggested_types?.[String(idx)] ?? 'text',
-                                    },
-                                ]),
-                        ),
-                    );
-                }
-                setStep('map');
-            } catch (err) {
-                 
-                console.error('[imcrm import] preview failed:', err);
-                if (err instanceof ApiError) {
-                    setError(err.message);
-                } else if (err instanceof Error) {
-                    setError(err.message);
-                } else {
-                    setError(__('No se pudo leer el archivo.'));
-                }
-            } finally {
-                setBusy(false);
-            }
-        };
-        reader.onerror = () => {
-            setError(__('No se pudo leer el archivo (FileReader error).'));
-        };
-        // CSV es siempre texto plano; UTF-8 con fallback Latin-1 lo
-        // maneja el backend (CsvParser).
-        reader.readAsText(file, 'UTF-8');
+        setSource('csv');
+        setXlsxNotes(undefined);
+        sheet.reset();
     };
 
     const runImport = async (): Promise<void> => {
@@ -270,6 +285,7 @@ export function ImportDialog({
                     csv,
                     mapping: cleanMapping,
                     new_fields: newFieldsPayload,
+                    source,
                 },
             );
             setResult(res.data);
@@ -282,7 +298,13 @@ export function ImportDialog({
             invalidateForList(qc, recordsKeys.all, listId);
             invalidateForList(qc, fieldsKeys.all, listId);
         } catch (err) {
-            setError(err instanceof ApiError ? err.message : __('Error al importar.'));
+            setError(
+                err instanceof ApiError && err.status === 413
+                    ? tooLargeMessage()
+                    : err instanceof ApiError
+                      ? err.message
+                      : __('Error al importar.'),
+            );
         } finally {
             setBusy(false);
         }
@@ -313,7 +335,7 @@ export function ImportDialog({
                 >
                     <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
                         <Dialog.Title className="imcrm-text-base imcrm-font-semibold">
-                            {__('Importar desde CSV')}
+                            {__('Importar desde CSV o Excel')}
                         </Dialog.Title>
                         <Dialog.Close asChild>
                             <Button variant="ghost" size="icon" aria-label={__('Cerrar')}>
@@ -323,20 +345,36 @@ export function ImportDialog({
                     </div>
 
                     <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Acepta exports de ClickUp, Airtable, Excel (Guardar como CSV) y Google Sheets. Detecta delimiter (`,` / `;` / tab) y encoding automáticamente.')}
+                        {__('Acepta planillas de Excel (.xlsx, eliges la hoja) y archivos CSV de ClickUp, Airtable o Google Sheets. Las fechas, montos y porcentajes de Excel se leen como lo que son.')}
                     </p>
 
-                    {error !== null && (
-                        <div className="imcrm-mt-3 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-destructive">
-                            {error}
+                    {(error ?? sheet.error) !== null && (
+                        <div role="alert" className="imcrm-mt-3 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-destructive">
+                            {error ?? sheet.error}
                         </div>
                     )}
 
                     <div className="imcrm-mt-4">
-                        {step === 'upload' && (
-                            <UploadStep busy={busy} onFile={handleFile} fileName={fileName} />
+                        {step === 'upload' && sheet.pending !== null && (
+                            <SheetChooser
+                                book={sheet.pending as PendingBook}
+                                busy={busy || sheet.reading}
+                                onChoose={(i) => void sheet.chooseSheet(i)}
+                                onCancel={() => sheet.reset()}
+                            />
                         )}
-                        {step === 'upload' && onUpdateInstead && (
+                        {step === 'upload' && sheet.pending === null && (
+                            <UploadStep
+                                busy={busy || sheet.reading}
+                                onFile={(f) => {
+                                    setError(null);
+                                    setFileName(f.name);
+                                    void sheet.openFile(f);
+                                }}
+                                fileName={fileName}
+                            />
+                        )}
+                        {step === 'upload' && sheet.pending === null && onUpdateInstead && (
                             <p className="imcrm-mt-3 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
                                 {__('¿El archivo es para cambiar registros que ya existen (precios, stock…)?')}{' '}
                                 <button
@@ -352,6 +390,7 @@ export function ImportDialog({
                                 </button>
                             </p>
                         )}
+                        {step === 'map' && xlsxNotes && <XlsxNotesBanner notes={xlsxNotes} />}
                         {step === 'map' && preview !== null && (
                             <MapStep
                                 preview={preview}
@@ -425,18 +464,21 @@ function UploadStep({
             <FileUp className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground" />
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                 <span className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                    {fileName !== '' ? fileName : __('Elige un archivo CSV')}
+                    {fileName !== '' ? fileName : __('Elige un archivo Excel (.xlsx) o CSV')}
                 </span>
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Click o arrastra. Tamaño máximo recomendado: 5 MB / 5 000 filas.')}
+                    {__('Haz clic o arrastra el archivo. Hasta 5.000 filas por importación (Excel: hasta 15 MB).')}
                 </span>
             </div>
             {busy && <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin imcrm-text-muted-foreground" />}
             <input
                 type="file"
-                accept=".csv,text/csv,text/plain"
+                accept={SPREADSHEET_ACCEPT}
+                data-testid="imcrm-import-file"
                 onChange={(e) => {
                     const f = e.target.files?.[0];
+                    // Se limpia para que volver a elegir el MISMO archivo dispare el cambio.
+                    e.target.value = '';
                     if (f) onFile(f);
                 }}
                 className="imcrm-sr-only"
@@ -588,7 +630,7 @@ function MapStep({
                 <table className="imcrm-w-full imcrm-text-xs">
                     <thead className="imcrm-bg-muted/30 imcrm-text-left imcrm-text-muted-foreground">
                         <tr>
-                            <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Columna CSV')}</th>
+                            <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Columna del archivo')}</th>
                             <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Campo destino')}</th>
                             <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Ejemplos')}</th>
                         </tr>
