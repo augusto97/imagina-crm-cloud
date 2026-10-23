@@ -3607,6 +3607,35 @@ en presupuesto. Las reglas nuevas no bloquean registros viejos: «obligatorio
 si» se evalúa en una edición sólo si cambió el campo o su condición. Un ID
 automático no se convierte desde otro tipo: se crea.
 
+### ADR-S56 — Calendario: bundle por rango, configuración en la vista y horas en la zona de la empresa (v0.1.301)
+
+**Contexto.** El calendario usaba el listado plano: cortaba en 200 registros, no
+contaba lo que quedaba afuera, no veía los eventos que empezaban antes del mes y
+dibujaba en la zona del navegador.
+
+**Decisión.**
+1. **Endpoint propio por rango** (`calendar-bundle`, ≤100 días): una consulta
+   con un CTE por fuente — casts tolerantes, tramo calculado en la zona de la
+   empresa (un fin exclusivo a medianoche no suma un día), `generate_series` por
+   día y `row_number()` para los primeros N, más `count(*)` del día — con tope
+   de 4.000 filas y `truncated`. Un prefiltro textual (`left(valor,10) COLLATE
+   "C"`, con margen de 2 días para fecha y hora) descarta antes de convertir.
+2. **Configuración en `saved_views.config`** (claves `calendar_*`, schema
+   compartido, sin migración). Los campos siguen la convención `*_field_id`,
+   así el blueprint y la migración de empresa los re-mapean solos.
+3. **El tramo se calcula igual en los dos lados**: `calendarEventSpan` en shared
+   reproduce la regla del SQL.
+4. **Estirar** escribe en el campo de fin o en un campo Duración; sin ninguno no
+   se puede (no hay dónde guardarlo). Mover corre el fin con el inicio.
+5. **Edición** por el `PATCH` en lote con `expect`: el deshacer no pisa cambios
+   ajenos (409).
+6. **Zona horaria**: la de la empresa, después la del navegador, después UTC.
+   Una fecha sin hora nunca se convierte.
+
+**Consecuencias.** Lo que se ve, lo que se cuenta y lo que se guarda coinciden.
+Las ocurrencias proyectadas de las recurrencias quedan fuera (sólo el icono), y
+en el celular no hay vista semana.
+
 ---
 
-**Versión del documento:** 1.97.0 (campos que llena la app)
+**Versión del documento:** 1.98.0 (calendario completo)

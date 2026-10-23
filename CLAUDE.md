@@ -8771,6 +8771,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         empresa, 6 del front y los de shared + E2E navegador 31/31 (escritorio,
         celular, oscuro).
 
+  - [x] **Calendario completo: mes, semana, día y agenda (v0.1.301, ADR-S56,
+        opción B4 del estudio)**: el calendario era sólo un mes que traía los
+        primeros 200 registros por el listado plano y dibujaba las horas en la
+        zona del navegador. Ahora: (a) **cuatro vistas** —Mes, Semana, Día y
+        Agenda— con selector y atajos (M/S/D/A, H para hoy, ←/→): en el mes los
+        eventos de varios días son barras y «+N más» abre el día completo con
+        el total real; semana y día tienen grilla por horas, franja «Todo el
+        día», línea de la hora actual y aviso de lo que queda fuera del
+        horario; la agenda va por días con scroll infinito. (b) **Un pedido por
+        rango** (`GET /lists/:l/records/calendar-bundle`): UNA consulta para
+        todas las fuentes (un CTE por fuente, `generate_series` por día y
+        `row_number()` para los primeros N, más el total del día), con filtros,
+        búsqueda, ACL y sin lo que está en la papelera; trae lo que empieza
+        antes del rango y lo de varios días; tope de 100 días y 4.000 filas con
+        aviso. Un descarte por texto (`left(valor,10) COLLATE "C"`) evita
+        convertir las fechas lejanas: el mes sobre 100.000 registros pasó de
+        ~1 s a p50 ~200 ms. (c) **Arrastrar reprograma**: en el mes conserva la
+        hora; en semana y día encaja a 15 minutos; el borde inferior estira el
+        fin o la duración (sin campo de fin ni Duración no se estira, y se
+        dice). Se guarda al instante por el `PATCH` en lote con `expect`, así
+        «Deshacer»/Ctrl+Z no pisa lo que otra persona cambió después.
+        (d) **Crear**: un clic en un hueco abre el alta con la fecha y la hora
+        puestas; arrastrar en un hueco crea con inicio y fin. (e) **Varias
+        fuentes de fecha** con etiqueta, color y chips para mostrarlas u
+        ocultarlas; color por fuente, por la opción de un campo o por las
+        reglas de color de la vista. (f) **Zona horaria de la empresa** (con
+        aviso si el equipo está en otra): una fecha sin hora nunca se corre de
+        día, y `calendarEventSpan` (shared) calcula el tramo con la misma regla
+        que el SQL. (g) Los recurrentes llevan su icono, quien no puede editar
+        no arrastra ni crea y un campo bloqueado por la tienda dice por qué.
+        (h) **Celular**: abre en Agenda (no hay semana: siete columnas no
+        entran), se desliza entre días y se mueve con «Mover a…». «Configurar
+        calendario» está en el calendario, en Personalizar y en el menú de la
+        pestaña; todo vive en la vista (claves `calendar_*`, sin migración).
+        Asistente/MCP, plantillas («Agenda de citas» abre en la semana) y
+        migración de empresa al día. **Bugs atrapados**: el adaptador
+        `lib/api.ts` desenvuelve cualquier `{data}` de primer nivel (la
+        respuesta se llama `records`), el front y el SQL calculaban distinto
+        los días de un evento (los de varios días quedaban escondidos bajo
+        «+N más») y «Mover a…» no corría el fin. 9 tests de API + casos en
+        asistente, plantillas y migración, 10 de shared y 13 del front (465
+        front en verde) + E2E navegador 48/48 (empresa en Bogotá y navegador en
+        Madrid, ~300 eventos, celular y oscuro). Quedan para después las
+        ocurrencias proyectadas de las recurrencias (hoy sólo el icono).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
