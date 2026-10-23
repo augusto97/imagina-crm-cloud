@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
-import { api } from '@/lib/api';
+import { api, rememberFieldKey } from '@/lib/api';
 import { canonicalListId, invalidateForList, joinInflight, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import type { CreateFieldInput, FieldEntity, UpdateFieldInput } from '@/types/field';
@@ -102,6 +102,9 @@ export function useCreateField(listId: string | number) {
             return res.data;
         },
         onSuccess: (created) => {
+            // v0.1.300 — el mapa f{id}↔slug se entera YA del campo nuevo (si los
+            // registros vuelven antes que los campos, no quedan sin traducir).
+            rememberFieldKey(created, listId);
             // 0.57.41 — scope a id+slug de la lista actual.
             invalidateForList(qc, fieldsKeys.all, listId);
             // v0.1.170 — un campo derivado (computed/lookup/rollup) cambia lo

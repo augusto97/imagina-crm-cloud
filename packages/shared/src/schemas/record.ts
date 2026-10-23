@@ -36,6 +36,11 @@ export const recordSchema = z.object({
     created_by: idSchema,
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
+    /**
+     * v0.1.300 — quién lo modificó por última vez (0 = el sistema; null = no se
+     * sabe, registros modificados antes de que existiera el dato).
+     */
+    updated_by: z.number().int().nonnegative().nullable().optional(),
 });
 export type RecordDto = z.infer<typeof recordSchema>;
 

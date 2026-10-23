@@ -21,6 +21,7 @@ import {
 import { BlockStyleEditor } from '@/admin/template-editor-core/BlockStyleEditor';
 import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
 import { hasBlockStyle, readBlockStyle, type BlockStyle } from '@/lib/blockStyle';
+import { displayTypeOf } from '@/lib/fieldTypeCatalog';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
@@ -69,7 +70,12 @@ const GROUPABLE_TYPES = [
     'user',
     'number', 'currency', 'rating', 'percent', 'duration',
     'lookup', 'rollup', 'time_tracked',
+    // v0.1.300 — columnas de sistema: por día/mes de creación, por quien creó…
+    'created_at', 'updated_at', 'created_by', 'updated_by',
 ];
+
+/** v0.1.300 — Fechas reales de un registro: las del usuario y las de sistema. */
+const DATE_LIKE_TYPES: ReadonlySet<string> = new Set(['date', 'datetime', 'created_at', 'updated_at']);
 
 /**
  * v0.1.286 — Default REAL de cada interruptor de "Mostrar" por tipo (el que
@@ -176,7 +182,7 @@ export function WidgetFormDialog({
         [fields.data],
     );
     const dateFields = useMemo(
-        () => (fields.data ?? []).filter((f) => f.type === 'date' || f.type === 'datetime'),
+        () => (fields.data ?? []).filter((f) => DATE_LIKE_TYPES.has(f.type)),
         [fields.data],
     );
     const allUsableFields = useMemo(
@@ -991,7 +997,10 @@ interface MetricOpt {
  * `RecordAggregator::aggregateExprs()` en PHP — si actualizas uno,
  * actualiza el otro.
  */
-function metricsForFieldType(type: string): MetricOpt[] {
+function metricsForFieldType(rawType: string): MetricOpt[] {
+    // v0.1.300 — las columnas de sistema miden como fecha y hora o persona; el ID
+    // automático, como texto.
+    const type = displayTypeOf(rawType);
     switch (type) {
         case 'number':
         case 'currency':
@@ -1594,7 +1603,7 @@ function isDateField(
 ): boolean {
     if (fieldId <= 0) return false;
     const f = fields.find((x) => x.id === fieldId);
-    return f?.type === 'date' || f?.type === 'datetime';
+    return f !== undefined && DATE_LIKE_TYPES.has(f.type);
 }
 
 function FieldPicker({ label, value, fields, onChange, emptyHint }: FieldPickerProps): JSX.Element {

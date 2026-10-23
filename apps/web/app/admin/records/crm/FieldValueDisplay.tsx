@@ -12,6 +12,7 @@ import { useWpUser } from '@/hooks/useWpUsers';
 import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber, numberFormatLocale } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
 import { UrlImage } from '@/components/fields/UrlImage';
@@ -54,6 +55,18 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
         const n = Number(value);
         if (!Number.isFinite(n) || n <= 0) return <span className="imcrm-text-muted-foreground/60">—</span>;
         return <span className="imcrm-tabular-nums">{formatDuration(n, (field.config as { format?: DurationFormat }).format)}</span>;
+    }
+
+    // v0.1.300 — columnas de sistema y el ID automático.
+    if ((field.type === 'created_by' || field.type === 'updated_by') && (value === 0 || value === '0')) {
+        return <span className="imcrm-text-muted-foreground">{__('Sistema')}</span>;
+    }
+    if (field.type === 'autonumber') {
+        if (value === null || value === undefined || value === '') return <span className="imcrm-text-muted-foreground/60">—</span>;
+        return <span className="imcrm-font-mono imcrm-tabular-nums">{String(value)}</span>;
+    }
+    if (field.type === 'created_at' || field.type === 'updated_at' || field.type === 'created_by' || field.type === 'updated_by') {
+        return <FieldValueDisplay field={asDisplayField(field)} value={value} />;
     }
 
     if (value === null || value === undefined || value === '') {

@@ -464,6 +464,10 @@ export class TrashService {
                 WHERE tenant_id = ${tenantId} AND id = ${id}
             `);
             await exitTrashMode(tx);
+            // v0.1.300 — Un ID automático en la papelera no numera (el trigger
+            // sólo mira campos vivos): lo que se creó mientras tanto recibe su
+            // número ahora, en orden de creación, del mismo contador.
+            if (row.type === 'autonumber') await numberUnnumbered(tx, tenantId, list.id, id);
             return { list, name: String(row.label), oldSlug: String(row.slug), slug };
         });
         this.realtime.fields(tenantId, out.list.id);
@@ -1080,4 +1084,25 @@ function parentListInTrash(): ConflictException {
         message: 'Es de una lista que está en la papelera: restaura primero la lista (vuelve con todo lo de adentro).',
         data: { status: 409 },
     });
+}
+
+/**
+ * v0.1.300 — Numera, uno por uno y en orden de creación, los registros vivos
+ * de la lista que no tienen el ID automático `fieldId`. Cada UPDATE pasa por
+ * el trigger `imcrm_records_autonumber`, que toma el siguiente número del
+ * contador del campo (no se repite ninguno ya emitido).
+ */
+async function numberUnnumbered(tx: Tx, tenantId: number, listId: number, fieldId: number): Promise<void> {
+    const key = `f${fieldId}`;
+    const pending = (
+        await tx.execute<{ id: number }>(sql`
+            SELECT id FROM records
+            WHERE tenant_id = ${tenantId} AND list_id = ${listId} AND deleted_at IS NULL
+              AND coalesce(data ->> ${key}, '') = ''
+            ORDER BY created_at, id
+        `)
+    ).rows;
+    for (const r of pending) {
+        await tx.execute(sql`UPDATE records SET data = data WHERE tenant_id = ${tenantId} AND id = ${Number(r.id)}`);
+    }
 }

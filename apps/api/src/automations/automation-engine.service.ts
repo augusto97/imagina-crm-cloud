@@ -2,6 +2,9 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
     bulkOperationSchema,
+    fieldDefaultOf,
+    isSystemField,
+    type SystemFieldType,
     filterTreeSchema,
     flowBranch,
     flowNodeAt,
@@ -58,6 +61,7 @@ import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.typ
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { RecordsRepository } from '../records/records.repository';
+import { systemFieldValue } from '../records/through-fields';
 import { RecordChangeHub } from '../records/record-change-hub';
 import { RecordsService, type Actor } from '../records/records.service';
 import { RelationsRepository } from '../records/relations.repository';
@@ -383,12 +387,15 @@ export class AutomationEngine {
             return { autos, maps: await this.fieldMaps(tx, event.tenantId, event.listId) };
         });
         if (!prep) return;
+        // v0.1.300 — «Creado por», «Fecha de creación»…: las columnas de sistema no
+        // viven en `data`; se leen UNA vez para las condiciones y variables.
+        const sysData = await this.systemData(event.tenantId, event.recordId, prep.maps);
         for (const auto of prep.autos) {
             const ctx: RunContext = {
                 tenantId: event.tenantId,
                 listId: event.listId,
                 recordId: event.recordId,
-                data: event.after,
+                data: { ...event.after, ...sysData },
                 before: event.before,
                 ...prep.maps,
                 ...(event.payment ? { pago: event.payment } : {}),
@@ -935,6 +942,33 @@ export class AutomationEngine {
         };
     }
 
+    /**
+     * v0.1.300 — Valores de las columnas de sistema del registro (claves `f{id}`):
+     * una lectura sólo si la lista tiene alguna.
+     */
+    private async systemData(
+        tenantId: number,
+        recordId: number | null,
+        maps: Pick<RunContext, 'slugToKey' | 'fieldsBySlug'>,
+    ): Promise<Record<string, unknown>> {
+        const sys = [...maps.fieldsBySlug.entries()].filter(([, f]) => isSystemField(f.type));
+        if (sys.length === 0 || recordId === null) return {};
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ createdAt: records.createdAt, updatedAt: records.updatedAt, createdBy: records.createdBy, updatedBy: records.updatedBy })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.id, recordId)))
+                .limit(1),
+        );
+        if (!row) return {};
+        const out: Record<string, unknown> = {};
+        for (const [slug, f] of sys) {
+            const key = maps.slugToKey.get(slug);
+            if (key) out[key] = systemFieldValue(f.type as SystemFieldType, row);
+        }
+        return out;
+    }
+
     /** slug → f{id}, slug → {type, config}, zona y formato regional de la empresa. */
     private async fieldMaps(
         tx: Tx,
@@ -1028,7 +1062,7 @@ export class AutomationEngine {
             // Un campo Persona guarda el id: `.email` y `.nombre` lo hacen útil
             // en un correo («Para: {{responsable.email}}»).
             const person = /^(before\.)?([a-zA-Z0-9_]+)\.(email|nombre)$/.exec(token);
-            if (person && ctx.fieldsBySlug.get(person[2]!)?.type === 'user') {
+            if (person && isPersonType(ctx.fieldsBySlug.get(person[2]!)?.type)) {
                 const key = ctx.slugToKey.get(person[2]!);
                 const source = person[1] ? ctx.before : ctx.data;
                 const id = Number(key !== undefined ? source?.[key] : undefined);
@@ -1076,7 +1110,7 @@ export class AutomationEngine {
         if (!item) return undefined;
         if (rest === 'record.id') return item.recordId;
         const person = /^([a-zA-Z0-9_]+)\.(email|nombre)$/.exec(rest);
-        if (person && item.fieldsBySlug.get(person[1]!)?.type === 'user') {
+        if (person && isPersonType(item.fieldsBySlug.get(person[1]!)?.type)) {
             const key = item.slugToKey.get(person[1]!);
             const id = Number(key !== undefined ? item.data[key] : undefined);
             const info = Number.isInteger(id) && id > 0 ? ctx.people?.get(id) : undefined;
@@ -1129,7 +1163,8 @@ export class AutomationEngine {
         const userKeys = (fieldsBySlug: Map<string, LabelFieldLike>, slugToKey: Map<string, string>): string[] => {
             const out: string[] = [];
             for (const [slug, f] of fieldsBySlug) {
-                if (f.type !== 'user') continue;
+                // v0.1.300 — también «Creado por» / «Modificado por».
+                if (!isPersonType(f.type)) continue;
                 const key = slugToKey.get(slug);
                 if (key) out.push(key);
             }
@@ -1173,6 +1208,10 @@ export class AutomationEngine {
 
     private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<void> {
         ctx.automation = { id: auto.id, name: auto.name };
+        // v0.1.300 — las columnas de sistema para las variables (`{{creado_por}}`).
+        if (ctx.recordId !== null && [...ctx.fieldsBySlug.entries()].some(([slug, f]) => isSystemField(f.type) && !(ctx.slugToKey.get(slug)! in ctx.data))) {
+            ctx.data = { ...ctx.data, ...(await this.systemData(ctx.tenantId, ctx.recordId, ctx)) };
+        }
         const startedAt = new Date();
         let runId: number | null = null;
         try {
@@ -1900,6 +1939,8 @@ export class AutomationEngine {
         // siempre), pero se avisa.
         for (const f of pre.fields) {
             if (!f.isRequired || READ_ONLY_TYPES.includes(f.type) || f.type === 'checkbox') continue;
+            // v0.1.300 — con valor por defecto el alta lo completa sola.
+            if (fieldDefaultOf(f.config as Record<string, unknown>) !== null) continue;
             const filled = f.type === 'relation'
                 ? relations.some((r) => r.fieldId === f.id && r.ids.length > 0)
                 : !isBlank(data[jsonbKeyForField(f.id)]);
@@ -2010,7 +2051,7 @@ export class AutomationEngine {
      */
     private recipients(ctx: RunContext, raw: unknown, merge: MergeFn): string {
         const template = typeof raw === 'string' ? raw : '';
-        const isPerson = (slug: string): boolean => ctx.fieldsBySlug.get(slug)?.type === 'user';
+        const isPerson = (slug: string): boolean => isPersonType(ctx.fieldsBySlug.get(slug)?.type);
         const withPeople = template
             .split(',')
             .map((part) => (isPerson(part.trim()) ? `{{${part.trim()}.email}}` : part))
@@ -2724,10 +2765,15 @@ async function patchRecordData(
     if (remove.length > 0) expr = sql`(${expr} - ARRAY[${sql.join(remove.map((k) => sql`${k}`), sql`, `)}]::text[])`;
     const [row] = await tx
         .update(records)
-        .set({ data: expr as unknown as Record<string, unknown>, updatedAt: sql`now()` as unknown as Date })
+        .set({ data: expr as unknown as Record<string, unknown>, updatedAt: sql`now()` as unknown as Date, updatedBy: SYSTEM_USER })
         .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), eq(records.id, recordId), isNull(records.deletedAt)))
         .returning({ data: records.data });
     return row?.data ?? null;
+}
+
+/** v0.1.300 — un campo Persona o «Creado por» / «Modificado por» (guardan el id de la persona). */
+function isPersonType(type: string | undefined): boolean {
+    return type === 'user' || type === 'created_by' || type === 'updated_by';
 }
 
 /**

@@ -10,6 +10,7 @@ import { useAttachment } from '@/hooks/useAttachments';
 import { __ } from '@/lib/i18n';
 import { Paperclip } from 'lucide-react';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
@@ -84,6 +85,22 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         const n = Number(value);
         if (!Number.isFinite(n) || n <= 0) return <span className="imcrm-text-muted-foreground">—</span>;
         return <span className="imcrm-tabular-nums">{formatDuration(n, (field.config as { format?: DurationFormat }).format)}</span>;
+    }
+
+    // v0.1.300 — «Creado por» / «Modificado por» de algo que hizo el SISTEMA (una
+    // automatización, un formulario público, una sincronización): id 0.
+    if ((field.type === 'created_by' || field.type === 'updated_by') && (value === 0 || value === '0')) {
+        return <span className="imcrm-text-muted-foreground">{__('Sistema')}</span>;
+    }
+    // v0.1.300 — el ID automático se lee como un código (monoespaciado, que se
+    // alinea en la columna); las columnas de sistema, como fecha y hora o
+    // persona.
+    if (field.type === 'autonumber') {
+        if (value === null || value === undefined || value === '') return <span className="imcrm-text-muted-foreground">—</span>;
+        return <span className="imcrm-font-mono imcrm-text-[12.5px] imcrm-tabular-nums">{String(value)}</span>;
+    }
+    if (field.type === 'created_at' || field.type === 'updated_at' || field.type === 'created_by' || field.type === 'updated_by') {
+        return renderCellValue(asDisplayField(field), value);
     }
 
     if (value === null || value === undefined || value === '') {

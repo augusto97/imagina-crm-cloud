@@ -170,7 +170,8 @@ export const IMPORT_UPDATE_CHUNK = 200;
 /** Filas por archivo. */
 export const IMPORT_UPDATE_MAX_ROWS = 5000;
 /** Tipos que sirven de columna clave. */
-export const IMPORT_MATCH_TYPES = ['text', 'email', 'phone', 'url', 'number'] as const;
+// v0.1.300 — también el ID automático («TCK-0042»): la clave natural de un ticket.
+export const IMPORT_MATCH_TYPES = ['text', 'email', 'phone', 'url', 'number', 'autonumber'] as const;
 
 export const importUpdateSchema = z.object({
     csv: z.string().min(1),

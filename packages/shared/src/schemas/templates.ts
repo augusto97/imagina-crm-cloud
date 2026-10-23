@@ -42,9 +42,11 @@ export type TemplateRoleField = z.infer<typeof templateRoleFieldSchema>;
  */
 const ROLE_TYPE_FAMILIES: ReadonlyArray<ReadonlyArray<FieldType>> = [
     ['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'time_tracked'],
-    ['date', 'datetime'],
-    ['text', 'long_text', 'email', 'url', 'phone'],
+    // v0.1.300 — las fechas de sistema también sirven de "la fecha" de un tablero.
+    ['date', 'datetime', 'created_at', 'updated_at'],
+    ['text', 'long_text', 'email', 'url', 'phone', 'autonumber'],
     ['select', 'multi_select'],
+    ['user', 'created_by', 'updated_by'],
 ];
 
 /** Los tipos aceptables para un rol cuyo campo original era de `type`. */

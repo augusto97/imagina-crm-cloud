@@ -1,4 +1,5 @@
 import { useContext } from 'react';
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { useNavigate } from 'react-router';
 
 import { DashboardBundleContext, WidgetDataOverrideContext } from '@/hooks/useDashboards';
@@ -164,10 +165,11 @@ export function segmentFilterTree(args: {
 
 /** Lo mismo que el servidor hace con un filtro del tablero (`dashboardFilterNodes`). */
 export function dashboardFilterNode(
-    field: Pick<FieldEntity, 'id' | 'type'>,
+    rawField: Pick<FieldEntity, 'id' | 'type'>,
     value: DashboardFilterValue['value'],
     userId: number,
 ): FilterNode | null {
+    const field = asDisplayField(rawField);
     if (value === '' || (Array.isArray(value) && value.length === 0)) return null;
     if (field.type === 'user') {
         const ids = (Array.isArray(value) ? value : [value])
@@ -192,7 +194,9 @@ export function dashboardFilterNode(
     return { type: 'condition', field_id: field.id, op: textual ? 'contains' : 'eq', value };
 }
 
-function segmentCondition(field: Pick<FieldEntity, 'id' | 'type'>, label: string, bucketed: boolean): FilterNode | null {
+function segmentCondition(rawField: Pick<FieldEntity, 'id' | 'type'>, label: string, bucketed: boolean): FilterNode | null {
+    // v0.1.300 — una columna de sistema filtra como fecha y hora o como persona.
+    const field = asDisplayField(rawField);
     const empty = label === '(sin valor)' || label === '';
     if (field.type === 'checkbox') {
         if (empty) return { type: 'condition', field_id: field.id, op: 'is_null', value: null };

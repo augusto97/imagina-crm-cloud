@@ -1,11 +1,14 @@
 import {
+    fieldDefaultOf,
     formItemSchema,
     isFormFieldType,
+    isUserWritableType,
     newFormItemId,
     splitFormPages,
     type FormConfig,
     type FormItem,
     type FormSettings,
+    type FieldType,
 } from '@imagina-base/shared';
 
 /**
@@ -18,6 +21,8 @@ interface FieldLike {
     label: string;
     type: string;
     is_required: boolean;
+    /** v0.1.300 — para saber si tiene un valor por defecto que cubre el hueco. */
+    config?: Record<string, unknown>;
 }
 
 export function insertAfter(items: FormItem[], item: FormItem, afterId: string | null): FormItem[] {
@@ -152,7 +157,11 @@ export function missingRequired<F extends FieldLike>(fields: readonly F[], confi
         // Una casilla obligatoria sin marcar se guarda como «no»; los
         // calculados no se escriben.
         if (!f.is_required || f.type === 'checkbox') return false;
-        if (['computed', 'lookup', 'rollup', 'time_tracked'].includes(f.type)) return false;
+        if (!isUserWritableType(f.type as FieldType)) return false;
+        // v0.1.300 — un valor por defecto fijo, «hoy» o «ahora» completa la respuesta
+        // («quien lo crea» no: un formulario público no tiene usuario).
+        const def = fieldDefaultOf(f.config);
+        if (def && def.kind !== 'creator') return false;
         const item = config.items.find((i) => i.type === 'field' && i.field_id === f.id);
         if (!item || item.type !== 'field') return true;
         // Oculta (sólo por la dirección) o condicional: puede llegar vacía.

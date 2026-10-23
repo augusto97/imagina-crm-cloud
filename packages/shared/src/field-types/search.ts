@@ -21,6 +21,8 @@ export const SEARCHABLE_FIELD_TYPES: ReadonlySet<string> = new Set([
     'url',
     'phone',
     'ai',
+    // v0.1.300 — el ID automático («TCK-0042»): buscarlo es lo primero que se hace.
+    'autonumber',
 ]);
 
 /** Tope de palabras por búsqueda (cada una es un patrón por fila). */

@@ -953,7 +953,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             if (v.ok) after[key] = v.value;
         }
         if (JSON.stringify(before) === JSON.stringify(after)) return null;
-        const updated = await this.recordsRepo.updateData(tx, tenantId, link.listId, link.recordId, after);
+        const updated = await this.recordsRepo.updateData(tx, tenantId, link.listId, link.recordId, after, 0);
         if (!updated) return null;
         await this.activity.logInTx(tx, {
             tenantId,

@@ -234,6 +234,22 @@ export function primeFieldMap(listKeys: Array<string | number>, fields: unknown)
     return map;
 }
 
+/**
+ * v0.1.300 — Suma un campo recién creado al mapa de su lista sin esperar a que
+ * vuelva `/fields`: los registros se refrescan a la vez que los campos y, si
+ * llegaban primero, la clave `f{id}` nueva quedaba sin traducir (la columna
+ * del ID automático o de un calculado salía en "—" hasta recargar).
+ */
+export function rememberFieldKey(field: { id: number; slug: string; list_id?: number }, listKey?: string | number): void {
+    const keys = [field.list_id, listKey].filter((k): k is string | number => k !== undefined).map(String);
+    for (const key of keys) {
+        const map = fieldMaps.get(fieldMapKey(key));
+        if (!map) continue;
+        map.toSlug[`f${field.id}`] = field.slug;
+        map.toFid[field.slug] = `f${field.id}`;
+    }
+}
+
 /** Devuelve el mapa de campos de una lista (cache → fetch on-demand). */
 async function ensureFieldMap(listKey: string): Promise<FieldKeyMap> {
     const cached = fieldMaps.get(fieldMapKey(listKey));

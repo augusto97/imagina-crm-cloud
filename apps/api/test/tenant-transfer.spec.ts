@@ -10,6 +10,7 @@ import {
     activity,
     attachments,
     auditLog,
+    autonumberCounters,
     automationHooks,
     automations,
     commentReactions,
@@ -135,6 +136,8 @@ describe('Migración de empresa (v0.1.197)', () => {
                 { tenantId: tenantA, listId: clientesId, slug: 'adjunto', label: 'Adjunto', type: 'file' },
                 { tenantId: tenantA, listId: facturasId, slug: 'cliente', label: 'Cliente', type: 'relation' },
                 { tenantId: tenantA, listId: facturasId, slug: 'estado', label: 'Estado', type: 'select' },
+                // v0.1.300 — ID automático: el número viaja tal cual y el contador también.
+                { tenantId: tenantA, listId: facturasId, slug: 'numero', label: 'Número', type: 'autonumber', config: { prefix: 'FV' } },
             ])
             .returning();
         nombreFieldId = insertedFields[0]!.id;
@@ -488,7 +491,7 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(out.size).toBeGreaterThan(0);
         expect(out.manifest.tenant.slug).toBe('acme');
         expect(out.manifest.counts.records).toBe(3);
-        expect(out.manifest.counts.fields).toBe(5);
+        expect(out.manifest.counts.fields).toBe(6);
         expect(out.manifest.files.count).toBe(1);
         expect(out.manifest.secrets_fingerprint).not.toBeNull();
 
@@ -533,7 +536,7 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newClientes.groupId).toBe(newGroups[0]!.id);
 
         const newFields = await pg.db.select().from(fields).where(eq(fields.tenantId, tenantB));
-        expect(newFields).toHaveLength(5);
+        expect(newFields).toHaveLength(6);
         const bySlug = new Map(newFields.map((f) => [f.slug, f]));
         const newNombre = bySlug.get('nombre')!;
         const newEstado = bySlug.get('estado')!;
@@ -573,6 +576,13 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(doc.content[0]!.content![0]!.attrs.id).toBe(anaId);
         expect(doc.content[0]!.content![1]!.attrs.id).toBe(newCliente.id);
         expect(doc.content[1]!.attrs!.fileId).toBe(newAttachments[0]!.id);
+
+        // v0.1.300 — el ID automático conserva su número (no se re-numera al importar)
+        // y el contador sigue desde donde iba en el origen.
+        const newNumero = bySlug.get('numero')!;
+        expect(newFactura.data[`f${newNumero.id}`]).toBe('FV-0001');
+        const counters = await pg.db.select().from(autonumberCounters).where(eq(autonumberCounters.fieldId, newNumero.id));
+        expect(counters.map((c) => [c.tenantId, c.period, Number(c.nextValue)])).toEqual([[tenantB, 0, 2]]);
 
         // v0.1.290 — el documento emitido congelado apunta al adjunto NUEVO.
         const newDocNumbers = await pg.db.select().from(documentNumbers).where(eq(documentNumbers.tenantId, tenantB));

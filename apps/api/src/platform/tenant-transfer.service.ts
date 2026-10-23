@@ -69,6 +69,7 @@ import {
     savedFilters,
     savedViews,
     documentNumbers,
+    autonumberCounters,
     documentTemplates,
     forms,
     templates,
@@ -286,6 +287,8 @@ export class TenantTransferService {
             await dump('document_templates', await this.byTenant(documentTemplates, tenantId, liveList(documentTemplates.listId)));
             // v0.1.267 — números ya emitidos (el consecutivo sigue donde iba).
             await dump('document_numbers', await this.byTenant(documentNumbers, tenantId, liveRecord(documentNumbers.recordId)));
+            // v0.1.300 — contadores del ID automático (el consecutivo sigue donde iba).
+            await dump('autonumber_counters', await this.byTenant(autonumberCounters, tenantId, liveField(autonumberCounters.fieldId)));
             // v0.1.275 — formularios públicos (el diseño apunta a campos por id).
             await dump('forms', await this.byTenant(forms, tenantId, liveList(forms.listId)));
             // Autorización de tratamiento de datos (Ley 1581): las versiones
@@ -429,6 +432,9 @@ export class TenantTransferService {
                 return await this.db.transaction(async (tx) => {
                     // Una empresa grande tarda: sin los topes de tiempo de la conexión.
                     await withoutTimeouts(tx);
+                    // v0.1.300 — los registros traen su ID automático: el trigger
+                    // los respeta (sin esto los renumeraría al insertarlos).
+                    await tx.execute(sql`select set_config('app.keep_autonumber', 'on', true)`);
                     return this.runImport(tx, work, manifest, input, writtenKeys);
                 });
             } catch (err) {
@@ -756,6 +762,8 @@ export class TenantTransferService {
                     createdBy: mapId(maps.user, r.createdBy) ?? fallbackUser ?? 0,
                     createdAt: this.date(r.createdAt) ?? new Date(),
                     updatedAt: this.date(r.updatedAt) ?? new Date(),
+                    // v0.1.300 — «Modificado por» (0 = el sistema se conserva).
+                    updatedBy: Number(r.updatedBy) === 0 ? 0 : mapId(maps.user, r.updatedBy),
                     deletedAt: this.date(r.deletedAt),
                 })),
             );
@@ -1199,6 +1207,22 @@ export class TenantTransferService {
                 repeatUntil: (r.repeatUntil as string | null) ?? null,
                 lastFiredAt: (r.lastFiredAt as string | null) ?? null,
             };
+        });
+
+        // v0.1.300 — contadores del ID automático, con el campo nuevo. El trigger ya
+        // pudo crear alguno (un registro que llegó sin número): gana el mayor.
+        counts.autonumber_counters = await this.streamInsert(rows('autonumber_counters'), async (batch) => {
+            let n = 0;
+            for (const c of batch) {
+                const fieldId = mapId(maps.field, c.fieldId);
+                if (fieldId === null) continue;
+                await tx.execute(sql`
+                    INSERT INTO autonumber_counters (tenant_id, field_id, period, next_value)
+                    VALUES (${tenantId}, ${fieldId}, ${Number(c.period ?? 0)}, ${Number(c.nextValue ?? 1)})
+                    ON CONFLICT (field_id, period) DO UPDATE SET next_value = GREATEST(autonumber_counters.next_value, EXCLUDED.next_value)`);
+                n++;
+            }
+            return n;
         });
 
         // v0.1.267 — números de documento emitidos (plantilla + registro nuevos).

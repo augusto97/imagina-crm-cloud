@@ -1,5 +1,6 @@
 import type { ConditionData } from '../schemas/automation';
 import type { FilterNode } from '../schemas/filter';
+import { valueBaseType, type FieldType } from '../schemas/field';
 import { FALLBACK_TIME_ZONE } from '../schemas/timezone';
 import { datetimeFilterRange, relativeRangeFor } from './date-ranges';
 
@@ -260,7 +261,9 @@ export function evaluateFilterCondition(
     opts: ConditionOptions = {},
 ): boolean | null {
     if (!field) return null;
-    const { type } = field;
+    // v0.1.300 — una columna de sistema se compara como fecha y hora o persona; el
+    // ID automático, como texto.
+    const type: string = valueBaseType(field.type as FieldType);
     const actual = field.value;
     const op = cond.op;
     const expected = cond.value;

@@ -515,7 +515,7 @@ export class SqlSyncEngine {
                     // columna mientras corría la sincronización no se pisa.
                     const [r] = await tx
                         .update(records)
-                        .set({ data: sql`${records.data} || ${JSON.stringify(u.patch)}::jsonb`, updatedAt: new Date() })
+                        .set({ data: sql`${records.data} || ${JSON.stringify(u.patch)}::jsonb`, updatedAt: new Date(), updatedBy: 0 })
                         .where(and(eq(records.tenantId, tenantId), eq(records.id, u.id), isNull(records.deletedAt)))
                         .returning({ data: records.data });
                     if (!r) continue;

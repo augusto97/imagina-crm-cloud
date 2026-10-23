@@ -1,4 +1,12 @@
-import { COMPUTED_MAX_DEPTH, type Field, type FieldType } from '@imagina-base/shared';
+import {
+    COMPUTED_MAX_DEPTH,
+    FALLBACK_TIME_ZONE,
+    isSystemField,
+    systemFieldBaseType,
+    type Field,
+    type FieldType,
+    type SystemFieldType,
+} from '@imagina-base/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { fieldTypedExpr, type FilterableField } from './query-builder';
@@ -39,9 +47,16 @@ const NUMERIC_OPS: ReadonlySet<string> = new Set<NumericOp>(['sum', 'product', '
 export function withComputedExprs(
     available: Map<number, FilterableField>,
     fields: readonly Field[],
+    /** v0.1.300 — zona de la empresa: agrupar por una fecha de sistema cuenta el día en su reloj. */
+    timeZone: string = FALLBACK_TIME_ZONE,
 ): Map<number, FilterableField> {
     const byId = new Map(fields.map((f) => [f.id, f]));
     const out = new Map(available);
+    // v0.1.300 — columnas de sistema: su valor es una columna de `records`.
+    for (const f of fields) {
+        if (!isSystemField(f.type) || !available.has(f.id)) continue;
+        out.set(f.id, systemFilterable(f.id, f.type, timeZone));
+    }
     // v0.1.291 — «Tiempo registrado»: la suma de `time_entries` del registro
     // (antes que los computed: un computed puede usarlo como entrada).
     for (const f of fields) {
@@ -65,6 +80,39 @@ export function withComputedExprs(
  */
 export function timeTrackedExpr(): SQL {
     return sql`(SELECT round(coalesce(sum(te.seconds), 0) / 60.0) FROM time_entries te WHERE te.record_id = ${records.id})`;
+}
+
+/**
+ * v0.1.300 — Expresión SQL de una columna de sistema sobre la fila de `records`.
+ * «Modificado por» de un registro que NUNCA se modificó es quien lo creó; uno
+ * modificado antes de que existiera `updated_by` queda sin dato (NULL).
+ */
+export function systemFieldExpr(type: SystemFieldType): SQL {
+    switch (type) {
+        case 'created_at':
+            return sql`${records.createdAt}`;
+        case 'updated_at':
+            return sql`${records.updatedAt}`;
+        case 'created_by':
+            return sql`${records.createdBy}`;
+        case 'updated_by':
+            return sql`coalesce(${records.updatedBy}, CASE WHEN ${records.updatedAt} = ${records.createdAt} THEN ${records.createdBy} END)`;
+    }
+}
+
+/**
+ * Entrada del whitelist filtrable de una columna de sistema: la expresión, y
+ * la clave de AGRUPADO — una fecha se agrupa por DÍA en el reloj de la
+ * empresa (agrupar por el instante exacto daría un grupo por registro); una
+ * persona, por su id. `valueKind: 'text'`: una fecha o una persona no se suma.
+ */
+export function systemFilterable(id: number, type: SystemFieldType, timeZone: string): FilterableField {
+    const expr = systemFieldExpr(type);
+    const groupExpr =
+        systemFieldBaseType(type) === 'datetime'
+            ? sql`to_char((${expr}) AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`
+            : sql`(${expr})::text`;
+    return { id, type, expr, valueKind: 'text', groupExpr };
 }
 
 /** ¿El computed tiene una operación que se puede llevar a SQL? (para la UI/asistente). */

@@ -113,6 +113,14 @@ export function cellWriteBlock(
             return __('Se calcula sola');
         case 'ai':
             return __('La completa la IA');
+        // v0.1.300 — los pone la app (al crear o modificar el registro).
+        case 'autonumber':
+            return __('El ID lo asigna la app');
+        case 'created_at':
+        case 'updated_at':
+        case 'created_by':
+        case 'updated_by':
+            return __('Lo completa la app');
         case 'file':
             if (purpose !== 'clear') return __('Los archivos se suben desde la celda o la ficha');
             break;

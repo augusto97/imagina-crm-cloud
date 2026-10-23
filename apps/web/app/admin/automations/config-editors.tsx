@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useState } from 'react';
+import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 import { ChevronRight, Play, Plus, Repeat, Send, Trash2 } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
@@ -1519,7 +1520,8 @@ function CreateRecordConfig({
                             >
                                 <option value="">{__('— Campo —')}</option>
                                 {tf
-                                    .filter((field) => field.type !== 'computed' && field.type !== 'lookup' && field.type !== 'rollup' && field.type !== 'time_tracked')
+                                    // v0.1.300 — ni el ID automático ni las columnas de sistema: los pone el servidor.
+                                    .filter((field) => !DERIVED_FIELD_TYPES.has(field.type))
                                     .map((field) => (
                                         <option key={field.id} value={field.slug}>
                                             {field.label}

@@ -9,6 +9,8 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
 import { AiFieldEditor } from './AiFieldEditor';
+import { AutonumberFieldEditor } from './AutonumberFieldEditor';
+import { FieldRulesEditor } from './FieldRulesEditor';
 import { makeGroup } from '@/admin/records/filterTree';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,19 +51,34 @@ interface FieldConfigEditorProps {
     currentFieldId?: number;
 }
 
-export function FieldConfigEditor({
+export function FieldConfigEditor(props: FieldConfigEditorProps): JSX.Element | null {
+    const typeEditor = <TypeConfigEditor {...props} />;
+    // v0.1.300 — valor por defecto y validaciones (sólo campos que se escriben a mano).
+    const rules = <FieldRulesEditor {...props} />;
+    return (
+        <>
+            {typeEditor}
+            {rules}
+        </>
+    );
+}
+
+function TypeConfigEditor({
     type,
     config,
     onChange,
     listId,
     currentFieldId,
 }: FieldConfigEditorProps): JSX.Element | null {
+    // v0.1.300 — ID automático.
+    if (type === 'autonumber') {
+        return <AutonumberFieldEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />;
+    }
     if (type === 'select' || type === 'multi_select') {
         return <OptionsEditor config={config} onChange={onChange} />;
     }
-    if (type === 'text' || type === 'long_text') {
-        return <MaxLengthEditor config={config} onChange={onChange} />;
-    }
+    // v0.1.300 — el largo máximo de texto vive en "Validaciones" (FieldRulesEditor),
+    // con el mínimo y un mensaje propio.
     if (type === 'number') {
         return <PrecisionEditor config={config} onChange={onChange} />;
     }
@@ -71,9 +88,8 @@ export function FieldConfigEditor({
     if (type === 'relation') {
         return <RelationEditor config={config} onChange={onChange} />;
     }
-    if (type === 'checkbox') {
-        return <CheckboxDefaultEditor config={config} onChange={onChange} />;
-    }
+    // v0.1.300 — "Marcada por defecto" vive en "Valor por defecto" (FieldRulesEditor):
+    // la clave vieja `config.default` nunca se guardaba (el schema la descartaba).
     if (type === 'computed') {
         return (
             <ComputedEditor
@@ -300,35 +316,6 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                 {__('Añadir opción')}
             </Button>
         </fieldset>
-    );
-}
-
-function MaxLengthEditor({ config, onChange }: SubProps): JSX.Element {
-    const max = typeof config.max_length === 'number' ? config.max_length : '';
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-            <Label>{__('Largo máximo (opcional)')}</Label>
-            <Input
-                type="number"
-                min={1}
-                max={65535}
-                value={max}
-                onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === '') {
-                        const next = { ...config };
-                        delete next.max_length;
-                        onChange(next);
-                    } else {
-                        onChange({ ...config, max_length: Number(v) });
-                    }
-                }}
-                placeholder="255"
-            />
-            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Si se deja vacío usa el límite del tipo (255 para texto, ilimitado para texto largo).')}
-            </p>
-        </div>
     );
 }
 
@@ -785,20 +772,6 @@ function RollupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Ele
                 {__('Se calcula en cada consulta sobre los registros vinculados. Sirve para filtrar y ordenar ("deuda > 0") y se suma en el pie de la tabla.')}
             </p>
         </div>
-    );
-}
-
-function CheckboxDefaultEditor({ config, onChange }: SubProps): JSX.Element {
-    const def = config.default === true;
-    return (
-        <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-            <input
-                type="checkbox"
-                checked={def}
-                onChange={(e) => onChange({ ...config, default: e.target.checked })}
-            />
-            {__('Marcado por defecto')}
-        </label>
     );
 }
 

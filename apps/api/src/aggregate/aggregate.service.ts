@@ -9,8 +9,10 @@ import {
     type FilterNode,
     type Role,
     type TimeBucket,
+    isSystemField,
     isThroughField,
     jsonbKeyForField,
+    systemFieldBaseType,
     addDaysYmd,
     zonedInstant,
     zonedToday,
@@ -133,7 +135,7 @@ export class AggregateService {
                 list: { id: list.id, settings: list.settings },
                 fields,
                 byId: new Map(fields.filter((f) => !hidden.has(f.id)).map((f) => [f.id, f])),
-                fieldsById: withComputedExprs(filterable, fields),
+                fieldsById: withComputedExprs(filterable, fields, timeZone),
                 hidden,
                 scope: base.scope,
                 clock: { now: new Date(), timeZone },
@@ -559,7 +561,9 @@ export class AggregateService {
         opts: DeltaOptions,
     ): Promise<DeltaResult> {
         const dateField = ctx.byId.get(opts.dateFieldId);
-        if (!dateField || (dateField.type !== 'date' && dateField.type !== 'datetime')) {
+        // v0.1.300 — también una fecha de sistema (creación / última modificación).
+        const isSystemDate = dateField !== undefined && isSystemField(dateField.type) && systemFieldBaseType(dateField.type) === 'datetime';
+        if (!dateField || (dateField.type !== 'date' && dateField.type !== 'datetime' && !isSystemDate)) {
             throw badRequest('date_field_id debe ser un campo date/datetime de la lista');
         }
         // v0.1.263 — las ventanas se cuentan en días del reloj de la empresa.
@@ -643,8 +647,9 @@ export class AggregateService {
         const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
-        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields);
-        const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, await this.clock(tenantId));
+        const footerClock = await this.clock(tenantId);
+        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields, footerClock.timeZone);
+        const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, footerClock);
         const baseWhere = and(
             eq(records.tenantId, tenantId),
             eq(records.listId, list.id),
@@ -688,7 +693,9 @@ export class AggregateService {
 
         const source =
             derivedCols.length > 0
-                ? sql`(select ${records.id}, ${records.data}, ${sql.join(derivedCols, sql`, `)} from ${records} where ${baseWhere}) as ${sql.identifier('records')}`
+                ? // v0.1.300 — también las columnas de la fila que leen las columnas de
+                  // sistema (agrupar el pie por «Creado por» las referencia afuera).
+                  sql`(select ${records.id}, ${records.data}, ${records.createdAt}, ${records.updatedAt}, ${records.createdBy}, ${records.updatedBy}, ${sql.join(derivedCols, sql`, `)} from ${records} where ${baseWhere}) as ${sql.identifier('records')}`
                 : sql`${records} where ${baseWhere}`;
         const selectList = (extra?: SQL): SQL =>
             sql.join(
@@ -957,6 +964,14 @@ function multiSelectSetExpr(fieldId: number): SQL {
  */
 export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableField>): SQL {
     if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
+    // v0.1.300 — columnas de sistema: una fecha por DÍA (reloj de la empresa), una
+    // persona por su id (ver `systemFilterable`).
+    if (isSystemField(field.type)) {
+        const ff = fieldsById.get(field.id);
+        if (ff?.groupExpr) return ff.groupExpr;
+        if (ff?.expr) return sql`(${ff.expr})::text`;
+        throw badRequest(`No se puede agrupar por «${field.label}».`);
+    }
     if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') return throughGroupExpr(field, fieldsById);
     return fieldTextExpr(field.id);
 }
@@ -983,6 +998,11 @@ function groupingExpr(
     // v0.1.97 — bucketing temporal (labels ordenables cronológicamente como string).
     if (bucket !== undefined && (field.type === 'date' || field.type === 'datetime')) {
         return timeBucketExpr(field, bucket, timeZone);
+    }
+    // v0.1.300 — las fechas de sistema también se agrupan por día/semana/mes…
+    if (bucket !== undefined && isSystemField(field.type) && systemFieldBaseType(field.type) === 'datetime') {
+        const ff = fieldsById.get(field.id);
+        if (ff?.expr) return timeBucketExpr({ ...field, type: 'datetime' }, bucket, timeZone, ff.expr);
     }
     // v0.1.190 — multi_select por combinación; v0.1.200 — derivados por su expresión.
     return groupKeyExpr(field, fieldsById);
@@ -1014,6 +1034,11 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
             : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
     }
     if (type === 'lookup') return [];
+    // v0.1.300 — columnas de sistema: fechas (mínimo/máximo) o personas (únicos).
+    if (isSystemField(type)) {
+        if (!ff?.expr) return [];
+        return systemFieldBaseType(type) === 'datetime' ? ['count', 'count_empty', 'min', 'max'] : ['count', 'count_empty', 'count_unique'];
+    }
     // v0.1.291 — el tiempo registrado (minutos) se suma y promedia como número.
     if (type === 'time_tracked') return ff?.expr ? ['count', 'sum', 'avg', 'min', 'max'] : [];
     // v0.1.252 — una relación vive en otra tabla: «vacíos» y «únicos» se
@@ -1037,10 +1062,10 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
  * (así el ORDER BY del group sigue siendo correcto) y son los labels que
  * muestra el chart: 2026-07-21 / 2026-W30 / 2026-07 / 2026-Q3 / 2026.
  */
-function timeBucketExpr(field: Field, bucket: TimeBucket, timeZone: string): SQL {
+function timeBucketExpr(field: Field, bucket: TimeBucket, timeZone: string, expr?: SQL): SQL {
     // v0.1.263 — un datetime cae en el día/mes del reloj de la EMPRESA (una
     // venta a las 9 pm del 31 en Colombia es de ese mes, no del siguiente).
-    const raw = fieldTypedExpr({ id: field.id, type: field.type });
+    const raw = expr ?? fieldTypedExpr({ id: field.id, type: field.type });
     const typed = field.type === 'datetime' ? sql`(${raw} AT TIME ZONE ${timeZone})` : raw;
     switch (bucket) {
         case 'day':

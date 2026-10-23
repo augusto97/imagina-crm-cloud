@@ -1,5 +1,6 @@
 import { formatDuration, type DurationFormat } from '@imagina-base/shared';
 
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr, formatNumber, numberFormatLocale } from '@/lib/tenantFormat';
@@ -117,9 +118,11 @@ export function formatBucketLabel(label: string): string {
  * vacío de una casilla también es «No»). Devuelve un mapa clave → texto que
  * se suma al de las opciones (la clave cruda sigue siendo la del dato).
  */
-export function groupDisplayLabels(keys: readonly string[], field: Pick<FieldEntity, 'type'> | undefined): Map<string, string> {
+export function groupDisplayLabels(keys: readonly string[], rawField: Pick<FieldEntity, 'type'> | undefined): Map<string, string> {
     const out = new Map<string, string>();
-    if (!field) return out;
+    if (!rawField) return out;
+    // v0.1.300 — las fechas de sistema se leen como fecha y hora.
+    const field = asDisplayField(rawField);
     if (field.type === 'checkbox') {
         out.set('true', __('Sí'));
         out.set('false', __('No'));

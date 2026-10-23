@@ -58,6 +58,8 @@ import { CellMarkOverlay, ERROR_CELL_SHADOW } from '../grid/CellMarkOverlay';
 import { GridEditContext } from '../grid/editStore';
 import { GridOverlays } from '../grid/GridOverlays';
 import { titleFieldOf } from '@/lib/recordTitle';
+import { displayTypeOf } from '@/lib/fieldTypeCatalog';
+import { useWpUser } from '@/hooks/useWpUsers';
 import { useWidth } from '../grid/useWidth';
 import { getTenantTimeZone } from '@/lib/tenantFormat';
 
@@ -1632,7 +1634,11 @@ const GroupHeaderButton = forwardRef<
                         colorAccent,
                     )}
                 >
-                    {labelText}
+                    {displayTypeOf(field.type) === 'user' && bucket.value !== null && /^[1-9]\d*$/.test(bucket.value) ? (
+                        <GroupPersonName id={Number(bucket.value)} fallback={labelText} />
+                    ) : (
+                        labelText
+                    )}
                 </span>
             )}
             <span className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -1829,6 +1835,9 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
     if (field.type === 'checkbox') {
         return value === '1' || value === 'true' ? __('Sí') : __('No');
     }
+    // v0.1.300 — «Creado/Modificado por»: el 0 es un cambio del sistema
+    // (automatización, sincronización); el resto, la persona (ver GroupPersonName).
+    if ((field.type === 'created_by' || field.type === 'updated_by') && value === '0') return __('Sistema');
     if (field.type === 'select' || field.type === 'multi_select') {
         // Buscar label en field.config.options
         const options = (field.config as { options?: Array<{ value: string; label: string }> })
@@ -1840,11 +1849,18 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
         if (set !== null) return orderByCatalog(set, Array.isArray(options) ? options : []).map(labelOf).join(' + ');
         return labelOf(value);
     }
-    if (field.type === 'date' || field.type === 'datetime') {
+    // v0.1.300 — las fechas de sistema agrupan por día (en la zona de la empresa).
+    if (displayTypeOf(field.type) === 'date' || displayTypeOf(field.type) === 'datetime') {
         // Etiqueta del grupo: solo la fecha, en el orden del workspace.
         return formatDateStr(value);
     }
     return value;
+}
+
+/** v0.1.300 — Nombre de la persona del grupo (campo persona o «Creado/Modificado por»). */
+function GroupPersonName({ id, fallback }: { id: number; fallback: string }): JSX.Element {
+    const user = useWpUser(id > 0 ? id : null);
+    return <>{user.data?.display_name || fallback}</>;
 }
 
 export { renderCellValue };

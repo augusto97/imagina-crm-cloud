@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react';
 
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { useWidgetData } from '@/hooks/useDashboards';
 import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
@@ -65,7 +66,8 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     const onSegment = useSegmentNav(widget);
     const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
     const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
-    const groupField = fields.data?.find((f) => f.id === groupFieldId);
+    const rawGroupField = fields.data?.find((f) => f.id === groupFieldId);
+    const groupField = rawGroupField ? asDisplayField(rawGroupField) : undefined;
     const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
     const fmt = (n: number): string => formatMetricValue(n, metric, metricField);
     // Un eje temporal va en orden cronológico (como lo manda el servidor).

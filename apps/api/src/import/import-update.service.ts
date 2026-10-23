@@ -294,6 +294,11 @@ export class ImportUpdateService {
             const rec = matches[0];
             if (!rec) {
                 if (input.mode !== 'upsert') return base;
+                // v0.1.300 — un «ID automático» lo da el servidor: no se puede crear
+                // un registro con el número que trae el archivo.
+                if (ctx.keyField?.type === 'autonumber') {
+                    return { ...base, error: `No hay ningún registro con ${ctx.keyField.label} «${base.key}» (ese número lo asigna la app: no se puede crear con él).` };
+                }
                 // Crear: con la clave en su campo (si es un campo) para que la
                 // próxima vez empareje.
                 const data = { ...values };

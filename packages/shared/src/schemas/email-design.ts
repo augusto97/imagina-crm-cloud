@@ -17,6 +17,7 @@ import {
     type ElementStyle,
 } from './design-style';
 import { formatPhone } from '../field-types/phone';
+import { valueBaseType, type FieldType } from './field';
 import type { RichDoc, RichMark, RichNode } from './rich-text';
 import { richDocSchema, sanitizeRichDoc } from './rich-text';
 import type { TenantFormat } from './tenant';
@@ -1373,7 +1374,9 @@ export function formatEmailFieldValue(
         const o = options.find((x) => x.value === v);
         return typeof o?.label === 'string' && o.label ? o.label : String(v);
     };
-    switch (field?.type) {
+    // v0.1.300 — las columnas de sistema se muestran como fecha y hora / persona,
+    // el ID automático como texto.
+    switch (field ? valueBaseType(field.type as FieldType) : undefined) {
         case 'checkbox':
             return value === true || value === 'true' || value === 1 ? 'Sí' : 'No';
         case 'select':
@@ -1386,11 +1389,11 @@ export function formatEmailFieldValue(
         case 'rating': {
             const n = typeof value === 'number' ? value : Number(value);
             if (!Number.isFinite(n)) return String(value);
-            if (field.type === 'rating') return `${n} de ${typeof cfg.max === 'number' ? cfg.max : 5}`;
-            const dec = field.type === 'currency' ? (precision ?? 2) : precision;
+            if (field?.type === 'rating') return `${n} de ${typeof cfg.max === 'number' ? cfg.max : 5}`;
+            const dec = field?.type === 'currency' ? (precision ?? 2) : precision;
             const num = groupNumber(n, dec, format.number_format);
-            if (field.type === 'percent') return `${num} %`;
-            if (field.type === 'currency') {
+            if (field?.type === 'percent') return `${num} %`;
+            if (field?.type === 'currency') {
                 const cur = typeof cfg.currency === 'string' ? cfg.currency : '';
                 return cur ? `${cur} ${num}` : num;
             }
@@ -1453,6 +1456,12 @@ export const EMAIL_FIELDS_BLOCK_TYPES: readonly string[] = [
     'date',
     'datetime',
     'user',
+    // v0.1.300 — ID automático y columnas de sistema.
+    'autonumber',
+    'created_at',
+    'updated_at',
+    'created_by',
+    'updated_by',
 ];
 
 export type { RichDoc as EmailRichDoc };

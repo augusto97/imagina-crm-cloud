@@ -7,6 +7,7 @@ export * from './list-templates';
 export * from './lists';
 export * from './fields';
 export * from './records';
+export * from './autonumber-counters';
 export * from './relations';
 export * from './recurrences';
 export * from './saved-views';

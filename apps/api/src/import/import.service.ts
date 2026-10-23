@@ -1,5 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import {
+    applyFieldDefaults,
+    checkRequiredIf,
+    type DefaultContext,
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
     IMPORT_ID_COLUMN,
@@ -36,6 +39,7 @@ import { RecordsRepository } from '../records/records.repository';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { readTenantFormat } from '../tenancy/tenant-format';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { eq } from 'drizzle-orm';
 import { memberships, users } from '../db/schema';
 
@@ -53,7 +57,29 @@ export class ImportService {
         private readonly recordsRepo: RecordsRepository,
         private readonly billing: BillingService,
         private readonly realtime: RealtimeService,
+        // v0.1.300 — "hoy" de los valores por defecto en el reloj de la empresa.
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
+
+    /** v0.1.300 — contexto de los valores por defecto (quién importa, ahora, zona). */
+    private async defaultsContext(tenantId: number, userId: number): Promise<DefaultContext> {
+        return { now: new Date(), timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId) : 'UTC', userId };
+    }
+
+    /**
+     * v0.1.300 — la fila con sus valores por defecto y el chequeo de
+     * "obligatorio si…". Devuelve el `data` final o el primer error.
+     */
+    private finishRow(
+        fields: Field[],
+        data: Record<string, unknown>,
+        ctx: DefaultContext,
+    ): { ok: true; data: Record<string, unknown> } | { ok: false; field: Field; message: string } {
+        const full = applyFieldDefaults(fields.filter((f) => isUserWritableType(f.type)), data, ctx);
+        const failed = checkRequiredIf(fields, full);
+        if (failed.length > 0) return { ok: false, field: failed[0]!.field as Field, message: failed[0]!.message };
+        return { ok: true, data: full };
+    }
 
     async importRows(
         tenantId: number,
@@ -87,6 +113,7 @@ export class ImportService {
         const valid: Record<string, unknown>[] = [];
         // v0.1.294 — «Sin repetidos»: contra la lista y contra el mismo lote.
         const unique = await this.tenantDb.withTenant(tenantId, (tx) => UniqueTracker.load(tx, tenantId, list.id, fields));
+        const defaults = await this.defaultsContext(tenantId, actorId);
 
         input.rows.forEach((row, index) => {
             const data: Record<string, unknown> = {};
@@ -111,14 +138,23 @@ export class ImportService {
                     data[key] = result.value;
                 }
             }
+            // v0.1.300 — valores por defecto y "obligatorio si…" (error por fila).
+            let full = data;
+            if (rowOk) {
+                const done = this.finishRow(fields, data, defaults);
+                if (!done.ok) {
+                    errors.push({ row: index, field: done.field.slug, message: done.message });
+                    rowOk = false;
+                } else full = done.data;
+            }
             if (rowOk && unique.active) {
-                const dup = unique.claim(data);
+                const dup = unique.claim(full);
                 if (dup !== null) {
                     errors.push({ row: index, field: '', message: dup });
                     rowOk = false;
                 }
             }
-            if (rowOk) valid.push(data);
+            if (rowOk) valid.push(full);
         });
 
         // Límite de plan (SEC-09): el import COMPLETO no debe superar el tope.
@@ -338,6 +374,7 @@ export class ImportService {
         const readOpts = await this.readOptions(tenantId, input.source);
         // v0.1.294 — «Sin repetidos»: contra la lista y contra el mismo archivo.
         const unique = await this.tenantDb.withTenant(tenantId, (tx) => UniqueTracker.load(tx, tenantId, list.id, [...bySlug.values()]));
+        const defaults = await this.defaultsContext(tenantId, actorId);
         rows.forEach((row, idx) => {
             const rowNumber = idx + 2; // +1 header, +1 human-friendly.
             const data: Record<string, unknown> = {};
@@ -378,14 +415,21 @@ export class ImportService {
                 skipped++;
                 return;
             }
-            const dup = unique.active ? unique.claim(data) : null;
+            // v0.1.300 — valores por defecto y "obligatorio si…" (error por fila).
+            const done = this.finishRow([...bySlug.values()], data, defaults);
+            if (!done.ok) {
+                errors.push({ row: rowNumber, message: `${done.field.label}: ${done.message}` });
+                skipped++;
+                return;
+            }
+            const dup = unique.active ? unique.claim(done.data) : null;
             if (dup !== null) {
                 errors.push({ row: rowNumber, message: dup });
                 skipped++;
                 return;
             }
             staged.push({
-                data,
+                data: done.data,
                 row: rowNumber,
                 fileId: idColumn === null ? '' : (row[idColumn] ?? '').trim(),
                 parentRef: parentColumn === null ? '' : (row[parentColumn] ?? '').trim(),

@@ -8724,6 +8724,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verificado con openpyxl y LibreOffice, incluida la ida y vuelta
         exportar → editar → actualizar.
 
+  - [x] **ID automático, columnas de sistema, valores por defecto y
+        validaciones (v0.1.300, ADR-S55, opciones A3+A4+A6 del estudio)**:
+        (a) tipo **«ID automático»** (`TCK-0001`, `PED-2026-0042`): prefijo
+        sugerido por el nombre de la lista, separador, dígitos, número inicial
+        y reinicio anual en la zona de la empresa. Lo asigna un **trigger de
+        Postgres** (`imcrm_records_autonumber`, BEFORE INSERT/UPDATE en
+        `records`) con un contador por campo y año (`autonumber_counters`,
+        RLS) bloqueado con su fila: altas en paralelo sin repetidos, un alta
+        revertida sin hueco, y TODOS los caminos de alta cubiertos sin tocar sus
+        services. Al agregarlo numera lo existente en orden de creación; nadie
+        lo escribe (alta, edición, import, edición masiva, pegar, formularios,
+        automatizaciones, API); se busca, filtra, ordena de forma natural y
+        exporta; una copia (duplicar, clonar, plantilla) recibe un número nuevo
+        y la migración de empresa conserva el suyo y su contador
+        (`app.keep_autonumber`). Con la papelera: un ID automático en la
+        papelera no numera, y al restaurarlo numera, en orden y del mismo
+        contador, lo que se creó mientras tanto. (b) **Columnas de sistema**
+        «Fecha de creación», «Última modificación», «Creado por» y «Modificado
+        por» (cuatro tipos que se leen de la fila en cada respuesta y se
+        muestran, filtran y agrupan como fecha y hora o persona); columna nueva
+        `records.updated_by`, mantenida en todas las escrituras (0 =
+        «Sistema»); van al pie, a los tableros, al CSV y al Excel con nombres.
+        (c) **Valor por defecto** por campo (fijo, hoy, ahora, quien lo crea,
+        opciones), aplicado cuando el valor no viene: alta (que lo muestra
+        puesto), formularios, import, «Crear un registro», asistente/MCP y API.
+        (d) **Validaciones** por campo: mínimo y máximo (números, montos,
+        porcentajes, duración, fechas), largo de texto, formatos (NIT con o sin
+        dígito de verificación —verificado—, cédula, placa, sólo números, sólo
+        letras) o una **expresión regular propia con análisis anti-ReDoS** al
+        guardar (sin anidamientos, alternancias solapadas, retroreferencias ni
+        lookarounds, con presupuesto de pasos; anclada y sobre ≤200
+        caracteres), y **«obligatorio sólo si otro campo es / no es / tiene
+        valor»**, cada una con su mensaje propio. La MISMA lógica de shared
+        corre en la celda, pegar y rellenar, la ficha, el alta, formularios,
+        import (error por fila), edición masiva, automatizaciones (saltean el
+        campo con el motivo) y API/MCP; un registro viejo que no cumple una
+        regla nueva no bloquea editar otra cosa. Editor en el panel de campos y
+        el administrador, con «Prueba un valor» en vivo. **Fixes de paso**: el
+        pie de la vista agrupada por una columna de sistema daba 500; la columna
+        nueva de un campo derivado podía quedar en «—» hasta recargar (carrera
+        del mapa `f{id}`↔slug); «Marcada por defecto» de las casillas nunca se
+        guardaba. Migración 0081. Benchmark §13 con el trigger: GET p95 14,7 ms
+        y PATCH p95 22,9 ms (100k registros). 18 tests de integración en un
+        spec propio + casos en papelera, import, plantillas y migración de
+        empresa, 6 del front y los de shared + E2E navegador 31/31 (escritorio,
+        celular, oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

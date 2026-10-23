@@ -412,7 +412,7 @@ export class RecurrencesService {
 
         // Update: patch del campo fecha (+ reset de estado) sobre el record.
         const merged = { ...(record.data as Record<string, unknown>), [dateKey]: nextDate, ...statusPatch };
-        const updated = await this.recordsRepo.updateData(tx, tenantId, rec.listId, rec.recordId, merged);
+        const updated = await this.recordsRepo.updateData(tx, tenantId, rec.listId, rec.recordId, merged, 0);
         if (!updated) return null;
         await this.activity.logInTx(tx, {
             tenantId,

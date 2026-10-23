@@ -8,8 +8,13 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
+    applyFieldDefaults,
+    checkRequiredIf,
     collectMentionedUserIds,
     FALLBACK_TIME_ZONE,
+    isSystemField,
+    isUserWritableType,
+    systemFieldBaseType,
     type BulkEditTarget,
     evaluateComputed,
     isDataField,
@@ -162,7 +167,13 @@ export class RecordsService {
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
         const rel = splitRelationValues(fields, input.data);
-        const data = this.validateData(fields, rel.data, { partial: opts.lenientRequired === true });
+        // v0.1.300 — valores por defecto: lo que NO viene en el alta (fijo, hoy en
+        // el reloj de la empresa, quien lo crea, una opción).
+        const clock = await this.clock(tenantId);
+        const withDefaults = applyFieldDefaults(fields, rel.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId });
+        const data = this.validateData(fields, withDefaults, { partial: opts.lenientRequired === true });
+        // v0.1.300 — "obligatorio si otro campo vale X" mira el registro entero.
+        if (opts.lenientRequired !== true) assertRequiredIf(fields, data);
 
         const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
@@ -509,6 +520,7 @@ export class RecordsService {
         // no ve completa — ocultos igual que un campo oculto.
         for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
         for (const id of withDependentComputed(fields, hiddenIds)) hiddenIds.add(id);
+        const clock = await this.clock(tenantId, tx);
         const fieldsById = withComputedExprs(
             new Map<number, FilterableField>(
                 [
@@ -520,6 +532,7 @@ export class RecordsService {
                 ].filter(([id]) => !hiddenIds.has(id)),
             ),
             fields,
+            clock.timeZone,
         );
         const assignmentId = resolvePermissions(list.settings).assignment_field_id;
         const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
@@ -530,7 +543,7 @@ export class RecordsService {
             hiddenIds,
             fieldsById,
             scopeW: scopeWhere(perms.view, actor.userId, assignmentKey),
-            clock: await this.clock(tenantId, tx),
+            clock,
         };
     }
 
@@ -614,12 +627,16 @@ export class RecordsService {
             const patch = this.validateData(fields, rel.data, { partial: true });
             await this.assertUniqueInTx(tx, tenantId, listId, fields, patch, id);
             const merged = mergeData(current.data, patch);
+            // v0.1.300 — obligatorio-si: sólo las reglas que tocan algo que cambió
+            // (un registro viejo que no cumplía una regla nueva no bloquea la
+            // edición de otro campo).
+            if (!opts.automationChain) assertRequiredIf(fields, merged, new Set(Object.keys(patch)));
             // v0.1.213 — lista de una tienda: sólo lo que WooCommerce acepta.
             this.assertStoreEdit(list, fields, current.data, merged, [
                 ...Object.keys(patch).map((k) => Number(k.slice(1))),
                 ...rel.values.map((v) => v.field.id),
             ]);
-            const updated = await this.repo.updateData(tx, tenantId, listId, id, merged);
+            const updated = await this.repo.updateData(tx, tenantId, listId, id, merged, actor.userId);
             if (updated) {
                 await this.syncRelations(tx, tenantId, id, rel.values);
                 await this.activity.logInTx(tx, {
@@ -720,6 +737,7 @@ export class RecordsService {
             } else {
                 // SEC-25: tampoco se apunta una edición en lote por un campo oculto.
                 const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+                const bulkClock = await this.clock(tenantId);
                 const fieldsById = withComputedExprs(
                     new Map<number, FilterableField>(
                         [
@@ -729,9 +747,10 @@ export class RecordsService {
                         ].filter(([id]) => !hiddenIds.has(id)),
                     ),
                     fields,
+                    bulkClock.timeZone,
                 );
                 where = andWhere(
-                    compileFilterTree(fieldsById, target.filter_tree, await this.clock(tenantId)),
+                    compileFilterTree(fieldsById, target.filter_tree, bulkClock),
                     compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), target.search),
                 );
                 parent = target.include_subtasks ? 'any' : 'roots';
@@ -830,7 +849,7 @@ export class RecordsService {
             const row = await this.repo.findByIdForUpdate(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
             const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
-            await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
+            await this.repo.updateDescription(tx, tenantId, list.id, id, clean, actor.userId);
             newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
             // La bitácora registra QUE cambió (con un resumen corto, nunca el
             // documento entero) y junta el autoguardado de una misma persona
@@ -953,7 +972,7 @@ export class RecordsService {
             }
             await tx
                 .update(records)
-                .set({ parentId, updatedAt: sql`now()` })
+                .set({ parentId, updatedAt: sql`now()`, updatedBy: actor.userId })
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, id)));
         });
         if (!opts.silent) this.realtime.records(tenantId, list.id);
@@ -986,7 +1005,7 @@ export class RecordsService {
             const ids = [id, ...snapshot.children];
             await tx
                 .update(records)
-                .set({ deletedAt: null, deletedBy: null, updatedAt: sql`now()` })
+                .set({ deletedAt: null, deletedBy: null, updatedAt: sql`now()`, updatedBy: actor.userId })
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, ids)));
             for (const { field, targetListId, ids: targets } of rel.values) {
                 const alive = targets.length > 0 ? await this.relationsRepo.existingInList(tx, tenantId, targetListId, targets) : new Set<number>();
@@ -1458,13 +1477,14 @@ export class RecordsService {
                 errors[key] = 'Campo desconocido en esta lista';
                 continue;
             }
+            // v0.1.277 — el campo con IA lo escribe el servidor: un formulario
+            // que reenvía su valor (sin cambiarlo) no rompe el guardado.
+            // v0.1.300 — igual el ID automático y las columnas de sistema.
+            if (field.type === 'ai' || field.type === 'autonumber' || isSystemField(field.type)) continue;
             if (!isDataField(field.type)) {
                 errors[key] = `El tipo '${field.type}' no se escribe en los datos`;
                 continue;
             }
-            // v0.1.277 — el campo con IA lo escribe el servidor: un formulario
-            // que reenvía su valor (sin cambiarlo) no rompe el guardado.
-            if (field.type === 'ai') continue;
             const result = validateFieldValue(
                 { type: field.type, config: field.config, is_required: field.is_required },
                 value,
@@ -1481,7 +1501,7 @@ export class RecordsService {
         if (!opts.partial) {
             // Alta: los campos de datos requeridos ausentes deben fallar.
             for (const field of fields) {
-                if (!isDataField(field.type)) continue;
+                if (!isUserWritableType(field.type)) continue;
                 const key = jsonbKeyForField(field.id);
                 if (!(key in rawData)) {
                     const result = validateFieldValue(
@@ -1524,7 +1544,33 @@ function toRecord(
         created_by: row.createdBy,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
+        updated_by: effectiveUpdatedBy(row),
     };
+}
+
+/**
+ * v0.1.300 — "Obligatorio si otro campo vale X" (field-rules.ts). Con `touched`,
+ * sólo las reglas que involucran un campo que cambió. Mismo error que la
+ * validación por campo (errores por slug).
+ */
+function assertRequiredIf(fields: Field[], data: Record<string, unknown>, touched?: ReadonlySet<string>): void {
+    const failed = checkRequiredIf(fields, data, touched ? { touched } : {});
+    if (failed.length === 0) return;
+    throw new BadRequestException({
+        code: 'validation_failed',
+        message: 'Datos del registro inválidos',
+        data: { status: 400, errors: Object.fromEntries(failed.map((e) => [e.field.slug ?? `f${e.field.id}`, e.message])) },
+    });
+}
+
+/**
+ * v0.1.300 — «Modificado por»: lo guardado, o —si el registro nunca se modificó—
+ * quien lo creó. NULL si se modificó antes de que existiera la columna. La
+ * misma regla que la expresión SQL (`systemFieldExpr`).
+ */
+function effectiveUpdatedBy(row: { updatedBy?: number | null; createdBy: number; createdAt: Date; updatedAt: Date }): number | null {
+    if (row.updatedBy !== null && row.updatedBy !== undefined) return row.updatedBy;
+    return row.updatedAt.getTime() === row.createdAt.getTime() ? row.createdBy : null;
 }
 
 /**
@@ -1759,6 +1805,22 @@ export function parseFieldSort(
         }
         // v0.1.286 — una persona se ordena por su NOMBRE (antes, como texto
         // de su id: «10» antes que «9»). El id se lee sólo si es un número.
+        // v0.1.300 — «Creado por» / «Modificado por»: por el nombre de la persona.
+        if (isSystemField(field.type) && systemFieldBaseType(field.type) === 'user' && field.expr) {
+            out.push(sql`(SELECT u.name FROM users u WHERE u.id = (${field.expr})) COLLATE "und-x-icu" ${dir} NULLS LAST`);
+            continue;
+        }
+        // v0.1.300 — el ID automático se ordena "natural": primero lo que va antes
+        // del número (prefijo y año) y después el NÚMERO como número — por
+        // texto «TCK-10000» quedaría antes que «TCK-9999». No sirve ordenar por
+        // el id del registro: con altas en paralelo el id sale de la secuencia
+        // antes de que el trigger tome el contador.
+        if (field.type === 'autonumber') {
+            const text = fieldTypedExpr(field);
+            out.push(sql`regexp_replace(${text}, '[0-9]+$', '') COLLATE "und-x-icu" ${dir} NULLS LAST`);
+            out.push(sql`(substring(${text} from '([0-9]+)$'))::numeric ${dir} NULLS LAST`);
+            continue;
+        }
         if (field.type === 'user' && !hasExpr) {
             const raw = fieldTypedExpr(field);
             out.push(

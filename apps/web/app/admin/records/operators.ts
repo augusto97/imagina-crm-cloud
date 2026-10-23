@@ -171,6 +171,16 @@ export function operatorsForType(
             // v0.1.170 — el backend compila el rollup a una subconsulta
             // correlacionada: "deuda > 0" funciona de verdad.
             return NUMERIC;
+        // v0.1.300 — el ID automático es texto; las columnas de sistema, una fecha
+        // y hora o una persona (el backend filtra la columna del registro).
+        case 'autonumber':
+            return TEXT_LIKE;
+        case 'created_at':
+        case 'updated_at':
+            return DATE_LIKE;
+        case 'created_by':
+        case 'updated_by':
+            return USER_LIKE.filter((o) => !o.nullary);
     }
 }
 

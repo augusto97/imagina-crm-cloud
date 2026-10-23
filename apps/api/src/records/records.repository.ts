@@ -19,6 +19,7 @@ const LIST_COLUMNS = {
     createdBy: records.createdBy,
     createdAt: records.createdAt,
     updatedAt: records.updatedAt,
+    updatedBy: records.updatedBy,
     deletedAt: records.deletedAt,
     hasDescription: sql<boolean>`(${records.description} IS NOT NULL)`,
 } as const;
@@ -452,10 +453,12 @@ export class RecordsRepository {
         listId: number,
         id: number,
         description: RichDoc | null,
+        /** v0.1.300 — quién la cambió («Modificado por»); 0 = el sistema. */
+        updatedBy?: number,
     ): Promise<void> {
         await tx
             .update(records)
-            .set({ description, updatedAt: new Date() })
+            .set({ description, updatedAt: new Date(), ...(updatedBy !== undefined ? { updatedBy } : {}) })
             .where(
                 and(
                     eq(records.tenantId, tenantId),
@@ -490,10 +493,12 @@ export class RecordsRepository {
         listId: number,
         id: number,
         data: Record<string, unknown>,
+        /** v0.1.300 — quién lo cambió («Modificado por»); 0 = el sistema. */
+        updatedBy?: number,
     ): Promise<RecordRow | null> {
         const [row] = await tx
             .update(records)
-            .set({ data, updatedAt: sql`now()` })
+            .set({ data, updatedAt: sql`now()`, ...(updatedBy !== undefined ? { updatedBy } : {}) })
             .where(
                 and(
                     eq(records.tenantId, tenantId),

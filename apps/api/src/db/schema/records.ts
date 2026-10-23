@@ -31,6 +31,12 @@ export const records = pgTable('records', {
     createdBy: bigint('created_by', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * v0.1.300 — quién lo modificó por última vez (columna «Modificado por»). 0 =
+     * el sistema (automatización, sincronización), NULL = no se sabe (antes
+     * de esta versión). En el alta lo completa el trigger con `created_by`.
+     */
+    updatedBy: bigint('updated_by', { mode: 'number' }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     /** Papelera: quién lo borró (null en los borrados de antes de la papelera). */
     deletedBy: bigint('deleted_by', { mode: 'number' }),

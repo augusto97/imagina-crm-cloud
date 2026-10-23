@@ -19,6 +19,7 @@ import { useSourceListId } from '../LayoutBlocks';
 import { useLayoutCtx } from '../LayoutContext';
 import { useEditor } from './editorState';
 import { FieldChecklist, FieldSelect, Group, NumberInput, Row, Segmented, TextInput, Toggle } from './inspectorUi';
+import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 
 /**
  * v0.1.231 — Formularios del inspector por tipo de bloque. Cada uno recibe
@@ -484,7 +485,8 @@ const VIEW_LABEL: Record<string, string> = {
 };
 
 /** Tipos que se calculan (no se editan en línea). */
-const DERIVED_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai', 'relation', 'file']);
+// v0.1.300 — también el ID automático y las columnas de sistema.
+const DERIVED_TYPES: ReadonlySet<string> = new Set([...DERIVED_FIELD_TYPES, 'relation', 'file']);
 
 export function RelatedForm({ block, set }: FormProps): JSX.Element {
     const ed = useEditor();

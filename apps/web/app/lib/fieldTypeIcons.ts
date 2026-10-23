@@ -9,7 +9,12 @@ import {
     Eye,
     GitBranch,
     Hash,
+    History,
     Link2,
+    ScanBarcode,
+    UserCheck,
+    UserPen,
+    CalendarPlus,
     List,
     ListChecks,
     Mail,
@@ -58,6 +63,11 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     rollup: Calculator,
     ai: Sparkles,
     time_tracked: Clock,
+    autonumber: ScanBarcode,
+    created_at: CalendarPlus,
+    updated_at: History,
+    created_by: UserCheck,
+    updated_by: UserPen,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */

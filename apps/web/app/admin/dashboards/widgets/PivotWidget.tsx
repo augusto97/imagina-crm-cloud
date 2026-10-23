@@ -40,7 +40,7 @@ export function PivotWidget({ dashboardId, widget }: { dashboardId: number; widg
     const colOrder = useGroupOptionOrder(widget.list_id, colFieldId);
     const rowField = fields.data?.find((f) => f.id === rowFieldId);
     const colField = fields.data?.find((f) => f.id === colFieldId);
-    const chrono = (t: string | undefined): boolean => t === 'date' || t === 'datetime';
+    const chrono = (t: string | undefined): boolean => t === 'date' || t === 'datetime' || t === 'created_at' || t === 'updated_at';
 
     const model = useMemo<PivotModel | null>(() => {
         if (pivot === null) return null;

@@ -56,17 +56,51 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'ai', label: 'Campo con IA', description: 'Resume, clasifica, extrae o traduce a partir de otros campos (también PDF e imágenes).', supportsUnique: false },
     // v0.1.291.
     { slug: 'time_tracked', label: 'Tiempo registrado', description: 'Suma el tiempo cargado en el registro (cronómetro y entradas a mano).', supportsUnique: false },
+    // v0.1.300 — ID automático y columnas de sistema.
+    { slug: 'autonumber', label: 'ID automático', description: 'Un código que se asigna solo al crear cada registro: TCK-0001, PED-2026-0042.', supportsUnique: false },
+    { slug: 'created_at', label: 'Fecha de creación', description: 'Cuándo se creó el registro. Se llena solo.', supportsUnique: false },
+    { slug: 'updated_at', label: 'Última modificación', description: 'Cuándo se cambió el registro por última vez. Se llena solo.', supportsUnique: false },
+    { slug: 'created_by', label: 'Creado por', description: 'Quién creó el registro. Se llena solo.', supportsUnique: false },
+    { slug: 'updated_by', label: 'Modificado por', description: 'Quién cambió el registro por última vez. Se llena solo.', supportsUnique: false },
 ];
 
 /** Tipos que NO viven en la columna de datos (referencias / derivados). */
-const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>(['relation', 'computed', 'lookup', 'rollup', 'time_tracked']);
+const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>([
+    'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
+    'created_at', 'updated_at', 'created_by', 'updated_by',
+]);
 
 /**
  * Tipos de SOLO LECTURA: su valor lo deriva el backend en cada lectura y
  * el usuario no lo escribe (v0.1.170 — antes cada superficie repetía
  * `type === 'computed'` y los tipos nuevos se le escapaban a alguna).
  */
-export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai', 'time_tracked']);
+export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set([
+    'computed', 'lookup', 'rollup', 'ai', 'time_tracked',
+    // v0.1.300 — los asigna el servidor.
+    'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by',
+]);
+
+/** v0.1.300 — Columnas de sistema (metadata del registro). */
+export const SYSTEM_FIELD_TYPES: ReadonlySet<string> = new Set(['created_at', 'updated_at', 'created_by', 'updated_by']);
+
+/**
+ * v0.1.300 — El tipo con el que se MUESTRA / filtra un valor: las fechas de sistema
+ * como «fecha y hora», «Creado/Modificado por» como persona y el ID
+ * automático como texto. El resto, su propio tipo.
+ */
+export function displayTypeOf(type: string): FieldTypeSlug {
+    if (type === 'created_at' || type === 'updated_at') return 'datetime';
+    if (type === 'created_by' || type === 'updated_by') return 'user';
+    if (type === 'autonumber') return 'text';
+    return type as FieldTypeSlug;
+}
+
+/** Copia del campo con su tipo "de mostrar" (ver `displayTypeOf`). */
+export function asDisplayField<T extends { type: string }>(field: T): T {
+    const t = displayTypeOf(field.type);
+    return t === field.type ? field : { ...field, type: t };
+}
 
 export function isDerivedFieldType(type: string): boolean {
     return DERIVED_FIELD_TYPES.has(type);
