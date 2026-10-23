@@ -35,6 +35,13 @@ import { DependenciesRepository } from '../records/dependencies.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ViewsService } from '../views/views.service';
+import {
+    applyButtonAutomationRefs,
+    buttonLostTemplate,
+    cleanResolvedButtonConfig,
+    extractButtonAutomationRefs,
+    portableButtonConfig,
+} from '../buttons/button-portable';
 
 /** Techo de registros de muestra por lista en un blueprint. */
 const MAX_BLUEPRINT_RECORDS = 500;
@@ -114,6 +121,12 @@ export class BlueprintService {
             const tokenize = (v: unknown, extra: readonly string[] = []): unknown =>
                 tokenizeListRefs(tokenizeFieldRefs(v, idToSlug, extra, crossList), listIdToKey);
 
+            // Campo «Botón»: su automatización viaja como índice del blueprint.
+            const autos = include.automations ? await this.automations.list(tenantId, String(list.id)) : [];
+            const autoIndexById = new Map(autos.map((a, i) => [a.id, i]));
+            const fieldConfig = (f: Field): Record<string, unknown> =>
+                f.type === 'button' ? portableButtonConfig(f.config, autoIndexById) : f.config;
+
             const settings: Record<string, unknown> = {};
             if (include.settings) {
                 for (const [k, v] of Object.entries(list.settings)) {
@@ -131,7 +144,7 @@ export class BlueprintService {
                     label: f.label,
                     slug: f.slug,
                     type: f.type,
-                    config: tokenize(f.config, ['inputs']) as Record<string, unknown>,
+                    config: tokenize(fieldConfig(f), ['inputs']) as Record<string, unknown>,
                     is_required: f.is_required,
                     is_unique: f.is_unique,
                     is_indexed: f.is_indexed,
@@ -155,7 +168,6 @@ export class BlueprintService {
             }
 
             if (include.automations) {
-                const autos = await this.automations.list(tenantId, String(list.id));
                 bp.automations = autos.map((a) => {
                     const trigger: Record<string, unknown> = {};
                     for (const [k, v] of Object.entries(a.trigger_config)) {
@@ -297,11 +309,23 @@ export class BlueprintService {
         //    que referencian otros.
         const slugMaps = new Map<string, Map<string, number>>();
         const pendingByList: Array<{ list: List; bl: BlueprintList; pending: Array<{ id: number; config: unknown }> }> = [];
+        // Campo «Botón»: las automatizaciones que referencia se re-apuntan al final.
+        const buttonAutoRefs: Array<{ list: List; key: string; fieldId: number; refs: Array<{ action: number; auto: number }> }> = [];
         for (const [i, bl] of blueprint.lists.entries()) {
             const list = created[i]!;
             const slugToId = new Map<string, number>();
             const pending: Array<{ id: number; config: unknown }> = [];
-            for (const f of bl.fields) {
+            for (const raw of bl.fields) {
+                let f = raw;
+                let autoRefs: Array<{ action: number; auto: number }> = [];
+                if (raw.type === 'button') {
+                    const ex = extractButtonAutomationRefs(raw.config);
+                    f = { ...raw, config: ex.config };
+                    autoRefs = ex.refs;
+                    if (buttonLostTemplate(ex.config)) {
+                        warnings.push(`El botón «${raw.label}» de «${bl.name}» genera un PDF: elige la plantilla de nuevo (las plantillas de documentos no viajan con la lista).`);
+                    }
+                }
                 const hasFieldRefs = JSON.stringify(f.config).includes('"$field"');
                 const config = resolveLists(hasFieldRefs ? {} : f.config) as Record<string, unknown>;
                 try {
@@ -317,6 +341,7 @@ export class BlueprintService {
                     });
                     slugToId.set(f.slug, field.id);
                     if (hasFieldRefs) pending.push({ id: field.id, config: f.config });
+                    if (autoRefs.length > 0) buttonAutoRefs.push({ list, key: bl.key, fieldId: field.id, refs: autoRefs });
                 } catch (err) {
                     warnings.push(`Campo «${f.label}» de «${bl.name}»: ${message(err)}`);
                 }
@@ -327,9 +352,10 @@ export class BlueprintService {
         for (const { list, bl, pending } of pendingByList) {
             const slugToId = slugMaps.get(bl.key)!;
             for (const p of pending) {
-                const config = this.dropDeadListRefs(
+                let config = this.dropDeadListRefs(
                     resolveLists(resolveFieldRefs(p.config, slugToId, slugMaps)) as Record<string, unknown>,
                 );
+                if (bl.fields.some((x) => x.type === 'button' && slugToId.get(x.slug) === p.id)) config = cleanResolvedButtonConfig(config);
                 try {
                     await this.fields.update(tenantId, String(list.id), String(p.id), { config });
                 } catch (err) {
@@ -339,7 +365,10 @@ export class BlueprintService {
         }
 
         // C) Ajustes, D) vistas, E) automatizaciones.
+        const autoIdsByKey = new Map<string, Array<number | null>>();
         for (const [i, bl] of blueprint.lists.entries()) {
+            const autoIds: Array<number | null> = [];
+            autoIdsByKey.set(bl.key, autoIds);
             const list = created[i]!;
             const slugToId = slugMaps.get(bl.key)!;
             const resolve = (v: unknown): unknown => resolveLists(resolveFieldRefs(v, slugToId, slugMaps));
@@ -372,6 +401,8 @@ export class BlueprintService {
             }
 
             for (const a of bl.automations) {
+                autoIds.push(null);
+                const slot = autoIds.length - 1;
                 const parsed = createAutomationSchema.safeParse({
                     name: a.name,
                     description: a.description,
@@ -385,7 +416,7 @@ export class BlueprintService {
                     continue;
                 }
                 try {
-                    await this.automations.create(tenantId, String(list.id), parsed.data);
+                    autoIds[slot] = (await this.automations.create(tenantId, String(list.id), parsed.data)).id;
                 } catch (err) {
                     // Incompleta (p. ej. un correo sin «Para») o sobre el límite
                     // de automatizaciones del plan: se crea PAUSADA y se avisa,
@@ -393,7 +424,7 @@ export class BlueprintService {
                     const code = (err as { getResponse?: () => { code?: unknown } }).getResponse?.()?.code;
                     if (parsed.data.is_active !== false && (code === 'automation_incomplete' || code === 'plan_limit_reached')) {
                         try {
-                            await this.automations.create(tenantId, String(list.id), { ...parsed.data, is_active: false });
+                            autoIds[slot] = (await this.automations.create(tenantId, String(list.id), { ...parsed.data, is_active: false })).id;
                             warnings.push(`Automatización «${a.name}» de «${bl.name}» quedó pausada: ${message(err)}`);
                             continue;
                         } catch {
@@ -402,6 +433,22 @@ export class BlueprintService {
                     }
                     warnings.push(`Automatización «${a.name}» de «${bl.name}»: ${message(err)}`);
                 }
+            }
+        }
+
+        // E2) Botones que corren una automatización puntual: ahora que la copia
+        //     existe, se re-apuntan a ella.
+        for (const b of buttonAutoRefs) {
+            const ids = autoIdsByKey.get(b.key) ?? [];
+            try {
+                const current = (await this.fields.listByListId(tenantId, b.list.id)).find((x) => x.id === b.fieldId);
+                if (current) {
+                    await this.fields.update(tenantId, String(b.list.id), String(b.fieldId), {
+                        config: applyButtonAutomationRefs(current.config, b.refs, ids),
+                    });
+                }
+            } catch (err) {
+                warnings.push(`Botón de «${b.list.name}»: ${message(err)}`);
             }
         }
 

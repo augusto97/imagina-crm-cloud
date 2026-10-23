@@ -1,3 +1,5 @@
+import { cleanResolvedButtonConfig } from '../buttons/button-portable';
+
 /**
  * Re-mapeo de ids al mover UNA empresa a otra instancia (v0.1.197, ADR-S23).
  *
@@ -335,4 +337,24 @@ export function remapSyncSettings(
     // Los tableros se importan sin mapa de ids: el enlace se pierde (el tablero no).
     s.dashboard_id = null;
     return s;
+}
+
+/**
+ * Campo «Botón» — su config apunta a campos (por convención), a una plantilla
+ * de documento (`document_template_id`) y a una automatización
+ * (`automation_id`, que no está en `IdMaps`: se pasa aparte porque las
+ * automatizaciones se insertan DESPUÉS de los campos). Lo que no resuelve se
+ * quita: el botón queda incompleto en vez de apuntar a la fila de otra empresa.
+ */
+export function remapButtonConfig(config: Record<string, unknown>, maps: IdMaps, automations: Map<number, number>): Record<string, unknown> {
+    const out = remapJson(config, maps) as Record<string, unknown>;
+    const original = Array.isArray(config.actions) ? (config.actions as Array<Record<string, unknown>>) : [];
+    if (Array.isArray(out.actions)) {
+        out.actions = (out.actions as Array<Record<string, unknown>>).map((a, i) => {
+            if (a.type !== 'run_automation') return a;
+            const raw = original[i]?.automation_id;
+            return { ...a, automation_id: raw === undefined || raw === null ? null : mapId(automations, raw) };
+        });
+    }
+    return cleanResolvedButtonConfig(out);
 }
