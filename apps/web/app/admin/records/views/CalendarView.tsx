@@ -1,191 +1,500 @@
-import { useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    CalendarDays,
+    CalendarRange,
+    ChevronLeft,
+    ChevronRight,
+    Globe2,
+    List,
+    Loader2,
+    CalendarCog,
+    Square,
+    TriangleAlert,
+} from 'lucide-react';
+import {
+    addDaysYmd,
+    timeZoneLabel,
+    zonedNowNaive,
+    zonedToday,
+    type CalendarMode,
+    type CalendarSettings,
+} from '@imagina-base/shared';
 
-import { colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
+import { ViewSwitch } from '@/components/ui/view-switch';
+import { useCalendarAgenda, useCalendarBundle, type CalendarBundleResponse } from '@/hooks/useCalendarBundle';
+import { useEventCallback } from '@/hooks/useEventCallback';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useRecords } from '@/hooks/useRecords';
-import { __, _n, sprintf } from '@/lib/i18n';
+import { useRecurrencesBatch } from '@/hooks/useRecurrences';
+import { useUpdateSavedView } from '@/hooks/useSavedViews';
+import { __, sprintf } from '@/lib/i18n';
+import { CAP, useCanAny } from '@/lib/permissions';
+import { titleFieldOf, untitledLabel } from '@/lib/recordTitle';
+import { isTypingTarget } from '@/lib/shortcuts';
+import { browserTimeZone, getTenantFormat, getTenantTimeZone } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
-import type { FilterTree, RecordEntity, RecordsQuery } from '@/types/record';
-import { parseUtcDate } from '@/lib/utcDate';
+import type { FilterTree, RecordEntity } from '@/types/record';
+import type { SavedViewEntity } from '@/types/view';
+
+import { ROW_COLOR_HEX } from '../grid/colorRules';
+import { useBatchUpdateRecords, type BatchCell } from '../grid/useBatchUpdate';
+import { useStoreRules } from '../storeRules';
+import { AgendaView } from './calendar/AgendaView';
+import type { CalendarActions } from './calendar/calendarActions';
+import { calendarColorResolver } from './calendar/calendarColors';
+import { CalendarDayDialog } from './calendar/CalendarDayDialog';
+import { calendarLockReason } from './calendar/calendarLocks';
+import {
+    AGENDA_PAGE_DAYS,
+    activeSources,
+    buildEvents,
+    clockLabel,
+    createPrefill,
+    isResizable,
+    isWeekend,
+    monthWeeks,
+    moveCells,
+    rangeFor,
+    resizeCells,
+    shiftCursor,
+    shortDate,
+    sourceFields,
+    titleFor,
+    unloadedByDay,
+    weekDays,
+    type CalendarCell,
+    type CalendarEvent,
+    type DropTarget,
+} from './calendar/calendarModel';
+import { CalendarMoveDialog } from './calendar/CalendarMoveDialog';
+import { CALENDAR_MODE_LABEL, CalendarSettingsDialog } from './calendar/CalendarSettingsDialog';
+import { MonthView } from './calendar/MonthView';
+import { TimeGridView } from './calendar/TimeGridView';
+import { viewConfigToCalendar, calendarToViewConfig } from './savedViewMapping';
 
 /**
- * Vista Calendar: mes actual con cada record colocado en el día de su
- * `date_field`. Sin librerías externas — un grid 7×N con días del mes y
- * relleno gris para los días del mes anterior/siguiente que completan
- * la primera y última semana.
+ * Vista Calendario — B4 «Calendario completo».
  *
- * Decisiones de scope:
- * - Solo vista mensual. Vista semana/día llega cuando el caso de uso
- *   lo justifique.
- * - Día = celda con hasta 3 records visibles + "+N más". Click en
- *   record abre el drawer.
- * - Navegación con prev/next/Hoy (mantiene mes actual en estado local
- *   — no parte del saved view config).
- * - Las fechas vienen del backend en UTC; se convierten a la zona del
- *   navegador con `Date.parse + Z` (mismo patrón usado en otras
- *   pantallas).
+ * Mes, Semana, Día y Agenda sobre el RANGO visible (`calendar-bundle`: una
+ * request por rango, con los eventos que empiezan antes y los de varios días,
+ * y un tope por día con el conteo exacto — «+N más» —). Varias fuentes de
+ * fecha a la vez («Vencimiento» y «Próximo contacto»), cada una con su color,
+ * prendibles desde la barra. Arrastrar reprograma (en el mes, de día
+ * conservando la hora; en semana y día, de día y hora con encaje a 15
+ * minutos), estirar cambia el fin o la duración, y un clic (o un arrastre)
+ * en un hueco abre el alta con la fecha ya puesta. El guardado es optimista y
+ * tiene deshacer.
+ *
+ * Todo en el reloj de la EMPRESA (ADR-S33): las horas se muestran y se
+ * arrastran en su zona aunque el navegador esté en otra (la barra lo avisa) y
+ * una fecha sin hora nunca se corre de día.
  */
 interface CalendarViewProps {
-    /** id o slug de la lista: el calendario pide SUS registros (los del mes). */
-    listId: number | string;
+    listId: number;
     fields: FieldEntity[];
-    dateField: FieldEntity;
-    /** Filtros y búsqueda de la vista (se combinan con el rango del mes). */
+    view: SavedViewEntity;
     filterTree?: FilterTree;
     search?: string;
     onCardClick: (record: RecordEntity) => void;
+    /** Crear con valores pre-cargados (undefined = sin permiso de alta). */
+    onAddRecord?: (prefill: Record<string, unknown>) => void;
+    /** Si los cambios del calendario (fuentes prendidas) se guardan en la vista. */
+    canEditView: boolean;
+    /** «Configurar calendario» controlado desde afuera (panel Personalizar). */
+    settingsOpen?: boolean;
+    onSettingsOpenChange?: (open: boolean) => void;
+    /** Si está cargando y el orden de los registros visibles (anterior/siguiente del modal). */
+    onStatusChange?: (s: { fetching: boolean; ids: number[] }) => void;
 }
 
-/** Tope de registros por mes (el máximo de una página del listado). */
-const RANGE_LIMIT = 200;
+/** Eventos por día que se piden según la vista. */
+const PER_DAY: Record<CalendarMode, number> = { month: 4, week: 40, day: 120, agenda: 40 };
 
-interface CalendarCell {
-    iso: string; // YYYY-MM-DD en local
-    day: number;
-    inCurrentMonth: boolean;
-    isToday: boolean;
-}
-
-const MAX_VISIBLE_PER_DAY = 3;
-/** Nombres de mes y día en el idioma de la interfaz. */
-const CALENDAR_LOCALE = 'es';
-
-/** "julio de 2026" → "Julio de 2026" (el `capitalize` de CSS daba "Julio De"). */
-function capitalizeFirst(s: string): string {
-    return s.charAt(0).toUpperCase() + s.slice(1);
+interface UndoEntry {
+    title: string;
+    before: BatchCell[];
+    after: BatchCell[];
 }
 
 export function CalendarView({
     listId,
     fields,
-    dateField,
+    view,
     filterTree,
     search,
     onCardClick,
+    onAddRecord,
+    canEditView,
+    settingsOpen: settingsOpenProp,
+    onSettingsOpenChange,
+    onStatusChange,
 }: CalendarViewProps): JSX.Element {
-    const [cursor, setCursor] = useState<Date>(() => {
-        const now = new Date();
-        return new Date(now.getFullYear(), now.getMonth(), 1);
+    const toast = useToast();
+    const batch = useBatchUpdateRecords(listId);
+    const updateView = useUpdateSavedView(listId);
+    const canEdit = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const storeRules = useStoreRules();
+    const touch = useMediaQuery('(hover: none) and (pointer: coarse)');
+    const phone = useMediaQuery('(max-width: 639px)');
+    const h12 = getTenantFormat().time_format === 'h12';
+
+    // ── Ajustes (de la vista, con override local para las fuentes prendidas) ──
+    const server = useMemo(() => viewConfigToCalendar(view.config), [view.config]);
+    const [override, setOverride] = useState<CalendarSettings | null>(null);
+    const pendingSaves = useRef(0);
+    useEffect(() => {
+        if (pendingSaves.current === 0) setOverride(null);
+    }, [view.config]);
+    const settings = override ?? server.settings;
+    const saveSettings = useEventCallback((next: CalendarSettings): void => {
+        setOverride(next);
+        if (!canEditView) return;
+        pendingSaves.current += 1;
+        updateView.mutate(
+            { id: view.id, config: calendarToViewConfig(view.config, next) },
+            {
+                onError: (err) => {
+                    toast.error(__('No se pudo guardar el ajuste del calendario'), err instanceof Error ? err.message : undefined);
+                    setOverride(null);
+                },
+                onSettled: () => {
+                    pendingSaves.current = Math.max(0, pendingSaves.current - 1);
+                },
+            },
+        );
+    });
+    const [innerSettingsOpen, setInnerSettingsOpen] = useState(false);
+    const settingsOpen = settingsOpenProp ?? innerSettingsOpen;
+    const setSettingsOpen = onSettingsOpenChange ?? setInnerSettingsOpen;
+
+    const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
+    const validSources = useMemo(() => settings.sources.filter((s) => sourceFields(s, fieldsById) !== null), [settings.sources, fieldsById]);
+    const sources = useMemo(() => activeSources(settings, fieldsById), [settings, fieldsById]);
+
+    // ── Zona y "hoy" (los de la empresa) ──
+    const guessTz = getTenantTimeZone() ?? browserTimeZone() ?? 'UTC';
+    const [serverTz, setServerTz] = useState<string | null>(null);
+    const timeZone = serverTz ?? guessTz;
+    const [today, setToday] = useState(() => zonedToday(timeZone));
+    useEffect(() => {
+        setToday(zonedToday(timeZone));
+        const t = window.setInterval(() => setToday(zonedToday(timeZone)), 60_000);
+        return () => window.clearInterval(t);
+    }, [timeZone]);
+    const browserTz = browserTimeZone();
+    const tzDiffers = browserTz !== null && browserTz !== timeZone && zonedNowNaive(browserTz).slice(0, 16) !== zonedNowNaive(timeZone).slice(0, 16);
+
+    // ── Vista (mes/semana/día/agenda) y cursor ──
+    const adapt = useCallback(
+        (m: CalendarMode): CalendarMode => (phone ? (m === 'week' || m === 'day' ? 'day' : 'agenda') : m),
+        [phone],
+    );
+    const [mode, setModeState] = useState<CalendarMode>(() => adapt(settings.defaultMode));
+    useEffect(() => {
+        setModeState(adapt(server.settings.defaultMode));
+    }, [server.settings.defaultMode, adapt]);
+    // En el teléfono no hay semana (7 columnas no entran): se ve el día.
+    const shownMode: CalendarMode = phone && mode === 'week' ? 'day' : mode;
+    const [cursor, setCursor] = useState(() => zonedToday(timeZone));
+    const setMode = (m: CalendarMode): void => setModeState(m);
+    const goToday = (): void => setCursor(today);
+    const shift = (dir: -1 | 1): void => setCursor((c) => shiftCursor(shownMode, c, dir));
+
+    // ── Datos ──
+    const hasFilter = filterTree !== undefined && filterTree.children.length > 0;
+    const searchTerm = search !== undefined && search.trim() !== '' ? search.trim() : undefined;
+    const range = rangeFor(shownMode, cursor, settings.weekStart);
+    const bundle = useCalendarBundle({
+        listId,
+        sources,
+        from: range.from,
+        to: range.to,
+        filterTree: hasFilter ? filterTree : undefined,
+        search: searchTerm,
+        perDay: PER_DAY[shownMode],
+        enabled: shownMode !== 'agenda',
+    });
+    const agenda = useCalendarAgenda({
+        listId,
+        sources,
+        from: cursor,
+        pageDays: AGENDA_PAGE_DAYS,
+        filterTree: hasFilter ? filterTree : undefined,
+        search: searchTerm,
+        perDay: PER_DAY.agenda,
+        enabled: shownMode === 'agenda',
+    });
+    const pages: CalendarBundleResponse[] = useMemo(
+        () => (shownMode === 'agenda' ? agenda.data?.pages ?? [] : bundle.data ? [bundle.data] : []),
+        [shownMode, agenda.data, bundle.data],
+    );
+    const zoneFromServer = pages[0]?.meta.time_zone ?? null;
+    useEffect(() => {
+        if (zoneFromServer && zoneFromServer !== serverTz) setServerTz(zoneFromServer);
+    }, [zoneFromServer, serverTz]);
+    const records = useMemo(() => {
+        const seen = new Map<number, RecordEntity>();
+        for (const p of pages) for (const r of p.records) seen.set(r.id, r);
+        return [...seen.values()];
+    }, [pages]);
+    const dayCounts = useMemo(() => {
+        const out: Record<string, { n: number; more: number }> = {};
+        for (const p of pages) Object.assign(out, p.days);
+        return out;
+    }, [pages]);
+    const fetching = shownMode === 'agenda' ? agenda.isFetching : bundle.isFetching;
+    const truncated = pages.some((p) => p.meta.truncated);
+    const brokenSources = (pages[0]?.meta.sources ?? []).filter((s) => !s.ok);
+
+    // ── Eventos ──
+    const titleField = useMemo(() => titleFieldOf(fields), [fields]);
+    const titleOf = useCallback(
+        (r: RecordEntity): string => {
+            const v = titleField ? r.fields[titleField.slug] : undefined;
+            return v !== undefined && v !== null && String(v).trim() !== '' ? String(v) : untitledLabel();
+        },
+        [titleField],
+    );
+    const colorOf = useMemo(
+        () =>
+            calendarColorResolver({
+                settings,
+                fields,
+                fieldsById,
+                colorRules: server.colorRules,
+                timeZone,
+                enabledSources: sources.length,
+            }),
+        [settings, fields, fieldsById, server.colorRules, timeZone, sources.length],
+    );
+    const build = useCallback(
+        (rows: readonly RecordEntity[]): CalendarEvent[] =>
+            buildEvents(rows, { sources, fieldsById, timeZone, defaultDuration: settings.defaultDuration, titleOf, colorOf }),
+        [sources, fieldsById, timeZone, settings.defaultDuration, titleOf, colorOf],
+    );
+    const events = useMemo(() => build(records), [build, records]);
+
+    const visibleDays = useMemo(() => {
+        if (shownMode === 'month') return monthWeeks(cursor, settings.weekStart).flat();
+        if (shownMode === 'week') return weekDays(cursor, settings.weekStart).filter((d) => settings.showWeekends || !isWeekend(d));
+        if (shownMode === 'day') return [cursor];
+        const n = (agenda.data?.pages.length ?? 1) * AGENDA_PAGE_DAYS;
+        return Array.from({ length: n }, (_, i) => addDaysYmd(cursor, i));
+    }, [shownMode, cursor, settings.weekStart, settings.showWeekends, agenda.data?.pages.length]);
+    const unloaded = useMemo(() => unloadedByDay(events, dayCounts, visibleDays), [events, dayCounts, visibleDays]);
+
+    // Recurrencias: el icono en el evento de la fuente que se repite.
+    const recordIds = useMemo(() => records.map((r) => r.id).sort((a, b) => a - b), [records]);
+    const recurrences = useRecurrencesBatch(listId, recordIds);
+    const recurring = useMemo(() => {
+        const s = new Set<string>();
+        for (const list of Object.values(recurrences.data ?? {})) for (const r of list) s.add(`${r.record_id}:${r.date_field_id}`);
+        return s;
+    }, [recurrences.data]);
+
+    // Estado hacia la página (anterior/siguiente del modal: en orden de fecha).
+    const orderedIds = useMemo(() => {
+        const sorted = [...events].sort((a, b) => (a.span.startDay < b.span.startDay ? -1 : a.span.startDay > b.span.startDay ? 1 : a.span.startMinute - b.span.startMinute));
+        return [...new Set(sorted.map((e) => e.record.id))];
+    }, [events]);
+    const statusKey = `${fetching}|${orderedIds.join(',')}`;
+    useEffect(() => {
+        onStatusChange?.({ fetching, ids: orderedIds });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [statusKey]);
+
+    // ── Escribir (optimista + deshacer) ──
+    const undoStack = useRef<UndoEntry[]>([]);
+    const undo = useEventCallback((entry: UndoEntry): void => {
+        undoStack.current = undoStack.current.filter((e) => e !== entry);
+        batch.mutate(
+            { cells: entry.before, expect: entry.after },
+            {
+                onSuccess: (out) => {
+                    const failed = out.failed[0];
+                    if (failed) {
+                        toast.error(
+                            failed.code === 'record_changed' ? __('No se deshizo: alguien cambió el registro después.') : __('No se pudo deshacer'),
+                            failed.code === 'record_changed' ? undefined : failed.message,
+                        );
+                        return;
+                    }
+                    toast.success(sprintf(__('Se deshizo el cambio de «%s»'), entry.title));
+                },
+                onError: (err) => toast.error(__('No se pudo deshacer'), err.message),
+            },
+        );
+    });
+    const commit = useEventCallback((ev: CalendarEvent, cells: CalendarCell[], done?: () => void): void => {
+        if (cells.length === 0) return;
+        const before: BatchCell[] = cells.map((c) => ({ recordId: ev.record.id, field: c.field, value: ev.record.fields[c.field.slug] ?? null }));
+        const after: BatchCell[] = cells.map((c) => ({ recordId: ev.record.id, field: c.field, value: c.value }));
+        batch.mutate(
+            { cells: after },
+            {
+                onSuccess: (out) => {
+                    const failed = out.failed[0] ?? out.cell_errors[0];
+                    if (failed) {
+                        setMoveError(failed.message);
+                        toast.error(__('No se pudo mover el evento'), failed.message);
+                        return;
+                    }
+                    done?.();
+                    // Lo que quedó escrito (el servidor puede normalizar la fecha) es la base del deshacer.
+                    const written = after.map((c) => ({ ...c, value: out.written.get(`${c.recordId}:${c.field.id}`) ?? c.value }));
+                    const entry: UndoEntry = { title: ev.title, before, after: written };
+                    undoStack.current = [...undoStack.current.slice(-19), entry];
+                    toast.show({
+                        title: sprintf(__('«%1$s» → %2$s'), ev.title, whenLabel(cells, ev, timeZone, h12)),
+                        variant: 'success',
+                        duration: 7000,
+                        action: { label: __('Deshacer'), onClick: () => undo(entry) },
+                    });
+                },
+                onError: (err) => {
+                    setMoveError(err.message);
+                    toast.error(__('No se pudo mover el evento'), err.message);
+                },
+            },
+        );
     });
 
-    const cells = useMemo<CalendarCell[]>(() => buildMonthCells(cursor), [cursor]);
-    // Día con la lista completa desplegada ("+N más").
-    const [expandedDay, setExpandedDay] = useState<string | null>(null);
-    // v0.1.286 — en el teléfono cada celda mide ~50 px: los eventos quedaban
-    // en «C..». Ahí la grilla muestra puntos y el día elegido se lista abajo.
-    const compact = useMediaQuery('(max-width: 639px)');
-    const [selectedDay, setSelectedDay] = useState<string | null>(null);
+    // Ctrl/⌘+Z deshace el último movimiento del calendario.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent): void => {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return;
+            if (isTypingTarget(e.target) || document.querySelector('[role="dialog"]')) return;
+            const last = undoStack.current[undoStack.current.length - 1];
+            if (!last) return;
+            e.preventDefault();
+            undo(last);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [undo]);
 
-    // v0.1.286 — se piden los registros del RANGO visible (la grilla, con los
-    // días del mes anterior/siguiente), no «los primeros 200 de la lista»:
-    // antes un registro de un mes cualquiera no aparecía si su id no estaba
-    // entre los 200 primeros. Cambiar de mes vuelve a pedir.
-    const query = useMemo<RecordsQuery>(
-        () => calendarRangeQuery(dateField, cells[0]!.iso, cells[cells.length - 1]!.iso, filterTree, search),
-        [dateField, cells, filterTree, search],
+    // ── Acciones para las vistas ──
+    const [dayOpen, setDayOpen] = useState<string | null>(null);
+    const [moving, setMoving] = useState<CalendarEvent | null>(null);
+    const [moveError, setMoveError] = useState<string | null>(null);
+    const lockedReason = useEventCallback((ev: CalendarEvent, what: 'move' | 'resize'): string | null =>
+        calendarLockReason(ev, what, { canEdit, fieldsById, storeRules }),
     );
-    const range = useRecords(listId, query);
-    const records = range.data?.data ?? EMPTY_RECORDS;
-    const totalInRange = range.data?.meta.total ?? records.length;
-
-    // Indexa records por día local (YYYY-MM-DD).
-    const recordsByDay = useMemo(() => {
-        const map = new Map<string, RecordEntity[]>();
-        for (const r of records) {
-            const raw = r.fields[dateField.slug];
-            if (typeof raw !== 'string' || raw === '') continue;
-            const iso = parseToLocalIso(raw);
-            if (iso === null) continue;
-            if (!map.has(iso)) map.set(iso, []);
-            map.get(iso)!.push(r);
-        }
-        return map;
-    }, [records, dateField.slug]);
-
-    const titleField = useMemo(() => pickTitleField(fields, dateField.id), [fields, dateField.id]);
-
-    // La interfaz es en español: el locale del NAVEGADOR mostraba "July 2026"
-    // y MON/TUE en un calendario que dice "Hoy" y "Ver menos" (v0.1.125).
-    const monthLabel = capitalizeFirst(
-        cursor.toLocaleDateString(CALENDAR_LOCALE, { month: 'long', year: 'numeric' }),
+    const canCreate = onAddRecord !== undefined && sources.length > 0;
+    const actions: CalendarActions = useMemo(
+        () => ({
+            timeZone,
+            h12,
+            today,
+            canCreate,
+            dragEnabled: canEdit && !touch,
+            touch,
+            showSource: sources.length > 1,
+            open: (ev) => onCardClick(ev.record),
+            moveTo: (ev) => (lockedReason(ev, 'move') === null ? (e) => {
+                setMoveError(null);
+                setMoving(e);
+            } : undefined),
+            lockedReason,
+            canResize: (ev) => isResizable(ev, fieldsById),
+            commitMove: (ev, target: DropTarget) => {
+                const cells = moveCells(ev, fieldsById, target, timeZone);
+                if (cells) commit(ev, cells);
+            },
+            commitResize: (ev, target: DropTarget) => {
+                const cells = resizeCells(ev, fieldsById, target, timeZone);
+                if (cells) commit(ev, cells);
+            },
+            create: (slot) => {
+                const source = sources[0];
+                if (!onAddRecord || !source) return;
+                // Un clic en el mes (sin hora) en una fuente con hora: a las 9:00, o
+                // al empezar el horario visible si es más tarde.
+                const minute = slot.minute ?? Math.max(settings.dayStartHour * 60, Math.min(9 * 60, (settings.dayEndHour - 1) * 60));
+                onAddRecord(createPrefill(source, fieldsById, { ...slot, minute }, timeZone, settings.defaultDuration));
+            },
+            showDay: setDayOpen,
+            recurring: (ev) => recurring.has(`${ev.record.id}:${ev.source.startFieldId}`),
+            sourceLabel: (ev) => ev.source.label ?? fieldsById.get(ev.source.startFieldId)?.label ?? '',
+        }),
+        [timeZone, h12, today, canCreate, canEdit, touch, sources, onCardClick, lockedReason, fieldsById, commit, onAddRecord, settings.dayStartHour, settings.dayEndHour, settings.defaultDuration, recurring],
     );
 
-    const handlePrev = (): void =>
-        setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
-    const handleNext = (): void =>
-        setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1));
-    const handleToday = (): void => {
-        const n = new Date();
-        setCursor(new Date(n.getFullYear(), n.getMonth(), 1));
+    // ── Atajos: M/S/D/A cambian la vista, H vuelve a hoy, ←/→ navegan ──
+    const lastKey = useRef<{ key: string; at: number } | null>(null);
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target)) return;
+            if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+            const prev = lastKey.current;
+            lastKey.current = { key: e.key.toLowerCase(), at: Date.now() };
+            // `g` + letra es un atajo global (ir a…): no lo pisa.
+            if (prev && prev.key === 'g' && Date.now() - prev.at < 1200) return;
+            const k = e.key.toLowerCase();
+            const modes: Record<string, CalendarMode> = { m: 'month', s: 'week', d: 'day', a: 'agenda' };
+            if (modes[k]) {
+                e.preventDefault();
+                setModeState(modes[k]!);
+            } else if (k === 'h') {
+                e.preventDefault();
+                setCursor(today);
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                setCursor((c) => shiftCursor(shownMode, c, e.key === 'ArrowLeft' ? -1 : 1));
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [today, shownMode]);
+
+    // ── Deslizar en el teléfono: día (o mes) anterior/siguiente ──
+    const swipe = useRef<{ x: number; y: number } | null>(null);
+    const onTouchStart = (e: React.TouchEvent): void => {
+        const t = e.touches[0];
+        swipe.current = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null;
+    };
+    const onTouchEnd = (e: React.TouchEvent): void => {
+        const s = swipe.current;
+        swipe.current = null;
+        const t = e.changedTouches[0];
+        if (!s || !t || (shownMode !== 'day' && shownMode !== 'month')) return;
+        const dx = t.clientX - s.x;
+        const dy = t.clientY - s.y;
+        if (Math.abs(dx) > 60 && Math.abs(dy) < 45) shift(dx < 0 ? 1 : -1);
     };
 
-    const weekdayLabels = useMemo(() => {
-        // 7 días desde un lunes para etiquetas localizadas.
-        const monday = new Date(2024, 0, 1); // 1 enero 2024 = lunes
-        return Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(monday);
-            d.setDate(monday.getDate() + i);
-            return d.toLocaleDateString(CALENDAR_LOCALE, { weekday: 'short' });
-        });
-    }, []);
-
-    // v0.1.125 — los eventos toman el color del primer campo select del
-    // registro (el mismo de los chips de la tabla y las columnas del Kanban):
-    // un calendario en un solo tono no deja distinguir nada de un vistazo.
-    const colorField = useMemo(
-        () => fields.find((f) => f.type === 'select' && f.id !== dateField.id),
-        [fields, dateField.id],
-    );
-    const optionColor = (record: RecordEntity): OptionColor | undefined => {
-        if (!colorField) return undefined;
-        const value = record.fields[colorField.slug];
-        if (typeof value !== 'string' || value === '') return undefined;
-        const options = (colorField.config as { options?: Array<{ value: string; color?: string }> })
-            .options;
-        const opt = Array.isArray(options) ? options.find((o) => o.value === value) : undefined;
-        return (opt?.color as OptionColor | undefined) ?? undefined;
+    const toggleSource = (id: string): void => {
+        saveSettings({ ...settings, sources: settings.sources.map((s) => (s.id === id ? { ...s, enabled: !s.enabled } : s)) });
+    };
+    const countFor = (id: string): number | null => {
+        const meta = pages[0]?.meta.sources.find((s) => s.key === id);
+        if (!meta || shownMode === 'agenda') return meta ? pages.reduce((n, p) => n + (p.meta.sources.find((s) => s.key === id)?.count ?? 0), 0) : null;
+        return meta.count;
     };
 
-    const monthCount = cells.reduce(
-        (n, c) => n + (c.inCurrentMonth ? (recordsByDay.get(c.iso)?.length ?? 0) : 0),
-        0,
-    );
-
-    const agendaDay = selectedDay ?? (cells.some((c) => c.isToday) ? toLocalIso(new Date()) : null);
-    const agendaRecords = compact && agendaDay !== null ? (recordsByDay.get(agendaDay) ?? []) : [];
+    const modeOptions = (phone ? (['day', 'agenda', 'month'] as CalendarMode[]) : (['month', 'week', 'day', 'agenda'] as CalendarMode[])).map((m) => ({
+        value: m,
+        label: CALENDAR_MODE_LABEL[m],
+        icon: m === 'month' ? CalendarDays : m === 'week' ? CalendarRange : m === 'day' ? Square : List,
+    }));
+    const weekShown = shownMode === 'week' ? visibleDays : [];
+    const loadedRangeEnd = shownMode === 'agenda' ? visibleDays[visibleDays.length - 1] ?? null : null;
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
-                <div className="imcrm-flex imcrm-items-baseline imcrm-gap-2">
-                    <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
-                        {monthLabel}
-                    </h2>
-                    {range.isFetching && (
-                        <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin imcrm-text-muted-foreground" aria-label={__('Cargando…')} />
-                    )}
-                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {sprintf(
-                            /* translators: %d: records in the visible month */
-                            _n('%d registro', '%d registros', monthCount),
-                            monthCount,
-                        )}
-                    </span>
-                </div>
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                    <Button variant="outline" size="sm" onClick={handleToday} className="imcrm-h-8">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-calendar" data-mode={shownMode} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                    <Button variant="outline" size="sm" onClick={goToday} className="imcrm-h-8" title={__('Hoy (H)')}>
                         {__('Hoy')}
                     </Button>
-                    {/* Navegación agrupada: dos flechas pegadas leen como un
-                        control único (antes eran dos botones sueltos). */}
                     <div className="imcrm-flex imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border">
                         <button
                             type="button"
-                            onClick={handlePrev}
-                            aria-label={__('Mes anterior')}
+                            onClick={() => shift(-1)}
+                            aria-label={__('Anterior')}
+                            title={__('Anterior (←)')}
                             className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
                         >
                             <ChevronLeft className="imcrm-h-4 imcrm-w-4" />
@@ -193,340 +502,191 @@ export function CalendarView({
                         <span className="imcrm-w-px imcrm-bg-border" aria-hidden />
                         <button
                             type="button"
-                            onClick={handleNext}
-                            aria-label={__('Mes siguiente')}
+                            onClick={() => shift(1)}
+                            aria-label={__('Siguiente')}
+                            title={__('Siguiente (→)')}
                             className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
                         >
                             <ChevronRight className="imcrm-h-4 imcrm-w-4" />
                         </button>
                     </div>
+                    <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight" data-testid="imcrm-cal-title">
+                        {titleFor(shownMode, cursor, settings.weekStart, today)}
+                    </h2>
+                    {fetching && <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin imcrm-text-muted-foreground" aria-label={__('Cargando…')} />}
+                    {tzDiffers && (
+                        <span
+                            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-text-muted-foreground"
+                            title={sprintf(
+                                __('Tu equipo está en %1$s. El calendario muestra y mueve las horas en la zona de la empresa (%2$s).'),
+                                timeZoneLabel(browserTz),
+                                timeZoneLabel(timeZone),
+                            )}
+                            data-testid="imcrm-cal-tz"
+                        >
+                            <Globe2 className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                            {sprintf(__('Horas de %s'), timeZoneLabel(timeZone))}
+                        </span>
+                    )}
+                </div>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                    <ViewSwitch label={__('Vista del calendario')} value={shownMode} options={modeOptions} onChange={setMode} testId="imcrm-cal-modes" />
+                    {canEditView && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="imcrm-h-8 imcrm-w-8"
+                            onClick={() => setSettingsOpen(true)}
+                            aria-label={__('Configurar calendario')}
+                            title={__('Configurar calendario')}
+                            data-testid="imcrm-cal-settings"
+                        >
+                            <CalendarCog className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                    )}
                 </div>
             </header>
 
-            <div className="imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm">
-                <div className="imcrm-grid imcrm-grid-cols-7 imcrm-border-b imcrm-border-border imcrm-bg-muted/40">
-                    {weekdayLabels.map((d, i) => (
-                        <div
-                            key={d}
-                            className={cn(
-                                'imcrm-px-2 imcrm-py-2 imcrm-text-center imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground',
-                                i >= 5 && 'imcrm-text-muted-foreground/70',
-                            )}
-                        >
-                            {d}
-                        </div>
-                    ))}
-                </div>
-                <div className="imcrm-grid imcrm-grid-cols-7">
-                    {cells.map((cell, idx) => {
-                        const dayRecords = recordsByDay.get(cell.iso) ?? [];
-                        const expanded = expandedDay === cell.iso;
-                        const visible = expanded ? dayRecords : dayRecords.slice(0, MAX_VISIBLE_PER_DAY);
-                        const isWeekend = idx % 7 >= 5;
-                        if (compact) {
-                            const selected = agendaDay === cell.iso;
-                            return (
-                                <button
-                                    type="button"
-                                    key={cell.iso}
-                                    onClick={() => setSelectedDay(cell.iso)}
-                                    aria-pressed={selected}
-                                    aria-label={sprintf(
-                                        /* translators: 1: day number, 2: number of records */
-                                        _n('Día %1$d, %2$d registro', 'Día %1$d, %2$d registros', dayRecords.length),
-                                        cell.day,
-                                        dayRecords.length,
-                                    )}
-                                    className={cn(
-                                        'imcrm-flex imcrm-min-h-[52px] imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-border-b imcrm-border-r imcrm-border-border/70 imcrm-py-1.5',
-                                        idx % 7 === 6 && 'imcrm-border-r-0',
-                                        idx >= cells.length - 7 && 'imcrm-border-b-0',
-                                        cell.inCurrentMonth ? 'imcrm-bg-card' : 'imcrm-bg-muted/40 imcrm-text-muted-foreground',
-                                        selected && 'imcrm-bg-accent',
-                                    )}
-                                >
-                                    <span
-                                        className={cn(
-                                            'imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-text-[12px] imcrm-font-semibold',
-                                            cell.isToday && 'imcrm-bg-primary imcrm-text-primary-foreground',
-                                        )}
-                                    >
-                                        {cell.day}
-                                    </span>
-                                    {dayRecords.length > 0 && (
-                                        <span className="imcrm-flex imcrm-items-center imcrm-gap-0.5" aria-hidden>
-                                            {dayRecords.slice(0, 3).map((r) => (
-                                                <span
-                                                    key={r.id}
-                                                    className="imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full"
-                                                    style={{ backgroundColor: colorVar(optionColor(r)) ?? 'hsl(var(--imcrm-primary))' }}
-                                                />
-                                            ))}
-                                            {dayRecords.length > 3 && (
-                                                <span className="imcrm-text-[9px] imcrm-font-semibold imcrm-text-muted-foreground">+</span>
-                                            )}
-                                        </span>
-                                    )}
-                                </button>
-                            );
-                        }
+            {validSources.length > 1 && (
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5" role="group" aria-label={__('Fechas que se muestran')} data-testid="imcrm-cal-source-chips">
+                    {validSources.map((s) => {
+                        const label = s.label ?? fieldsById.get(s.startFieldId)?.label ?? '';
+                        const n = s.enabled ? countFor(s.id) : null;
                         return (
-                            <div
-                                key={cell.iso}
+                            <button
+                                key={s.id}
+                                type="button"
+                                aria-pressed={s.enabled}
+                                onClick={() => toggleSource(s.id)}
+                                data-source={s.id}
+                                title={s.enabled ? sprintf(__('Ocultar «%s»'), label) : sprintf(__('Mostrar «%s»'), label)}
                                 className={cn(
-                                    'imcrm-flex imcrm-min-h-[116px] imcrm-flex-col imcrm-gap-1 imcrm-border-b imcrm-border-r imcrm-border-border/70 imcrm-p-1.5 imcrm-text-xs imcrm-transition-colors',
-                                    // Sin bordes colgando en la última columna/fila.
-                                    idx % 7 === 6 && 'imcrm-border-r-0',
-                                    idx >= cells.length - 7 && 'imcrm-border-b-0',
-                                    cell.inCurrentMonth
-                                        ? isWeekend
-                                            ? 'imcrm-bg-muted/20'
-                                            : 'imcrm-bg-card'
-                                        : 'imcrm-bg-muted/40 imcrm-text-muted-foreground',
-                                    'hover:imcrm-bg-accent/40',
+                                    'imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-transition-colors',
+                                    s.enabled ? 'imcrm-border-border imcrm-bg-card imcrm-text-foreground' : 'imcrm-border-dashed imcrm-border-border imcrm-text-muted-foreground imcrm-opacity-70',
                                 )}
                             >
-                                <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
-                                    {/* Hoy = disco primary, como un calendario de verdad. */}
-                                    <span
-                                        className={cn(
-                                            'imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-text-[12px] imcrm-font-semibold',
-                                            cell.isToday
-                                                ? 'imcrm-bg-primary imcrm-text-primary-foreground'
-                                                : cell.inCurrentMonth
-                                                  ? 'imcrm-text-foreground'
-                                                  : 'imcrm-text-muted-foreground/70',
-                                        )}
-                                    >
-                                        {cell.day}
-                                    </span>
-                                    {dayRecords.length > 0 && (
-                                        <span className="imcrm-rounded-full imcrm-bg-muted imcrm-px-1.5 imcrm-text-[10px] imcrm-font-semibold imcrm-text-muted-foreground">
-                                            {dayRecords.length}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                                    {visible.map((r) => {
-                                        const color = optionColor(r);
-                                        const solid = colorVar(color);
-                                        return (
-                                            <button
-                                                type="button"
-                                                key={r.id}
-                                                onClick={() => onCardClick(r)}
-                                                className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-truncate imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-left imcrm-text-[11px] imcrm-font-medium imcrm-transition-opacity hover:imcrm-opacity-80"
-                                                style={
-                                                    solid !== undefined
-                                                        ? {
-                                                              backgroundColor: `color-mix(in srgb, ${solid} 16%, transparent)`,
-                                                              color: 'hsl(var(--imcrm-foreground))',
-                                                          }
-                                                        : {
-                                                              backgroundColor:
-                                                                  'hsl(var(--imcrm-primary) / 0.12)',
-                                                              color: 'hsl(var(--imcrm-foreground))',
-                                                          }
-                                                }
-                                                title={titleString(r, titleField)}
-                                            >
-                                                <span
-                                                    aria-hidden
-                                                    className="imcrm-h-1.5 imcrm-w-1.5 imcrm-shrink-0 imcrm-rounded-full"
-                                                    style={{
-                                                        backgroundColor:
-                                                            solid ?? 'hsl(var(--imcrm-primary))',
-                                                    }}
-                                                />
-                                                <span className="imcrm-truncate">
-                                                    {titleString(r, titleField)}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                    {dayRecords.length > MAX_VISIBLE_PER_DAY && (
-                                        // Antes era texto muerto: ahora despliega el día.
-                                        <button
-                                            type="button"
-                                            onClick={() => setExpandedDay(expanded ? null : cell.iso)}
-                                            className="imcrm-self-start imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                                        >
-                                            {expanded
-                                                ? __('Ver menos')
-                                                : sprintf(
-                                                      /* translators: %d: number of remaining records */
-                                                      __('+%d más'),
-                                                      dayRecords.length - MAX_VISIBLE_PER_DAY,
-                                                  )}
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
+                                <span
+                                    aria-hidden
+                                    className="imcrm-h-2.5 imcrm-w-2.5 imcrm-rounded-full"
+                                    style={{ backgroundColor: s.enabled ? ROW_COLOR_HEX[s.color] : 'transparent', boxShadow: `inset 0 0 0 2px ${ROW_COLOR_HEX[s.color]}` }}
+                                />
+                                {label}
+                                {n !== null && <span className="imcrm-tabular-nums imcrm-text-muted-foreground">{n}</span>}
+                            </button>
                         );
                     })}
                 </div>
-            </div>
-
-            {/* v0.1.286 — en el teléfono, la lista del día elegido (título entero). */}
-            {compact && agendaDay !== null && (
-                <section className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" aria-label={__('Registros del día')}>
-                    <h3 className="imcrm-text-sm imcrm-font-semibold">
-                        {capitalizeFirst(
-                            new Date(`${agendaDay}T12:00:00`).toLocaleDateString(CALENDAR_LOCALE, { weekday: 'long', day: 'numeric', month: 'long' }),
-                        )}
-                    </h3>
-                    {agendaRecords.length === 0 ? (
-                        <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Sin registros este día.')}</p>
-                    ) : (
-                        agendaRecords.map((r) => {
-                            const solid = colorVar(optionColor(r));
-                            return (
-                                <button
-                                    type="button"
-                                    key={r.id}
-                                    onClick={() => onCardClick(r)}
-                                    className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-sm"
-                                >
-                                    <span
-                                        aria-hidden
-                                        className="imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full"
-                                        style={{ backgroundColor: solid ?? 'hsl(var(--imcrm-primary))' }}
-                                    />
-                                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-words">{titleString(r, titleField)}</span>
-                                </button>
-                            );
-                        })
-                    )}
-                </section>
             )}
 
-            {totalInRange > records.length && (
-                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-view-partial-notice">
+            {brokenSources.length > 0 && (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-amber-600 dark:imcrm-text-amber-400" data-testid="imcrm-cal-broken">
+                    <TriangleAlert className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                     {sprintf(
-                        /* translators: 1: records shown, 2: records in the visible range */
-                        __('Hay más: se muestran %1$d de %2$d registros de este mes. Usa filtros para acotar la vista.'),
-                        records.length,
-                        totalInRange,
+                        __('%d fuente(s) de fecha no se pueden mostrar (el campo no existe, cambió de tipo o no lo puedes ver).'),
+                        brokenSources.length,
                     )}
                 </p>
             )}
 
-            {monthCount === 0 && !range.isFetching && (
-                <p className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    <CalendarDays className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Ningún registro cae en este mes.')}
+            {sources.length === 0 ? (
+                <p className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-rounded-xl imcrm-border imcrm-border-dashed imcrm-border-border imcrm-py-10 imcrm-text-sm imcrm-text-muted-foreground">
+                    <CalendarDays className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    {validSources.length === 0 ? __('Este calendario no tiene un campo de fecha válido. Elígelo en «Configurar calendario».') : __('Todas las fechas están ocultas: activa al menos una arriba.')}
                 </p>
+            ) : shownMode === 'month' ? (
+                <MonthView
+                    weeks={monthWeeks(cursor, settings.weekStart)}
+                    month={cursor.slice(0, 7)}
+                    showWeekends={settings.showWeekends}
+                    events={events}
+                    unloaded={unloaded}
+                    compact={phone}
+                    actions={actions}
+                />
+            ) : shownMode === 'agenda' ? (
+                <AgendaView
+                    days={visibleDays}
+                    events={events}
+                    unloaded={unloaded}
+                    loading={agenda.isLoading}
+                    hasMore={agenda.hasNextPage ?? false}
+                    loadingMore={agenda.isFetchingNextPage}
+                    onLoadMore={() => {
+                        if (agenda.hasNextPage && !agenda.isFetchingNextPage) void agenda.fetchNextPage();
+                    }}
+                    rangeEnd={loadedRangeEnd}
+                    actions={actions}
+                />
+            ) : (
+                <TimeGridView
+                    days={shownMode === 'week' ? weekShown : [cursor]}
+                    events={events}
+                    unloaded={unloaded}
+                    dayStartHour={settings.dayStartHour}
+                    dayEndHour={settings.dayEndHour}
+                    defaultDuration={settings.defaultDuration}
+                    actions={actions}
+                />
+            )}
+
+            {truncated && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-view-partial-notice">
+                    {__('Hay más eventos de los que entran en este rango: usa filtros para acotar la vista.')}
+                </p>
+            )}
+            {shownMode === 'agenda' && loadedRangeEnd && (
+                <p className="imcrm-sr-only">{sprintf(__('Hasta el %s'), shortDate(loadedRangeEnd))}</p>
+            )}
+
+            <CalendarDayDialog
+                day={dayOpen}
+                onClose={() => setDayOpen(null)}
+                listId={listId}
+                sources={sources}
+                filterTree={hasFilter ? filterTree : undefined}
+                search={searchTerm}
+                build={build}
+                actions={actions}
+            />
+            <CalendarMoveDialog
+                event={moving}
+                fieldsById={fieldsById}
+                timeZone={timeZone}
+                saving={batch.isPending}
+                error={moveError}
+                onCancel={() => setMoving(null)}
+                onConfirm={(ev, cells) => commit(ev, cells, () => setMoving(null))}
+            />
+            {canEditView && (
+                <CalendarSettingsDialog listId={listId} view={view} open={settingsOpen} onOpenChange={setSettingsOpen} />
             )}
         </div>
     );
 }
 
-const EMPTY_RECORDS: RecordEntity[] = [];
-
-/**
- * Query del listado para el rango visible: los filtros de la vista AND fecha
- * entre el primer y el último día de la grilla, ordenado por la fecha (así el
- * tope de 200 se queda con lo primero del mes). Para un campo fecha y hora,
- * un valor de sólo-fecha cubre el día entero en la zona de la empresa
- * (servidor, v0.1.286).
- */
-export function calendarRangeQuery(
-    dateField: Pick<FieldEntity, 'id'>,
-    fromIso: string,
-    toIso: string,
-    filterTree: FilterTree | undefined,
-    search: string | undefined,
-): RecordsQuery {
-    const tree: FilterTree = {
-        type: 'group',
-        logic: 'and',
-        children: [
-            ...(filterTree && filterTree.children.length > 0 ? [filterTree] : []),
-            { type: 'condition', field_id: dateField.id, op: 'gte', value: fromIso },
-            { type: 'condition', field_id: dateField.id, op: 'lte', value: toIso },
-        ],
-    };
-    const q: RecordsQuery = {
-        page: 1,
-        per_page: RANGE_LIMIT,
-        filter_tree: JSON.stringify(tree),
-        sort: `field_${dateField.id}:asc`,
-    };
-    if (search !== undefined && search.trim() !== '') q.search = search.trim();
-    return q;
-}
-
-function buildMonthCells(cursor: Date): CalendarCell[] {
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const firstOfMonth = new Date(year, month, 1);
-    const startOfGrid = new Date(firstOfMonth);
-    // Lunes como día 1 (getDay() en JS: Domingo=0). Calculamos cuántos
-    // días retroceder para caer en el lunes de la primera fila.
-    const dayOfWeek = (firstOfMonth.getDay() + 6) % 7; // Lunes=0..Domingo=6
-    startOfGrid.setDate(firstOfMonth.getDate() - dayOfWeek);
-
-    const cells: CalendarCell[] = [];
-    const today = new Date();
-    const todayIso = toLocalIso(today);
-
-    // 5 o 6 semanas según lo que ocupe el mes: forzar 42 celdas dejaba una
-    // fila entera de días del mes siguiente (ruido puro).
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const total = Math.ceil((dayOfWeek + daysInMonth) / 7) * 7;
-    for (let i = 0; i < total; i++) {
-        const d = new Date(startOfGrid);
-        d.setDate(startOfGrid.getDate() + i);
-        const iso = toLocalIso(d);
-        cells.push({
-            iso,
-            day: d.getDate(),
-            inCurrentMonth: d.getMonth() === month,
-            isToday: iso === todayIso,
-        });
+/** «12 oct 14:30» del nuevo inicio, para el aviso con «Deshacer». */
+function whenLabel(cells: CalendarCell[], ev: CalendarEvent, timeZone: string, h12: boolean): string {
+    const start = cells.find((c) => c.field.id === ev.source.startFieldId);
+    if (start && typeof start.value === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(start.value)) return shortDate(start.value);
+        const d = new Date(start.value);
+        if (!Number.isNaN(d.getTime())) {
+            const day = zonedToday(timeZone, d);
+            const naive = zonedNowNaive(timeZone, d);
+            const [h = '0', m = '0'] = naive.slice(11, 16).split(':');
+            return `${shortDate(day)} ${clockLabel(Number(h) * 60 + Number(m), h12)}`;
+        }
     }
-    return cells;
-}
-
-function toLocalIso(d: Date): string {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${dd}`;
-}
-
-/**
- * Convierte el string que llega del backend (UTC ISO o YYYY-MM-DD) al
- * iso local del día en que cae. Para columnas tipo `date` el back envía
- * "YYYY-MM-DD" — sin TZ, lo dejamos como está. Para `datetime` envía
- * "YYYY-MM-DD HH:MM:SS" UTC; lo parseamos como UTC y derivamos el día
- * local.
- */
-function parseToLocalIso(raw: string): string | null {
-    // YYYY-MM-DD puro (date field).
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-        return raw;
+    const other = cells[0];
+    if (other && other.field.type === 'duration' && typeof other.value === 'number') return sprintf(__('%d min'), other.value);
+    if (other && typeof other.value === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(other.value)) return sprintf(__('hasta el %s'), shortDate(other.value));
+        const d = new Date(other.value);
+        if (!Number.isNaN(d.getTime())) {
+            const naive = zonedNowNaive(timeZone, d);
+            const [h = '0', m = '0'] = naive.slice(11, 16).split(':');
+            return sprintf(__('hasta las %s'), clockLabel(Number(h) * 60 + Number(m), h12));
+        }
     }
-    // datetime → asumir UTC (el back lo guarda así en CLAUDE.md §11).
-    const ts = parseUtcDate(raw).getTime();
-    if (Number.isNaN(ts)) return null;
-    return toLocalIso(new Date(ts));
-}
-
-function pickTitleField(fields: FieldEntity[], excludeId: number): FieldEntity | undefined {
-    const primary = fields.find((f) => f.is_primary);
-    if (primary) return primary;
-    return fields.find((f) => f.id !== excludeId && (f.type === 'text' || f.type === 'email'));
-}
-
-function titleString(record: RecordEntity, titleField?: FieldEntity): string {
-    if (titleField) {
-        const v = record.fields[titleField.slug];
-        if (typeof v === 'string' && v !== '') return v;
-    }
-    return sprintf(
-        /* translators: %d: record id */
-        __('Registro #%d'),
-        record.id,
-    );
+    return __('guardado');
 }

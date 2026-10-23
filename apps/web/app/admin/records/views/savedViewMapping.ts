@@ -1,4 +1,12 @@
-import { readKanbanSettings, withKanbanSettings, type KanbanSettings, type ViewColorRule } from '@imagina-base/shared';
+import {
+    readCalendarSettings,
+    readKanbanSettings,
+    withCalendarSettings,
+    withKanbanSettings,
+    type CalendarSettings,
+    type KanbanSettings,
+    type ViewColorRule,
+} from '@imagina-base/shared';
 
 import { type FilterOperator, type FilterTree } from '@/types/record';
 import type { SavedViewConfig } from '@/types/view';
@@ -188,7 +196,7 @@ export function hasChangesVsView(state: RecordsState, config: SavedViewConfig): 
  * defaults del schema (`enabled`, `target`) se completan aquí para que la
  * comparación de "cambios sin guardar" no los cuente como diferencia.
  */
-function readColorRules(raw: unknown): ViewColorRule[] {
+export function readColorRules(raw: unknown): ViewColorRule[] {
     if (!Array.isArray(raw)) return [];
     const out: ViewColorRule[] = [];
     for (const r of raw) {
@@ -237,4 +245,26 @@ export function viewConfigToKanban(config: SavedViewConfig): KanbanSettings {
 
 export function kanbanToViewConfig(config: SavedViewConfig, settings: KanbanSettings): SavedViewConfig {
     return withKanbanSettings(config as Record<string, unknown>, settings) as SavedViewConfig;
+}
+
+/**
+ * B4 — Calendario completo: los ajustes del calendario (fuentes de fecha con
+ * su fin o duración, etiqueta y color, cuáles están apagadas, cómo se pinta,
+ * vista por defecto, primer día de la semana, horario visible, fines de
+ * semana y duración por defecto) viven en la config con claves `calendar_*`
+ * (más `date_field_id`, la fuente principal de siempre). Lectura tolerante;
+ * la escritura reemplaza SÓLO esas claves y las reglas de color (las mismas
+ * de la tabla). Filtros, orden y demás quedan como estaban.
+ */
+export function viewConfigToCalendar(config: SavedViewConfig): { settings: CalendarSettings; colorRules: ViewColorRule[] } {
+    return { settings: readCalendarSettings(config), colorRules: readColorRules(config.color_rules) };
+}
+
+export function calendarToViewConfig(config: SavedViewConfig, settings: CalendarSettings, colorRules?: ViewColorRule[]): SavedViewConfig {
+    const next = withCalendarSettings(config as Record<string, unknown>, settings) as SavedViewConfig;
+    if (colorRules !== undefined) {
+        if (colorRules.length > 0) next.color_rules = colorRules;
+        else delete next.color_rules;
+    }
+    return next;
 }

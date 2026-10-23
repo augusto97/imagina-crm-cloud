@@ -37,6 +37,14 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
         { keys: [mod('Z'), mod('Y')], label: __('Deshacer y rehacer'), sep: '·' },
         { keys: [__('Clic derecho')], label: __('Todas las acciones de la celda') },
     ];
+    // B4 — el calendario.
+    const calendarRows: ShortcutRow[] = [
+        { keys: ['M', 'S', 'D', 'A'], label: __('Ver mes, semana, día o agenda'), sep: '·' },
+        { keys: ['H'], label: __('Volver a hoy') },
+        { keys: ['←', '→'], label: __('Período anterior o siguiente'), sep: '·' },
+        { keys: [__('Arrastrar')], label: __('Reprogramar un evento (o estirar su borde para cambiar el fin)') },
+        { keys: [mod('Z')], label: __('Deshacer el último movimiento') },
+    ];
     const renderRows = (list: ShortcutRow[]): JSX.Element => (
         <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border">
             {list.map((r) => (
@@ -84,6 +92,10 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
                         {__('En la tabla')}
                     </h3>
                     {renderRows(tableRows)}
+                    <h3 className="imcrm-mb-1 imcrm-mt-4 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                        {__('En el calendario')}
+                    </h3>
+                    {renderRows(calendarRows)}
                 </Dialog.Content>
             </Dialog.Portal>
         </Dialog.Root>

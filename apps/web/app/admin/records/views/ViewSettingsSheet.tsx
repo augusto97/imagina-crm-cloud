@@ -3,6 +3,7 @@ import type { ViewColorRule } from '@imagina-base/shared';
 import { Link } from 'react-router';
 import {
     ArchiveRestore,
+    CalendarDays,
     Check,
     Columns3,
     Copy,
@@ -136,6 +137,8 @@ interface ViewSettingsSheetProps {
     focusSection?: { section: 'colors'; n: number } | null;
     /** v0.1.297 — kanban: abre «Configurar tablero» (carriles, totales, tarjetas, límites, reglas). */
     onConfigureBoard?: () => void;
+    /** B4 — calendario: abre «Configurar calendario» (fechas, colores, horario, vista por defecto). */
+    onConfigureCalendar?: () => void;
 }
 
 /**
@@ -199,6 +202,7 @@ export function ViewSettingsSheet({
     onFrozenColumnsChange,
     focusSection = null,
     onConfigureBoard,
+    onConfigureCalendar,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -475,6 +479,16 @@ export function ViewSettingsSheet({
                                         visibleColumns,
                                     )}
                                     onClick={() => setColumnsOpen(true)}
+                                />
+                            )}
+
+                            {/* B4 — en el calendario, lo propio (fechas, colores, horario) vive en su diálogo. */}
+                            {viewType === 'calendar' && onConfigureCalendar && (
+                                <RowButton
+                                    icon={CalendarDays}
+                                    label={__('Calendario')}
+                                    value={__('Fechas, colores, horario y vista por defecto')}
+                                    onClick={onConfigureCalendar}
                                 />
                             )}
 

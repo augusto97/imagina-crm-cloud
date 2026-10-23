@@ -22,11 +22,14 @@ export function ColorRulesEditor({
     fields,
     rules,
     onChange,
+    eventsOnly = false,
 }: {
     listId: number;
     fields: FieldEntity[];
     rules: ViewColorRule[];
     onChange: (next: ViewColorRule[]) => void;
+    /** B4 — en el calendario la regla pinta el EVENTO: no hay fila ni celda que elegir. */
+    eventsOnly?: boolean;
 }): JSX.Element {
     const colorable = fields.filter((f) => operatorsForType(f.type, f).length > 0);
     const update = (i: number, patch: Partial<ViewColorRule>): void =>
@@ -57,7 +60,9 @@ export function ColorRulesEditor({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="imcrm-color-rules">
             {rules.length === 0 && (
                 <p className="imcrm-px-1 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Pinta las filas (o una celda) que cumplen una condición: lo vencido en rojo, lo pagado en verde. Si varias reglas se cumplen, gana la de arriba.')}
+                    {eventsOnly
+                        ? __('Pinta los eventos que cumplen una condición: lo vencido en rojo, lo pagado en verde. Si varias reglas se cumplen, gana la de arriba.')
+                        : __('Pinta las filas (o una celda) que cumplen una condición: lo vencido en rojo, lo pagado en verde. Si varias reglas se cumplen, gana la de arriba.')}
                 </p>
             )}
             {rules.map((rule, i) => (
@@ -128,6 +133,7 @@ export function ColorRulesEditor({
                             />
                         ))}
                     </div>
+                    {!eventsOnly && (
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                         <Select
                             aria-label={__('Qué se pinta')}
@@ -157,6 +163,7 @@ export function ColorRulesEditor({
                             </Select>
                         )}
                     </div>
+                    )}
                 </div>
             ))}
             {rules.length < MAX_VIEW_COLOR_RULES && colorable.length > 0 && (
