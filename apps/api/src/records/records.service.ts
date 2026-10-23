@@ -11,10 +11,16 @@ import {
     applyFieldDefaults,
     checkRequiredIf,
     collectMentionedUserIds,
+    doneRuleFor,
+    effectiveEndMs,
     FALLBACK_TIME_ZONE,
     isSystemField,
     isUserWritableType,
     systemFieldBaseType,
+    readDependencySettings,
+    RESCHEDULE_MAX_DEPTH,
+    RESCHEDULE_MAX_RECORDS,
+    shiftDateValue,
     type BulkEditTarget,
     evaluateComputed,
     isDataField,
@@ -32,6 +38,8 @@ import {
     type BatchUpdateRecordsResult,
     type CreateRecordInput,
     type Field,
+    type FilterGroup,
+    type FilterNode,
     type List,
     type ListRecordsQuery,
     type RecordDto,
@@ -69,10 +77,18 @@ import { RecordsRepository, type RecordListRow, type RecordRow } from './records
 import { withComputedExprs } from './computed-sql';
 import type { ThroughPlan } from './through-fields';
 import { RelationsRepository } from './relations.repository';
+import { DependenciesRepository } from './dependencies.repository';
 import { compileSearch } from './search-sql';
 import { relatedScopeSql, type RelatedScope } from './related-scope';
 import { BillingService } from '../billing/billing.service';
 import { calendarPicksSql, readPicks, type CalendarPick, type CalendarSqlSource } from './calendar-sql';
+
+/** A8 — un registro que corrió la reprogramación en cadena. */
+interface ShiftedRecord {
+    id: number;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+}
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
 export interface Actor {
@@ -128,7 +144,14 @@ export class RecordsService {
         @Optional() private readonly timeZones?: TenantTimeZones,
         // v0.1.276 — avisos de menciones en la descripción.
         @Optional() private readonly notify?: NotifyHub,
-    ) {}
+        // A8 — dependencias (bloqueantes abiertos del listado y reprogramación
+        // en cadena). Sin estado: sin DI (specs posicionales) se crea uno.
+        @Optional() depsRepo?: DependenciesRepository,
+    ) {
+        this.deps = depsRepo ?? new DependenciesRepository();
+    }
+
+    private readonly deps: DependenciesRepository;
 
     private async clock(tenantId: number, tx?: Tx): Promise<QueryClock> {
         return { now: new Date(), timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE };
@@ -246,7 +269,7 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
-        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount } = await run(async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
@@ -269,19 +292,25 @@ export class RecordsService {
                 await this.fields.through.plans(tx, tenantId, list.id, fields),
                 actor,
             );
+            const hiddenKeys = hiddenKeysWithDerived(fields, list.settings, actor, restricted);
+            const hiddenIds = new Set([...hiddenKeys].map((k) => Number(k.slice(1))));
             return {
                 row: r,
                 fields,
-                hiddenKeys: hiddenKeysWithDerived(fields, list.settings, actor, restricted),
+                hiddenKeys,
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
+                blockedOpen: r ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
             };
         });
         // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
         if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
         return stripHidden(
-            toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
+            {
+                ...toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
+                blocked_by_open: blockedOpen,
+            },
             hiddenKeys,
         );
     }
@@ -614,6 +643,157 @@ export class RecordsService {
     }
 
     /**
+     * B1 — Registros de una LÍNEA DE TIEMPO (Gantt): los que tienen alguna
+     * fecha dentro de `[from, to]` (inicio, fin, o la barra que cruza el
+     * rango), con el mismo filtro, búsqueda, ACL y campos ocultos que el
+     * listado; además los padres de las subtareas que entraron (para
+     * anidarlas) y una tanda de «Sin programar» (sin ninguna de las dos
+     * fechas). Todo en una transacción, una consulta por pieza.
+     */
+    async listTimeline(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        opts: {
+            startFieldId: number;
+            endFieldId: number | null;
+            from: string;
+            to: string;
+            filter_tree?: ListRecordsQuery['filter_tree'];
+            search?: string;
+            sort?: string;
+            limit: number;
+            subtasks: boolean;
+            unscheduledLimit: number;
+        },
+    ): Promise<{
+        list: List;
+        fields: Field[];
+        rows: RecordDto[];
+        parents: RecordDto[];
+        truncated: boolean;
+        unscheduled: RecordDto[];
+        unscheduledTotal: number;
+    }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            const dateOk = (id: number | null): boolean => {
+                if (id === null) return true;
+                const f = ctx.fields.find((x) => x.id === id);
+                return !!f && (f.type === 'date' || f.type === 'datetime') && !ctx.hiddenIds.has(f.id);
+            };
+            if (!dateOk(opts.startFieldId) || !dateOk(opts.endFieldId)) {
+                throw new BadRequestException({
+                    code: 'invalid_gantt_field',
+                    message: 'El inicio y el fin del Gantt tienen que ser campos de fecha visibles de esta lista.',
+                    data: { status: 400 },
+                });
+            }
+            const s = opts.startFieldId;
+            const e = opts.endFieldId;
+            const cond = (field_id: number, op: 'gte' | 'lte' | 'is_null' | 'is_not_null', value?: string) =>
+                ({ type: 'condition' as const, field_id, op, ...(value !== undefined ? { value } : {}) });
+            const group = (logic: 'and' | 'or', children: FilterNode[]): FilterGroup => ({ type: 'group', logic, children });
+            const inRange: FilterGroup =
+                e === null
+                    ? group('and', [cond(s, 'gte', opts.from), cond(s, 'lte', opts.to)])
+                    : group('or', [
+                          group('and', [
+                              cond(s, 'is_not_null'),
+                              cond(s, 'lte', opts.to),
+                              group('or', [cond(e, 'gte', opts.from), group('and', [cond(e, 'is_null'), cond(s, 'gte', opts.from)])]),
+                          ]),
+                          group('and', [cond(s, 'is_null'), cond(e, 'gte', opts.from), cond(e, 'lte', opts.to)]),
+                      ]);
+            const noDates: FilterGroup =
+                e === null ? group('and', [cond(s, 'is_null')]) : group('and', [cond(s, 'is_null'), cond(e, 'is_null')]);
+            // El rango se compila APARTE del filtro de la vista (y se une por
+            // AND en SQL): así no le suma profundidad al árbol de la persona.
+            const base = this.readWhere(ctx, { filter_tree: opts.filter_tree, search: opts.search });
+            const where = andWhere(base, compileFilterTree(ctx.fieldsById, inRange, ctx.clock));
+            const orderBy = parseFieldSort(opts.sort ?? `field_${s}:asc`, ctx.fieldsById, ctx.fields);
+            const parent = opts.subtasks ? ('any' as const) : ('roots' as const);
+            const listed = await this.repo.list(tx, tenantId, ctx.list.id, { parent, where, orderBy, limit: opts.limit, dir: 'asc', offset: 0 });
+            const pageRows = listed.slice(0, opts.limit);
+            const ids = new Set(pageRows.map((r) => r.id));
+            // Padres de las subtareas que entraron sin su padre: se agregan
+            // (con el mismo ACL) para poder anidarlas.
+            const missingParents = [...new Set(pageRows.map((r) => r.parentId).filter((p): p is number => p !== null && !ids.has(p)))];
+            const parentRows = missingParents.length
+                ? await this.repo.list(tx, tenantId, ctx.list.id, {
+                      parent: 'any',
+                      where: andWhere(ctx.scopeW, inArray(records.id, missingParents.slice(0, opts.limit))),
+                      limit: opts.limit,
+                      dir: 'asc',
+                  })
+                : [];
+            const unWhere = andWhere(base, compileFilterTree(ctx.fieldsById, noDates, ctx.clock));
+            const unRows = opts.unscheduledLimit > 0
+                ? await this.repo.list(tx, tenantId, ctx.list.id, {
+                      parent,
+                      where: unWhere,
+                      orderBy: [sql`${records.updatedAt} DESC`],
+                      limit: opts.unscheduledLimit,
+                      dir: 'desc',
+                      offset: 0,
+                  })
+                : [];
+            const unscheduledTotal = opts.unscheduledLimit > 0 ? await this.repo.count(tx, tenantId, ctx.list.id, { parent, where: unWhere }) : 0;
+            const [rows, parents, unscheduled] = [
+                await this.hydrate(tx, tenantId, ctx, pageRows),
+                await this.hydrate(tx, tenantId, ctx, parentRows.slice(0, opts.limit)),
+                await this.hydrate(tx, tenantId, ctx, unRows.slice(0, opts.unscheduledLimit)),
+            ];
+            return {
+                list: ctx.list,
+                fields: ctx.fields,
+                rows,
+                parents,
+                truncated: listed.length > opts.limit,
+                unscheduled,
+                unscheduledTotal,
+            };
+        });
+    }
+
+    /**
+     * B1 — Las fechas CRUDAS de inicio y fin de los registros con alguna
+     * fecha (línea base del Gantt), con el alcance de lectura de quien pide y
+     * hasta `cap` filas. Una consulta.
+     */
+    async datedRows(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        startFieldId: number,
+        endFieldId: number | null,
+        cap: number,
+    ): Promise<{ list: List; rows: Array<{ id: number; start: string | null; end: string | null }> }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            const sk = jsonbKeyForField(startFieldId);
+            const ek = endFieldId !== null ? jsonbKeyForField(endFieldId) : null;
+            const startText = sql`(${records.data} ->> ${sk})`;
+            const endText = ek ? sql`(${records.data} ->> ${ek})` : sql`NULL::text`;
+            const rows = await tx
+                .select({ id: records.id, start: sql<string | null>`left(${startText}, 40)`, end: sql<string | null>`left(${endText}, 40)` })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, tenantId),
+                        eq(records.listId, ctx.list.id),
+                        isNull(records.deletedAt),
+                        ctx.scopeW,
+                        sql`(${startText} IS NOT NULL OR ${endText} IS NOT NULL)`,
+                    ),
+                )
+                .orderBy(records.id)
+                .limit(cap);
+            return { list: ctx.list, rows };
+        });
+    }
+
+    /**
      * Lo que necesita una LECTURA de la lista para quien pide (v0.1.286, antes
      * vivía dentro de `list`): campos, ACL (scope + ocultos), campos filtrables
      * con las expresiones de los derivados y el reloj de la empresa.
@@ -681,13 +861,35 @@ export class RecordsService {
         const ids = result.map((r) => r.id);
         const rels = await this.relationsRepo.batchTargets(tx, tenantId, ids, relFieldIds);
         const subtaskCounts = await this.repo.subtaskCounts(tx, tenantId, ids);
+        // A8 — bloqueantes abiertos de la tanda (icono «bloqueado»), una consulta.
+        const blocked = await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids);
         const hiddenKeys = new Set([...ctx.hiddenIds].map((id) => jsonbKeyForField(id)));
         return result.map((r) =>
             stripHidden(
-                toRecord(withComputed(ctx.fields, r), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
+                {
+                    ...toRecord(withComputed(ctx.fields, r), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
+                    blocked_by_open: blocked.get(r.id) ?? 0,
+                },
                 hiddenKeys,
             ),
         );
+    }
+
+    /**
+     * A8 — Cuántos bloqueantes ABIERTOS tiene cada registro (vivos y no
+     * terminados según la regla de «Mi trabajo»). Si el campo de estado está
+     * oculto para quien mira, todo bloqueante vivo cuenta: «terminado» se
+     * deduciría de un campo que no puede ver.
+     */
+    private async openBlockers(
+        tx: Tx,
+        tenantId: number,
+        fields: Field[],
+        hiddenIds: ReadonlySet<number>,
+        ids: number[],
+    ): Promise<Map<number, number>> {
+        const rule = doneRuleFor(fields);
+        return this.deps.openBlockerCounts(tx, tenantId, ids, rule && !hiddenIds.has(rule.fieldId) ? rule : null);
     }
 
     async update(
@@ -752,6 +954,9 @@ export class RecordsService {
                 ...rel.values.map((v) => v.field.id),
             ]);
             const updated = await this.repo.updateData(tx, tenantId, listId, id, merged, actor.userId);
+            // A8 — si cambió el fin y la lista reprograma, lo que depende de
+            // este registro se corre lo mismo, en ESTA transacción.
+            let rescheduled: ShiftedRecord[] = [];
             if (updated) {
                 await this.syncRelations(tx, tenantId, id, rel.values);
                 await this.activity.logInTx(tx, {
@@ -763,6 +968,7 @@ export class RecordsService {
                     action: 'record_updated',
                     diff: computeDiff(current.data, merged),
                 });
+                rescheduled = await this.rescheduleDependentsInTx(tx, tenantId, list, fields, actor, id, current.data, updated.data);
             }
             const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
             const rels = updated
@@ -776,37 +982,140 @@ export class RecordsService {
             const subtasks = updated && (updated.parentId ?? null) === null
                 ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
                 : 0;
-            return { updated, enriched, before: current.data, rels, subtasks };
+            const blockedOpen = updated ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
+            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
         if (!opts.silent) this.realtime.records(tenantId, listId);
-        if (!opts.noAutomations) this.automations.dispatch({
-            tenantId,
-            listId,
-            recordId: row.id,
-            trigger: 'record_updated',
-            after: row.data,
-            before: result.before, // para changed_fields
-            ...(opts.automationChain ? { chain: opts.automationChain } : {}),
-        });
-        // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId, list, fields });
-        // Recurrencias con trigger status_change: fire-and-forget (no bloquea
-        // la respuesta del update; un fallo se loguea y no rompe la mutación).
-        void this.recurrences
-            ?.onRecordUpdated(tenantId, listId, row.id, result.before, row.data)
-            .catch((err) =>
-                this.logger.error(`Recurrencias post-update de record ${row.id}: ${String(err)}`),
-            );
-        return toRecord(
-            withComputed(fields, result.enriched ?? row),
-            byFieldToKeys(
-                fields.filter((f) => f.type === 'relation').map((f) => f.id),
-                result.rels.get(row.id),
+        // Lo corrido por la reprogramación es un cambio más: automatizaciones,
+        // avisos y la tienda se enteran igual que de una edición a mano.
+        for (const changed of [{ id: row.id, before: result.before, after: row.data }, ...result.rescheduled]) {
+            if (!opts.noAutomations) this.automations.dispatch({
+                tenantId,
+                listId,
+                recordId: changed.id,
+                trigger: 'record_updated',
+                after: changed.after,
+                before: changed.before, // para changed_fields
+                ...(opts.automationChain ? { chain: opts.automationChain } : {}),
+            });
+            // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
+            this.changes?.emit({ tenantId, listId, recordId: changed.id, before: changed.before, after: changed.after, actorId: actor.userId, list, fields });
+            // Recurrencias con trigger status_change: fire-and-forget (no bloquea
+            // la respuesta del update; un fallo se loguea y no rompe la mutación).
+            void this.recurrences
+                ?.onRecordUpdated(tenantId, listId, changed.id, changed.before, changed.after)
+                .catch((err) =>
+                    this.logger.error(`Recurrencias post-update de record ${changed.id}: ${String(err)}`),
+                );
+        }
+        return {
+            ...toRecord(
+                withComputed(fields, result.enriched ?? row),
+                byFieldToKeys(
+                    fields.filter((f) => f.type === 'relation').map((f) => f.id),
+                    result.rels.get(row.id),
+                ),
+                result.subtasks,
             ),
-            result.subtasks,
-        );
+            blocked_by_open: result.blockedOpen,
+            ...(result.rescheduled.length > 0 ? { rescheduled: result.rescheduled.map((r) => r.id) } : {}),
+        };
+    }
+
+    /**
+     * A8 — Reprogramación en cadena. Si la lista lo tiene encendido
+     * (`settings.dependencies`) y cambió el FIN efectivo del registro (su fin,
+     * o su inicio si es un hito), cada registro que depende de él corre su
+     * inicio y su fin lo mismo; y lo que depende de ESE, también. Todo en la
+     * transacción de la edición, con tope de registros y de eslabones, cada
+     * registro con su actividad. Lo que quien edita no puede editar (ACL) o lo
+     * que la tienda no deja cambiar no se mueve —y la cadena no sigue por ahí.
+     */
+    private async rescheduleDependentsInTx(
+        tx: Tx,
+        tenantId: number,
+        list: List,
+        fields: Field[],
+        actor: Actor,
+        rootId: number,
+        before: Record<string, unknown>,
+        after: Record<string, unknown>,
+    ): Promise<ShiftedRecord[]> {
+        const settings = readDependencySettings(list.settings);
+        if (!settings.reschedule) return [];
+        const dateField = (fid: number | null): Field | null =>
+            fid === null ? null : fields.find((f) => f.id === fid && (f.type === 'date' || f.type === 'datetime')) ?? null;
+        const startF = dateField(settings.start_field_id);
+        const endF = dateField(settings.end_field_id);
+        if (!startF && !endF) return [];
+        const sk = startF ? jsonbKeyForField(startF.id) : null;
+        const ek = endF ? jsonbKeyForField(endF.id) : null;
+        const e0 = effectiveEndMs(before, sk, ek);
+        const e1 = effectiveEndMs(after, sk, ek);
+        if (e0 === null || e1 === null || e0 === e1) return [];
+        const delta = e1 - e0;
+
+        const shifted: ShiftedRecord[] = [];
+        const visited = new Set<number>([rootId]);
+        let frontier = [rootId];
+        for (let depth = 0; frontier.length > 0 && depth < RESCHEDULE_MAX_DEPTH; depth++) {
+            const next: number[] = [];
+            // Orden estable por id: dos reprogramaciones simultáneas toman los
+            // candados de fila en el mismo orden (menos riesgo de deadlock).
+            const level = (await this.deps.dependentsOf(tx, tenantId, frontier)).sort((a, b) => a.blocked - b.blocked);
+            for (const edge of level) {
+                if (visited.has(edge.blocked) || edge.listId !== list.id) continue;
+                visited.add(edge.blocked);
+                if (shifted.length >= RESCHEDULE_MAX_RECORDS) break;
+                const cur = await this.repo.findByIdForUpdate(tx, tenantId, list.id, edge.blocked);
+                if (!cur || !this.aclCanReach(list, actor, 'edit', cur)) continue;
+                const data = cur.data as Record<string, unknown>;
+                const patch: Record<string, unknown> = {};
+                for (const [f, key] of [[startF, sk], [endF, ek]] as const) {
+                    if (!f || !key) continue;
+                    const moved = shiftDateValue(f.type, data[key], delta);
+                    if (moved !== null && moved !== data[key]) patch[key] = moved;
+                }
+                if (Object.keys(patch).length === 0) continue;
+                let merged: Record<string, unknown>;
+                try {
+                    const valid = this.validateData(fields, patch, { partial: true });
+                    merged = mergeData(data, valid);
+                    this.assertStoreEdit(list, fields, data, merged, Object.keys(valid).map((k) => Number(k.slice(1))));
+                    await this.assertUniqueInTx(tx, tenantId, list.id, fields, valid, cur.id);
+                } catch {
+                    continue;
+                }
+                const upd = await this.repo.updateData(tx, tenantId, list.id, cur.id, merged, actor.userId);
+                if (!upd) continue;
+                await this.activity.logInTx(tx, {
+                    tenantId,
+                    listId: list.id,
+                    recordId: cur.id,
+                    userId: actor.userId > 0 ? actor.userId : null,
+                    action: 'record_updated',
+                    diff: computeDiff(data, merged),
+                });
+                shifted.push({ id: cur.id, before: data, after: upd.data as Record<string, unknown> });
+                next.push(cur.id);
+            }
+            if (shifted.length >= RESCHEDULE_MAX_RECORDS) break;
+            frontier = next;
+        }
+        if (shifted.length >= RESCHEDULE_MAX_RECORDS) {
+            this.logger.warn(`Reprogramación de ${rootId}: se alcanzó el tope de ${RESCHEDULE_MAX_RECORDS} registros`);
+        }
+        return shifted;
+    }
+
+    /**
+     * ¿El actor alcanza esta fila para la acción? (dependencias: quien agrega
+     * o quita una dependencia tiene que poder editar el registro bloqueado).
+     */
+    canReach(list: List, actor: Actor, action: 'view' | 'edit' | 'delete', row: Pick<RecordRow, 'data' | 'createdBy'>): boolean {
+        return this.aclCanReach(list, actor, action, row);
     }
 
     /**

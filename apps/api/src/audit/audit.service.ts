@@ -126,7 +126,11 @@ export type AuditAction =
     | 'data_consent.update'
     | 'data_consent.version'
     | 'data_consent.withdraw_admin'
-    | 'data_consent.export';
+    | 'data_consent.export'
+    // A8/B1 — reprogramación por dependencias (ajuste de la lista) y línea base del Gantt.
+    | 'list.dependencies_settings'
+    | 'gantt.baseline_save'
+    | 'gantt.baseline_delete';
 
 export interface AuditEntryDto {
     id: number;

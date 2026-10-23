@@ -575,6 +575,13 @@
       "when": 1784200000150,
       "tag": "0081_autonumber_system_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784200000160,
+      "tag": "0082_record_dependencies_gantt",
+      "breakpoints": true
     }
   ]
 }

@@ -613,7 +613,7 @@ function parseSetKey(key: string): string[] | null {
 }
 
 /** Un registro del bundle con `fields` por slug (el adaptador del front no alcanza los anidados). */
-function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<string, unknown> {
+export function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<string, unknown> {
     return {
         id: r.id,
         fields: mapKeys(r.data as Record<string, unknown>, toSlug),
@@ -623,6 +623,8 @@ function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<string, 
         parent_id: r.parent_id ?? null,
         subtask_count: r.subtask_count ?? 0,
         has_description: r.has_description ?? false,
+        // A8 — icono «bloqueado» en la tarjeta del kanban y en la barra del Gantt.
+        blocked_by_open: r.blocked_by_open ?? 0,
         created_by: r.created_by,
         created_at: stripZ(r.created_at),
         updated_at: stripZ(r.updated_at),
