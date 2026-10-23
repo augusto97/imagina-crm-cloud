@@ -51,6 +51,11 @@ import {
     KANBAN_VALUE_METRICS,
     KANBAN_VALUE_TYPES,
     readKanbanSettings,
+    CALENDAR_COLOR_BY,
+    CALENDAR_MAX_SOURCES,
+    CALENDAR_MODES,
+    calendarSourceTypesOk,
+    readCalendarSettings,
     type AiProposal,
     type AiProposalKind,
     type AiProposalPreview,
@@ -282,8 +287,48 @@ const viewSpec = z.object({
         .array(colorRuleSpec)
         .max(MAX_VIEW_COLOR_RULES)
         .optional()
-        .describe('table: colores condicionales. El orden es la prioridad (gana la primera regla que se cumple, por fila y por celda).'),
-    date_field: fieldSlugSchema.optional().describe('calendar: campo date/datetime (obligatorio)'),
+        .describe('table y calendar: colores condicionales (en el calendario pintan el evento). El orden es la prioridad (gana la primera regla que se cumple, por fila y por celda).'),
+    date_field: fieldSlugSchema.optional().describe('calendar: campo date/datetime donde EMPIEZA cada evento (obligatorio)'),
+    // B4 — Calendario completo.
+    end_date_field: fieldSlugSchema
+        .optional()
+        .describe('calendar: campo donde TERMINA el evento (mismo tipo que date_field). Con fin, los eventos ocupan varios días o tienen duración y se pueden estirar.'),
+    duration_field: fieldSlugSchema
+        .optional()
+        .describe('calendar: en vez de end_date_field, un campo Duración (minutos) que da el largo del evento; sólo con un date_field de fecha y hora (p. ej. citas)'),
+    calendar_sources: z
+        .array(
+            z.object({
+                start: fieldSlugSchema.describe('Campo date/datetime de inicio'),
+                end: fieldSlugSchema.optional().describe('Campo de fin (mismo tipo)'),
+                duration: fieldSlugSchema.optional().describe('O un campo Duración (minutos), con inicio de fecha y hora'),
+                label: z.string().max(80).optional().describe('Etiqueta de la fuente («Próximo contacto»)'),
+                color: viewRowColorSchema.optional(),
+            }),
+        )
+        .max(CALENDAR_MAX_SOURCES - 1)
+        .optional()
+        .describe('calendar: fuentes de fecha ADICIONALES que se muestran a la vez (p. ej. «Vencimiento» y «Próximo contacto»), cada una con su etiqueta y color'),
+    date_label: z.string().max(80).optional().describe('calendar: etiqueta de la fuente principal (date_field)'),
+    color_by: z
+        .enum(CALENDAR_COLOR_BY)
+        .optional()
+        .describe('calendar: color de los eventos — auto (default), source (el de cada fuente), field (el de la opción de color_field) o none. Las color_rules ganan sobre esto.'),
+    color_field: fieldSlugSchema.optional().describe('calendar con color_by=field: campo select cuyo color pinta el evento'),
+    default_mode: z.enum(CALENDAR_MODES).optional().describe('calendar: vista con la que abre — month (default), week, day o agenda'),
+    week_start: z.enum(['monday', 'sunday', 'saturday']).optional().describe('calendar: primer día de la semana (default monday)'),
+    day_hours: z
+        .object({ start: z.number().int().min(0).max(23), end: z.number().int().min(1).max(24) })
+        .optional()
+        .describe('calendar: horario visible en semana y día (p. ej. {start: 7, end: 20})'),
+    show_weekends: z.boolean().optional().describe('calendar: false oculta sábado y domingo'),
+    default_duration: z
+        .number()
+        .int()
+        .min(0)
+        .max(1440)
+        .optional()
+        .describe('calendar: minutos que dura un evento con hora y sin fin (default 60; 0 = todo el día)'),
     filters: z.array(filterRuleSpec).max(20).optional().describe('Condiciones unidas por AND'),
     sort: z.array(z.object({ field: fieldSlugSchema, dir: z.enum(['asc', 'desc']) })).max(5).optional(),
     hidden_columns: z.array(fieldSlugSchema).max(60).optional().describe('table: columnas ocultas'),
@@ -1359,6 +1404,7 @@ export class StructureTools implements AiProposalApplier {
         if (input.view.frozen_columns) details.push(`${input.view.frozen_columns} columna${input.view.frozen_columns === 1 ? '' : 's'} fija${input.view.frozen_columns === 1 ? '' : 's'}`);
         if (input.view.color_rules?.length) details.push(`${input.view.color_rules.length} regla${input.view.color_rules.length === 1 ? '' : 's'} de color`);
         if (input.view.date_field) details.push(`sobre «${bySlug.get(input.view.date_field)?.label}»`);
+        if (input.view.type === 'calendar') details.push(...calendarSummary(input.view, (s) => bySlug.get(s)?.label));
         if (input.view.filters?.length) details.push(`${input.view.filters.length} filtro${input.view.filters.length === 1 ? '' : 's'}`);
         if (input.view.sort?.length) details.push('con orden');
         return this.saveProposal(ctx, {
@@ -2156,6 +2202,12 @@ export class StructureTools implements AiProposalApplier {
             const fields = await this.fields.listByListId(ctx.tenantId, list.id);
             const bySlug = new Map(fields.map((f) => [f.slug, f]));
             const spec: ViewSpec = { ...input.config, name: view.name, type: view.type as ViewSpec['type'] };
+            // B4 — en un calendario, cambiar sólo la vista por defecto o el horario
+            // no obliga a repetir el campo de fecha: se conserva el actual.
+            if (view.type === 'calendar' && !spec.date_field) {
+                const current = fields.find((f) => f.id === (view.config as { date_field_id?: unknown }).date_field_id);
+                if (current) spec.date_field = current.slug;
+            }
             const config = this.buildViewConfig(spec, (slug) => {
                 const f = bySlug.get(slug);
                 if (!f) throw new AiToolError(`La vista referencia el campo «${slug}» que no existe en «${list.name}». Campos: ${fields.map((x) => x.slug).join(', ')}.`);
@@ -2178,6 +2230,7 @@ export class StructureTools implements AiProposalApplier {
             if (spec.value_field) bits.push(`${spec.value_metric === 'avg' ? 'promedio' : 'suma'} de «${bySlug.get(spec.value_field)?.label}» por columna`);
             if (spec.wip_limits?.length) bits.push(`${spec.wip_limits.length} límite${spec.wip_limits.length === 1 ? '' : 's'} por columna`);
             if (spec.move_rules?.length) bits.push(`${spec.move_rules.length} regla${spec.move_rules.length === 1 ? '' : 's'} al mover`);
+            if (view.type === 'calendar') bits.push(...calendarSummary(spec, (s) => bySlug.get(s)?.label));
             changes.push({ label: 'Configuración', from: null, to: bits.join(', ') || 'sin filtros ni agrupación' });
         }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la vista actual.');
@@ -3074,7 +3127,7 @@ export class StructureTools implements AiProposalApplier {
             config.frozen_columns = v.frozen_columns;
         }
         if (v.color_rules?.length) {
-            if (v.type !== 'table') throw new AiToolError(`Vista «${v.name}»: color_rules sólo aplica a vistas de tabla.`);
+            if (v.type !== 'table' && v.type !== 'calendar') throw new AiToolError(`Vista «${v.name}»: color_rules sólo aplica a vistas de tabla o calendario.`);
             config.color_rules = v.color_rules.map((r: ColorRuleSpec, i: number) => {
                 const target = r.target ?? 'row';
                 return {
@@ -3097,6 +3150,13 @@ export class StructureTools implements AiProposalApplier {
             const d = resolve(v.date_field);
             if (!DATE_TYPES.includes(d.type)) throw new AiToolError(`Vista «${v.name}»: date_field «${v.date_field}» es ${d.type}, se esperaba date/datetime.`);
             config.date_field_id = d.id;
+            Object.assign(config, this.buildCalendarConfig(v, d, resolve));
+        }
+        const calendarOnly = (
+            ['end_date_field', 'duration_field', 'calendar_sources', 'date_label', 'color_by', 'color_field', 'default_mode', 'week_start', 'day_hours', 'show_weekends', 'default_duration'] as const
+        ).filter((k) => v[k] !== undefined);
+        if (v.type !== 'calendar' && calendarOnly.length > 0) {
+            throw new AiToolError(`Vista «${v.name}»: ${calendarOnly.join(', ')} sólo aplica${calendarOnly.length === 1 ? '' : 'n'} a vistas de calendario.`);
         }
         if (v.type === 'cards' && v.card_fields) config.card_field_ids = v.card_fields.map((s) => resolve(s).id);
         const kanbanOnly = (['lane_by', 'value_field', 'value_metric', 'card_title', 'card_cover', 'card_size', 'wip_limits', 'move_rules', 'hide_empty_columns'] as const).filter(
@@ -3186,6 +3246,82 @@ export class StructureTools implements AiProposalApplier {
                 }),
             }));
         }
+        return out;
+    }
+
+    /**
+     * B4 — Lo propio del calendario completo: fin de la fuente principal,
+     * fuentes adicionales, color, vista por defecto, semana, horario visible y
+     * duración por defecto. El fin es del MISMO tipo que el inicio (arrastrar y
+     * estirar tienen una sola semántica: días enteros o minutos).
+     */
+    private buildCalendarConfig(
+        v: ViewSpec,
+        start: { id: unknown; type: FieldType },
+        resolve: (slug: string) => { id: unknown; type: FieldType; options?: unknown },
+    ): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        const endOf = (startSlug: string, startType: FieldType, endSlug: string | undefined): unknown => {
+            if (endSlug === undefined) return undefined;
+            if (endSlug === startSlug) throw new AiToolError(`Vista «${v.name}»: el fin de «${startSlug}» tiene que ser otro campo.`);
+            const e = resolve(endSlug);
+            if (!calendarSourceTypesOk(startType, e.type)) {
+                throw new AiToolError(`Vista «${v.name}»: el fin «${endSlug}» es ${e.type}; tiene que ser del mismo tipo que «${startSlug}» (${startType}).`);
+            }
+            return e.id;
+        };
+        const durationOf = (startSlug: string, startType: FieldType, durSlug: string | undefined, endSlug: string | undefined): unknown => {
+            if (durSlug === undefined) return undefined;
+            if (endSlug !== undefined) throw new AiToolError(`Vista «${v.name}»: «${startSlug}» tiene fin Y duración; elige uno.`);
+            const d = resolve(durSlug);
+            if (d.type !== 'duration' || !calendarSourceTypesOk(startType, d.type)) {
+                throw new AiToolError(`Vista «${v.name}»: la duración «${durSlug}» tiene que ser un campo Duración y el inicio «${startSlug}» de fecha y hora.`);
+            }
+            return d.id;
+        };
+        const end = endOf(v.date_field!, start.type, v.end_date_field);
+        if (end !== undefined) out.calendar_end_field_id = end;
+        const dur = durationOf(v.date_field!, start.type, v.duration_field, v.end_date_field);
+        if (dur !== undefined) out.calendar_duration_field_id = dur;
+        if (v.date_label) out.calendar_main_label = v.date_label;
+        if (v.calendar_sources?.length) {
+            const used = new Set([v.date_field]);
+            out.calendar_sources = v.calendar_sources.map((s, i) => {
+                if (used.has(s.start)) throw new AiToolError(`Vista «${v.name}»: «${s.start}» ya es una fuente del calendario.`);
+                used.add(s.start);
+                const st = resolve(s.start);
+                if (!DATE_TYPES.includes(st.type)) throw new AiToolError(`Vista «${v.name}»: la fuente «${s.start}» es ${st.type}, se esperaba date/datetime.`);
+                const e = endOf(s.start, st.type, s.end);
+                const du = durationOf(s.start, st.type, s.duration, s.end);
+                return {
+                    id: `s${i + 2}`,
+                    start_field_id: st.id,
+                    ...(e !== undefined ? { end_field_id: e } : {}),
+                    ...(du !== undefined ? { duration_field_id: du } : {}),
+                    ...(s.label ? { label: s.label } : {}),
+                    ...(s.color ? { color: s.color } : {}),
+                };
+            });
+        }
+        if (v.color_by !== undefined && v.color_by !== 'auto') out.calendar_color_by = v.color_by;
+        if (v.color_field !== undefined) {
+            const c = resolve(v.color_field);
+            if (c.type !== 'select') throw new AiToolError(`Vista «${v.name}»: color_field tiene que ser un campo select; «${v.color_field}» es ${c.type}.`);
+            out.calendar_color_field_id = c.id;
+            if (v.color_by === undefined) out.calendar_color_by = 'field';
+        } else if (v.color_by === 'field') {
+            throw new AiToolError(`Vista «${v.name}»: color_by=field necesita color_field (un campo select).`);
+        }
+        if (v.default_mode !== undefined && v.default_mode !== 'month') out.calendar_default_mode = v.default_mode;
+        if (v.week_start === 'sunday') out.calendar_week_start = 0;
+        if (v.week_start === 'saturday') out.calendar_week_start = 6;
+        if (v.day_hours) {
+            if (v.day_hours.end <= v.day_hours.start) throw new AiToolError(`Vista «${v.name}»: day_hours.end tiene que ser mayor que start.`);
+            out.calendar_day_start = v.day_hours.start;
+            out.calendar_day_end = v.day_hours.end;
+        }
+        if (v.show_weekends === false) out.calendar_show_weekends = false;
+        if (v.default_duration !== undefined) out.calendar_default_duration = v.default_duration;
         return out;
     }
 
@@ -3670,7 +3806,39 @@ function describeViewForModel(
         const rules = Object.entries(k.moveRules).map(([column, ids]) => ({ column, require: ids.map(slugOf).filter((x): x is string => x !== null) }));
         if (rules.length > 0) out.move_rules = rules;
     }
-    if (v.type === 'table') {
+    if (v.type === 'calendar') {
+        // B4 — lo del calendario completo, en el vocabulario de propose_update_view.
+        const c = readCalendarSettings(cfg);
+        const [main, ...extra] = c.sources;
+        if (main) {
+            const start = slugOf(main.startFieldId);
+            if (start) out.date_field = start;
+            const end = slugOf(main.endFieldId);
+            if (end) out.end_date_field = end;
+            const dur = slugOf(main.durationFieldId);
+            if (dur) out.duration_field = dur;
+            if (main.label) out.date_label = main.label;
+        }
+        const sources = extra
+            .map((s) => ({
+                start: slugOf(s.startFieldId),
+                ...(slugOf(s.endFieldId) ? { end: slugOf(s.endFieldId) } : {}),
+                ...(slugOf(s.durationFieldId) ? { duration: slugOf(s.durationFieldId) } : {}),
+                ...(s.label ? { label: s.label } : {}),
+                color: s.color,
+            }))
+            .filter((s) => s.start !== null);
+        if (sources.length > 0) out.calendar_sources = sources;
+        if (c.colorBy !== 'auto') out.color_by = c.colorBy;
+        const colorField = slugOf(c.colorFieldId);
+        if (colorField) out.color_field = colorField;
+        if (c.defaultMode !== 'month') out.default_mode = c.defaultMode;
+        if (c.weekStart !== 1) out.week_start = c.weekStart === 0 ? 'sunday' : 'saturday';
+        out.day_hours = { start: c.dayStartHour, end: c.dayEndHour };
+        if (!c.showWeekends) out.show_weekends = false;
+        out.default_duration = c.defaultDuration;
+    }
+    if (v.type === 'table' || v.type === 'calendar') {
         const sub = slugOf(cfg.sub_group_by_field_id);
         if (sub) out.sub_group_by = sub;
         if (typeof cfg.frozen_columns === 'number') out.frozen_columns = cfg.frozen_columns;
@@ -3690,6 +3858,22 @@ function describeViewForModel(
         }
     }
     return out;
+}
+
+/** B4 — Lo del calendario en lenguaje claro, para la tarjeta de la propuesta. */
+function calendarSummary(v: ViewSpec, labelOf: (slug: string) => string | undefined): string[] {
+    const bits: string[] = [];
+    if (v.end_date_field) bits.push(`hasta «${labelOf(v.end_date_field) ?? v.end_date_field}»`);
+    if (v.duration_field) bits.push(`dura «${labelOf(v.duration_field) ?? v.duration_field}»`);
+    if (v.calendar_sources?.length) {
+        bits.push(`también ${v.calendar_sources.map((s) => `«${s.label ?? labelOf(s.start) ?? s.start}»`).join(', ')}`);
+    }
+    const modes: Record<string, string> = { month: 'mes', week: 'semana', day: 'día', agenda: 'agenda' };
+    if (v.default_mode) bits.push(`abre en ${modes[v.default_mode] ?? v.default_mode}`);
+    if (v.day_hours) bits.push(`de ${v.day_hours.start}:00 a ${v.day_hours.end}:00`);
+    if (v.show_weekends === false) bits.push('sin fines de semana');
+    if (v.color_field) bits.push(`color por «${labelOf(v.color_field) ?? v.color_field}»`);
+    return bits;
 }
 
 function viewTypeLabel(type: string): string {
