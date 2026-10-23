@@ -75,6 +75,7 @@ import { RecordChangeHub } from './record-change-hub';
 import { NotifyHub } from '../notifications/notify-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { withComputedExprs } from './computed-sql';
+import { applyRowFormulas, buildFormulaRuntime, type FormulaRuntime } from './formula-runtime';
 import type { ThroughPlan } from './through-fields';
 import { RelationsRepository } from './relations.repository';
 import { DependenciesRepository } from './dependencies.repository';
@@ -117,6 +118,8 @@ interface ReadContext {
     fieldsById: Map<number, FilterableField>;
     scopeW: SQL | undefined;
     clock: QueryClock;
+    /** Fórmulas (A1): formato, zona y nombres para calcularlas (sólo si hay). */
+    formula?: FormulaRuntime;
 }
 
 @Injectable()
@@ -155,6 +158,16 @@ export class RecordsService {
 
     private async clock(tenantId: number, tx?: Tx): Promise<QueryClock> {
         return { now: new Date(), timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE };
+    }
+
+    /**
+     * Fórmulas (A1): lo necesario para calcularlas en ESTA lectura. Sin campos
+     * fórmula no consulta nada.
+     */
+    private async formulaRuntime(tx: Tx, tenantId: number, listId: number, fields: Field[], plans?: ThroughPlan[]): Promise<FormulaRuntime | undefined> {
+        if (!fields.some((f) => f.type === 'formula')) return undefined;
+        const resolved = plans ?? (await this.fields.through.plans(tx, tenantId, listId, fields));
+        return buildFormulaRuntime(tx, tenantId, fields, resolved);
     }
 
     async create(
@@ -200,7 +213,7 @@ export class RecordsService {
         // v0.1.300 — "obligatorio si otro campo vale X" mira el registro entero.
         if (opts.lenientRequired !== true) assertRequiredIf(fields, data);
 
-        const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { row, enriched, rt } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
             await this.assertUniqueInTx(tx, tenantId, listId, fields, data, null);
             // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
@@ -237,7 +250,11 @@ export class RecordsService {
             });
             // v0.1.170 — lookup/rollup sólo para el DTO (la actividad y las
             // automatizaciones ven los datos persistidos).
-            return { row: inserted, enriched: await this.withThrough(tx, tenantId, listId, fields, [inserted]) };
+            return {
+                row: inserted,
+                enriched: await this.withThrough(tx, tenantId, listId, fields, [inserted]),
+                rt: await this.formulaRuntime(tx, tenantId, listId, fields),
+            };
         });
         // `silent` (v0.1.294): el alta en lote avisa UNA vez al final.
         if (!opts.silent) this.realtime.records(tenantId, listId);
@@ -252,7 +269,7 @@ export class RecordsService {
         // v0.1.209 — también las altas (las compras completan una línea nueva).
         this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list, fields });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-        return toRecord(withComputed(fields, enriched[0] ?? row), {
+        return toRecord(withComputed(fields, enriched[0] ?? row, rt), {
             ...byFieldToKeys(relFieldIds, undefined),
             ...relationsToMap(rel.values),
         });
@@ -269,7 +286,7 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
-        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen } = await run(async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, rt } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
@@ -286,12 +303,8 @@ export class RecordsService {
                       fields.filter((f) => f.type === 'relation').map((f) => f.id),
                   )
                 : new Map<number, Map<number, number[]>>();
-            const restricted = await this.fields.through.restrictedFor(
-                tx,
-                tenantId,
-                await this.fields.through.plans(tx, tenantId, list.id, fields),
-                actor,
-            );
+            const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
+            const restricted = await this.fields.through.restrictedFor(tx, tenantId, plans, actor);
             const hiddenKeys = hiddenKeysWithDerived(fields, list.settings, actor, restricted);
             const hiddenIds = new Set([...hiddenKeys].map((k) => Number(k.slice(1))));
             return {
@@ -302,13 +315,14 @@ export class RecordsService {
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
                 blockedOpen: r ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
+                rt: r ? await this.formulaRuntime(tx, tenantId, list.id, fields, plans) : undefined,
             };
         });
         // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
         if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
         return stripHidden(
             {
-                ...toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
+                ...toRecord(withComputed(fields, row, rt), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
                 blocked_by_open: blockedOpen,
             },
             hiddenKeys,
@@ -828,6 +842,7 @@ export class RecordsService {
             ),
             fields,
             clock.timeZone,
+            clock.now,
         );
         const assignmentId = resolvePermissions(list.settings).assignment_field_id;
         const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
@@ -839,6 +854,7 @@ export class RecordsService {
             fieldsById,
             scopeW: scopeWhere(perms.view, actor.userId, assignmentKey),
             clock,
+            formula: await this.formulaRuntime(tx, tenantId, list.id, fields, plans),
         };
     }
 
@@ -867,7 +883,7 @@ export class RecordsService {
         return result.map((r) =>
             stripHidden(
                 {
-                    ...toRecord(withComputed(ctx.fields, r), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
+                    ...toRecord(withComputed(ctx.fields, r, ctx.formula), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
                     blocked_by_open: blocked.get(r.id) ?? 0,
                 },
                 hiddenKeys,
@@ -983,7 +999,8 @@ export class RecordsService {
                 ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
                 : 0;
             const blockedOpen = updated ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
-            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen };
+            const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
+            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, rt };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -1012,7 +1029,7 @@ export class RecordsService {
         }
         return {
             ...toRecord(
-                withComputed(fields, result.enriched ?? row),
+                withComputed(fields, result.enriched ?? row, result.rt),
                 byFieldToKeys(
                     fields.filter((f) => f.type === 'relation').map((f) => f.id),
                     result.rels.get(row.id),
@@ -1172,6 +1189,7 @@ export class RecordsService {
                     ),
                     fields,
                     bulkClock.timeZone,
+                    bulkClock.now,
                 );
                 where = andWhere(
                     compileFilterTree(fieldsById, target.filter_tree, bulkClock),
@@ -1191,6 +1209,7 @@ export class RecordsService {
             if (total === 0) return { list, fields, total, rows: [] };
             const listed = await this.repo.list(tx, tenantId, list.id, { parent, where, limit: cap, dir: 'asc' });
             const enriched = await this.fields.through.attach(tx, tenantId, plans, listed.slice(0, cap), fields);
+            const rt = await this.formulaRuntime(tx, tenantId, list.id, fields, plans);
             const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
             const rels = await this.relationsRepo.batchTargets(
                 tx,
@@ -1204,7 +1223,7 @@ export class RecordsService {
                 for (const id of relFieldIds) relations[id] = byField?.get(id) ?? [];
                 return {
                     id: r.id,
-                    data: withComputed(fields, r).data as Record<string, unknown>,
+                    data: withComputed(fields, r, rt).data as Record<string, unknown>,
                     relations,
                     parentId: r.parentId ?? null,
                     updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
@@ -1951,7 +1970,7 @@ export class RecordsService {
 }
 
 function toRecord(
-    row: RecordRow | RecordListRow,
+    row: (RecordRow | RecordListRow) & { formulaErrors?: Record<string, string> },
     relations: Record<string, number[]> = {},
     subtaskCount = 0,
 ): RecordDto {
@@ -1970,6 +1989,8 @@ function toRecord(
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
         updated_by: effectiveUpdatedBy(row),
+        // Fórmulas (A1): las que dieron error en esta fila, con el motivo.
+        ...(row.formulaErrors ? { formula_errors: row.formulaErrors } : {}),
     };
 }
 
@@ -2110,6 +2131,13 @@ function stripHidden(record: RecordDto, hiddenKeys: Set<string>): RecordDto {
     for (const [k, v] of Object.entries(record.relations ?? {})) {
         if (!hiddenKeys.has(k)) relations[k] = v;
     }
+    if (record.formula_errors) {
+        const errors: Record<string, string> = {};
+        for (const [k, v] of Object.entries(record.formula_errors)) {
+            if (!hiddenKeys.has(k)) errors[k] = v;
+        }
+        return { ...record, data, relations, formula_errors: errors };
+    }
     return { ...record, data, relations };
 }
 
@@ -2173,15 +2201,25 @@ function pickWhere(tenantId: number, fields: Field[], query: ListRecordsQuery): 
  * lazy en cada lectura — paridad con el hydrate del plugin; jamás se
  * persisten). Devuelve un row con `data` clonado; sin computeds es no-op.
  */
-function withComputed<T extends { data: Record<string, unknown> }>(fields: Field[], row: T): T {
+function withComputed<T extends { data: Record<string, unknown> }>(
+    fields: Field[],
+    row: T,
+    /** Fórmulas (A1): sin runtime (la lista no tiene fórmulas) no se calculan. */
+    rt?: FormulaRuntime,
+): T & { formulaErrors?: Record<string, string> } {
     const computed = fields.filter((f) => f.type === 'computed');
-    if (computed.length === 0) return row;
-    const data = { ...(row.data as Record<string, unknown>) };
-    const getValue = (fieldId: number): unknown => data[jsonbKeyForField(fieldId)] ?? null;
-    for (const field of computed) {
-        data[jsonbKeyForField(field.id)] = evaluateComputed(field, fields, getValue);
+    let out: T = row;
+    if (computed.length > 0) {
+        const data = { ...(row.data as Record<string, unknown>) };
+        const getValue = (fieldId: number): unknown => data[jsonbKeyForField(fieldId)] ?? null;
+        for (const field of computed) {
+            data[jsonbKeyForField(field.id)] = evaluateComputed(field, fields, getValue);
+        }
+        out = { ...row, data };
     }
-    return { ...row, data };
+    // Las fórmulas van DESPUÉS: pueden usar calculados, lookups, rollups y
+    // columnas de sistema (todos ya en `data`).
+    return applyRowFormulas(fields, out, rt);
 }
 
 /**
@@ -2190,7 +2228,7 @@ function withComputed<T extends { data: Record<string, unknown> }>(fields: Field
  * se descarta en silencio (mismo criterio que el filter tree). NULLS LAST en
  * ambas direcciones — las celdas vacías siempre al final, estilo hoja.
  */
-const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup', 'button'];
+const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup', 'button', 'formula'];
 /** Tipos cuyo orden es alfabético (expresión de texto). */
 const TEXT_SORT_TYPES = new Set<string>(['text', 'long_text', 'email', 'url', 'phone', 'select', 'lookup', 'ai']);
 
@@ -2215,6 +2253,12 @@ export function parseFieldSort(
         // Un rollup sin subconsulta (config sin resolver) no ordena.
         if (field.type === 'rollup' && !hasExpr) continue;
         const dir = m[2] === 'desc' ? sql`DESC` : sql`ASC`;
+        // Fórmulas (A1): por su expresión; un texto como lo lee una persona.
+        if (field.type === 'formula' && field.expr) {
+            const e = field.formulaKind === 'text' ? sql`(${field.expr}) COLLATE "und-x-icu"` : sql`(${field.expr})`;
+            out.push(sql`${e} ${dir} NULLS LAST`);
+            continue;
+        }
         // v0.1.286 — una selección se ordena como su CATÁLOGO de opciones
         // (Pendiente → En curso → Hecho, como el kanban), no por el valor
         // interno; lo que no está en el catálogo va después, por texto.

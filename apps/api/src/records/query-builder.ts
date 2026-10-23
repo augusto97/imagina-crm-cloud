@@ -38,6 +38,12 @@ export interface FilterableField {
      * por día en el reloj de la empresa). Sin ella, `(expr)::text`.
      */
     groupExpr?: SQL;
+    /**
+     * Fórmulas (A1) — el tipo SQL de `expr` (cómo se filtra: número, texto,
+     * sí/no, fecha o fecha y hora) o, si no compila, por qué (`formulaReason`).
+     */
+    formulaKind?: 'number' | 'text' | 'boolean' | 'date' | 'datetime';
+    formulaReason?: string;
 }
 
 /**
@@ -127,6 +133,14 @@ function compileCondition(
     // v0.1.291 — y el tiempo registrado (suma de `time_entries`).
     if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
+    }
+    // Fórmulas (A1): por su expresión SQL y según el tipo de su resultado. Sin
+    // expresión (no compila a SQL) no es filtrable y la condición se descarta.
+    // Sólo en la consulta principal: la expresión apunta a la fila de `records`.
+    if (field.type === 'formula') {
+        return field.expr && field.formulaKind && dataRef === records.data
+            ? compileFormulaCondition(field.expr, field.formulaKind, cond, now)
+            : undefined;
     }
     // v0.1.300 — columnas de sistema: la columna de `records` como fecha y hora o
     // como persona. Sólo en la consulta principal (en la subconsulta de un
@@ -346,6 +360,57 @@ function compileSystem(expr: SQL, base: 'datetime' | 'user', cond: FilterConditi
         }
         default:
             return undefined;
+    }
+}
+
+/**
+ * Fórmulas (A1) — condición sobre la expresión de una fórmula según el tipo
+ * de su resultado: un número o un texto como un derivado, un sí/no como una
+ * casilla, una fecha como un campo fecha («hoy», «este mes») y una fecha y
+ * hora como las columnas de sistema.
+ */
+function compileFormulaCondition(
+    expr: SQL,
+    kind: NonNullable<FilterableField['formulaKind']>,
+    cond: FilterCondition,
+    now: QueryClock,
+): SQL | undefined {
+    const op = cond.op;
+    switch (kind) {
+        case 'number':
+            return compileOverride(expr, 'numeric', cond);
+        case 'text': {
+            if (op === 'in' || op === 'nin') {
+                const values = toArray(cond.value).map(str);
+                if (values.length === 0) return op === 'in' ? sql`false` : undefined;
+                const membership = sql`(${expr}) IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`;
+                return op === 'in' ? membership : sql`((${expr}) IS NULL OR NOT (${membership}))`;
+            }
+            return compileOverride(expr, 'text', cond);
+        }
+        case 'boolean': {
+            const on = cond.value === true || cond.value === 1 || cond.value === 'true' || cond.value === '1';
+            if (op === 'eq') return on ? sql`(${expr}) IS TRUE` : sql`(${expr}) IS NOT TRUE`;
+            if (op === 'neq') return on ? sql`(${expr}) IS NOT TRUE` : sql`(${expr}) IS TRUE`;
+            if (op === 'is_null') return sql`(${expr}) IS NOT TRUE`;
+            if (op === 'is_not_null') return sql`(${expr}) IS TRUE`;
+            return undefined;
+        }
+        case 'datetime':
+            return compileSystem(expr, 'datetime', cond, now);
+        case 'date': {
+            if (op === 'is_null') return sql`(${expr}) IS NULL`;
+            if (op === 'is_not_null') return sql`(${expr}) IS NOT NULL`;
+            if (op === 'between_relative') {
+                const custom = asCustomRange(cond.value);
+                const range = custom ?? computePresetRange(asPreset(cond.value), 'date', now);
+                return sql`((${expr}) >= ${range.from}::date AND (${expr}) <= ${range.to}::date)`;
+            }
+            if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
+                return compileComparison(sql`(${expr})`, 'date', op, cond.value);
+            }
+            return undefined;
+        }
     }
 }
 
