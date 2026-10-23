@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.301** (Calendario completo: mes, semana, día y agenda — primera entrega de la tanda 2 de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.302** (Dependencias entre registros + vista Gantt — segunda entrega de la tanda 2 de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -382,8 +382,9 @@ versión publicada: **v0.1.301** (Calendario completo: mes, semana, día y agend
   fases: el usuario prueba y después se sigue con las fases 3-6.
   **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
   personales (v0.1.298), Excel (v0.1.299) y Campos (v0.1.300) publicados:
-  **la tanda 1 está completa**. De la tanda 2 ya salió Calendario
-  (v0.1.301). El contenedor se reinició varias veces durante la tanda 2 y una
+  **la tanda 1 está completa**. De la tanda 2 ya salieron Calendario
+  (v0.1.301) y Dependencias + Gantt (v0.1.302); Botón terminó y se integra
+  como v0.1.303; Fórmulas sigue en curso. El contenedor se reinició varias veces durante la tanda 2 y una
   vez se cortó por el límite de uso: el avance de cada agente quedó en commits
   de su rama (`wip-gantt`, `wip-calendario` y las ramas de cada worktree) y se
   retomó. Gantt + dependencias (slot 8)
@@ -630,6 +631,18 @@ versión publicada: **v0.1.301** (Calendario completo: mes, semana, día y agend
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.302** — **Dependencias entre registros + vista Gantt**
+  (opciones A8 y B1 del estudio, ADR-S57). Un registro bloquea a otro de la
+  misma lista (sin ciclos, desfase en días), con el aviso «¿Cerrar igual?» y un
+  candado en la fila y la tarjeta; reprogramación en cadena opcional por lista.
+  La vista Gantt trae arrastrar con deshacer, flechas, crear dependencias
+  tirando, zoom, línea base, PDF, «Sin programar», grupos y subtareas; en el
+  celular es de lectura. El asistente/MCP maneja dependencias y vistas gantt.
+  Migración 0082. Al integrarlo con el Calendario (que se publicó antes),
+  `color_by`/`color_field` del asistente pasaron a ser UNA clave compartida y
+  cada vista valida sus valores. Pendiente: dependencias entre listas en la
+  interfaz (la API está lista), ruta crítica y reprogramación que respete el
+  desfase.
 - **2026-10-23 · v0.1.301** — **Calendario completo** (opción B4 del estudio,
   ADR-S56). Mes, Semana, Día y Agenda sobre un bundle por rango en UNA consulta
   (total real por día y por fuente, tope de 100 días y 4.000 filas), arrastrar

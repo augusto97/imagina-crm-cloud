@@ -8816,6 +8816,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Madrid, ~300 eventos, celular y oscuro). Quedan para después las
         ocurrencias proyectadas de las recurrencias (hoy sólo el icono).
 
+  - [x] **Dependencias entre registros + vista Gantt (v0.1.302, ADR-S57,
+        opciones A8 y B1 del estudio)**: un registro puede **bloquear** a otro
+        de la misma lista, con desfase opcional en días. (a) **Modelo**: tabla
+        `record_dependencies` (RLS, única por par; cada punta guarda su lista,
+        así abrirlo a otra lista no cambia la API ni el esquema). **Sin
+        ciclos**: se valida en el servidor con un candado por lista (dos altas
+        a la vez no lo esquivan) y el error dice el camino que lo cerraría.
+        Hay que ver las dos puntas y poder editar el bloqueado; si el estado
+        del bloqueante está oculto para el rol, cuenta como abierto (no se
+        deduce un dato que no se ve). La papelera deja la dependencia inerte y
+        vuelve al restaurar. (b) **Ficha**: sección «Dependencias» en el modal,
+        la página y la ficha diseñada (bloque nuevo) con «Bloqueado por» y
+        «Bloquea», título y estado, agregar buscando y quitar. (c) **Aviso al
+        cerrar**: «Todavía está bloqueado por X, Y. ¿Cerrar igual?» en la
+        celda, la ficha y el kanban, con la detección de terminado de «Mi
+        trabajo»; candado en la fila y en la tarjeta (`blocked_by_open` en el
+        listado, una consulta por página). (d) **Reprogramación en cadena**
+        (opcional, por lista, `settings.dependencies`): al correr el fin de un
+        registro, lo que depende de él se corre lo mismo en la misma
+        transacción — tope de 200 registros y 50 eslabones, candados en orden
+        de id, ACL y reglas de la tienda (lo que no se puede mover corta la
+        cadena), actividad por registro y automatizaciones; un aviso cuenta
+        cuántos se movieron. (e) **Vista Gantt** (tipo nuevo, config `gantt_*`
+        en la vista, sin migración para eso): barras de inicio a fin (una sola
+        fecha = hito), agrupada por persona, estado u opción, grupos plegables
+        y subtareas anidadas; panel con el título y hasta 6 columnas de ancho
+        ajustable; arrastrar para mover o estirar (optimista, con «Deshacer» y
+        Ctrl/⌘+Z); flechas de dependencias y crear una tirando desde el borde
+        de la barra (el ciclo se rechaza con el motivo); zoom día/semana/mes/
+        trimestre, línea de hoy e «Ir a hoy»; **línea base** por vista
+        (`gantt_baselines` + ítems, RLS) con barras fantasma; **PDF**
+        vectorial en el servidor; «Sin programar» que se suelta en el lienzo
+        para darle fechas; colores por opción o por las reglas de la vista.
+        Un solo bundle (`/records/gantt-bundle`) con una ventana de fechas que
+        crece al scrollear, filas virtualizadas. En el celular es de lectura
+        con «Mover fechas…»; modo oscuro. (f) **Asistente/MCP**:
+        `propose_set_dependencies` (se ofrece con `edit_records` o
+        `edit_own_records`: una herramienta ahora puede pedir una de varias
+        capacidades) y vistas gantt en `propose_create_view`/`update_view`;
+        `get_list_schema` describe las dependencias. Al integrarlo con el
+        Calendario, `color_by`/`color_field` quedaron como UNA clave del
+        asistente para las dos vistas y cada una acepta sólo sus valores.
+        (g) Plantillas, duplicar lista y migración de empresa re-mapean
+        dependencias, líneas base y la vista; borrar la empresa limpia las
+        tablas. Bugs del intento anterior corregidos en el camino (títulos de
+        bloqueantes con N+1, «terminado» que se revelaba con el estado oculto,
+        contador del asistente que contaba bloqueantes en la papelera, la
+        reprogramación sin `updated_by`, el PDF que ignoraba el orden de la
+        vista, la celda del panel semitransparente al pasar el mouse).
+        Migración 0082. 13 tests de API + casos de `color_by`, 22 de shared y
+        10 del front (346 shared y 475 front en verde) + E2E navegador 39/39
+        sobre la integración (148 registros, cadena de 3 dependencias,
+        reprogramación, línea base, PDF, celular y oscuro) y el del
+        Calendario re-verificado 48/48. Queda fuera: dependencias entre listas
+        distintas en la interfaz (la API está lista), recalcular por desfase al
+        reprogramar y ruta crítica.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
