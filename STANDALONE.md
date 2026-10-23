@@ -3678,6 +3678,45 @@ dirección, desfase ni regla de ciclos); calcular el Gantt con el listado plano
 (N+1 y sin ventana); guardar la reprogramación en la vista (es una regla de la
 lista y afecta a todas las vistas).
 
+### ADR-S58 — Campo «Botón»: acciones sobre un registro que ejecuta el servidor (v0.1.303)
+
+**Contexto.** Los usuarios repetían a mano gestos sobre un registro (escribir
+por WhatsApp, marcar como pagado, emitir la cuenta de cobro). Las
+automatizaciones sólo reaccionaban a eventos, no a una intención explícita.
+
+**Decisión.**
+1. **Tipo `button` sin valor.** Su config vive en `field.config`
+   (`buttonConfigSchema`): apariencia, acciones ordenadas (`open_url`,
+   `update_fields`, `run_automation`, `generate_pdf`), `confirm`, `disabled_if` +
+   `disabled_reason`, `roles` y `portal_run_automation`. Las referencias
+   terminan en `field_id`, `document_template_id` o `automation_id`, así el
+   blueprint y la migración de empresa las re-mapean por convención.
+2. **Lógica pura en shared**, compartida por la interfaz y el servidor: estado
+   deshabilitado (en la zona de la empresa), qué va en lote y qué impide
+   funcionar en el portal.
+3. **Presionar es siempre una llamada al servidor**, que re-chequea rol,
+   edición, condición, ACL y tienda, y ejecuta las acciones en orden frenando
+   ante la primera falla. Los cambios van por `RecordsService.update`; las
+   automatizaciones se encolan con el disparador `button_pressed` (filtrable
+   por botón) y su estado se consulta por `press_id`.
+4. **Enlaces** armados y validados DESPUÉS de resolver las variables: sólo
+   https/mailto/tel, valores codificados, teléfono normalizado; el navegador los
+   abre sin `opener`.
+5. **Lote**: sólo botones sin enlace ni descarga, tandas de 50, fila por fila.
+6. **Portal**: endpoint propio; variables limitadas a lo visible, campos
+   editables del portal, plantillas publicadas y automatizaciones sólo con
+   permiso explícito. El servidor manda el estado calculado y sólo la parte
+   visual de la config, y oculta el botón que no puede funcionar.
+
+**Consecuencias.** Sin migración. El botón no se ordena, filtra, agrupa, suma,
+exporta ni escribe, y no es columna del Gantt. Una plantilla o automatización
+usada por un botón no se borra. La actividad registra cada presión, con la
+falla si la hubo.
+
+**Alternativas descartadas.** Ejecutar las acciones en el navegador (el permiso
+no se delega al cliente); guardar el enlace resuelto o un valor en
+`records.data`; botones en kanban y tarjetas (próxima entrega).
+
 ---
 
-**Versión del documento:** 1.99.0 (dependencias y Gantt)
+**Versión del documento:** 1.100.0 (campo Botón)
