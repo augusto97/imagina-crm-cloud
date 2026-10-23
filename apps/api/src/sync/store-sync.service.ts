@@ -557,7 +557,7 @@ export class StoreSyncService {
                 }
             });
             for (const id of [oldVariations, oldLines]) {
-                if (id) await this.lists.remove(tenantId, String(id)).catch(() => undefined);
+                if (id) await this.lists.remove(tenantId, String(id), { permanent: true }).catch(() => undefined);
             }
             for (const id of purchase) {
                 const [{ n } = { n: 0 }] = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -567,7 +567,7 @@ export class StoreSyncService {
                         .where(and(eq(records.tenantId, tenantId), eq(records.listId, id), isNull(records.deletedAt))),
                 );
                 if (n === 0) {
-                    await this.lists.remove(tenantId, String(id)).catch(() => undefined);
+                    await this.lists.remove(tenantId, String(id), { permanent: true }).catch(() => undefined);
                 } else {
                     // Datos de la empresa: quedan como una lista común.
                     await this.tenantDb.withTenant(tenantId, (tx) =>

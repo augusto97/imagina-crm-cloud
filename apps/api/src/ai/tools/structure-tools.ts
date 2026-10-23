@@ -530,7 +530,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_field',
             label: 'Armando el borrado del campo',
-            description: 'Propone ELIMINAR un campo y todos sus valores guardados. Es destructivo: confirma con la persona antes de proponerlo.',
+            description: 'Propone ELIMINAR un campo: va a la Papelera con sus valores (se recupera tal cual durante 30 días; después se borra para siempre). Confirma con la persona antes de proponerlo.',
             capability: 'manage_fields',
             input: z.object({ list: z.string().max(63), field: fieldSlugSchema }),
             run: (ctx, input) => this.proposeDeleteField(ctx, input as { list: string; field: string }),
@@ -696,7 +696,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_automation',
             label: 'Armando el borrado de la automatización',
-            description: 'Propone ELIMINAR una automatización y su historial de ejecuciones. Destructivo: confirma con la persona antes.',
+            description: 'Propone ELIMINAR una automatización: deja de correr al instante (sus esperas en curso se cancelan) y va a la Papelera, desde donde se recupera durante 30 días. Confirma con la persona antes.',
             capability: 'manage_automations',
             input: z.object({ list: z.string().max(63), automation: z.union([z.number().int().positive(), z.string().min(1).max(190)]) }),
             run: (ctx, input) => this.proposeDeleteAutomation(ctx, input as { list: string; automation: number | string }),
@@ -718,7 +718,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_view',
             label: 'Armando el borrado de la vista',
-            description: 'Propone ELIMINAR una vista guardada. Los registros no se tocan.',
+            description: 'Propone ELIMINAR una vista guardada (va a la Papelera y se recupera durante 30 días). Los registros no se tocan.',
             capability: 'manage_views',
             input: z.object({ list: z.string().max(63), view: z.union([z.number().int().positive(), z.string().min(1).max(190)]) }),
             run: (ctx, input) => this.proposeDeleteView(ctx, input as { list: string; view: number | string }),
@@ -726,7 +726,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_list',
             label: 'Armando el borrado de la lista',
-            description: 'Propone ELIMINAR una lista completa con todos sus registros, campos, vistas y automatizaciones. Es lo más destructivo que hay: proponlo sólo si la persona lo pidió explícitamente por su nombre.',
+            description: 'Propone ELIMINAR una lista completa con todos sus registros, campos, vistas y automatizaciones: va entera a la Papelera (se recupera tal cual durante 30 días; después se borra para siempre). Es lo más grande que se puede borrar: proponlo sólo si la persona lo pidió explícitamente por su nombre.',
             capability: 'manage_lists',
             input: z.object({ list: z.string().max(63) }),
             run: (ctx, input) => this.proposeDeleteList(ctx, input as { list: string }),
@@ -1230,7 +1230,7 @@ export class StructureTools implements AiProposalApplier {
         return this.saveProposal(ctx, {
             kind: 'delete_field',
             title: `Eliminar el campo «${field.label}» de «${list.name}»`,
-            summary: `Se elimina el campo «${field.label}» (${field.type}) y sus valores en ${count} registro${count === 1 ? '' : 's'}. No se puede deshacer.`,
+            summary: `Se elimina el campo «${field.label}» (${field.type}) con sus valores en ${count} registro${count === 1 ? '' : 's'}. Se puede recuperar desde la Papelera por 30 días.`,
             destructive: true,
             listSlug: list.slug,
             preview: { lists: [], fields: [{ label: field.label, type: field.type, detail: 'se elimina' }], widgets: [], automation: null, changes: [] },
@@ -2025,7 +2025,7 @@ export class StructureTools implements AiProposalApplier {
         return this.saveProposal(ctx, {
             kind: 'delete_automation',
             title: `Eliminar la automatización «${auto.name}» de «${list.name}»`,
-            summary: `Se elimina «${auto.name}» (${auto.is_active ? 'activa' : 'pausada'}) con su historial de ejecuciones. No se puede deshacer.`,
+            summary: `Se elimina «${auto.name}» (${auto.is_active ? 'activa' : 'pausada'}): deja de correr al instante. Se puede recuperar desde la Papelera por 30 días.`,
             destructive: true,
             listSlug: list.slug,
             preview: {
@@ -2103,7 +2103,7 @@ export class StructureTools implements AiProposalApplier {
         return this.saveProposal(ctx, {
             kind: 'delete_view',
             title: `Eliminar la vista «${view.name}» de «${list.name}»`,
-            summary: `Se elimina la vista ${viewTypeLabel(view.type)} «${view.name}»${view.is_default ? ' (era la vista por defecto)' : ''}. Los registros no se tocan.`,
+            summary: `Se elimina la vista ${viewTypeLabel(view.type)} «${view.name}»${view.is_default ? ' (era la vista por defecto)' : ''}. Los registros no se tocan. Se puede recuperar desde la Papelera por 30 días.`,
             destructive: true,
             listSlug: list.slug,
             preview: { changes: [{ label: 'Vista', from: view.name, to: '(eliminada)' }] },
@@ -2122,7 +2122,7 @@ export class StructureTools implements AiProposalApplier {
         return this.saveProposal(ctx, {
             kind: 'delete_list',
             title: `Eliminar la lista «${list.name}»`,
-            summary: `Se elimina «${list.name}» con ${count} registro${count === 1 ? '' : 's'}, ${fields.length} campos, ${views.length} vista${views.length === 1 ? '' : 's'} y ${autos.length} automatizaci${autos.length === 1 ? 'ón' : 'ones'}. No se puede deshacer.`,
+            summary: `Se elimina «${list.name}» con ${count} registro${count === 1 ? '' : 's'}, ${fields.length} campos, ${views.length} vista${views.length === 1 ? '' : 's'} y ${autos.length} automatizaci${autos.length === 1 ? 'ón' : 'ones'}. Se puede recuperar desde la Papelera por 30 días.`,
             destructive: true,
             listSlug: list.slug,
             preview: { lists: [{ name: list.name, fields: fields.map((f) => ({ label: f.label, type: f.type })), views: views.map((v) => ({ name: v.name, type: v.type })), automations: autos.map((a) => a.name), records_count: count }] },
@@ -2230,7 +2230,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'delete_field': {
-                await this.fields.remove(ctx.tenantId, String(payload.listId), String(payload.fieldId));
+                await this.fields.remove(ctx.tenantId, String(payload.listId), String(payload.fieldId), { userId: ctx.userId });
                 return { message: 'Campo eliminado.', links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }], warnings: [] };
             }
             case 'create_view': {
@@ -2309,7 +2309,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'delete_automation': {
-                await this.automations.remove(ctx.tenantId, String(payload.listId), payload.automationId);
+                await this.automations.remove(ctx.tenantId, String(payload.listId), payload.automationId, ctx.userId);
                 return { message: 'Automatización eliminada.', links: [{ label: 'Ver las automatizaciones', href: `/lists/${payload.listSlug}/automations` }], warnings: [] };
             }
             case 'update_view': {
@@ -2373,7 +2373,7 @@ export class StructureTools implements AiProposalApplier {
                 return { message: `Plantilla «${payload.name}» eliminada.`, links: [], warnings: [] };
             }
             case 'delete_list': {
-                await this.lists.remove(ctx.tenantId, String(payload.listId));
+                await this.lists.remove(ctx.tenantId, String(payload.listId), { userId: ctx.userId });
                 return { message: `Lista «${payload.listSlug}» eliminada.`, links: [{ label: 'Ver las listas', href: '/lists' }], warnings: [] };
             }
             default:

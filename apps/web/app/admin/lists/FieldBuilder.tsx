@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { fieldsKeys, useCreateField, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useList, useLists, useUpdateList } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -105,6 +106,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const updateList = useUpdateList(listId);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
     /** ¿Entra la columna de ajustes? (`xl` de Tailwind = 1280px.) */
     const wideEnough = useMediaQuery('(min-width: 1280px)');
 
@@ -257,14 +259,20 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 field.label,
             ),
             description: __(
-                'Deja de aparecer en la tabla, la ficha y los formularios. Lo que ya estaba cargado en ese campo se conserva.',
+                'Deja de aparecer en la tabla, la ficha y los formularios, y va a la papelera con lo que ya estaba cargado: puedes recuperarlo tal cual durante 30 días.',
             ),
             confirmLabel: __('Eliminar campo'),
             destructive: true,
         });
         if (!ok) return;
         if (selectedId === field.id) setSelectedId(null);
-        deleteField.mutate({ id: field.id, purge: false });
+        deleteField.mutate(
+            { id: field.id, purge: false },
+            {
+                onSuccess: () => trashed({ type: 'field', id: field.id, name: field.label }),
+                onError: (err) => toast.error(__('No se pudo eliminar el campo'), err instanceof Error ? err.message : String(err)),
+            },
+        );
     };
 
     const requiredCount = all.filter((f) => f.is_required).length;

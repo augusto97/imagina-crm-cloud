@@ -57,6 +57,7 @@ import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
 import { AutomationEngine } from './automation-engine.service';
 import { redactAutomationSecrets, restoreRedactedSecrets } from './automation-secrets';
+import { cancelWaitingRuns, trashRow } from '../trash/trash-ops';
 import {
     AutomationsRepository,
     type AutomationRow,
@@ -201,7 +202,8 @@ export class AutomationsService {
         const rows = await this.db
             .select()
             .from(automations)
-            .where(and(eq(automations.isActive, true), inArray(automations.triggerType, ['scheduled', 'due_date_reached'])));
+            // Conexión base (sin RLS): lo que está en la papelera se filtra a mano.
+            .where(and(eq(automations.isActive, true), isNull(automations.deletedAt), inArray(automations.triggerType, ['scheduled', 'due_date_reached'])));
         for (const row of rows) await this.scheduler.sync(row.tenantId, row);
         return rows.length;
     }
@@ -214,7 +216,7 @@ export class AutomationsService {
         const rows = await this.db
             .select()
             .from(automations)
-            .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true), eq(automations.triggerType, 'scheduled')));
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true), isNull(automations.deletedAt), eq(automations.triggerType, 'scheduled')));
         for (const row of rows) await this.scheduler.sync(row.tenantId, row);
         return rows.length;
     }
@@ -558,18 +560,26 @@ export class AutomationsService {
         return toAutomation(await this.syncHook(tenantId, row));
     }
 
-    async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<void> {
+    /**
+     * Manda la automatización a la papelera: deja de correr al instante (se
+     * quitan sus horarios, la URL de su webhook responde 404 y sus esperas en
+     * curso se cancelan) y restaurarla la vuelve a dejar como estaba.
+     */
+    async remove(tenantId: number, listIdOrSlug: string, id: number, userId: number | null = null): Promise<{ id: number; name: string }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
-            if (!current || current.listId !== list.id) return false;
-            return this.repo.remove(tx, tenantId, id);
+            if (!current || current.listId !== list.id) return null;
+            if (!(await trashRow(tx, 'automations', tenantId, id, userId))) return null;
+            await cancelWaitingRuns(tx, tenantId, [id], 'La automatización se movió a la papelera: la espera no siguió.');
+            return current;
         });
         if (!deleted) throw notFound(id);
         await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.remove(id);
         // v0.1.285 — lo que ya no existe no puede seguir "fallando".
         this.incidents?.resolve(tenantId, `automation:${id}`);
+        return { id: deleted.id, name: deleted.name };
     }
 
     /**
@@ -970,6 +980,9 @@ export class AutomationsService {
             })
             .from(automationHooks)
             .innerJoin(tenants, eq(tenants.id, automationHooks.tenantId))
+            // Papelera: la URL de una automatización borrada responde 404
+            // (conexión base: el filtro va a mano) y vuelve al restaurarla.
+            .innerJoin(automations, and(eq(automations.id, automationHooks.automationId), isNull(automations.deletedAt)))
             .where(eq(automationHooks.token, token))
             .limit(1);
         if (!row) return null;

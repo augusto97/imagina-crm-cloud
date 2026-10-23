@@ -198,7 +198,7 @@ export class DataTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_records',
             label: 'Preparando el borrado',
-            description: 'Propone ELIMINAR registros (por filtros o ids, máx 500). Destructivo: confirma con la persona antes de proponerlo.',
+            description: 'Propone ELIMINAR registros (por filtros o ids, máx 500): van a la Papelera con sus subtareas, vínculos y comentarios y se recuperan durante 30 días. Confirma con la persona antes de proponerlo.',
             capability: 'bulk_actions',
             input: deleteRecordsSpec,
             run: (ctx, input) => this.proposeDeleteRecords(ctx, input as DeleteRecordsSpec),
@@ -400,7 +400,7 @@ export class DataTools implements AiProposalApplier {
         return this.saveProposal(ctx, {
             kind: 'delete_records',
             title: `Eliminar ${n} registro${n === 1 ? '' : 's'} de «${list.name}»`,
-            summary: `Se eliminan ${n} registro${n === 1 ? '' : 's'}${targets.description}, con sus subtareas y comentarios. No se puede deshacer.`,
+            summary: `Se eliminan ${n} registro${n === 1 ? '' : 's'}${targets.description}, con sus subtareas y comentarios. Se puede recuperar desde la Papelera por 30 días.`,
             destructive: true,
             listSlug: list.slug,
             preview: emptyPreview({ affected_count: n, rows: targets.sample }),

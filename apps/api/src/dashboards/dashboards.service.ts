@@ -37,6 +37,7 @@ import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { mapLimit } from '../common/map-limit';
 import { fillTimeBuckets, zeroFillable } from './time-buckets';
+import { trashRow } from '../trash/trash-ops';
 
 /**
  * v0.1.286 — El bundle agrupa los widgets por LISTA: cada lista resuelve su
@@ -162,11 +163,13 @@ export class DashboardsService {
         return toDashboard(row);
     }
 
+    /**
+     * Papelera: el tablero deja de verse (su enlace público responde 404 y los
+     * envíos programados no salen) y restaurarlo lo trae como estaba.
+     */
     async remove(tenantId: number, id: number, viewer: DashboardViewer): Promise<void> {
         await this.assertCanManage(tenantId, id, viewer);
-        await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.delete(dashboards).where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id))),
-        );
+        await this.tenantDb.withTenant(tenantId, (tx) => trashRow(tx, 'dashboards', tenantId, id, viewer.userId));
     }
 
     /**

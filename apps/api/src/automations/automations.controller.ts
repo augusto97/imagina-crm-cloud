@@ -170,6 +170,6 @@ export class AutomationsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<void> {
-        await this.automations.remove(req.tenant!.tenantId, list, id);
+        await this.automations.remove(req.tenant!.tenantId, list, id, req.authUserId ?? null);
     }
 }

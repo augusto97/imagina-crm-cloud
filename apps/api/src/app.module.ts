@@ -50,6 +50,7 @@ import { RecurrencesModule } from './recurrences/recurrences.module';
 import { RedisModule } from './redis/redis.module';
 import { TemplatesModule } from './templates/templates.module';
 import { TimeTrackingModule } from './time-tracking/time-tracking.module';
+import { TrashModule } from './trash/trash.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ViewsModule } from './views/views.module';
@@ -115,6 +116,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         HealthModule,
         UpdateModule,
         RecoveryModule,
+        // Papelera: restaurar, borrar para siempre y el vaciado diario.
+        TrashModule,
     ],
 })
 export class AppModule {}

@@ -40,4 +40,7 @@ export const savedViews = pgTable('saved_views', {
     autosave: boolean('autosave').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Papelera: null = viva. */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: bigint('deleted_by', { mode: 'number' }),
 });

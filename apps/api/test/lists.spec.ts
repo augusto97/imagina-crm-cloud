@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Role } from '@imagina-base/shared';
 import { roleHasCapability } from '@imagina-base/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -128,8 +128,20 @@ describe('ListsService (Postgres real + RLS)', () => {
         );
         await service.remove(tenantA, l.slug);
         await expect(service.get(tenantA, l.slug)).rejects.toBeInstanceOf(NotFoundException);
+        // Papelera: los registros se van CON la lista (quedan marcados como
+        // borrados, recuperables al restaurarla) — ninguno queda vivo.
+        const live = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ id: records.id }).from(records).where(and(eq(records.listId, l.id), isNull(records.deletedAt))),
+        );
+        expect(live).toHaveLength(0);
+        // El borrado de verdad (purga / migraciones internas) sigue cascadeando.
+        const otra = await service.create(tenantA, { name: 'Con Datos 2' });
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(records).values([{ tenantId: tenantA, listId: otra.id, data: { f1: 'c' }, createdBy: 1 }]),
+        );
+        await service.remove(tenantA, otra.slug, { permanent: true });
         const left = await withTenant(pg.db, tenantA, (tx) =>
-            tx.select({ id: records.id }).from(records).where(eq(records.listId, l.id)),
+            tx.select({ id: records.id }).from(records).where(eq(records.listId, otra.id)),
         );
         expect(left).toHaveLength(0);
     });

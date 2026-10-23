@@ -140,6 +140,11 @@ export function useToast(): ToastContextValue {
     return ctx;
 }
 
+/** Igual que `useToast` pero sin exigir el provider: `null` fuera de él (hooks reutilizables). */
+export function useToastOptional(): ToastContextValue | null {
+    return useContext(ToastContext);
+}
+
 function ToastViewport({
     toasts,
     onDismiss,

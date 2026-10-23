@@ -90,3 +90,4 @@ export * from './dashboard-report/report';
 export * from './dashboard-report/report-svg';
 export * from './dashboard-report/report-csv';
 export * from './dashboard-report/report-email';
+export * from './schemas/trash';

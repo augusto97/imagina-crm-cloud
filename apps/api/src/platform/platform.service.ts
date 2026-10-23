@@ -165,7 +165,7 @@ export class PlatformService {
         const [recMap, userMap, autoMap, storageMap, emailMap, aiMap, ownerMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
             this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'))).groupBy(memberships.tenantId)),
-            this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(inArray(automations.tenantId, ids)).groupBy(automations.tenantId)),
+            this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(and(inArray(automations.tenantId, ids), isNull(automations.deletedAt))).groupBy(automations.tenantId)),
             this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(and(inArray(attachments.tenantId, ids), isNull(attachments.storageConnectionId), isNull(attachments.pendingFormId))).groupBy(attachments.tenantId)),
             // Correos de plataforma del mes en curso (ADR-S18): lookup por PK,
             // acotado a los ids de ESTA página (mismo criterio de v0.1.115).

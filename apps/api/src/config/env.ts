@@ -231,6 +231,9 @@ const envSchema = z.object({
     // v0.1.181 (ADR-S21) — clave del proveedor IA por env: respaldo de la que el
     // superadmin carga en Plataforma → Asistente IA (Redis `platform:ai`).
     AI_API_KEY: z.string().default(''),
+    // Papelera: días que lo borrado queda recuperable antes de purgarse solo.
+    // (Preparado para que más adelante dependa del plan.)
+    TRASH_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
 });
 
 export type Env = z.infer<typeof envSchema>;

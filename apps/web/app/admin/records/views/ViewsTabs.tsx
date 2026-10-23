@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useCreateSavedView, useDeleteSavedView, useReorderSavedViews, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { canWriteView, isViewOwner } from './viewAccess';
@@ -73,6 +74,7 @@ export function ViewsTabs({
 
     const reorder = useReorderSavedViews(listId);
     const toast = useToast();
+    const trashed = useTrashedToast();
     const create = useCreateSavedView(listId);
     const favorites = useFavorites();
     const updateFavorites = useUpdateFavorites();
@@ -135,13 +137,14 @@ export function ViewsTabs({
                 __('¿Eliminar la vista "%s"?'),
                 view.name,
             ),
-            description: __('Los registros no se tocan: sólo se borra esta forma de verlos.'),
+            description: __('Los registros no se tocan: la vista va a la papelera y puedes recuperarla durante 30 días.'),
             confirmLabel: __('Eliminar vista'),
             destructive: true,
         });
         if (!ok) return;
         await remove.mutateAsync(view.id);
         if (activeViewId === view.id) onSelectView(null);
+        trashed({ type: 'view', id: view.id, name: view.name });
     };
 
     const copyLink = async (view: SavedViewEntity): Promise<void> => {

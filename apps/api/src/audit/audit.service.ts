@@ -113,7 +113,13 @@ export type AuditAction =
     | 'dashboard.public_regenerate'
     | 'dashboard.subscription_create'
     | 'dashboard.subscription_update'
-    | 'dashboard.subscription_delete';
+    | 'dashboard.subscription_delete'
+    // Papelera: devolver algo a la vida, borrarlo para siempre a mano y
+    // vaciarla entera (el barrido automático de los 30 días no deja rastro
+    // por cada cosa: deja uno por corrida).
+    | 'trash.restore'
+    | 'trash.purge'
+    | 'trash.empty';
 
 export interface AuditEntryDto {
     id: number;

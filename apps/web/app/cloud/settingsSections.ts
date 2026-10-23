@@ -14,6 +14,7 @@ import {
     PenLine,
     Sparkles,
     SunMoon,
+    Trash2,
     TriangleAlert,
     Users,
 } from 'lucide-react';
@@ -38,6 +39,7 @@ export type SettingsSectionId =
     | 'almacenamiento'
     | 'conectores'
     | 'problemas'
+    | 'papelera'
     | 'asistente'
     | 'firma'
     | 'apariencia'
@@ -94,6 +96,10 @@ export function settingsSectionGroups({
                           { id: 'problemas', label: 'Problemas', icon: TriangleAlert },
                       ] satisfies SettingsSectionItem[])
                     : []),
+                // Papelera: TODO miembro la abre (ve lo que borró y los
+                // registros borrados de las listas que puede ver); restaurar
+                // y vaciar se deciden en el backend.
+                { id: 'papelera', label: 'Papelera', icon: Trash2 },
             ],
         },
         {

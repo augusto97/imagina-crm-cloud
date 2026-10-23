@@ -275,6 +275,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 - Base de dev: `docker exec -it imagina-base-postgres-1 psql -U imagina -d imagina_base`.
 - El tenant de dev arranca en plan `trial` (500 registros): para pruebas
   grandes, subirlo a mano (`update tenants set plan='pro' where id=1`).
+- **Varias entregas en paralelo** (cada una en su worktree): `sh
+  scripts/dev/slot.sh <n 1-9> up|restart|stop|status|env` levanta una instancia
+  AISLADA — API en 3100+n, app en 5180+n, base `imagina_slot_<n>`, Redis DB n,
+  logs en `/tmp/imagina-dev-slot-<n>` — sobre el Postgres/Redis del entorno
+  principal. Para migrar la base del slot: `eval "$(sh scripts/dev/slot.sh <n>
+  env)" && pnpm db:migrate`. Desde un slot NUNCA correr `up.sh`/`restart.sh`:
+  matan los procesos de todos. La plantilla E2E lee `E2E_BASE`/`E2E_DB`.
 
 ### 7.3 Tests
 - API: `pnpm --filter @imagina-base/api test` (Vitest + Testcontainers: levanta
@@ -357,9 +364,42 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de click derecho abierto, y «Editar con un click» configurable por vista), en `main`.
+versión publicada: **v0.1.296** (papelera de 30 días para registros, listas, campos, vistas, automatizaciones y tableros — primera entrega de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
+  ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
+  en paralelo en copias aisladas (worktrees), cada una con su instancia de
+  desarrollo propia (`scripts/dev/slot.sh <n>`: API 3100+n, app 5180+n, base
+  `imagina_slot_<n>`), y se publican de a una, en el orden en que terminan.
+  **Tanda 1**: Papelera A2 (slot 1), Campos A3+A4+A6 (slot 2), Datos
+  personales I10 (slot 3), Excel G6 (slot 4), Kanban de ventas B5 (slot 5).
+  **Tanda 2** (cuando la 1 esté integrada, porque comparten tipos de campo):
+  Botón A5 (slot 6), Fórmulas A1 (slot 7), Dependencias + Gantt A8+B1 (slot 8),
+  Calendario completo B4 (slot 9). Decisiones dadas al usuario: papelera de
+  30 días para todos los planes, restaura quien borró o un admin; el prefijo
+  del ID automático se sugiere del nombre de la lista. Al terminar las dos
+  fases: el usuario prueba y después se sigue con las fases 3-6.
+  **Avance**: Papelera publicada (v0.1.296). Kanban de ventas terminado,
+  sale como v0.1.297. Campos, Datos personales y Excel en curso. Los
+  documentos de cada entrega toman el siguiente ADR libre (Papelera S52,
+  Kanban S53…) y la migración de cada una se renumera a la siguiente libre al
+  integrarla.
+- 2026-10-22 — **Pedido del usuario: estudio de funcionalidades frente a la
+  competencia** (premium y open source: Airtable, ClickUp, Notion, monday,
+  SmartSuite, Smartsheet, Fibery, Attio, Kommo, NocoDB, Baserow, Teable,
+  Grist, NocoBase, Twenty, Odoo). Entregado en
+  `docs/estudio-funcionalidades-2026-10.md`: ~90 opciones con código (A1…J3),
+  valor/esfuerzo, paquetes por tipo de negocio y seis oleadas propuestas.
+  **Esperando que el usuario elija.** Lo más destacado: fórmulas de verdad
+  (A1), papelera (A2), autonumérico + campos de sistema + valores por defecto
+  (A3/A4/A6), botón (A5), Gantt + dependencias (B1/A8), calendario completo
+  (B4), kanban de ventas (B5), equipos/roles/invitados (C1-C3), aprobaciones
+  (C5), plantillas de registro (C6), API pública + n8n/Make (G1/G2), Excel
+  (G6), DIAN vía proveedor (G8), firma electrónica (D6), agenda de citas (D5),
+  WhatsApp oficial sin guardar el hilo (D3), PWA + push (H1), consentimiento
+  Ley 1581 (I10), inglés/portugués (I1) y modo agencia (I3). No recomendados:
+  chat interno, pizarras, correo masivo (ADR-S18), apps generadas con código.
 - 2026-10-21 — **El usuario respondió «hazlo todo»** a la lista de carencias de
   la auditoría II, y dejó a mi criterio los pendientes de PDF y del cliente de
   Google. Plan: seis entregas trabajadas en paralelo en copias aisladas y
@@ -582,6 +622,26 @@ versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.296** — **Papelera** (opción A2 del estudio, primera
+  entrega de las fases 1 y 2 que el usuario aprobó «de una»; ADR-S52). Todo
+  borrado de registros, listas, campos, vistas, automatizaciones y tableros va
+  a la papelera 30 días (`TRASH_RETENTION_DAYS`) y vuelve tal cual: aviso
+  «Deshacer» tras cada borrado, Ajustes → Papelera y «Registros borrados» en
+  Personalizar vista; purga diaria a las 04:17 UTC. Migración 0079 (columnas
+  `deleted_at`/`deleted_by`, índices parciales, policy RLS con `app.trash`):
+  sin reescritura de datos, pero el índice de `records` se construye en la
+  migración (bloquea escrituras mientras pasa una vez por la tabla).
+  **Al desplegar**: los registros ya borrados de forma lógica aparecen en la
+  papelera («Lo borró —») y los de más de 30 días se purgan en la primera
+  corrida diaria (antes quedaban guardados para siempre). **Cambio de
+  comportamiento**: una lista sincronizada con una tienda ya no se puede borrar
+  sin dejar de sincronizarla (409 `store_managed`). Pendiente: retención por
+  plan; restaurar una lista no chequea el máximo de automatizaciones del plan;
+  comentarios, formularios, plantillas de documento, carpetas y conexiones
+  siguen borrándose para siempre; restaurar desde el asistente/MCP. Regla: una
+  lectura por la conexión base (`@Inject(DRIZZLE)`) no pasa por la RLS y debe
+  filtrar `deleted_at IS NULL`; lo que necesita ver lo borrado usa
+  `enterTrashMode`/`inTrashMode` (`trash/trash-ops.ts`).
 - **2026-10-22 · v0.1.295** — **Selección visible con el menú + «Editar con
   un click» por vista** (pedidos del usuario con capturas: "déjalo
   configurable" y "al dar click derecho se pierde la selección"). El menú se

@@ -8562,6 +8562,47 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         largo en un click, enlace que se abre, vista guardada con el modo y
         «Todos» sin él) y las suites de v0.1.294 sin cambios.
 
+  - [x] **Papelera (v0.1.296, ADR-S52, opción A2 del estudio de
+        funcionalidades)**: lo que se borra —registros, listas, campos, vistas,
+        automatizaciones y tableros— deja de borrarse de verdad: va a una
+        papelera por 30 días (`TRASH_RETENTION_DAYS`, preparado para depender
+        del plan) y vuelve tal cual. Una lista vuelve con sus registros, campos,
+        vistas, automatizaciones y formularios; un registro con sus subtareas,
+        vínculos, archivos y comentarios; un campo con sus valores.
+        (a) **Oculto por la RLS**: `deleted_at`/`deleted_by` en las cinco
+        tablas (migración 0079) y la policy sólo deja ver una fila borrada si la
+        transacción encendió `app.trash = 'on'` —papelera, restaurar, purgar—,
+        así para el resto de la app es como si no existiera, sin tocar cada
+        lectura; los barridos por la conexión base (hooks, tableros públicos y
+        envíos, formularios, recurrencias, SQL, plataforma) filtran a mano.
+        Slugs y «por defecto» únicos sólo entre lo vivo: al restaurar, si otro
+        tomó el nombre interno, se le pone un sufijo y el aviso lo dice.
+        (b) **Borrar una lista** marca en cascada lo de adentro con el mismo
+        instante y restaurarla devuelve sólo eso (lo borrado antes sigue en la
+        papelera); los vínculos no se borran, las subtareas viajan con su
+        padre, y una lista de tienda no va a la papelera mientras se sincroniza
+        (409 `store_managed`: antes se podía borrar del todo). (c) **Quién
+        restaura**: quien lo borró o un admin, con la capacidad de cada tipo y,
+        para un registro, alcanzando la fila por el ACL; el límite del plan se
+        aplica al restaurar, y una automatización que lo pasaría vuelve
+        pausada. En la papelera una automatización no corre (scheduler fuera,
+        webhook entrante 404, esperas canceladas) y un tablero no se publica ni
+        se envía; al restaurar se re-registran. (d) **Interfaz**: aviso «Se
+        movió a la papelera · Deshacer» tras cada borrado (8 s), Ajustes →
+        **Papelera** para todo miembro (buscador, chips por tipo, quién y hace
+        cuánto, días que quedan, restaurar, borrar para siempre y, para admins,
+        vaciar) y «Registros borrados» en Personalizar vista. (e) **Purga
+        diaria** (BullMQ, 04:17 UTC) de lo vencido —el borrado definitivo de
+        antes—, incluidos los bytes de los archivos que ya no usa nadie;
+        bitácora de restaurar, purgar y vaciar; migrar una empresa no exporta
+        lo que está en la papelera; el asistente/MCP avisa que lo borrado se
+        recupera durante 30 días. **OJO al desplegar**: los registros que ya
+        estaban borrados aparecen en la papelera («Lo borró —») y los de más de
+        30 días se purgan en la primera corrida. 12 tests de API (suite
+        completa 1338 en verde), 3 del front y 2 de shared + E2E navegador
+        37/37 (aviso y Deshacer, restaurar, lista que vuelve con sus registros,
+        campo con su valor, borrar para siempre, vaciar, oscuro y celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

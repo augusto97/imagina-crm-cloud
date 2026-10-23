@@ -36,6 +36,7 @@ import {
     useUpdateDashboard,
     type DashboardBundleScope,
 } from '@/hooks/useDashboards';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { CAP, useCan } from '@/lib/permissions';
 import { formatDateStr } from '@/lib/tenantFormat';
 import { ApiError } from '@/lib/api';
@@ -108,6 +109,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
     const update = useUpdateDashboard(id);
     const remove = useDeleteDashboard();
     const toast = useToast();
+    const trashed = useTrashedToast();
     const confirm = useConfirm();
 
     const [widgetDialogOpen, setWidgetDialogOpen] = useState(false);
@@ -330,14 +332,14 @@ function DashboardView({ id }: { id: number }): JSX.Element {
         if (!dashboard.data) return;
         const ok = await confirm({
             title: __('Eliminar dashboard'),
-            description: __('Sus widgets se perderán. Esta acción no se puede deshacer.'),
+            description: __('Va a la papelera con sus widgets (su enlace público deja de funcionar y los envíos programados no salen). Puedes recuperarlo durante 30 días.'),
             destructive: true,
             confirmLabel: __('Eliminar'),
         });
         if (!ok) return;
         try {
             await remove.mutateAsync(dashboard.data.id);
-            toast.success(__('Dashboard eliminado'));
+            trashed({ type: 'dashboard', id: dashboard.data.id, name: dashboard.data.name });
             navigate('/dashboards');
         } catch (err) {
             if (err instanceof Error) {

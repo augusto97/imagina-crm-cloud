@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { DRIZZLE, type Db } from '../db/client';
 import { automations } from '../db/schema';
@@ -123,7 +123,7 @@ export class AutomationDispatcher {
                 const rows = await this.db
                     .select({ type: automations.triggerType })
                     .from(automations)
-                    .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, listId), eq(automations.isActive, true)));
+                    .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, listId), eq(automations.isActive, true), isNull(automations.deletedAt)));
                 types = [...new Set(rows.map((r) => r.type))];
                 await this.redis.set(cacheKey(tenantId, listId), JSON.stringify({ v: ver, types }), 'EX', TRIGGERS_CACHE_TTL_S);
             }

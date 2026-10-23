@@ -35,6 +35,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
 import { ThroughEngine, type ThroughPlan } from '../records/through-fields';
 import { FieldsRepository, type FieldRow } from './fields.repository';
+import { trashRow } from '../trash/trash-ops';
 
 /** Un camino posible para un lookup/rollup de una lista (v0.1.170). El shape vive en shared. */
 export type { RelationPath } from '@imagina-base/shared';
@@ -429,11 +430,16 @@ export class FieldsService {
         tenantId: number,
         listIdOrSlug: string,
         fieldIdOrSlug: string,
-        opts: { internal?: boolean } = {},
-    ): Promise<void> {
+        /**
+         * `internal`: lo borra el sistema (migraciones del pack de la tienda) —
+         * de verdad, sin pasar por la papelera. Si no, va a la papelera con
+         * sus valores intactos en los registros (las claves `f{id}` quedan).
+         */
+        opts: { internal?: boolean; userId?: number | null } = {},
+    ): Promise<{ id: number; label: string }> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const marker = opts.internal ? null : await this.storeMarker(tenantId, listId);
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const current = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
             if (marker && isStoreField(marker, current.id)) {
                 throw new BadRequestException({
@@ -442,10 +448,13 @@ export class FieldsService {
                     data: { status: 400 },
                 });
             }
-            await this.repo.remove(tx, tenantId, listId, current.id);
+            if (opts.internal) await this.repo.remove(tx, tenantId, listId, current.id);
+            else await trashRow(tx, 'fields', tenantId, current.id, opts.userId ?? null);
+            return current;
         });
         this.realtime.fields(tenantId, listId);
         this.realtime.records(tenantId, listId);
+        return { id: current.id, label: current.label };
     }
 
     async reorder(tenantId: number, listIdOrSlug: string, fieldIds: number[]): Promise<Field[]> {

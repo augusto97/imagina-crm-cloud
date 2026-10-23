@@ -61,6 +61,12 @@ del rol, p. ej. `manage_lists`):
 | `propose_create_records` / `propose_update_records` / `propose_delete_records` | Registros (alta, edición y borrado masivo con filtros o ids). |
 | `propose_bulk_edit` | Edición masiva con operaciones sobre el valor de cada registro (sumar, %, redondear, calcular, reemplazar, agregar/quitar opciones, correr fechas…), hasta 5.000 registros, con vista previa real y deshacer desde el historial de la lista. Una automatización con la acción `bulk_edit` la repite en un horario. |
 
+**Papelera**: todo lo que borran las `propose_delete_*` (listas con todo lo de
+adentro, campos con sus valores, vistas, automatizaciones y registros con sus
+subtareas, vínculos y comentarios) va a la Papelera de la app y se recupera
+desde Ajustes → Papelera durante 30 días; después se borra para siempre. El MCP
+no restaura ni vacía la papelera: eso se hace en la app.
+
 Lo que **no** está en el MCP, y por qué:
 
 - **Estilos por bloque del portal y de la ficha** (colores, tipografía): se

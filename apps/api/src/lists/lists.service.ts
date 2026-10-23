@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
     listSlugSchema,
+    readStoreListMarker,
     slugify,
     TITLE_FIELD_TYPES,
     recordLayoutV3Schema,
@@ -19,6 +20,7 @@ import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsRepository, type ListRow } from './lists.repository';
+import { trashListCascade } from '../trash/trash-ops';
 
 /** Roles del workspace cuyos permisos por lista se configuran. */
 const CONFIGURABLE_ROLE_META: ListRoleMeta[] = [
@@ -329,12 +331,40 @@ export class ListsService {
         return toList(row);
     }
 
-    async remove(tenantId: number, idOrSlug: string): Promise<void> {
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+    /**
+     * Manda la lista a la papelera con todo lo de adentro (campos, vistas,
+     * automatizaciones, registros): para el resto de la app desaparece, y
+     * restaurarla la deja como estaba. `permanent` es el borrado de verdad de
+     * siempre (lo usan migraciones internas, p. ej. el pack de la tienda).
+     */
+    async remove(
+        tenantId: number,
+        idOrSlug: string,
+        opts: { userId?: number | null; permanent?: boolean } = {},
+    ): Promise<{ id: number; name: string; automationIds: number[] }> {
+        const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolve(tx, tenantId, idOrSlug);
-            await this.repo.remove(tx, tenantId, current.id);
+            if (opts.permanent) {
+                await this.repo.remove(tx, tenantId, current.id);
+                return { id: current.id, name: current.name, automationIds: [] };
+            }
+            // Una lista que mantiene la tienda se sigue escribiendo sola: si
+            // se fuera a la papelera la sincronización quedaría escribiendo
+            // en algo que no existe. Primero se deja de sincronizar.
+            const marker = readStoreListMarker(current.settings);
+            if (marker) {
+                throw new ConflictException({
+                    code: 'store_managed',
+                    message: `Esta lista la mantiene ${marker.store_name ? `la tienda ${marker.store_name}` : 'la tienda'}: deja de sincronizarla antes de borrarla.`,
+                    data: { status: 409 },
+                });
+            }
+            const res = await trashListCascade(tx, tenantId, current.id, opts.userId ?? null);
+            return { id: current.id, name: current.name, automationIds: res.automationIds };
         });
         this.realtime.lists(tenantId);
+        this.realtime.records(tenantId, out.id);
+        return out;
     }
 
     /** Resuelve una lista por id numérico o slug (CONTRACT.md §1). 404 si no existe. */

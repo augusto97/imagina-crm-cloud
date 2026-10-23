@@ -129,17 +129,16 @@ export class ListsController {
     @HttpCode(204)
     @RequireCapability('manage_lists')
     async remove(@Req() req: FastifyRequest, @Param('idOrSlug') idOrSlug: string): Promise<void> {
-        // Se resuelve ANTES de borrar: después el nombre ya no existe y la
-        // bitácora quedaría con un id suelto imposible de interpretar.
-        const list = await this.lists.get(tenantId(req), idOrSlug).catch(() => null);
-        await this.lists.remove(tenantId(req), idOrSlug);
+        // Papelera: la lista (con todo lo de adentro) queda recuperable.
+        const list = await this.lists.remove(tenantId(req), idOrSlug, { userId: req.authUserId ?? null });
         await this.audit.log({
             tenantId: tenantId(req),
             userId: req.authUserId ?? null,
             action: 'list.delete',
             targetType: 'list',
-            targetId: list?.id ?? null,
-            targetLabel: list?.name ?? idOrSlug,
+            targetId: list.id,
+            targetLabel: list.name,
+            meta: { trash: true },
         });
     }
 }

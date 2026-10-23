@@ -249,7 +249,7 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
         const r = await exec(admin, 'propose_delete_records', { list: 'facturas', ids });
         expect(r.proposal).toMatchObject({ kind: 'delete_records', destructive: true });
         expect(r.proposal!.preview.affected_count).toBe(1);
-        expect(r.proposal!.summary).toContain('No se puede deshacer');
+        expect(r.proposal!.summary).toContain('Papelera por 30 días');
         // Un agente no puede aplicar (bulk_actions no está en su rol).
         await expect(proposals.apply(agent, r.proposal!.id)).rejects.toMatchObject({ status: 404 }); // no es su propuesta
         const applied = await proposals.apply(admin, r.proposal!.id);

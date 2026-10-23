@@ -5,6 +5,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
 import { useCanEditDashboard, useDeleteDashboard, useDuplicateDashboard, useUpdateDashboard } from '@/hooks/useDashboards';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { dashboardColor, dashboardIcon } from '@/lib/dashboardIcon';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
@@ -41,6 +42,7 @@ export function DashboardPanelItem({
     onToggleStar: () => void;
 }): JSX.Element {
     const toast = useToast();
+    const trashed = useTrashedToast();
     const confirm = useConfirm();
     const update = useUpdateDashboard(dashboard.id);
     const duplicate = useDuplicateDashboard();
@@ -92,14 +94,14 @@ export function DashboardPanelItem({
     const del = async (): Promise<void> => {
         const ok = await confirm({
             title: __('Eliminar dashboard'),
-            description: __('Sus widgets se perderán. Esta acción no se puede deshacer.'),
+            description: __('Va a la papelera con sus widgets (su enlace público deja de funcionar y los envíos programados no salen). Puedes recuperarlo durante 30 días.'),
             destructive: true,
             confirmLabel: __('Eliminar'),
         });
         if (!ok) return;
         try {
             await remove.mutateAsync(dashboard.id);
-            toast.success(__('Dashboard eliminado'));
+            trashed({ type: 'dashboard', id: dashboard.id, name: dashboard.name });
             const pathname = currentPathname();
             if (pathname === base || pathname.startsWith(`${base}/`)) goTo('/dashboards');
         } catch (err) {

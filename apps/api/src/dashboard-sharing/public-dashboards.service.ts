@@ -8,10 +8,10 @@ import {
     type PublicDashboardBundle,
     type UpdatePublicDashboardInput,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DRIZZLE, type Db } from '../db/client';
-import { publicDashboards, tenants, users } from '../db/schema';
+import { dashboards, publicDashboards, tenants, users } from '../db/schema';
 import { DashboardsService, type DashboardViewer } from '../dashboards/dashboards.service';
 import { DomainsService } from '../domains/domains.service';
 import { FilesService } from '../files/files.service';
@@ -244,6 +244,9 @@ export class PublicDashboardsService {
             .select({ row: publicDashboards, archivedAt: tenants.archivedAt })
             .from(publicDashboards)
             .innerJoin(tenants, eq(tenants.id, publicDashboards.tenantId))
+            // Papelera: el enlace de un tablero borrado responde 404 (y vuelve
+            // al restaurarlo). Conexión base: el filtro va a mano.
+            .innerJoin(dashboards, and(eq(dashboards.id, publicDashboards.dashboardId), isNull(dashboards.deletedAt)))
             .where(eq(publicDashboards.token, token))
             .limit(1);
         if (!hit || hit.archivedAt !== null) throw notFound();

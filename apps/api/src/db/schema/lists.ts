@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
     bigint,
     integer,
@@ -30,7 +31,11 @@ export const lists = pgTable(
         }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+        /** Papelera: null = viva. Mientras no es null, la RLS la oculta. */
+        deletedAt: timestamp('deleted_at', { withTimezone: true }),
+        deletedBy: bigint('deleted_by', { mode: 'number' }),
     },
-    // Unicidad de slug de lista: global por tenant (CONTRACT.md §2).
-    (t) => [uniqueIndex('lists_tenant_slug_ux').on(t.tenantId, t.slug)],
+    // Unicidad de slug de lista: global por tenant (CONTRACT.md §2), entre
+    // las VIVAS (lo que está en la papelera libera su slug).
+    (t) => [uniqueIndex('lists_tenant_slug_ux').on(t.tenantId, t.slug).where(sql`deleted_at IS NULL`)],
 );

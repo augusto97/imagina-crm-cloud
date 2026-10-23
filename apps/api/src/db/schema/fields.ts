@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
     bigint,
     boolean,
@@ -39,10 +40,13 @@ export const fields = pgTable(
         position: integer('position').notNull().default(0),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+        /** Papelera: null = vivo. Sus valores (`f{id}`) quedan en los registros. */
+        deletedAt: timestamp('deleted_at', { withTimezone: true }),
+        deletedBy: bigint('deleted_by', { mode: 'number' }),
     },
     (t) => [
         // Unicidad de slug de campo: dentro de su lista (CONTRACT.md §2).
-        uniqueIndex('fields_list_slug_ux').on(t.listId, t.slug),
+        uniqueIndex('fields_list_slug_ux').on(t.listId, t.slug).where(sql`deleted_at IS NULL`),
         index('fields_tenant_idx').on(t.tenantId),
     ],
 );

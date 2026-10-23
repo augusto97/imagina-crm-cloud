@@ -23,7 +23,7 @@ const LIST_COLUMNS = {
     hasDescription: sql<boolean>`(${records.description} IS NOT NULL)`,
 } as const;
 
-export type RecordListRow = Omit<RecordRow, 'description' | 'descriptionText'> & { hasDescription: boolean };
+export type RecordListRow = Omit<RecordRow, 'description' | 'descriptionText' | 'deletedBy'> & { hasDescription: boolean };
 
 export interface ListRecordsOpts {
     where?: SQL;
@@ -442,11 +442,16 @@ export class RecordsRepository {
             );
     }
 
-    /** Marca como borradas las subtareas de un padre (mismo tx que el padre). */
-    async softDeleteChildren(tx: Tx, tenantId: number, parentId: number): Promise<void> {
+    /**
+     * Marca como borradas las subtareas de un padre (mismo tx que el padre).
+     * `now()` es el instante de la TRANSACCIÓN: el padre y sus subtareas
+     * quedan con la misma fecha, y así restaurar el padre trae justo las que
+     * se fueron con él (no las que ya estaban en la papelera de antes).
+     */
+    async softDeleteChildren(tx: Tx, tenantId: number, parentId: number, userId: number | null = null): Promise<void> {
         await tx
             .update(records)
-            .set({ deletedAt: new Date() })
+            .set({ deletedAt: sql`now()`, deletedBy: userId })
             .where(
                 and(
                     eq(records.tenantId, tenantId),
@@ -478,10 +483,10 @@ export class RecordsRepository {
         return row ?? null;
     }
 
-    async softDelete(tx: Tx, tenantId: number, listId: number, id: number): Promise<boolean> {
+    async softDelete(tx: Tx, tenantId: number, listId: number, id: number, userId: number | null = null): Promise<boolean> {
         const rows = await tx
             .update(records)
-            .set({ deletedAt: sql`now()` })
+            .set({ deletedAt: sql`now()`, deletedBy: userId })
             .where(
                 and(
                     eq(records.tenantId, tenantId),

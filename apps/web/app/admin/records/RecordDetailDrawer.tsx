@@ -31,6 +31,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { markLocalRecordsChange, useDeleteRecord, useUpdateRecord } from '@/hooks/useRecords';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { notificationKeys } from '@/hooks/useNotifications';
 import { forgetRecord, useRecordView } from '@/hooks/useRecordView';
@@ -151,6 +152,7 @@ export function RecordDetailDrawer({
     const remove = useDeleteRecord(listId);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
     const navigate = useNavigate();
     const qc = useQueryClient();
     // v0.1.213 — lista de una tienda: qué campos se editan en WooCommerce.
@@ -299,8 +301,8 @@ export function RecordDetailDrawer({
                 title,
             ),
             description: record.subtask_count > 0
-                ? __('Se elimina junto con sus subtareas. Esta acción no se puede deshacer.')
-                : __('Esta acción no se puede deshacer.'),
+                ? __('Va a la papelera junto con sus subtareas: puedes recuperarlo durante 30 días.')
+                : __('Va a la papelera: puedes recuperarlo durante 30 días.'),
             destructive: true,
             confirmLabel: __('Eliminar'),
         });
@@ -317,7 +319,7 @@ export function RecordDetailDrawer({
         try {
             await remove.mutateAsync({ id, purge: false });
             forgetRecord(qc, listId, id);
-            toast.success(__('Registro eliminado'));
+            trashed({ type: 'record', id, name: title });
         } catch (err) {
             toast.error(__('No se pudo eliminar el registro'), err instanceof Error ? err.message : undefined);
         }

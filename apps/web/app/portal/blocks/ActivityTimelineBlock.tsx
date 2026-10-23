@@ -126,6 +126,9 @@ export function portalActivityText(
     if (action === 'record_deleted' || action === 'record.deleted') {
         return { title: `${who.company} eliminó este registro`, lines: [] };
     }
+    if (action === 'record_restored') {
+        return { title: `${who.company} restauró este registro`, lines: [] };
+    }
     const changes = changesOf(entry, fields);
     if (changes.length === 0) {
         return { title: who.mine ? 'Actualizaste tus datos' : `${who.company} actualizó este registro`, lines: [] };

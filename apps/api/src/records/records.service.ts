@@ -976,7 +976,7 @@ export class RecordsService {
             const ids = [id, ...snapshot.children];
             await tx
                 .update(records)
-                .set({ deletedAt: null, updatedAt: sql`now()` })
+                .set({ deletedAt: null, deletedBy: null, updatedAt: sql`now()` })
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, ids)));
             for (const { field, targetListId, ids: targets } of rel.values) {
                 const alive = targets.length > 0 ? await this.relationsRepo.existingInList(tx, tenantId, targetListId, targets) : new Set<number>();
@@ -1000,14 +1000,16 @@ export class RecordsService {
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
-            const ok = await this.repo.softDelete(tx, tenantId, listId, id);
+            const ok = await this.repo.softDelete(tx, tenantId, listId, id, actor.userId);
             if (ok) {
                 // Las subtareas se van con el padre: si no, quedarían vivas
                 // colgando de un registro que ya nadie ve.
-                await this.repo.softDeleteChildren(tx, tenantId, id);
-                // Los vínculos que SALEN del record se limpian (paridad con el
-                // plugin); los que ENTRAN se filtran al leer (target borrado).
-                await this.relationsRepo.deleteBySource(tx, tenantId, id);
+                await this.repo.softDeleteChildren(tx, tenantId, id, actor.userId);
+                // Papelera: los vínculos NO se borran (restaurar los trae de
+                // vuelta). Mientras está en la papelera no cuentan: toda
+                // lectura de `relations` cruza con `records.deleted_at` del
+                // otro lado (lookups, rollups, filtros, "Vinculados"). Se van
+                // de verdad al purgar (ON DELETE CASCADE).
                 await this.activity.logInTx(tx, {
                     tenantId,
                     listId,

@@ -29,7 +29,7 @@ import {
     type TenantTransferManifest,
     type TenantTransferStatus,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import * as argon2 from 'argon2';
 import { isEncrypted } from '../common/secret-box';
@@ -270,57 +270,68 @@ export class TenantTransferService {
             await dump('users', userRows);
             await dump('memberships', members);
             await dump('list_groups', await this.byTenant(listGroups, tenantId));
-            await dump('lists', await this.byTenant(lists, tenantId));
-            await dump('list_slug_history', await this.byTenant(listSlugHistory, tenantId));
-            await dump('fields', await this.byTenant(fields, tenantId));
+            // Papelera: lo que está en la papelera NO viaja (ni lo que cuelga
+            // de ello). La conexión base no pasa por la RLS: el filtro va a mano.
+            await dump('lists', await this.byTenant(lists, tenantId, sql`${lists.deletedAt} IS NULL`));
+            await dump('list_slug_history', await this.byTenant(listSlugHistory, tenantId, liveList(listSlugHistory.listId)));
+            await dump('fields', await this.byTenant(fields, tenantId, sql`${fields.deletedAt} IS NULL`));
             await dump('templates', await this.byTenant(templates, tenantId));
             await dump('connections', await this.byTenant(connections, tenantId));
             await dump('attachments', attachRows);
-            await dump('saved_views', await this.byTenant(savedViews, tenantId));
+            await dump('saved_views', await this.byTenant(savedViews, tenantId, sql`${savedViews.deletedAt} IS NULL`));
             // v0.1.266 — plantillas de documentos PDF.
-            await dump('document_templates', await this.byTenant(documentTemplates, tenantId));
+            await dump('document_templates', await this.byTenant(documentTemplates, tenantId, liveList(documentTemplates.listId)));
             // v0.1.267 — números ya emitidos (el consecutivo sigue donde iba).
-            await dump('document_numbers', await this.byTenant(documentNumbers, tenantId));
+            await dump('document_numbers', await this.byTenant(documentNumbers, tenantId, liveRecord(documentNumbers.recordId)));
             // v0.1.275 — formularios públicos (el diseño apunta a campos por id).
-            await dump('forms', await this.byTenant(forms, tenantId));
-            await dump('saved_filters', await this.byTenant(savedFilters, tenantId));
-            await dump('automations', await this.byTenant(automations, tenantId));
+            await dump('forms', await this.byTenant(forms, tenantId, liveList(forms.listId)));
+            await dump('saved_filters', await this.byTenant(savedFilters, tenantId, liveList(savedFilters.listId)));
+            await dump('automations', await this.byTenant(automations, tenantId, sql`${automations.deletedAt} IS NULL`));
             // v0.1.288 — historial de versiones (fotos sin secretos).
-            await dump('automation_versions', await this.byTenant(automationVersions, tenantId));
-            await dump('dashboards', await this.byTenant(dashboards, tenantId));
+            await dump('automation_versions', await this.byTenant(automationVersions, tenantId, liveAutomation(automationVersions.automationId)));
+            await dump('dashboards', await this.byTenant(dashboards, tenantId, sql`${dashboards.deletedAt} IS NULL`));
             // v0.1.292 — envíos programados y enlaces públicos de los tableros.
             // El TOKEN del enlace no viaja (es la credencial de ESTE servidor):
             // el destino emite uno nuevo, igual que con las listas públicas.
-            await dump('dashboard_subscriptions', await this.byTenant(dashboardSubscriptions, tenantId));
+            await dump('dashboard_subscriptions', await this.byTenant(dashboardSubscriptions, tenantId, liveDashboard(dashboardSubscriptions.dashboardId)));
             await dump(
                 'public_dashboards',
-                (await this.byTenant(publicDashboards, tenantId)).map(({ token: _token, ...rest }) => rest),
+                (await this.byTenant(publicDashboards, tenantId, liveDashboard(publicDashboards.dashboardId))).map(({ token: _token, ...rest }) => rest),
             );
-            await dump('recurrences', await this.byTenant(recurrences, tenantId));
-            await dump('portal_links', await this.byTenant(portalLinks, tenantId));
-            await dump('public_lists', await this.byTenant(publicLists, tenantId));
-            await dump('relations', await this.byTenant(relations, tenantId));
-            await dump('mentions', await this.byTenant(mentions, tenantId));
+            await dump('recurrences', await this.byTenant(recurrences, tenantId, and(liveRecord(recurrences.recordId), liveField(recurrences.dateFieldId))));
+            await dump('portal_links', await this.byTenant(portalLinks, tenantId, liveRecord(portalLinks.recordId)));
+            await dump('public_lists', await this.byTenant(publicLists, tenantId, liveList(publicLists.listId)));
+            await dump(
+                'relations',
+                await this.byTenant(relations, tenantId, and(liveRecord(relations.sourceRecordId), liveRecord(relations.targetRecordId), liveField(relations.fieldId))),
+            );
+            await dump('mentions', await this.byTenant(mentions, tenantId, liveRecord(mentions.recordId)));
             await dump('email_usage', await this.byTenant(emailUsage, tenantId));
             await dump('ai_usage', await this.byTenant(aiUsage, tenantId));
             // v0.1.206 — sincronizaciones con tiendas y sus vínculos: sin
             // ellos, reactivarla en el destino DUPLICARÍA todo lo traído.
             await dump('connection_syncs', await this.byTenant(connectionSyncs, tenantId));
-            await dump('sync_links', await this.byTenant(syncLinks, tenantId));
+            await dump('sync_links', await this.byTenant(syncLinks, tenantId, liveRecord(syncLinks.recordId)));
             // v0.1.243 — sincronizaciones desde SQL Server.
-            await dump('sql_syncs', await this.byTenant(sqlSyncs, tenantId));
+            await dump('sql_syncs', await this.byTenant(sqlSyncs, tenantId, liveList(sqlSyncs.listId)));
 
             // Tablas grandes: por páginas keyset, escribiendo a medida (las de
             // una empresa con cientos de miles de filas no entran en memoria).
-            counts.records = await this.dumpPaged(work, 'records', records, tenantId);
-            counts.comments = await this.dumpPaged(work, 'comments', comments, tenantId);
+            counts.records = await this.dumpPaged(work, 'records', records, tenantId, sql`${records.deletedAt} IS NULL`);
+            counts.comments = await this.dumpPaged(work, 'comments', comments, tenantId, liveRecord(comments.recordId));
             // v0.1.291 — reacciones de los comentarios y registro de tiempo.
-            counts.comment_reactions = await this.dumpPaged(work, 'comment_reactions', commentReactions, tenantId);
-            counts.time_entries = await this.dumpPaged(work, 'time_entries', timeEntries, tenantId);
-            counts.activity = await this.dumpPaged(work, 'activity', activity, tenantId);
+            counts.comment_reactions = await this.dumpPaged(
+                work,
+                'comment_reactions',
+                commentReactions,
+                tenantId,
+                sql`NOT EXISTS (SELECT 1 FROM comments c JOIN records r ON r.id = c.record_id WHERE c.id = ${commentReactions.commentId} AND r.deleted_at IS NOT NULL)`,
+            );
+            counts.time_entries = await this.dumpPaged(work, 'time_entries', timeEntries, tenantId, liveRecord(timeEntries.recordId));
+            counts.activity = await this.dumpPaged(work, 'activity', activity, tenantId, and(liveList(activity.listId), liveRecord(activity.recordId)));
             counts.audit_log = await this.dumpPaged(work, 'audit_log', auditLog, tenantId);
             counts.automation_runs = input.include_runs
-                ? await this.dumpPaged(work, 'automation_runs', automationRuns, tenantId)
+                ? await this.dumpPaged(work, 'automation_runs', automationRuns, tenantId, liveAutomation(automationRuns.automationId))
                 : 0;
             if (!input.include_runs) {
                 await this.writeNdjson(path.join(work, 'rows', 'automation_runs.ndjson'), []);
@@ -1421,8 +1432,8 @@ export class TenantTransferService {
      * que la fila sale como `Row` y cada caller construye sus valores
      * explícitamente (no hay copia ciega de columnas).
      */
-    private async byTenant(table: TenantTable, tenantId: number): Promise<Row[]> {
-        const rows = await this.db.select().from(table).where(eq(table.tenantId, tenantId));
+    private async byTenant(table: TenantTable, tenantId: number, extra?: SQL): Promise<Row[]> {
+        const rows = await this.db.select().from(table).where(and(eq(table.tenantId, tenantId), extra));
         return rows as Row[];
     }
 
@@ -1432,6 +1443,7 @@ export class TenantTransferService {
         name: string,
         table: KeyedTable,
         tenantId: number,
+        extra?: SQL,
     ): Promise<number> {
         const out = createWriteStream(path.join(work, 'rows', `${name}.ndjson`));
         let cursor = 0;
@@ -1441,7 +1453,7 @@ export class TenantTransferService {
                 const page = (await this.db
                     .select()
                     .from(table)
-                    .where(and(eq(table.tenantId, tenantId), gt(table.id, cursor)))
+                    .where(and(eq(table.tenantId, tenantId), gt(table.id, cursor), extra))
                     .orderBy(asc(table.id))
                     .limit(PAGE)) as Row[];
                 if (page.length === 0) break;
@@ -1693,4 +1705,28 @@ export function assertOnlyRegularFiles(root: string): void {
             }
         }
     }
+}
+
+// ── Papelera: lo borrado no viaja ────────────────────────────────────────
+// Condiciones "lo que cuelga de algo VIVO" para el export (conexión base, sin
+// RLS). Un id nulo (columna opcional) no excluye la fila.
+
+function liveList(col: PgColumn): SQL {
+    return sql`NOT EXISTS (SELECT 1 FROM lists x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
+}
+
+function liveRecord(col: PgColumn): SQL {
+    return sql`NOT EXISTS (SELECT 1 FROM records x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
+}
+
+function liveField(col: PgColumn): SQL {
+    return sql`NOT EXISTS (SELECT 1 FROM fields x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
+}
+
+function liveAutomation(col: PgColumn): SQL {
+    return sql`NOT EXISTS (SELECT 1 FROM automations x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
+}
+
+function liveDashboard(col: PgColumn): SQL {
+    return sql`NOT EXISTS (SELECT 1 FROM dashboards x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
 }

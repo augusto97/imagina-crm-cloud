@@ -10,6 +10,8 @@ export const ACTIVITY_ACTIONS = [
     'record_created',
     'record_updated',
     'record_deleted',
+    // Papelera: volvió a la vida (con sus subtareas, vínculos y comentarios).
+    'record_restored',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;

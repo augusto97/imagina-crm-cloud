@@ -7,6 +7,7 @@ export type ActivityAction =
     | 'record_created'
     | 'record_updated'
     | 'record_deleted'
+    | 'record_restored'
     | 'record.created'
     | 'record.updated'
     | 'record.deleted'

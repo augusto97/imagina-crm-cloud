@@ -34,6 +34,7 @@ import {
     useDuplicateAutomation,
     useUpdateAutomation,
 } from '@/hooks/useAutomations';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
@@ -77,6 +78,7 @@ export function AutomationsPage(): JSX.Element {
     const [saveTemplateFor, setSaveTemplateFor] = useState<AutomationEntity | null>(null);
 
     const deleteMutation = useDeleteAutomation(list.data?.id ?? 0);
+    const trashed = useTrashedToast();
     const duplicateMutation = useDuplicateAutomation(list.data?.id ?? 0);
     const relationPaths = useRelationPaths(list.data?.id);
     const qc = useQueryClient();
@@ -102,14 +104,14 @@ export function AutomationsPage(): JSX.Element {
         if (!list.data) return;
         const ok = await confirm({
             title: __('Eliminar automatización'),
-            description: __('Sus runs anteriores se conservan para auditoría.'),
+            description: __('Deja de correr al instante y va a la papelera con su historial: puedes recuperarla durante 30 días.'),
             destructive: true,
             confirmLabel: __('Eliminar'),
         });
         if (!ok) return;
         try {
             await deleteMutation.mutateAsync(id);
-            toast.success(__('Automatización eliminada'));
+            trashed({ type: 'automation', id, name: automations.data?.find((a) => a.id === id)?.name });
         } catch (err) {
             if (err instanceof ApiError || err instanceof Error) {
                 toast.error(__('No se pudo eliminar'), err.message);
