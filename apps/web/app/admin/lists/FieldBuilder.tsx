@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { fieldsKeys, useCreateField, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
+import { formulaDeleteWarning } from '@/lib/formulaDependents';
 import { useTrashedToast } from '@/hooks/useTrash';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useList, useLists, useUpdateList } from '@/hooks/useLists';
@@ -258,9 +259,14 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 __('¿Eliminar el campo "%s"?'),
                 field.label,
             ),
-            description: __(
-                'Deja de aparecer en la tabla, la ficha y los formularios, y va a la papelera con lo que ya estaba cargado: puedes recuperarlo tal cual durante 30 días.',
-            ),
+            description: [
+                __(
+                    'Deja de aparecer en la tabla, la ficha y los formularios, y va a la papelera con lo que ya estaba cargado: puedes recuperarlo tal cual durante 30 días.',
+                ),
+                formulaDeleteWarning(field, all),
+            ]
+                .filter(Boolean)
+                .join(' '),
             confirmLabel: __('Eliminar campo'),
             destructive: true,
         });

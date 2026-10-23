@@ -59,6 +59,7 @@ export * from './field-types/field-rules';
 export * from './field-types/autonumber';
 export * from './field-types/button';
 export * from './field-types/computed';
+export * from './formula';
 export * from './field-types/phone';
 export * from './field-types/duration';
 export * from './field-types/search';

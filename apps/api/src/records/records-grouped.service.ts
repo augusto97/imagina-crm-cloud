@@ -628,6 +628,8 @@ export function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<s
         created_by: r.created_by,
         created_at: stripZ(r.created_at),
         updated_at: stripZ(r.updated_at),
+        // Fórmulas (A1): el motivo de las que dieron error en esta fila.
+        ...(r.formula_errors ? { formula_errors: mapKeys(r.formula_errors, toSlug) } : {}),
     };
 }
 

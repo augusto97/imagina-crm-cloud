@@ -370,6 +370,7 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             break;
         // v0.1.300 — también lo que pone la app (ID automático, creación/modificación).
         case 'computed':
+        case 'formula':
         case 'lookup':
         case 'rollup':
         case 'time_tracked':

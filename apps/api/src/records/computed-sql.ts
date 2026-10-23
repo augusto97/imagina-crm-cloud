@@ -10,6 +10,7 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { fieldTypedExpr, type FilterableField } from './query-builder';
+import { compileFormulaField, formulaGroupExpr } from './formula-sql';
 
 /**
  * v0.1.229 — Campos `computed` NUMÉRICOS como expresión SQL.
@@ -49,6 +50,8 @@ export function withComputedExprs(
     fields: readonly Field[],
     /** v0.1.300 — zona de la empresa: agrupar por una fecha de sistema cuenta el día en su reloj. */
     timeZone: string = FALLBACK_TIME_ZONE,
+    /** Fórmulas (A1) — el «ahora» de la lectura (HOY() y AHORA() en SQL). */
+    now: Date = new Date(),
 ): Map<number, FilterableField> {
     const byId = new Map(fields.map((f) => [f.id, f]));
     const out = new Map(available);
@@ -67,6 +70,26 @@ export function withComputedExprs(
         if (f.type !== 'computed' || !available.has(f.id)) continue;
         const expr = computedExpr(f, byId, out, new Set(), 0);
         if (expr) out.set(f.id, { id: f.id, type: 'computed', expr, valueKind: 'numeric' });
+    }
+    // Fórmulas (A1): las que compilan a SQL filtran, ordenan, agrupan y se
+    // suman; las que no, quedan sin expresión y con el motivo (la interfaz no
+    // las ofrece para filtrar y el motor de agregados lo dice).
+    for (const f of fields) {
+        if (f.type !== 'formula' || !available.has(f.id)) continue;
+        const res = compileFormulaField(f, { fields: byId, available: out, timeZone, now });
+        out.set(
+            f.id,
+            res.ok
+                ? {
+                      id: f.id,
+                      type: 'formula',
+                      expr: res.expr,
+                      valueKind: res.kind === 'number' ? 'numeric' : 'text',
+                      formulaKind: res.kind,
+                      groupExpr: formulaGroupExpr(res.expr, res.kind, timeZone),
+                  }
+                : { id: f.id, type: 'formula', formulaReason: res.reason },
+        );
     }
     return out;
 }

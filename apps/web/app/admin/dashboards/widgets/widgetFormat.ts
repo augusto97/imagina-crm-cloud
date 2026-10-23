@@ -21,6 +21,8 @@ const COUNT_METRICS = new Set(['count', 'count_unique', 'count_empty', 'count_tr
 function displayField(field: FieldEntity | undefined): FieldEntity | undefined {
     if (!field) return undefined;
     if (field.type === 'rollup') return rollupDisplayField(field);
+    // Fórmulas (A1): como el tipo de su resultado (moneda, porcentaje…).
+    if (field.type === 'formula') return asDisplayField(field);
     return field;
 }
 

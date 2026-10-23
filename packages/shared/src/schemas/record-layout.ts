@@ -441,6 +441,11 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
         { key: 'big', label: 'Cifra grande' },
     ],
     lookup: [{ key: 'auto', label: 'Según el campo de origen' }],
+    // Fórmulas: se muestran según su tipo de resultado (número, moneda, fecha…).
+    formula: [
+        { key: 'auto', label: 'Según el resultado' },
+        { key: 'big', label: 'Cifra grande' },
+    ],
     rollup: [
         { key: 'number', label: 'Número' },
         { key: 'big', label: 'Cifra grande' },

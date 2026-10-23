@@ -80,9 +80,9 @@ interface EditableCellProps {
 // `computed` y compañía se muestran de sólo lectura: los deriva el servidor.
 // v0.1.300 — el ID automático y las columnas de sistema los pone el servidor.
 const SERVER_FILLED = ['autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by'];
-const NON_INLINE_TYPES = ['user', 'file', 'relation', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', ...SERVER_FILLED];
+const NON_INLINE_TYPES = ['user', 'file', 'relation', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'formula', ...SERVER_FILLED];
 /** Tipos que no se editan desde la celda en ningún modo. */
-const READ_ONLY_TYPES = ['file', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', ...SERVER_FILLED];
+const READ_ONLY_TYPES = ['file', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'formula', ...SERVER_FILLED];
 /** Tipos que se editan con un selector (popover). */
 const PICKER_TYPES = ['select', 'multi_select', 'date', 'datetime', 'user', 'relation'];
 const NUMERIC_TEXT_TYPES = ['number', 'currency', 'percent'];

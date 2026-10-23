@@ -178,7 +178,12 @@ export function WidgetFormDialog({
         previousListIdRef.current = listId;
     }, [listId]);
     const groupableFields = useMemo(
-        () => (fields.data ?? []).filter((f) => GROUPABLE_TYPES.includes(f.type)),
+        () => (fields.data ?? []).filter(
+            (f) =>
+                GROUPABLE_TYPES.includes(f.type)
+                // Fórmulas (A1): las que el servidor compila a SQL.
+                || (f.type === 'formula' && f.formula?.sql === true),
+        ),
         [fields.data],
     );
     const dateFields = useMemo(
@@ -199,7 +204,13 @@ export function WidgetFormDialog({
     const aggregatableFields = useMemo<FieldOpt[]>(
         () => (fields.data ?? [])
             .filter((f) => f.type !== 'relation' && f.type !== 'lookup' && f.type !== 'button' && (f.type !== 'computed' || isNumericComputedOp(f.config)))
-            .map((f) => ({ id: f.id, label: f.label, type: f.type === 'computed' ? 'number' : f.type })),
+            // Fórmulas (A1): sólo las que compilan a SQL, medidas como el tipo de su resultado.
+            .filter((f) => f.type !== 'formula' || f.formula?.sql === true)
+            .map((f) => ({
+                id: f.id,
+                label: f.label,
+                type: f.type === 'computed' ? 'number' : f.type === 'formula' ? (f.formula?.result_type ?? 'text') : f.type,
+            })),
         [fields.data],
     );
 

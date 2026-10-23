@@ -168,6 +168,21 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(calculado)')}</span>
                 </Row>
             );
+        // Fórmulas (A1): la fórmula y lo que da.
+        case 'formula':
+            return (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <span className="imcrm-truncate imcrm-font-mono imcrm-text-[11px]">
+                        <span className="imcrm-font-semibold imcrm-text-primary">SI</span>({'{'}
+                        <span className="imcrm-text-violet-700 dark:imcrm-text-violet-200">Total</span>
+                        {'}'} &gt; 1000000, <span className="imcrm-text-emerald-700 dark:imcrm-text-emerald-300">{'"Grande"'}</span>, …)
+                    </span>
+                    <Row>
+                        <span className="imcrm-font-medium">{__('Grande')}</span>
+                        <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(se calcula sola)')}</span>
+                    </Row>
+                </div>
+            );
         case 'lookup':
             return (
                 <Row>

@@ -3717,6 +3717,44 @@ falla si la hubo.
 no se delega al cliente); guardar el enlace resuelto o un valor en
 `records.data`; botones en kanban y tarjetas (próxima entrega).
 
+### ADR-S59 — Campo «Fórmula»: lenguaje propio, evaluador único y SQL sólo si es idéntico (v0.1.304)
+
+**Contexto.** El calculado (`computed`) ofrece 8 operaciones fijas; los clientes
+piden fórmulas de hoja de cálculo (condiciones, textos, fechas, días hábiles).
+
+**Decisión.**
+1. Lenguaje en español con alias en inglés, gramática de hoja de cálculo
+   (operadores `+ - * / ^ %`, `&` para unir, comparaciones) y 49 funciones. El
+   catálogo vive en `packages/shared/src/formula`.
+2. Referencias por ID (`{#id}` en la config; `labels` con la última etiqueta
+   para explicar un campo borrado). Se muestran y se escriben por nombre y se
+   traducen al guardar. En blueprints viaja `{@slug}`.
+3. Un solo lector/evaluador puro (shared) para la vista previa y la lectura en
+   el servidor. Nunca se persiste el resultado. Topes: 50.000 pasos, 50 ms y
+   100 KB de texto.
+4. Compilación a SQL (`formula-sql.ts`) SÓLO cuando reproduce exactamente al
+   evaluador; si no, la fórmula no filtra, ordena ni suma y el DTO lleva
+   `sql_reason`. Los valores viajan como parámetros (regla de oro nº 4).
+5. Tipo de resultado inferido o elegido (number, currency, percent 0-100,
+   duration, text, date, datetime, checkbox); la interfaz la trata como ese
+   tipo.
+6. Errores por fila en `formula_errors` → «#ERROR» con el motivo.
+7. ACL: una fórmula que depende (transitivamente) de un campo oculto queda
+   oculta. Ciclos prohibidos. Papelera: el campo borrado da #ERROR con su
+   nombre y la fórmula se recupera al restaurarlo. Un campo sin valor (Botón)
+   no se puede usar.
+
+**Consecuencias.** Sin migración. Lo que no compila a SQL (días hábiles,
+regex, formato de fecha, multi_select, personas, lookups multi-valor) se
+muestra pero no se puede filtrar ni sumar. Agregar una función obliga a
+decidir su traducción a SQL o dejarla fuera de forma explícita.
+
+**Alternativas descartadas.** Persistir el resultado en `records.data` (habría
+que recalcular en cascada en cada escritura); evaluar con `eval` o una
+librería de hojas de cálculo (sin control de topes ni de SQL equivalente);
+funciones que agreguen listas vinculadas dentro de la fórmula (ya existen
+rollup y lookup).
+
 ---
 
-**Versión del documento:** 1.100.0 (campo Botón)
+**Versión del documento:** 1.101.0 (campo Fórmula)

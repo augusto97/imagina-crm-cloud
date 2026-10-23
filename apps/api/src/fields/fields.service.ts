@@ -12,6 +12,15 @@ import {
     formatDuration,
     formatPhone,
     AI_INPUT_TYPES,
+    evaluateComputed,
+    formatEmailFieldValue,
+    formulaDependencies,
+    formulaDisplayConfig,
+    formulaHealth,
+    formulaResultTypeOf,
+    formulaToDisplay,
+    inferFormulaResultType,
+    prepareFormula,
     isDataField,
     isStoreField,
     isThroughField,
@@ -42,6 +51,9 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
 import { ThroughEngine, type ThroughPlan } from '../records/through-fields';
+import { withComputedExprs } from '../records/computed-sql';
+import { applyRowFormulas, buildFormulaRuntime } from '../records/formula-runtime';
+import type { FilterableField } from '../records/query-builder';
 import { FieldsRepository, type FieldRow } from './fields.repository';
 import { trashRow } from '../trash/trash-ops';
 import { assertButtonConfigRefs } from '../buttons/button-config-refs';
@@ -180,6 +192,86 @@ export class FieldsService {
     }
 
     /**
+     * Fórmulas (A1) — la fórmula llega como la escribió la persona (por NOMBRE,
+     * o mezclando `{#id}`) y se GUARDA por id. Se revisa entera: sintaxis
+     * (con la columna del error), campos que existen y se pueden usar, que no
+     * se use a sí misma y que no forme un ciclo con otras fórmulas. También
+     * recuerda el nombre de cada campo usado (`labels`): si uno va a la
+     * papelera, el error lo nombra. Una fórmula vacía se acepta (el campo
+     * sale vacío, como un lookup a medio configurar).
+     */
+    private async normalizeFormula(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        selfId: number | null,
+        config: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+        const text = typeof config.formula === 'string' ? config.formula : '';
+        if (text.trim() === '') {
+            const out: Record<string, unknown> = { ...config, formula: '' };
+            delete out.labels;
+            return out;
+        }
+        const fields = (await this.repo.listByList(tx, tenantId, listId)).map(toField);
+        const res = prepareFormula(text, fields, selfId);
+        if (!res.ok) {
+            throw new BadRequestException({
+                code: 'invalid_formula',
+                message: res.error.message,
+                data: {
+                    status: 400,
+                    errors: { formula: res.error.message },
+                    formula_error: { start: res.error.start, end: res.error.end },
+                },
+            });
+        }
+        return { ...config, formula: res.stored, labels: res.labels };
+    }
+
+    /**
+     * Fórmulas (A1) — lo que la interfaz necesita de cada fórmula de la lista
+     * (texto por nombre, tipo de resultado, si compila a SQL y por qué no, si
+     * algún campo que usa ya no existe). Derivado en cada lectura.
+     */
+    private formulaInfos(fields: Field[], plans: ThroughPlan[], tenantId: number): Map<number, NonNullable<Field['formula']>> {
+        const out = new Map<number, NonNullable<Field['formula']>>();
+        const formulas = fields.filter((f) => f.type === 'formula');
+        if (formulas.length === 0) return out;
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const targets = new Map(plans.map((p) => [p.field.id, p.targetField]));
+        const throughTarget = (id: number) => {
+            const t = targets.get(id);
+            return t ? { type: t.type, config: t.config } : null;
+        };
+        const available = withComputedExprs(
+            new Map<number, FilterableField>([
+                ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                ...this.through.filterableFor(plans, tenantId),
+            ]),
+            fields,
+        );
+        for (const f of formulas) {
+            const cfg = (f.config ?? {}) as Record<string, unknown>;
+            const stored = typeof cfg.formula === 'string' ? cfg.formula : '';
+            const labels = (cfg.labels && typeof cfg.labels === 'object' ? cfg.labels : {}) as Record<string, string>;
+            const ff = available.get(f.id);
+            const display = formulaDisplayConfig(f, { fields: byId, throughTarget });
+            out.set(f.id, {
+                display: formulaToDisplay(stored, fields, labels),
+                result_type: formulaResultTypeOf(f, { fields: byId, throughTarget }),
+                inferred_type: inferFormulaResultType(stored, { fields: byId, throughTarget }).type,
+                display_config: display.config,
+                sql: ff?.expr !== undefined,
+                sql_reason: ff?.expr !== undefined ? null : (ff?.formulaReason ?? 'la fórmula no se puede llevar a la base'),
+                error: formulaHealth(f, fields),
+                dependencies: formulaDependencies(cfg),
+            });
+        }
+        return out;
+    }
+
+    /**
      * v0.1.300 — Valida y normaliza las reglas comunes de la config
      * (`default_value`, `validation`) contra el campo y su lista:
      *  - el valor por defecto tiene que ser de un tipo que el campo admite y,
@@ -299,18 +391,23 @@ export class FieldsService {
         // (moneda, opciones con color, fecha) sin otra request. Derivado en
         // cada lectura, nunca persistido — no puede quedar viejo.
         let throughById = new Map<number, Field['through']>();
+        let plans: ThroughPlan[] = [];
         if (ThroughEngine.hasThrough(fields)) {
-            const [plans, lists] = await Promise.all([
+            const [resolved, lists] = await Promise.all([
                 this.throughPlansFor(tenantId, list.id, fields),
                 this.lists.list(tenantId),
             ]);
+            plans = resolved;
             const names = new Map(lists.map((l) => [l.id, l.name]));
             throughById = new Map(plans.map((p) => [p.field.id, ThroughEngine.info(p, names)]));
         }
+        // Fórmulas (A1): el texto por nombre, el tipo de resultado y si filtra.
+        const formulaById = this.formulaInfos(fields, plans, tenantId);
         return fields.map((f) => ({
             ...f,
             ...(f.id === titleId ? { is_primary: true } : {}),
             ...(isThroughField(f.type) ? { through: throughById.get(f.id) ?? null } : {}),
+            ...(f.type === 'formula' ? { formula: formulaById.get(f.id) ?? null } : {}),
         }));
     }
 
@@ -434,6 +531,7 @@ export class FieldsService {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
             if (input.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, null, config);
             config = await this.normalizeRules(tx, tenantId, listId, null, input.type, config);
+            if (input.type === 'formula') config = await this.normalizeFormula(tx, tenantId, listId, null, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
             return this.repo
@@ -527,14 +625,20 @@ export class FieldsService {
                     }
                 }
                 newConfig = await this.normalizeRules(tx, tenantId, listId, current.id, toType, newConfig);
+                if (toType === 'formula') newConfig = await this.normalizeFormula(tx, tenantId, listId, current.id, newConfig);
                 changes.type = toType;
                 changes.config = newConfig;
-                await migrateFieldData(tx, tenantId, listId, current.id, fromType, toType, newConfig, bridge);
+                // Fórmulas (A1): de fórmula a un tipo con datos se ESCRIBE el valor
+                // calculado de cada registro (lo que se veía); de calculado a
+                // fórmula no hay datos que mover.
+                if (fromType === 'formula') await this.materializeFormula(tx, tenantId, listId, current.id, toType, newConfig);
+                else if (toType !== 'formula') await migrateFieldData(tx, tenantId, listId, current.id, fromType, toType, newConfig, bridge);
             } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
                 await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
                 if (current.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, current.id, changes.config);
                 changes.config = await this.normalizeRules(tx, tenantId, listId, current.id, current.type as FieldType, changes.config);
+                if (current.type === 'formula') changes.config = await this.normalizeFormula(tx, tenantId, listId, current.id, changes.config);
             }
             if (patch.is_indexed !== undefined) {
                 changes.isIndexed = patch.is_indexed;
@@ -713,6 +817,85 @@ export class FieldsService {
         });
     }
 
+    /**
+     * Fórmulas (A1) — al convertir una fórmula en un campo con datos (texto,
+     * número, fecha…), cada registro guarda el valor que la fórmula calculaba:
+     * un número como número, en un texto lo que se LEÍA (con el formato de la
+     * empresa). Por lotes, dentro de la misma transacción del cambio de tipo.
+     */
+    private async materializeFormula(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        fieldId: number,
+        toType: FieldType,
+        config: Record<string, unknown>,
+    ): Promise<void> {
+        const fields = (await this.repo.listByList(tx, tenantId, listId)).map(toField);
+        const self = fields.find((f) => f.id === fieldId);
+        if (!self) return;
+        const plans = await this.through.plans(tx, tenantId, listId, fields);
+        const rt = await buildFormulaRuntime(tx, tenantId, fields, plans);
+        if (!rt) return;
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const targets = new Map(plans.map((p) => [p.field.id, p.targetField]));
+        const display = formulaDisplayConfig(self, {
+            fields: byId,
+            throughTarget: (id) => {
+                const t = targets.get(id);
+                return t ? { type: t.type, config: t.config } : null;
+            },
+        });
+        const format = {
+            number_format: rt.env.numberFormat ?? 'comma_dot',
+            date_format: rt.env.dateFormat ?? 'ymd',
+            time_format: rt.env.timeFormat ?? 'h24',
+            timezone: rt.env.timeZone,
+        } as const;
+        const displayField = { type: display.type === 'checkbox' ? 'checkbox' : display.type, config: display.config };
+        const key = jsonbKeyForField(fieldId);
+        const spec = { type: toType, config: { ...config, validation: undefined }, is_required: false };
+        const computed = fields.filter((f) => f.type === 'computed');
+        let cursor = 0;
+        for (;;) {
+            const batch = await tx
+                .select({
+                    id: records.id,
+                    data: records.data,
+                    createdAt: records.createdAt,
+                    updatedAt: records.updatedAt,
+                    createdBy: records.createdBy,
+                    updatedBy: records.updatedBy,
+                })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), isNull(records.deletedAt), sql`${records.id} > ${cursor}`))
+                .orderBy(records.id)
+                .limit(CONVERT_BATCH);
+            if (batch.length === 0) break;
+            cursor = batch[batch.length - 1]!.id;
+            const rows = await this.through.attach(tx, tenantId, plans, batch.map((r) => ({ ...r, data: r.data as Record<string, unknown> })), fields);
+            const changes: Array<{ id: number; val: unknown }> = [];
+            for (const r of rows) {
+                const data = { ...r.data };
+                for (const c of computed) data[jsonbKeyForField(c.id)] = evaluateComputed(c, fields, (id) => data[jsonbKeyForField(id)] ?? null);
+                const value = applyRowFormulas(fields, { data }, rt).data[key];
+                if (value === null || value === undefined) continue;
+                const textual = toType === 'text' || toType === 'long_text';
+                const bridged = textual ? formatEmailFieldValue(displayField as never, value, format) : value;
+                const res = validateFieldValue(spec, bridged);
+                if (res.ok && res.value !== null) changes.push({ id: r.id, val: res.value });
+            }
+            if (changes.length > 0) {
+                await tx.execute(sql`
+                    UPDATE records AS r
+                    SET data = jsonb_set(r.data, ARRAY[${key}::text], v.val)
+                    FROM jsonb_to_recordset(${JSON.stringify(changes)}::jsonb) AS v(id bigint, val jsonb)
+                    WHERE r.tenant_id = ${tenantId} AND r.list_id = ${listId} AND r.id = v.id`);
+            }
+            if (batch.length < CONVERT_BATCH) break;
+        }
+    }
+
     /** Resuelve el list_id validando pertenencia al tenant (404 si no existe). */
     private async resolveListId(tenantId: number, listIdOrSlug: string): Promise<number> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -773,6 +956,7 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'lookup',
     'rollup',
     'time_tracked',
+    'formula',
     // v0.1.158 — numéricos puros: sugerir "90" no ayuda a nadie (el
     // teléfono SÍ queda con autocomplete: buscar por prefijo es útil).
     'rating',
@@ -854,7 +1038,32 @@ const NON_CONVERTIBLE: readonly FieldType[] = [
     'button',
 ];
 
+/** Fórmulas (A1): a qué tipos se convierte una fórmula (guardando el valor calculado). */
+const FORMULA_TARGETS: readonly FieldType[] = [
+    'text', 'long_text', 'number', 'currency', 'percent', 'duration', 'rating', 'date', 'datetime', 'checkbox', 'email', 'url', 'phone',
+];
+
 function assertConvertible(from: FieldType, to: FieldType): void {
+    // Fórmulas (A1): un CALCULADO se puede pasar a fórmula (la interfaz arma la
+    // fórmula equivalente; los dos se calculan al leer, no hay datos que
+    // mover). Una fórmula pasa a un tipo con datos guardando lo calculado.
+    // Cualquier otro tipo NO se vuelve fórmula: se perderían sus datos.
+    if (to === 'formula') {
+        if (from === 'computed') return;
+        throw new BadRequestException({
+            code: 'type_not_convertible',
+            message: 'Un campo con datos no se puede convertir en fórmula (se perderían los valores guardados): crea un campo «Fórmula» nuevo. Sólo un campo «Calculado» se convierte en fórmula.',
+            data: { status: 400 },
+        });
+    }
+    if (from === 'formula') {
+        if (FORMULA_TARGETS.includes(to)) return;
+        throw new BadRequestException({
+            code: 'type_not_convertible',
+            message: 'Una fórmula se puede convertir en texto, número, moneda, porcentaje, duración, calificación, fecha, fecha y hora, casilla, email, enlace o teléfono (conserva el valor calculado).',
+            data: { status: 400 },
+        });
+    }
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
         throw new BadRequestException({
             code: 'type_not_convertible',

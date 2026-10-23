@@ -138,6 +138,8 @@ describe('Migración de empresa (v0.1.197)', () => {
                 { tenantId: tenantA, listId: facturasId, slug: 'estado', label: 'Estado', type: 'select' },
                 // v0.1.300 — ID automático: el número viaja tal cual y el contador también.
                 { tenantId: tenantA, listId: facturasId, slug: 'numero', label: 'Número', type: 'autonumber', config: { prefix: 'FV' } },
+                // Fórmulas (A1): los ids viven DENTRO del texto.
+                { tenantId: tenantA, listId: clientesId, slug: 'saludo', label: 'Saludo', type: 'formula' },
             ])
             .returning();
         nombreFieldId = insertedFields[0]!.id;
@@ -145,6 +147,10 @@ describe('Migración de empresa (v0.1.197)', () => {
         adjuntoFieldId = insertedFields[2]!.id;
         relFieldId = insertedFields[3]!.id;
         estadoFieldId = insertedFields[4]!.id;
+        await pg.db
+            .update(fields)
+            .set({ config: { formula: `MAYUSC({#${nombreFieldId}})`, labels: { [String(nombreFieldId)]: 'Nombre' } } })
+            .where(eq(fields.id, insertedFields[6]!.id));
         // La relación apunta a la OTRA lista: su config lleva un list id.
         await pg.db
             .update(fields)
@@ -491,7 +497,7 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(out.size).toBeGreaterThan(0);
         expect(out.manifest.tenant.slug).toBe('acme');
         expect(out.manifest.counts.records).toBe(3);
-        expect(out.manifest.counts.fields).toBe(6);
+        expect(out.manifest.counts.fields).toBe(7);
         expect(out.manifest.files.count).toBe(1);
         expect(out.manifest.secrets_fingerprint).not.toBeNull();
 
@@ -536,9 +542,14 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newClientes.groupId).toBe(newGroups[0]!.id);
 
         const newFields = await pg.db.select().from(fields).where(eq(fields.tenantId, tenantB));
-        expect(newFields).toHaveLength(6);
+        expect(newFields).toHaveLength(7);
         const bySlug = new Map(newFields.map((f) => [f.slug, f]));
         const newNombre = bySlug.get('nombre')!;
+        // La fórmula apunta al campo NUEVO (texto y nombres recordados).
+        expect(bySlug.get('saludo')!.config).toEqual({
+            formula: `MAYUSC({#${newNombre.id}})`,
+            labels: { [String(newNombre.id)]: 'Nombre' },
+        });
         const newEstado = bySlug.get('estado')!;
         // La config de la relación apunta a la lista NUEVA.
         expect(bySlug.get('cliente')!.config).toEqual({ target_list_id: newClientes.id });

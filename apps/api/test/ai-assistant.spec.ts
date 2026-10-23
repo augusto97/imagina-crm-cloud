@@ -465,6 +465,55 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         expect(JSON.stringify(schema.content)).toContain('minutos registrados');
     });
 
+    it('fórmulas (A1): se proponen por NOMBRE, se guardan por id y el esquema las muestra por nombre', async () => {
+        const list = await lists.create(tenantId, { name: 'Pedidos IA' });
+        await fields.create(tenantId, String(list.id), { label: 'Precio', type: 'currency', config: { currency: 'COP' } });
+        await fields.create(tenantId, String(list.id), { label: 'Cantidad', type: 'number' });
+        // Un campo que no existe vuelve al modelo como error corregible.
+        const bad = await registry.execute(ctx, 'propose_add_fields', {
+            list: list.slug,
+            fields: [{ label: 'Total', type: 'formula', formula: { expression: '{Precio} * {Unidades}' } }],
+        });
+        expect(bad.isError).toBe(true);
+        expect(JSON.stringify(bad.content)).toContain('No hay ningún campo «Unidades»');
+        const res = await registry.execute(ctx, 'propose_add_fields', {
+            list: list.slug,
+            fields: [
+                { label: 'Total', type: 'formula', formula: { expression: '{Precio} * {Cantidad}' } },
+                { label: 'Con IVA', type: 'formula', formula: { expression: 'REDONDEAR({Total} * 1.19)' } },
+            ],
+        });
+        expect(res.isError).toBeFalsy();
+        const proposalId = JSON.stringify(res.content).match(/"proposal_id\\?":\\?"([^"\\]+)/)?.[1];
+        await proposals.apply(ctx, proposalId!);
+        const fs = await fields.listByListId(tenantId, list.id);
+        const precio = fs.find((f) => f.slug === 'precio')!;
+        const total = fs.find((f) => f.slug === 'total')!;
+        expect(total.config.formula).toBe(`{#${precio.id}} * {#${fs.find((f) => f.slug === 'cantidad')!.id}}`);
+        expect(fs.find((f) => f.slug === 'con_iva')!.config.formula).toBe(`REDONDEAR({#${total.id}} * 1.19)`);
+        const schema = JSON.stringify((await registry.execute(ctx, 'get_list_schema', { list: list.slug })).content);
+        expect(schema).toContain('{Precio} * {Cantidad}');
+        expect(schema).toContain('REDONDEAR({Total} * 1.19)');
+
+        // Cambiarla también es por nombre; un ciclo vuelve como error corregible.
+        const cyc = await registry.execute(ctx, 'propose_update_field', {
+            list: list.slug,
+            field: 'total',
+            formula: { expression: '{Con IVA} / 1.19' },
+        });
+        expect(cyc.isError).toBe(true);
+        expect(JSON.stringify(cyc.content)).toMatch(/círculo/);
+        const upd = await registry.execute(ctx, 'propose_update_field', {
+            list: list.slug,
+            field: 'total',
+            formula: { expression: '{Precio} * {Cantidad} * 2' },
+        });
+        expect(upd.isError).toBeFalsy();
+        await proposals.apply(ctx, JSON.stringify(upd.content).match(/"proposal_id\\?":\\?"([^"\\]+)/)![1]!);
+        const after = (await fields.listByListId(tenantId, list.id)).find((f) => f.slug === 'total')!;
+        expect(after.config.formula).toBe(`{#${precio.id}} * {#${fs.find((f) => f.slug === 'cantidad')!.id}} * 2`);
+    });
+
     it('la automatización con un slug inexistente se rechaza con la lista de slugs válidos', async () => {
         const list = await lists.create(tenantId, { name: 'Tareas' });
         await fields.create(tenantId, String(list.id), { label: 'Título', type: 'text' });

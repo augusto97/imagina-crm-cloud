@@ -218,7 +218,8 @@ export function planXlsxColumns(writer: XlsxStreamWriter, fields: Field[], ctx: 
         const plan = (cell: (r: RecordDto) => XlsxOutCell): XlsxColumnPlan => ({
             header: field.label,
             field,
-            cell,
+            // Fórmulas (A1): una fila donde la fórmula dio error dice «#ERROR».
+            cell: (r) => (r.formula_errors?.[key] ? '#ERROR' : cell(r)),
             width: (c) => widthOf(c, numericWidth),
         });
         switch (field.type) {

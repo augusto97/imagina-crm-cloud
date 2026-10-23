@@ -6,10 +6,11 @@ import { FieldConfigEditor } from '@/admin/lists/FieldConfigEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useCreateField, useUpdateField } from '@/hooks/useFields';
+import { useCreateField, useFields, useUpdateField } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { ApiError } from '@/lib/api';
-import { riskOf } from '@/lib/fieldTypeMigration';
+import { formulaConversionNote, riskOf } from '@/lib/fieldTypeMigration';
+import { formulaConfigFromComputed } from './formula/formulaConvert';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
@@ -50,6 +51,7 @@ export function FieldDialog({
 }: FieldDialogProps): JSX.Element {
     const create = useCreateField(listId);
     const update = useUpdateField(listId);
+    const listFields = useFields(listId);
     const { data: fieldTypes } = useFieldTypes();
 
     const isEdit = field !== undefined && field !== null;
@@ -112,7 +114,9 @@ export function FieldDialog({
     // claves de un tipo previo (ej. options al pasar de select a number).
     const handleTypeChange = (next: FieldTypeSlug | ''): void => {
         setType(next);
-        setConfig({});
+        // Fórmulas (A1): «Convertir en fórmula» arranca con la fórmula
+        // equivalente al calculado, para revisarla.
+        setConfig(next === 'formula' && field?.type === 'computed' ? formulaConfigFromComputed(field.config ?? {}, listFields.data ?? []) : {});
     };
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
@@ -346,6 +350,14 @@ function TypeChangeWarning({
     fromType: string;
     toType: string;
 }): JSX.Element | null {
+    const formulaNote = formulaConversionNote(fromType, toType);
+    if (formulaNote) {
+        return (
+            <div className="imcrm-mt-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                {formulaNote}
+            </div>
+        );
+    }
     const risk = riskOf(fromType, toType);
     if (risk === null || risk === 'safe') {
         // safe = sin warning. null no debería pasar porque el dropdown

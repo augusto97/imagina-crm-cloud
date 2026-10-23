@@ -131,14 +131,15 @@ export class AggregateService {
                 ].filter(([id]) => !hidden.has(id)),
             );
             const timeZone = this.timeZones ? await this.timeZones.orUtc(tenantId, t) : FALLBACK_TIME_ZONE;
+            const now = new Date();
             return {
                 list: { id: list.id, settings: list.settings },
                 fields,
                 byId: new Map(fields.filter((f) => !hidden.has(f.id)).map((f) => [f.id, f])),
-                fieldsById: withComputedExprs(filterable, fields, timeZone),
+                fieldsById: withComputedExprs(filterable, fields, timeZone, now),
                 hidden,
                 scope: base.scope,
-                clock: { now: new Date(), timeZone },
+                clock: { now, timeZone },
             };
         };
         return tx ? build(tx) : this.tenantDb.withTenant(tenantId, build);
@@ -648,7 +649,7 @@ export class AggregateService {
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
         const footerClock = await this.clock(tenantId);
-        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields, footerClock.timeZone);
+        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields, footerClock.timeZone, footerClock.now);
         const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, footerClock);
         const baseWhere = and(
             eq(records.tenantId, tenantId),
@@ -816,7 +817,7 @@ export class AggregateService {
         if ((metric === 'min' || metric === 'max') && !minmax) {
             throw badRequest(`${metric} sólo aplica a campos numéricos o de fecha`);
         }
-        if ((metric === 'count_true' || metric === 'count_false') && field!.type !== 'checkbox') {
+        if ((metric === 'count_true' || metric === 'count_false') && field!.type !== 'checkbox' && ff?.formulaKind !== 'boolean') {
             throw badRequest(`${metric} sólo aplica a checkbox`);
         }
     }
@@ -975,6 +976,14 @@ export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableFie
         throw badRequest(`No se puede agrupar por «${field.label}».`);
     }
     if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') return throughGroupExpr(field, fieldsById);
+    // Fórmulas (A1): por su valor (una fecha por día, en el reloj de la empresa).
+    if (field.type === 'formula') {
+        const ff = fieldsById.get(field.id);
+        if (ff?.groupExpr) return ff.groupExpr;
+        throw badRequest(
+            `No se puede agrupar por la fórmula «${field.label}»${ff?.formulaReason ? `: ${ff.formulaReason}` : ''}.`,
+        );
+    }
     return fieldTextExpr(field.id);
 }
 
@@ -1000,6 +1009,13 @@ function groupingExpr(
     // v0.1.97 — bucketing temporal (labels ordenables cronológicamente como string).
     if (bucket !== undefined && (field.type === 'date' || field.type === 'datetime')) {
         return timeBucketExpr(field, bucket, timeZone);
+    }
+    // Fórmulas (A1) con resultado de fecha: por día/semana/mes… como un campo fecha.
+    if (bucket !== undefined && field.type === 'formula') {
+        const ff = fieldsById.get(field.id);
+        if (ff?.expr && (ff.formulaKind === 'date' || ff.formulaKind === 'datetime')) {
+            return timeBucketExpr({ ...field, type: ff.formulaKind }, bucket, timeZone, ff.expr);
+        }
     }
     // v0.1.300 — las fechas de sistema también se agrupan por día/semana/mes…
     if (bucket !== undefined && isSystemField(field.type) && systemFieldBaseType(field.type) === 'datetime') {
@@ -1036,6 +1052,21 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
             : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
     }
     if (type === 'lookup' || type === 'button') return [];
+    // Fórmulas (A1): según el tipo de su resultado, si compila a SQL.
+    if (type === 'formula') {
+        if (!ff?.expr) return [];
+        switch (ff.formulaKind) {
+            case 'number':
+                return ['count', 'count_empty', 'count_unique', 'sum', 'avg', 'min', 'max'];
+            case 'date':
+            case 'datetime':
+                return ['count', 'count_empty', 'min', 'max'];
+            case 'boolean':
+                return ['count', 'count_true', 'count_false'];
+            default:
+                return ['count', 'count_empty', 'count_unique'];
+        }
+    }
     // v0.1.300 — columnas de sistema: fechas (mínimo/máximo) o personas (únicos).
     if (isSystemField(type)) {
         if (!ff?.expr) return [];

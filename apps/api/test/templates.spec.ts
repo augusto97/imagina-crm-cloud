@@ -431,6 +431,27 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         expect(rows.map((r) => r.data[`f${bySlug.get('numero')!.id}`]).sort()).toEqual(['PED-001', 'PED-002']);
     });
 
+    it('fórmulas (A1): duplicar re-apunta los ids DENTRO de la fórmula (también entre fórmulas)', async () => {
+        const src = await listsService.create(tenantA, { name: 'Cotizaciones' });
+        await fieldsService.create(tenantA, String(src.id), { label: 'Precio', type: 'number' });
+        await fieldsService.create(tenantA, String(src.id), { label: 'Cantidad', type: 'number' });
+        // La fórmula que usa otra fórmula va ANTES que ella en el orden de campos.
+        await fieldsService.create(tenantA, String(src.id), { label: 'Subtotal', type: 'formula', config: { formula: '{Precio} * {Cantidad}' } });
+        await fieldsService.create(tenantA, String(src.id), { label: 'Con IVA', type: 'formula', config: { formula: 'SI({Subtotal} > 0, {Subtotal} * 1.19, 0)', result_type: 'currency', currency: 'COP' } });
+        const { lists: created, warnings } = await templates.duplicate(tenantA, actor, String(src.id), {
+            include: { views: false, automations: false, settings: false, records: false },
+        });
+        expect(warnings).toEqual([]);
+        const cf = await fieldsService.listByListId(tenantA, created[0]!.id);
+        const by = new Map(cf.map((f) => [f.slug, f]));
+        expect(by.get('subtotal')!.config.formula).toBe(`{#${by.get('precio')!.id}} * {#${by.get('cantidad')!.id}}`);
+        expect(by.get('con_iva')!.config).toMatchObject({
+            formula: `SI({#${by.get('subtotal')!.id}} > 0, {#${by.get('subtotal')!.id}} * 1.19, 0)`,
+            result_type: 'currency',
+            currency: 'COP',
+        });
+    });
+
     it('duplicar SIN registros ni automatizaciones respeta la elección', async () => {
         const src = await listsService.create(tenantA, { name: 'Solo estructura' });
         const t = await fieldsService.create(tenantA, String(src.id), { label: 'T', type: 'text' });

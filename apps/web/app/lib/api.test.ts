@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    api,
     buildFieldMap,
     cloudRecordsMeta,
     cloudRecordsQuery,
@@ -9,6 +10,7 @@ import {
     mapRecordBody,
     normalizeDates,
     recordsPathKind,
+    rememberFieldKey,
 } from '@/lib/api';
 
 /**
@@ -180,5 +182,28 @@ describe('normalizeDates', () => {
             { updated_at: '2026-01-01T00:00:00' },
         ]);
         expect(normalizeDates('texto')).toBe('texto');
+    });
+});
+
+describe('campo nuevo con la tabla abierta', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('la columna nueva se traduce aunque el mapa del slug y el del id sean objetos distintos', async () => {
+        const json = (body: unknown): Response =>
+            new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const fieldsV1 = [{ id: 501, list_id: 77, slug: 'producto' }];
+        const replies: unknown[] = [
+            { data: fieldsV1 }, // la tabla pide los campos por SLUG
+            { data: fieldsV1 }, // el editor de un campo, por ID → otro objeto
+            { data: [{ id: 1, list_id: 77, data: { f501: 'Taza', f502: 75000 } }], meta: {} },
+        ];
+        vi.stubGlobal('fetch', vi.fn(async () => json(replies.shift())));
+
+        await api.get('/lists/tienda_api/fields');
+        await api.get('/lists/77/fields');
+        // Se crea un campo desde el editor (que tiene el id de la lista).
+        rememberFieldKey({ id: 502, slug: 'total', list_id: 77 }, 77);
+        const res = await api.get<Array<{ fields: Record<string, unknown> }>>('/lists/tienda_api/records');
+        expect(res.data[0]!.fields).toMatchObject({ producto: 'Taza', total: 75000 });
     });
 });

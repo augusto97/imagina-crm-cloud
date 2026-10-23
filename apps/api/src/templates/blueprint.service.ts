@@ -8,6 +8,7 @@ import {
     findDependencyCycle,
     isDataField,
     jsonbKeyForField,
+    formulaRefsToSlugs,
     resolveFieldRefs,
     resolveListRefs,
     tokenizeFieldRefs,
@@ -144,7 +145,12 @@ export class BlueprintService {
                     label: f.label,
                     slug: f.slug,
                     type: f.type,
-                    config: tokenize(fieldConfig(f), ['inputs']) as Record<string, unknown>,
+                    // Fórmulas (A1): las referencias `{#id}` viajan por nombre
+                    // interno (`{@slug}`); al guardar la copia vuelven a ser ids.
+                    config:
+                        f.type === 'formula'
+                            ? formulaBlueprintConfig(f.config, (id) => idToSlug.get(id))
+                            : (tokenize(fieldConfig(f), ['inputs']) as Record<string, unknown>),
                     is_required: f.is_required,
                     is_unique: f.is_unique,
                     is_indexed: f.is_indexed,
@@ -326,7 +332,9 @@ export class BlueprintService {
                         warnings.push(`El botón «${raw.label}» de «${bl.name}» genera un PDF: elige la plantilla de nuevo (las plantillas de documentos no viajan con la lista).`);
                     }
                 }
-                const hasFieldRefs = JSON.stringify(f.config).includes('"$field"');
+                // Una fórmula va siempre a la segunda pasada: nombra campos que
+                // quizá todavía no existen.
+                const hasFieldRefs = f.type === 'formula' || JSON.stringify(f.config).includes('"$field"');
                 const config = resolveLists(hasFieldRefs ? {} : f.config) as Record<string, unknown>;
                 try {
                     const field = await this.fields.create(tenantId, String(list.id), {
@@ -555,7 +563,9 @@ export class BlueprintService {
             slugMaps.set(bl.key, slugToId);
             for (const f of bl.fields) {
                 if (slugToId.has(f.slug)) continue;
-                const hasFieldRefs = JSON.stringify(f.config).includes('"$field"');
+                // Una fórmula va siempre a la segunda pasada: nombra campos que
+                // quizá todavía no existen.
+                const hasFieldRefs = f.type === 'formula' || JSON.stringify(f.config).includes('"$field"');
                 try {
                     const field = await this.fields.create(tenantId, String(listId), {
                         label: f.label,
@@ -857,4 +867,12 @@ function newWidgetId(): string {
 function message(err: unknown): string {
     if (err && typeof err === 'object' && 'message' in err) return String((err as { message: unknown }).message);
     return String(err);
+}
+
+/** Fórmulas (A1): la config de una fórmula para una plantilla (sin ids). */
+function formulaBlueprintConfig(config: Record<string, unknown>, slugOf: (id: number) => string | undefined): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...config };
+    delete out.labels;
+    if (typeof config.formula === 'string') out.formula = formulaRefsToSlugs(config.formula, slugOf);
+    return out;
 }

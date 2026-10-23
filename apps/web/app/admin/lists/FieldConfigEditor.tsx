@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 import {
     COUNTRY_DIAL_CODES,
     LOOKUP_TARGET_TYPES,
@@ -30,6 +30,9 @@ import { slugify } from '@/lib/slug';
 import { __, sprintf } from '@/lib/i18n';
 import type { FieldTypeSlug } from '@/types/field';
 import type { FilterTree } from '@/types/record';
+
+// Fórmulas (A1): el editor (y el lector/evaluador) se cargan al abrirlo.
+const FormulaFieldEditor = lazy(() => import('./formula/FormulaFieldEditor').then((m) => ({ default: m.FormulaFieldEditor })));
 
 /**
  * Editor de la propiedad `config` de un campo. Cambia su contenido
@@ -74,6 +77,14 @@ function TypeConfigEditor({
     // Campo «Botón»: apariencia, acciones, condición, roles y portal.
     if (type === 'button') {
         return <ButtonFieldEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />;
+    }
+    // Fórmulas (A1).
+    if (type === 'formula') {
+        return (
+            <Suspense fallback={<p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cargando el editor de fórmulas…')}</p>}>
+                <FormulaFieldEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />
+            </Suspense>
+        );
     }
     // v0.1.300 — ID automático.
     if (type === 'autonumber') {

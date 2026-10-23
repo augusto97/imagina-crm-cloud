@@ -19,6 +19,8 @@ export interface RecordEntity {
     created_by: number;
     created_at: string;
     updated_at: string;
+    /** Fórmulas (A1): por slug, el motivo de las que dieron error en esta fila. */
+    formula_errors?: Record<string, string>;
 }
 
 export interface RecordListMeta {
@@ -203,4 +205,14 @@ export type GroupableFieldType = (typeof GROUPABLE_FIELD_TYPES)[number];
 
 export function isGroupableType(type: string): type is GroupableFieldType {
     return (GROUPABLE_FIELD_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * ¿Se puede agrupar por este CAMPO? Fórmulas (A1): sólo las que el servidor
+ * compila a SQL (las demás se calculan en cada lectura y no hay columna por
+ * la que agrupar).
+ */
+export function isGroupableField(field: { type: string; formula?: { sql: boolean } | null }): boolean {
+    if (field.type === 'formula') return field.formula?.sql === true;
+    return isGroupableType(field.type);
 }

@@ -14,6 +14,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { AggregateBag } from '@/hooks/useAggregates';
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { fieldPrecision } from '@/lib/fieldNumberFormat';
 import { formatNumber } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
@@ -50,8 +51,13 @@ const NUMERIC_COMPUTED_OPS = new Set(['sum', 'product', 'subtract', 'divide', 'a
  * un `computed` numérico (el backend lo compila a SQL desde v0.1.229) y un
  * `rollup` que da un número (contar/sumar/promediar, o mín/máx de un número).
  */
-export function footerIsNumeric(field: Pick<FieldEntity, 'type' | 'config' | 'through'>): boolean {
+export function footerIsNumeric(field: Pick<FieldEntity, 'type' | 'config' | 'through' | 'formula'>): boolean {
     if (NUMERIC_TYPES.has(field.type)) return true;
+    // Fórmulas (A1): las que el servidor compila a SQL y dan un número.
+    if (field.type === 'formula') {
+        const info = field.formula;
+        return !!info && info.sql && ['number', 'currency', 'percent', 'duration'].includes(info.result_type);
+    }
     const op = (field.config as { operation?: unknown } | null | undefined)?.operation;
     if (field.type === 'computed') return typeof op === 'string' && NUMERIC_COMPUTED_OPS.has(op);
     if (field.type === 'rollup') {
@@ -67,8 +73,10 @@ export function footerIsNumeric(field: Pick<FieldEntity, 'type' | 'config' | 'th
  * registro salvo relación y lookup (listas de valores); de los `computed`,
  * sólo los numéricos (los demás no tienen valor en SQL: el pie mentía).
  */
-export function footerIsAggregatable(field: Pick<FieldEntity, 'type' | 'config' | 'through'>): boolean {
+export function footerIsAggregatable(field: Pick<FieldEntity, 'type' | 'config' | 'through' | 'formula'>): boolean {
     if (field.type === 'relation' || field.type === 'lookup') return false;
+    // Fórmulas (A1): sólo si compila a SQL (si no, no hay valor en la base).
+    if (field.type === 'formula') return field.formula?.sql === true;
     if (field.type === 'computed') return footerIsNumeric(field);
     return true;
 }
@@ -131,7 +139,9 @@ export function FooterAggregateCell({
         return null;
     }
 
-    const formatted = formatAggregate(field, agg, totalCount, kind);
+    const formatted = formatAggregate(field.type === 'formula' ? asDisplayField(field) : field, agg, totalCount, kind);
+    // Fórmulas (A1): las fechas se calculan como fechas.
+    const dateLike = ['date', 'datetime', 'created_at', 'updated_at'].includes(field.type === 'formula' ? asDisplayField(field).type : field.type);
 
     return (
         <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -223,7 +233,7 @@ export function FooterAggregateCell({
                 )}
 
                 {/* Categoría: Fechas — date / datetime y las fechas de sistema (v0.1.300) */}
-                {(field.type === 'date' || field.type === 'datetime' || field.type === 'created_at' || field.type === 'updated_at') && (
+                {dateLike && (
                     <DropdownMenuSub>
                         <DropdownMenuSubTrigger>{__('Fechas')}</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>

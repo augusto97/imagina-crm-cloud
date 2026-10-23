@@ -5,6 +5,9 @@ import { formatDuration, resolveDisplay } from '@imagina-base/shared';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { FieldValueDisplay } from '@/admin/records/crm/FieldValueDisplay';
+import { FormulaErrorBadge } from '@/components/fields/FormulaErrorBadge';
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
+import { isFormulaError } from '@/lib/formulaError';
 import { effectiveAffixes, withAffixes } from '@/lib/affixes';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __ } from '@/lib/i18n';
@@ -38,6 +41,13 @@ export interface FieldDisplayProps {
 
 export function FieldDisplay(props: FieldDisplayProps): JSX.Element {
     const { field, value } = props;
+    // Fórmulas (A1): el error con su motivo; si no, el valor con la forma
+    // del tipo de su resultado («Cifra grande» si se eligió).
+    if (isFormulaError(value)) return <FormulaErrorBadge message={value.message} detailed />;
+    if (field.type === 'formula') {
+        const big = resolveDisplay('formula', props.display) === 'big';
+        return <FieldDisplay {...props} field={asDisplayField(field)} display={big ? 'big' : undefined} />;
+    }
     const display = resolveDisplay(field.type, props.display);
     const accent = props.accent ?? 'hsl(var(--imcrm-primary))';
 

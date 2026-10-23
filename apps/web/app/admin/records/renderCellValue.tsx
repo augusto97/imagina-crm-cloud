@@ -11,6 +11,8 @@ import { __ } from '@/lib/i18n';
 import { Paperclip } from 'lucide-react';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
+import { FormulaErrorBadge } from '@/components/fields/FormulaErrorBadge';
+import { isFormulaError } from '@/lib/formulaError';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
@@ -58,6 +60,10 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     // tablas de sólo lectura) no se dibuja nada; el botón vivo lo pone
     // `EditableCell` / la ficha con su registro.
     if (field.type === 'button') return null;
+    // Fórmulas (A1): una fila donde la fórmula no se pudo calcular muestra
+    // «#ERROR» con el motivo; si no, se pinta como el tipo de su resultado.
+    if (isFormulaError(value)) return <FormulaErrorBadge message={value.message} />;
+    if (field.type === 'formula') return renderCellValue(asDisplayField(field), value);
     // v0.1.170 — lookup: cada valor vinculado se pinta con el TIPO del campo
     // destino (chips de select con su color, moneda, fecha…); rollup: un
     // número con la precisión/moneda del destino (o fecha en min/max).

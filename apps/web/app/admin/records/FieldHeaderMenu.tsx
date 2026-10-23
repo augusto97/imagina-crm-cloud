@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { formulaDeleteWarning } from '@/lib/formulaDependents';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -177,7 +178,12 @@ export function FieldHeaderMenu({
                 __('¿Eliminar el campo "%s"?'),
                 field.label,
             ),
-            description: __('La columna va a la papelera con sus valores: puedes recuperarla tal cual durante 30 días.'),
+            description: [
+                __('La columna va a la papelera con sus valores: puedes recuperarla tal cual durante 30 días.'),
+                formulaDeleteWarning(field, fields ?? []),
+            ]
+                .filter(Boolean)
+                .join(' '),
             confirmLabel: __('Eliminar'),
             destructive: true,
         });
@@ -228,6 +234,17 @@ export function FieldHeaderMenu({
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="imcrm-w-56">
+                {/* Fórmulas (A1): una fórmula que no compila a SQL no se ordena;
+                    se dice por qué en vez de ofrecer un orden que no pasa. */}
+                {!onSort && field.type === 'formula' && field.formula && !field.formula.sql && (
+                    <>
+                        <div className="imcrm-px-2 imcrm-py-1.5 imcrm-text-xs imcrm-text-muted-foreground">
+                            <p className="imcrm-font-medium imcrm-text-foreground">{__('No se puede ordenar ni filtrar')}</p>
+                            {field.formula.sql_reason && <p className="imcrm-mt-0.5">{field.formula.sql_reason}</p>}
+                        </div>
+                        <DropdownMenuSeparator />
+                    </>
+                )}
                 {onSort && (
                     <>
                         <DropdownMenuItem onSelect={() => onSort(field, 'asc')}>

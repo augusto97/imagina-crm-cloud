@@ -1,3 +1,4 @@
+import { FormulaErrorValue } from '@/lib/formulaError';
 import { getBootData } from '@/lib/boot';
 import { CLOUD_WIRED } from '@/lib/cloudFeatures';
 
@@ -193,6 +194,10 @@ export interface FieldKeyMap {
 // `list_id`): así un listado pedido por id no vuelve a pedir los campos que ya
 // llegaron por slug.
 const fieldMaps = new Map<string, FieldKeyMap>();
+// De qué lista es cada mapa: el de un slug y el del id pueden ser objetos
+// distintos (llegaron en respuestas distintas de `/fields`), y un campo nuevo
+// tiene que llegar a los dos.
+const mapListIds = new WeakMap<FieldKeyMap, number>();
 
 function fieldMapKey(listKey: string): string {
     return `${getBootData().tenantId ?? 0}:${listKey}`;
@@ -202,7 +207,10 @@ function storeFieldMap(listKey: string, fields: unknown): FieldKeyMap {
     const map = buildFieldMap(fields);
     fieldMaps.set(fieldMapKey(listKey), map);
     const first = Array.isArray(fields) ? (fields[0] as { list_id?: unknown } | null | undefined) : undefined;
-    if (first && typeof first.list_id === 'number') fieldMaps.set(fieldMapKey(String(first.list_id)), map);
+    if (first && typeof first.list_id === 'number') {
+        fieldMaps.set(fieldMapKey(String(first.list_id)), map);
+        mapListIds.set(map, first.list_id);
+    }
     return map;
 }
 
@@ -241,10 +249,18 @@ export function primeFieldMap(listKeys: Array<string | number>, fields: unknown)
  * del ID automático o de un calculado salía en "—" hasta recargar).
  */
 export function rememberFieldKey(field: { id: number; slug: string; list_id?: number }, listKey?: string | number): void {
-    const keys = [field.list_id, listKey].filter((k): k is string | number => k !== undefined).map(String);
-    for (const key of keys) {
-        const map = fieldMaps.get(fieldMapKey(key));
-        if (!map) continue;
+    const maps = new Set<FieldKeyMap>();
+    for (const key of [field.list_id, listKey]) {
+        const map = key !== undefined ? fieldMaps.get(fieldMapKey(String(key))) : undefined;
+        if (map) maps.add(map);
+    }
+    // Todos los mapas de la lista, no sólo el de la clave pedida: si la tabla
+    // traduce con el del slug y el campo se creó desde el editor (que pidió los
+    // campos por id), la columna nueva quedaba en "—" hasta recargar.
+    if (field.list_id !== undefined) {
+        for (const map of fieldMaps.values()) if (mapListIds.get(map) === field.list_id) maps.add(map);
+    }
+    for (const map of maps) {
         map.toSlug[`f${field.id}`] = field.slug;
         map.toFid[field.slug] = `f${field.id}`;
     }
@@ -285,10 +301,21 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
     for (const [k, v] of Object.entries(relSource)) {
         relations[map.toSlug[k] ?? k] = v;
     }
+    // Fórmulas (A1): el motivo de las que dieron error, por slug; el valor
+    // pasa a ser «#ERROR» con el motivo (ver `FormulaErrorValue`).
+    const errSource = (r.formula_errors as Record<string, unknown> | undefined) ?? {};
+    let formulaErrors: Record<string, string> | undefined;
+    for (const [k, v] of Object.entries(errSource)) {
+        if (typeof v !== 'string') continue;
+        const slug = map.toSlug[k] ?? k;
+        (formulaErrors ??= {})[slug] = v;
+        fields[slug] = new FormulaErrorValue(v);
+    }
     return {
         id: r.id,
         fields,
         relations,
+        ...(formulaErrors ? { formula_errors: formulaErrors } : {}),
         // Subtareas (v0.1.132): la jerarquía es por ID, no por slug — pasa tal cual.
         parent_id: (r.parent_id as number | null | undefined) ?? null,
         subtask_count: (r.subtask_count as number | undefined) ?? 0,
@@ -305,6 +332,29 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         created_at: stripZ(r.created_at),
         updated_at: stripZ(r.updated_at),
     };
+}
+
+/**
+ * Fórmulas (A1) — en un bundle (registros anidados en grupos/celdas) cada
+ * registro trae `formula_errors` por slug: el valor pasa a `FormulaErrorValue`
+ * (ver `mapRecord`). Muta el payload recién llegado (no se comparte).
+ */
+export function wrapFormulaErrorsDeep(value: unknown, depth: number): void {
+    if (depth > 8 || value === null || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+        for (const v of value) wrapFormulaErrorsDeep(v, depth + 1);
+        return;
+    }
+    const obj = value as Record<string, unknown>;
+    const errors = obj.formula_errors;
+    const fields = obj.fields;
+    if (errors && typeof errors === 'object' && fields && typeof fields === 'object') {
+        for (const [slug, msg] of Object.entries(errors as Record<string, unknown>)) {
+            if (typeof msg === 'string') (fields as Record<string, unknown>)[slug] = new FormulaErrorValue(msg);
+        }
+        return;
+    }
+    for (const v of Object.values(obj)) wrapFormulaErrorsDeep(v, depth + 1);
 }
 
 function stripZ(value: unknown): unknown {
@@ -353,6 +403,12 @@ async function normalizeCloudResponse<T>(
         // v0.1.187 — con `page` el backend devuelve el total real y la UI
         // pagina de verdad; sin `page` la tanda se sirve como una sola página.
         return { data: rows as T, meta: cloudRecordsMeta(env.meta, rows.length) };
+    }
+
+    // Bundles de la vista agrupada y del kanban (los registros ya vienen por
+    // slug desde el servidor): las fórmulas con error pasan a «#ERROR».
+    if (/\/records\/(grouped|kanban)-bundle$/.test(path)) {
+        wrapFormulaErrorsDeep(payload, 0);
     }
 
     // Widget data de dashboards: el payload ES la WidgetData y puede tener un

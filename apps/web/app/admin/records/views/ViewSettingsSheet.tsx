@@ -45,7 +45,7 @@ import { downloadTimeCsv } from '@/hooks/useTimeTracking';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
-import { countConditions, isEmptyTree, isGroupableType, type FilterTree } from '@/types/record';
+import { countConditions, isEmptyTree, isGroupableField, type FilterTree } from '@/types/record';
 import type { RowDensity, RowFontSize } from '../recordsState';
 
 /** Las tres densidades de fila que puede elegir quien mira la vista. */
@@ -238,7 +238,7 @@ export function ViewSettingsSheet({
     // ofrecer una agrupación que el backend rechaza.
     const groupable = fields.filter(
         (f) =>
-            isGroupableType(f.type)
+            isGroupableField(f)
             && (f.type !== 'lookup'
                 || (f.through?.target_field != null && f.through.target_field.type !== 'computed')),
     );

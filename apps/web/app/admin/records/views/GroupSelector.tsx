@@ -9,7 +9,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { __ } from '@/lib/i18n';
-import { isGroupableType } from '@/types/record';
+import { isGroupableField } from '@/types/record';
 import type { FieldEntity } from '@/types/field';
 
 interface GroupSelectorProps {
@@ -29,7 +29,7 @@ interface GroupSelectorProps {
  */
 export function GroupSelector({ fields, value, onChange }: GroupSelectorProps): JSX.Element {
     const groupable = fields
-        .filter((f) => isGroupableType(f.type))
+        .filter((f) => isGroupableField(f))
         .sort((a, b) => a.position - b.position);
 
     const active = value !== null ? fields.find((f) => f.id === value) : null;

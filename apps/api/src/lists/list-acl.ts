@@ -1,6 +1,7 @@
 import {
     CONFIGURABLE_ROLES,
     defaultRolePermissions,
+    formulaDependencies,
     listPermissionsSchema,
     type ConfigurableRole,
     type ListPermissions,
@@ -159,8 +160,9 @@ export function withDependentComputed(
     while (changed) {
         changed = false;
         for (const f of fields) {
-            if (f.type !== 'computed' || out.has(f.id)) continue;
-            const inputs = (f.config?.inputs ?? []) as unknown[];
+            if ((f.type !== 'computed' && f.type !== 'formula') || out.has(f.id)) continue;
+            // Fórmulas (A1): sus entradas son los campos que nombra la fórmula.
+            const inputs = f.type === 'formula' ? formulaDependencies(f.config ?? {}) : ((f.config?.inputs ?? []) as unknown[]);
             if (inputs.some((id) => out.has(Number(id)))) {
                 out.add(f.id);
                 changed = true;

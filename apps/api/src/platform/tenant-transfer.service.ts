@@ -20,6 +20,7 @@ import { pipeline } from 'node:stream/promises';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
     TENANT_TRANSFER_FORMAT,
+    remapFormulaConfig,
     tenantTransferManifestSchema,
     type ExportTenantInput,
     type ExportTenantResult,
@@ -690,7 +691,9 @@ export class TenantTransferService {
         for (const f of fieldRows) {
             const newId = maps.field.get(Number(f.id));
             if (newId === undefined) continue;
-            const config = remapJson((f.config as Row | null) ?? {}, maps) as Row;
+            let config = remapJson((f.config as Row | null) ?? {}, maps) as Row;
+            // Fórmulas (A1): los ids viven DENTRO del texto (`{#12}`).
+            if (String(f.type) === 'formula') config = remapFormulaConfig(config, (id) => mapId(maps.field, id)) as Row;
             await tx.update(fields).set({ config }).where(eq(fields.id, newId));
         }
 

@@ -32,7 +32,9 @@ export type FieldTypeSlug =
     | 'created_by'
     | 'updated_by'
     // Campo «Botón» (A5): acciones al presionarlo, sin valor.
-    | 'button';
+    | 'button'
+    // Fórmulas (A1): se calcula sola con una fórmula en español.
+    | 'formula';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend
@@ -87,6 +89,30 @@ export interface FieldEntity {
     column_name?: string;
     /** Sólo lookup/rollup (v0.1.170). */
     through?: ThroughInfo | null;
+    /**
+     * Sólo fórmulas (A1): la fórmula por nombre, el tipo del resultado, cómo
+     * se muestra y si el servidor la puede filtrar/ordenar/sumar (y si no, por
+     * qué). Lo deriva el backend en cada listado de campos.
+     */
+    formula?: FormulaInfo | null;
+}
+
+export interface FormulaInfo {
+    /** La fórmula como se escribe (por nombre). */
+    display: string;
+    /** Cómo se muestra: el elegido o el inferido. */
+    result_type: 'number' | 'currency' | 'percent' | 'duration' | 'text' | 'date' | 'datetime' | 'checkbox';
+    inferred_type: FormulaInfo['result_type'];
+    /** Config del tipo del resultado (moneda y decimales). */
+    display_config: Record<string, unknown>;
+    /** ¿El servidor la compila a SQL (filtrar, ordenar, agrupar, sumar)? */
+    sql: boolean;
+    /** Por qué no compila (para explicarlo donde no se ofrece). */
+    sql_reason: string | null;
+    /** La fórmula no se puede calcular (campo borrado, ciclo…). */
+    error: string | null;
+    /** Ids de los campos que usa. */
+    dependencies: number[];
 }
 
 export interface CreateFieldInput {

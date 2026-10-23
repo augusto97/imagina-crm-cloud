@@ -343,7 +343,7 @@ export interface MoveInput {
 }
 
 /** Tipos que no se escriben a mano (no se piden al mover). */
-const NOT_WRITABLE: readonly string[] = ['lookup', 'rollup', 'computed', 'ai', 'time_tracked', 'relation', 'file'];
+const NOT_WRITABLE: readonly string[] = ['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'relation', 'file'];
 
 export function planMove(input: MoveInput): MovePlan {
     const { record, groupField, laneField, settings } = input;
