@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.296** (papelera de 30 días para registros, listas, campos, vistas, automatizaciones y tableros — primera entrega de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.297** (kanban para ventas: totales por columna y carril calculados en el servidor, carriles, límites y reglas al mover — segunda entrega de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -380,8 +380,8 @@ versión publicada: **v0.1.296** (papelera de 30 días para registros, listas, c
   30 días para todos los planes, restaura quien borró o un admin; el prefijo
   del ID automático se sugiere del nombre de la lista. Al terminar las dos
   fases: el usuario prueba y después se sigue con las fases 3-6.
-  **Avance**: Papelera publicada (v0.1.296). Kanban de ventas terminado,
-  sale como v0.1.297. Campos, Datos personales y Excel en curso. Los
+  **Avance**: Papelera (v0.1.296) y Kanban de ventas (v0.1.297) publicados.
+  Campos, Datos personales y Excel en curso. Los
   documentos de cada entrega toman el siguiente ADR libre (Papelera S52,
   Kanban S53…) y la migración de cada una se renumera a la siguiente libre al
   integrarla.
@@ -622,6 +622,17 @@ versión publicada: **v0.1.296** (papelera de 30 días para registros, listas, c
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.297** — **Kanban para ventas** (opción B5 del estudio,
+  ADR-S53). El tablero contaba en el navegador sobre los primeros 200 registros:
+  con más, las cantidades mentían y no había totales. Ahora sale de un pedido
+  propio (`kanban-bundle`) con la cantidad y la suma (o el promedio) de un campo
+  por columna, carril y celda calculados en el servidor sobre todo lo filtrado,
+  y el total del embudo. Además: carriles por un segundo campo (arrastrar entre
+  carriles cambia los dos), límite por columna que avisa, reglas al mover («al
+  pasar a Perdido pedir el motivo»), tarjetas con campos/portada/tamaño,
+  columnas plegables y ocultables, «Mostrar más» por celda y «Mover a…» en el
+  teléfono. Sin migración (todo en la vista). Fuera: orden manual dentro de una
+  columna, columnas por multi_select o fecha, montos abreviados («2,1 M»).
 - **2026-10-23 · v0.1.296** — **Papelera** (opción A2 del estudio, primera
   entrega de las fases 1 y 2 que el usuario aprobó «de una»; ADR-S52). Todo
   borrado de registros, listas, campos, vistas, automatizaciones y tableros va

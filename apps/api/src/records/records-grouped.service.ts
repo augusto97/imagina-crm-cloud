@@ -1,5 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { Field, FilterGroup, RecordDto } from '@imagina-base/shared';
+import {
+    KANBAN_MAX_COLUMNS,
+    KANBAN_MAX_LANES,
+    KANBAN_MAX_PER_CELL,
+    KANBAN_NULL_KEY,
+    kanbanCellKey,
+    kanbanRawKey,
+    type Field,
+    type FilterGroup,
+    type RecordDto,
+} from '@imagina-base/shared';
 import { AggregateService, groupKeyExpr } from '../aggregate/aggregate.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -10,6 +20,39 @@ const NULL_KEY = '__null__';
 const MAX_AUTO_EXPANDED = 40;
 /** Grupos que viajan como máximo (el resto se informa en `hidden_groups`). */
 const MAX_BUCKETS = 300;
+
+/**
+ * v0.1.297 — Celdas del kanban que traen tarjetas en una sola request (el resto se
+ * cuenta igual). Con 25 por celda son, como mucho, 7.500 filas.
+ */
+const KANBAN_MAX_LOADED_CELLS = 300;
+
+/** v0.1.297 — Respuesta del bundle del kanban (ver `kanbanBundle`). */
+export interface KanbanBundle {
+    meta: {
+        group_by_field_id: number;
+        group_by_slug: string;
+        group_by_type: string;
+        lane_field_id?: number;
+        lane_slug?: string;
+        lane_type?: string;
+        value_field_id: number | null;
+        value_metric: 'sum' | 'avg';
+        total_records: number;
+        total_value: number | null;
+        per_cell: number;
+        hidden_columns: number;
+        hidden_lanes: number;
+    };
+    /** En el orden del campo (catálogo de opciones), «Sin valor» al final. */
+    columns: Array<{ value: string | null; count: number; total: number | null }>;
+    lanes?: Array<{ value: string | null; count: number; total: number | null }>;
+    /**
+     * Por clave de celda (`kanbanCellKey`): tarjetas y totales. `records` es
+     * null si la celda no se cargó (columna o carril plegado).
+     */
+    cells: Record<string, { count: number; total: number | null; records: Array<Record<string, unknown>> | null; has_more: boolean }>;
+}
 
 export interface GroupBucket {
     value: string | null;
@@ -322,6 +365,146 @@ export class RecordsGroupedService {
                 ...(agg.hidden_sub_groups ? { hidden_sub_groups: agg.hidden_sub_groups } : {}),
             },
             expanded,
+        };
+    }
+
+    /**
+     * v0.1.297 — Bundle del KANBAN para ventas (B5): todo el tablero en UNA request
+     * y tres consultas, como la vista agrupada:
+     *  1. los totales (`AggregateService.boardStats`): tarjetas y suma (o
+     *     promedio) del campo de valor por columna, por carril, por celda y en
+     *     total — sobre TODO lo que coincide con la vista (filtros, búsqueda,
+     *     ACL), no sobre lo cargado;
+     *  2. las primeras tarjetas de cada celda visible (una ventana
+     *     `row_number()` particionada por columna, o por carril y columna), con
+     *     tope propio para las celdas a las que se les pidió «Mostrar más»;
+     *  3. la hidratación de esas filas (relaciones, derivados, subtareas).
+     * Las columnas plegadas u ocultas y los carriles plegados se cuentan pero
+     * no traen tarjetas (`skip` / `skipLanes`).
+     */
+    async kanbanBundle(
+        tenantId: number,
+        actor: Actor,
+        listKey: string,
+        opts: {
+            groupBy: number;
+            laneBy?: number;
+            valueFieldId?: number;
+            valueMetric?: 'sum' | 'avg';
+            filterTree?: FilterGroup;
+            search?: string;
+            sort?: string;
+            perCell: number;
+            /** Clave de celda (`kanbanCellKey`) → cuántas tarjetas traer. */
+            limits?: Record<string, number>;
+            skip?: string[];
+            skipLanes?: string[];
+        },
+    ): Promise<KanbanBundle> {
+        const { meta, groupField, fields } = await this.groupMeta(tenantId, listKey, opts.groupBy);
+        if (opts.laneBy !== undefined && (opts.laneBy === groupField.id || !fields.some((f) => f.id === opts.laneBy))) {
+            throw new BadRequestException({
+                code: 'invalid_lane_by',
+                message: 'Los carriles tienen que ser otro campo de la lista',
+                data: { status: 400 },
+            });
+        }
+        const stats = await this.aggregate.boardStats(tenantId, listKey, {
+            groupFieldId: groupField.id,
+            laneFieldId: opts.laneBy,
+            valueFieldId: opts.valueFieldId,
+            valueMetric: opts.valueMetric,
+            filter_tree: opts.filterTree,
+            search: opts.search,
+            viewer: actor,
+        });
+        // El carril que de verdad se usó (uno oculto para esta persona se ignora).
+        const laneField = stats.laneFieldId !== null ? fields.find((f) => f.id === stats.laneFieldId) : undefined;
+        const allColumns = orderBuckets(groupField, stats.columns);
+        const columns = allColumns.slice(0, KANBAN_MAX_COLUMNS);
+        const allLanes = laneField ? orderBuckets(laneField, stats.lanes ?? []) : [];
+        const lanes = allLanes.slice(0, KANBAN_MAX_LANES);
+        const toSlug = new Map(fields.map((f) => [`f${f.id}`, f.slug]));
+        const skip = new Set(opts.skip ?? []);
+        const skipLanes = new Set(opts.skipLanes ?? []);
+        const raw = (k: string): string | null => kanbanRawKey(k);
+        const capOf = (key: string): number => {
+            const n = opts.limits?.[key];
+            return typeof n === 'number' && Number.isInteger(n) && n > opts.perCell ? Math.min(KANBAN_MAX_PER_CELL, n) : opts.perCell;
+        };
+
+        const cells: KanbanBundle['cells'] = {};
+        if (!laneField) {
+            const keys = columns.map((c) => c.value ?? KANBAN_NULL_KEY).filter((k) => !skip.has(k) && (stats.columns.find((c) => (c.value ?? KANBAN_NULL_KEY) === k)?.count ?? 0) > 0);
+            const limits = keys.filter((k) => capOf(k) !== opts.perCell).map((k) => ({ key: raw(k), limit: capOf(k) }));
+            const rowsByGroup = await this.records.listGroupRows(tenantId, actor, listKey, {
+                groupFieldId: groupField.id,
+                groupKeyExpr,
+                keys: keys.map(raw),
+                perGroup: opts.perCell,
+                limits,
+                filter_tree: opts.filterTree,
+                search: opts.search,
+                sort: opts.sort,
+                recentFirst: true,
+            });
+            for (const c of columns) {
+                const key = kanbanCellKey(undefined, c.value);
+                const rows = skip.has(key) ? null : (rowsByGroup.get(c.value) ?? []).map((r) => toBundleRow(r, toSlug));
+                cells[key] = { count: c.count, total: c.total, records: rows, has_more: rows !== null && c.count > rows.length };
+            }
+        } else {
+            const pairs: Array<[string | null, string | null]> = [];
+            const keptCols = new Set(columns.map((c) => c.value));
+            const keptLanes = new Set(lanes.map((l) => l.value));
+            for (const cell of stats.cells ?? []) {
+                if (!keptCols.has(cell.column) || !keptLanes.has(cell.lane)) continue;
+                if (skip.has(cell.column ?? KANBAN_NULL_KEY) || skipLanes.has(cell.lane ?? KANBAN_NULL_KEY)) continue;
+                if (pairs.length >= KANBAN_MAX_LOADED_CELLS) break;
+                pairs.push([cell.lane, cell.column]);
+            }
+            const limits = pairs
+                .map((pair) => ({ pair, limit: capOf(kanbanCellKey(pair[0], pair[1])) }))
+                .filter((l) => l.limit !== opts.perCell);
+            const rowsByPair = await this.records.listSubGroupRows(tenantId, actor, listKey, {
+                groupFieldId: laneField.id,
+                subGroupFieldId: groupField.id,
+                groupKeyExpr,
+                pairs,
+                perGroup: opts.perCell,
+                limits,
+                filter_tree: opts.filterTree,
+                search: opts.search,
+                sort: opts.sort,
+                recentFirst: true,
+            });
+            const loaded = new Set(pairs.map(([l, c]) => kanbanCellKey(l, c)));
+            for (const cell of stats.cells ?? []) {
+                if (!keptCols.has(cell.column) || !keptLanes.has(cell.lane)) continue;
+                const key = kanbanCellKey(cell.lane, cell.column);
+                // Mismo formato de clave que `subGroupPairKey(carril, columna)`.
+                const rows = loaded.has(key) ? (rowsByPair.get(subGroupPairKey(cell.lane, cell.column)) ?? []).map((r) => toBundleRow(r, toSlug)) : null;
+                cells[key] = { count: cell.count, total: cell.total, records: rows, has_more: rows !== null && cell.count > rows.length };
+            }
+        }
+
+        return {
+            meta: {
+                group_by_field_id: meta.group_by_field_id,
+                group_by_slug: meta.group_by_slug,
+                group_by_type: meta.group_by_type,
+                ...(laneField ? { lane_field_id: laneField.id, lane_slug: laneField.slug, lane_type: laneField.type } : {}),
+                value_field_id: stats.valueFieldId,
+                value_metric: stats.valueMetric,
+                total_records: stats.total.count,
+                total_value: stats.total.value,
+                per_cell: opts.perCell,
+                hidden_columns: allColumns.length - columns.length,
+                hidden_lanes: allLanes.length - lanes.length,
+            },
+            columns: columns.map((c) => ({ value: c.value, count: c.count, total: c.total })),
+            ...(laneField ? { lanes: lanes.map((l) => ({ value: l.value, count: l.count, total: l.total })) } : {}),
+            cells,
         };
     }
 

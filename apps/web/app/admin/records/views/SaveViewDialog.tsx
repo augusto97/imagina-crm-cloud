@@ -51,8 +51,13 @@ export function SaveViewDialog({
     const [cardSize, setCardSize] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
     const [error, setError] = useState<string | null>(null);
 
+    // v0.1.297 — el kanban también se arma por una persona («por vendedor»); los
+    // de selección primero.
     const selectFields = useMemo(
-        () => (fields.data ?? []).filter((f) => f.type === 'select'),
+        () => [
+            ...(fields.data ?? []).filter((f) => f.type === 'select'),
+            ...(fields.data ?? []).filter((f) => f.type === 'user'),
+        ],
         [fields.data],
     );
     const dateFields = useMemo(
@@ -210,7 +215,7 @@ export function SaveViewDialog({
                                     ))}
                                 </Select>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    {__('Las columnas del tablero serán las opciones de este campo.')}
+                                    {__('Las columnas del tablero serán las opciones de este campo (o las personas). Después puedes sumar carriles, totales y reglas desde «Configurar tablero».')}
                                 </p>
                             </div>
                         )}

@@ -168,7 +168,17 @@ export class RecordsRepository {
         tx: Tx,
         tenantId: number,
         listId: number,
-        opts: { where?: SQL; groupExpr: SQL; keys: Array<string | null>; orderBy: SQL[]; perGroup: number },
+        opts: {
+            where?: SQL;
+            groupExpr: SQL;
+            keys: Array<string | null>;
+            orderBy: SQL[];
+            perGroup: number;
+            /** v0.1.297 — tope propio de algunos grupos («Mostrar más» de una columna del kanban). */
+            limits?: Array<{ key: string | null; limit: number }>;
+            /** v0.1.297 — orden sin orden por campo (el kanban: lo actualizado hace poco primero). */
+            fallbackOrder?: SQL[];
+        },
     ): Promise<Array<{ group: string | null; row: RecordListRow }>> {
         if (opts.keys.length === 0) return [];
         const base = and(
@@ -188,7 +198,9 @@ export class RecordsRepository {
         const keyParts: SQL[] = [];
         if (values.length > 0) keyParts.push(sql`${grp} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`);
         if (opts.keys.includes(null)) keyParts.push(sql`${grp} IS NULL`);
-        const order = sql.join([...opts.orderBy, sql`${records.id} ASC`], sql`, `);
+        const primary = opts.orderBy.length > 0 ? opts.orderBy : (opts.fallbackOrder ?? []);
+        const order = sql.join([...primary, sql`${records.id} ASC`], sql`, `);
+        const limit = perGroupLimit(opts.perGroup, (opts.limits ?? []).map((l) => ({ match: sql`t.grp IS NOT DISTINCT FROM ${l.key}::text`, limit: l.limit })));
         const picked = await tx.execute(sql`
             SELECT t.id, t.grp FROM (
                 SELECT ${records.id} AS id, ${grp} AS grp,
@@ -201,7 +213,7 @@ export class RecordsRepository {
                 ) AS ${sql.identifier('records')}
                 WHERE ${sql.join(keyParts, sql` OR `)}
             ) t
-            WHERE t.rn <= ${opts.perGroup}
+            WHERE t.rn <= ${limit}
             ORDER BY t.grp, t.rn`);
         const picks = (picked.rows as Array<{ id: string | number; grp: string | null }>).map((r) => ({
             id: Number(r.id),
@@ -236,6 +248,9 @@ export class RecordsRepository {
             pairs: Array<[string | null, string | null]>;
             orderBy: SQL[];
             perGroup: number;
+            /** v0.1.297 — tope propio de algunos pares (celdas del kanban con «Mostrar más»). */
+            limits?: Array<{ pair: [string | null, string | null]; limit: number }>;
+            fallbackOrder?: SQL[];
         },
     ): Promise<Array<{ group: string | null; sub: string | null; row: RecordListRow }>> {
         if (opts.pairs.length === 0) return [];
@@ -252,7 +267,15 @@ export class RecordsRepository {
         const pairParts = opts.pairs.map(
             ([g, s]) => sql`(${grp} IS NOT DISTINCT FROM ${g}::text AND ${sub} IS NOT DISTINCT FROM ${s}::text)`,
         );
-        const order = sql.join([...opts.orderBy, sql`${records.id} ASC`], sql`, `);
+        const primary = opts.orderBy.length > 0 ? opts.orderBy : (opts.fallbackOrder ?? []);
+        const order = sql.join([...primary, sql`${records.id} ASC`], sql`, `);
+        const limit = perGroupLimit(
+            opts.perGroup,
+            (opts.limits ?? []).map((l) => ({
+                match: sql`t.grp IS NOT DISTINCT FROM ${l.pair[0]}::text AND t.sub IS NOT DISTINCT FROM ${l.pair[1]}::text`,
+                limit: l.limit,
+            })),
+        );
         const picked = await tx.execute(sql`
             SELECT t.id, t.grp, t.sub FROM (
                 SELECT ${records.id} AS id, ${grp} AS grp, ${sub} AS sub,
@@ -265,7 +288,7 @@ export class RecordsRepository {
                 ) AS ${sql.identifier('records')}
                 WHERE ${sql.join(pairParts, sql` OR `)}
             ) t
-            WHERE t.rn <= ${opts.perGroup}
+            WHERE t.rn <= ${limit}
             ORDER BY t.grp, t.sub, t.rn`);
         const picks = (picked.rows as Array<{ id: string | number; grp: string | null; sub: string | null }>).map((r) => ({
             id: Number(r.id),
@@ -498,4 +521,16 @@ export class RecordsRepository {
             .returning({ id: records.id });
         return rows.length > 0;
     }
+}
+
+/**
+ * v0.1.297 — Tope de filas por grupo: el general o, para los grupos con tope propio
+ * («Mostrar más» de una columna del kanban), el suyo. Todo bindeado; los casts
+ * a `int` hacen falta porque dentro de un CASE los parámetros sin tipo se
+ * resuelven como texto.
+ */
+function perGroupLimit(perGroup: number, overrides: Array<{ match: SQL; limit: number }>): SQL {
+    if (overrides.length === 0) return sql`${perGroup}`;
+    const whens = overrides.map((o) => sql`WHEN ${o.match} THEN ${o.limit}::int`);
+    return sql`(CASE ${sql.join(whens, sql` `)} ELSE ${perGroup}::int END)`;
 }

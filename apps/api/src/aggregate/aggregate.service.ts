@@ -419,6 +419,109 @@ export class AggregateService {
     }
 
     /**
+     * v0.1.297 — Totales del KANBAN (B5) en UNA consulta: por cada columna, carril y
+     * celda (carril × columna) cuántas tarjetas hay y la suma (o el promedio)
+     * de un campo numérico, más el total general. Mismo ACL, filtro, búsqueda
+     * y regla de primer nivel que la vista agrupada: lo que se cuenta es
+     * exactamente lo que el tablero puede mostrar, no lo que ya se cargó.
+     *
+     * `GROUPING SETS` sobre una subconsulta que arma las claves UNA vez por
+     * fila (la de un multi_select o un derivado es cara); la de afuera se
+     * llama "records", así la métrica —que apunta a `"records"."data"`— vale
+     * sin tocarla. Un campo de valor que la persona no ve (oculto por su rol)
+     * o que ya no es numérico se ignora en vez de romper el tablero.
+     */
+    async boardStats(
+        tenantId: number,
+        listIdOrSlug: string,
+        opts: {
+            groupFieldId: number;
+            laneFieldId?: number;
+            valueFieldId?: number;
+            valueMetric?: 'sum' | 'avg';
+            filter_tree?: AggregateRequest['filter_tree'];
+            search?: string;
+            viewer?: AggregateViewer;
+        },
+    ): Promise<BoardStats> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.listContext(tenantId, listIdOrSlug, opts.viewer, tx);
+            const { byId, fieldsById, clock } = ctx;
+            const groupField = byId.get(opts.groupFieldId);
+            if (!groupField) throw badRequest('group_by no pertenece a la lista');
+            // Un carril por un campo que esta persona no ve (oculto por su rol)
+            // se ignora: el tablero sigue funcionando, sin carriles — agrupar
+            // por él mostraría los valores ocultos (SEC-25).
+            const laneField =
+                opts.laneFieldId !== undefined && opts.laneFieldId !== groupField.id ? byId.get(opts.laneFieldId) : undefined;
+
+            const metric = opts.valueMetric === 'avg' ? 'avg' : 'sum';
+            let valueField = opts.valueFieldId !== undefined ? byId.get(opts.valueFieldId) : undefined;
+            if (valueField) {
+                try {
+                    this.assertMetricCompat(metric, valueField, fieldsById);
+                } catch {
+                    valueField = undefined;
+                }
+            }
+
+            const groupExpr = groupingExpr(groupField, undefined, fieldsById, clock.timeZone);
+            const laneExpr = laneField ? groupingExpr(laneField, undefined, fieldsById, clock.timeZone) : undefined;
+            if (groupKeyHasSubquery(groupField.type) || (laneField && groupKeyHasSubquery(laneField.type))) await disableJitForTx(tx);
+
+            const where = and(
+                eq(records.tenantId, tenantId),
+                eq(records.listId, ctx.list.id),
+                isNull(records.deletedAt),
+                // Las tarjetas son las filas de primer nivel (como los grupos de la tabla).
+                isNull(records.parentId),
+                ctx.scope,
+                compileFilterTree(fieldsById, opts.filter_tree, clock),
+                compileSearch(ctx.fields.filter((f) => !ctx.hidden.has(f.id)), opts.search),
+            ) ?? sql`true`;
+            const valueExpr = valueField ? this.metricExpr(metric, valueField, fieldsById) : sql`NULL`;
+            const R = sql.identifier('records');
+            const bkt = sql`${R}.${sql.identifier('bkt')}`;
+            const sbk = sql`${R}.${sql.identifier('sbk')}`;
+            const keyed = laneExpr
+                ? sql`(SELECT ${records}.*, (${groupExpr})::text AS bkt, (${laneExpr})::text AS sbk FROM ${records} WHERE ${where} OFFSET 0) AS ${R}`
+                : sql`(SELECT ${records}.*, (${groupExpr})::text AS bkt FROM ${records} WHERE ${where} OFFSET 0) AS ${R}`;
+            const res = laneExpr
+                ? await tx.execute(sql`
+                    SELECT ${bkt} AS grp, ${sbk} AS sub, count(*) AS cnt, ${valueExpr} AS val,
+                           GROUPING(${bkt}) AS gg, GROUPING(${sbk}) AS gs
+                    FROM ${keyed}
+                    GROUP BY GROUPING SETS ((${bkt}, ${sbk}), (${bkt}), (${sbk}), ())`)
+                : await tx.execute(sql`
+                    SELECT ${bkt} AS grp, NULL AS sub, count(*) AS cnt, ${valueExpr} AS val,
+                           GROUPING(${bkt}) AS gg, 1 AS gs
+                    FROM ${keyed}
+                    GROUP BY GROUPING SETS ((${bkt}), ())`);
+
+            const out: BoardStats = {
+                total: { count: 0, value: null },
+                columns: [],
+                lanes: laneField ? [] : undefined,
+                cells: laneField ? [] : undefined,
+                valueFieldId: valueField?.id ?? null,
+                valueMetric: metric,
+                laneFieldId: laneField?.id ?? null,
+            };
+            for (const r of res.rows as Array<{ grp: unknown; sub: unknown; cnt: unknown; val: unknown; gg: unknown; gs: unknown }>) {
+                const count = Number(r.cnt ?? 0);
+                const value = valueField ? toNumberOrNull(r.val) : null;
+                const gg = Number(r.gg) === 1;
+                const gs = Number(r.gs) === 1;
+                if (gg && gs) out.total = { count, value };
+                else if (!gg && gs) out.columns.push({ value: keyOf(r.grp), count, total: value });
+                else if (gg && !gs) out.lanes!.push({ value: keyOf(r.sub), count, total: value });
+                else out.cells!.push({ column: keyOf(r.grp), lane: keyOf(r.sub), count, total: value });
+            }
+            return out;
+        });
+    }
+
+    /**
      * v0.1.97 — Delta vs período anterior (widget `stat_delta`). Evalúa la
      * MISMA métrica sobre dos ventanas consecutivas de N días ancladas a hoy
      * (en el reloj de la empresa):
@@ -771,6 +874,26 @@ export interface DeltaResult {
     previous: number | string | null;
     delta_pct: number | null;
     period_days: number;
+}
+
+/** v0.1.297 — totales del kanban (ver `boardStats`). `value` es null sin campo de valor. */
+export interface BoardStats {
+    total: { count: number; value: number | null };
+    columns: Array<{ value: string | null; count: number; total: number | null }>;
+    /** Sólo con carriles. */
+    lanes?: Array<{ value: string | null; count: number; total: number | null }>;
+    /** Sólo con carriles: cada celda (carril × columna) con tarjetas. */
+    cells?: Array<{ column: string | null; lane: string | null; count: number; total: number | null }>;
+    /** El campo que se sumó de verdad (null si no había o no se podía). */
+    valueFieldId: number | null;
+    valueMetric: 'sum' | 'avg';
+    /** El campo de los carriles que se usó (null: sin carriles o ignorado). */
+    laneFieldId: number | null;
+}
+
+function toNumberOrNull(val: unknown): number | null {
+    const n = normalize(val);
+    return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
 /** v0.1.286 — lo resuelto de una lista para agregar sobre ella (ver `listContext`). */

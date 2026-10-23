@@ -37,6 +37,12 @@ import {
     viewRowColorSchema,
     VIEW_ROW_COLORS,
     MAX_VIEW_COLOR_RULES,
+    KANBAN_CARD_SIZES,
+    KANBAN_COLUMN_TYPES,
+    KANBAN_LANE_TYPES,
+    KANBAN_VALUE_METRICS,
+    KANBAN_VALUE_TYPES,
+    readKanbanSettings,
     type AiProposal,
     type AiProposalKind,
     type AiProposalPreview,
@@ -229,7 +235,34 @@ const viewSpec = z.object({
     filters: z.array(filterRuleSpec).max(20).optional().describe('Condiciones unidas por AND'),
     sort: z.array(z.object({ field: fieldSlugSchema, dir: z.enum(['asc', 'desc']) })).max(5).optional(),
     hidden_columns: z.array(fieldSlugSchema).max(60).optional().describe('table: columnas ocultas'),
-    card_fields: z.array(fieldSlugSchema).max(12).optional().describe('cards: campos que se muestran en la tarjeta'),
+    card_fields: z.array(fieldSlugSchema).max(12).optional().describe('cards y kanban: campos que se muestran en la tarjeta, en orden'),
+    // v0.1.297 — Kanban para ventas (B5).
+    lane_by: fieldSlugSchema
+        .optional()
+        .describe('kanban: CARRILES (filas horizontales) por un segundo campo — select, persona (user) o casilla. P. ej. por vendedor o por prioridad. Arrastrar entre carriles cambia los dos campos.'),
+    value_field: fieldSlugSchema
+        .optional()
+        .describe('kanban: campo numérico o moneda que se suma en el encabezado de cada columna y carril («el valor del embudo» de cada etapa)'),
+    value_metric: z.enum(KANBAN_VALUE_METRICS).optional().describe('kanban: sum (default) o avg'),
+    card_title: fieldSlugSchema.optional().describe('kanban: campo de texto que hace de título de la tarjeta (default: el título de la lista)'),
+    card_cover: fieldSlugSchema.optional().describe('kanban: campo archivo o enlace de imagen para la portada de la tarjeta'),
+    card_size: z.enum(KANBAN_CARD_SIZES).optional().describe('kanban: compact | normal'),
+    wip_limits: z
+        .array(z.object({ column: z.string().min(1).max(190).describe('`value` (o etiqueta) de la opción de group_by'), limit: z.number().int().min(1).max(10_000) }))
+        .max(50)
+        .optional()
+        .describe('kanban: límite de tarjetas por columna (WIP). La columna se marca cuando lo supera; no bloquea.'),
+    move_rules: z
+        .array(
+            z.object({
+                column: z.string().min(1).max(190).describe('`value` (o etiqueta) de la opción de group_by'),
+                require: z.array(fieldSlugSchema).min(1).max(20).describe('Campos que se piden al mover una tarjeta A esa columna, si están vacíos'),
+            }),
+        )
+        .max(50)
+        .optional()
+        .describe('kanban: reglas al mover. P. ej. a «perdido» pedir motivo_perdida; a «ganado», fecha_cierre y monto.'),
+    hide_empty_columns: z.boolean().optional().describe('kanban: ocultar las columnas y carriles sin tarjetas'),
     is_default: z.boolean().optional(),
 });
 type ViewSpec = z.infer<typeof viewSpec>;
@@ -1045,10 +1078,11 @@ export class StructureTools implements AiProposalApplier {
                 settings.title_field_id = { $field: spec.title_field };
             }
 
+            const optionsBySlug = new Map(fields.map((f) => [f.slug, (f.config as { options?: unknown } | undefined)?.options]));
             const views = (spec.views ?? []).map((v) => {
                 const config = this.buildViewConfig(v, (slug) => {
                     requireSlug(slug, `Vista «${v.name}»`);
-                    return { id: { $field: slug }, type: fieldTypeBySlug.get(slug)! };
+                    return { id: { $field: slug }, type: fieldTypeBySlug.get(slug)!, options: optionsBySlug.get(slug) };
                 });
                 return { name: v.name, type: v.type, config, is_default: v.is_default ?? false };
             });
@@ -1245,7 +1279,7 @@ export class StructureTools implements AiProposalApplier {
         const config = this.buildViewConfig(input.view, (slug) => {
             const f = bySlug.get(slug);
             if (!f) throw new AiToolError(`La vista referencia el campo «${slug}» que no existe en «${list.name}». Campos: ${fields.map((x) => x.slug).join(', ')}.`);
-            return { id: f.id, type: f.type };
+            return { id: f.id, type: f.type, options: (f.config as { options?: unknown }).options };
         });
         // La config se valida contra el schema real del tipo de vista.
         let parsedConfig: Record<string, unknown>;
@@ -2066,7 +2100,7 @@ export class StructureTools implements AiProposalApplier {
             const config = this.buildViewConfig(spec, (slug) => {
                 const f = bySlug.get(slug);
                 if (!f) throw new AiToolError(`La vista referencia el campo «${slug}» que no existe en «${list.name}». Campos: ${fields.map((x) => x.slug).join(', ')}.`);
-                return { id: f.id, type: f.type };
+                return { id: f.id, type: f.type, options: (f.config as { options?: unknown }).options };
             });
             try {
                 patch.config = parseViewConfig(view.type as ViewSpec['type'], config);
@@ -2081,6 +2115,10 @@ export class StructureTools implements AiProposalApplier {
             if (spec.filters?.length) bits.push(`${spec.filters.length} filtro${spec.filters.length === 1 ? '' : 's'}`);
             if (spec.sort?.length) bits.push('con orden');
             if (spec.hidden_columns?.length) bits.push(`${spec.hidden_columns.length} columnas ocultas`);
+            if (spec.lane_by) bits.push(`carriles por «${bySlug.get(spec.lane_by)?.label}»`);
+            if (spec.value_field) bits.push(`${spec.value_metric === 'avg' ? 'promedio' : 'suma'} de «${bySlug.get(spec.value_field)?.label}» por columna`);
+            if (spec.wip_limits?.length) bits.push(`${spec.wip_limits.length} límite${spec.wip_limits.length === 1 ? '' : 's'} por columna`);
+            if (spec.move_rules?.length) bits.push(`${spec.move_rules.length} regla${spec.move_rules.length === 1 ? '' : 's'} al mover`);
             changes.push({ label: 'Configuración', from: null, to: bits.join(', ') || 'sin filtros ni agrupación' });
         }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la vista actual.');
@@ -2850,16 +2888,17 @@ export class StructureTools implements AiProposalApplier {
     /** Config de vista con ids (o tokens `{$field}` en el blueprint). */
     private buildViewConfig(
         v: ViewSpec,
-        resolve: (slug: string) => { id: unknown; type: FieldType },
+        resolve: (slug: string) => { id: unknown; type: FieldType; options?: unknown },
     ): Record<string, unknown> {
         const config: Record<string, unknown> = {};
         if (v.type === 'kanban') {
             if (!v.group_by) throw new AiToolError(`La vista kanban «${v.name}» necesita group_by.`);
             const g = resolve(v.group_by);
-            if (g.type !== 'select' && g.type !== 'user' && g.type !== 'checkbox' && g.type !== 'text') {
+            if (!KANBAN_COLUMN_TYPES.includes(g.type)) {
                 throw new AiToolError(`Vista «${v.name}»: kanban se agrupa por un select (o user/checkbox); «${v.group_by}» es ${g.type}.`);
             }
             config.group_by_field_id = g.id;
+            Object.assign(config, this.buildKanbanConfig(v, g, resolve));
         } else if (v.type === 'table' && v.group_by) {
             config.group_by_field_id = resolve(v.group_by).id;
         }
@@ -2904,6 +2943,12 @@ export class StructureTools implements AiProposalApplier {
             config.date_field_id = d.id;
         }
         if (v.type === 'cards' && v.card_fields) config.card_field_ids = v.card_fields.map((s) => resolve(s).id);
+        const kanbanOnly = (['lane_by', 'value_field', 'value_metric', 'card_title', 'card_cover', 'card_size', 'wip_limits', 'move_rules', 'hide_empty_columns'] as const).filter(
+            (k) => v[k] !== undefined,
+        );
+        if (v.type !== 'kanban' && kanbanOnly.length > 0) {
+            throw new AiToolError(`Vista «${v.name}»: ${kanbanOnly.join(', ')} sólo aplica${kanbanOnly.length === 1 ? '' : 'n'} a vistas kanban.`);
+        }
         if (v.filters?.length) config.filter_tree = this.buildFilterTree(v.filters, (slug) => resolve(slug).id);
         if (v.sort?.length) config.sort = v.sort.map((s) => ({ field_id: resolve(s.field).id, dir: s.dir }));
         // Los ids de columna de la tabla son los SLUGS (TanStack), no field_ids:
@@ -2915,6 +2960,77 @@ export class StructureTools implements AiProposalApplier {
             });
         }
         return config;
+    }
+
+    /**
+     * v0.1.297 — Lo propio del kanban para ventas (B5): carriles, total por columna,
+     * tarjetas, límites por columna y reglas al mover. Las columnas se nombran
+     * por el `value` de la opción (o su etiqueta, que se traduce) — la clave
+     * con la que el tablero las identifica.
+     */
+    private buildKanbanConfig(
+        v: ViewSpec,
+        group: { id: unknown; type: FieldType; options?: unknown },
+        resolve: (slug: string) => { id: unknown; type: FieldType; options?: unknown },
+    ): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        const options = Array.isArray(group.options)
+            ? (group.options as Array<{ value?: unknown; label?: unknown }>).filter((o) => typeof o?.value === 'string')
+            : [];
+        const column = (ref: string): string => {
+            if (group.type === 'select' && options.length > 0) {
+                const norm = (x: unknown): string => String(x ?? '').trim().toLowerCase();
+                const hit = options.find((o) => o.value === ref) ?? options.find((o) => norm(o.label) === norm(ref));
+                if (!hit) {
+                    throw new AiToolError(
+                        `Vista «${v.name}»: la columna «${ref}» no es una opción de «${v.group_by}». Opciones: ${options.map((o) => `${String(o.value)} («${String(o.label ?? o.value)}»)`).join(', ')}.`,
+                    );
+                }
+                return String(hit.value);
+            }
+            return ref;
+        };
+        if (v.lane_by !== undefined) {
+            if (v.lane_by === v.group_by) throw new AiToolError(`Vista «${v.name}»: lane_by tiene que ser otro campo que group_by.`);
+            const lane = resolve(v.lane_by);
+            if (!KANBAN_LANE_TYPES.includes(lane.type)) {
+                throw new AiToolError(`Vista «${v.name}»: los carriles se arman por un select, una persona (user) o una casilla; «${v.lane_by}» es ${lane.type}.`);
+            }
+            out.kanban_lane_field_id = lane.id;
+        }
+        if (v.value_field !== undefined) {
+            const val = resolve(v.value_field);
+            if (!KANBAN_VALUE_TYPES.includes(val.type)) {
+                throw new AiToolError(`Vista «${v.name}»: value_field tiene que ser numérico o moneda; «${v.value_field}» es ${val.type}.`);
+            }
+            out.kanban_value_field_id = val.id;
+            if (v.value_metric === 'avg') out.kanban_value_metric = 'avg';
+        }
+        if (v.card_fields?.length) out.kanban_meta_field_ids = v.card_fields.map((s) => resolve(s).id);
+        if (v.card_title !== undefined) out.kanban_title_field_id = resolve(v.card_title).id;
+        if (v.card_cover !== undefined) {
+            const cover = resolve(v.card_cover);
+            if (cover.type !== 'file' && cover.type !== 'url') {
+                throw new AiToolError(`Vista «${v.name}»: card_cover tiene que ser un campo archivo o enlace; «${v.card_cover}» es ${cover.type}.`);
+            }
+            out.kanban_cover_field_id = cover.id;
+        }
+        if (v.card_size === 'compact') out.kanban_card_size = 'compact';
+        if (v.hide_empty_columns) out.kanban_hide_empty = true;
+        if (v.wip_limits?.length) out.kanban_wip_limits = v.wip_limits.map((w) => ({ column: column(w.column), limit: w.limit }));
+        if (v.move_rules?.length) {
+            out.kanban_move_rules = v.move_rules.map((r) => ({
+                column: column(r.column),
+                required_field_ids: r.require.map((slug) => {
+                    const f = resolve(slug);
+                    if (['lookup', 'rollup', 'computed', 'ai', 'time_tracked'].includes(f.type)) {
+                        throw new AiToolError(`Vista «${v.name}»: «${slug}» es un campo calculado (${f.type}); no se puede pedir al mover.`);
+                    }
+                    return f.id;
+                }),
+            }));
+        }
+        return out;
     }
 
     private buildFilterTree(rules: FilterRuleSpec[], resolveId: (slug: string) => unknown): FilterGroup {
@@ -3358,6 +3474,29 @@ function describeViewForModel(
     const cfg = v.config ?? {};
     const groupBy = slugOf(cfg.group_by_field_id);
     if (groupBy) out.group_by = groupBy;
+    if (v.type === 'kanban') {
+        // v0.1.297 — lo del kanban para ventas, en el mismo vocabulario que propose_update_view.
+        const k = readKanbanSettings(cfg);
+        const lane = slugOf(k.laneFieldId);
+        if (lane) out.lane_by = lane;
+        const value = slugOf(k.valueFieldId);
+        if (value) {
+            out.value_field = value;
+            if (k.valueMetric === 'avg') out.value_metric = 'avg';
+        }
+        const title = slugOf(k.titleFieldId);
+        if (title) out.card_title = title;
+        const cardFields = k.metaFieldIds.map(slugOf).filter((x): x is string => x !== null);
+        if (cardFields.length > 0) out.card_fields = cardFields;
+        const cover = slugOf(k.coverFieldId);
+        if (cover) out.card_cover = cover;
+        if (k.cardSize === 'compact') out.card_size = 'compact';
+        if (k.hideEmpty) out.hide_empty_columns = true;
+        const wip = Object.entries(k.wipLimits).map(([column, limit]) => ({ column, limit }));
+        if (wip.length > 0) out.wip_limits = wip;
+        const rules = Object.entries(k.moveRules).map(([column, ids]) => ({ column, require: ids.map(slugOf).filter((x): x is string => x !== null) }));
+        if (rules.length > 0) out.move_rules = rules;
+    }
     if (v.type === 'table') {
         const sub = slugOf(cfg.sub_group_by_field_id);
         if (sub) out.sub_group_by = sub;

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { RecordsState } from '../recordsState';
 import type { SavedViewConfig } from '@/types/view';
 
-import { hasChangesVsView, stateToViewConfig, viewConfigToState } from './savedViewMapping';
+import { hasChangesVsView, kanbanToViewConfig, stateToViewConfig, viewConfigToKanban, viewConfigToState } from './savedViewMapping';
 
 const baseState: RecordsState = {
     page: 1,
@@ -227,5 +227,57 @@ describe('v0.1.287 — columnas fijas, colores y segundo agrupado', () => {
         const config = stateToViewConfig({ ...baseState, colorRules: [rule] });
         expect(hasChangesVsView({ ...baseState, colorRules: [{ ...rule, color: 'blue' }] }, config)).toBe(true);
         expect(hasChangesVsView({ ...baseState, colorRules: [rule], frozenColumns: 3 }, config)).toBe(true);
+    });
+});
+
+describe('v0.1.297 — kanban para ventas: ajustes del tablero en la vista', () => {
+    const saved: SavedViewConfig = {
+        group_by_field_id: 2,
+        sort: [{ field_id: 3, dir: 'desc' }],
+        filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 5, op: 'eq', value: 'alta' }] },
+        kanban_title_field_id: 1,
+        kanban_meta_field_ids: [5, 8],
+        kanban_value_field_id: 3,
+        kanban_lane_field_id: 4,
+        kanban_collapsed_lanes: ['3'],
+        kanban_collapsed_columns: ['ganado'],
+        kanban_hidden_columns: ['__null__'],
+        kanban_hide_empty: true,
+        kanban_wip_limits: [{ column: 'negociacion', limit: 40 }],
+        kanban_move_rules: [{ column: 'perdido', required_field_ids: [6] }],
+        kanban_cover_field_id: 9,
+        kanban_card_size: 'compact',
+    };
+
+    it('config → ajustes → config deja la vista igual (round-trip)', () => {
+        const settings = viewConfigToKanban(saved);
+        expect(settings).toMatchObject({
+            laneFieldId: 4,
+            valueFieldId: 3,
+            valueMetric: 'sum',
+            wipLimits: { negociacion: 40 },
+            moveRules: { perdido: [6] },
+            cardSize: 'compact',
+        });
+        const back = kanbanToViewConfig(saved, settings);
+        expect(back).toEqual(saved);
+    });
+
+    it('cambiar un ajuste del tablero no toca filtros, orden ni agrupación', () => {
+        const settings = viewConfigToKanban(saved);
+        const next = kanbanToViewConfig(saved, { ...settings, laneFieldId: null, wipLimits: {}, valueMetric: 'avg' });
+        expect(next.filter_tree).toEqual(saved.filter_tree);
+        expect(next.sort).toEqual(saved.sort);
+        expect(next.group_by_field_id).toBe(2);
+        expect(next.kanban_lane_field_id).toBeUndefined();
+        expect(next.kanban_collapsed_lanes).toBeUndefined();
+        expect(next.kanban_wip_limits).toBeUndefined();
+        expect(next.kanban_value_metric).toBe('avg');
+        // Una vista vieja (sólo columnas) no gana claves vacías al guardarse.
+        expect(kanbanToViewConfig({ group_by_field_id: 2 }, viewConfigToKanban({ group_by_field_id: 2 }))).toEqual({
+            group_by_field_id: 2,
+            kanban_title_field_id: null,
+            kanban_meta_field_ids: [],
+        });
     });
 });

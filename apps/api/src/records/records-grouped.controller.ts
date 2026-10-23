@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
-import { filterTreeSchema, type FilterGroup } from '@imagina-base/shared';
+import { filterTreeSchema, KANBAN_PAGE_SIZE, type FilterGroup } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -58,6 +58,52 @@ export class RecordsGroupedController {
             subGroupBy: q.sub_group_by === undefined || q.sub_group_by === '' ? undefined : intParam(q.sub_group_by, 'sub_group_by'),
             collapsedSub: pairList(q.collapsed_sub),
         });
+    }
+
+    /**
+     * v0.1.297 — Bundle del kanban (B5): columnas, carriles, totales y las primeras
+     * tarjetas de cada celda en UNA request (ver `RecordsGroupedService.kanbanBundle`).
+     */
+    @Get('kanban-bundle')
+    @RequireCapability('view_records', 'view_own_records')
+    kanbanBundle(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Query() q: Record<string, unknown>,
+    ): Promise<unknown> {
+        const perCell = Number(q.per_cell);
+        return this.grouped.kanbanBundle(tenantId(req), actor(req), list, {
+            groupBy: intParam(q.group_by, 'group_by'),
+            laneBy: q.lane_by === undefined || q.lane_by === '' ? undefined : intParam(q.lane_by, 'lane_by'),
+            valueFieldId: q.value_field === undefined || q.value_field === '' ? undefined : intParam(q.value_field, 'value_field'),
+            valueMetric: q.value_metric === 'avg' ? 'avg' : 'sum',
+            filterTree: parseFilter(q.filter_tree),
+            search: typeof q.search === 'string' ? q.search : undefined,
+            sort: typeof q.sort === 'string' && q.sort.length <= 500 ? q.sort : undefined,
+            perCell: Number.isInteger(perCell) && perCell > 0 ? Math.min(100, perCell) : KANBAN_PAGE_SIZE,
+            limits: cellLimits(q.limits),
+            skip: keyList(q.skip),
+            skipLanes: keyList(q.skip_lanes),
+        });
+    }
+}
+
+/**
+ * v0.1.297 — `{"<clave de celda>": n}` (JSON): las celdas a las que se les pidió
+ * «Mostrar más». Lo que no tenga esa forma se ignora; el servicio acota el n.
+ */
+export function cellLimits(v: unknown): Record<string, number> {
+    if (typeof v !== 'string' || v.trim() === '') return {};
+    try {
+        const parsed: unknown = JSON.parse(v);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        const out: Record<string, number> = {};
+        for (const [k, n] of Object.entries(parsed as Record<string, unknown>).slice(0, 500)) {
+            if (typeof n === 'number' && Number.isInteger(n) && n > 0) out[k] = n;
+        }
+        return out;
+    } catch {
+        return {};
     }
 }
 

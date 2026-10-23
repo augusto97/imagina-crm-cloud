@@ -688,6 +688,91 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect((after.config as Record<string, unknown>).color_rules).toBeUndefined();
     });
 
+    it('v0.1.297 — kanban para ventas: carriles, total por columna, tarjetas, límites y reglas al mover (y get_list_schema los describe)', async () => {
+        const opps = await lists.create(tenantId, { name: 'Oportunidades' });
+        await fields.create(tenantId, String(opps.id), { label: 'Nombre', type: 'text' });
+        await fields.create(tenantId, String(opps.id), {
+            label: 'Etapa',
+            type: 'select',
+            config: { options: [{ value: 'nuevo', label: 'Nuevo' }, { value: 'ganado', label: 'Ganado' }, { value: 'perdido', label: 'Perdido' }] },
+        });
+        await fields.create(tenantId, String(opps.id), { label: 'Monto', type: 'currency', config: { currency: 'COP' } });
+        await fields.create(tenantId, String(opps.id), { label: 'Vendedor', type: 'user' });
+        await fields.create(tenantId, String(opps.id), { label: 'Motivo de pérdida', type: 'text' });
+        await fields.create(tenantId, String(opps.id), { label: 'Cierre', type: 'date' });
+        try {
+            const created = json(
+                await call('propose_create_view', {
+                    list: 'oportunidades',
+                    view: {
+                        name: 'Embudo',
+                        type: 'kanban',
+                        group_by: 'etapa',
+                        lane_by: 'vendedor',
+                        value_field: 'monto',
+                        card_fields: ['monto', 'vendedor'],
+                        card_size: 'compact',
+                        wip_limits: [{ column: 'Nuevo', limit: 10 }],
+                        move_rules: [
+                            { column: 'perdido', require: ['motivo_de_perdida'] },
+                            { column: 'Ganado', require: ['cierre', 'monto'] },
+                        ],
+                        hide_empty_columns: true,
+                    },
+                }),
+            );
+            await apply(created.proposal_id);
+            const view = (await views.list(tenantId, 'oportunidades')).find((v) => v.name === 'Embudo')!;
+            const id = new Map((await fields.listByListId(tenantId, opps.id)).map((f) => [f.slug, f.id]));
+            expect(view.config).toMatchObject({
+                group_by_field_id: id.get('etapa'),
+                kanban_lane_field_id: id.get('vendedor'),
+                kanban_value_field_id: id.get('monto'),
+                kanban_meta_field_ids: [id.get('monto'), id.get('vendedor')],
+                kanban_card_size: 'compact',
+                kanban_hide_empty: true,
+                // Las columnas se guardan por el `value` de la opción aunque el modelo use la etiqueta.
+                kanban_wip_limits: [{ column: 'nuevo', limit: 10 }],
+                kanban_move_rules: [
+                    { column: 'perdido', required_field_ids: [id.get('motivo_de_perdida')] },
+                    { column: 'ganado', required_field_ids: [id.get('cierre'), id.get('monto')] },
+                ],
+            });
+
+            const schema = json(await call('get_list_schema', { list: 'oportunidades' }));
+            expect((schema.views as Array<Record<string, unknown>>).find((v) => v.name === 'Embudo')).toMatchObject({
+                group_by: 'etapa',
+                lane_by: 'vendedor',
+                value_field: 'monto',
+                card_fields: ['monto', 'vendedor'],
+                wip_limits: [{ column: 'nuevo', limit: 10 }],
+                move_rules: [{ column: 'perdido', require: ['motivo_de_perdida'] }, { column: 'ganado', require: ['cierre', 'monto'] }],
+            });
+
+            // Errores corregibles: columna que no existe, total por un texto, carriles por el mismo campo,
+            // pedir un campo calculado, opciones de kanban en una tabla.
+            for (const bad of [
+                { name: 'X', type: 'kanban', group_by: 'etapa', wip_limits: [{ column: 'cerrado', limit: 3 }] },
+                { name: 'X', type: 'kanban', group_by: 'etapa', value_field: 'nombre' },
+                { name: 'X', type: 'kanban', group_by: 'etapa', lane_by: 'etapa' },
+                { name: 'X', type: 'kanban', group_by: 'etapa', lane_by: 'cierre' },
+                { name: 'X', type: 'table', lane_by: 'vendedor' },
+            ]) {
+                expect(isError(await call('propose_create_view', { list: 'oportunidades', view: bad }))).toBe(true);
+            }
+
+            const upd = json(await call('propose_update_view', { list: 'oportunidades', view: view.id, config: { group_by: 'etapa', value_field: 'monto', value_metric: 'avg' } }));
+            const changes = (upd.proposal as { preview: { changes: Array<{ to: string }> } }).preview.changes;
+            expect(changes[0]!.to).toContain('promedio de «Monto»');
+            await apply(upd.proposal_id);
+            const after = (await views.list(tenantId, 'oportunidades')).find((v) => v.id === view.id)!;
+            expect(after.config).toMatchObject({ kanban_value_metric: 'avg' });
+            expect((after.config as Record<string, unknown>).kanban_lane_field_id).toBeUndefined();
+        } finally {
+            await lists.remove(tenantId, 'oportunidades');
+        }
+    });
+
     it('propose_update_list mueve a una carpeta existente (y rechaza una inexistente); list_dashboards lee los tableros', async () => {
         const [g] = await pg.db.insert(listGroups).values({ tenantId, name: 'Comercial', position: 0 }).returning();
         const bad = await call('propose_update_list', { list: 'gastos', folder: 'Inexistente' });

@@ -127,11 +127,53 @@ export const tableViewConfigSchema = z.object({
     sub_group_by_field_id: idSchema.nullable().optional(),
 });
 
+/**
+ * v0.1.297 — Kanban para ventas (B5). Las columnas y los carriles se identifican
+ * por su CLAVE de grupo: el valor crudo (el `value` de la opción de un select,
+ * el id de una persona como texto, `true`/`false`) o `__null__` para «Sin
+ * valor» — la misma clave que arma el motor de agregados. Por eso los límites
+ * y las reglas viajan como ARRAYS de `{column, …}` y no como un objeto con la
+ * clave de la columna: así el re-mapeo de ids (plantillas, migrar empresa) no
+ * puede confundir una columna llamada «field_id» con una referencia.
+ */
+export const kanbanWipLimitSchema = z.object({
+    column: z.string().min(1).max(500),
+    limit: z.number().int().min(1).max(10_000),
+});
+export type KanbanWipLimit = z.infer<typeof kanbanWipLimitSchema>;
+
+/** Al ENTRAR a `column`, la tarjeta pide estos campos (si están vacíos). */
+export const kanbanMoveRuleSchema = z.object({
+    column: z.string().min(1).max(500),
+    required_field_ids: z.array(idSchema).max(20),
+});
+export type KanbanMoveRule = z.infer<typeof kanbanMoveRuleSchema>;
+
+export const KANBAN_VALUE_METRICS = ['sum', 'avg'] as const;
+export type KanbanValueMetric = (typeof KANBAN_VALUE_METRICS)[number];
+export const KANBAN_CARD_SIZES = ['compact', 'normal'] as const;
+export type KanbanCardSize = (typeof KANBAN_CARD_SIZES)[number];
+
 export const kanbanViewConfigSchema = z.object({
     ...viewStateCommon,
     group_by_field_id: idSchema,
     kanban_title_field_id: idSchema.nullable().default(null),
     kanban_meta_field_ids: z.array(idSchema).default([]),
+    /** v0.1.297 — campo numérico/moneda que se suma (o promedia) por columna y carril. */
+    kanban_value_field_id: idSchema.nullable().optional(),
+    kanban_value_metric: z.enum(KANBAN_VALUE_METRICS).optional(),
+    /** v0.1.297 — carriles (swimlanes): filas por un segundo campo. */
+    kanban_lane_field_id: idSchema.nullable().optional(),
+    kanban_collapsed_lanes: z.array(z.string().max(500)).max(500).optional(),
+    kanban_collapsed_columns: z.array(z.string().max(500)).max(500).optional(),
+    kanban_hidden_columns: z.array(z.string().max(500)).max(500).optional(),
+    /** v0.1.297 — ocultar las columnas (y carriles) que no tienen tarjetas. */
+    kanban_hide_empty: z.boolean().optional(),
+    kanban_wip_limits: z.array(kanbanWipLimitSchema).max(200).optional(),
+    kanban_move_rules: z.array(kanbanMoveRuleSchema).max(200).optional(),
+    /** v0.1.297 — portada de la tarjeta: un campo archivo o un enlace de imagen. */
+    kanban_cover_field_id: idSchema.nullable().optional(),
+    kanban_card_size: z.enum(KANBAN_CARD_SIZES).optional(),
 });
 
 export const calendarViewConfigSchema = z.object({
