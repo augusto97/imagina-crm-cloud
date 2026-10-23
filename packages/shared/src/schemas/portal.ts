@@ -166,6 +166,15 @@ export const portalBootSchema = z.object({
      * siquiera llega a este boot (`403 consent_required`).
      */
     data_consent: portalBootConsentSchema,
+    /**
+     * Campo «Botón» — el estado de cada botón que el diseño muestra (por id de
+     * campo), calculado en el servidor con el registro completo: si está
+     * deshabilitado (y por qué) y, si el portal no lo permite, el motivo. La
+     * config del botón que viaja es sólo la de presentación.
+     */
+    buttons: z
+        .record(z.object({ disabled: z.boolean(), reason: z.string().nullable(), blocked: z.string().nullable() }))
+        .default({}),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 

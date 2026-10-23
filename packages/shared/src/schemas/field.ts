@@ -3,6 +3,7 @@ import { idSchema, isoDateTimeSchema } from './common';
 import { filterTreeSchema } from './filter';
 import { fieldSlugSchema } from './slug';
 import { autonumberConfigSchema, fieldRulesSchema } from './field-rules';
+import { buttonConfigSchema } from './button';
 
 /** Tipos de campo del plugin (CONTRACT.md §3). */
 export const FIELD_TYPES = [
@@ -58,6 +59,11 @@ export const FIELD_TYPES = [
     'updated_at',
     'created_by',
     'updated_by',
+    // Campo «Botón» (A5): no guarda valor. Se presiona en la tabla, la ficha
+    // y (si se elige) el portal, y ejecuta sus acciones sobre el registro:
+    // abrir un enlace con variables, cambiar campos, correr automatizaciones
+    // o generar un PDF. Ver schemas/button.ts.
+    'button',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -233,6 +239,7 @@ export const fieldConfigSchemas = {
     updated_at: z.object({}),
     created_by: z.object({}),
     updated_by: z.object({}),
+    button: buttonConfigSchema,
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
@@ -267,6 +274,8 @@ export const NON_DATA_FIELD_TYPES: readonly FieldType[] = [
     'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
     // v0.1.300 — columnas de sistema: se leen de `records` (created_at, …).
     'created_at', 'updated_at', 'created_by', 'updated_by',
+    // El botón no tiene valor: sólo su config y lo que hace al presionarlo.
+    'button',
 ];
 
 export function isDataField(type: FieldType): boolean {
