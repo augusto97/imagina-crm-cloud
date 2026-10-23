@@ -41,6 +41,7 @@ import { AutomationsService } from './automations.service';
         RecordsRepository,
         RelationsRepository,
     ],
-    exports: [AutomationsService, AutomationDispatcher],
+    // AutomationScheduler: la papelera re-registra los horarios al restaurar.
+    exports: [AutomationsService, AutomationDispatcher, AutomationScheduler],
 })
 export class AutomationsModule {}

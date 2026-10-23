@@ -554,6 +554,13 @@
       "when": 1784200000120,
       "tag": "0078_dashboard_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1784200000130,
+      "tag": "0079_trash",
+      "breakpoints": true
     }
   ]
 }

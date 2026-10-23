@@ -162,6 +162,9 @@ export class RecurrencesRepository {
             .where(
                 and(
                     eq(recurrences.triggerType, 'schedule'),
+                    // Papelera (conexión base, sin RLS): un campo de fecha borrado
+                    // no rueda (sus valores siguen en el registro).
+                    sql`EXISTS (SELECT 1 FROM fields f WHERE f.id = ${recurrences.dateFieldId} AND f.deleted_at IS NULL)`,
                     sql`jsonb_typeof(${records.data} -> ('f' || ${recurrences.dateFieldId})) = 'string'`,
                     sql`${value} <> ''`,
                     // v0.1.263 — una fecha SIN hora vence cuando empieza ese día en

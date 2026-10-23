@@ -35,4 +35,7 @@ export const dashboards = pgTable('dashboards', {
     createdBy: bigint('created_by', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Papelera: null = vivo. */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: bigint('deleted_by', { mode: 'number' }),
 });

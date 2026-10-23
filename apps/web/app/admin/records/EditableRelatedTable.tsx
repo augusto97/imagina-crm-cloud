@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { useCreateRecord, useDeleteRecord } from '@/hooks/useRecords';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
@@ -208,6 +209,7 @@ function EditableItemsTable(p: EditableRelatedTableProps): JSX.Element {
     const remove = useDeleteRecord(p.listId);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
     const [adding, setAdding] = useState(false);
     const [draft, setDraft] = useState('');
     const [addError, setAddError] = useState<string | null>(null);
@@ -251,7 +253,7 @@ function EditableItemsTable(p: EditableRelatedTableProps): JSX.Element {
     const deleteItem = async (id: number, label: string): Promise<void> => {
         const ok = await confirm({
             title: __('¿Eliminar este ítem?'),
-            description: sprintf(__('«%s» se elimina de «%s».'), label, p.listName),
+            description: sprintf(__('«%s» se elimina de «%s» y va a la papelera (se puede recuperar durante 30 días).'), label, p.listName),
             confirmLabel: __('Eliminar'),
             destructive: true,
         });
@@ -260,6 +262,7 @@ function EditableItemsTable(p: EditableRelatedTableProps): JSX.Element {
         try {
             await remove.mutateAsync({ id });
             p.onChanged?.();
+            trashed({ type: 'record', id, name: label, onRestored: () => p.onChanged?.() });
         } catch (err) {
             toast.error(__('No se pudo eliminar'), err instanceof Error ? err.message : String(err));
         } finally {

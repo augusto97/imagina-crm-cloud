@@ -254,7 +254,15 @@ export class SqlSyncService {
         const due = await this.db
             .select({ id: sqlSyncs.id, tenantId: sqlSyncs.tenantId })
             .from(sqlSyncs)
-            .where(and(eq(sqlSyncs.enabled, true), lte(sqlSyncs.nextRunAt, new Date())))
+            .where(
+                and(
+                    eq(sqlSyncs.enabled, true),
+                    lte(sqlSyncs.nextRunAt, new Date()),
+                    // Papelera: con la lista borrada no corre (conexión base:
+                    // el filtro va a mano). Al restaurarla sigue sola.
+                    sql`NOT EXISTS (SELECT 1 FROM lists l WHERE l.id = ${sqlSyncs.listId} AND l.deleted_at IS NOT NULL)`,
+                ),
+            )
             .orderBy(asc(sqlSyncs.nextRunAt))
             .limit(100);
         for (const d of due) {

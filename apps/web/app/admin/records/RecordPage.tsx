@@ -41,6 +41,7 @@ import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { notificationKeys } from '@/hooks/useNotifications';
 import { markLocalRecordsChange, useDeleteRecord, useRecord, useUpdateRecord } from '@/hooks/useRecords';
+import { recordTitleFor, useTrashedToast } from '@/hooks/useTrash';
 import { forgetRecord, useRecordView } from '@/hooks/useRecordView';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
@@ -84,6 +85,7 @@ export function RecordPage(): JSX.Element {
     const remove = useDeleteRecord(list.data?.id ?? 0);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
 
     // Sólo lo que la persona tocó: un cambio de otra persona (o el
     // autoguardado de la descripción, que vuelve a pedir el registro) ya no
@@ -117,8 +119,8 @@ export function RecordPage(): JSX.Element {
                 record.data.id,
             ),
             description: record.data.subtask_count > 0
-                ? __('Se elimina junto con sus subtareas. Esta acción no se puede deshacer.')
-                : __('Esta acción no se puede deshacer.'),
+                ? __('Va a la papelera junto con sus subtareas: puedes recuperarlo durante 30 días.')
+                : __('Va a la papelera: puedes recuperarlo durante 30 días.'),
             destructive: true,
             confirmLabel: __('Eliminar'),
         });
@@ -127,6 +129,7 @@ export function RecordPage(): JSX.Element {
         // la lista y el aviso del socket volvían a pedir el registro (404).
         const id = record.data.id;
         const listId = list.data.id;
+        const deletedName = recordTitleFor(fields.data ?? [], record.data.fields);
         flushSync(() => {
             draft.reset();
             setDeletedId(id);
@@ -136,7 +139,7 @@ export function RecordPage(): JSX.Element {
         try {
             await remove.mutateAsync({ id, purge: false });
             forgetRecord(qc, listId, id);
-            toast.success(__('Registro eliminado'));
+            trashed({ type: 'record', id, name: deletedName });
         } catch (err) {
             toast.error(__('No se pudo eliminar el registro'), err instanceof Error ? err.message : undefined);
         }

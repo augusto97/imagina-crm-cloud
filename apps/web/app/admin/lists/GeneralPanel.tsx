@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useDeleteList, useUpdateList } from '@/hooks/useLists';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import type { ListSummary } from '@/types/list';
@@ -155,6 +156,7 @@ export function DangerZonePanel({ list }: Props): JSX.Element {
     const remove = useDeleteList();
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
 
     const handleDelete = async (): Promise<void> => {
         const ok = await confirm({
@@ -164,14 +166,19 @@ export function DangerZonePanel({ list }: Props): JSX.Element {
                 list.name,
             ),
             description: __(
-                'Se quitará del menú junto con sus campos, vistas y automatizaciones. Los registros dejan de ser accesibles desde la app.',
+                'Va a la papelera con sus registros, campos, vistas y automatizaciones (que dejan de correr). Puedes recuperarla entera durante 30 días desde Ajustes → Papelera.',
             ),
             confirmLabel: __('Eliminar lista'),
             destructive: true,
         });
         if (!ok) return;
-        await remove.mutateAsync({ idOrSlug: list.id });
-        toast.success(__('Lista eliminada'));
+        try {
+            await remove.mutateAsync({ idOrSlug: list.id });
+        } catch (err) {
+            toast.error(__('No se pudo eliminar la lista'), err instanceof Error ? err.message : String(err));
+            return;
+        }
+        trashed({ type: 'list', id: list.id, name: list.name });
         navigate('/lists');
     };
 
@@ -182,7 +189,7 @@ export function DangerZonePanel({ list }: Props): JSX.Element {
                     {__('Eliminar esta lista')}
                 </h3>
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('No se puede deshacer. Te pedimos confirmación antes.')}
+                    {__('Va a la papelera con todo lo de adentro: se recupera entera durante 30 días.')}
                 </p>
             </div>
             <Button

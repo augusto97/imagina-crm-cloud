@@ -73,7 +73,7 @@ export class McpService {
             server.registerTool(
                 'apply_proposal',
                 {
-                    description: 'Aplica una propuesta creada por una herramienta propose_* (por proposal_id). Llámala SÓLO después de que la persona haya confirmado la vista previa. No se puede deshacer.',
+                    description: 'Aplica una propuesta creada por una herramienta propose_* (por proposal_id). Llámala SÓLO después de que la persona haya confirmado la vista previa. No se puede deshacer desde aquí (lo que se borra queda en la Papelera de la app por 30 días).',
                     inputSchema: { proposal_id: z.string().min(6).max(64) } as never,
                 },
                 applyHandler as never,

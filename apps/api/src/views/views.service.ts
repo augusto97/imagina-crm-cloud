@@ -10,6 +10,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ViewsRepository, type ViewRow } from './views.repository';
+import { trashRow } from '../trash/trash-ops';
 
 /**
  * v0.1.260 — quién pide. Sin viewer (procesos internos: plantillas, export,
@@ -172,7 +173,8 @@ export class ViewsService {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !canSeeView(current, viewer)) return false;
             if (current.isLocked && !canEditLocked(current, viewer)) throw viewLocked();
-            return this.repo.remove(tx, tenantId, listId, id);
+            // Papelera: la vista queda recuperable (se restaura con su config).
+            return trashRow(tx, 'saved_views', tenantId, id, viewer?.userId ?? null);
         });
         if (!deleted) throw viewNotFound(id);
         this.realtime.views(tenantId, listId);

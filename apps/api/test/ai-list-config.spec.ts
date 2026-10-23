@@ -711,7 +711,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         const del = json(await call('propose_delete_list', { list: 'gastos' }));
         const p = del.proposal as { destructive: boolean; summary: string; preview: { lists: Array<{ name: string }> } };
         expect(p.destructive).toBe(true);
-        expect(p.summary).toContain('No se puede deshacer');
+        expect(p.summary).toContain('Papelera por 30 días');
         expect(p.preview.lists[0]!.name).toBe('Gastos');
         await apply(del.proposal_id);
         expect((await lists.list(tenantId)).map((l) => l.slug).sort()).toEqual(['clientes', 'facturas', 'tickets']);

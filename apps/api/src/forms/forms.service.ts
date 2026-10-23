@@ -42,11 +42,11 @@ import {
     zonedInstant,
     type FormFieldItem,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, formPendingSubmissions, forms, tenants, type FormPendingRow, type FormRow } from '../db/schema';
+import { attachments, formPendingSubmissions, forms, lists, tenants, type FormPendingRow, type FormRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -356,6 +356,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             })
             .from(forms)
             .innerJoin(tenants, eq(tenants.id, forms.tenantId))
+            // Papelera: con la lista borrada el formulario no existe (404) y
+            // vuelve al restaurarla. Conexión base: el filtro va a mano.
+            .innerJoin(lists, and(eq(lists.id, forms.listId), isNull(lists.deletedAt)))
             .where(eq(forms.token, token))
             .limit(1);
         // v0.1.289 — una respuesta enviada mientras estaba publicado se puede

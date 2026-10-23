@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
 import { useCreateField, useDeleteField, useReorderFields } from '@/hooks/useFields';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -108,6 +109,7 @@ export function FieldHeaderMenu({
     const reorder = useReorderFields(listId);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
     const navigate = useNavigate();
     // v0.1.213 — una columna que viene de la tienda sólo cambia de nombre:
     // no se borra (la próxima sincronización la necesita) ni se automatiza si
@@ -170,14 +172,14 @@ export function FieldHeaderMenu({
                 __('¿Eliminar el campo "%s"?'),
                 field.label,
             ),
-            description: __('La columna desaparecerá de la lista y sus valores dejarán de mostrarse en los registros.'),
+            description: __('La columna va a la papelera con sus valores: puedes recuperarla tal cual durante 30 días.'),
             confirmLabel: __('Eliminar'),
             destructive: true,
         });
         if (!ok) return;
         try {
             await del.mutateAsync({ id: field.id });
-            toast.success(__('Campo eliminado'));
+            trashed({ type: 'field', id: field.id, name: field.label });
         } catch (err) {
             toast.error(
                 __('No se pudo eliminar el campo'),

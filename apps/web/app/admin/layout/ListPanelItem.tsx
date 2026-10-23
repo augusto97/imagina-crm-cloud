@@ -30,6 +30,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { useListGroups, useMoveListToGroup } from '@/hooks/useListGroups';
 import { useDeleteList, useUpdateList } from '@/hooks/useLists';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { __, sprintf } from '@/lib/i18n';
@@ -80,6 +81,7 @@ export const ListPanelItem = memo(function ListPanelItem({
     onToggleStar: (listId: number) => void;
 }): JSX.Element {
     const toast = useToast();
+    const trashed = useTrashedToast();
     const confirm = useConfirm();
     const update = useUpdateList(list.id);
     const move = useMoveListToGroup();
@@ -133,7 +135,7 @@ export const ListPanelItem = memo(function ListPanelItem({
                 list.name,
             ),
             description: __(
-                'Se quitará del menú junto con sus campos, vistas y automatizaciones. Los registros dejan de ser accesibles desde la app.',
+                'Va a la papelera con sus registros, campos, vistas y automatizaciones (que dejan de correr). Puedes recuperarla entera durante 30 días desde Ajustes → Papelera.',
             ),
             confirmLabel: __('Eliminar lista'),
             destructive: true,
@@ -141,7 +143,7 @@ export const ListPanelItem = memo(function ListPanelItem({
         if (!ok) return;
         try {
             await remove.mutateAsync({ idOrSlug: list.id });
-            toast.success(__('Lista eliminada'));
+            trashed({ type: 'list', id: list.id, name: list.name });
             // Si estabas parado en esa lista, la página ya no existe.
             const pathname = currentPathname();
             if (pathname.startsWith(`${base}/`) || pathname === base) goTo('/lists');

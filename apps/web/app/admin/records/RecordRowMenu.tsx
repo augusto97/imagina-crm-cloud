@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
 import { useCreateRecord, useDeleteRecord } from '@/hooks/useRecords';
+import { recordTitleFor, useTrashedToast } from '@/hooks/useTrash';
 import { __, sprintf } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
@@ -97,6 +98,7 @@ export function RecordRowMenu({
     const remove = useDeleteRecord(listId);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
     const [copied, setCopied] = useState<'link' | 'id' | null>(null);
 
     if (target === null) return null;
@@ -141,7 +143,7 @@ export function RecordRowMenu({
             title: __('¿Eliminar este registro?'),
             description: sprintf(
                 /* translators: %d: record id */
-                __('Se quita de la lista para todo el equipo, con sus subtareas. (#%d)'),
+                __('Va a la papelera con sus subtareas: puedes recuperarlo durante 30 días. (#%d)'),
                 record.id,
             ),
             confirmLabel: __('Eliminar'),
@@ -149,7 +151,7 @@ export function RecordRowMenu({
         });
         if (!ok) return;
         await remove.mutateAsync({ id: record.id });
-        toast.success(__('Registro eliminado'));
+        trashed({ type: 'record', id: record.id, name: recordTitleFor(fields, record.fields) });
     };
 
     return (

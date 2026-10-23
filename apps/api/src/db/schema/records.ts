@@ -32,4 +32,6 @@ export const records = pgTable('records', {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    /** Papelera: quién lo borró (null en los borrados de antes de la papelera). */
+    deletedBy: bigint('deleted_by', { mode: 'number' }),
 });

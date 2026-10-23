@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ViewColorRule } from '@imagina-base/shared';
 import { Link } from 'react-router';
 import {
+    ArchiveRestore,
     Check,
     Columns3,
     Copy,
@@ -37,6 +38,7 @@ import {
 } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { useDeleteSavedView, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { useTrashedToast } from '@/hooks/useTrash';
 import { downloadTimeCsv } from '@/hooks/useTimeTracking';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -199,6 +201,7 @@ export function ViewSettingsSheet({
     const remove = useDeleteSavedView(listId);
     const confirm = useConfirm();
     const toast = useToast();
+    const trashed = useTrashedToast();
 
     const [columnsOpen, setColumnsOpen] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
@@ -263,12 +266,13 @@ export function ViewSettingsSheet({
                 __('¿Eliminar la vista "%s"?'),
                 activeView.name,
             ),
-            description: __('Se borra la vista, no los registros.'),
+            description: __('Se borra la vista, no los registros. Va a la papelera: puedes recuperarla durante 30 días.'),
             confirmLabel: __('Eliminar vista'),
             destructive: true,
         });
         if (!okToDelete) return;
         await remove.mutateAsync(activeView.id);
+        trashed({ type: 'view', id: activeView.id, name: activeView.name });
         onSelectView(null);
         onOpenChange(false);
     };
@@ -695,6 +699,15 @@ export function ViewSettingsSheet({
                                     }}
                                 />
                             )}
+                            {/* Papelera: los registros borrados de ESTA lista (cada quien ve los suyos
+                                y los de esta lista que puede ver; restaurar lo decide el backend). */}
+                            <RowLink
+                                icon={ArchiveRestore}
+                                label={__('Registros borrados')}
+                                value={__('Papelera')}
+                                to={`/settings?s=papelera&list=${listId}&type=record`}
+                                onNavigate={() => onOpenChange(false)}
+                            />
                             {canManageAutomations && (
                                 <RowLink
                                     icon={Zap}

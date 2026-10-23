@@ -13,6 +13,7 @@ import { AppearanceCard } from '@/admin/settings/AppearanceCard';
 import { NotificationPrefsCard } from '@/admin/settings/NotificationPrefsCard';
 import { AuditLogPanel } from '@/cloud/components/AuditLogPanel';
 import { IncidentsPanel } from '@/cloud/components/IncidentsPanel';
+import { TrashPanel } from '@/cloud/components/TrashPanel';
 import { SecurityCard } from '@/admin/settings/SecurityCard';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { PersonalDataCard } from '@/admin/settings/PersonalDataCard';
@@ -189,6 +190,7 @@ export function SettingsPage(): JSX.Element {
                 {active === 'conectores' && <IntegrationsPanel />}
 
                 {active === 'problemas' && <IncidentsPanel />}
+                {active === 'papelera' && <TrashPanel />}
                 {/* Bitácora de acciones administrativas (v0.1.114). */}
                 {active === 'auditoria' && isAdmin && <AuditLogPanel />}
                 {/* Per-usuario: contraseña + sesiones abiertas (v0.1.116). */}

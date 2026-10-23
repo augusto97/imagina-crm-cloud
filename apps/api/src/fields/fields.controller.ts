@@ -164,10 +164,9 @@ export class FieldsController {
         @Param('list') list: string,
         @Param('field') field: string,
     ): Promise<void> {
-        // Resolver ANTES: borrar el campo destruye su valor en todos los
-        // registros, y después ya no hay nombre que registrar.
+        // Resolver ANTES: después de borrarlo ya no se ve (está en la papelera).
         const doomed = await this.fields.get(tenantId(req), list, field).catch(() => null);
-        await this.fields.remove(tenantId(req), list, field);
+        await this.fields.remove(tenantId(req), list, field, { userId: req.authUserId ?? null });
         await this.audit.log({
             tenantId: tenantId(req),
             userId: req.authUserId ?? null,
@@ -175,7 +174,7 @@ export class FieldsController {
             targetType: 'field',
             targetId: doomed?.id ?? null,
             targetLabel: doomed?.label ?? field,
-            meta: { list, type: doomed?.type },
+            meta: { list, type: doomed?.type, trash: true },
         });
     }
 }

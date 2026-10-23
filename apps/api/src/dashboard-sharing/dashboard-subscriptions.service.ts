@@ -14,7 +14,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { dashboardSubscriptions, memberships, users } from '../db/schema';
+import { dashboardSubscriptions, dashboards, memberships, users } from '../db/schema';
 import { DashboardsService, dashboardVisibleTo, type DashboardViewer } from '../dashboards/dashboards.service';
 import { DomainsService } from '../domains/domains.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -172,13 +172,18 @@ export class DashboardSubscriptionsService {
     async run(tenantId: number, id: number): Promise<SubscriptionSendResult> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [r] = await tx.select().from(dashboardSubscriptions).where(and(eq(dashboardSubscriptions.tenantId, tenantId), eq(dashboardSubscriptions.id, id))).limit(1);
-            return r ? { sub: r, readOnly: await tenantIsReadOnly(tx, tenantId) } : null;
+            if (!r) return null;
+            // Papelera: el tablero borrado no se ve (RLS) y su envío no sale.
+            // No es una falla (no abre un problema): vuelve a salir al restaurarlo.
+            const [dash] = await tx.select({ id: dashboards.id }).from(dashboards).where(eq(dashboards.id, r.dashboardId)).limit(1);
+            return { sub: r, readOnly: await tenantIsReadOnly(tx, tenantId), trashed: !dash };
         });
         if (!row) {
             await this.scheduler.remove(id);
             return { status: 'skipped', sent_to: [], error: 'El envío ya no existe.' };
         }
         const sub = row.sub;
+        if (row.trashed) return this.finish(tenantId, sub, { status: 'skipped', sent_to: [], error: 'El tablero está en la papelera.' });
         if (!sub.enabled) return this.finish(tenantId, sub, { status: 'skipped', sent_to: [], error: 'El envío está pausado.' });
         if (row.readOnly) {
             // ADR-S09: impaga o archivada = solo-lectura; lo programado no corre.

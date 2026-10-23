@@ -89,6 +89,8 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         case 'record_deleted':
         case 'record.deleted':
             return __('eliminó este registro');
+        case 'record_restored':
+            return __('restauró este registro desde la papelera');
         case 'comment.created':
             return __('comentó');
         case 'comment.updated':

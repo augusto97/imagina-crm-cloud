@@ -26,6 +26,9 @@ export const automations = pgTable('automations', {
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Papelera: null = viva. */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: bigint('deleted_by', { mode: 'number' }),
 });
 
 export const automationRuns = pgTable('automation_runs', {
