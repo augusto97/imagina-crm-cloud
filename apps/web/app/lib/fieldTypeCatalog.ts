@@ -1,4 +1,4 @@
-import type { FieldTypeMeta, FieldTypeSlug } from '@/types/field';
+import type { FieldTypeMeta, FieldTypeSlug, FormulaInfo } from '@/types/field';
 
 /**
  * Catálogo de los tipos de campo (Imagina Base cloud).
@@ -48,6 +48,8 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'rating', label: 'Calificación', description: 'Estrellas (de 1 a 10).', supportsUnique: false },
     { slug: 'percent', label: 'Porcentaje', description: 'Avance de 0 a 100 con barra.', supportsUnique: false },
     { slug: 'duration', label: 'Duración', description: 'Tiempo en horas y minutos.', supportsUnique: false },
+    // Fórmulas (A1).
+    { slug: 'formula', label: 'Fórmula', description: 'Calcula un valor con una fórmula en español: SI, SUMA, DIAS_ENTRE, MAYUSC…', supportsUnique: false },
     { slug: 'computed', label: 'Calculado', description: 'Se calcula a partir de otros campos.', supportsUnique: false },
     // v0.1.170 — a través de una relación (ADR-S19).
     { slug: 'lookup', label: 'Buscar en relación (lookup)', description: 'Muestra un campo del registro vinculado, siempre al día.', supportsUnique: false },
@@ -69,7 +71,7 @@ const ENTRIES: CatalogEntry[] = [
 /** Tipos que NO viven en la columna de datos (referencias / derivados). */
 const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>([
     'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
-    'created_at', 'updated_at', 'created_by', 'updated_by',
+    'created_at', 'updated_at', 'created_by', 'updated_by', 'formula',
     'button',
 ]);
 
@@ -84,6 +86,8 @@ export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set([
     'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by',
     // El botón no tiene valor que escribir: se presiona.
     'button',
+    // Fórmulas (A1).
+    'formula',
 ]);
 
 /** v0.1.300 — Columnas de sistema (metadata del registro). */
@@ -101,10 +105,30 @@ export function displayTypeOf(type: string): FieldTypeSlug {
     return type as FieldTypeSlug;
 }
 
-/** Copia del campo con su tipo "de mostrar" (ver `displayTypeOf`). */
+/**
+ * Copia del campo con su tipo "de mostrar" (ver `displayTypeOf`). Una fórmula
+ * se muestra como el tipo de su RESULTADO (número, moneda con su código y
+ * decimales, fecha, sí/no…), con la config que arma el servidor.
+ */
 export function asDisplayField<T extends { type: string }>(field: T): T {
+    if (field.type === 'formula') {
+        const info = (field as { formula?: FormulaInfo | null }).formula;
+        if (!info) return { ...field, type: 'text' };
+        return { ...field, type: info.result_type, config: info.display_config ?? {} };
+    }
     const t = displayTypeOf(field.type);
     return t === field.type ? field : { ...field, type: t };
+}
+
+/** El tipo con el que se muestra un CAMPO (a diferencia de `displayTypeOf`, entiende fórmulas). */
+export function displayTypeOfField(field: { type: string; formula?: FormulaInfo | null }): FieldTypeSlug {
+    if (field.type === 'formula') return field.formula?.result_type ?? 'text';
+    return displayTypeOf(field.type);
+}
+
+/** Fórmulas (A1): ¿el servidor la puede filtrar, ordenar, agrupar y sumar? */
+export function isSqlFormula(field: { type: string; formula?: FormulaInfo | null }): boolean {
+    return field.type === 'formula' && field.formula?.sql === true;
 }
 
 export function isDerivedFieldType(type: string): boolean {

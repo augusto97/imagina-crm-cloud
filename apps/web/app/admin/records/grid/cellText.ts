@@ -1,6 +1,7 @@
 import { formatDuration, formatPhone, type DurationFormat } from '@imagina-base/shared';
 
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
+import { isFormulaError } from '@/lib/formulaError';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
@@ -26,6 +27,8 @@ export interface CellTextContext {
 }
 
 export function cellToText(field: FieldEntity, value: unknown, ctx: CellTextContext): string {
+    // Fórmulas (A1): lo que se ve en la celda.
+    if (isFormulaError(value)) return '#ERROR';
     if (field.type === 'lookup') {
         const display = lookupDisplayField(field);
         const values = lookupValues(value);

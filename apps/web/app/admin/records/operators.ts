@@ -1,6 +1,6 @@
 import type { ThroughInfo } from '@imagina-base/shared';
 import { __ } from '@/lib/i18n';
-import type { FieldTypeSlug } from '@/types/field';
+import type { FieldTypeSlug, FormulaInfo } from '@/types/field';
 import type { FilterOperator } from '@/types/record';
 
 interface OperatorMeta {
@@ -117,8 +117,26 @@ export function isNumericComputedField(field?: { config?: unknown } | null): boo
  */
 export function operatorsForType(
     type: FieldTypeSlug,
-    field?: { through?: ThroughInfo | null; config?: unknown },
+    field?: { through?: ThroughInfo | null; config?: unknown; formula?: FormulaInfo | null },
 ): OperatorMeta[] {
+    if (type === 'formula') {
+        // Fórmulas (A1): sólo si el servidor la compila a SQL; se filtra
+        // como el tipo de su resultado. Si no compila, sin operadores (el
+        // filtro la muestra con el motivo).
+        const info = field?.formula;
+        if (!info || !info.sql) return [];
+        switch (info.result_type) {
+            case 'text':
+                return TEXT_LIKE;
+            case 'date':
+            case 'datetime':
+                return DATE_LIKE;
+            case 'checkbox':
+                return [{ op: 'eq', label: __('es') }];
+            default:
+                return NUMERIC;
+        }
+    }
     if (type === 'lookup') {
         const target = field?.through?.target_field;
         // Sin `through` resuelto tampoco hay expresión.

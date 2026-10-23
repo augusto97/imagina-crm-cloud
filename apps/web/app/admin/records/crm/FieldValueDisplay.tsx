@@ -13,6 +13,8 @@ import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber, numberFormatLocale } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
+import { FormulaErrorBadge } from '@/components/fields/FormulaErrorBadge';
+import { isFormulaError } from '@/lib/formulaError';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
 import { UrlImage } from '@/components/fields/UrlImage';
@@ -35,6 +37,10 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
     // Campo «Botón»: no tiene valor que mostrar (el botón vivo lo dibuja quien
     // tiene el registro: la fila de la ficha o el bloque del diseño).
     if (field.type === 'button') return <span className="imcrm-text-muted-foreground/60">—</span>;
+    // Fórmulas (A1): el motivo del error se lee al lado; si no, el valor como
+    // el tipo de su resultado.
+    if (isFormulaError(value)) return <FormulaErrorBadge message={value.message} detailed />;
+    if (field.type === 'formula') return <FieldValueDisplay field={asDisplayField(field)} value={value} />;
     // v0.1.170 — a través de una relación: se pinta con el campo destino.
     if (field.type === 'lookup') {
         const display = lookupDisplayField(field);

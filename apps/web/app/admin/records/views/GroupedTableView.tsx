@@ -58,7 +58,7 @@ import { CellMarkOverlay, ERROR_CELL_SHADOW } from '../grid/CellMarkOverlay';
 import { GridEditContext } from '../grid/editStore';
 import { GridOverlays } from '../grid/GridOverlays';
 import { titleFieldOf } from '@/lib/recordTitle';
-import { displayTypeOf } from '@/lib/fieldTypeCatalog';
+import { asDisplayField, displayTypeOf } from '@/lib/fieldTypeCatalog';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { useWidth } from '../grid/useWidth';
 import { getTenantTimeZone } from '@/lib/tenantFormat';
@@ -648,6 +648,8 @@ const EMPTY_SORT: ActiveSort[] = [];
 
 /** Tipos que el backend no ordena (ver `NON_SORTABLE` en records.service). */
 function isSortableField(field: FieldEntity): boolean {
+    // Fórmulas (A1): sólo las que el servidor compila a SQL.
+    if (field.type === 'formula') return field.formula?.sql === true;
     return field.type !== 'relation' && field.type !== 'file' && field.type !== 'button';
 }
 
@@ -1819,6 +1821,8 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
     // etiqueta de la opción, la fecha en el formato de la empresa), que es
     // exactamente lo que muestra la celda.
     if (field.type === 'rollup') return formatBucketLabel(rollupDisplayField(field), value);
+    // Fórmulas (A1): como el tipo de su resultado (sí/no, fecha…).
+    if (field.type === 'formula') return formatBucketLabel(asDisplayField(field), value);
     // v0.1.291 — el tiempo registrado agrupa por minutos: se lee como duración.
     if (field.type === 'time_tracked') {
         const n = Number(value);

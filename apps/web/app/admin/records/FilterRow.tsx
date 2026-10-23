@@ -1,7 +1,7 @@
 import { Trash2 } from 'lucide-react';
 
 import { Select } from '@/components/ui/select';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { FilterCondition, FilterOperator } from '@/types/record';
@@ -41,6 +41,9 @@ export function FilterRow({
     // v0.1.286 — también relaciones (tiene / no tiene / vinculado a) y
     // calculados numéricos: el backend los filtraba y la interfaz no los ofrecía.
     const filterableFields = fields.filter((f) => operatorsForType(f.type, f).length > 0);
+    // Fórmulas (A1): las que no compilan a SQL se listan deshabilitadas con
+    // el motivo, así nadie se pregunta por qué no aparecen.
+    const sqlLessFormulas = fields.filter((f) => f.type === 'formula' && f.formula && !f.formula.sql);
     const selected = fields.find((f) => f.id === condition.field_id) ?? null;
     const operators = selected ? operatorsForType(selected.type, selected) : [];
 
@@ -90,6 +93,11 @@ export function FilterRow({
                 {filterableFields.map((f) => (
                     <option key={f.id} value={f.id}>
                         {f.label}
+                    </option>
+                ))}
+                {sqlLessFormulas.map((f) => (
+                    <option key={f.id} value={f.id} disabled title={f.formula?.sql_reason ?? undefined}>
+                        {sprintf(__('%s (no se puede filtrar)'), f.label)}
                     </option>
                 ))}
             </Select>

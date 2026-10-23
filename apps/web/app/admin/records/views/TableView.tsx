@@ -300,7 +300,12 @@ export function TableView({
                 size: field.type === 'url' && isImageUrlField(field.config) ? 90 : defaultSizeForType(field.type),
                 minSize: 80,
                 maxSize: 800,
-                meta: { fieldId: field.id, primary: field.is_primary, sortable: !UNSORTABLE.includes(field.type) },
+                meta: {
+                    fieldId: field.id,
+                    primary: field.is_primary,
+                    // Fórmulas (A1): sólo las que el servidor compila a SQL.
+                    sortable: !UNSORTABLE.includes(field.type) && (field.type !== 'formula' || field.formula?.sql === true),
+                },
             }));
 
         // v0.1.252 — el ID va al final (antes primero y ancho): lo que se

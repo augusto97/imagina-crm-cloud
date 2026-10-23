@@ -107,6 +107,7 @@ export function cellWriteBlock(
     if (!field) return __('Esta columna no se edita');
     switch (field.type) {
         case 'computed':
+        case 'formula':
         case 'lookup':
         case 'rollup':
         case 'time_tracked':

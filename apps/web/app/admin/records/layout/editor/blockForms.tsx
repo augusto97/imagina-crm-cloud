@@ -42,7 +42,10 @@ export interface FormProps {
 }
 
 const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked']);
-const isNumeric = (f: FieldEntity): boolean => NUMERIC.has(f.type);
+const isNumeric = (f: FieldEntity): boolean =>
+    NUMERIC.has(f.type)
+    // Fórmulas (A1): las que el servidor compila a SQL y dan un número.
+    || (f.type === 'formula' && f.formula?.sql === true && ['number', 'currency', 'percent', 'duration'].includes(f.formula.result_type));
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const ids = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n > 0) : []);
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
@@ -399,7 +402,7 @@ export function ChartForm({ block, set }: FormProps): JSX.Element {
                 )}
                 {needsGroup && (
                     <Row label={__('Agrupar por')}>
-                        <FieldSelect fields={fields} value={groupField?.id} onChange={(id) => set({ group_by_field_id: id })} allow={(f) => GROUPABLE.has(f.type)} ariaLabel={__('Agrupar por')} />
+                        <FieldSelect fields={fields} value={groupField?.id} onChange={(id) => set({ group_by_field_id: id })} allow={(f) => GROUPABLE.has(f.type) || (f.type === 'formula' && f.formula?.sql === true)} ariaLabel={__('Agrupar por')} />
                     </Row>
                 )}
                 {needsGroup && groupField && isDate(groupField) && (
