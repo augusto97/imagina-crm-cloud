@@ -85,6 +85,22 @@ describe('Tokens del blueprint (puros)', () => {
         // Un slug que no existe en el destino se descarta, no queda roto.
         const broken = resolveFieldRefs({ title_field_id: { $field: 'nope' }, ids: [{ $field: 'nope' }, 5] }, new Map());
         expect(broken).toEqual({ title_field_id: null, ids: [5] });
+
+        // v0.1.297 — kanban para ventas: los ids nuevos de la config siguen la convención.
+        const kanban = tokenizeFieldRefs(
+            { kanban_value_field_id: 11, kanban_lane_field_id: 10, kanban_move_rules: [{ column: 'perdido', required_field_ids: [11] }] },
+            idToSlug,
+        );
+        expect(kanban).toEqual({
+            kanban_value_field_id: { $field: 'monto' },
+            kanban_lane_field_id: { $field: 'estado' },
+            kanban_move_rules: [{ column: 'perdido', required_field_ids: [{ $field: 'monto' }] }],
+        });
+        expect(resolveFieldRefs(kanban, new Map([['estado', 20], ['monto', 21]]))).toEqual({
+            kanban_value_field_id: 21,
+            kanban_lane_field_id: 20,
+            kanban_move_rules: [{ column: 'perdido', required_field_ids: [21] }],
+        });
     });
 
     it('list_id / target_list_id del pack → $list y vuelta', () => {

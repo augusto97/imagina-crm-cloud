@@ -134,6 +134,8 @@ interface ViewSettingsSheetProps {
     onFrozenColumnsChange?: (next: number | null) => void;
     /** v0.1.287 — abrir el panel directo en una sección (atajo del menú de la columna). */
     focusSection?: { section: 'colors'; n: number } | null;
+    /** v0.1.297 — kanban: abre «Configurar tablero» (carriles, totales, tarjetas, límites, reglas). */
+    onConfigureBoard?: () => void;
 }
 
 /**
@@ -196,6 +198,7 @@ export function ViewSettingsSheet({
     frozenColumns = null,
     onFrozenColumnsChange,
     focusSection = null,
+    onConfigureBoard,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -472,6 +475,16 @@ export function ViewSettingsSheet({
                                         visibleColumns,
                                     )}
                                     onClick={() => setColumnsOpen(true)}
+                                />
+                            )}
+
+                            {/* v0.1.297 — en el kanban, lo propio del tablero vive en su diálogo. */}
+                            {viewType === 'kanban' && onConfigureBoard && (
+                                <RowButton
+                                    icon={Columns3}
+                                    label={__('Tablero')}
+                                    value={__('Carriles, totales, tarjetas y reglas')}
+                                    onClick={onConfigureBoard}
                                 />
                             )}
 

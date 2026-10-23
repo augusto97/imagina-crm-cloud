@@ -1,4 +1,4 @@
-import type { ViewColorRule } from '@imagina-base/shared';
+import { readKanbanSettings, withKanbanSettings, type KanbanSettings, type ViewColorRule } from '@imagina-base/shared';
 
 import { type FilterOperator, type FilterTree } from '@/types/record';
 import type { SavedViewConfig } from '@/types/view';
@@ -222,4 +222,19 @@ function stableStringify(value: unknown): string {
         return `{${entries.join(',')}}`;
     }
     return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * v0.1.297 — Kanban para ventas (B5): los ajustes del tablero (carriles, total por
+ * columna, tarjetas, límites, reglas al mover, columnas plegadas/ocultas)
+ * viven en la config de la vista con claves `kanban_*`. La lectura es
+ * tolerante (lo que no tiene forma se descarta) y la escritura reemplaza SÓLO
+ * esas claves: filtros, orden y demás quedan como estaban.
+ */
+export function viewConfigToKanban(config: SavedViewConfig): KanbanSettings {
+    return readKanbanSettings(config);
+}
+
+export function kanbanToViewConfig(config: SavedViewConfig, settings: KanbanSettings): SavedViewConfig {
+    return withKanbanSettings(config as Record<string, unknown>, settings) as SavedViewConfig;
 }

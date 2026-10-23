@@ -86,6 +86,7 @@ import {
     remapRichDoc,
     type IdMaps,
     remapSyncSettings,
+    remapViewConfig,
 } from './tenant-transfer.remap';
 
 /**
@@ -791,7 +792,8 @@ export class TenantTransferService {
                 listId: maps.list.get(Number(v.listId))!,
                 name: String(v.name),
                 type: String(v.type),
-                config: remapJson((v.config as Row | null) ?? {}, maps) as Row,
+                // v0.1.297 — además de los ids de campo, las columnas/carriles por persona del kanban.
+                config: remapViewConfig((v.config as Row | null) ?? {}, fieldTypeByOldId, maps) as Row,
                 isDefault: Boolean(v.isDefault),
                 position: Number(v.position ?? 0),
                 icon: typeof v.icon === 'string' ? v.icon : null,

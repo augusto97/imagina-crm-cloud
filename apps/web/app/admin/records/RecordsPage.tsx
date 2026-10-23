@@ -221,6 +221,15 @@ export function RecordsPage(): JSX.Element {
     // el listado plano no se usa ahí.
     const calendarMode = activeViewType === 'calendar'
         && Boolean(views.data?.find((x) => x.id === activeViewId)?.config.date_field_id);
+    // v0.1.297 — el kanban pide su propio bundle (columnas, totales y tarjetas por
+    // celda): el listado plano tampoco se usa ahí.
+    const kanbanMode = activeViewType === 'kanban'
+        && Boolean(views.data?.find((x) => x.id === activeViewId)?.config.group_by_field_id);
+    const [kanbanStatus, setKanbanStatus] = useState<{ total: number | null; fetching: boolean; ids: number[] }>({
+        total: null,
+        fetching: false,
+        ids: [],
+    });
     const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
         total: null,
         fetching: false,
@@ -247,7 +256,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied && !groupedMode && !calendarMode ? listSlug : undefined,
+        viewApplied && !groupedMode && !calendarMode && !kanbanMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -275,7 +284,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch && !groupedMode && !calendarMode ? listSlug : undefined,
+        useServerSearch && !groupedMode && !calendarMode && !kanbanMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -297,8 +306,8 @@ export function RecordsPage(): JSX.Element {
     }, [hasSearch, clientSearchable, baseRecords, serverSearch, state.search, fields.data]);
     // Lo que abarca "todos los que coinciden" (acciones masivas) y el spinner
     // del buscador: en modo agrupado lo informa el bundle.
-    const matchingCount = groupedMode ? groupedStatus.total : records.data?.meta?.total ?? null;
-    const listFetching = groupedMode ? groupedStatus.fetching : records.isFetching;
+    const matchingCount = groupedMode ? groupedStatus.total : kanbanMode ? kanbanStatus.total : records.data?.meta?.total ?? null;
+    const listFetching = groupedMode ? groupedStatus.fetching : kanbanMode ? kanbanStatus.fetching : records.isFetching;
     const [createOpen, setCreateOpen] = useState(false);
     // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
     // dentro del grupo "Hecho" abre el form con estado=hecho seteado).
@@ -472,6 +481,13 @@ export function RecordsPage(): JSX.Element {
         setCreateDefaults(first || second ? { ...(first ?? {}), ...(second ?? {}) } : undefined);
         setCreateOpen(true);
     });
+    // v0.1.297 — kanban: crear una tarjeta dentro de una columna (y carril).
+    const onKanbanAddRecord = useEventCallback((prefill: Record<string, unknown>) => {
+        setCreateDefaults(Object.keys(prefill).length > 0 ? prefill : undefined);
+        setCreateParentId(null);
+        setCreateOpen(true);
+    });
+    const [kanbanSettingsOpen, setKanbanSettingsOpen] = useState(false);
     const onFrozenColumnsChange = useEventCallback((next: number | null) =>
         setState((s) => ({ ...s, frozenColumns: next })),
     );
@@ -733,7 +749,7 @@ const applyView = (view: SavedViewEntity | null): void => {
     // Anterior / siguiente del modal: el orden de la tabla plana (o de las
     // tarjetas, el kanban y el calendario, que leen la misma página). En la
     // vista agrupada cada grupo pagina aparte: ahí no hay un orden único.
-    const navIds = isTableGrouped ? [] : (records.data?.data ?? []).map((r) => r.id);
+    const navIds = isTableGrouped ? [] : kanbanMode ? kanbanStatus.ids : (records.data?.data ?? []).map((r) => r.id);
     const navIndex = drawerRecordId !== null ? navIds.indexOf(drawerRecordId) : -1;
     const drawerNav = {
         prev: navIndex > 0 ? navIds[navIndex - 1]! : null,
@@ -1225,6 +1241,14 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
                     onCsvUpdate={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
+                    onConfigureBoard={
+                        isKanban && activeView && canManageViews && canWriteView(activeView)
+                            ? () => {
+                                  setViewSettingsOpen(false);
+                                  setKanbanSettingsOpen(true);
+                              }
+                            : undefined
+                    }
                 />
             )}
 
@@ -1363,17 +1387,21 @@ const applyView = (view: SavedViewEntity | null): void => {
                         // cambio. Eliminar la abstracción lazy elimina
                         // toda esa familia de bugs.
                         <>
-                            {isKanban && groupByField ? (
+                            {isKanban && groupByField && activeView ? (
                                 <KanbanView
+                                    key={activeView.id}
                                     listId={list.data.id}
                                     fields={fields.data}
-                                    records={records.data?.data ?? []}
+                                    view={activeView}
                                     groupByField={groupByField}
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
-                                    titleFieldId={activeView?.config.kanban_title_field_id ?? null}
-                                    metaFieldIds={activeView?.config.kanban_meta_field_ids ?? null}
                                     filterTree={state.filterTree}
                                     search={debouncedSearch}
+                                    onAddRecord={canCreateRecords ? onKanbanAddRecord : undefined}
+                                    onStatusChange={setKanbanStatus}
+                                    canEditView={canManageViews && canWriteView(activeView)}
+                                    settingsOpen={kanbanSettingsOpen}
+                                    onSettingsOpenChange={setKanbanSettingsOpen}
                                 />
                             ) : isCalendar && dateField ? (
                                 <CalendarView
@@ -1498,7 +1526,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     {/* v0.1.187 — kanban/tarjetas/calendario traen UNA tanda
                         (máx 200): si la lista es más grande, decirlo en vez
                         de dejar que parezca que faltan registros. */}
-                    {meta && isAlternativeView && meta.total > (records.data?.data.length ?? 0) && (
+                    {meta && isAlternativeView && !isKanban && meta.total > (records.data?.data.length ?? 0) && (
                         <p
                             className="imcrm-text-xs imcrm-text-muted-foreground"
                             data-testid="imcrm-view-partial-notice"

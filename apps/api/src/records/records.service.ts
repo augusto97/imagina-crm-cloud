@@ -403,6 +403,10 @@ export class RecordsService {
             filter_tree?: ListRecordsQuery['filter_tree'];
             search?: string;
             sort?: string;
+            /** v0.1.297 — tope propio de algunos grupos (kanban: «Mostrar más»). */
+            limits?: Array<{ key: string | null; limit: number }>;
+            /** v0.1.297 — sin orden por campo: lo actualizado hace poco primero (kanban). */
+            recentFirst?: boolean;
         },
     ): Promise<Map<string | null, RecordDto[]>> {
         const out = new Map<string | null, RecordDto[]>();
@@ -418,6 +422,8 @@ export class RecordsService {
                 keys: opts.keys,
                 orderBy: parseFieldSort(opts.sort, ctx.fieldsById, ctx.fields),
                 perGroup: opts.perGroup,
+                limits: opts.limits,
+                fallbackOrder: opts.recentFirst ? [sql`${records.updatedAt} DESC`] : undefined,
             });
             const dtos = await this.hydrate(tx, tenantId, ctx, picked.map((p) => p.row));
             picked.forEach((p, i) => {
@@ -448,6 +454,8 @@ export class RecordsService {
             filter_tree?: ListRecordsQuery['filter_tree'];
             search?: string;
             sort?: string;
+            limits?: Array<{ pair: [string | null, string | null]; limit: number }>;
+            recentFirst?: boolean;
         },
     ): Promise<Map<string, RecordDto[]>> {
         const out = new Map<string, RecordDto[]>();
@@ -465,6 +473,8 @@ export class RecordsService {
                 pairs: opts.pairs,
                 orderBy: parseFieldSort(opts.sort, ctx.fieldsById, ctx.fields),
                 perGroup: opts.perGroup,
+                limits: opts.limits,
+                fallbackOrder: opts.recentFirst ? [sql`${records.updatedAt} DESC`] : undefined,
             });
             const dtos = await this.hydrate(tx, tenantId, ctx, picked.map((p) => p.row));
             picked.forEach((p, i) => {

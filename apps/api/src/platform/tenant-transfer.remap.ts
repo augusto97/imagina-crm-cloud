@@ -230,6 +230,55 @@ export function remapListSettings(
 }
 
 /**
+ * v0.1.297 — Config de una vista guardada. Los ids de campo los cubre `remapJson`
+ * por convención (`kanban_value_field_id`, `required_field_ids`…); lo que no
+ * sigue ninguna son las CLAVES de columna y carril del kanban cuando el campo
+ * es una PERSONA: la clave es su id de usuario como texto («30»). Se traducen
+ * con el mapa de usuarios; una que no viajó se descarta (dejarla le aplicaría
+ * el límite o el plegado a OTRA persona). `fieldTypeByOldId` es por el id
+ * VIEJO del campo.
+ */
+export function remapViewConfig(
+    config: Record<string, unknown>,
+    fieldTypeByOldId: Map<number, string>,
+    maps: IdMaps,
+): Record<string, unknown> {
+    const out = remapJson(config, maps) as Record<string, unknown>;
+    const isUserField = (raw: unknown): boolean => {
+        const id = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(id) && fieldTypeByOldId.get(id) === 'user';
+    };
+    const userKey = (key: unknown): string | null => {
+        if (typeof key !== 'string') return null;
+        if (key === '__null__') return key;
+        const id = mapId(maps.user, key);
+        return id === null ? null : String(id);
+    };
+    const keys = (raw: unknown): string[] | undefined =>
+        Array.isArray(raw) ? raw.map(userKey).filter((k): k is string => k !== null) : undefined;
+    const byColumn = (raw: unknown): unknown =>
+        Array.isArray(raw)
+            ? raw.flatMap((entry) => {
+                  if (!entry || typeof entry !== 'object') return [];
+                  const column = userKey((entry as { column?: unknown }).column);
+                  return column === null ? [] : [{ ...(entry as Record<string, unknown>), column }];
+              })
+            : raw;
+    if (isUserField(config.group_by_field_id)) {
+        for (const k of ['kanban_collapsed_columns', 'kanban_hidden_columns'] as const) {
+            if (out[k] !== undefined) out[k] = keys(out[k]);
+        }
+        for (const k of ['kanban_wip_limits', 'kanban_move_rules'] as const) {
+            if (out[k] !== undefined) out[k] = byColumn(out[k]);
+        }
+    }
+    if (isUserField(config.kanban_lane_field_id) && out.kanban_collapsed_lanes !== undefined) {
+        out.kanban_collapsed_lanes = keys(out.kanban_collapsed_lanes);
+    }
+    return out;
+}
+
+/**
  * Las condiciones y merge tags de una automatización hablan por SLUG, así que
  * sobreviven solas; lo que sí hay que traducir son los ids de `actions[]`
  * (campo, lista destino, conexión) y del trigger, recorriendo las ramas del

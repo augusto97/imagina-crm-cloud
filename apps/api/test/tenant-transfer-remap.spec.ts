@@ -7,6 +7,7 @@ import {
     remapListSettings,
     remapRecordData,
     remapRichDoc,
+    remapViewConfig,
     type IdMaps,
 } from '../src/platform/tenant-transfer.remap';
 
@@ -100,6 +101,40 @@ describe('remapJson', () => {
                 { id: 'r2', enabled: true, condition: { type: 'condition', field_id: 112, op: 'is_null' }, color: 'amber', target: 'cell', cell_field_id: 111 },
             ],
         });
+    });
+
+    it('v0.1.297 — kanban: ids de campo por convención y columnas/carriles por PERSONA con el mapa de usuarios', () => {
+        // Columnas por etapa (select) y carriles por vendedor (user).
+        const types = new Map<number, string>([[10, 'select'], [11, 'user'], [12, 'currency']]);
+        const out = remapViewConfig(
+            {
+                group_by_field_id: 10,
+                kanban_lane_field_id: 11,
+                kanban_value_field_id: 12,
+                kanban_collapsed_lanes: ['30', '999', '__null__'],
+                kanban_wip_limits: [{ column: 'ganado', limit: 5 }],
+                kanban_move_rules: [{ column: 'perdido', required_field_ids: [12, 999] }],
+            },
+            types,
+            maps(),
+        );
+        expect(out).toEqual({
+            group_by_field_id: 110,
+            kanban_lane_field_id: 111,
+            kanban_value_field_id: 112,
+            // El 999 no viajó: se descarta (si no, el plegado sería de OTRA persona).
+            kanban_collapsed_lanes: ['130', '__null__'],
+            // Columnas por un select: su value no cambia.
+            kanban_wip_limits: [{ column: 'ganado', limit: 5 }],
+            kanban_move_rules: [{ column: 'perdido', required_field_ids: [112] }],
+        });
+        // Columnas por persona: las claves de columna también se traducen.
+        const byUser = remapViewConfig(
+            { group_by_field_id: 11, kanban_wip_limits: [{ column: '31', limit: 3 }, { column: '999', limit: 1 }], kanban_hidden_columns: ['30'] },
+            types,
+            maps(),
+        );
+        expect(byUser).toEqual({ group_by_field_id: 111, kanban_wip_limits: [{ column: '131', limit: 3 }], kanban_hidden_columns: ['130'] });
     });
 
     it('deja intactos los slugs y los valores que no son referencias', () => {

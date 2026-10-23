@@ -1,4 +1,4 @@
-import type { ViewColorRule } from '@imagina-base/shared';
+import type { KanbanMoveRule, KanbanWipLimit, ViewColorRule } from '@imagina-base/shared';
 
 export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards';
 
@@ -111,13 +111,28 @@ export interface SavedViewConfig {
      * título prominente de cada card. Si no se setea, KanbanView
      * elige el primary field (o el primer text/email como fallback).
      */
-    kanban_title_field_id?: number;
+    kanban_title_field_id?: number | null;
     /**
      * Sólo para vistas tipo `kanban`: ids de los campos que se
      * muestran como meta debajo del título (max 3-4). Si no se setea,
      * KanbanView elige por heurística los 3 primeros no excluidos.
      */
     kanban_meta_field_ids?: number[];
+    /** v0.1.297 — Kanban para ventas (B5): campo que se suma/promedia por columna y carril. */
+    kanban_value_field_id?: number | null;
+    kanban_value_metric?: 'sum' | 'avg';
+    /** v0.1.297 — carriles por un segundo campo. */
+    kanban_lane_field_id?: number | null;
+    kanban_collapsed_lanes?: string[];
+    kanban_collapsed_columns?: string[];
+    kanban_hidden_columns?: string[];
+    kanban_hide_empty?: boolean;
+    /** v0.1.297 — límite de tarjetas por columna (clave de la columna). */
+    kanban_wip_limits?: KanbanWipLimit[];
+    /** v0.1.297 — campos que se piden al mover una tarjeta a una columna. */
+    kanban_move_rules?: KanbanMoveRule[];
+    kanban_cover_field_id?: number | null;
+    kanban_card_size?: 'compact' | 'normal';
 }
 
 export interface SavedViewEntity {

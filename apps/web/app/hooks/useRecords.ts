@@ -186,6 +186,23 @@ export function patchRecordInCache(
         }
         return touched ? { ...bundle, expanded } : undefined;
     }
+    // v0.1.297 — bundle del kanban (`{cells: {k: {records: [...]}}}`): el registro
+    // movido cambia de valor al instante y el tablero lo reubica solo.
+    const board = data as { cells?: Record<string, { records?: RecordEntity[] | null }> };
+    if (board.cells && typeof board.cells === 'object') {
+        let touched = false;
+        const cells: Record<string, unknown> = {};
+        for (const [k, cell] of Object.entries(board.cells)) {
+            const rows = cell?.records;
+            if (Array.isArray(rows) && rows.some((r) => r.id === id)) {
+                touched = true;
+                cells[k] = { ...cell, records: rows.map((r) => (r.id === id ? patch(r) : r)) };
+            } else {
+                cells[k] = cell;
+            }
+        }
+        return touched ? { ...board, cells } : undefined;
+    }
     return undefined;
 }
 
