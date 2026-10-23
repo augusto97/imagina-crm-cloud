@@ -1,6 +1,10 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
     AUTOMATION_ACTIONS,
+    FORMULA_RESULT_TYPES,
+    formulaToDisplay,
+    prepareFormula,
+    type FormulaFieldRef,
     FIELD_DEFAULT_KINDS,
     FIELD_FORMAT_PRESETS,
     REQUIRED_IF_OPS,
@@ -161,6 +165,8 @@ const AI_FIELD_TYPES = [
     'updated_by',
     // Campo «Botón»: acciones al presionarlo (no guarda valor).
     'button',
+    // Fórmulas (A1).
+    'formula',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -203,6 +209,29 @@ const fieldSpec = z.object({
         })
         .optional()
         .describe('Sólo ai: el valor lo completa un modelo a partir de otros campos y se recalcula solo al cambiarlos (consume la cuota de IA)'),
+    formula: z
+        .object({
+            expression: z
+                .string()
+                .min(1)
+                .max(4000)
+                .describe(
+                    'La fórmula en español, con los campos por NOMBRE entre llaves: `{Precio} * {Cantidad}`, `SI({Total} > 1000000, "Grande", "Chico")`. '
+                        + 'Operadores + - * / ^, % (porcentaje: 19%), = <> < > <= >=, & (unir texto). Decimales con punto; argumentos separados por coma. '
+                        + 'Funciones: SI, Y, O, NO, SWITCH, ESBLANCO, SI.ERROR, BLANCO, CONCATENAR, MAYUSC, MINUSC, IZQUIERDA, DERECHA, EXTRAER, LARGO, CONTIENE, REEMPLAZAR, ESPACIOS, REGEX_COINCIDE, '
+                        + 'REDONDEAR, REDONDEAR.MAS, REDONDEAR.MENOS, ABS, MAX, MIN, SUMA, PROMEDIO, ENTERO, RESIDUO, POTENCIA, HOY, AHORA, DIAS_ENTRE, MESES_ENTRE, SUMAR_DIAS, SUMAR_MESES, '
+                        + 'SUMAR_DIAS_HABILES (festivos de Colombia), DIA_SEMANA, ANIO, MES, DIA, FORMATO_FECHA, TEXTO, VALOR, FECHA, LETRAS, PESOS. '
+                        + 'Una selección se lee por su etiqueta; un campo vacío cuenta como 0 en una cuenta. Puede usar otras fórmulas, lookups, rollups y columnas de sistema (sin ciclos).',
+                ),
+            result_type: z
+                .enum(FORMULA_RESULT_TYPES)
+                .optional()
+                .describe('Cómo se muestra el resultado; sin él se infiere (moneda si usa un campo moneda, fecha, sí/no…)'),
+            currency: z.string().length(3).optional().describe('result_type currency: código ISO 4217'),
+            precision: z.number().int().min(0).max(10).optional().describe('Decimales del resultado'),
+        })
+        .optional()
+        .describe('Sólo formula: el valor se calcula solo en cada registro (nadie lo escribe). Si la fórmula compila a la base, también filtra, ordena y se suma.'),
     autonumber: z
         .object({
             prefix: z.string().max(20).optional().describe('Prefijo (TCK, PED…). Sin él: las primeras letras del nombre de la lista.'),
@@ -688,6 +717,7 @@ export class StructureTools implements AiProposalApplier {
                 is_unique: z.boolean().optional(),
                 add_options: z.array(optionSpec).max(60).optional().describe('select/multi_select: opciones a AGREGAR a las existentes'),
                 replace_options: z.array(optionSpec).max(60).optional().describe('select/multi_select: reemplazar TODAS las opciones (ojo: los valores guardados que no estén quedan huérfanos)'),
+                formula: fieldSpec.shape.formula.describe('Sólo campos formula: la fórmula nueva (por NOMBRE de campo) y cómo mostrarla'),
                 config: z.record(z.unknown()).optional().describe('Reemplazo completo de la configuración (avanzado)'),
                 button: buttonSpec.optional().describe('Sólo campos button: reemplaza lo que hace el botón (mismo vocabulario que propose_add_fields)'),
             }),
@@ -1203,6 +1233,7 @@ export class StructureTools implements AiProposalApplier {
                     return [s, { id: { $field: s }, type: f.type, config: f.options ? { options: normalizeOptions(f.options) } : {} }];
                 }),
             );
+            const formulaRefs: FormulaFieldRef[] = [];
             const fields = spec.fields.map((f) => {
                 const slug = f.slug ?? toSlug(f.label);
                 if (slugs.has(slug)) throw new AiToolError(`La lista «${spec.name}» repite el campo «${slug}».`);
@@ -1213,7 +1244,9 @@ export class StructureTools implements AiProposalApplier {
                     localSlugs: () => slugs,
                     forBlueprint: true,
                     fieldRef: (s) => specRefs.get(s),
+                    formulaFields: () => formulaRefs,
                 });
+                formulaRefs.push({ id: -(formulaRefs.length + 1), slug, label: f.label, type: f.type });
                 return {
                     label: f.label,
                     slug,
@@ -1368,6 +1401,10 @@ export class StructureTools implements AiProposalApplier {
                     return undefined;
                 },
                 ...buttonRefs,
+                formulaFields: () => [
+                    ...current.map((x) => ({ id: x.id, slug: x.slug, label: x.label, type: x.type, config: x.config })),
+                    ...inputs.map((x, i) => ({ id: -(i + 1), slug: x.slug ?? '', label: x.label, type: x.type, config: x.config ?? {} })),
+                ],
             });
             inputs.push({
                 label: f.label,
@@ -1442,6 +1479,25 @@ export class StructureTools implements AiProposalApplier {
             }, { forBlueprint: false, ...(await this.buttonRefs(ctx, list.id, [{ label: field.label, type: 'button', button: input.button }])) });
             patch.config = parseFieldConfig(field.type, config);
             changes.push({ label: 'Botón', from: describeConfig('button', field.config, []), to: describeConfig('button', patch.config, []) ?? '' });
+        } else if (input.formula !== undefined) {
+            if (field.type !== 'formula') throw new AiToolError(`«${field.slug}» es ${field.type}: sólo un campo formula tiene fórmula.`);
+            const listFields = await this.fields.listByListId(ctx.tenantId, list.id);
+            const checked = prepareFormula(input.formula.expression, listFields as never, field.id);
+            if (!checked.ok) throw new AiToolError(`Fórmula de «${field.slug}»: ${checked.error.message}`);
+            const next: Record<string, unknown> = { ...field.config, formula: input.formula.expression };
+            if (input.formula.result_type) next.result_type = input.formula.result_type;
+            if (input.formula.currency) next.currency = input.formula.currency.toUpperCase();
+            if (input.formula.precision !== undefined) next.precision = input.formula.precision;
+            patch.config = parseFieldConfig(field.type, next);
+            changes.push({
+                label: 'Fórmula',
+                from: formulaToDisplay(
+                    typeof field.config.formula === 'string' ? field.config.formula : '',
+                    listFields,
+                    (field.config.labels ?? {}) as Record<string, string>,
+                ),
+                to: input.formula.expression,
+            });
         } else if (input.config !== undefined) {
             patch.config = parseFieldConfig(field.type, input.config);
             changes.push({ label: 'Configuración', from: JSON.stringify(field.config), to: JSON.stringify(patch.config) });
@@ -3005,6 +3061,8 @@ export class StructureTools implements AiProposalApplier {
             fieldRef?: (slug: string) => ButtonFieldRef | undefined;
             buttonAutomationIds?: ReadonlySet<number>;
             buttonTemplateIds?: ReadonlySet<number>;
+            /** Fórmulas (A1): los campos que la fórmula puede nombrar (los de la lista + los anteriores del pedido). */
+            formulaFields?: () => FormulaFieldRef[];
         },
     ): { config: Record<string, unknown> } {
         let config: Record<string, unknown> = {};
@@ -3093,6 +3151,20 @@ export class StructureTools implements AiProposalApplier {
                     templateIds: opts.buttonTemplateIds,
                 });
                 break;
+            case 'formula': {
+                if (!f.formula) throw new AiToolError(`El campo «${slug}» (formula) necesita formula {expression}.`);
+                // Se revisa YA (sintaxis, campos que existen, sin ciclos) para que
+                // el modelo corrija antes de proponer; se guarda por nombre y el
+                // servidor la traduce a ids al crear el campo.
+                const checked = prepareFormula(f.formula.expression, (opts.formulaFields?.() ?? []) as never, null);
+                if (!checked.ok) throw new AiToolError(`Fórmula de «${slug}»: ${checked.error.message}`);
+                config.formula = f.formula.expression;
+                if (f.formula.result_type) config.result_type = f.formula.result_type;
+                if (f.formula.currency) config.currency = f.formula.currency.toUpperCase();
+                if (f.formula.precision !== undefined) config.precision = f.formula.precision;
+                // Las referencias van por NOMBRE: se validan al guardar, no aquí.
+                return { config };
+            }
             case 'autonumber':
                 if (f.autonumber?.prefix !== undefined) config.prefix = f.autonumber.prefix.trim().toUpperCase();
                 if (f.autonumber?.digits !== undefined) config.digits = f.autonumber.digits;
@@ -3686,6 +3758,7 @@ interface UpdateFieldSpec {
     is_unique?: boolean;
     add_options?: z.infer<typeof optionSpec>[];
     replace_options?: z.infer<typeof optionSpec>[];
+    formula?: NonNullable<z.infer<typeof fieldSpec>['formula']>;
     config?: Record<string, unknown>;
     button?: z.infer<typeof buttonSpec>;
 }
@@ -3903,6 +3976,14 @@ function describeFieldForModel(
     if (f.type === 'time_tracked') {
         out.note = 'Sólo lectura: minutos registrados con el cronómetro o a mano en la ficha (se filtra, ordena y suma).';
     }
+    // Fórmulas (A1): la fórmula por NOMBRE (como se escribe), su resultado y si filtra.
+    if (f.type === 'formula') {
+        const all = [...fieldById.values()].filter((x) => x.list_id === f.list_id);
+        const labels = (cfg.labels && typeof cfg.labels === 'object' ? cfg.labels : {}) as Record<string, string>;
+        out.formula = formulaToDisplay(typeof cfg.formula === 'string' ? cfg.formula : '', all, labels);
+        out.result_type = typeof cfg.result_type === 'string' ? cfg.result_type : 'auto';
+        out.note = 'Sólo lectura: se calcula sola en cada registro.';
+    }
     // v0.1.300 — ID automático, columnas de sistema y reglas.
     if (f.type === 'autonumber') {
         out.autonumber = { prefix: cfg.prefix ?? '', digits: cfg.digits ?? 4, yearly: cfg.yearly === true, start: cfg.start ?? 1 };
@@ -3950,6 +4031,8 @@ function describeConfig(type: FieldType, config: Record<string, unknown>, lists:
             const acts = Array.isArray(config.actions) ? (config.actions as Array<{ type?: string }>) : [];
             return acts.map((a) => names[String(a.type)] ?? String(a.type)).join(', ') || null;
         }
+        case 'formula':
+            return typeof config.formula === 'string' ? `= ${config.formula}` : null;
         default:
             return null;
     }

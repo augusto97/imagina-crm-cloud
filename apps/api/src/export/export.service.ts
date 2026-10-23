@@ -7,6 +7,7 @@ import {
     XLSX_EXPORT_MAX_ROWS,
     XlsxStreamWriter,
     formatDuration,
+    formulaShownAs,
     isDataField,
     isSystemField,
     jsonbKeyForField,
@@ -143,7 +144,9 @@ export class ExportService {
                 const cells = columns.map((c) =>
                     c.type === 'relation'
                         ? labeler.labels(c.id, r.relations?.[jsonbKeyForField(c.id)])
-                        : readable.cell(c, r.data[jsonbKeyForField(c.id)]) ?? stringifyCell(r.data[jsonbKeyForField(c.id)], c.type, targetTypeOf(c)),
+                        : r.formula_errors?.[jsonbKeyForField(c.id)]
+                          ? '#ERROR'
+                          : readable.cell(c, r.data[jsonbKeyForField(c.id)]) ?? stringifyCell(r.data[jsonbKeyForField(c.id)], c.type, targetTypeOf(c)),
                 );
                 await write(
                     csvLine(
@@ -303,7 +306,10 @@ export class ExportService {
     ): Promise<Field[]> {
         const all = await this.fields.list(tenantId, String(list.id));
         const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
-        const exportable = all.filter((f) => (isDataField(f.type) || isExportableDerived(f.type)) && !hidden.has(f.slug));
+        const exportable = all
+            .filter((f) => (isDataField(f.type) || isExportableDerived(f.type)) && !hidden.has(f.slug))
+            // Fórmulas (A1): salen con el formato de su resultado (moneda, fecha…).
+            .map((f) => formulaShownAs(f));
         const byId = new Map(exportable.map((f) => [f.id, f]));
         return fieldIds.length > 0 ? fieldIds.map((id) => byId.get(id)).filter((f) => f !== undefined) : exportable;
     }
@@ -591,6 +597,8 @@ function safeFileName(name: string): string {
 function isExportableDerived(type: string): boolean {
     return (
         type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation' || type === 'time_tracked'
+        // Fórmulas (A1): con el valor calculado de cada fila.
+        || type === 'formula'
         // v0.1.300 — columnas de sistema (creado/modificado por y cuándo).
         || isSystemField(type)
     );
