@@ -3567,6 +3567,46 @@ partida, no asesoría legal: la interfaz lo dice. Fuera de alcance: borrar datos
 al retirar, casillas por finalidad, datos sensibles o de menores aparte,
 autorización para datos cargados por el equipo y leyes de otros países.
 
+### ADR-S55 — Campos que llena la app y reglas de campo (v0.1.300)
+
+**Contexto.** Hacía falta un código legible por registro (TCK-0001), saber quién
+creó o cambió algo, y reglas de negocio por campo (valor inicial, formato,
+rango, obligatorio condicional) sin escribir automatizaciones.
+
+**Decisión.**
+1. El ID automático lo asigna un **trigger de Postgres** (BEFORE INSERT/UPDATE
+   en `records`) con un contador por (campo, año) en `autonumber_counters`
+   (RLS), bloqueado con `INSERT … ON CONFLICT DO UPDATE`. Así ningún camino de
+   alta, presente o futuro, puede saltearlo, y la atomicidad la da la fila del
+   contador. El número se guarda como **texto en `data`** (busca, filtra y
+   exporta sin código especial) y no cambia nunca; sólo la migración de empresa
+   conserva el que trae (marca de sesión `app.keep_autonumber`). La función SQL
+   `imcrm_autonumber_text` tiene una gemela en TS (`formatAutonumber`) cubierta
+   por un test de paridad. El trigger sólo mira campos vivos: un ID automático
+   en la papelera (ADR-S52) no numera, y al restaurarlo se numera lo creado
+   mientras tanto con el mismo contador.
+2. Las columnas de sistema son **cuatro tipos** (`created_at`, `updated_at`,
+   `created_by`, `updated_by`) sin valor en `data`: se leen de la fila en cada
+   respuesta y el QueryBuilder y el motor de agregados las compilan como
+   expresión inyectada; se muestran como fecha y hora o persona
+   (`valueBaseType`). Columna nueva `records.updated_by` (0 = sistema). Cuatro
+   tipos y no uno con config porque front y back deciden casi todo por
+   `field.type`.
+3. Valor por defecto y validaciones viven en `field.config` (`default_value`,
+   `validation`) y se aplican con funciones puras de shared en el navegador y
+   en el servidor; así viajan solos en plantillas, al duplicar y al migrar.
+   «Obligatorio si» referencia el campo por `field_id`, que plantillas y
+   migración re-apuntan.
+4. Expresión regular propia: análisis estático al guardar y, al aplicarla,
+   anclada, sobre ≤200 caracteres y cacheada. Un patrón sin analizar no se
+   ejecuta.
+
+**Consecuencias.** Cada escritura en `records` paga una consulta indexada a
+`fields` (unos 0,06 ms por fila sin ID automático y 0,27 ms con él); §13 sigue
+en presupuesto. Las reglas nuevas no bloquean registros viejos: «obligatorio
+si» se evalúa en una edición sólo si cambió el campo o su condición. Un ID
+automático no se convierte desde otro tipo: se crea.
+
 ---
 
-**Versión del documento:** 1.96.0 (excel)
+**Versión del documento:** 1.97.0 (campos que llena la app)

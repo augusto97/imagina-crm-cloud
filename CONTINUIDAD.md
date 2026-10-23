@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.299** (Excel: exportar la vista con tipos reales e importar .xlsx eligiendo la hoja — cuarta entrega de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.300** (ID automático, columnas de sistema, valores por defecto y validaciones por campo — quinta entrega de las fases 1 y 2 del estudio, cierra la tanda 1), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -381,10 +381,11 @@ versión publicada: **v0.1.299** (Excel: exportar la vista con tipos reales e im
   del ID automático se sugiere del nombre de la lista. Al terminar las dos
   fases: el usuario prueba y después se sigue con las fases 3-6.
   **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
-  personales (v0.1.298) y Excel (v0.1.299) publicados.
-  Campos en curso; Gantt + dependencias (slot 8) y Calendario (slot 9)
+  personales (v0.1.298), Excel (v0.1.299) y Campos (v0.1.300) publicados:
+  **la tanda 1 está completa**. Gantt + dependencias (slot 8) y Calendario (slot 9)
   arrancaron sobre la rama local `integ-base` (lo integrado y todavía no
-  publicado). Botón y Fórmulas, cuando Campos esté integrado. Los
+  publicado). Botón (slot 6) y Fórmulas (slot 7) arrancaron sobre
+  `integ-base` con Campos incluido. Los
   documentos de cada entrega toman el siguiente ADR libre (Papelera S52,
   Kanban S53…) y la migración de cada una se renumera a la siguiente libre al
   integrarla.
@@ -625,6 +626,21 @@ versión publicada: **v0.1.299** (Excel: exportar la vista con tipos reales e im
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.300** — **ID automático, columnas de sistema, valores por
+  defecto y validaciones** (opciones A3+A4+A6 del estudio, ADR-S55). Tipo «ID
+  automático» asignado por un trigger de Postgres con contador atómico por campo
+  y año (todos los caminos de alta, sin repetidos ni huecos; numera lo
+  existente al agregarlo; en la papelera no numera y al volver completa lo
+  creado mientras tanto). Cuatro columnas de sistema (creación, modificación,
+  creado por, modificado por; `records.updated_by` nuevo, 0 = Sistema). Valor
+  por defecto y validaciones por campo (rango, largo, NIT/cédula/placa, regex
+  con anti-ReDoS, «obligatorio si») con la misma lógica de shared en el
+  navegador y el servidor. Fixes: 500 del pie agrupado por una columna de
+  sistema, carrera del mapa de claves al crear un derivado, «Marcada por
+  defecto» de las casillas que nunca se guardaba. Migración 0081 (trigger +
+  `autonumber_counters` + `records.updated_by`): cada escritura en `records`
+  suma ~0,06 ms (0,27 con ID automático), §13 en presupuesto. **Con esto la
+  tanda 1 de las fases 1 y 2 queda completa.**
 - **2026-10-23 · v0.1.299** — **Excel (.xlsx)** (opción G6 del estudio,
   addendum de ADR-S38). Exportar la vista con tipos reales (montos, fechas en la
   zona de la empresa, duraciones, etiquetas, nombres), encabezado inmovilizado y
