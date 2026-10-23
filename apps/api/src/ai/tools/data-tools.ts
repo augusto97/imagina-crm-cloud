@@ -32,6 +32,7 @@ import { AggregateService } from '../../aggregate/aggregate.service';
 import { FieldsService } from '../../fields/fields.service';
 import { ListsService } from '../../lists/lists.service';
 import { BulkEditService } from '../../records/bulk-edit.service';
+import { DependenciesService } from '../../records/dependencies.service';
 import { RecordsService, type Actor } from '../../records/records.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
@@ -98,18 +99,44 @@ const bulkEditSpec = z.object({
 });
 type BulkEditSpec = z.infer<typeof bulkEditSpec>;
 
+/** A8 — agregar y quitar dependencias («`blocker` bloquea a `blocked`»), por id de registro. */
+const depPair = z.object({
+    blocker: z.number().int().positive().describe('Id del registro que BLOQUEA (tiene que terminarse primero)'),
+    blocked: z.number().int().positive().describe('Id del registro BLOQUEADO (espera al otro)'),
+});
+const setDependenciesSpec = z.object({
+    list: z.string().max(63),
+    add: z
+        .array(depPair.extend({ lag_days: z.number().int().min(-365).max(365).optional().describe('Desfase opcional en días') }))
+        .max(100)
+        .optional(),
+    remove: z.array(depPair).max(100).optional(),
+});
+type SetDependenciesSpec = z.infer<typeof setDependenciesSpec>;
+
 type Payload =
     | { kind: 'create_records'; listId: number; listSlug: string; rows: Array<Record<string, unknown>> }
     | { kind: 'update_records'; listId: number; listSlug: string; ids: number[]; data: Record<string, unknown> }
     | { kind: 'delete_records'; listId: number; listSlug: string; ids: number[] }
-    | { kind: 'bulk_edit_records'; listId: number; listSlug: string; ids: number[]; operations: BulkOperation[] };
+    | { kind: 'bulk_edit_records'; listId: number; listSlug: string; ids: number[]; operations: BulkOperation[] }
+    | {
+          kind: 'set_dependencies';
+          listId: number;
+          listSlug: string;
+          add: Array<{ blocker: number; blocked: number; lag_days: number }>;
+          remove: Array<{ blocker: number; blocked: number }>;
+      };
 
-type DataKind = 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records';
-const CAPABILITY_BY_KIND: Record<DataKind, Capability> = {
+type DataKind = 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies';
+const CAPABILITY_BY_KIND: Record<DataKind, Capability | null> = {
     create_records: 'create_records',
     update_records: 'bulk_actions',
     delete_records: 'bulk_actions',
     bulk_edit_records: 'bulk_actions',
+    // Sin capability global (manager tiene edit_records y agent
+    // edit_own_records): cada par se chequea al proponer Y al aplicar con el
+    // ACL de la fila (poder editar el registro bloqueado).
+    set_dependencies: null,
 };
 
 /** Tipos que el asistente puede escribir por valor (el resto son referencias a otras entidades o derivados). */
@@ -133,7 +160,7 @@ const WRITABLE_TYPES = new Set([
  */
 @Injectable()
 export class DataTools implements AiProposalApplier {
-    static readonly KINDS: ReadonlySet<AiProposalKind> = new Set(['create_records', 'update_records', 'delete_records', 'bulk_edit_records']);
+    static readonly KINDS: ReadonlySet<AiProposalKind> = new Set(['create_records', 'update_records', 'delete_records', 'bulk_edit_records', 'set_dependencies']);
 
     constructor(
         private readonly lists: ListsService,
@@ -143,6 +170,8 @@ export class DataTools implements AiProposalApplier {
         private readonly store: ProposalsStore,
         // v0.1.222 — Optional + al final: los specs que arman DataTools a mano siguen andando.
         @Optional() private readonly bulkEditService?: BulkEditService,
+        // A8 — dependencias entre registros.
+        @Optional() private readonly dependencies?: DependenciesService,
     ) {}
 
     private get bulkEdit(): BulkEditService {
@@ -194,6 +223,17 @@ export class DataTools implements AiProposalApplier {
             capability: 'bulk_actions',
             input: bulkEditSpec,
             run: (ctx, input) => this.proposeBulkEdit(ctx, input as BulkEditSpec),
+        });
+        registry.register({
+            name: 'propose_set_dependencies',
+            label: 'Preparando las dependencias',
+            description:
+                'Propone AGREGAR o QUITAR dependencias «bloquea / bloqueado por» entre registros de una misma lista (por id, de query_records): `blocker` tiene que terminarse antes que `blocked`. ' +
+                'El servidor rechaza los ciclos (A bloquea a B y B a A). Si la lista reprograma, mover el fin de un bloqueante corre lo que depende de él. Al cerrar algo con bloqueantes abiertos la app avisa.',
+            // Editar todo o sólo lo suyo (cada vínculo re-chequea el ACL de la fila).
+            capability: ['edit_records', 'edit_own_records'],
+            input: setDependenciesSpec,
+            run: (ctx, input) => this.proposeSetDependencies(ctx, input as SetDependenciesSpec),
         });
         registry.register({
             name: 'propose_delete_records',
@@ -408,6 +448,37 @@ export class DataTools implements AiProposalApplier {
         });
     }
 
+    private async proposeSetDependencies(ctx: AiToolContext, input: SetDependenciesSpec): Promise<AiToolResult> {
+        if (!this.dependencies) throw new AiToolError('Las dependencias no están disponibles en este servidor.');
+        const add = (input.add ?? []).map((p) => ({ blocker: p.blocker, blocked: p.blocked, lag_days: p.lag_days ?? 0 }));
+        const remove = (input.remove ?? []).map((p) => ({ blocker: p.blocker, blocked: p.blocked }));
+        if (add.length === 0 && remove.length === 0) throw new AiToolError('Pasa al menos una dependencia en `add` o en `remove`.');
+        const { list } = await this.loadList(ctx, input.list);
+        const plan = await this.dependencies.plan(ctx.tenantId, actorOf(ctx), String(list.id), add, remove);
+        if (plan.problems.length > 0) throw new AiToolError(plan.problems.slice(0, 10).join(' '));
+        const t = (id: number): string => plan.titles.get(id) ?? `Registro #${id}`;
+        const n = add.length + remove.length;
+        const parts = [
+            add.length > 0 ? `agregar ${add.length} dependencia${add.length === 1 ? '' : 's'}` : null,
+            remove.length > 0 ? `quitar ${remove.length}` : null,
+        ].filter(Boolean);
+        return this.saveProposal(ctx, {
+            kind: 'set_dependencies',
+            title: `Dependencias en «${list.name}»: ${parts.join(' y ')}`,
+            summary: `Se ${parts.join(' y se ')} entre registros de «${list.name}». Lo bloqueado espera a que su bloqueante termine.`,
+            destructive: false,
+            listSlug: list.slug,
+            preview: emptyPreview({
+                affected_count: n,
+                rows: [
+                    ...add.map((p) => ({ Cambio: 'Agregar', Bloquea: t(p.blocker), 'Bloqueado': t(p.blocked), ...(p.lag_days ? { Desfase: `${p.lag_days} d` } : {}) })),
+                    ...remove.map((p) => ({ Cambio: 'Quitar', Bloquea: t(p.blocker), 'Bloqueado': t(p.blocked) })),
+                ].slice(0, 20),
+            }),
+            payload: { kind: 'set_dependencies', listId: list.id, listSlug: list.slug, add, remove },
+        });
+    }
+
     // ── Aplicar ──────────────────────────────────────────────────────────
 
     async apply(ctx: AiToolContext, stored: StoredProposal): Promise<AiApplyOutcome> {
@@ -452,6 +523,33 @@ export class DataTools implements AiProposalApplier {
                 }
                 return {
                     message: `${changed} registro${changed === 1 ? '' : 's'} actualizado${changed === 1 ? '' : 's'}. Se puede deshacer desde «Historial de ediciones masivas» de la lista.`,
+                    links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }],
+                    warnings,
+                };
+            }
+            case 'set_dependencies': {
+                if (!this.dependencies) throw new Error('Las dependencias no están disponibles en este servidor.');
+                const warnings: string[] = [];
+                let done = 0;
+                // Primero las bajas (una alta del mismo lote puede depender de ellas para no cerrar un círculo).
+                for (const p of payload.remove) {
+                    try {
+                        await this.dependencies.removePair(ctx.tenantId, actor, String(payload.listId), p.blocker, p.blocked);
+                        done += 1;
+                    } catch (err) {
+                        warnings.push(`#${p.blocker} → #${p.blocked}: ${errMessage(err)}`);
+                    }
+                }
+                for (const p of payload.add) {
+                    try {
+                        await this.dependencies.addPair(ctx.tenantId, actor, String(payload.listId), p.blocker, p.blocked, p.lag_days);
+                        done += 1;
+                    } catch (err) {
+                        warnings.push(`#${p.blocker} → #${p.blocked}: ${errMessage(err)}`);
+                    }
+                }
+                return {
+                    message: `${done} cambio${done === 1 ? '' : 's'} de dependencias aplicado${done === 1 ? '' : 's'}.`,
                     links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }],
                     warnings,
                 };
@@ -615,6 +713,8 @@ export class DataTools implements AiProposalApplier {
             }
         }
         if (r.parent_id) out.parent_id = r.parent_id;
+        // A8 — cuántos bloqueantes sin terminar tiene (0 = nada lo bloquea).
+        if ((r.blocked_by_open ?? 0) > 0) out.blocked_by_open = r.blocked_by_open;
         return out;
     }
 

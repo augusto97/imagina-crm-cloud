@@ -56,6 +56,13 @@ import {
     CALENDAR_MODES,
     calendarSourceTypesOk,
     readCalendarSettings,
+    GANTT_COLOR_BY,
+    GANTT_DATE_TYPES,
+    GANTT_GROUP_TYPES,
+    GANTT_MAX_COLUMNS,
+    GANTT_ZOOMS,
+    readDependencySettings,
+    readGanttSettings,
     type AiProposal,
     type AiProposalKind,
     type AiProposalPreview,
@@ -99,6 +106,7 @@ import { TenantDb } from '../../tenancy/tenant-db.service';
 import { BlueprintService } from '../../templates/blueprint.service';
 import { ViewsService } from '../../views/views.service';
 import { isNumericComputed } from '../../records/computed-sql';
+import { DependenciesRepository } from '../../records/dependencies.repository';
 import { FormsService } from '../../forms/forms.service';
 import { DataConsentService } from '../../data-consent/data-consent.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
@@ -269,10 +277,18 @@ const colorRuleSpec = z.object({
 });
 type ColorRuleSpec = z.infer<typeof colorRuleSpec>;
 
+/**
+ * Calendario (B4) y Gantt (B1) comparten `color_by`/`color_field` en el
+ * vocabulario del asistente; cada builder acepta sólo los valores de su vista.
+ */
+const VIEW_COLOR_BY = ['auto', 'source', 'field', 'rules', 'none'] as const;
+
 const viewSpec = z.object({
     name: z.string().min(1).max(190),
-    type: viewTypeSchema.describe('table | kanban | calendar | cards'),
-    group_by: fieldSlugSchema.optional().describe('kanban: campo select por el que se arman las columnas (obligatorio). table: agrupar filas por este campo.'),
+    type: viewTypeSchema.describe('table | kanban | calendar | cards | gantt'),
+    group_by: fieldSlugSchema
+        .optional()
+        .describe('kanban: campo select por el que se arman las columnas (obligatorio). table: agrupar filas por este campo. gantt: encabezados de grupo plegables por un select, una persona (user) o una casilla.'),
     sub_group_by: fieldSlugSchema
         .optional()
         .describe('table: segundo nivel de agrupado («y luego por»): subgrupos dentro de cada grupo de `group_by`. Otro campo; no relación ni archivo.'),
@@ -311,10 +327,12 @@ const viewSpec = z.object({
         .describe('calendar: fuentes de fecha ADICIONALES que se muestran a la vez (p. ej. «Vencimiento» y «Próximo contacto»), cada una con su etiqueta y color'),
     date_label: z.string().max(80).optional().describe('calendar: etiqueta de la fuente principal (date_field)'),
     color_by: z
-        .enum(CALENDAR_COLOR_BY)
+        .enum(VIEW_COLOR_BY)
         .optional()
-        .describe('calendar: color de los eventos — auto (default), source (el de cada fuente), field (el de la opción de color_field) o none. Las color_rules ganan sobre esto.'),
-    color_field: fieldSlugSchema.optional().describe('calendar con color_by=field: campo select cuyo color pinta el evento'),
+        .describe(
+            'calendar y gantt: de dónde sale el color. calendar: auto (default), source (el de cada fuente), field (el de la opción de color_field) o none; las color_rules ganan sobre esto. gantt: field (default, el de la opción de color_field), rules (las color_rules de la vista) o none.',
+        ),
+    color_field: fieldSlugSchema.optional().describe('calendar y gantt: campo select cuyo color de opción pinta el evento o la barra (con color_by=field)'),
     default_mode: z.enum(CALENDAR_MODES).optional().describe('calendar: vista con la que abre — month (default), week, day o agenda'),
     week_start: z.enum(['monday', 'sunday', 'saturday']).optional().describe('calendar: primer día de la semana (default monday)'),
     day_hours: z
@@ -360,6 +378,16 @@ const viewSpec = z.object({
         .optional()
         .describe('kanban: reglas al mover. P. ej. a «perdido» pedir motivo_perdida; a «ganado», fecha_cierre y monto.'),
     hide_empty_columns: z.boolean().optional().describe('kanban: ocultar las columnas y carriles sin tarjetas'),
+    // B1 — Gantt / línea de tiempo.
+    start_field: fieldSlugSchema.optional().describe('gantt: campo date/datetime de INICIO de cada barra (obligatorio)'),
+    end_field: fieldSlugSchema
+        .optional()
+        .describe('gantt: campo date/datetime de FIN. Sin fin (o un registro con una sola fecha) se dibuja como HITO (rombo).'),
+    columns: z.array(fieldSlugSchema).max(GANTT_MAX_COLUMNS).optional().describe('gantt: columnas del panel izquierdo además del título (responsable, estado…)'),
+    zoom: z.enum(GANTT_ZOOMS).optional().describe('gantt: zoom con el que abre — day | week (default) | month | quarter'),
+    show_subtasks: z.boolean().optional().describe('gantt: subtareas anidadas bajo su padre (default true)'),
+    show_dependencies: z.boolean().optional().describe('gantt: flechas de dependencia entre barras (default true)'),
+    show_baseline: z.boolean().optional().describe('gantt: barra fantasma de la línea base, si hay una guardada (default true)'),
     is_default: z.boolean().optional(),
 });
 type ViewSpec = z.infer<typeof viewSpec>;
@@ -545,7 +573,7 @@ type Payload =
     | { kind: 'delete_document_template'; listId: number; listSlug: string; templateId: number; name: string };
 
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
-type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records'>;
+type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies'>;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
     create_list: 'manage_lists',
@@ -670,7 +698,9 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_create_view',
             label: 'Armando la vista',
-            description: 'Propone una vista guardada (tabla, kanban, calendario o tarjetas) sobre una lista existente, con filtros, orden y agrupación.',
+            description:
+                'Propone una vista guardada (tabla, kanban, calendario, tarjetas o gantt) sobre una lista existente, con filtros, orden y agrupación. ' +
+                'Un gantt (línea de tiempo) necesita start_field y, para barras con duración, end_field (fechas); agrupa por group_by, colorea por color_field o color_rules y muestra las columnas de `columns`.',
             capability: 'manage_views',
             input: z.object({ list: z.string().max(63), view: viewSpec }),
             run: (ctx, input) => this.proposeCreateView(ctx, input as { list: string; view: ViewSpec }),
@@ -1004,9 +1034,22 @@ export class StructureTools implements AiProposalApplier {
         // gráficos y tablas de vinculados en la ficha).
         const paths = await this.fields.relationPaths(ctx.tenantId, String(list.id)).catch(() => []);
         const folder = list.group_id ? (await this.listFolders(ctx.tenantId)).find((g) => g.id === list.group_id)?.name ?? null : null;
+        // A8 — dependencias entre registros: cuántas hay y si la lista reprograma.
+        const depSettings = readDependencySettings(settings);
+        const depCount = await this.tenantDb
+            .withTenant(ctx.tenantId, (tx) => new DependenciesRepository().countForList(tx, ctx.tenantId, list.id))
+            .catch(() => 0);
         return {
             content: {
                 list: { slug: list.slug, name: list.name, icon: list.icon, color: list.color, records_count: count, folder },
+                dependencies: {
+                    _nota:
+                        'Dependencias «bloquea / bloqueado por» entre registros de esta lista (sin ciclos). Cada registro de query_records trae blocked_by_open (bloqueantes sin terminar). Se crean o quitan con propose_set_dependencies.',
+                    count: depCount,
+                    reschedule: depSettings.reschedule,
+                    reschedule_start_field: depSettings.start_field_id ? fieldById.get(depSettings.start_field_id)?.slug ?? null : null,
+                    reschedule_end_field: depSettings.end_field_id ? fieldById.get(depSettings.end_field_id)?.slug ?? null : null,
+                },
                 fields: fields.map((f) => describeFieldForModel(f, listById, fieldById)),
                 views: views.map((v) => describeViewForModel(v, fieldById)),
                 linked_lists: paths.map((p) => ({
@@ -3127,7 +3170,9 @@ export class StructureTools implements AiProposalApplier {
             config.frozen_columns = v.frozen_columns;
         }
         if (v.color_rules?.length) {
-            if (v.type !== 'table' && v.type !== 'calendar') throw new AiToolError(`Vista «${v.name}»: color_rules sólo aplica a vistas de tabla o calendario.`);
+            if (v.type !== 'table' && v.type !== 'calendar' && v.type !== 'gantt') {
+                throw new AiToolError(`Vista «${v.name}»: color_rules sólo aplica a vistas de tabla, calendario o gantt.`);
+            }
             config.color_rules = v.color_rules.map((r: ColorRuleSpec, i: number) => {
                 const target = r.target ?? 'row';
                 return {
@@ -3153,12 +3198,23 @@ export class StructureTools implements AiProposalApplier {
             Object.assign(config, this.buildCalendarConfig(v, d, resolve));
         }
         const calendarOnly = (
-            ['end_date_field', 'duration_field', 'calendar_sources', 'date_label', 'color_by', 'color_field', 'default_mode', 'week_start', 'day_hours', 'show_weekends', 'default_duration'] as const
+            ['end_date_field', 'duration_field', 'calendar_sources', 'date_label', 'default_mode', 'week_start', 'day_hours', 'show_weekends', 'default_duration'] as const
         ).filter((k) => v[k] !== undefined);
         if (v.type !== 'calendar' && calendarOnly.length > 0) {
             throw new AiToolError(`Vista «${v.name}»: ${calendarOnly.join(', ')} sólo aplica${calendarOnly.length === 1 ? '' : 'n'} a vistas de calendario.`);
         }
         if (v.type === 'cards' && v.card_fields) config.card_field_ids = v.card_fields.map((s) => resolve(s).id);
+        if (v.type === 'gantt') Object.assign(config, this.buildGanttConfig(v, resolve));
+        const colorOnly = (['color_by', 'color_field'] as const).filter((k) => v[k] !== undefined);
+        if (v.type !== 'calendar' && v.type !== 'gantt' && colorOnly.length > 0) {
+            throw new AiToolError(`Vista «${v.name}»: ${colorOnly.join(', ')} sólo aplica${colorOnly.length === 1 ? '' : 'n'} a vistas de calendario o gantt.`);
+        }
+        const ganttOnly = (['start_field', 'end_field', 'columns', 'zoom', 'show_subtasks', 'show_dependencies', 'show_baseline'] as const).filter(
+            (k) => v[k] !== undefined,
+        );
+        if (v.type !== 'gantt' && ganttOnly.length > 0) {
+            throw new AiToolError(`Vista «${v.name}»: ${ganttOnly.join(', ')} sólo aplica${ganttOnly.length === 1 ? '' : 'n'} a vistas gantt.`);
+        }
         const kanbanOnly = (['lane_by', 'value_field', 'value_metric', 'card_title', 'card_cover', 'card_size', 'wip_limits', 'move_rules', 'hide_empty_columns'] as const).filter(
             (k) => v[k] !== undefined,
         );
@@ -3303,6 +3359,9 @@ export class StructureTools implements AiProposalApplier {
                 };
             });
         }
+        if (v.color_by !== undefined && !(CALENDAR_COLOR_BY as readonly string[]).includes(v.color_by)) {
+            throw new AiToolError(`Vista «${v.name}»: en un calendario color_by es auto, source, field o none (las color_rules ya ganan solas).`);
+        }
         if (v.color_by !== undefined && v.color_by !== 'auto') out.calendar_color_by = v.color_by;
         if (v.color_field !== undefined) {
             const c = resolve(v.color_field);
@@ -3322,6 +3381,59 @@ export class StructureTools implements AiProposalApplier {
         }
         if (v.show_weekends === false) out.calendar_show_weekends = false;
         if (v.default_duration !== undefined) out.calendar_default_duration = v.default_duration;
+        return out;
+    }
+
+    /**
+     * B1 — Lo propio del Gantt: inicio y fin (fechas), agrupar, color, columnas
+     * del panel y zoom, con las claves `gantt_*` de la vista (por id: se
+     * re-mapean solas en plantillas y al migrar una empresa).
+     */
+    private buildGanttConfig(v: ViewSpec, resolve: (slug: string) => { id: unknown; type: FieldType; options?: unknown }): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        if (!v.start_field) throw new AiToolError(`La vista gantt «${v.name}» necesita start_field (un campo de fecha).`);
+        const start = resolve(v.start_field);
+        if (!GANTT_DATE_TYPES.includes(start.type)) {
+            throw new AiToolError(`Vista «${v.name}»: start_field «${v.start_field}» es ${start.type}, se esperaba date/datetime.`);
+        }
+        out.gantt_start_field_id = start.id;
+        if (v.end_field !== undefined && v.end_field !== v.start_field) {
+            const end = resolve(v.end_field);
+            if (!GANTT_DATE_TYPES.includes(end.type)) {
+                throw new AiToolError(`Vista «${v.name}»: end_field «${v.end_field}» es ${end.type}, se esperaba date/datetime.`);
+            }
+            out.gantt_end_field_id = end.id;
+        }
+        if (v.group_by !== undefined) {
+            const g = resolve(v.group_by);
+            if (!GANTT_GROUP_TYPES.includes(g.type)) {
+                throw new AiToolError(`Vista «${v.name}»: un gantt se agrupa por un select, una persona (user) o una casilla; «${v.group_by}» es ${g.type}.`);
+            }
+            out.gantt_group_by_field_id = g.id;
+        }
+        if (v.color_field !== undefined) {
+            const c = resolve(v.color_field);
+            if (c.type !== 'select') throw new AiToolError(`Vista «${v.name}»: color_field tiene que ser un select (el color de cada opción); «${v.color_field}» es ${c.type}.`);
+            out.gantt_color_field_id = c.id;
+        }
+        if (v.color_by !== undefined && !(GANTT_COLOR_BY as readonly string[]).includes(v.color_by)) {
+            throw new AiToolError(`Vista «${v.name}»: en un gantt color_by es field, rules o none.`);
+        }
+        if (v.color_by !== undefined && v.color_by !== 'field') {
+            if (v.color_by === 'rules' && !v.color_rules?.length) throw new AiToolError(`Vista «${v.name}»: color_by=rules necesita color_rules.`);
+            out.gantt_color_by = v.color_by;
+        }
+        if (v.columns?.length) {
+            out.gantt_columns = v.columns.map((slug) => {
+                const f = resolve(slug);
+                if (f.type === 'long_text') throw new AiToolError(`Vista «${v.name}»: «${slug}» es texto largo; no entra como columna del gantt.`);
+                return { field_id: f.id };
+            });
+        }
+        if (v.zoom !== undefined && v.zoom !== 'week') out.gantt_zoom = v.zoom;
+        if (v.show_subtasks === false) out.gantt_show_subtasks = false;
+        if (v.show_dependencies === false) out.gantt_show_dependencies = false;
+        if (v.show_baseline === false) out.gantt_show_baseline = false;
         return out;
     }
 
@@ -3838,7 +3950,26 @@ function describeViewForModel(
         if (!c.showWeekends) out.show_weekends = false;
         out.default_duration = c.defaultDuration;
     }
-    if (v.type === 'table' || v.type === 'calendar') {
+    if (v.type === 'gantt') {
+        // B1 — lo del Gantt, en el mismo vocabulario que propose_update_view.
+        const g = readGanttSettings(cfg);
+        const start = slugOf(g.startFieldId);
+        if (start) out.start_field = start;
+        const end = slugOf(g.endFieldId);
+        if (end) out.end_field = end;
+        const group = slugOf(g.groupByFieldId);
+        if (group) out.group_by = group;
+        const color = slugOf(g.colorFieldId);
+        if (color) out.color_field = color;
+        if (g.colorBy !== 'field') out.color_by = g.colorBy;
+        const cols = g.columns.map((c) => slugOf(c.field_id)).filter((x): x is string => x !== null);
+        if (cols.length > 0) out.columns = cols;
+        if (g.zoom !== 'week') out.zoom = g.zoom;
+        if (!g.showSubtasks) out.show_subtasks = false;
+        if (!g.showDependencies) out.show_dependencies = false;
+        if (!g.showBaseline) out.show_baseline = false;
+    }
+    if (v.type === 'table' || v.type === 'calendar' || v.type === 'gantt') {
         const sub = slugOf(cfg.sub_group_by_field_id);
         if (sub) out.sub_group_by = sub;
         if (typeof cfg.frozen_columns === 'number') out.frozen_columns = cfg.frozen_columns;
@@ -3877,7 +4008,7 @@ function calendarSummary(v: ViewSpec, labelOf: (slug: string) => string | undefi
 }
 
 function viewTypeLabel(type: string): string {
-    return { table: 'de tabla', kanban: 'kanban', calendar: 'de calendario', cards: 'de tarjetas' }[type] ?? type;
+    return { table: 'de tabla', kanban: 'kanban', calendar: 'de calendario', cards: 'de tarjetas', gantt: 'Gantt' }[type] ?? type;
 }
 
 function timeBucketLabel(b: string): string {

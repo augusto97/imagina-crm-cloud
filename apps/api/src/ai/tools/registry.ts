@@ -39,8 +39,11 @@ export interface AiToolDef<I = unknown> {
     /** Etiqueta corta para el indicador "Consultando…" de la UI. */
     label: string;
     description: string;
-    /** Capability que exige, o `null` si sólo lee lo que cualquier miembro ve. */
-    capability: Capability | null;
+    /**
+     * Capability que exige, o `null` si sólo lee lo que cualquier miembro ve.
+     * Una lista = alcanza con CUALQUIERA (p. ej. editar todo o sólo lo suyo).
+     */
+    capability: Capability | readonly Capability[] | null;
     input: ZodTypeAny;
     run(ctx: AiToolContext, input: I): Promise<AiToolResult>;
 }
@@ -50,6 +53,13 @@ export class AiToolError extends Error {
     constructor(message: string) {
         super(message);
     }
+}
+
+/** ¿El rol puede usar una herramienta con esta exigencia? (`null` = cualquiera; lista = alguna). */
+export function toolAllowed(role: Role, capability: Capability | readonly Capability[] | null): boolean {
+    if (capability === null) return true;
+    if (typeof capability === 'string') return roleHasCapability(role, capability);
+    return capability.some((c) => roleHasCapability(role, c));
 }
 
 export class AiToolRegistry {
@@ -70,7 +80,7 @@ export class AiToolRegistry {
 
     /** Herramientas que ESTE rol puede usar (las demás ni se le ofrecen al modelo). */
     listFor(role: Role): AiToolDef[] {
-        return this.list().filter((t) => t.capability === null || roleHasCapability(role, t.capability));
+        return this.list().filter((t) => toolAllowed(role, t.capability));
     }
 
     /** Definiciones en el formato de la API de Anthropic (`input_schema` = JSON Schema). */
@@ -90,10 +100,11 @@ export class AiToolRegistry {
     async execute(ctx: AiToolContext, name: string, rawInput: unknown): Promise<AiToolResult> {
         const tool = this.tools.get(name);
         if (!tool) return { content: { error: `Herramienta desconocida: ${name}` }, isError: true };
-        if (tool.capability !== null && !roleHasCapability(ctx.role, tool.capability)) {
+        if (!toolAllowed(ctx.role, tool.capability)) {
+            const needs = Array.isArray(tool.capability) ? tool.capability.join(' o ') : String(tool.capability);
             return {
                 content: {
-                    error: `Tu rol (${ctx.role}) no tiene permiso para esta acción (requiere ${tool.capability}). Dile a la persona que un administrador puede hacerlo.`,
+                    error: `Tu rol (${ctx.role}) no tiene permiso para esta acción (requiere ${needs}). Dile a la persona que un administrador puede hacerlo.`,
                 },
                 isError: true,
             };

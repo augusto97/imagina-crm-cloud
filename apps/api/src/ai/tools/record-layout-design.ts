@@ -58,7 +58,7 @@ export const recordBlockSpec = z.discriminatedUnion('type', [
     }),
     z.object({ type: z.literal('stages'), field: slug.describe('Un campo select: cada opción es una etapa') }),
     z.object({ type: z.literal('files'), title: z.string().max(120).optional(), fields: z.array(slug).max(10).optional() }),
-    z.object({ type: z.enum(['description', 'record_stats', 'subtasks', 'time_tracking', 'activity', 'comments', 'portal_access', 'divider']), title: z.string().max(120).optional() }),
+    z.object({ type: z.enum(['description', 'record_stats', 'subtasks', 'time_tracking', 'dependencies', 'activity', 'comments', 'portal_access', 'divider']), title: z.string().max(120).optional() }),
     z.object({
         type: z.literal('chart'),
         title: z.string().max(120).optional(),
@@ -209,7 +209,7 @@ export interface DesignContext {
     collections?: Array<{ id: number; name: string; provider: string }>;
 }
 
-const NOT_IN_PORTAL = new Set(['description', 'record_stats', 'subtasks', 'time_tracking', 'portal_access']);
+const NOT_IN_PORTAL = new Set(['description', 'record_stats', 'subtasks', 'time_tracking', 'dependencies', 'portal_access']);
 
 export interface DesignBuildResult {
     layout: RecordLayoutV3;
