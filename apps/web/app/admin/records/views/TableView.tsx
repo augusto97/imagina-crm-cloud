@@ -58,7 +58,7 @@ import { isImageUrlField } from '@/lib/imageProxy';
 
 
 /** Tipos que el backend no ordena (ver `NON_SORTABLE` en records.service). */
-const UNSORTABLE: readonly string[] = ['relation', 'file'];
+const UNSORTABLE: readonly string[] = ['relation', 'file', 'button'];
 interface TableViewProps {
     listId: number;
     /** Slug de la lista — para queries que necesitan slug en la URL (aggregates). */
@@ -278,6 +278,7 @@ export function TableView({
                             value={ctx.getValue()}
                             canEdit={canEditRecords}
                             lockedReason={access?.access === 'locked' ? access.reason : null}
+                            record={ctx.row.original}
                         />
                     );
                     // El chevron de subtareas vive en la PRIMERA columna de
@@ -814,7 +815,7 @@ export function TableView({
                                                             : flexRender(h.column.columnDef.header, h.getContext())}
                                                     </span>
                                                     <StoreColumnBadge fieldId={fieldId} />
-                                                    <SortIndicator dir={sortDir ?? null} index={sortIndex} multiCount={sort.length} />
+                                                    {sortable && <SortIndicator dir={sortDir ?? null} index={sortIndex} multiCount={sort.length} />}
                                                 </button>
                                             ) : h.isPlaceholder ? null : (
                                                 flexRender(h.column.columnDef.header, h.getContext())
@@ -1274,6 +1275,8 @@ function defaultSizeForType(type: string): number {
             return 220;
         case 'long_text':
             return 280;
+        case 'button':
+            return 170;
         default:
             return 180;
     }

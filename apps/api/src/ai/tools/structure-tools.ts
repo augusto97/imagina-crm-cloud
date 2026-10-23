@@ -140,6 +140,7 @@ import {
 import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
 import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
+import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
 
@@ -158,6 +159,8 @@ const AI_FIELD_TYPES = [
     'updated_at',
     'created_by',
     'updated_by',
+    // Campo «Botón»: acciones al presionarlo (no guarda valor).
+    'button',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -209,6 +212,7 @@ const fieldSpec = z.object({
         })
         .optional()
         .describe('Sólo autonumber: ID automático que la app asigna al crear cada registro (no se escribe a mano). Numera solo los registros que ya existen.'),
+    button: buttonSpec.optional(),
     default: z
         .object({
             kind: z.enum(FIELD_DEFAULT_KINDS).describe('value = valor fijo; today = hoy (date); now = ahora (datetime); creator = quien crea el registro (user)'),
@@ -465,7 +469,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -476,7 +480,8 @@ const automationSpec = z.object({
                 'Con for_each_record: true + records_filters: [{field, op, value}] corre las acciones UNA VEZ POR CADA registro que cumpla (con sus {{slug}}; hasta 1.000 por disparo; fechas relativas en la zona de la empresa) — ej. «cada lunes, a cada cliente con saldo pendiente, un correo». ' +
                 'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
-                'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}.',
+                'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}. ' +
+                'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -684,6 +689,7 @@ export class StructureTools implements AiProposalApplier {
                 add_options: z.array(optionSpec).max(60).optional().describe('select/multi_select: opciones a AGREGAR a las existentes'),
                 replace_options: z.array(optionSpec).max(60).optional().describe('select/multi_select: reemplazar TODAS las opciones (ojo: los valores guardados que no estén quedan huérfanos)'),
                 config: z.record(z.unknown()).optional().describe('Reemplazo completo de la configuración (avanzado)'),
+                button: buttonSpec.optional().describe('Sólo campos button: reemplaza lo que hace el botón (mismo vocabulario que propose_add_fields)'),
             }),
             run: (ctx, input) => this.proposeUpdateField(ctx, input as UpdateFieldSpec),
         });
@@ -849,7 +855,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1189,6 +1195,14 @@ export class StructureTools implements AiProposalApplier {
         for (const spec of input.lists) {
             const key = spec.key ?? toSlug(spec.name);
             const slugs = new Set<string>();
+            // Campo «Botón»: puede cambiar cualquier campo del pedido (aunque
+            // venga después en la lista), con su tipo y sus opciones.
+            const specRefs = new Map<string, ButtonFieldRef>(
+                spec.fields.map((f) => {
+                    const s = f.slug ?? toSlug(f.label);
+                    return [s, { id: { $field: s }, type: f.type, config: f.options ? { options: normalizeOptions(f.options) } : {} }];
+                }),
+            );
             const fields = spec.fields.map((f) => {
                 const slug = f.slug ?? toSlug(f.label);
                 if (slugs.has(slug)) throw new AiToolError(`La lista «${spec.name}» repite el campo «${slug}».`);
@@ -1198,6 +1212,7 @@ export class StructureTools implements AiProposalApplier {
                     existingBySlug,
                     localSlugs: () => slugs,
                     forBlueprint: true,
+                    fieldRef: (s) => specRefs.get(s),
                 });
                 return {
                     label: f.label,
@@ -1240,6 +1255,10 @@ export class StructureTools implements AiProposalApplier {
                 if (JSON.stringify(parsed.data.actions).includes('"bulk_edit"')) {
                     throw new AiToolError(`Automatización «${a.name}»: «Editar en lote» necesita los campos ya creados. Crea primero la lista y después propón la automatización con propose_create_automation.`);
                 }
+                // Campo «Botón»: el disparador «Al presionar el botón» por slug.
+                translateButtonTrigger(parsed.data.trigger_type, (parsed.data.trigger_config ??= {}) as Record<string, unknown>, (s) =>
+                    fieldTypeBySlug.get(s) === 'button' ? { $field: s } : undefined,
+                );
                 this.validateAutomationSlugs(parsed.data, new Set(fieldTypeBySlug.keys()), (target) => {
                     if (keys.has(target)) return { $list: target } as unknown as number;
                     const l = existingBySlug.get(target);
@@ -1303,6 +1322,25 @@ export class StructureTools implements AiProposalApplier {
         });
     }
 
+    /**
+     * Campo «Botón» — lo que la traducción necesita para validar un botón sobre
+     * una lista existente: sus automatizaciones «Al presionar el botón» y sus
+     * plantillas de documento (sólo si algún botón del pedido las usa).
+     */
+    private async buttonRefs(ctx: AiToolContext, listId: number, specs: FieldSpec[]): Promise<{ buttonAutomationIds?: Set<number>; buttonTemplateIds?: Set<number> }> {
+        const acts = specs.flatMap((f) => (f.type === 'button' ? f.button?.actions ?? [] : []));
+        const out: { buttonAutomationIds?: Set<number>; buttonTemplateIds?: Set<number> } = {};
+        if (acts.some((a) => a.type === 'run_automation' && a.automation_id !== undefined)) {
+            const autos = await this.automations.list(ctx.tenantId, String(listId));
+            out.buttonAutomationIds = new Set(autos.filter((a) => a.trigger_type === 'button_pressed').map((a) => a.id));
+        }
+        if (acts.some((a) => a.type === 'generate_pdf')) {
+            const docs = this.documents ? await this.documents.list(ctx.tenantId, String(listId)).catch(() => []) : [];
+            out.buttonTemplateIds = new Set(docs.map((d) => d.id));
+        }
+        return out;
+    }
+
     private async proposeAddFields(ctx: AiToolContext, input: { list: string; fields: FieldSpec[] }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
         const current = await this.fields.listByListId(ctx.tenantId, list.id);
@@ -1311,6 +1349,7 @@ export class StructureTools implements AiProposalApplier {
         const currentBySlug = new Map(current.map((f) => [f.slug, f]));
         const newSlugs = new Set<string>();
         const inputs: CreateFieldInput[] = [];
+        const buttonRefs = await this.buttonRefs(ctx, list.id, input.fields);
         for (const f of input.fields) {
             const slug = f.slug ?? toSlug(f.label);
             if (currentBySlug.has(slug)) throw new AiToolError(`La lista ya tiene un campo «${slug}». Usa propose_update_field para modificarlo.`);
@@ -1322,6 +1361,13 @@ export class StructureTools implements AiProposalApplier {
                 localSlugs: () => new Set([...currentBySlug.keys(), ...newSlugs]),
                 forBlueprint: false,
                 resolveInput: (s) => currentBySlug.get(s)?.id,
+                fieldRef: (s) => {
+                    const cur = currentBySlug.get(s);
+                    if (cur) return { id: cur.id, type: cur.type, config: cur.config };
+                    if (newSlugs.has(s)) throw new AiToolError(`Un botón sólo puede cambiar campos que YA existen: crea primero «${s}» y después el botón.`);
+                    return undefined;
+                },
+                ...buttonRefs,
             });
             inputs.push({
                 label: f.label,
@@ -1386,6 +1432,16 @@ export class StructureTools implements AiProposalApplier {
                 from: currentOpts.map((o) => o.label).join(', ') || null,
                 to: merged.map((o) => o.label).join(', '),
             });
+        } else if (input.button !== undefined) {
+            if (field.type !== 'button') throw new AiToolError(`«${field.slug}» es ${field.type}: \`button\` sólo aplica a campos Botón.`);
+            const current = await this.fields.listByListId(ctx.tenantId, list.id);
+            const bySlug = new Map(current.map((f) => [f.slug, f]));
+            const config = buildButtonConfig(input.button, field.slug, (s) => {
+                const f = bySlug.get(s);
+                return f ? { id: f.id, type: f.type, config: f.config } : undefined;
+            }, { forBlueprint: false, ...(await this.buttonRefs(ctx, list.id, [{ label: field.label, type: 'button', button: input.button }])) });
+            patch.config = parseFieldConfig(field.type, config);
+            changes.push({ label: 'Botón', from: describeConfig('button', field.config, []), to: describeConfig('button', patch.config, []) ?? '' });
         } else if (input.config !== undefined) {
             patch.config = parseFieldConfig(field.type, input.config);
             changes.push({ label: 'Configuración', from: JSON.stringify(field.config), to: JSON.stringify(patch.config) });
@@ -1684,6 +1740,7 @@ export class StructureTools implements AiProposalApplier {
         await translateFlowActions(parsed.data.actions as unknown[], await this.flowCtx(ctx, list, fields));
         parsed.data.trigger_config ??= {};
         translateScheduledEach(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
+        translateButtonTrigger(parsed.data.trigger_type, parsed.data.trigger_config, buttonFieldResolver(fields));
         assertFlowIssues({ trigger_type: parsed.data.trigger_type, trigger_config: parsed.data.trigger_config, actions: parsed.data.actions });
         // v0.1.281 — correos diseñados: vocabulario del modelo → diseño del editor.
         translateEmailDesignActions(parsed.data.actions as unknown[], { fields: designFields(fields), brandColor: await this.brandColor(ctx) });
@@ -2145,6 +2202,7 @@ export class StructureTools implements AiProposalApplier {
             if (input.actions !== undefined) await translateFlowActions(merged.data.actions as unknown[], await this.flowCtx(ctx, list, fields));
             merged.data.trigger_config ??= {};
             translateScheduledEach(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
+            translateButtonTrigger(merged.data.trigger_type, merged.data.trigger_config, buttonFieldResolver(fields));
             if (input.actions !== undefined || input.trigger_config !== undefined) {
                 assertFlowIssues({ trigger_type: merged.data.trigger_type, trigger_config: merged.data.trigger_config, actions: merged.data.actions });
             }
@@ -2943,9 +3001,13 @@ export class StructureTools implements AiProposalApplier {
             localSlugs: () => Set<string>;
             forBlueprint: boolean;
             resolveInput?: (slug: string) => number | undefined;
+            /** Campo «Botón»: los campos que puede cambiar (con tipo y config). */
+            fieldRef?: (slug: string) => ButtonFieldRef | undefined;
+            buttonAutomationIds?: ReadonlySet<number>;
+            buttonTemplateIds?: ReadonlySet<number>;
         },
     ): { config: Record<string, unknown> } {
-        const config: Record<string, unknown> = {};
+        let config: Record<string, unknown> = {};
         switch (f.type) {
             case 'select':
             case 'multi_select':
@@ -3024,6 +3086,13 @@ export class StructureTools implements AiProposalApplier {
                 if (f.ai.task === 'classify' && (f.ai.options ?? []).length < 2) throw new AiToolError(`ai «${slug}»: clasificar necesita al menos dos options.`);
                 break;
             }
+            case 'button':
+                config = buildButtonConfig(f.button, slug, (s) => opts.fieldRef?.(s), {
+                    forBlueprint: opts.forBlueprint,
+                    automationIds: opts.buttonAutomationIds,
+                    templateIds: opts.buttonTemplateIds,
+                });
+                break;
             case 'autonumber':
                 if (f.autonumber?.prefix !== undefined) config.prefix = f.autonumber.prefix.trim().toUpperCase();
                 if (f.autonumber?.digits !== undefined) config.digits = f.autonumber.digits;
@@ -3427,6 +3496,7 @@ export class StructureTools implements AiProposalApplier {
             out.gantt_columns = v.columns.map((slug) => {
                 const f = resolve(slug);
                 if (f.type === 'long_text') throw new AiToolError(`Vista «${v.name}»: «${slug}» es texto largo; no entra como columna del gantt.`);
+                if (f.type === 'button') throw new AiToolError(`Vista «${v.name}»: «${slug}» es un botón (no tiene valor); no entra como columna del gantt.`);
                 return { field_id: f.id };
             });
         }
@@ -3617,6 +3687,7 @@ interface UpdateFieldSpec {
     add_options?: z.infer<typeof optionSpec>[];
     replace_options?: z.infer<typeof optionSpec>[];
     config?: Record<string, unknown>;
+    button?: z.infer<typeof buttonSpec>;
 }
 
 interface UpdateListSpec {
@@ -3849,6 +3920,11 @@ function describeFieldForModel(
             ...(ri ? { required_if: { field: typeof ri.field_id === 'number' ? fieldById.get(ri.field_id)?.slug ?? null : null, op: ri.op, ...(ri.value !== undefined ? { value: ri.value } : {}) } } : {}),
         };
     }
+    // Campo «Botón»: qué hace al presionarlo (campos por slug).
+    if (f.type === 'button') {
+        out.button = describeButtonForModel(cfg, (id) => (typeof id === 'number' ? fieldById.get(id)?.slug ?? null : null));
+        out.note = 'Botón: no guarda valor. Se presiona en la tabla, la ficha o el portal y ejecuta sus acciones.';
+    }
     if (f.type === 'lookup' || f.type === 'rollup') {
         out.through = f.through ? `${f.through.relation_label} → ${f.through.other_list_name}${f.through.target_field ? '.' + f.through.target_field.label : ''}` : null;
         if (f.type === 'rollup') out.operation = cfg.operation;
@@ -3869,6 +3945,11 @@ function describeConfig(type: FieldType, config: Record<string, unknown>, lists:
         }
         case 'computed':
             return String(config.operation ?? '');
+        case 'button': {
+            const names: Record<string, string> = { open_url: 'abre un enlace', update_fields: 'cambia campos', run_automation: 'corre una automatización', generate_pdf: 'genera un PDF' };
+            const acts = Array.isArray(config.actions) ? (config.actions as Array<{ type?: string }>) : [];
+            return acts.map((a) => names[String(a.type)] ?? String(a.type)).join(', ') || null;
+        }
         default:
             return null;
     }
@@ -4053,6 +4134,11 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return 'Cuando se recibe un pago';
         case 'form_submitted':
             return 'Cuando se envía un formulario';
+        case 'button_pressed': {
+            const id = Number(cfg.button_field_id);
+            const f = fields.find((x) => x.id === id);
+            return f ? `Al presionar «${f.label}»` : 'Al presionar un botón';
+        }
         default:
             return type;
     }
@@ -4124,4 +4210,24 @@ function describePublic(v: unknown): string {
 
 function liteOf(f: Field): LayoutFieldLite {
     return { id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown> };
+}
+
+/**
+ * Campo «Botón» — «Al presionar el botón» llega del modelo con el SLUG del
+ * botón (`button_field`); se guarda como `button_field_id` (el id, o el token
+ * `{$field}` en un blueprint). Un slug que no es un botón vuelve como error.
+ */
+function translateButtonTrigger(triggerType: string, cfg: Record<string, unknown>, resolve: (slug: string) => unknown): void {
+    if (triggerType !== 'button_pressed') return;
+    const slug = cfg.button_field;
+    if (typeof slug === 'string' && slug !== '') {
+        const id = resolve(slug);
+        if (id === undefined) throw new AiToolError(`button_pressed: «${slug}» no es un campo Botón de la lista.`);
+        cfg.button_field_id = id;
+    }
+    delete cfg.button_field;
+}
+
+function buttonFieldResolver(fields: Field[]): (slug: string) => number | undefined {
+    return (slug) => fields.find((f) => f.slug === slug && f.type === 'button')?.id;
 }

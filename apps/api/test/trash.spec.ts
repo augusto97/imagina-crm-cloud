@@ -311,6 +311,33 @@ describe('Papelera', () => {
         expect(await countRaw('records', `id = ${r.id} AND data ? 'f${tel.id}'`)).toBe(0);
     });
 
+    it('un campo «Botón» vuelve de la papelera con su config (acciones, condición y apariencia)', async () => {
+        const l = await makeList('Cobros');
+        const estado = await fieldsSvc.create(tenantA, String(l.id), {
+            label: 'Estado',
+            type: 'select',
+            slug: 'estado',
+            config: { options: [{ value: 'pendiente', label: 'Pendiente' }, { value: 'pagada', label: 'Pagada' }] },
+        });
+        const config = {
+            label: 'Marcar como pagado',
+            color: 'green',
+            icon: 'check',
+            confirm: '¿Marcar como pagado?',
+            actions: [{ type: 'update_fields', values: [{ field_id: estado.id, mode: 'set', value: 'pagada' }] }],
+            disabled_if: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: estado.id, op: 'eq', value: 'pagada' }] },
+            disabled_reason: 'Ya está pagado',
+            roles: ['manager'],
+        };
+        const boton = await fieldsSvc.create(tenantA, String(l.id), { label: 'Pagar', type: 'button', slug: 'pagar', config });
+        await fieldsSvc.remove(tenantA, String(l.id), 'pagar', { userId: admin.userId });
+        expect((await fieldsSvc.list(tenantA, String(l.id))).some((f) => f.id === boton.id)).toBe(false);
+        await trash.restore(tenantA, admin, 'field', boton.id);
+        const back = await fieldsSvc.get(tenantA, String(l.id), 'pagar');
+        expect(back.type).toBe('button');
+        expect(back.config).toMatchObject(config);
+    });
+
     it('un ID automático en la papelera no numera; al volver numera lo creado mientras tanto, sin repetir', async () => {
         const l = await makeList('Pedidos');
         const n = (data: Record<string, unknown>) => recs.create(tenantA, admin, String(l.id), { data });

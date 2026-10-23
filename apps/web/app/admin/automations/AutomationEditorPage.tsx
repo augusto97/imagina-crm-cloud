@@ -202,6 +202,24 @@ function presetFromQuery(
     params: URLSearchParams,
     fields: FieldEntity[],
 ): AutomationFormState | null {
+    // Campo «Botón» — «Automatizar» desde su columna o su editor: el
+    // disparador «Al presionar el botón» ya apuntado a ese botón.
+    if (params.get('trigger') === 'button_pressed') {
+        const buttonId = Number(params.get('button') ?? '');
+        const button = fields.find((f) => f.id === buttonId && f.type === 'button');
+        return {
+            ...EMPTY_AUTOMATION_STATE,
+            name: button
+                ? sprintf(
+                      /* translators: %s: nombre del botón */
+                      __('Al presionar «%s»'),
+                      button.label,
+                  )
+                : __('Al presionar el botón'),
+            triggerType: 'button_pressed',
+            triggerConfig: button ? { button_field_id: button.id } : {},
+        };
+    }
     if (params.get('action') !== 'update_field') return null;
     const fieldId = Number(params.get('field') ?? '');
     const field = fields.find((f) => f.id === fieldId);

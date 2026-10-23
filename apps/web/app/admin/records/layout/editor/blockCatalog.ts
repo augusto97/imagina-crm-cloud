@@ -83,7 +83,7 @@ export interface CatalogEntry {
     create: (ctx: CatalogContext) => LayoutBlock;
 }
 
-const SHORT: ReadonlySet<string> = new Set(['long_text', 'file', 'relation']);
+const SHORT: ReadonlySet<string> = new Set(['long_text', 'file', 'relation', 'button']);
 
 /** La primera relación que toca la lista (la fuente natural de un gráfico). */
 export function defaultSource(ctx: CatalogContext): LayoutDataSource {
@@ -163,6 +163,16 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
             const f = ctx.fields.find((x) => ['currency', 'number', 'percent', 'rating'].includes(x.type)) ?? ctx.fields[0];
             return block('field', { field_id: f?.id, display: f?.type === 'percent' ? 'ring' : 'big', card: true });
         },
+    },
+    {
+        // Campo «Botón»: el botón del registro a lo ancho de su columna.
+        key: 'action_button',
+        type: 'field',
+        category: 'record',
+        label: __('Botón de acción'),
+        description: __('Un campo «Botón»: WhatsApp, marcar como pagado, generar un PDF…'),
+        icon: MousePointerClick,
+        create: (ctx) => block('field', { field_id: ctx.fields.find((f) => f.type === 'button')?.id, display: 'full', label: 'hidden' }),
     },
     {
         key: 'stages',

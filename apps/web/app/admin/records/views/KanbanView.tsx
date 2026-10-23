@@ -1033,7 +1033,7 @@ function pickTitleField(fields: FieldEntity[], excludeId: number): FieldEntity |
 
 function pickMetaFields(fields: FieldEntity[], exclude: number[]): FieldEntity[] {
     return fields
-        .filter((f) => !exclude.includes(f.id) && f.type !== 'long_text' && f.type !== 'file' && f.type !== 'relation')
+        .filter((f) => !exclude.includes(f.id) && f.type !== 'long_text' && f.type !== 'file' && f.type !== 'relation' && f.type !== 'button')
         .slice(0, 3);
 }
 

@@ -54,6 +54,10 @@ export function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: str
  * entre TableView (modo lectura) y EditableCell (cuando NO está en edit).
  */
 export function renderCellValue(field: FieldEntity, value: unknown): React.ReactNode {
+    // Campo «Botón»: no guarda valor. Donde no se puede presionar (tarjetas,
+    // tablas de sólo lectura) no se dibuja nada; el botón vivo lo pone
+    // `EditableCell` / la ficha con su registro.
+    if (field.type === 'button') return null;
     // v0.1.170 — lookup: cada valor vinculado se pinta con el TIPO del campo
     // destino (chips de select con su color, moneda, fecha…); rollup: un
     // número con la precisión/moneda del destino (o fecha en min/max).

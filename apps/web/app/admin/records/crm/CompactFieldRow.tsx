@@ -26,6 +26,7 @@ import { RatingControl, type RatingIcon } from '@/components/fields/RatingContro
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 
 import { FieldValueDisplay } from './FieldValueDisplay';
+import { ButtonFieldControl } from '../buttons/ButtonFieldControl';
 import { isCheckedValue } from '../renderCellValue';
 
 interface CompactFieldRowProps {
@@ -123,7 +124,12 @@ export function CompactFieldRow({
     // una lista de tienda, lo que se edita en WooCommerce (v0.1.213).
     const isReadOnly = isDerivedFieldType(field.type) || lockedReason !== null;
 
-    const control = field.type === 'ai' && lockedReason === null ? (
+    const control = field.type === 'button' ? (
+        // Campo «Botón»: se presiona (el registro lo trae el control).
+        <div className="imcrm-flex imcrm-min-h-[24px] imcrm-items-center imcrm-py-0.5">
+            <ButtonFieldControl field={field} listId={listId} recordId={recordId} size="md" />
+        </div>
+    ) : field.type === 'ai' && lockedReason === null ? (
         <AiFieldValue field={field} value={value} listId={listId} recordId={recordId} />
     ) : isReadOnly ? (
         <div

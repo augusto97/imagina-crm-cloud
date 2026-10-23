@@ -86,6 +86,7 @@ import {
     emptyMaps,
     mapId,
     remapAutomation,
+    remapButtonConfig,
     remapJson,
     remapListSettings,
     remapRecordData,
@@ -1170,6 +1171,16 @@ export class TenantTransferService {
             }
         }
         counts.automations = autoMap.size;
+
+        // Campo «Botón»: su plantilla de PDF y su automatización recién existen
+        // ahora (la segunda pasada de los campos las dejó en null).
+        for (const f of fieldRows) {
+            if (String(f.type) !== 'button') continue;
+            const newId = maps.field.get(Number(f.id));
+            if (newId === undefined) continue;
+            const config = remapButtonConfig((f.config as Row | null) ?? {}, maps, autoMap) as Row;
+            await tx.update(fields).set({ config }).where(eq(fields.id, newId));
+        }
 
         counts.automation_runs = await this.streamInsert(rows('automation_runs'), async (batch) => {
             const values = batch

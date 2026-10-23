@@ -48,7 +48,7 @@ const SORTABLE_TYPES = new Set([
 ]);
 const TEXT_SORT_TYPES = new Set(['text', 'long_text', 'email', 'url', 'phone', 'select']);
 /** Tipos que una lista pública no muestra (no viven en `data` o apuntan a otras listas). */
-const NOT_PUBLIC_TYPES = new Set(['relation', 'computed', 'lookup', 'rollup', 'time_tracked', 'created_at', 'updated_at', 'created_by', 'updated_by']);
+const NOT_PUBLIC_TYPES = new Set(['relation', 'computed', 'lookup', 'rollup', 'time_tracked', 'created_at', 'updated_at', 'created_by', 'updated_by', 'button']);
 
 type FieldRow = typeof fields.$inferSelect;
 

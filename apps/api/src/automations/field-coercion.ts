@@ -49,6 +49,8 @@ export const READ_ONLY_TYPES: readonly string[] = [
     'computed', 'lookup', 'rollup', 'ai', 'time_tracked',
     // v0.1.300 — ID automático y columnas de sistema.
     'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by',
+    // Campo «Botón»: no tiene valor.
+    'button',
 ];
 
 const NUMERIC_TYPES = ['number', 'currency', 'percent', 'rating'];

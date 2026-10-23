@@ -15,6 +15,7 @@ import {
     Webhook,
     BadgeDollarSign,
     ClipboardList,
+    MousePointerClick,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
@@ -82,6 +83,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: ClipboardList,
         title: 'Se envía un formulario',
         description: 'Dispara cuando alguien llena un formulario público de esta lista (el registro ya está creado).',
+    },
+    // Campo «Botón»: alguien lo presiona en la tabla, la ficha o el portal.
+    button_pressed: {
+        icon: MousePointerClick,
+        title: 'Al presionar el botón',
+        description: 'Dispara cuando alguien presiona un campo «Botón» de un registro de esta lista.',
     },
 };
 
@@ -253,6 +260,16 @@ export function summarizeTrigger(
             return __('Cuando un cliente paga un link de cobro');
         case 'form_submitted':
             return __('Cuando alguien envía un formulario');
+        case 'button_pressed': {
+            const id = typeof config.button_field_id === 'number' ? config.button_field_id : 0;
+            const button = id > 0 ? fields.find((f) => f.id === id) : undefined;
+            if (!button) return __('Cuando alguien presiona un botón');
+            return sprintf(
+                /* translators: %s: nombre del campo botón */
+                __('Cuando alguien presiona «%s»'),
+                button.label,
+            );
+        }
         default:
             return triggerType;
     }

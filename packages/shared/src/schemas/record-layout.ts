@@ -447,6 +447,11 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
         { key: 'bar', label: 'Barra hacia una meta' },
         { key: 'gauge', label: 'Medidor hacia una meta' },
     ],
+    // Campo «Botón»: se presiona; el ancho completo llena su columna.
+    button: [
+        { key: 'button', label: 'Botón' },
+        { key: 'full', label: 'Botón a lo ancho' },
+    ],
 };
 
 export function defaultDisplayFor(type: FieldType): string {

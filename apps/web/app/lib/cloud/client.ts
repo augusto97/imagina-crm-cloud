@@ -1,4 +1,5 @@
 import {
+    type PressButtonResult,
     updateDataConsentSchema,
     type DataConsentRecordDto,
     type DataConsentRecordsPage,
@@ -1550,6 +1551,10 @@ export class CloudClient {
     /** v0.1.233 — el cliente corrige SUS datos (sólo los campos editables del diseño). */
     portalUpdateMe(fields: Record<string, unknown>): Promise<unknown> {
         return this.request('PATCH', '/portal/me', { body: { fields } });
+    }
+    /** Campo «Botón» en el portal: el servidor decide qué puede hacer el cliente. */
+    portalPressButton(fieldId: number): Promise<PressButtonResult> {
+        return this.request('POST', `/portal/me/buttons/${fieldId}`, { body: {}, schema: z.custom<PressButtonResult>() });
     }
     /** El cliente crea un registro en una lista habilitada (campos por id). */
     async portalCreateRecord(listId: number, fields: Record<string, unknown>): Promise<{ id: number }> {

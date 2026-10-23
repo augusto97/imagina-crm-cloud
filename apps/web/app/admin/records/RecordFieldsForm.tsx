@@ -22,6 +22,7 @@ import { CompactFieldRow } from './crm/CompactFieldRow';
 import { FileFieldControl } from './FileFieldControl';
 import { maxFilesOf } from './fileIds';
 import { FieldValueDisplay } from './crm/FieldValueDisplay';
+import { ButtonFieldControl } from './buttons/ButtonFieldControl';
 
 interface RecordFieldsFormProps {
     /**
@@ -356,6 +357,14 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             control = (
                 <div id={id} className="imcrm-min-h-[36px] imcrm-py-1.5">
                     <AiFieldValue field={field} value={value} listId={listId} recordId={recordId} />
+                </div>
+            );
+            break;
+        // Campo «Botón»: se presiona (con el registro guardado).
+        case 'button':
+            control = (
+                <div id={id} className="imcrm-min-h-[36px] imcrm-py-1">
+                    <ButtonFieldControl field={field} listId={listId} recordId={recordId} size="md" />
                 </div>
             );
             break;

@@ -8873,6 +8873,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         distintas en la interfaz (la API está lista), recalcular por desfase al
         reprogramar y ruta crítica.
 
+  - [x] **Campo «Botón» (v0.1.303, ADR-S58, opción A5 del estudio)**: un tipo
+        de campo que no guarda valor y se presiona en la tabla, la vista
+        agrupada, la ficha (modal, página y diseño v3) y, si se elige, en el
+        portal del cliente. (a) **Qué hace**: abrir un enlace con variables
+        (WhatsApp con el teléfono normalizado y el texto codificado, llamar,
+        correo o mapa; sólo `https:`/`mailto:`/`tel:`, una variable al
+        principio del enlace se toma como la dirección base y el resto se
+        codifica, la pestaña abre sin `opener`); cambiar campos (poner, vaciar,
+        hoy, yo, invertir, sumar) por `RecordsService.update` —validaciones de
+        ADR-S55, actividad, realtime y automatizaciones—; correr
+        automatizaciones con el disparador nuevo **«Al presionar el botón»**
+        (`{{boton.nombre}}`, `{{boton.persona}}`, `{{boton.email}}`, estado
+        consultable por `press_id`: «Se inició la automatización…» →
+        «terminó» o «falló»); y generar un PDF (descargarlo o guardarlo en un
+        campo Archivo). Las acciones corren en orden y frenan ante la primera
+        falla con el motivo. (b) **El servidor manda**: `POST
+        /lists/:l/records/:id/buttons/:fieldId` re-chequea el rol elegido, el
+        permiso de edición, «deshabilitado si…» (en la zona de la empresa), el
+        ACL y lo que bloquea la tienda. Deshabilitado se ve atenuado con el
+        motivo en el tooltip; confirmación opcional. (c) **En lote**:
+        «Presionar» desde la barra de selección, en tandas de 50 con el
+        resultado por fila — sólo para botones sin enlace ni PDF (eso exige un
+        gesto por registro). (d) **Portal** (`POST /portal/me/buttons/:fieldId`):
+        variables limitadas a lo que el cliente ve, sólo campos editables del
+        portal, sólo PDF de plantillas publicadas y automatizaciones sólo con
+        el permiso explícito `portal_run_automation`; `portal.me` manda el
+        estado calculado y sólo la parte visual (nunca enlaces, valores ni
+        condiciones), y un botón que ahí no puede funcionar no se le muestra al
+        cliente — el editor del portal explica por qué. (e) **Actividad**:
+        «Ana presionó «X»» (con la falla si la hubo); el cliente sólo ve los
+        botones que tiene a la vista. (f) **Editor visual del campo**:
+        apariencia con vista previa, acciones en tarjetas, atajos de enlaces,
+        condición, roles y la regla del portal. (g) No se ordena, filtra,
+        agrupa, suma, colorea, exporta ni escribe por import, edición masiva,
+        formularios ni automatizaciones; no entra como columna del Gantt. Una
+        plantilla o automatización que usa un botón no se puede borrar. Viaja
+        en plantillas, migración de empresa y papelera, y el asistente/MCP lo
+        crea y configura. Sin migración (todo en `field.config`). **Bugs de
+        paso**: la celda del botón no se re-dibujaba al cambiar la fila (el
+        `memo` de `EditableCell` sólo comparaba el valor), los botones quedaban
+        cargando para siempre en modo estricto, y la tabla dibujaba el
+        indicador de orden en columnas que no se ordenan (relación, archivo,
+        botón). 25 tests nuevos (12 de `buttons.spec`, 5 del portal, papelera,
+        7 de shared y casos del front) + E2E navegador 37/37 + 14/14 sobre la
+        integración con Calendario y Gantt (y el del Gantt re-verificado
+        39/39). Queda fuera: botones en kanban y tarjetas.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

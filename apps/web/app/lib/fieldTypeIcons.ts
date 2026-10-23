@@ -18,6 +18,7 @@ import {
     List,
     ListChecks,
     Mail,
+    MousePointerClick,
     Paperclip,
     Percent,
     Phone,
@@ -68,6 +69,7 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     updated_at: History,
     created_by: UserCheck,
     updated_by: UserPen,
+    button: MousePointerClick,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */

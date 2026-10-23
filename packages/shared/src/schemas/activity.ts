@@ -16,6 +16,8 @@ export const ACTIVITY_ACTIONS = [
     // `{ dependency: { kind, record_id, title } }` desde el registro de la entrada.
     'dependency_added',
     'dependency_removed',
+    // Campo «Botón»: alguien lo presionó. `diff.button` = {field_id, label, ok, actions}.
+    'button_pressed',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;

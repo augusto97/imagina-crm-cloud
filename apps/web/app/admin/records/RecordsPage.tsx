@@ -42,6 +42,7 @@ import type { RecordEntity } from '@/types/record';
 import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
+import { useBulkButtons } from './buttons/ButtonFieldControl';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
@@ -114,6 +115,7 @@ const BulkHistorySheet = lazyWithReload(() => import('./bulk/BulkHistorySheet').
 const BulkStructureDialog = lazyWithReload(() => import('./bulk/BulkStructureDialog').then((m) => ({ default: m.BulkStructureDialog })));
 const CsvUpdateDialog = lazyWithReload(() => import('./bulk/CsvUpdateDialog').then((m) => ({ default: m.CsvUpdateDialog })));
 const StoreBulkDialog = lazyWithReload(() => import('./bulk/StoreBulkDialog').then((m) => ({ default: m.StoreBulkDialog })));
+const ButtonBulkDialog = lazyWithReload(() => import('./buttons/ButtonBulkDialog').then((m) => ({ default: m.ButtonBulkDialog })));
 const StoreVariationsDialog = lazyWithReload(() => import('./bulk/StoreVariationsDialog').then((m) => ({ default: m.StoreVariationsDialog })));
 const ImportDialog = lazyWithReload(() => import('./ImportDialog').then((m) => ({ default: m.ImportDialog })));
 const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ default: m.ShareDialog })));
@@ -415,6 +417,9 @@ export function RecordsPage(): JSX.Element {
             : null;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    // Campo «Botón»: presionarlo sobre la selección (en tandas, fila por fila).
+    const bulkButtons = useBulkButtons(fields.data);
+    const [bulkButtonId, setBulkButtonId] = useState<number | null>(null);
     // El registro abierto en el modal vive en la URL (`?record=<id>`): la
     // lista queda debajo, atrás (o el gesto de Android) cierra el modal,
     // recargar lo vuelve a abrir y el enlace se puede compartir.
@@ -1373,6 +1378,23 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </Suspense>
             )}
 
+            {list.data && bulkButtonId !== null && fields.data?.some((f) => f.id === bulkButtonId) && (
+                <Suspense fallback={null}>
+                    <ButtonBulkDialog
+                        listId={list.data.id}
+                        field={fields.data.find((f) => f.id === bulkButtonId)!}
+                        ids={selectedIds}
+                        recordTitle={(id) => {
+                            const primary = pickPrimaryField(fields.data ?? []);
+                            const rec = records.data?.data.find((r) => r.id === id);
+                            const v = primary && rec ? rec.fields[primary.slug] : null;
+                            return typeof v === 'string' && v.trim() !== '' ? v : sprintf(__('Registro #%d'), id);
+                        }}
+                        onClose={() => setBulkButtonId(null)}
+                    />
+                </Suspense>
+            )}
+
             {list.data && structure !== null && (
                 <Suspense fallback={null}>
                     <BulkStructureDialog
@@ -1624,6 +1646,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
                         onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                         onStructure={structureActions}
+                        pressButtons={bulkButtons.map((b) => ({ id: b.field.id, label: b.label, reason: b.reason }))}
+                        onPressButton={setBulkButtonId}
                         onAssign={
                             assignField
                                 ? () => {

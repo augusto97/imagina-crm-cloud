@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
@@ -16,6 +17,7 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     record_updated: ['record_updated', 'field_changed'],
     payment_received: ['payment_received'],
     form_submitted: ['form_submitted'],
+    button_pressed: ['button_pressed'],
 };
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
@@ -51,7 +53,7 @@ export interface TriggerEvent {
     tenantId: number;
     listId: number;
     recordId: number;
-    trigger: 'record_created' | 'record_updated' | 'payment_received' | 'form_submitted';
+    trigger: 'record_created' | 'record_updated' | 'payment_received' | 'form_submitted' | 'button_pressed';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -66,8 +68,28 @@ export interface TriggerEvent {
      * `form_submitted`): `{{formulario.nombre}}` y el filtro por formulario.
      */
     form?: { id: number; name: string };
+    /**
+     * Campo «Botón» — el botón que se presionó (trigger `button_pressed`):
+     * el filtro por botón y `{{boton.nombre}}`, `{{boton.persona}}`.
+     */
+    button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
+    /** Sólo estas automatizaciones (un botón que corre una puntual). */
+    automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */
     chain?: AutomationChain;
+}
+
+/** Lo que devuelve el worker al procesar un evento: las corridas que abrió. */
+export interface EventRunRef {
+    automation_id: number;
+    run_id: number;
+}
+
+/** Estado de un trabajo encolado por un botón (ver `buttonJob`). */
+export interface ButtonJobState {
+    state: 'queued' | 'running' | 'done' | 'unknown';
+    runs: EventRunRef[];
+    error: string | null;
 }
 
 /** v0.1.221 — la acción «Editar en lote» de una automatización, lista para el worker. */
@@ -203,6 +225,40 @@ export class AutomationDispatcher {
         if (!this.queue) return false;
         await this.queue.add('resume', data, { removeOnComplete: 1000, removeOnFail: 1000 });
         return true;
+    }
+
+    /**
+     * Campo «Botón» — encola el evento `button_pressed` con un id propio, para
+     * que la interfaz pueda preguntar cómo terminaron las automatizaciones
+     * (`buttonJob`). Sin el atajo de `listensTo`: quien presiona ya eligió
+     * qué automatizaciones corren. null = no hay cola (sin Redis).
+     */
+    async dispatchButton(event: TriggerEvent): Promise<string | null> {
+        if (!this.queue) return null;
+        const jobId = `btn-${event.tenantId}-${randomUUID()}`;
+        try {
+            await this.queue.add('event', event, { jobId, removeOnComplete: 1000, removeOnFail: 1000 });
+            return jobId;
+        } catch (err) {
+            this.lost(event.tenantId, event.listId, null, 'la automatización del botón', err);
+            throw err;
+        }
+    }
+
+    /** Estado del trabajo de un botón (sólo los de esta empresa: el id la lleva). */
+    async buttonJob(tenantId: number, jobId: string): Promise<ButtonJobState> {
+        if (!this.queue || !jobId.startsWith(`btn-${tenantId}-`)) return { state: 'unknown', runs: [], error: null };
+        const job = await this.queue.getJob(jobId);
+        if (!job) return { state: 'unknown', runs: [], error: null };
+        const st = await job.getState();
+        if (st === 'completed') {
+            const value = job.returnvalue as unknown;
+            const runs = Array.isArray(value) ? (value as EventRunRef[]).filter((r) => typeof r?.run_id === 'number') : [];
+            return { state: 'done', runs, error: null };
+        }
+        if (st === 'failed') return { state: 'done', runs: [], error: job.failedReason ?? 'Falló' };
+        if (st === 'active') return { state: 'running', runs: [], error: null };
+        return { state: 'queued', runs: [], error: null };
     }
 
     dispatch(event: TriggerEvent): void {

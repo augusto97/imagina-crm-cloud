@@ -186,7 +186,7 @@ export function WidgetFormDialog({
         [fields.data],
     );
     const allUsableFields = useMemo(
-        () => (fields.data ?? []).filter((f) => f.type !== 'relation'),
+        () => (fields.data ?? []).filter((f) => f.type !== 'relation' && f.type !== 'button'),
         [fields.data],
     );
     // 0.36.9: cualquier field excepto relation/computed se puede usar
@@ -198,7 +198,7 @@ export function WidgetFormDialog({
     // como tal. Los de fecha/concat siguen afuera.
     const aggregatableFields = useMemo<FieldOpt[]>(
         () => (fields.data ?? [])
-            .filter((f) => f.type !== 'relation' && f.type !== 'lookup' && (f.type !== 'computed' || isNumericComputedOp(f.config)))
+            .filter((f) => f.type !== 'relation' && f.type !== 'lookup' && f.type !== 'button' && (f.type !== 'computed' || isNumericComputedOp(f.config)))
             .map((f) => ({ id: f.id, label: f.label, type: f.type === 'computed' ? 'number' : f.type })),
         [fields.data],
     );

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FieldEntity } from '@/types/field';
 import type { ActivityEntity } from '@/types/activity';
 
-import { actorOf, changeSentence, changesOf, formatActivityValue, summarizeActivity } from './activityText';
+import { actionText, actorOf, buttonPressOf, changeSentence, changesOf, formatActivityValue, summarizeActivity } from './activityText';
 
 const field = (over: Partial<FieldEntity> & { id: number; slug: string }): FieldEntity =>
     ({
@@ -132,5 +132,17 @@ describe('activityText', () => {
         const cantidad = field({ id: 9, slug: 'cantidad', type: 'number' });
         expect(formatActivityValue(cantidad, 150000)).toBe('150,000');
         expect(formatActivityValue(cantidad, '150000')).toBe('150,000');
+    });
+});
+
+describe('actividad del campo «Botón»', () => {
+    it('dice qué botón se presionó y, si falló, por qué', () => {
+        const ok = entry({ action: 'button_pressed', changes: { button: { field_id: 9, label: 'Marcar como pagado', ok: true, actions: ['update_fields'] } } });
+        expect(actionText(ok, changesOf(ok, FIELDS).length)).toBe('presionó «Marcar como pagado»');
+        const bad = entry({ action: 'button_pressed', changes: { button: { label: 'Enviar', ok: false, error: 'Falta el enlace.' } } });
+        expect(actionText(bad, 0)).toBe('presionó «Enviar» · falló: Falta el enlace.');
+        expect(buttonPressOf(entry({ action: 'button_pressed', changes: {} })).label).toBe('un botón');
+        // El diff del botón no se lee como cambios de campos.
+        expect(changesOf(ok, FIELDS)).toEqual([]);
     });
 });

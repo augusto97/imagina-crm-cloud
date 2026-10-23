@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.302** (Dependencias entre registros + vista Gantt — segunda entrega de la tanda 2 de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.303** (Campo «Botón» — tercera entrega de la tanda 2 de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -383,8 +383,8 @@ versión publicada: **v0.1.302** (Dependencias entre registros + vista Gantt —
   **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
   personales (v0.1.298), Excel (v0.1.299) y Campos (v0.1.300) publicados:
   **la tanda 1 está completa**. De la tanda 2 ya salieron Calendario
-  (v0.1.301) y Dependencias + Gantt (v0.1.302); Botón terminó y se integra
-  como v0.1.303; Fórmulas sigue en curso. El contenedor se reinició varias veces durante la tanda 2 y una
+  (v0.1.301), Dependencias + Gantt (v0.1.302) y Botón (v0.1.303); Fórmulas
+  sigue en curso y es la última de las dos fases. El contenedor se reinició varias veces durante la tanda 2 y una
   vez se cortó por el límite de uso: el avance de cada agente quedó en commits
   de su rama (`wip-gantt`, `wip-calendario` y las ramas de cada worktree) y se
   retomó. Gantt + dependencias (slot 8)
@@ -631,6 +631,15 @@ versión publicada: **v0.1.302** (Dependencias entre registros + vista Gantt —
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.303** — **Campo «Botón»** (opción A5 del estudio,
+  ADR-S58). Se presiona en la tabla, la agrupada, la ficha y (si se elige) el
+  portal; abre enlaces con variables (WhatsApp, llamar, correo, mapa), cambia
+  campos, corre automatizaciones con el disparador «Al presionar el botón» o
+  genera un PDF. El servidor re-chequea rol, edición, condición, ACL y tienda;
+  en lote corre en tandas con el resultado por fila; el portal tiene reglas
+  propias y oculta el botón que ahí no funciona. Sin migración. Al integrarlo
+  con el Gantt, el botón quedó fuera de las columnas del panel y del orden.
+  Pendiente: botones en kanban y tarjetas.
 - **2026-10-23 · v0.1.302** — **Dependencias entre registros + vista Gantt**
   (opciones A8 y B1 del estudio, ADR-S57). Un registro bloquea a otro de la
   misma lista (sin ciclos, desfase en días), con el aviso «¿Cerrar igual?» y un

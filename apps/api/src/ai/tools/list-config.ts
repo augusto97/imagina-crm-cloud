@@ -227,7 +227,7 @@ export function buildPortalTemplate(specs: PortalBlockSpec[], ctx: PortalBuildCo
             case 'editable_form': {
                 for (const s of spec.fields) {
                     const f = requireField(ctx.fields, s, where, listName);
-                    if (['computed', 'lookup', 'rollup', 'time_tracked', 'ai', 'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by'].includes(f.type)) throw new AiToolError(`${where}: «${s}» es ${f.type} y no se puede editar.`);
+                    if (['computed', 'lookup', 'rollup', 'time_tracked', 'ai', 'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by', 'button'].includes(f.type)) throw new AiToolError(`${where}: «${s}» es ${f.type} y no se puede editar.`);
                 }
                 config = { editable_field_slugs: spec.fields, title: spec.title ?? 'Actualizar mis datos', submit_label: spec.submit_label ?? 'Guardar' };
                 label = spec.title || 'Actualizar mis datos';

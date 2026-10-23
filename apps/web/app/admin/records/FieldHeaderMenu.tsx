@@ -96,14 +96,19 @@ export function FieldHeaderMenu({
     field,
     fields,
     onEdit,
-    onSort,
     onHide,
-    onCalculate,
     onReorderColumns,
     onFreeze,
     onUnfreeze,
-    onColor,
+    onColor: onColorProp,
+    onSort: onSortProp,
+    onCalculate: onCalculateProp,
 }: FieldHeaderMenuProps): JSX.Element {
+    // Campo «Botón»: no tiene valor que ordenar, colorear ni sumar.
+    const isButton = field.type === 'button';
+    const onSort = isButton ? undefined : onSortProp;
+    const onColor = isButton ? undefined : onColorProp;
+    const onCalculate = isButton ? undefined : onCalculateProp;
     const create = useCreateField(listId);
     const del = useDeleteField(listId);
     const reorder = useReorderFields(listId);
@@ -310,8 +315,12 @@ export function FieldHeaderMenu({
                             // columna — llegar al editor vacío no servía de
                             // nada (reporte del usuario, v0.1.161).
                             navigate(
-                                `/lists/${listSlug}/automations/new`
-                                + `?action=update_field&field=${field.id}`,
+                                isButton
+                                    // Un botón se automatiza con el disparador
+                                    // «Al presionar el botón» ya apuntado a él.
+                                    ? `/lists/${listSlug}/automations/new?trigger=button_pressed&button=${field.id}`
+                                    : `/lists/${listSlug}/automations/new`
+                                      + `?action=update_field&field=${field.id}`,
                             )
                         }
                     >

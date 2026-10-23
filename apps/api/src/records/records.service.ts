@@ -1904,7 +1904,8 @@ export class RecordsService {
             // v0.1.277 — el campo con IA lo escribe el servidor: un formulario
             // que reenvía su valor (sin cambiarlo) no rompe el guardado.
             // v0.1.300 — igual el ID automático y las columnas de sistema.
-            if (field.type === 'ai' || field.type === 'autonumber' || isSystemField(field.type)) continue;
+            // Campo «Botón»: no tiene valor; un formulario que lo reenvía no rompe.
+            if (field.type === 'ai' || field.type === 'autonumber' || field.type === 'button' || isSystemField(field.type)) continue;
             if (!isDataField(field.type)) {
                 errors[key] = `El tipo '${field.type}' no se escribe en los datos`;
                 continue;
@@ -2189,7 +2190,7 @@ function withComputed<T extends { data: Record<string, unknown> }>(fields: Field
  * se descarta en silencio (mismo criterio que el filter tree). NULLS LAST en
  * ambas direcciones — las celdas vacías siempre al final, estilo hoja.
  */
-const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup'];
+const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup', 'button'];
 /** Tipos cuyo orden es alfabético (expresión de texto). */
 const TEXT_SORT_TYPES = new Set<string>(['text', 'long_text', 'email', 'url', 'phone', 'select', 'lookup', 'ai']);
 

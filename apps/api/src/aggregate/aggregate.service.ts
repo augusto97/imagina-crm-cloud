@@ -963,6 +963,8 @@ function multiSelectSetExpr(fieldId: number): SQL {
  * de cada grupo de la vista agrupada — tiene que ser la misma en los tres.
  */
 export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableField>): SQL {
+    // Campo «Botón»: no tiene valor que agrupar.
+    if (field.type === 'button') throw badRequest(`No se puede agrupar por «${field.label}»: es un botón.`);
     if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
     // v0.1.300 — columnas de sistema: una fecha por DÍA (reloj de la empresa), una
     // persona por su id (ver `systemFilterable`).
@@ -1033,7 +1035,7 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
             ? ['count', 'count_empty', 'min', 'max']
             : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
     }
-    if (type === 'lookup') return [];
+    if (type === 'lookup' || type === 'button') return [];
     // v0.1.300 — columnas de sistema: fechas (mínimo/máximo) o personas (únicos).
     if (isSystemField(type)) {
         if (!ff?.expr) return [];

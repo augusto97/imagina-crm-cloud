@@ -168,7 +168,7 @@ export function ConditionEditor({
                             >
                                 <option value="">{__('— Campo —')}</option>
                                 {fields
-                                    .filter((f) => f.type !== 'relation')
+                                    .filter((f) => f.type !== 'relation' && f.type !== 'button')
                                     .map((f) => (
                                         <option key={f.id} value={f.slug}>
                                             {f.label}

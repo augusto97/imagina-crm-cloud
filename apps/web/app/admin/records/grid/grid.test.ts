@@ -155,6 +155,9 @@ describe('pegar un bloque', () => {
         expect(cellWriteBlock(field(9, 'cliente', 'relation'), rows[0]!, 'paste')).toBeNull();
         expect(cellWriteBlock(field(9, 'adjunto', 'file'), rows[0]!, 'paste')).not.toBeNull();
         expect(cellWriteBlock(field(9, 'cliente', 'relation'), rows[0]!, 'fill')).toBeNull();
+        // Campo «Botón»: se presiona, nunca se pega ni se rellena.
+        expect(cellWriteBlock(field(9, 'pagar', 'button'), rows[0]!, 'paste')).toMatch(/botón/);
+        expect(cellWriteBlock(field(9, 'pagar', 'button'), rows[0]!, 'clear')).not.toBeNull();
     });
 });
 

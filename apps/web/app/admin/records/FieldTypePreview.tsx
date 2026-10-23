@@ -1,5 +1,6 @@
 import { Calendar, Check, Paperclip, Star } from 'lucide-react';
 
+import { FieldButtonView } from '@/components/fields/FieldButtonView';
 import { chipSoftStyle } from '@/components/ui/color-picker';
 import { __ } from '@/lib/i18n';
 import { formatDateStr, formatDateTime, formatNumber } from '@/lib/tenantFormat';
@@ -186,6 +187,14 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                 <Row>
                     <span className="imcrm-tabular-nums">$ {formatNumber(1250000)}</span>
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(3 facturas)')}</span>
+                </Row>
+            );
+        // Campo «Botón»: dos botones como se ven en la columna.
+        case 'button':
+            return (
+                <Row>
+                    <FieldButtonView label={__('WhatsApp')} color="green" icon="message" size="cell" inert />
+                    <FieldButtonView label={__('Marcar pagado')} color="blue" icon="check" size="cell" inert />
                 </Row>
             );
         // v0.1.300 — ID automático y columnas de sistema.

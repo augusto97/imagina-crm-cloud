@@ -48,6 +48,7 @@ import {
     type PortalRequestAccessInput,
     type PortalRelatedOptions,
     type PortalUpdateMeInput,
+    type PressButtonResult,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -372,6 +373,14 @@ export class PortalController {
     @UseGuards(SessionGuard)
     pay(@Req() req: FastifyRequest, @Param('blockId') blockId: string): Promise<PortalPayResult> {
         return this.portal.payFromPortal(portalActor(req), String(blockId).slice(0, 80));
+    }
+
+    /** Campo «Botón» — el cliente presiona un botón de su registro (ver `PortalService.pressButton`). */
+    @Post('portal/me/buttons/:fieldId')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    pressButton(@Req() req: FastifyRequest, @Param('fieldId', ParseIntPipe) fieldId: number): Promise<PressButtonResult> {
+        return this.portal.pressButton(portalActor(req), fieldId);
     }
 
     /** v0.1.267 — PDF publicado en el portal, del registro del cliente. */

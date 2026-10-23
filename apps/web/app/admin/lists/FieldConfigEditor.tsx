@@ -10,6 +10,7 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
 import { AiFieldEditor } from './AiFieldEditor';
 import { AutonumberFieldEditor } from './AutonumberFieldEditor';
+import { ButtonFieldEditor } from './ButtonFieldEditor';
 import { FieldRulesEditor } from './FieldRulesEditor';
 import { makeGroup } from '@/admin/records/filterTree';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,10 @@ function TypeConfigEditor({
     listId,
     currentFieldId,
 }: FieldConfigEditorProps): JSX.Element | null {
+    // Campo «Botón»: apariencia, acciones, condición, roles y portal.
+    if (type === 'button') {
+        return <ButtonFieldEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />;
+    }
     // v0.1.300 — ID automático.
     if (type === 'autonumber') {
         return <AutonumberFieldEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />;

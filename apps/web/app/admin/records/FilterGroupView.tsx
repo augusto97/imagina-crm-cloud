@@ -82,7 +82,7 @@ export function FilterGroupView({
     };
 
     const addCondition = (): void => {
-        const firstField = fields.find((f) => f.type !== 'relation');
+        const firstField = fields.find((f) => f.type !== 'relation' && f.type !== 'button');
         const defaultOp = firstField ? defaultOpFor(firstField.type) : 'eq';
         onRootChange(
             addNode(
@@ -94,7 +94,7 @@ export function FilterGroupView({
     };
 
     const addNestedGroupAfter = (afterIdx: number): void => {
-        const firstField = fields.find((f) => f.type !== 'relation');
+        const firstField = fields.find((f) => f.type !== 'relation' && f.type !== 'button');
         const defaultOp  = firstField ? defaultOpFor(firstField.type) : 'eq';
         const nested     = makeGroup('and', [makeCondition(firstField?.id ?? 0, defaultOp, '')]);
         const nextChildren = [...group.children];

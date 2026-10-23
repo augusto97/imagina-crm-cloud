@@ -20,7 +20,9 @@ import { parseUtcDate } from '@/lib/utcDate';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+import type { RecordEntity } from '@/types/record';
 
+import { ButtonFieldControl } from './buttons/ButtonFieldControl';
 import { DateCellEditor } from './DateCellEditor';
 import { isCloseCancelled } from './dependencies/closeGuard';
 import { gridCellKey, useCellEditRequest, useGridEditStore, type EditEndReason } from './grid/editStore';
@@ -48,6 +50,11 @@ interface EditableCellProps {
      * editar (lo calcula quien arma la fila con `storeAccessFor`). null = libre.
      */
     lockedReason?: string | null;
+    /**
+     * El registro de la fila. Lo necesita el campo «Botón» (su condición de
+     * «deshabilitado si…» mira otros campos del registro).
+     */
+    record?: RecordEntity;
 }
 
 /**
@@ -136,6 +143,7 @@ function EditableCellInner({
     value,
     canEdit: canEditByCaps = true,
     lockedReason = null,
+    record,
 }: EditableCellProps): JSX.Element {
     const canEditByUser = canEditByCaps && lockedReason === null;
     // v0.1.259 — UNA mutación por tabla (contexto), no una por celda: con
@@ -156,8 +164,10 @@ function EditableCellInner({
     const [picker, setPicker] = useState<{ token: number; seed: string | null } | null>(null);
     /** El último pedido de edición ya atendido (estado, no ref: se lee al dibujar). */
     const [handledToken, setHandledToken] = useState(0);
-    /** Acciones de un pedido que no son abrir un editor (marcar casilla, poner estrellas). */
-    const [pendingAction, setPendingAction] = useState<{ kind: 'toggle' | 'rate' | 'end'; value?: number | null } | null>(null);
+    /** Acciones de un pedido que no son abrir un editor (marcar casilla, poner estrellas, presionar un botón). */
+    const [pendingAction, setPendingAction] = useState<{ kind: 'toggle' | 'rate' | 'press' | 'end'; value?: number | null } | null>(null);
+    /** Campo «Botón»: sube en uno para presionarlo desde el teclado. */
+    const [pressSignal, setPressSignal] = useState(0);
     const committing = useRef(false);
     /** El editor arrancó con algo tecleado (reemplaza el valor): el cursor va al final. */
     const [seeded, setSeeded] = useState(false);
@@ -260,7 +270,10 @@ function EditableCellInner({
     if (store && editReq && editReq.token !== handledToken) {
         setHandledToken(editReq.token);
         const seed = editReq.seed;
-        if (!canEditByUser || READ_ONLY_TYPES.includes(field.type)) {
+        if (field.type === 'button') {
+            // Enter o Espacio presionan el botón (sus permisos los decide él).
+            setPendingAction(seed === null || seed === ' ' ? { kind: 'press' } : { kind: 'end' });
+        } else if (!canEditByUser || READ_ONLY_TYPES.includes(field.type)) {
             setPendingAction({ kind: 'end' });
         } else if (field.type === 'checkbox') {
             // Enter o Espacio la marcan / desmarcan.
@@ -282,7 +295,10 @@ function EditableCellInner({
         setPendingAction(null);
         if (pendingAction.kind === 'toggle') void commit(!isCheckedValue(value), 'closed');
         else if (pendingAction.kind === 'rate') void commit(pendingAction.value ?? null, 'closed');
-        else endGrid('closed');
+        else if (pendingAction.kind === 'press') {
+            setPressSignal((n) => n + 1);
+            endGrid('closed');
+        } else endGrid('closed');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pendingAction]);
 
@@ -311,6 +327,16 @@ function EditableCellInner({
 
     if (!editing) {
         const isDateField = field.type === 'date' || field.type === 'datetime';
+
+        // Campo «Botón»: UN click lo presiona (como la casilla), sin elegir la
+        // celda antes. Deshabilitado, se ve atenuado con el motivo en el tooltip.
+        if (field.type === 'button') {
+            return (
+                <span className="imcrm-flex imcrm-h-full imcrm-min-w-0 imcrm-items-center">
+                    <ButtonFieldControl field={field} listId={listId} record={record ?? null} size="cell" pressSignal={pressSignal} />
+                </span>
+            );
+        }
 
         // select / multi_select: popover directo estilo ClickUp — UN click
         // abre las opciones (nada de doble click ni modo edición
@@ -675,6 +701,9 @@ export const EditableCell = memo(EditableCellWithUpdater, (prev, next) => {
         && prev.value === next.value
         && prev.canEdit === next.canEdit
         && prev.lockedReason === next.lockedReason
+        // Campo «Botón»: no tiene valor propio; su «deshabilitado si…» mira la
+        // FILA y su aspecto la config — sin esto quedaba con el estado viejo.
+        && (next.field.type !== 'button' || (prev.record === next.record && prev.field === next.field))
     );
 });
 

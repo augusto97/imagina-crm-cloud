@@ -62,12 +62,15 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'updated_at', label: 'Última modificación', description: 'Cuándo se cambió el registro por última vez. Se llena solo.', supportsUnique: false },
     { slug: 'created_by', label: 'Creado por', description: 'Quién creó el registro. Se llena solo.', supportsUnique: false },
     { slug: 'updated_by', label: 'Modificado por', description: 'Quién cambió el registro por última vez. Se llena solo.', supportsUnique: false },
+    // Campo «Botón» (A5).
+    { slug: 'button', label: 'Botón', description: 'Un click abre WhatsApp o un enlace, marca como pagado, corre una automatización o genera un PDF.', supportsUnique: false },
 ];
 
 /** Tipos que NO viven en la columna de datos (referencias / derivados). */
 const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>([
     'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
     'created_at', 'updated_at', 'created_by', 'updated_by',
+    'button',
 ]);
 
 /**
@@ -79,6 +82,8 @@ export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set([
     'computed', 'lookup', 'rollup', 'ai', 'time_tracked',
     // v0.1.300 — los asigna el servidor.
     'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by',
+    // El botón no tiene valor que escribir: se presiona.
+    'button',
 ]);
 
 /** v0.1.300 — Columnas de sistema (metadata del registro). */

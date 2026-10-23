@@ -156,6 +156,8 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
     // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
+    // button_pressed: sólo un botón; sin él, cualquier botón de la lista.
+    if (typeof c.button_field_id === 'number' && c.button_field_id > 0) out.button_field_id = c.button_field_id;
     // v0.1.288 — programado «para cada registro que cumpla…».
     if (c.for_each_record === true) {
         out.for_each_record = true;
@@ -183,6 +185,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: «20 días después del vencimiento» para recordatorios de pago. Si la fecha se cambia, vuelve a dispararse para la fecha nueva.');
         case 'form_submitted':
             return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que puedes avisarle al equipo, contestarle a quien lo llenó o completar campos. Puedes usar {{formulario.nombre}}.');
+        case 'button_pressed':
+            return __('Se ejecuta cuando alguien presiona un campo «Botón» de un registro de esta lista (en la tabla, la ficha o el portal, si el botón lo permite). Sirve para tareas que se hacen a pedido: enviar una cotización, avisar al equipo, crear la factura. Puedes usar {{boton.nombre}} y {{boton.persona}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
@@ -280,6 +284,57 @@ export function TriggerConfigEditor({
             )}
 
             {triggerType === 'form_submitted' && <FormSubmittedConfig config={config} onChange={onChange} />}
+
+            {triggerType === 'button_pressed' && <ButtonPressedConfig config={config} onChange={onChange} fields={fields} />}
+        </div>
+    );
+}
+
+/** Campo «Botón» — qué botón dispara (o cualquiera de la lista). */
+function ButtonPressedConfig({
+    config,
+    onChange,
+    fields,
+}: {
+    config: TriggerConfig;
+    onChange: (next: TriggerConfig) => void;
+    fields: FieldEntity[];
+}): JSX.Element {
+    const current = typeof config.button_field_id === 'number' ? config.button_field_id : 0;
+    const buttons = fields.filter((f) => f.type === 'button');
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="trigger-button-config">
+            <Label htmlFor="trigger-button-id">{__('Botón')}</Label>
+            <Select
+                id="trigger-button-id"
+                value={String(current)}
+                onChange={(e) => {
+                    const id = Number(e.target.value);
+                    const next = { ...config };
+                    if (id > 0) next.button_field_id = id;
+                    else delete next.button_field_id;
+                    onChange(next);
+                }}
+            >
+                <option value="0">{__('Cualquier botón de esta lista')}</option>
+                {buttons.map((f) => (
+                    <option key={f.id} value={f.id}>
+                        {f.label}
+                    </option>
+                ))}
+                {current > 0 && !buttons.some((f) => f.id === current) && (
+                    <option value={current}>{__('Botón eliminado')}</option>
+                )}
+            </Select>
+            {buttons.length === 0 ? (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Esta lista todavía no tiene botones: agrega un campo «Botón» con la acción «Correr una automatización».')}
+                </p>
+            ) : (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('El botón tiene que tener la acción «Correr una automatización» para que esta corra al presionarlo.')}
+                </p>
+            )}
         </div>
     );
 }
@@ -1697,7 +1752,7 @@ function ChoiceValueInput({
  * `field` puede ser undefined si el campo aún no fue elegido — en ese
  * caso mostramos placeholder.
  */
-function FieldValueInput({
+export function FieldValueInput({
     field,
     availableFields,
     value,

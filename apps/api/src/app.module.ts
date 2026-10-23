@@ -47,6 +47,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
 import { RecordsModule } from './records/records.module';
+import { ButtonsModule } from './buttons/buttons.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
 import { RedisModule } from './redis/redis.module';
 import { TemplatesModule } from './templates/templates.module';
@@ -92,6 +93,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ListsModule,
         FieldsModule,
         RecordsModule,
+        // Campo «Botón» (A5): presionar botones de registros.
+        ButtonsModule,
         RecurrencesModule,
         ViewsModule,
         GanttModule,
