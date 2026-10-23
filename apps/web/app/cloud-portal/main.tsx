@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router';
 import { PortalApp } from '@/cloud-portal/PortalApp';
+import { ConfirmProvider } from '@/components/ui/confirm-dialog';
+import { ToastProvider } from '@/components/ui/toast';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
 import '@fontsource-variable/inter';
 import '@/styles/globals.css';
@@ -43,7 +45,12 @@ if (container && !blockCrossOriginFraming(container)) {
         <StrictMode>
             <QueryClientProvider client={queryClient}>
                 <BrowserRouter>
-                    <PortalApp />
+                    {/* Los avisos y la confirmación de los botones del portal. */}
+                    <ToastProvider>
+                        <ConfirmProvider>
+                            <PortalApp />
+                        </ConfirmProvider>
+                    </ToastProvider>
                 </BrowserRouter>
             </QueryClientProvider>
         </StrictMode>,

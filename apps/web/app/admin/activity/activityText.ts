@@ -94,6 +94,17 @@ export function dependencyText(entry: ActivityEntity): string {
     return added ? sprintf(__('marcó que está bloqueado por %s'), title) : sprintf(__('quitó que estaba bloqueado por %s'), title);
 }
 
+/** Lo que guardó un presionado de botón (`diff.button`). */
+export function buttonPressOf(entry: Pick<ActivityEntity, 'changes'>): { label: string; ok: boolean; error: string | null } {
+    const raw = (entry.changes as Record<string, unknown> | null | undefined)?.button;
+    const b = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    return {
+        label: typeof b.label === 'string' && b.label !== '' ? b.label : __('un botón'),
+        ok: b.ok !== false,
+        error: typeof b.error === 'string' && b.error !== '' ? b.error : null,
+    };
+}
+
 /** El verbo de la entrada, en pasado y con sujeto ya puesto aparte. */
 export function actionText(entry: ActivityEntity, changeCount: number): string {
     switch (entry.action) {
@@ -116,6 +127,12 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         case 'dependency_added':
         case 'dependency_removed':
             return dependencyText(entry);
+        // Campo «Botón»: `diff.button` = {label, ok, error?}.
+        case 'button_pressed': {
+            const b = buttonPressOf(entry);
+            const said = sprintf(/* translators: %s: texto del botón */ __('presionó «%s»'), b.label);
+            return b.ok ? said : `${said} · ${b.error ? sprintf(__('falló: %s'), b.error) : __('no terminó')}`;
+        }
         default:
             // record_updated sin diff legible (o con campos que ya no existen).
             return changeCount === 0 ? __('actualizó este registro') : '';

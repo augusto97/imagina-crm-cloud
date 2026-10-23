@@ -32,6 +32,9 @@ interface FieldValueDisplayProps {
  * como una página de detalle y no una fila de tabla disfrazada.
  */
 export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX.Element {
+    // Campo «Botón»: no tiene valor que mostrar (el botón vivo lo dibuja quien
+    // tiene el registro: la fila de la ficha o el bloque del diseño).
+    if (field.type === 'button') return <span className="imcrm-text-muted-foreground/60">—</span>;
     // v0.1.170 — a través de una relación: se pinta con el campo destino.
     if (field.type === 'lookup') {
         const display = lookupDisplayField(field);

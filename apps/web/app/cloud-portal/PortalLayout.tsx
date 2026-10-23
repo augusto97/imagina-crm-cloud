@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { jsonbKeyForField, type PortalBoot, type RecordLayoutV3 } from '@imagina-base/shared';
 
 import { LayoutContext, type LayoutCtx } from '@/admin/records/layout/LayoutContext';
+import { PortalButtonsContext, type PortalButtonsValue } from '@/admin/records/buttons/ButtonFieldControl';
 import { resolveTheme } from '@/admin/records/layout/layoutTheme';
 import { LayoutBody } from '@/admin/records/layout/RecordLayoutView';
 import { portalApi } from '@/cloud-portal/portalClient';
@@ -75,6 +76,17 @@ export function PortalLayout({ boot, layout }: { boot: PortalBoot; layout: Recor
         [data],
     );
 
+    // Campo «Botón»: el estado de cada uno lo calcula el servidor (con el
+    // registro completo) y presionar va por `POST /portal/me/buttons/:id`.
+    const buttons = useMemo<PortalButtonsValue>(
+        () => ({
+            states: boot.buttons ?? {},
+            press: (fieldId) => portalApi.portalPressButton(fieldId),
+            onDone: () => void qc.invalidateQueries({ queryKey: ['portal-me'] }),
+        }),
+        [boot.buttons, qc],
+    );
+
     const ctx: LayoutCtx = {
         list: { id: boot.list_id, slug: boot.list_slug, name: boot.list_name } as ListSummary,
         record,
@@ -107,6 +119,7 @@ export function PortalLayout({ boot, layout }: { boot: PortalBoot; layout: Recor
 
     return (
         <LayoutContext.Provider value={ctx}>
+            <PortalButtonsContext.Provider value={buttons}>
             <WidgetDataOverrideContext.Provider value={override}>
                 <div className="imcrm-lay-root imcrm-flex imcrm-flex-col" style={{ gap: theme.gap }} data-testid="imcrm-portal-layout">
                     {save.saving && (
@@ -117,6 +130,7 @@ export function PortalLayout({ boot, layout }: { boot: PortalBoot; layout: Recor
                     <LayoutBody layout={layout} />
                 </div>
             </WidgetDataOverrideContext.Provider>
+            </PortalButtonsContext.Provider>
         </LayoutContext.Provider>
     );
 }

@@ -1,6 +1,16 @@
 import { useMemo } from 'react';
 import { BarChart3, ChartArea, ChartLine, ChartPie, CircleGauge, Filter, Gauge, Table2, TrendingUp } from 'lucide-react';
-import { EDITABLE_TOTAL_TYPES, FIELD_DISPLAYS, PORTAL_EDITABLE_TYPES, RELATED_VIEWS, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
+import {
+    EDITABLE_TOTAL_TYPES,
+    FIELD_DISPLAYS,
+    PORTAL_EDITABLE_TYPES,
+    RELATED_VIEWS,
+    buttonPortalProblems,
+    portalEditableFieldIds,
+    readButtonConfig,
+    type LayoutBlock,
+    type LayoutDataSource,
+} from '@imagina-base/shared';
 
 import { KPI_ICON_OPTIONS } from '@/admin/dashboards/widgets/KpiWidget';
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
@@ -8,6 +18,7 @@ import { GalleryBlockForm, ImageBlockForm, SpacerBlockForm } from '@/admin/templ
 import { useQuery } from '@tanstack/react-query';
 
 import { api } from '@/cloud/session';
+import { useDocumentTemplates } from '@/admin/documents/useDocuments';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
@@ -91,8 +102,53 @@ export function FieldForm({ block, set }: FormProps): JSX.Element {
                     {c.card !== true && <Toggle label={__('Ocultar la etiqueta')} checked={c.label === 'hidden'} onChange={(v) => set({ label: v ? 'hidden' : undefined })} />}
                 </Group>
             )}
-            {field && ctx.mode === 'portal' && <ClientEditToggle block={block} set={set} fields={[field]} />}
+            {field && ctx.mode === 'portal' && field.type !== 'button' && <ClientEditToggle block={block} set={set} fields={[field]} />}
+            {field && ctx.mode === 'portal' && <PortalButtonCheck fields={[field]} />}
         </>
+    );
+}
+
+/**
+ * Campo «Botón» en el portal: qué le impide funcionar ahí. Mientras tenga
+ * algún problema el cliente no lo ve (y el servidor igual lo rechaza), así
+ * que el editor lo dice en vez de dejar que «desaparezca» sin explicación.
+ */
+function PortalButtonCheck({ fields }: { fields: FieldEntity[] }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const ed = useEditor();
+    const buttons = fields.filter((f) => f.type === 'button');
+    const templates = useDocumentTemplates(buttons.length > 0 ? Number(ctx.list.id) : undefined).data;
+    const editable = useMemo(() => portalEditableFieldIds(ed.layout, ctx.fields), [ed.layout, ctx.fields]);
+    if (buttons.length === 0 || templates === undefined) return null;
+    const published = new Set(templates.filter((t) => t.portal_visible).map((t) => t.id));
+    return (
+        <Group title={__('En el portal')}>
+            {buttons.map((f) => {
+                const problems = buttonPortalProblems(readButtonConfig(f.config), { editableFieldIds: editable, portalTemplateIds: published });
+                return problems.length === 0 ? (
+                    <p key={f.id} className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-portal-button-ok={f.id}>
+                        {buttons.length > 1 ? `«${f.label}»: ` : ''}
+                        {__('El cliente puede presionarlo.')}
+                    </p>
+                ) : (
+                    <div
+                        key={f.id}
+                        className="imcrm-rounded-md imcrm-border imcrm-border-amber-500/40 imcrm-bg-amber-500/10 imcrm-px-2.5 imcrm-py-2 imcrm-text-[11px] imcrm-leading-snug imcrm-text-amber-800 dark:imcrm-text-amber-200"
+                        data-portal-button-problems={f.id}
+                    >
+                        <p className="imcrm-font-semibold">
+                            {buttons.length > 1 ? `«${f.label}»: ` : ''}
+                            {__('El cliente no lo ve hasta que lo resuelvas:')}
+                        </p>
+                        <ul className="imcrm-mt-1 imcrm-list-disc imcrm-pl-4">
+                            {problems.map((p) => (
+                                <li key={p}>{__(p)}</li>
+                            ))}
+                        </ul>
+                    </div>
+                );
+            })}
+        </Group>
     );
 }
 
@@ -101,7 +157,7 @@ export function FieldForm({ block, set }: FormProps): JSX.Element {
  * whitelist del servidor (sin bloques editables, el cliente no edita nada).
  */
 function ClientEditToggle({ block, set, fields }: FormProps & { fields: FieldEntity[] }): JSX.Element {
-    const blocked = fields.filter((f) => !PORTAL_EDITABLE_TYPES.includes(f.type));
+    const blocked = fields.filter((f) => !PORTAL_EDITABLE_TYPES.includes(f.type) && f.type !== 'button');
     return (
         <Group title={__('Cliente')}>
             <Toggle
@@ -156,7 +212,10 @@ export function FieldsForm({ block, set }: FormProps): JSX.Element {
                 {c.collapsible !== false && <Toggle label={__('Empieza plegado')} checked={c.collapsed === true} onChange={(v) => set({ collapsed: v })} />}
             </Group>
             {ctx.mode === 'portal' && (
-                <ClientEditToggle block={block} set={set} fields={ids(c.field_ids).map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined)} />
+                <>
+                    <ClientEditToggle block={block} set={set} fields={ids(c.field_ids).map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined)} />
+                    <PortalButtonCheck fields={ids(c.field_ids).map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined)} />
+                </>
             )}
         </>
     );

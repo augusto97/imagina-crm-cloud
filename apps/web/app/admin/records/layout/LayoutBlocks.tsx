@@ -18,6 +18,7 @@ import {
     Link2,
     Mail,
     MessageSquare,
+    MousePointerClick,
     Paperclip,
     Pencil,
     StickyNote,
@@ -62,6 +63,8 @@ import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 import type { FieldEntity } from '@/types/field';
+import type { RecordEntity } from '@/types/record';
+import { ButtonFieldControl, usePortalButtonHidden } from '@/admin/records/buttons/ButtonFieldControl';
 
 import { ActivityFeed } from './ActivityFeed';
 import { FieldDisplay, optionsOf } from './FieldDisplay';
@@ -125,7 +128,11 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     const collapsible = block.type === 'fields' && block.config.collapsible !== false && title !== null;
     const [open, setOpen] = useState(block.config.collapsed !== true);
     const Icon = blockIcon(block);
+    // Un botón que el portal no deja usar no se le muestra al cliente (ni su hueco).
+    const buttonField = block.type === 'field' ? ctx.fieldsById.get(Number(block.config.field_id)) : undefined;
+    const portalHidden = usePortalButtonHidden(buttonField?.type === 'button' ? buttonField.id : null);
 
+    if (portalHidden) return null;
     if (isEmptyActionButton(block, ctx)) return null;
     // Sin conexión de cobro (o sin nada que mostrar) el cliente no ve «Pagos».
     if (ctx.mode === 'portal' && !ctx.preview && block.type === 'payments' && !ctx.portalPayments?.[block.id]) return null;
@@ -188,6 +195,7 @@ function isEmptyActionButton(block: LayoutBlock, ctx: ReturnType<typeof useLayou
     const c = block.config;
     if (block.type !== 'field' || c.display !== 'button' || c.label !== 'hidden' || c.card === true || ctx.preview) return false;
     const field = ctx.fieldsById.get(Number(c.field_id));
+    if (field?.type === 'button') return false;
     const value = field ? ctx.values[field.slug] : undefined;
     return value === null || value === undefined || value === '';
 }
@@ -378,6 +386,7 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     const field = ctx.fieldsById.get(Number(block.config.field_id));
     if (!field) return <MissingField />;
     const c = block.config;
+    if (field.type === 'button') return <ButtonFieldBlock block={block} field={field} />;
     const value = ctx.values[field.slug];
     const locked = ctx.lockedReasons[field.slug] ?? null;
     void locked;
@@ -462,7 +471,9 @@ export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: s
         <div className={cn('imcrm-props', layout === 'stacked' && 'imcrm-props-stacked')}>
             <div className="imcrm-props-grid" data-cols={String(cols)}>
                 {list.map((f) =>
-                    // En el portal, lo que el cliente no puede editar se ve como dato,
+                    f.type === 'button' ? (
+                        <ButtonPropRow key={f.id} field={f} />
+                    ) : // En el portal, lo que el cliente no puede editar se ve como dato,
                     // sin candados ni controles.
                     ctx.mode === 'portal' && !fieldEditable(ctx, f) ? (
                         <ReadOnlyRow key={f.id} field={f} />
@@ -491,6 +502,66 @@ export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: s
                         />
                     ),
                 )}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * El registro con los valores VIVOS de la ficha (el autoguardado tarda un
+ * instante): «deshabilitado si…» se ve al toque al cambiar el campo.
+ */
+function useLiveRecord(): RecordEntity {
+    const ctx = useLayoutCtx();
+    return useMemo(() => ({ ...ctx.record, fields: { ...ctx.record.fields, ...ctx.values } }), [ctx.record, ctx.values]);
+}
+
+/** Campo «Botón» como bloque de la ficha: el botón, a lo ancho si se eligió. */
+function ButtonFieldBlock({ block, field }: { block: LayoutBlock; field: FieldEntity }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const record = useLiveRecord();
+    const hidden = usePortalButtonHidden(field.id);
+    const c = block.config;
+    if (hidden) return null;
+    const showLabel = c.label !== 'hidden';
+    const full = c.display === 'full';
+    return (
+        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2" data-button-block={field.slug}>
+            {showLabel && (
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                    <MousePointerClick className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+                    <span className="imcrm-truncate">{block.title || field.label}</span>
+                </span>
+            )}
+            <div className="imcrm-min-w-0">
+                <ButtonFieldControl
+                    field={field}
+                    listId={ctx.list.id}
+                    record={record}
+                    fields={ctx.fields}
+                    size={full ? 'full' : 'md'}
+                    inert={ctx.preview === true}
+                />
+            </div>
+        </div>
+    );
+}
+
+/** Campo «Botón» dentro de un bloque de propiedades. */
+function ButtonPropRow({ field }: { field: FieldEntity }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const record = useLiveRecord();
+    if (usePortalButtonHidden(field.id)) return null;
+    return (
+        <div className="imcrm-prop" data-button-field={field.slug}>
+            <div className="imcrm-prop-row imcrm-px-2 imcrm-py-1.5">
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-[3px] imcrm-text-xs imcrm-text-muted-foreground">
+                    <MousePointerClick className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70" aria-hidden />
+                    <span className="imcrm-truncate">{field.label}</span>
+                </span>
+                <span className="imcrm-min-w-0">
+                    <ButtonFieldControl field={field} listId={ctx.list.id} record={record} fields={ctx.fields} size="md" inert={ctx.preview === true} />
+                </span>
             </div>
         </div>
     );

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { changeSentence, changesOf } from '@/admin/activity/activityText';
+import { buttonPressOf, changeSentence, changesOf } from '@/admin/activity/activityText';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import type { ActivityEntity } from '@/types/activity';
 import type { FieldEntity } from '@/types/field';
@@ -128,6 +128,10 @@ export function portalActivityText(
     }
     if (action === 'record_restored') {
         return { title: `${who.company} restauró este registro`, lines: [] };
+    }
+    if (action === 'button_pressed') {
+        const label = buttonPressOf(entry).label;
+        return { title: who.mine ? `Presionaste «${label}»` : `${who.company} presionó «${label}»`, lines: [] };
     }
     const changes = changesOf(entry, fields);
     if (changes.length === 0) {
