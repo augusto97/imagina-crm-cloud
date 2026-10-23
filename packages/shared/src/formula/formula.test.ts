@@ -8,12 +8,14 @@ import {
     formulaDependencies,
     formulaDisplayConfig,
     formulaRefIds,
+    formulaRefNotAllowed,
     formulasDependingOn,
     formulaToDisplay,
     formulaToStored,
     FormulaSyntaxError,
     inferFormulaResultType,
     parseFormula,
+    prepareFormula,
     remapFormulaRefs,
     type FormulaEnv,
     type FormulaEvalField,
@@ -171,6 +173,14 @@ describe('referencias por nombre, guardadas por id', () => {
         const r = formulaToStored('{Precio}', dup as never);
         expect(!r.ok && r.error.message).toMatch(/\{precio\} o \{precio_2\}/);
         expect(formulaToDisplay('{#1} + {#50}', dup as never)).toBe('{precio} + {precio_2}');
+    });
+
+    it('un botón, una relación o un archivo no se pueden usar', () => {
+        expect(formulaRefNotAllowed('button')).toMatch(/botón no tiene valor/);
+        const withButton = [...FIELDS, { id: 70, slug: 'cobrar', label: 'Cobrar', type: 'button', config: {} }];
+        const r = prepareFormula('{Cobrar} & "x"', withButton as never, null);
+        expect(r.ok).toBe(false);
+        expect(!r.ok && r.error.message).toMatch(/botón no tiene valor/);
     });
 
     it('re-mapea ids (plantillas, migración) sin tocar lo demás', () => {

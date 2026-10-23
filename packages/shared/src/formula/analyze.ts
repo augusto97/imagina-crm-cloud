@@ -54,6 +54,7 @@ export type ThroughTargetOf = (fieldId: number) => { type: string; config?: Reco
 export function formulaRefNotAllowed(type: string): string | null {
     if (type === 'relation') return 'Una relación no se puede usar en una fórmula: usa un lookup o un rollup de esa relación.';
     if (type === 'file') return 'Un campo de archivos no se puede usar en una fórmula.';
+    if (type === 'button') return 'Un botón no tiene valor: no se puede usar en una fórmula.';
     return null;
 }
 
