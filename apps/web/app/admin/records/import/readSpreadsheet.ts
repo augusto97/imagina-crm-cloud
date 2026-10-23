@@ -1,5 +1,5 @@
 /**
- * v0.1.296 — Lectura de planillas de Excel EN EL NAVEGADOR (se carga a pedido:
+ * v0.1.299 — Lectura de planillas de Excel EN EL NAVEGADOR (se carga a pedido:
  * quien importa un CSV no baja este código).
  *
  * El .xlsx nunca viaja al servidor: se abre aquí (con los topes de tamaño del

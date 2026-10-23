@@ -11,7 +11,7 @@ import {
 } from '@imagina-base/shared';
 
 /**
- * v0.1.296 — Cómo sale cada campo en una planilla de Excel. A diferencia del
+ * v0.1.299 — Cómo sale cada campo en una planilla de Excel. A diferencia del
  * CSV (todo texto), en el .xlsx cada celda es del TIPO real: un monto es un
  * número con su moneda y sus decimales, una fecha es una fecha de Excel (que
  * se ordena y filtra como fecha), una duración es tiempo (`[h]:mm`, se suma).

@@ -1,7 +1,7 @@
 /**
  * Planillas de Excel (.xlsx): lector para el import (corre en el navegador)
  * y escritor por streaming para el export (corre en el servidor). Sin más
- * dependencia que `fflate` (zip). Ver ADR-S38 (addendum v0.1.296).
+ * dependencia que `fflate` (zip). Ver ADR-S38 (addendum v0.1.299).
  */
 export * from './errors';
 export * from './serial';

@@ -22,7 +22,7 @@ interface ExportButtonProps {
     /** `field_{id}:{dir},…` (vacío = sin orden). */
     sort?: string;
     /**
-     * Columnas que la vista MUESTRA, en su orden (v0.1.296): son las que
+     * Columnas que la vista MUESTRA, en su orden (v0.1.299): son las que
      * arrancan marcadas y el orden de las columnas del archivo.
      */
     fieldIds?: number[];
@@ -56,7 +56,7 @@ function readFormat(): ExportFormat {
 /**
  * Botón/diálogo "Exportar" de la lista y de «Exportar vista».
  *
- * v0.1.296 — dos formatos:
+ * v0.1.299 — dos formatos:
  *  - **Excel (.xlsx)** (por defecto): la vista tal como se ve, con cada celda
  *    de su tipo real (montos con su moneda y decimales, fechas, porcentajes,
  *    duraciones), encabezado fijo con filtro y anchos ajustados.

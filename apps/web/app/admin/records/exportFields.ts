@@ -1,5 +1,5 @@
 /**
- * v0.1.296 — Qué columnas exporta «Exportar» y en qué orden: las que la vista
+ * v0.1.299 — Qué columnas exporta «Exportar» y en qué orden: las que la vista
  * MUESTRA, en el orden en que se ven (no el orden del esquema de la lista).
  */
 

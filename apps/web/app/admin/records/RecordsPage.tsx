@@ -739,7 +739,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         ? views.data?.find((v) => v.id === activeViewId) ?? null
         : null;
     const isKanban = activeView?.type === 'kanban';
-    // v0.1.296 — «Exportar» trae las columnas que la vista muestra, en su orden.
+    // v0.1.299 — «Exportar» trae las columnas que la vista muestra, en su orden.
     const exportFieldIds = useMemo(
         () => visibleExportFieldIds(fields.data ?? [], state.columnVisibility, state.columnOrder),
         [fields.data, state.columnVisibility, state.columnOrder],

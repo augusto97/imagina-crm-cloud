@@ -547,7 +547,7 @@ export class ImportService {
     }
 
     /**
-     * v0.1.296 — Cómo se lee el TEXTO de cada celda. Lo que viene de una
+     * v0.1.299 — Cómo se lee el TEXTO de cada celda. Lo que viene de una
      * planilla de Excel (`source: 'xlsx'`) se lee con el formato regional y la
      * zona de la empresa: el navegador escribió los números con su decimal y
      * las fechas y horas en su reloj (las mismas con que se exportan). El CSV

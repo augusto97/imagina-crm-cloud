@@ -39,7 +39,7 @@ export interface ViewExportOptions {
     search?: string;
     sort?: string;
     /**
-     * v0.1.296 — ¿incluir las subtareas? (por defecto sí: un archivo que las
+     * v0.1.299 — ¿incluir las subtareas? (por defecto sí: un archivo que las
      * pierde en silencio es peor). Sin ellas sale sólo el primer nivel y sin
      * las columnas de jerarquía.
      */
@@ -108,7 +108,7 @@ export class ExportService {
         // v0.1.132 — jerarquía. Las subtareas se exportan (si no, el archivo
         // perdería filas en silencio), pero las dos columnas que la describen
         // sólo aparecen si la lista tiene alguna: una lista sin subtareas
-        // exporta exactamente el mismo CSV que antes. v0.1.296 — quien las
+        // exporta exactamente el mismo CSV que antes. v0.1.299 — quien las
         // descarta a propósito (`includeSubtasks: false`) recibe el primer nivel.
         const includeSubtasks = opts.includeSubtasks !== false;
         const withHierarchy = includeSubtasks && (await this.hasSubtasks(tenantId, list.id));
@@ -160,7 +160,7 @@ export class ExportService {
     }
 
     /**
-     * v0.1.296 — Export a EXCEL (.xlsx) de lo que se ve en la vista: mismos
+     * v0.1.299 — Export a EXCEL (.xlsx) de lo que se ve en la vista: mismos
      * registros que el CSV (ACL por rol, filtros, búsqueda, orden y columnas
      * elegidas, en su orden), pero cada celda con su TIPO real — ver
      * `xlsx-columns.ts`. Encabezado en negrita, inmovilizado y con filtro
@@ -290,7 +290,7 @@ export class ExportService {
      * TÍTULOS de los vinculados. `list` (no `listByListId`): trae los
      * lookup/rollup con su relación RESUELTA en `through`.
      *
-     * v0.1.296 — Un campo que el rol de quien exporta NO ve no sale ni como
+     * v0.1.299 — Un campo que el rol de quien exporta NO ve no sale ni como
      * columna vacía: su nombre tampoco es para esa persona (los VALORES ya los
      * quitaba el listado).
      */
@@ -376,7 +376,7 @@ export class ExportService {
             }
             optionLabels.set(c.id, m);
         }
-        // v0.1.296 — también un lookup hacia un campo persona (el .xlsx lo
+        // v0.1.299 — también un lookup hacia un campo persona (el .xlsx lo
         // muestra con el nombre, como la ficha).
         const hasUser = columns.some((c) => c.type === 'user' || (c.type === 'lookup' && targetTypeOf(c) === 'user'));
         const members = new Map<number, string>();

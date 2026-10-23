@@ -7,7 +7,7 @@ import { getTenantFormat } from '@/lib/tenantFormat';
 import type { OpenedBook } from './readSpreadsheet';
 
 /**
- * v0.1.296 — El archivo que se sube para importar (o para «actualizar desde un
+ * v0.1.299 — El archivo que se sube para importar (o para «actualizar desde un
  * archivo»): un CSV, o una planilla de Excel de la que se elige la hoja.
  * Ambos terminan en lo mismo: el TEXTO que entiende el import, más lo que
  * hay que avisar de la planilla.

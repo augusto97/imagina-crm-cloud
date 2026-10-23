@@ -9,7 +9,7 @@ const fields = [
     { id: 13, slug: 'nota', position: 3 },
 ];
 
-describe('columnas del export (v0.1.296)', () => {
+describe('columnas del export (v0.1.299)', () => {
     it('las visibles de la vista, en su orden (lo que no está en el orden sigue la posición)', () => {
         expect(visibleExportFieldIds(fields, {}, [])).toEqual([10, 11, 12, 13]);
         expect(visibleExportFieldIds(fields, { nota: false }, ['estado', 'id', 'nombre'])).toEqual([12, 10, 11]);

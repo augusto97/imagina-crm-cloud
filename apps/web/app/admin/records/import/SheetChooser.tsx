@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import type { PendingBook, XlsxImportNotes } from './useSpreadsheetFile';
 
 /**
- * v0.1.296 — El libro trae varias hojas: ¿cuál se importa? Arranca marcada la
+ * v0.1.299 — El libro trae varias hojas: ¿cuál se importa? Arranca marcada la
  * que estaba abierta al guardar el archivo. Las ocultas se listan (a veces
  * los datos están ahí) con su aviso.
  */

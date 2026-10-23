@@ -42,7 +42,7 @@ import { startPostgres, type TestPg } from './helpers/containers';
 const rt = new RealtimeService();
 const admin: Actor = { userId: 0, role: 'admin' };
 
-/** v0.1.296 — Excel: export con tipos reales y el import de planillas. */
+/** v0.1.299 — Excel: export con tipos reales y el import de planillas. */
 describe('Excel (.xlsx): export de la vista e import de planillas', () => {
     let pg: TestPg;
     let lists_: ListsService;

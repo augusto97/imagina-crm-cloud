@@ -35,7 +35,7 @@ export type ImportResult = z.infer<typeof importResultSchema>;
 // columna→slug + campos nuevos on-the-fly).
 
 /**
- * v0.1.296 — De dónde salió el texto del import. `xlsx`: lo convirtió el
+ * v0.1.299 — De dónde salió el texto del import. `xlsx`: lo convirtió el
  * navegador desde una planilla de Excel (`xlsxSheetToImportTable`), con los
  * números sin separador de miles y con el decimal de la empresa, y las fechas
  * y horas en el reloj de pared de la empresa: el servidor lo lee entonces con
@@ -71,7 +71,7 @@ export const IMPORT_CREATABLE_TYPES = [
     'checkbox',
     'url',
     'email',
-    // v0.1.296 — el diálogo los ofrecía (y el detector sugiere `phone`) pero
+    // v0.1.299 — el diálogo los ofrecía (y el detector sugiere `phone`) pero
     // el schema los rechazaba: una lista nueva desde un archivo con teléfonos
     // fallaba con «Datos inválidos».
     'phone',

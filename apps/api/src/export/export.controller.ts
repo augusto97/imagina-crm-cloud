@@ -17,7 +17,7 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
  *  - default: bundle JSON de intercambio (CONTRACT §11, STANDALONE §16).
  *  - `?format=csv`: CSV con selección de campos/delimiter/filtro — lo que
  *    usa el diálogo "Exportar" del admin. Respeta el ACL por rol.
- *  - `?format=xlsx` (v0.1.296): la misma vista como planilla de Excel, con
+ *  - `?format=xlsx` (v0.1.299): la misma vista como planilla de Excel, con
  *    tipos reales (montos, fechas, porcentajes, duraciones). Mismo ACL.
  *
  * SEC-10: todos se STREAMEAN (keyset) → sin OOM en listas grandes.
@@ -50,7 +50,7 @@ export class ExportController {
             .split(',')
             .map((s) => Number(s.trim()))
             .filter((n) => Number.isInteger(n) && n > 0);
-        // v0.1.296 — `subtasks=0` exporta sólo el primer nivel.
+        // v0.1.299 — `subtasks=0` exporta sólo el primer nivel.
         const includeSubtasks = subtasks !== '0' && subtasks !== 'false';
         const view = {
             fieldIds,

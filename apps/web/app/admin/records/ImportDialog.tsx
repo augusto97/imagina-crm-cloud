@@ -126,7 +126,7 @@ type Step = 'upload' | 'map' | 'done';
  *
  * Flujo en tres pasos:
  *  1. Upload — el usuario selecciona el archivo. Un CSV se lee como texto;
- *     un .xlsx se abre en el navegador (v0.1.296), se elige la hoja si hay
+ *     un .xlsx se abre en el navegador (v0.1.299), se elige la hoja si hay
  *     varias y se convierte a ese mismo texto. POST a `/preview`.
  *  2. Map — backend devolvió cabeceras + muestra + sugerencia de
  *     mapping. El usuario ajusta `csv_column_idx → field_slug` y
@@ -159,7 +159,7 @@ export function ImportDialog({
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState<boolean>(false);
     const [result, setResult] = useState<RunResponse | null>(null);
-    // v0.1.296 — de dónde salió el texto (un CSV o una hoja de Excel) y lo
+    // v0.1.299 — de dónde salió el texto (un CSV o una hoja de Excel) y lo
     // que hay que avisar de la planilla.
     const [source, setSource] = useState<'csv' | 'xlsx'>('csv');
     const [xlsxNotes, setXlsxNotes] = useState<XlsxImportNotes | undefined>(undefined);

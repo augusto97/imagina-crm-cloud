@@ -71,7 +71,7 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [undoOpen, setUndoOpen] = useState(false);
-    // v0.1.296 — una planilla de Excel: la hoja elegida, convertida.
+    // v0.1.299 — una planilla de Excel: la hoja elegida, convertida.
     const [source, setSource] = useState<'csv' | 'xlsx'>('csv');
     const [xlsxNotes, setXlsxNotes] = useState<XlsxImportNotes | undefined>(undefined);
 
