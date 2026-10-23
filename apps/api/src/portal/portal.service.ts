@@ -15,6 +15,11 @@ import {
 import {
     autoPortalLayout,
     brandingSchema,
+    buttonPortalProblems,
+    buttonDisabledState,
+    FALLBACK_TIME_ZONE,
+    readButtonConfig,
+    type PressButtonResult,
     DATA_BLOCK_TYPES,
     layoutBlocks,
     migratePortalTemplateToV3,
@@ -72,7 +77,7 @@ import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { DocumentsService } from '../documents/documents.service';
 import { DomainsService } from '../domains/domains.service';
 import { RecordLayoutDataService } from '../dashboards/record-layout-data.service';
-import { fields, lists, memberships, paymentLinks, portalCredentials, portalLinks, records, relations, users, tenants } from '../db/schema';
+import { documentTemplates, fields, lists, memberships, paymentLinks, portalCredentials, portalLinks, records, relations, users, tenants } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
@@ -85,6 +90,7 @@ import { NotifyHub } from '../notifications/notify-hub';
 import { RecordChangeHub } from '../records/record-change-hub';
 import { portalAccessEmail, portalReplyEmail, senderName, type PortalEmailBrand } from './portal-email';
 import { RecordsService } from '../records/records.service';
+import { ButtonsService } from '../buttons/buttons.service';
 import { filterActivityDiff, portalConversation, portalRecordFieldIds } from './portal-visibility';
 
 const MAGIC_TTL_SECONDS = 60 * 60 * 24; // 24h
@@ -195,6 +201,8 @@ export class PortalService implements OnModuleInit {
         @Optional() private readonly collections?: CollectionsService,
         // Ley 1581 — sin aceptar la autorización de datos, el portal no se usa.
         @Optional() private readonly dataConsent?: DataConsentService,
+        // Campo «Botón» — los botones que el diseño del portal muestra.
+        @Optional() private readonly buttons?: ButtonsService,
     ) {}
 
     onModuleInit(): void {
@@ -936,6 +944,58 @@ export class PortalService implements OnModuleInit {
      * usuario tiene UN vínculo: con dos es ambiguo y tiene que volver a entrar.
      */
     /**
+     * Campo «Botón» — el cliente presiona un botón de SU registro. Sólo si el
+     * botón está en el diseño del portal y todas sus acciones se permiten ahí
+     * (`buttonPortalProblems`): abrir enlaces (con las variables que el
+     * cliente ya ve), cambiar campos que el portal deja editar (por el mismo
+     * PATCH del portal, con su whitelist), PDF publicados en el portal y, sólo
+     * con la regla explícita del botón, correr una automatización.
+     */
+    async pressButton(actor: PortalActor, fieldId: number): Promise<PressButtonResult> {
+        if (!this.buttons) throw new NotFoundException({ code: 'not_found', message: 'Botón no encontrado', data: { status: 404 } });
+        const link = await this.requireLink(actor);
+        const tenantId = link.tenantId;
+        const { ctx, templateIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await this.assertWritable(tx, tenantId);
+            const ctx = await this.portalCtx(tx, tenantId, link.listId);
+            const tpl = await tx
+                .select({ id: documentTemplates.id })
+                .from(documentTemplates)
+                .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.listId, link.listId), eq(documentTemplates.portalVisible, true)));
+            return { ctx, templateIds: new Set(tpl.map((t) => t.id)) };
+        });
+        const field = ctx.fields.find((f) => f.id === fieldId && f.type === 'button');
+        if (!field || !ctx.visible.has(fieldId)) {
+            throw new NotFoundException({ code: 'portal_button_not_found', message: 'Ese botón no está en tu portal.', data: { status: 404 } });
+        }
+        const problems = buttonPortalProblems(readButtonConfig(field.config), { editableFieldIds: ctx.editableIds, portalTemplateIds: templateIds });
+        if (problems.length > 0) {
+            throw new ForbiddenException({ code: 'portal_button_forbidden', message: `${problems[0]}.`, data: { status: 403 } });
+        }
+        const bySlugId = new Map(ctx.fields.map((f) => [jsonbKeyForField(f.id), f.slug]));
+        return this.buttons.press(tenantId, { userId: actor.userId, role: 'client' }, String(ctx.list.id), link.recordId, fieldId, {
+            portal: true,
+            readAs: { userId: actor.userId, role: 'admin' },
+            visibleFieldIds: ctx.visible,
+            writeFields: async (patch) => {
+                const fieldsBySlug: Record<string, unknown> = {};
+                for (const [key, value] of Object.entries(patch)) {
+                    const slug = bySlugId.get(key);
+                    if (slug) fieldsBySlug[slug] = value;
+                }
+                await this.updateMe(actor, { fields: fieldsBySlug } as PortalUpdateMeInput);
+            },
+            portalPdf: async (templateId) => {
+                if (!this.documents || !templateIds.has(templateId)) {
+                    throw new ForbiddenException({ code: 'portal_button_forbidden', message: 'El PDF usa una plantilla que no está publicada en el portal.', data: { status: 403 } });
+                }
+                const doc = await this.documents.renderForPortal(tenantId, link.listId, link.recordId, templateId);
+                return { filename: doc.filename, pdf: doc.buffer.toString('base64'), number: null };
+            },
+        });
+    }
+
+    /**
      * v0.1.267 (ADR-S35 fase 2) — PDF de una plantilla publicada en el portal,
      * SIEMPRE del registro del cliente (el del acceso elegido). El id de la
      * plantilla es lo único que llega del cliente; si no es de su lista o no
@@ -1497,8 +1557,14 @@ export class PortalService implements OnModuleInit {
                 // A8 — las dependencias son del trabajo del equipo (nombran
                 // registros internos): el cliente no las ve.
                 if (row.action === 'dependency_added' || row.action === 'dependency_removed') continue;
-                const diff = filterActivityDiff(row.diff, ctx.visible);
+                let diff = filterActivityDiff(row.diff, ctx.visible);
                 if (row.action === 'record_updated' && Object.keys(diff).length === 0) continue;
+                // Campo «Botón»: sólo los botones que el cliente ve, y sólo su nombre.
+                if (row.action === 'button_pressed') {
+                    const b = (row.diff as { button?: { field_id?: unknown; label?: unknown } } | null)?.button;
+                    if (!b || !ctx.visible.has(Number(b.field_id))) continue;
+                    diff = { button: { field_id: Number(b.field_id), label: String(b.label ?? '') } };
+                }
                 out.push({
                     id: row.id,
                     list_id: row.listId,
@@ -2338,8 +2404,14 @@ export class PortalService implements OnModuleInit {
             // Sólo los campos que el DISEÑO muestra (más el título y los
             // editables): una columna interna que el portal no dibuja no sale
             // del servidor, ni su valor ni su definición.
-            const shownFields = ctx.fields.filter((f) => ctx.visible.has(f.id));
             const rawData = record.data as Record<string, unknown>;
+            const documents = this.documents ? await this.documents.portalDocumentsInTx(tx, link.tenantId, list.id) : [];
+            // Campo «Botón» — su estado se calcula aquí, con el registro completo;
+            // al cliente sólo le llega la parte de presentación de la config.
+            const buttons = portalButtonStates(ctx, rawData, new Set(documents.map((d) => d.id)), format.timezone ?? FALLBACK_TIME_ZONE);
+            const shownFields = ctx.fields
+                .filter((f) => ctx.visible.has(f.id))
+                .map((f) => (f.type === 'button' ? { ...f, config: portalButtonConfig(f.config) } : f));
             const data: Record<string, unknown> = {};
             for (const f of shownFields) {
                 const key = jsonbKeyForField(f.id);
@@ -2356,7 +2428,7 @@ export class PortalService implements OnModuleInit {
                     // las columnas que ahí se eligieron), nunca "todas las
                     // columnas" al pie del portal.
                     related_lists: [],
-                    documents: this.documents ? await this.documents.portalDocumentsInTx(tx, link.tenantId, list.id) : [],
+                    documents,
                     list_id: list.id,
                     list_slug: list.slug,
                     list_name: list.name,
@@ -2388,6 +2460,7 @@ export class PortalService implements OnModuleInit {
                     password: await this.passwordStatus(tx, link.tenantId, userId, (tenantRow?.settings ?? {}) as Record<string, unknown>),
                     payments: {},
                     data_consent: null,
+                    buttons,
                 },
             };
         });
@@ -2588,4 +2661,38 @@ function listSlugsIn(raw: unknown): Set<string> {
 
 function liteField(f: Field): LayoutFieldLite {
     return { id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown>, is_primary: f.is_primary };
+}
+
+/** Campo «Botón» — lo que el portal necesita para dibujar un botón (sin acciones ni condiciones). */
+function portalButtonConfig(config: Record<string, unknown>): Record<string, unknown> {
+    const c = readButtonConfig(config);
+    return {
+        ...(c.label ? { label: c.label } : {}),
+        ...(c.color ? { color: c.color } : {}),
+        ...(c.icon ? { icon: c.icon } : {}),
+        ...(c.confirm ? { confirm: c.confirm } : {}),
+        actions: c.actions.map((a) => ({ type: a.type })),
+    };
+}
+
+/** El estado de los botones del diseño del portal para ESTE registro. */
+function portalButtonStates(
+    ctx: { fields: Field[]; visible: Set<number>; editableIds: Set<number> },
+    data: Record<string, unknown>,
+    portalTemplateIds: Set<number>,
+    timeZone: string,
+): Record<string, { disabled: boolean; reason: string | null; blocked: string | null }> {
+    const byId = new Map(ctx.fields.map((f) => [f.id, f]));
+    const out: Record<string, { disabled: boolean; reason: string | null; blocked: string | null }> = {};
+    for (const f of ctx.fields) {
+        if (f.type !== 'button' || !ctx.visible.has(f.id)) continue;
+        const cfg = readButtonConfig(f.config);
+        const state = buttonDisabledState(cfg, (id) => {
+            const ff = byId.get(id);
+            return ff ? { type: ff.type, value: data[jsonbKeyForField(id)] } : undefined;
+        }, { timeZone });
+        const problems = buttonPortalProblems(cfg, { editableFieldIds: ctx.editableIds, portalTemplateIds });
+        out[String(f.id)] = { disabled: state.disabled, reason: state.reason, blocked: problems[0] ?? null };
+    }
+    return out;
 }
