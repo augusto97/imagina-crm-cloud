@@ -23,6 +23,8 @@ const TRIGGERS: TriggerMeta[] = [
     // v0.1.251 — un cliente pagó un link de Mercado Pago o Wompi del registro.
     { slug: 'payment_received', label: 'Cuando se recibe un pago', event: 'imagina_crm/payment_received', config_schema: {} },
     { slug: 'form_submitted', label: 'Cuando se envía un formulario', event: 'imagina_crm/form_submitted', config_schema: {} },
+    // Campo «Botón» — alguien presionó un botón del registro (todos o uno).
+    { slug: 'button_pressed', label: 'Al presionar el botón', event: 'imagina_crm/button_pressed', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [

@@ -92,8 +92,11 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                         await this.recurrences.tick();
                         await this.maintainRuns();
                     } else {
-                        await this.engine.process(job.data as TriggerEvent);
+                        // Las corridas que abrió quedan como resultado del job:
+                        // un botón pregunta por ellas para decir cómo terminaron.
+                        return this.engine.process(job.data as TriggerEvent);
                     }
+                    return undefined;
                 },
                 { connection: conn(), concurrency: 5 },
             );

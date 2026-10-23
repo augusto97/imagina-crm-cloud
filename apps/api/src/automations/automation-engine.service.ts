@@ -74,6 +74,7 @@ import {
     MAX_AUTOMATION_CHAIN_DEPTH,
     nextChain,
     type AutomationChain,
+    type EventRunRef,
     type TriggerEvent,
 } from './automation-dispatcher.service';
 import { evaluateCondition, explainCondition, type ConditionOptions } from './condition-evaluator';
@@ -106,6 +107,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     payment_received: ['payment_received'],
     // v0.1.275 — alguien completó un formulario público de la lista.
     form_submitted: ['form_submitted'],
+    // Campo «Botón» — alguien presionó un botón del registro.
+    button_pressed: ['button_pressed'],
 };
 
 interface PersonInfo {
@@ -138,6 +141,8 @@ interface RunContext {
     pago?: Record<string, unknown>;
     /** v0.1.275 — el formulario que se acaba de enviar (`{{formulario.nombre}}`). */
     form?: { id: number; name: string };
+    /** Campo «Botón» — el botón que se presionó (`{{boton.nombre}}`, `{{boton.persona}}`). */
+    button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
@@ -245,6 +250,7 @@ export interface ResumeState {
         payload?: Record<string, unknown>;
         pago?: Record<string, unknown>;
         form?: { id: number; name: string };
+        button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
         pdf?: Record<string, unknown>;
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
@@ -367,14 +373,17 @@ export class AutomationEngine {
         return marker;
     }
 
-    /** Trigger de record (record_created / record_updated). */
-    async process(event: TriggerEvent): Promise<void> {
+    /**
+     * Trigger de record (record_created / record_updated). Devuelve las
+     * corridas que abrió (el botón las consulta para decir cómo terminaron).
+     */
+    async process(event: TriggerEvent): Promise<EventRunRef[]> {
         const chain = event.chain;
         // Una cadena de automatizaciones que se pasó del tope no sigue
         // (un A → B → A → … no termina nunca).
         if (chain && chain.depth > MAX_AUTOMATION_CHAIN_DEPTH) {
             this.logger.warn(`Cadena de automatizaciones cortada en la profundidad ${chain.depth} (lista ${event.listId}).`);
-            return;
+            return [];
         }
         const prep = await this.tenantDb.withTenant(event.tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
@@ -382,11 +391,15 @@ export class AutomationEngine {
             const triggerTypes = TRIGGERS_FOR_EVENT[event.trigger];
             const autos = (
                 await this.automations.activeByTriggers(tx, event.tenantId, event.listId, triggerTypes)
-            ).filter((a) => !chain || !chain.automation_ids.includes(a.id)); // nunca se re-dispara a sí misma
+            )
+                .filter((a) => !chain || !chain.automation_ids.includes(a.id)) // nunca se re-dispara a sí misma
+                // Un botón que corre UNA automatización puntual.
+                .filter((a) => !event.automation_ids || event.automation_ids.includes(a.id));
             if (autos.length === 0) return null;
             return { autos, maps: await this.fieldMaps(tx, event.tenantId, event.listId) };
         });
-        if (!prep) return;
+        if (!prep) return [];
+        const runs: EventRunRef[] = [];
         // v0.1.300 — «Creado por», «Fecha de creación»…: las columnas de sistema no
         // viven en `data`; se leen UNA vez para las condiciones y variables.
         const sysData = await this.systemData(event.tenantId, event.recordId, prep.maps);
@@ -400,11 +413,14 @@ export class AutomationEngine {
                 ...prep.maps,
                 ...(event.payment ? { pago: event.payment } : {}),
                 ...(event.form ? { form: event.form } : {}),
+                ...(event.button ? { button: event.button } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
-            await this.runOne(ctx, auto);
+            const runId = await this.runOne(ctx, auto);
+            if (runId !== null) runs.push({ automation_id: auto.id, run_id: runId });
         }
+        return runs;
     }
 
     /** Trigger `scheduled` (cron): corre una automatización sin record. */
@@ -699,6 +715,7 @@ export class AutomationEngine {
             ...(state.ctx.payload ? { payload: state.ctx.payload } : {}),
             ...(state.ctx.pago ? { pago: state.ctx.pago } : {}),
             ...(state.ctx.form ? { form: state.ctx.form } : {}),
+            ...(state.ctx.button ? { button: state.ctx.button } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
@@ -930,6 +947,9 @@ export class AutomationEngine {
             case 'form_submitted':
                 notes.push('Se asume que este registro llegó por el formulario.');
                 break;
+            case 'button_pressed':
+                notes.push('Se asume que tú presionaste el botón en este registro.');
+                break;
             default:
                 break;
         }
@@ -1003,6 +1023,13 @@ export class AutomationEngine {
         if (auto.triggerType === 'form_submitted') {
             const wanted = Number(cfg.form_id);
             if (Number.isInteger(wanted) && wanted > 0 && ctx.form?.id !== wanted) return false;
+        }
+        // Campo «Botón» — «Al presionar el botón»: sin `button_field_id` vale
+        // cualquier botón de la lista; con uno, sólo ese.
+        if (auto.triggerType === 'button_pressed') {
+            if (!ctx.button) return false;
+            const wanted = Number(cfg.button_field_id);
+            if (Number.isInteger(wanted) && wanted > 0 && ctx.button.field_id !== wanted) return false;
         }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
@@ -1086,6 +1113,10 @@ export class AutomationEngine {
             }
             // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
             if (token === 'formulario.nombre') return ctx.form?.name ?? '';
+            // Campo «Botón» — el botón que se presionó y quién lo presionó.
+            if (token === 'boton.nombre') return ctx.button?.label ?? '';
+            if (token === 'boton.persona') return ctx.button?.user_name ?? '';
+            if (token === 'boton.email') return ctx.button?.user_email ?? '';
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -1206,7 +1237,7 @@ export class AutomationEngine {
         for (const r of rows) ctx.people.set(r.id, { name: r.name ?? '', email: r.email });
     }
 
-    private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<void> {
+    private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<number | null> {
         ctx.automation = { id: auto.id, name: auto.name };
         // v0.1.300 — las columnas de sistema para las variables (`{{creado_por}}`).
         if (ctx.recordId !== null && [...ctx.fieldsBySlug.entries()].some(([slug, f]) => isSystemField(f.type) && !(ctx.slugToKey.get(slug)! in ctx.data))) {
@@ -1221,9 +1252,9 @@ export class AutomationEngine {
         } catch (err) {
             // La automatización se borró mientras se encolaba el evento.
             this.logger.warn(`No se pudo abrir la corrida de la automatización ${auto.id}: ${errorText(err)}`);
-            return;
+            return null;
         }
-        if (runId === null) return;
+        if (runId === null) return null;
 
         let flow: Flow;
         try {
@@ -1233,6 +1264,7 @@ export class AutomationEngine {
             this.logger.error(`Automatización ${auto.id} falló: ${String(err)}`);
         }
         await this.finalize(ctx, auto, runId, flow.log, flow.pause ?? null, flow.log.some((l) => l.status === 'failed'));
+        return runId;
     }
 
     /**
@@ -1289,6 +1321,7 @@ export class AutomationEngine {
                 ...(ctx.payload ? { payload: ctx.payload } : {}),
                 ...(ctx.pago ? { pago: ctx.pago } : {}),
                 ...(ctx.form ? { form: ctx.form } : {}),
+                ...(ctx.button ? { button: ctx.button } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),

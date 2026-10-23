@@ -44,6 +44,7 @@ import { ListsService } from '../lists/lists.service';
 import { ThroughEngine, type ThroughPlan } from '../records/through-fields';
 import { FieldsRepository, type FieldRow } from './fields.repository';
 import { trashRow } from '../trash/trash-ops';
+import { assertButtonConfigRefs } from '../buttons/button-config-refs';
 
 /** Un camino posible para un lookup/rollup de una lista (v0.1.170). El shape vive en shared. */
 export type { RelationPath } from '@imagina-base/shared';
@@ -431,6 +432,7 @@ export class FieldsService {
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
+            if (input.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, null, config);
             config = await this.normalizeRules(tx, tenantId, listId, null, input.type, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
@@ -531,6 +533,7 @@ export class FieldsService {
             } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
                 await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
+                if (current.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, current.id, changes.config);
                 changes.config = await this.normalizeRules(tx, tenantId, listId, current.id, current.type as FieldType, changes.config);
             }
             if (patch.is_indexed !== undefined) {
@@ -775,6 +778,7 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'rating',
     'percent',
     'duration',
+    'button',
 ]);
 
 /** Escapa los metacaracteres de LIKE/ILIKE (`%`, `_`, `\`). */
@@ -846,13 +850,15 @@ const NON_CONVERTIBLE: readonly FieldType[] = [
     'computed', 'relation', 'file', 'lookup', 'rollup', 'ai', 'time_tracked',
     // v0.1.300 — columnas de sistema (no tienen datos propios).
     'created_at', 'updated_at', 'created_by', 'updated_by',
+    // Campo «Botón»: no guarda valor (sólo su config).
+    'button',
 ];
 
 function assertConvertible(from: FieldType, to: FieldType): void {
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
         throw new BadRequestException({
             code: 'type_not_convertible',
-            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup, con IA y las columnas de sistema no admiten conversión.`,
+            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup, con IA, botón y las columnas de sistema no admiten conversión.`,
             data: { status: 400 },
         });
     }

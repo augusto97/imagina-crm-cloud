@@ -61,7 +61,7 @@ import { applyDateModifiers, labelForFieldValue } from '../automations/merge-tag
 import { BillingService } from '../billing/billing.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import type { Tx } from '../db/client';
-import { attachments, automations, documentNumbers, documentTemplates, memberships, records as recordsTable, tenants, users } from '../db/schema';
+import { attachments, automations, documentNumbers, documentTemplates, fields as fieldsTable, memberships, records as recordsTable, tenants, users } from '../db/schema';
 import type { DocumentTemplateRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService, type StoredFileRef } from '../files/files.service';
@@ -308,11 +308,16 @@ export class DocumentsService {
             const row = await this.findInTx(tx, tenantId, list.id, id);
             if (!row) throw templateNotFound(id);
             const used = await this.usedByInTx(tx, tenantId, id);
-            if (used.length > 0) {
+            const buttons = await this.usedByButtonsInTx(tx, tenantId, list.id, id);
+            if (used.length > 0 || buttons.length > 0) {
+                const who = [
+                    ...(used.length > 0 ? [`las automatizaciones ${used.join(', ')}`] : []),
+                    ...(buttons.length > 0 ? [`los botones ${buttons.map((b) => `«${b}»`).join(', ')}`] : []),
+                ];
                 throw new ConflictException({
                     code: 'document_template_in_use',
-                    message: `La usan estas automatizaciones: ${used.join(', ')}. Sácala de ellas antes de borrarla.`,
-                    data: { status: 409, automations: used },
+                    message: `La usan ${who.join(' y ')}. Sácala de ahí antes de borrarla.`,
+                    data: { status: 409, automations: used, buttons },
                 });
             }
             // v0.1.290 — Los PDF congelados de sus documentos emitidos se van
@@ -366,6 +371,20 @@ export class DocumentsService {
             });
         };
         return rows.filter((r) => uses(r.actions)).map((r) => r.name);
+    }
+
+    /** Campo «Botón» — los botones de la lista cuyo «Generar un PDF» usa la plantilla. */
+    private async usedByButtonsInTx(tx: Tx, tenantId: number, listId: number, templateId: number): Promise<string[]> {
+        const rows = await tx
+            .select({ label: fieldsTable.label, config: fieldsTable.config })
+            .from(fieldsTable)
+            .where(and(eq(fieldsTable.tenantId, tenantId), eq(fieldsTable.listId, listId), eq(fieldsTable.type, 'button'), sql`${fieldsTable.deletedAt} IS NULL`));
+        return rows
+            .filter((r) => {
+                const actions = (r.config as { actions?: unknown } | null)?.actions;
+                return Array.isArray(actions) && actions.some((a) => (a as { type?: string })?.type === 'generate_pdf' && Number((a as { document_template_id?: unknown }).document_template_id) === templateId);
+            })
+            .map((r) => r.label);
     }
 
     private validDesign(raw: unknown): DocDesign {
