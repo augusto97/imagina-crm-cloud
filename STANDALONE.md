@@ -3483,6 +3483,38 @@ plantillas de documento, carpetas y conexiones siguen borrándose para siempre.
 Regla para quien toque estas tablas: una lectura por la conexión base debe
 filtrar lo borrado; una operación que necesita verlo usa el modo papelera.
 
+### ADR-S53 — Kanban para ventas: bundle del tablero y ajustes en la vista (v0.1.297)
+
+**Contexto.** El kanban traía hasta 200 registros por el listado plano y
+contaba en el navegador: con más tarjetas las cantidades mentían y no había
+totales por columna, que es lo primero que mira quien lleva un embudo de
+ventas.
+
+**Decisión.**
+1. Un endpoint propio, `GET /lists/:l/records/kanban-bundle`, devuelve en UNA
+   request columnas (orden del catálogo, «Sin valor» al final), carriles y
+   celdas con `{count, total, records, has_more}`. Los números salen de
+   `AggregateService.boardStats` (una consulta GROUPING SETS sobre lo que
+   coincide con la vista: filtros, búsqueda, ACL, primer nivel); las tarjetas,
+   de una ventana `row_number()` por celda con tope propio (`limits`) para
+   «Mostrar más» — sin offsets, así una tarjeta que se mueve no se duplica.
+   Topes: 25 por tanda, 500 por celda, 300 celdas cargadas, 100 columnas y 50
+   carriles.
+2. Los ajustes viven en `saved_views.config` (`kanban_*`, schema compartido):
+   límites y reglas como arrays `{column, …}` para que el re-mapeo por
+   convención (`*_field_id(s)`) no confunda claves con ids. Sin migración.
+3. Las reglas al mover son de interfaz: piden los campos vacíos al cambiar de
+   columna y escriben por el PATCH normal; el servidor no las conoce.
+4. Un carril oculto por ACL o un campo de total no numérico u oculto se
+   ignoran (el tablero carga); un `lane_by` explícito inválido es 400.
+5. Táctil: sin arrastre, «Mover a…» desde el menú de la tarjeta.
+
+**Consecuencias.** El tablero cuesta una request y tres consultas sin importar
+cuántas columnas o carriles tenga; sumar una métrica nueva es agregar una
+expresión en `boardStats`. Fuera de alcance: orden manual dentro de la columna,
+columnas por multi_select o fecha (una tarjeta en varias columnas rompe el
+arrastre) y notación compacta de montos.
+
 ---
 
-**Versión del documento:** 1.93.0 (papelera)
+**Versión del documento:** 1.94.0 (kanban para ventas)

@@ -8603,6 +8603,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         37/37 (aviso y Deshacer, restaurar, lista que vuelve con sus registros,
         campo con su valor, borrar para siempre, vaciar, oscuro y celular).
 
+  - [x] **Kanban para ventas (v0.1.297, ADR-S53, opción B5 del estudio)**:
+        el tablero dejaba de mentir con más de 200 tarjetas —traía las primeras
+        200 por el listado plano y contaba en el navegador, sin totales—. Ahora
+        sale de UN pedido nuevo (`GET /lists/:l/records/kanban-bundle`, tres
+        consultas) con columnas en el orden del campo, carriles opcionales y,
+        por columna, carril y celda, la cantidad y la SUMA o el PROMEDIO de un
+        campo numérico (moneda, número, porcentaje, duración, rollup o
+        calculado), calculados en el servidor sobre todo lo que coincide con la
+        vista —filtros, búsqueda, ACL, sólo primer nivel— (`boardStats`, una
+        consulta con GROUPING SETS), más el total del embudo arriba.
+        (a) **Carriles** por un segundo campo (selección, persona o casilla),
+        plegables, con su cantidad y total; arrastrar entre carriles cambia los
+        dos campos. (b) **Límite por columna** («45/40», marca la columna;
+        avisa y no bloquea). (c) **Reglas al mover**: por columna destino,
+        campos que se piden en un diálogo al soltar («Perdido» → «Motivo de
+        pérdida»; «Ganado» → «Fecha de cierre» y «Monto»); sólo los vacíos,
+        cancelar deja la tarjeta donde estaba y los valores se validan como
+        cualquier edición (el servidor no conoce las reglas). (d) **Tarjetas**
+        con campos en su formato real, portada (archivo o enlace de imagen) y
+        tamaño compacto o normal. (e) **Columnas** plegables y ocultables,
+        «Ocultar columnas vacías», «Sin valor» al final y en el orden de las
+        opciones. (f) Tarjetas de a 25 por celda con «Mostrar más» (tope propio
+        de esa celda en la misma ventana `row_number()`, sin offsets: una
+        tarjeta que se mueve no se duplica), lo actualizado hace poco primero si
+        la vista no ordena, cabecera fija y movimiento optimista que reubica la
+        tarjeta por su valor nuevo. Todo vive en la vista (`kanban_*` en el
+        schema compartido, sin migración) y se edita en «Configurar tablero» o
+        desde el menú de cada columna; quien no puede editar la vista pliega y
+        oculta sólo en su pantalla. Sin edición no se arrastra; el candado de la
+        tienda se respeta. En el teléfono, «Mover a…» y «Mover a carril…» desde
+        el menú de la tarjeta. El asistente/MCP acepta carriles, total, límites,
+        reglas, tarjeta y `hide_empty_columns` (columnas por valor o etiqueta);
+        plantillas y migrar empresa re-mapean los campos (y las columnas o
+        carriles por persona). **Bugs de paso**: una carrera entre el `dragover`
+        y el re-render ignoraba el drop o movía otra tarjeta (ref síncrono), y
+        guardar una vista kanban sólo ofrecía agrupar por selección (ahora
+        también por persona). 6 tests de API nuevos + 3 extendidos, 8 de shared
+        y 11 del front (suite de la API 1334 en verde) — E2E navegador 36/36
+        contra SQL (totales por columna, carril, celda y embudo; límite; regla
+        con cancelar; entre carriles; persistencia; búsqueda; celular; oscuro;
+        visor sin arrastre).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
