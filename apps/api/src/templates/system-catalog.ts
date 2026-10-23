@@ -1116,7 +1116,18 @@ const citas: SystemTemplate = {
             ],
             {
                 settings: { title_field_id: ref('cliente') },
-                views: [calendar('Agenda', 'fecha'), table('Tabla', true), kanban('Por estado', 'estado')],
+                // B4 — la agenda abre en la semana, cada cita dura lo que dice
+                // «Duración» y se pinta con el color de su estado.
+                views: [
+                    calendar('Agenda', 'fecha', {
+                        calendar_duration_field_id: ref('duracion'),
+                        calendar_default_mode: 'week',
+                        calendar_color_by: 'field',
+                        calendar_color_field_id: ref('estado'),
+                    }),
+                    table('Tabla', true),
+                    kanban('Por estado', 'estado'),
+                ],
                 automations: [
                     {
                         name: 'Recordatorio el día anterior',

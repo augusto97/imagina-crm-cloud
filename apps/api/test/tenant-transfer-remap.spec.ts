@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseViewConfig } from '@imagina-base/shared';
 import {
     emptyMaps,
     mapId,
@@ -135,6 +136,39 @@ describe('remapJson', () => {
             maps(),
         );
         expect(byUser).toEqual({ group_by_field_id: 111, kanban_wip_limits: [{ column: '131', limit: 3 }], kanban_hidden_columns: ['130'] });
+    });
+
+    it('B4 — calendario: fin, fuentes adicionales, campo de color y reglas por convención', () => {
+        const types = new Map<number, string>([[10, 'datetime'], [11, 'datetime'], [12, 'select']]);
+        const out = remapViewConfig(
+            {
+                date_field_id: 10,
+                calendar_end_field_id: 11,
+                calendar_color_field_id: 12,
+                calendar_sources: [
+                    { id: 's2', start_field_id: 11, end_field_id: 999, color: 'red' },
+                    { id: 's3', start_field_id: 999 },
+                ],
+                calendar_hidden_sources: ['s2'],
+                color_rules: [{ id: 'r1', condition: { type: 'condition', field_id: 12, op: 'eq', value: 'x' }, color: 'gray' }],
+            },
+            types,
+            maps(),
+        );
+        expect(out).toEqual({
+            date_field_id: 110,
+            calendar_end_field_id: 111,
+            calendar_color_field_id: 112,
+            // Un campo que no viajó queda en null: la lectura de la vista descarta esa fuente.
+            calendar_sources: [
+                { id: 's2', start_field_id: 111, end_field_id: null, color: 'red' },
+                { id: 's3', start_field_id: null },
+            ],
+            calendar_hidden_sources: ['s2'],
+            color_rules: [{ id: 'r1', condition: { type: 'condition', field_id: 112, op: 'eq', value: 'x' }, color: 'gray' }],
+        });
+        const cfg = parseViewConfig('calendar', out);
+        expect(cfg.calendar_sources).toEqual([{ id: 's2', start_field_id: 111, end_field_id: null, color: 'red' }]);
     });
 
     it('deja intactos los slugs y los valores que no son referencias', () => {
