@@ -54,6 +54,12 @@ export const formPendingSubmissions = pgTable(
         data: jsonb('data').$type<Record<string, unknown>>().notNull(),
         attachmentIds: jsonb('attachment_ids').$type<number[]>().notNull().default([]),
         ip: varchar('ip', { length: 64 }),
+        /**
+         * Autorización de tratamiento de datos aceptada al ENVIAR (versión,
+         * cuándo, IP, navegador, referencia del enlace de retiro): se registra al
+         * confirmar, con estos datos del envío original. null = no se pidió.
+         */
+        consent: jsonb('consent').$type<PendingConsent | null>(),
         expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     },
@@ -64,3 +70,15 @@ export const formPendingSubmissions = pgTable(
     ],
 );
 export type FormPendingRow = typeof formPendingSubmissions.$inferSelect;
+
+/** La autorización de datos que espera con una respuesta sin confirmar. */
+export interface PendingConsent {
+    version: number;
+    /** Huella del texto aceptado (casilla + texto + enlace). */
+    text_hash: string;
+    accepted_at: string;
+    ip: string | null;
+    user_agent: string | null;
+    /** Referencia del enlace de retiro que va en el correo de confirmación. */
+    withdraw_ref: string | null;
+}

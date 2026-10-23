@@ -10,6 +10,7 @@ import {
 
 import { documentKeys, issuedDocumentKeys } from '@/admin/documents/useDocuments';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
+import { recordDataConsentsKey } from '@/cloud/components/dataConsentText';
 import { api, cloudRecordsMeta, mapRecord, normalizeDates, primeFieldMap, type FieldKeyMap } from '@/lib/api';
 import type { RecordsQuery } from '@/types/record';
 
@@ -82,6 +83,8 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.documents) qc.setQueryData(documentKeys.forList(listId), normalizeDates(b.documents));
     if (b.issued_documents) qc.setQueryData(issuedDocumentKeys.forRecord(listId, recordId), normalizeDates(b.issued_documents));
     if (b.payments) qc.setQueryData(['record-payments', listId, recordId], b.payments);
+    // Ley 1581 — las autorizaciones de datos del registro (línea de la ficha).
+    if (b.data_consents) qc.setQueryData(recordDataConsentsKey(listId, recordId), b.data_consents);
     if (b.relation_paths) qc.setQueryData(['relation-paths', lid], b.relation_paths);
     // v0.1.291 — registro de tiempo: viaja en el mismo bundle (sin otra request).
     if (b.time) qc.setQueryData(timeKeys.forRecord(lid, recordId), b.time);

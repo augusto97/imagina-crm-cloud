@@ -85,6 +85,8 @@ import {
     documentTemplates,
     forms,
     formPendingSubmissions,
+    dataConsents,
+    dataConsentVersions,
     portalCredentials,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
@@ -390,6 +392,10 @@ export class PlatformService {
             // v0.1.266 — plantillas de documentos PDF.
             await tx.delete(documentNumbers).where(eq(documentNumbers.tenantId, id));
             await tx.delete(documentTemplates).where(eq(documentTemplates.tenantId, id));
+            // Autorizaciones de datos (Ley 1581): la evidencia y sus versiones
+            // (antes que formularios/registros/listas, que la referencian).
+            await tx.delete(dataConsents).where(eq(dataConsents.tenantId, id));
+            await tx.delete(dataConsentVersions).where(eq(dataConsentVersions.tenantId, id));
             // v0.1.275 — formularios públicos. v0.1.289 — y sus respuestas sin
             // confirmar (antes que el formulario: la FK las ata a él).
             await tx.delete(formPendingSubmissions).where(eq(formPendingSubmissions.tenantId, id));

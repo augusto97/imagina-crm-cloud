@@ -1,6 +1,7 @@
 import { Bell, Mail } from 'lucide-react';
 import { NOTIFICATION_KIND_LABELS, NOTIFICATION_KINDS, type NotificationKind } from '@imagina-base/shared';
 
+import { activeMembership } from '@/cloud/session';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
@@ -23,6 +24,8 @@ export function NotificationPrefsCard(): JSX.Element {
     const toast = useToast();
     const p = prefs.data;
     const tz = getTenantTimeZone() ?? browserTimeZone() ?? 'UTC';
+    // Ley 1581 — el retiro de una autorización de datos sólo les llega a los admins.
+    const kinds = activeMembership()?.role === 'admin' ? NOTIFICATION_KINDS : NOTIFICATION_KINDS.filter((k) => k !== 'consent');
 
     const save = (patch: Parameters<typeof update.mutate>[0]): void =>
         update.mutate(patch, {
@@ -49,7 +52,7 @@ export function NotificationPrefsCard(): JSX.Element {
                                 <Mail className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                                 {__('Por correo, en el momento')}
                             </p>
-                            {NOTIFICATION_KINDS.map((k: NotificationKind) => (
+                            {kinds.map((k: NotificationKind) => (
                                 <label key={k} className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-md imcrm-px-2 imcrm-py-2 hover:imcrm-bg-accent/50">
                                     <span className="imcrm-text-sm">{__(NOTIFICATION_KIND_LABELS[k])}</span>
                                     <input

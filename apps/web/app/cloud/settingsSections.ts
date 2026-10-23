@@ -12,6 +12,7 @@ import {
     DatabaseZap,
     Plug,
     PenLine,
+    Scale,
     Sparkles,
     SunMoon,
     Trash2,
@@ -36,6 +37,7 @@ export type SettingsSectionId =
     | 'formato'
     | 'correo'
     | 'portal'
+    | 'privacidad'
     | 'almacenamiento'
     | 'conectores'
     | 'problemas'
@@ -76,6 +78,8 @@ export function settingsSectionGroups({
                           { id: 'correo', label: 'Correo', icon: Mail },
                           // v0.1.289 — entrar al portal con contraseña y captcha de formularios.
                           { id: 'portal', label: 'Portal y formularios', icon: DoorOpen },
+                          // Ley 1581 — autorización de tratamiento de datos (formularios y portal).
+                          { id: 'privacidad', label: 'Datos personales', icon: Scale },
                           // v0.1.268 (ADR-S36) — archivos en el bucket propio de la empresa.
                           { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive },
                           // v0.1.181 — asistente IA (ADR-S21): opt-in, clave propia, modelo.

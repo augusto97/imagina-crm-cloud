@@ -3,6 +3,7 @@ import { activitySchema } from './activity';
 import { recordPaymentsSchema } from './collections';
 import { commentSchema } from './comment';
 import { idSchema } from './common';
+import type { RecordDataConsentDto } from './data-consent';
 import { documentTemplateSummarySchema, issuedDocumentSchema } from './document-design';
 import { fieldSchema } from './field';
 import { listSchema } from './list';
@@ -84,5 +85,11 @@ export const recordViewBundleSchema = z.object({
      * últimas entradas y el cronómetro en curso de quien mira).
      */
     time: recordTimeSchema.nullable().default(null),
+    /**
+     * Autorizaciones de tratamiento de datos (Ley 1581) ligadas al registro:
+     * la que se dio en el formulario que lo creó y las del portal de sus
+     * clientes. null = no se pudo leer (la ficha la pide por su cuenta).
+     */
+    data_consents: z.array(z.custom<RecordDataConsentDto>()).nullable().default(null),
 });
 export type RecordViewBundle = z.infer<typeof recordViewBundleSchema>;

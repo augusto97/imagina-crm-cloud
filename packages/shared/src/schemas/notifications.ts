@@ -21,7 +21,11 @@ import { idSchema } from './common';
  * v0.1.291 — `reply`: alguien respondió en un hilo de comentarios donde la
  * persona escribió (el comentario raíz o una respuesta).
  */
-export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply'] as const;
+/**
+ * `consent`: un titular retiró su autorización de tratamiento de datos (Ley
+ * 1581) desde el enlace del correo o desde el portal. Sólo a los admins.
+ */
+export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply', 'consent'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
@@ -32,6 +36,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     reminder: 'Tus recordatorios',
     failure: 'Algo dejó de funcionar (automatizaciones, correo, conectores)',
     reply: 'Responden a tus comentarios',
+    consent: 'Alguien retira su autorización de datos personales (sólo admins)',
 };
 
 export interface NotificationDto {
@@ -89,6 +94,8 @@ export const notificationPrefsSchema = z.object({
             failure: z.boolean().default(true),
             /** v0.1.291 — una respuesta a lo que escribiste es directa, como una mención. */
             reply: z.boolean().default(true),
+            /** Un retiro de autorización de datos obliga a la empresa a actuar: encendido. */
+            consent: z.boolean().default(true),
         })
         .default({}),
     /**
@@ -115,6 +122,7 @@ export const updateNotificationPrefsSchema = z
                 reminder: z.boolean(),
                 failure: z.boolean(),
                 reply: z.boolean(),
+                consent: z.boolean(),
             })
             .partial(),
         digest: z.enum(['off', 'daily']),

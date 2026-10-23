@@ -47,6 +47,8 @@ import {
     commentReactions,
     comments,
     connections,
+    dataConsents,
+    dataConsentVersions,
     connectionSyncs,
     sqlSyncs,
     dashboards,
@@ -286,6 +288,9 @@ export class TenantTransferService {
             await dump('document_numbers', await this.byTenant(documentNumbers, tenantId, liveRecord(documentNumbers.recordId)));
             // v0.1.275 — formularios públicos (el diseño apunta a campos por id).
             await dump('forms', await this.byTenant(forms, tenantId, liveList(forms.listId)));
+            // Autorización de tratamiento de datos (Ley 1581): las versiones
+            // del texto (la evidencia va abajo, por páginas).
+            await dump('data_consent_versions', await this.byTenant(dataConsentVersions, tenantId));
             await dump('saved_filters', await this.byTenant(savedFilters, tenantId, liveList(savedFilters.listId)));
             await dump('automations', await this.byTenant(automations, tenantId, sql`${automations.deletedAt} IS NULL`));
             // v0.1.288 — historial de versiones (fotos sin secretos).
@@ -330,6 +335,10 @@ export class TenantTransferService {
             );
             counts.time_entries = await this.dumpPaged(work, 'time_entries', timeEntries, tenantId, liveRecord(timeEntries.recordId));
             counts.activity = await this.dumpPaged(work, 'activity', activity, tenantId, and(liveList(activity.listId), liveRecord(activity.recordId)));
+            // La EVIDENCIA de cada autorización de datos: es prueba legal de la
+            // empresa (la tiene que conservar), así que viaja con ella — también
+            // la de registros en la papelera (su referencia queda en blanco).
+            counts.data_consents = await this.dumpPaged(work, 'data_consents', dataConsents, tenantId);
             counts.audit_log = await this.dumpPaged(work, 'audit_log', auditLog, tenantId);
             counts.automation_runs = input.include_runs
                 ? await this.dumpPaged(work, 'automation_runs', automationRuns, tenantId, liveAutomation(automationRuns.automationId))
@@ -989,6 +998,58 @@ export class TenantTransferService {
             (f) => maps.list.has(Number(f.listId)),
         );
 
+        // 7d. Autorización de tratamiento de datos (Ley 1581). Las versiones y
+        //     la EVIDENCIA de cada aceptación viajan: son la prueba que la
+        //     empresa tiene que conservar. El número de versión se conserva
+        //     (`settings.data_consent.current_version` apunta a él) y cada
+        //     referencia (formulario, lista, registro, persona) se traduce; la
+        //     que no viajó queda en NULL, igual que si se hubiera borrado. El
+        //     enlace para retirarla que ya se mandó por correo NO: apunta al
+        //     servidor de origen y lleva su firma.
+        counts.data_consent_versions = await this.insertPlain(tx, rows('data_consent_versions'), dataConsentVersions, (v) => {
+            const version = Number(v.version);
+            if (!Number.isInteger(version) || version <= 0) return null;
+            return {
+                tenantId,
+                version,
+                text: String(v.text ?? ''),
+                checkboxLabel: String(v.checkboxLabel ?? ''),
+                policyUrl: (v.policyUrl as string | null) ?? null,
+                textHash: String(v.textHash ?? ''),
+                createdBy: mapId(maps.user, v.createdBy),
+                createdAt: this.date(v.createdAt) ?? new Date(),
+            };
+        });
+        counts.data_consents = await this.insertPlain(tx, rows('data_consents'), dataConsents, (c) => {
+            const version = Number(c.version);
+            if (!Number.isInteger(version) || version <= 0) return null;
+            const str = (v: unknown, max: number): string | null => (typeof v === 'string' && v !== '' ? v.slice(0, max) : null);
+            return {
+                tenantId,
+                version,
+                textHash: String(c.textHash ?? ''),
+                source: c.source === 'portal' ? 'portal' : 'form',
+                sourceLabel: String(c.sourceLabel ?? '').slice(0, 300),
+                formId: mapId(maps.form, c.formId),
+                listId: mapId(maps.list, c.listId),
+                recordId: mapId(maps.record, c.recordId),
+                userId: mapId(maps.user, c.userId),
+                subjectEmail: str(c.subjectEmail, 320),
+                subjectName: str(c.subjectName, 300),
+                acceptedAt: this.date(c.acceptedAt) ?? new Date(),
+                ip: str(c.ip, 64),
+                userAgent: str(c.userAgent, 400),
+                withdrawRef: null,
+                withdrawnAt: this.date(c.withdrawnAt),
+                withdrawnVia: str(c.withdrawnVia, 12),
+                withdrawnIp: str(c.withdrawnIp, 64),
+                withdrawnUserAgent: str(c.withdrawnUserAgent, 400),
+                withdrawnBy: mapId(maps.user, c.withdrawnBy),
+                withdrawnNote: str(c.withdrawnNote, 500),
+                createdAt: this.date(c.createdAt) ?? new Date(),
+            };
+        });
+
         // 8. Automatizaciones (+ URL nueva del webhook entrante).
         const autoRows = await this.readAll(rows('automations'));
         const autoMap = new Map<number, number>();
@@ -1371,6 +1432,11 @@ export class TenantTransferService {
         if ((counts.dashboard_subscriptions ?? 0) > 0) {
             warnings.push(
                 `${counts.dashboard_subscriptions} envío(s) programado(s) de tableros llegaron PAUSADOS (para no duplicar correos con el servidor anterior): actívalos en cada tablero → Compartir → Envío por correo.`,
+            );
+        }
+        if ((counts.data_consents ?? 0) > 0) {
+            warnings.push(
+                `${counts.data_consents} autorización(es) de tratamiento de datos viajaron como evidencia. Los enlaces para retirarlas que ya se mandaron por correo apuntan al servidor anterior: si un titular pide el retiro, regístralo en Ajustes → Datos personales.`,
             );
         }
         if (formRows.length > 0) {

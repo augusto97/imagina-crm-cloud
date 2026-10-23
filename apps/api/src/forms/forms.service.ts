@@ -39,6 +39,7 @@ import {
     formatEmailFieldValue,
     formFileAllowed,
     resolveTimeZone,
+    resolveTitleFieldId,
     zonedInstant,
     type FormFieldItem,
 } from '@imagina-base/shared';
@@ -46,7 +47,8 @@ import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, formPendingSubmissions, forms, lists, tenants, type FormPendingRow, type FormRow } from '../db/schema';
+import { attachments, formPendingSubmissions, forms, lists, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
+import { DataConsentService, newWithdrawRef } from '../data-consent/data-consent.service';
 import { DomainsService } from '../domains/domains.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -124,6 +126,26 @@ function hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * La autorización de tratamiento de datos (Ley 1581) aceptada con una
+ * respuesta: qué versión del texto y desde dónde. Se registra como evidencia
+ * ANTES de crear el registro (nunca hay datos guardados sin su prueba).
+ */
+interface AcceptedConsent {
+    version: number;
+    textHash: string;
+    acceptedAt: Date;
+    ip: string | null;
+    userAgent: string | null;
+    /** Enlace de retiro ya mandado por correo (respuesta confirmada por correo). */
+    withdrawRef?: string | null;
+}
+
+/** Mensaje junto a la casilla cuando no se marcó. */
+const CONSENT_REQUIRED_MESSAGE = 'Para enviar, acepta la autorización para el tratamiento de tus datos personales.';
+/** Clave del error de la casilla (no choca con un id de ítem: esos no llevan «_»). */
+export const CONSENT_ERROR_KEY = '__consent';
+
 /** Resultado del enlace de confirmación (lo dibuja el controller con la marca). */
 export interface ConfirmOutcome {
     status: 'confirmed' | 'invalid' | 'closed' | 'failed';
@@ -181,6 +203,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.289 — verificación anti-robots y correos a quien responde.
         @Optional() private readonly captcha?: CaptchaService,
         @Optional() private readonly mail?: MailService,
+        // Autorización de tratamiento de datos personales (Ley 1581).
+        @Optional() private readonly dataConsent?: DataConsentService,
     ) {}
 
     onModuleInit(): void {
@@ -419,6 +443,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const format = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
         const ts = Date.now();
         const keys = config.settings.captcha && this.captcha ? await this.captcha.resolve(row.tenantId, f.tenantSettings) : null;
+        const consent = await this.consentFor(f);
         return {
             title: config.settings.title || row.name,
             description: config.settings.description,
@@ -441,7 +466,17 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             max_upload_bytes: this.env.MAX_UPLOAD_BYTES,
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             confirm_email: config.settings.confirm_email,
+            data_consent: consent ? DataConsentService.toPublic(consent) : null,
         };
+    }
+
+    /**
+     * La autorización de datos que pide ESTE formulario: la versión vigente de
+     * la empresa, si la empresa la activó y el formulario no la apagó.
+     */
+    private async consentFor(f: ResolvedForm) {
+        if (!this.dataConsent || !f.config.settings.data_consent) return null;
+        return this.dataConsent.active(f.row.tenantId, f.tenantSettings);
     }
 
     /**
@@ -509,7 +544,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     }
 
     /** Recibe una respuesta: valida, crea el registro y avisa a las automatizaciones. */
-    async submit(token: string, ip: string, input: SubmitFormInput): Promise<SubmitFormResult> {
+    async submit(token: string, ip: string, input: SubmitFormInput, meta: { userAgent?: string | null } = {}): Promise<SubmitFormResult> {
         const f = await this.resolve(token);
         const closed = this.closedReason(f);
         if (closed) throw new ForbiddenException({ code: 'form_closed', message: closed, data: { status: 403 } });
@@ -534,6 +569,10 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const item = f.config.items.find((i) => i.type === 'field' && i.field_id === s.respondent_email_field_id);
             if (item && !errors[item.id]) errors[item.id] = 'Necesitamos tu correo para confirmar la respuesta.';
         }
+        // Ley 1581: sin la casilla marcada no se recibe nada. Lo decide el
+        // servidor (la casilla del navegador es sólo la pantalla).
+        const consent = await this.consentFor(f);
+        if (consent && input.consent !== true) errors[CONSENT_ERROR_KEY] = CONSENT_REQUIRED_MESSAGE;
         if (Object.keys(errors).length > 0) {
             throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors });
         }
@@ -542,12 +581,24 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // respuestas: un dato mal escrito no le quema el token a la persona.
         await this.checkCaptcha(f, input.captcha, ip);
 
+        // La versión que la persona VIO (la página pudo cargarse antes de un
+        // cambio del texto), con cuándo y desde dónde la aceptó.
+        const accepted: AcceptedConsent | null =
+            consent && this.dataConsent
+                ? {
+                      ...(await this.dataConsent.acceptedVersion(f.row.tenantId, input.consent_version, consent)),
+                      acceptedAt: new Date(),
+                      ip: ip || null,
+                      userAgent: meta.userAgent ?? null,
+                  }
+                : null;
+
         if (s.confirm_email && respondentEmail) {
-            return this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip);
+            return this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted);
         }
 
-        await this.finalize(f, fields, data, attachmentIds);
-        if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip);
+        const created = await this.finalize(f, fields, data, attachmentIds, accepted);
+        if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
         return { ok: true, redirect_url: f.config.settings.redirect_url };
     }
 
@@ -561,7 +612,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         fields: Field[],
         data: Record<string, unknown>,
         attachmentIds: number[],
-    ): Promise<{ id: number; data: Record<string, unknown> }> {
+        consent: AcceptedConsent | null = null,
+    ): Promise<{ id: number; data: Record<string, unknown>; withdrawRef: string | null }> {
         // Cupo: se RESERVA el lugar antes de crear el registro con un UPDATE
         // condicional (antes se contaba y se sumaba después: dos envíos a la
         // vez pasaban los dos el último lugar).
@@ -569,11 +621,44 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             throw new ForbiddenException({ code: 'form_closed', message: f.config.settings.closed_message, data: { status: 403 } });
         }
 
+        // Ley 1581 — la prueba de la autorización se guarda ANTES que los
+        // datos: si después el registro no se puede crear, se descarta.
+        let evidence: { id: number; withdrawRef: string | null } | null = null;
+        if (consent && this.dataConsent) {
+            try {
+                evidence = await this.dataConsent.recordForm(f.row.tenantId, {
+                    version: consent.version,
+                    textHash: consent.textHash,
+                    formId: f.row.id,
+                    formName: f.config.settings.title || f.row.name,
+                    listId: f.row.listId,
+                    recordId: null,
+                    ...(await this.subjectOf(f, fields, data)),
+                    acceptedAt: consent.acceptedAt,
+                    ip: consent.ip,
+                    userAgent: consent.userAgent,
+                    ...(consent.withdrawRef !== undefined ? { withdrawRef: consent.withdrawRef } : {}),
+                });
+            } catch (err) {
+                await this.releaseSlot(f);
+                this.logger.warn(`Formulario ${f.row.id}: no se pudo guardar la autorización de datos: ${err instanceof Error ? err.message : String(err)}`);
+                throw new HttpException(
+                    {
+                        code: 'form_unavailable',
+                        message: 'No pudimos recibir tu respuesta en este momento. Prueba de nuevo más tarde.',
+                        data: { status: 503 },
+                    },
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                );
+            }
+        }
+
         let created;
         try {
             created = await this.records.create(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), { data });
         } catch (err) {
             await this.releaseSlot(f);
+            if (evidence && this.dataConsent) await this.dataConsent.discard(f.row.tenantId, evidence.id);
             // Lo que el visitante puede corregir (un dato inválido) vuelve con
             // su motivo; lo demás —el plan lleno, un campo obligatorio de la
             // lista que el formulario no pregunta— es de la empresa, no de él.
@@ -607,6 +692,12 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         }
 
         this.incidents?.resolve(f.row.tenantId, `form:${f.row.id}`);
+        if (evidence && this.dataConsent) {
+            const ev = evidence;
+            await this.dataConsent.linkRecord(f.row.tenantId, ev.id, created.id).catch((err: unknown) =>
+                this.logger.warn(`Formulario ${f.row.id}: la autorización ${ev.id} no quedó atada al registro: ${String(err)}`),
+            );
+        }
         if (attachmentIds.length > 0) {
             await this.redis
                 .zrem(PENDING_UPLOADS_KEY, ...attachmentIds.map((id) => `${f.row.tenantId}:${id}`))
@@ -629,7 +720,34 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             after: created.data,
             form: { id: f.row.id, name: f.row.name },
         });
-        return { id: created.id, data: created.data };
+        return { id: created.id, data: created.data, withdrawRef: evidence?.withdrawRef ?? null };
+    }
+
+    /**
+     * Quién es el titular de una respuesta (snapshot para la evidencia): el
+     * correo de quien responde (o la primera pregunta de correo) y el título
+     * del registro.
+     */
+    private async subjectOf(f: ResolvedForm, fields: Field[], data: Record<string, unknown>): Promise<{ email: string | null; name: string | null }> {
+        const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
+        const s = f.config.settings;
+        let email = s.respondent_email_field_id !== null ? str(data[jsonbKeyForField(s.respondent_email_field_id)]) : null;
+        if (!email) {
+            for (const field of fields) {
+                if (field.type !== 'email') continue;
+                email = str(data[jsonbKeyForField(field.id)]);
+                if (email) break;
+            }
+        }
+        let name: string | null = null;
+        try {
+            const list = await this.lists.get(f.row.tenantId, String(f.row.listId));
+            const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
+            if (titleId !== null) name = str(data[jsonbKeyForField(titleId)]);
+        } catch {
+            name = null;
+        }
+        return { email, name };
     }
 
     // ─────────────────── Captcha (v0.1.289) ───────────────────
@@ -694,6 +812,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         attachmentIds: number[],
         email: string,
         ip: string,
+        consent: AcceptedConsent | null = null,
     ): Promise<SubmitFormResult> {
         if (!this.mail) {
             throw new HttpException(
@@ -712,6 +831,19 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             );
         }
         const token = randomBytes(24).toString('base64url');
+        // La autorización aceptada al ENVIAR espera con la respuesta y se
+        // registra al confirmar (con estos datos). Su enlace de retiro ya va
+        // en el correo: retirarla antes de confirmar descarta la respuesta.
+        const pendingConsent: PendingConsent | null = consent
+            ? {
+                  version: consent.version,
+                  text_hash: consent.textHash,
+                  accepted_at: consent.acceptedAt.toISOString(),
+                  ip: consent.ip,
+                  user_agent: consent.userAgent?.slice(0, 400) ?? null,
+                  withdraw_ref: newWithdrawRef(),
+              }
+            : null;
         const [pending] = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
             tx
                 .insert(formPendingSubmissions)
@@ -723,6 +855,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     data,
                     attachmentIds,
                     ip: ip.slice(0, 64),
+                    consent: pendingConsent,
                     expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
                 })
                 .returning({ id: formPendingSubmissions.id }),
@@ -739,6 +872,10 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const brand = await this.emailBrand(f, base);
         const message = formConfirmEmail(brand, `${base}/api/v1/public/f/confirm/${token}`, {
             formTitle: f.config.settings.title || f.row.name,
+            withdrawUrl:
+                pendingConsent?.withdraw_ref && this.dataConsent
+                    ? this.dataConsent.withdrawUrl(base, f.row.tenantId, pendingConsent.withdraw_ref)
+                    : null,
         });
         try {
             await this.mail.sendNow({
@@ -834,8 +971,21 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         }
         const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
         const attachmentIds = (pending.attachmentIds ?? []).filter((n) => Number.isInteger(n) && n > 0);
+        // La autorización se registra AHORA, con los datos del envío original.
+        const pc = pending.consent ?? null;
+        const accepted: AcceptedConsent | null = pc
+            ? {
+                  version: pc.version,
+                  textHash: pc.text_hash,
+                  acceptedAt: new Date(pc.accepted_at),
+                  ip: pc.ip,
+                  userAgent: pc.user_agent,
+                  withdrawRef: pc.withdraw_ref,
+              }
+            : null;
+        let withdrawRef: string | null = null;
         try {
-            await this.finalize(f, fields, pending.data, attachmentIds);
+            withdrawRef = (await this.finalize(f, fields, pending.data, attachmentIds, accepted)).withdrawRef;
         } catch (err) {
             if (err instanceof ForbiddenException) {
                 await this.discardFiles(pending);
@@ -854,6 +1004,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     data: pending.data,
                     attachmentIds: pending.attachmentIds,
                     ip: pending.ip,
+                    consent: pending.consent,
                     expiresAt: pending.expiresAt,
                 })
                 .onConflictDoNothing()
@@ -866,7 +1017,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 continueUrl: null,
             };
         }
-        if (f.config.settings.send_copy) this.sendCopyLater(f, fields, pending.data, pending.email, pending.ip ?? '');
+        if (f.config.settings.send_copy) this.sendCopyLater(f, fields, pending.data, pending.email, pending.ip ?? '', withdrawRef);
         return {
             status: 'confirmed',
             title: '¡Listo! Tu respuesta quedó confirmada',
@@ -893,6 +1044,21 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             .returning();
         for (const p of doomed) await this.discardFiles(p);
         return doomed.length;
+    }
+
+    /**
+     * El titular retiró su autorización de datos ANTES de confirmar la
+     * respuesta (enlace del correo): la respuesta se descarta con sus
+     * archivos — sin autorización no se guarda nada.
+     */
+    async discardPending(tenantId: number, pendingId: number): Promise<void> {
+        const gone = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .delete(formPendingSubmissions)
+                .where(and(eq(formPendingSubmissions.tenantId, tenantId), eq(formPendingSubmissions.id, pendingId)))
+                .returning(),
+        );
+        for (const p of gone) await this.discardFiles(p);
     }
 
     private async discardFiles(p: Pick<FormPendingRow, 'tenantId' | 'attachmentIds'>): Promise<void> {
@@ -953,19 +1119,37 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * Copia de las respuestas a quien respondió. No demora la respuesta del
      * envío ni la tumba si el correo falla: es una cortesía.
      */
-    private sendCopyLater(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, email: string, ip: string): void {
-        void this.sendCopy(f, fields, data, email, ip).catch((err: unknown) =>
+    private sendCopyLater(
+        f: ResolvedForm,
+        fields: Field[],
+        data: Record<string, unknown>,
+        email: string,
+        ip: string,
+        withdrawRef: string | null = null,
+    ): void {
+        void this.sendCopy(f, fields, data, email, ip, withdrawRef).catch((err: unknown) =>
             this.logger.warn(`Formulario ${f.row.id}: la copia a ${maskEmail(email)} no salió: ${err instanceof Error ? err.message : String(err)}`),
         );
     }
 
-    private async sendCopy(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, email: string, ip: string): Promise<boolean> {
+    private async sendCopy(
+        f: ResolvedForm,
+        fields: Field[],
+        data: Record<string, unknown>,
+        email: string,
+        ip: string,
+        withdrawRef: string | null = null,
+    ): Promise<boolean> {
         if (!this.mail) return false;
         if (!(await this.allowRespondentMail(email, ip))) return false;
         const answers = await this.answerLines(f, fields, data);
         const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
         const brand = await this.emailBrand(f, base);
-        const message = formCopyEmail(brand, { formTitle: f.config.settings.title || f.row.name, answers });
+        const message = formCopyEmail(brand, {
+            formTitle: f.config.settings.title || f.row.name,
+            answers,
+            withdrawUrl: withdrawRef && this.dataConsent ? this.dataConsent.withdrawUrl(base, f.row.tenantId, withdrawRef) : null,
+        });
         await this.mail.sendNow({
             tenantId: f.row.tenantId,
             to: email,

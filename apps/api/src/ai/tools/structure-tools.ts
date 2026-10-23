@@ -87,6 +87,7 @@ import { BlueprintService } from '../../templates/blueprint.service';
 import { ViewsService } from '../../views/views.service';
 import { isNumericComputed } from '../../records/computed-sql';
 import { FormsService } from '../../forms/forms.service';
+import { DataConsentService } from '../../data-consent/data-consent.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -505,6 +506,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly documents?: DocumentsService,
         // v0.1.275 — formularios públicos (el trigger form_submitted).
         @Optional() private readonly forms?: FormsService,
+        // Autorización de tratamiento de datos (Ley 1581): si los formularios la piden.
+        @Optional() private readonly dataConsent?: DataConsentService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -886,6 +889,8 @@ export class StructureTools implements AiProposalApplier {
             ? await this.documents.list(ctx.tenantId, String(list.id)).catch(() => [])
             : [];
         const listForms = this.forms ? await this.forms.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
+        // ¿La empresa pide la autorización de datos? (versión vigente o null).
+        const consent = this.dataConsent && listForms.length > 0 ? await this.dataConsent.active(ctx.tenantId).catch(() => null) : null;
         const allLists = await this.lists.list(ctx.tenantId);
         const listById = new Map(allLists.map((l) => [l.id, l]));
         const fieldById = new Map(fields.map((f) => [f.id, f]));
@@ -986,6 +991,9 @@ export class StructureTools implements AiProposalApplier {
                         respondent_email_field: emailField?.slug ?? null,
                         confirm_email: st.confirm_email && emailField !== undefined,
                         send_copy: st.send_copy && emailField !== undefined,
+                        // Pide la casilla de autorización de tratamiento de datos
+                        // (Ley 1581): la empresa la activó y el formulario no la apagó.
+                        asks_data_consent: st.data_consent && consent !== null,
                     };
                 }),
                 connectors: connections

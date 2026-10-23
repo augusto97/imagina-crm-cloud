@@ -36,6 +36,7 @@ export * from './billing-payments';
 export * from './collections';
 export * from './document-templates';
 export * from './forms';
+export * from './data-consents';
 export * from './notifications';
 export * from './incidents';
 export * from './comment-reactions';

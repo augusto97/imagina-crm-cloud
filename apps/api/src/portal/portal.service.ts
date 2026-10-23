@@ -54,6 +54,7 @@ import {
     type PortalUpdateMeInput,
     type PortalCommentDto,
     type PortalCreatableList,
+    type PortalConsentDto,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -64,6 +65,7 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import { SessionService } from '../auth/session.service';
 import { CollectionsService } from '../collections/collections.service';
 import { CommentsRepository } from '../comments/comments.repository';
+import { DataConsentService } from '../data-consent/data-consent.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { DocumentsService } from '../documents/documents.service';
@@ -190,6 +192,8 @@ export class PortalService implements OnModuleInit {
         @Optional() private readonly records_?: RecordsService,
         // v0.1.289 — el bloque «Pagos»: links de pago del cliente y «Pagar».
         @Optional() private readonly collections?: CollectionsService,
+        // Ley 1581 — sin aceptar la autorización de datos, el portal no se usa.
+        @Optional() private readonly dataConsent?: DataConsentService,
     ) {}
 
     onModuleInit(): void {
@@ -945,7 +949,19 @@ export class PortalService implements OnModuleInit {
         return { buffer: doc.buffer, filename: doc.filename };
     }
 
+    /**
+     * El acceso de la sesión, y que el cliente haya aceptado la autorización
+     * de tratamiento de datos vigente si la empresa la pide en el portal
+     * (Ley 1581). Sin aceptarla: `403 consent_required` en TODO lo del portal
+     * salvo ver/aceptar/retirar la autorización y salir.
+     */
     private async requireLink(actor: PortalActor) {
+        const link = await this.resolveLink(actor);
+        await this.dataConsent?.assertPortalConsent(link.tenantId, actor.userId);
+        return link;
+    }
+
+    private async resolveLink(actor: PortalActor) {
         const notLinked = () =>
             new NotFoundException({
                 code: 'portal_not_linked',
@@ -1007,6 +1023,38 @@ export class PortalService implements OnModuleInit {
             if (!(await this.portalSwitchedOff(link.tenantId, link.listId))) return link;
         }
         throw disabled();
+    }
+
+    // ─────────── Autorización de tratamiento de datos (Ley 1581) ───────────
+
+    /** El estado de la autorización del cliente (lo pide la pantalla de aceptarla). */
+    async consentStatus(actor: PortalActor): Promise<PortalConsentDto> {
+        const link = await this.resolveLink(actor);
+        return this.dataConsent
+            ? this.dataConsent.portalDto(link.tenantId, actor.userId)
+            : {
+                  status: 'not_required',
+                  consent: null,
+                  company: '',
+                  branding: { primary_color: null, app_name: null, logo_url: null },
+                  accepted_at: null,
+                  accepted_version: null,
+                  withdrawn_at: null,
+              };
+    }
+
+    /** El cliente acepta la versión vigente (queda la evidencia con su IP y navegador). */
+    async acceptConsent(actor: PortalActor, version: number, meta: { ip: string | null; userAgent: string | null }): Promise<PortalConsentDto> {
+        const link = await this.resolveLink(actor);
+        if (!this.dataConsent) return this.consentStatus(actor);
+        return this.dataConsent.portalAccept(link.tenantId, actor.userId, { listId: link.listId, recordId: link.recordId }, version, meta);
+    }
+
+    /** El cliente retira su autorización: el portal se bloquea hasta que la acepte de nuevo. */
+    async withdrawConsent(actor: PortalActor, meta: { ip: string | null; userAgent: string | null }): Promise<PortalConsentDto> {
+        const link = await this.resolveLink(actor);
+        if (!this.dataConsent) return this.consentStatus(actor);
+        return this.dataConsent.portalWithdraw(link.tenantId, actor.userId, meta);
     }
 
     /**
@@ -1751,8 +1799,11 @@ export class PortalService implements OnModuleInit {
      * portal pedía /me y después /accounts y /me/comments en cascada.
      */
     async me(actor: PortalActor): Promise<PortalBoot> {
-        const link = await this.requireLink(actor);
-        const { boot, ctx } = await this.bootWithinTenant(actor.userId, link);
+        const link = await this.resolveLink(actor);
+        // Ley 1581 — sin la autorización vigente aceptada, el portal no arranca.
+        const consent = (await this.dataConsent?.assertPortalConsent(link.tenantId, actor.userId)) ?? null;
+        const { boot: rawBoot, ctx } = await this.bootWithinTenant(actor.userId, link);
+        const boot: PortalBoot = { ...rawBoot, data_consent: consent };
         const [accounts, comments] = await Promise.all([
             this.accounts(actor, link),
             ctx.conversation.comments
@@ -2322,6 +2373,7 @@ export class PortalService implements OnModuleInit {
                     // v0.1.289 — «Crear / cambiar contraseña» en su menú.
                     password: await this.passwordStatus(tx, link.tenantId, userId, (tenantRow?.settings ?? {}) as Record<string, unknown>),
                     payments: {},
+                    data_consent: null,
                 },
             };
         });

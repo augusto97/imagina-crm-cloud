@@ -9,6 +9,7 @@ import {
     ParseIntPipe,
     Patch,
     Post,
+    Optional,
     Query,
     Req,
     Res,
@@ -20,6 +21,7 @@ import {
     updateFormSchema,
     type CaptchaAvailability,
     type CreateFormInput,
+    type FormDataConsentAvailability,
     type FormDto,
     type FormUploadResult,
     type PublicFormMeta,
@@ -35,6 +37,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ListsService } from '../lists/lists.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { DataConsentService } from '../data-consent/data-consent.service';
 import { CaptchaService } from './captcha.service';
 import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, newNonce, renderFormNoticePage, renderFormPage } from './form-page';
 import { FormsService, type ConfirmOutcome } from './forms.service';
@@ -52,6 +55,7 @@ export class FormsController {
         private readonly lists: ListsService,
         private readonly audit: AuditService,
         private readonly captcha: CaptchaService,
+        @Optional() private readonly dataConsent?: DataConsentService,
     ) {}
 
     @Get()
@@ -69,6 +73,17 @@ export class FormsController {
     @RequireCapability('manage_lists')
     captchaAvailability(@Req() req: FastifyRequest): Promise<CaptchaAvailability> {
         return this.captcha.availability(req.tenant!.tenantId, req.tenant!.role);
+    }
+
+    /**
+     * ¿Los formularios de esta empresa piden la autorización de tratamiento de
+     * datos (Ley 1581)? El texto vigente, para la vista previa del constructor.
+     */
+    @Get('data-consent')
+    @RequireCapability('manage_lists')
+    async dataConsentAvailability(@Req() req: FastifyRequest): Promise<FormDataConsentAvailability> {
+        if (!this.dataConsent) return { active: false, consent: null, can_configure: req.tenant!.role === 'admin' };
+        return this.dataConsent.availabilityForForms(req.tenant!.tenantId, req.tenant!.role);
     }
 
     @Get(':id')
@@ -162,7 +177,9 @@ export class PublicFormsController {
         @Param('token') token: string,
         @Body(new ZodValidationPipe(submitFormSchema)) input: SubmitFormInput,
     ): Promise<SubmitFormResult> {
-        return this.forms.submit(token, req.ip, input);
+        // El navegador queda en la evidencia de la autorización de datos (Ley 1581).
+        const ua = req.headers['user-agent'];
+        return this.forms.submit(token, req.ip, input, { userAgent: typeof ua === 'string' ? ua : null });
     }
 
     /**

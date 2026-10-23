@@ -17,6 +17,7 @@ import {
     Monitor,
     Plus,
     Redo2,
+    Scale,
     SeparatorHorizontal,
     ShieldCheck,
     Smartphone,
@@ -32,6 +33,7 @@ import {
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
     type CaptchaAvailability,
+    type FormDataConsentAvailability,
     type FormFileAccept,
     type FormCondition,
     type FormConditionOp,
@@ -74,7 +76,8 @@ import {
     updateItem,
     updateSettings,
 } from './formDesignOps';
-import { formEmbedCode, formPublicUrl, useCaptchaAvailability, useUpdateForm } from './useForms';
+import { formEmbedCode, formPublicUrl, useCaptchaAvailability,
+    useDataConsentAvailability, useUpdateForm } from './useForms';
 
 /**
  * v0.1.275 — Constructor de formularios a pantalla completa (ADR-S39).
@@ -138,6 +141,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const update = useUpdateForm(listId);
     const branding = useBrandingData();
     const captcha = useCaptchaAvailability(listId);
+    const dataConsent = useDataConsentAvailability(listId);
     const narrow = useMediaQuery('(max-width: 1023px)');
 
     const [draft, setDraft] = useState<Draft>({ name: form.name, config: form.config });
@@ -228,8 +232,10 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             // La vista previa no carga el widget: muestra dónde va.
             captcha: s.captcha && captcha.data?.provider ? { provider: captcha.data.provider, site_key: '' } : null,
             confirm_email: s.confirm_email,
+            // Ley 1581 — la casilla de autorización con el texto vigente de la empresa.
+            data_consent: s.data_consent && dataConsent.data?.active ? dataConsent.data.consent : null,
         };
-    }, [config, draft.name, fields, branding.data, captcha.data?.provider]);
+    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data]);
 
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {
@@ -337,6 +343,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             missing={missing}
             fields={fields}
             captcha={captcha.data ?? null}
+            dataConsent={dataConsent.data ?? null}
         />
     );
     const preview = (
@@ -996,6 +1003,7 @@ function SettingsInspector({
     missing,
     fields,
     captcha,
+    dataConsent,
 }: {
     draft: Draft;
     setName: (name: string) => void;
@@ -1004,6 +1012,7 @@ function SettingsInspector({
     missing: FieldEntity[];
     fields: FieldEntity[];
     captcha: CaptchaAvailability | null;
+    dataConsent: FormDataConsentAvailability | null;
 }): JSX.Element {
     const s = config.settings;
     const set = (patch: Partial<FormConfig['settings']>): void => onChange(updateSettings(config, patch));
@@ -1147,6 +1156,45 @@ function SettingsInspector({
                                 </a>
                             ) : (
                                 __('Pídele al administrador que las cargue en Ajustes → Portal y formularios.')
+                            )}
+                        </p>
+                    </>
+                )}
+            </Section>
+
+            <Section title={__('Datos personales')}>
+                {dataConsent?.active ? (
+                    <>
+                        <Check
+                            label={__('Pedir la autorización de tratamiento de datos')}
+                            checked={s.data_consent}
+                            onChange={(v) => set({ data_consent: v })}
+                            testId="form-data-consent"
+                        />
+                        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            <Scale className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
+                            {s.data_consent
+                                ? __('Al final del formulario aparece una casilla obligatoria con el texto de tu empresa (versión %d). Sin marcarla no se puede enviar, y cada respuesta guarda la prueba de la autorización.').replace(
+                                      '%d',
+                                      String(dataConsent.consent?.version ?? ''),
+                                  )
+                                : __('Apagada: este formulario no pide la autorización. Hazlo sólo si no recoge datos personales o si ya la obtienes por otro medio.')}
+                        </p>
+                    </>
+                ) : dataConsent === null ? (
+                    // Todavía no se sabe (cargando): ni casilla ni aviso, para no mostrar algo que no es.
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cargando…')}</p>
+                ) : (
+                    <>
+                        <Check label={__('Pedir la autorización de tratamiento de datos')} checked={false} disabled onChange={() => undefined} testId="form-data-consent" />
+                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-data-consent-unavailable">
+                            {__('Tu empresa todavía no tiene el texto de la autorización.')}{' '}
+                            {dataConsent.can_configure ? (
+                                <a href="/#/settings?s=privacidad" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline">
+                                    {__('Configúralo en Ajustes → Datos personales')}
+                                </a>
+                            ) : (
+                                __('Pídele al administrador que lo configure en Ajustes → Datos personales.')
                             )}
                         </p>
                     </>

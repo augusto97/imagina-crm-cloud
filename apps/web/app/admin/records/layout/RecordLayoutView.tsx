@@ -13,6 +13,8 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
 
+import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
+
 import { RecordSubtasks } from '../RecordSubtasks';
 import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
@@ -93,7 +95,16 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> {__('Preparando la ficha…')}
                         </div>
                     ) : (
-                        <LayoutBody layout={layout} footer={<ImplicitSubtasks layout={layout} />} />
+                        <LayoutBody
+                            layout={layout}
+                            footer={
+                                <>
+                                    <ImplicitSubtasks layout={layout} />
+                                    {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
+                                    <RecordDataConsentLine listId={list.id} recordId={record.id} />
+                                </>
+                            }
+                        />
                     )}
                 </div>
             </WidgetDataOverrideContext.Provider>

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { passwordSchema } from './auth';
 import { paymentLinkStatusSchema } from './collections';
 import { idSchema } from './common';
+import { portalBootConsentSchema } from './data-consent';
 import { publicBootSchema } from './domains';
 import { fieldSchema } from './field';
 import { recordSchema } from './record';
@@ -158,6 +159,13 @@ export const portalBootSchema = z.object({
      * los links de pago de los registros del cliente y si se le ofrece pagar.
      */
     payments: z.record(z.lazy(() => portalPaymentsBlockDataSchema)).default({}),
+    /**
+     * Autorización de tratamiento de datos (Ley 1581) que el cliente aceptó
+     * en este portal: para «Ver mi autorización» y «Retirarla» en su menú.
+     * null = la empresa no la pide en el portal. Sin aceptarla, el portal ni
+     * siquiera llega a este boot (`403 consent_required`).
+     */
+    data_consent: portalBootConsentSchema,
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 
