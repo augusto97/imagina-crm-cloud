@@ -88,10 +88,11 @@ export function EditKanbanViewDialog({ listId, view, open, onOpenChange }: EditK
             f.id !== groupByFieldId &&
             (settings.titleFieldId !== null ? f.id !== settings.titleFieldId : !f.is_primary) &&
             f.type !== 'long_text' &&
-            f.type !== 'relation',
+            f.type !== 'relation' &&
+            f.type !== 'button',
     );
     const coverCandidates = allFields.filter((f) => f.type === 'file' || f.type === 'url');
-    const sortCandidates = allFields.filter((f) => !['relation', 'file', 'long_text'].includes(f.type));
+    const sortCandidates = allFields.filter((f) => !['relation', 'file', 'long_text', 'button'].includes(f.type));
 
     // Columnas conocidas del campo (catálogo de un select; Sí/No de una casilla).
     const knownColumns = useMemo(() => columnsOf(groupField), [groupField]);

@@ -121,6 +121,9 @@ export function cellWriteBlock(
         case 'created_by':
         case 'updated_by':
             return __('Lo completa la app');
+        // Campo «Botón»: no tiene valor (se presiona).
+        case 'button':
+            return __('Es un botón: se presiona, no se escribe');
         case 'file':
             if (purpose !== 'clear') return __('Los archivos se suben desde la celda o la ficha');
             break;

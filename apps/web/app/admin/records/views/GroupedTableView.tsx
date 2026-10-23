@@ -648,7 +648,7 @@ const EMPTY_SORT: ActiveSort[] = [];
 
 /** Tipos que el backend no ordena (ver `NON_SORTABLE` en records.service). */
 function isSortableField(field: FieldEntity): boolean {
-    return field.type !== 'relation' && field.type !== 'file';
+    return field.type !== 'relation' && field.type !== 'file' && field.type !== 'button';
 }
 
 interface ColumnDef {
@@ -1754,6 +1754,7 @@ function renderColumnCell(
             field={column.field}
             value={column.field.type === 'relation' ? record.relations?.[column.field.slug] : record.fields[column.field.slug]}
             lockedReason={lockedReasonOf(storeRules, column.field, record)}
+            record={record}
         />
     );
 }

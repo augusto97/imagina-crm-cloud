@@ -181,6 +181,9 @@ export function operatorsForType(
         case 'created_by':
         case 'updated_by':
             return USER_LIKE.filter((o) => !o.nullary);
+        // Campo «Botón»: no tiene valor — no se filtra (ni se ofrece).
+        case 'button':
+            return [];
     }
 }
 

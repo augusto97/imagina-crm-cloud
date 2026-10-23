@@ -30,7 +30,9 @@ export type FieldTypeSlug =
     | 'created_at'
     | 'updated_at'
     | 'created_by'
-    | 'updated_by';
+    | 'updated_by'
+    // Campo «Botón» (A5): acciones al presionarlo, sin valor.
+    | 'button';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

@@ -1,7 +1,8 @@
-import { Copy, CornerDownRight, Layers, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import { Copy, CornerDownRight, Layers, MousePointerClick, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
 import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +23,9 @@ interface BulkActionsToolbarProps {
     onStructure?: Partial<Record<BulkStructureAction, () => void>>;
     /** v0.1.220 — atajo: asignar un responsable (edición masiva preparada). */
     onAssign?: () => void;
+    /** Campo «Botón»: los botones de la lista (con el motivo de los que no van en lote). */
+    pressButtons?: Array<{ id: number; label: string; reason: string | null }>;
+    onPressButton?: (fieldId: number) => void;
 }
 
 /**
@@ -47,6 +51,8 @@ export function BulkActionsToolbar({
     onStoreVariations,
     onStructure,
     onAssign,
+    pressButtons = [],
+    onPressButton,
 }: BulkActionsToolbarProps): JSX.Element | null {
     if (selectedIds.length === 0) return null;
 
@@ -141,6 +147,38 @@ export function BulkActionsToolbar({
                     <UserPlus className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('Asignar')}</span>
                 </Button>
+            )}
+
+            {onPressButton && pressButtons.length > 0 && (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="imcrm-gap-1.5"
+                            data-testid="imcrm-bulk-press-open"
+                            aria-label={__('Presionar un botón')}
+                            title={__('Presionar un botón')}
+                        >
+                            <MousePointerClick className="imcrm-h-3.5 imcrm-w-3.5" />
+                            <span className="imcrm-hidden sm:imcrm-inline">{__('Presionar')}</span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" side="top" className="imcrm-w-72">
+                        {pressButtons.map((b) => (
+                            <DropdownMenuItem
+                                key={b.id}
+                                disabled={b.reason !== null}
+                                onSelect={() => onPressButton(b.id)}
+                                className="imcrm-flex imcrm-flex-col imcrm-items-start imcrm-gap-0.5"
+                                data-testid={`imcrm-bulk-press-${b.id}`}
+                            >
+                                <span className="imcrm-font-medium">{b.label}</span>
+                                {b.reason && <span className="imcrm-text-xs imcrm-text-muted-foreground">{b.reason}</span>}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
             )}
 
             {onStructure?.move && (

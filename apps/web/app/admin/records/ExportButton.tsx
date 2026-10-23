@@ -96,7 +96,8 @@ export function ExportButton({
 
     // Primero las columnas de la vista (en su orden); después el resto.
     const exportableFields = useMemo(
-        () => orderExportFields(fields.data ?? [], initialFieldIds ?? []),
+        // Un botón no tiene valor que exportar.
+        () => orderExportFields((fields.data ?? []).filter((f) => f.type !== 'button'), initialFieldIds ?? []),
         [fields.data, initialFieldIds],
     );
 

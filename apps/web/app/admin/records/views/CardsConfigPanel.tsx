@@ -37,7 +37,7 @@ export function CardsConfigPanel({
     size,
     onSizeChange,
 }: CardsConfigPanelProps): JSX.Element {
-    const candidateFields = fields.filter((f) => f.type !== 'relation');
+    const candidateFields = fields.filter((f) => f.type !== 'relation' && f.type !== 'button');
     // v0.1.210 — también un enlace que se muestra como imagen (la foto de un producto).
     const fileFields = fields.filter((f) => f.type === 'file' || (f.type === 'url' && isImageUrlField(f.config)));
 
