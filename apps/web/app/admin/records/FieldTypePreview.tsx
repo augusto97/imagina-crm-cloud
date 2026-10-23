@@ -188,5 +188,30 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(3 facturas)')}</span>
                 </Row>
             );
+        // v0.1.300 — ID automático y columnas de sistema.
+        case 'autonumber':
+            return (
+                <Row>
+                    <span className="imcrm-font-mono imcrm-tabular-nums">TCK-0042</span>
+                    <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(se asigna solo)')}</span>
+                </Row>
+            );
+        case 'created_at':
+        case 'updated_at':
+            return (
+                <Row>
+                    <span className="imcrm-tabular-nums">{formatDateTime(new Date(Date.UTC(2026, 9, 14, 15, 30)))}</span>
+                </Row>
+            );
+        case 'created_by':
+        case 'updated_by':
+            return (
+                <Row>
+                    <span className="imcrm-flex imcrm-h-4 imcrm-w-4 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-[9px] imcrm-font-medium">
+                        AG
+                    </span>
+                    <span>Ana Gómez</span>
+                </Row>
+            );
     }
 }

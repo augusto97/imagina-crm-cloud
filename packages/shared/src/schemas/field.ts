@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { idSchema, isoDateTimeSchema } from './common';
 import { filterTreeSchema } from './filter';
 import { fieldSlugSchema } from './slug';
+import { autonumberConfigSchema, fieldRulesSchema } from './field-rules';
 
 /** Tipos de campo del plugin (CONTRACT.md §3). */
 export const FIELD_TYPES = [
@@ -44,6 +45,19 @@ export const FIELD_TYPES = [
     // escribe: se resuelve en cada lectura con una subconsulta sobre
     // `time_entries`, así se filtra, ordena y suma como un rollup.
     'time_tracked',
+    // v0.1.300 — ID automático (`TCK-0001`, `PED-2026-0042`): el servidor lo asigna
+    // al CREAR el registro con un contador atómico. Vive en `records.data`
+    // como el TEXTO ya formateado (se busca, se filtra y sale en el export),
+    // pero nadie lo escribe a mano.
+    'autonumber',
+    // v0.1.300 — columnas de SISTEMA: metadata del registro (fecha de creación,
+    // última modificación, quién lo creó y quién lo modificó por última
+    // vez). No viven en `data`: se leen de las columnas de `records` en cada
+    // lectura y filtran/ordenan/agrupan con la expresión SQL de la columna.
+    'created_at',
+    'updated_at',
+    'created_by',
+    'updated_by',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -109,7 +123,7 @@ export type AiFieldConfig = z.infer<typeof aiFieldConfigSchema>;
 /** Tipos que un campo con IA puede leer (los archivos: PDF e imágenes). */
 export const AI_INPUT_TYPES: readonly string[] = [
     'text', 'long_text', 'number', 'currency', 'select', 'multi_select', 'date', 'datetime',
-    'checkbox', 'url', 'email', 'user', 'phone', 'rating', 'percent', 'duration', 'file',
+    'checkbox', 'url', 'email', 'user', 'phone', 'rating', 'percent', 'duration', 'file', 'autonumber',
 ];
 
 export const fieldConfigSchemas = {
@@ -208,20 +222,38 @@ export const fieldConfigSchemas = {
     ai: aiFieldConfigSchema,
     /** v0.1.291 — igual que `duration`: el valor SIEMPRE son minutos. */
     time_tracked: z.object({ format: z.enum(['hm', 'clock']).optional() }),
+    /**
+     * v0.1.300 — ID automático. El texto se arma como
+     * `[prefijo][sep][año][sep]número` (las partes vacías no dejan
+     * separador): `TCK-0001`, `PED-2026-0042`, `0042`. Ver
+     * field-types/autonumber.ts (y su gemelo SQL `imcrm_autonumber_text`).
+     */
+    autonumber: autonumberConfigSchema,
+    created_at: z.object({}),
+    updated_at: z.object({}),
+    created_by: z.object({}),
+    updated_by: z.object({}),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
  * v0.1.277 — Tipos que una persona NO escribe aunque vivan en `data`: el
  * campo con IA lo llena el servidor. Los formularios, el import, la edición
- * masiva y el portal los saltean; un PATCH que los trae se rechaza.
+ * masiva y el portal los saltean; un PATCH que los trae se ignora.
+ * v0.1.300 — también el ID automático (lo asigna el servidor al crear).
  */
 export function isUserWritableType(type: FieldType): boolean {
-    return isDataField(type) && type !== 'ai';
+    return isDataField(type) && type !== 'ai' && type !== 'autonumber';
 }
 
-/** Valida la config de un campo contra el schema de su tipo. */
+/**
+ * Valida la config de un campo contra el schema de su tipo. v0.1.300 — los tipos
+ * que se escriben a mano además aceptan las reglas comunes (`default_value`
+ * y `validation`, ver field-rules.ts); los demás las pierden.
+ */
 export function parseFieldConfig(type: FieldType, config: unknown): Record<string, unknown> {
-    return fieldConfigSchemas[type].parse(config ?? {}) as Record<string, unknown>;
+    const base = fieldConfigSchemas[type] as z.AnyZodObject;
+    const schema = isUserWritableType(type) ? base.merge(fieldRulesSchema) : base;
+    return schema.parse(config ?? {}) as Record<string, unknown>;
 }
 
 /**
@@ -231,10 +263,43 @@ export function parseFieldConfig(type: FieldType, config: unknown): Record<strin
  * - `lookup` / `rollup`: solo lectura, se resuelven cruzando `relations`.
  * - `time_tracked` (v0.1.291): solo lectura, la suma de `time_entries`.
  */
-export const NON_DATA_FIELD_TYPES: readonly FieldType[] = ['relation', 'computed', 'lookup', 'rollup', 'time_tracked'];
+export const NON_DATA_FIELD_TYPES: readonly FieldType[] = [
+    'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
+    // v0.1.300 — columnas de sistema: se leen de `records` (created_at, …).
+    'created_at', 'updated_at', 'created_by', 'updated_by',
+];
 
 export function isDataField(type: FieldType): boolean {
     return !NON_DATA_FIELD_TYPES.includes(type);
+}
+
+/**
+ * v0.1.300 — Columnas de SISTEMA: tipo de campo → columna de `records` de la que
+ * sale el valor, y el tipo "de siempre" con el que se muestra, filtra y
+ * agrupa (fecha y hora, o persona).
+ */
+export const SYSTEM_FIELD_TYPES = ['created_at', 'updated_at', 'created_by', 'updated_by'] as const;
+export type SystemFieldType = (typeof SYSTEM_FIELD_TYPES)[number];
+
+export function isSystemField(type: string): type is SystemFieldType {
+    return (SYSTEM_FIELD_TYPES as readonly string[]).includes(type);
+}
+
+/** `datetime` para las fechas de sistema, `user` para las personas. */
+export function systemFieldBaseType(type: SystemFieldType): 'datetime' | 'user' {
+    return type === 'created_at' || type === 'updated_at' ? 'datetime' : 'user';
+}
+
+/**
+ * v0.1.300 — El tipo con el que se MUESTRA/compara un valor: una columna de
+ * sistema se comporta como fecha y hora o como persona, y el ID automático
+ * como texto. El resto, su propio tipo. Lo usan los formateadores (correo,
+ * PDF, reportes) para no repetir casos.
+ */
+export function valueBaseType(type: FieldType): FieldType {
+    if (isSystemField(type)) return systemFieldBaseType(type);
+    if (type === 'autonumber') return 'text';
+    return type;
 }
 
 /** Tipos que leen A TRAVÉS de una relación (v0.1.170, ADR-S19). */
@@ -253,6 +318,8 @@ export function isThroughField(type: FieldType): boolean {
 export const LOOKUP_TARGET_TYPES: readonly FieldType[] = [
     'text', 'long_text', 'number', 'currency', 'select', 'multi_select', 'date', 'datetime',
     'checkbox', 'url', 'email', 'user', 'computed', 'phone', 'rating', 'percent', 'duration',
+    // v0.1.300 — el número de la factura vinculada («FAC-0042»).
+    'autonumber',
 ];
 
 /** Campos que un rollup puede sumar/promediar. */

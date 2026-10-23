@@ -24,7 +24,13 @@ export type FieldTypeSlug =
     // v0.1.277 — campo con IA (ADR-S41).
     | 'ai'
     // v0.1.291 — tiempo registrado (suma de las entradas de tiempo, minutos).
-    | 'time_tracked';
+    | 'time_tracked'
+    // v0.1.300 — ID automático y columnas de sistema.
+    | 'autonumber'
+    | 'created_at'
+    | 'updated_at'
+    | 'created_by'
+    | 'updated_by';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

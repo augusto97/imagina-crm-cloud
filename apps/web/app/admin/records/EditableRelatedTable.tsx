@@ -18,11 +18,13 @@ import { EditableCell, RecordUpdaterProvider } from './EditableCell';
 import { RecordCreateDialog } from './RecordCreateDialog';
 import { renderCellValue } from './renderCellValue';
 import { storeAccessFor } from './storeRules';
+import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 
 /** Tipos que la fila de totales sabe sumar (los mismos que el servidor). */
 export const SUMMABLE_TYPES: ReadonlySet<string> = new Set(EDITABLE_TOTAL_TYPES);
 /** Tipos que no se editan en línea (se calculan o necesitan su propio editor). */
-const DERIVED: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai']);
+// v0.1.300 — también el ID automático y las columnas de sistema (los pone el servidor).
+const DERIVED: ReadonlySet<string> = new Set([...DERIVED_FIELD_TYPES, 'time_tracked']);
 
 export interface EditableRow {
     id: number;

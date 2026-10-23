@@ -13,6 +13,7 @@ import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
+import { isRequiredNow } from '@/lib/fieldRules';
 
 import { DateCellEditor } from './DateCellEditor';
 import { RelationPicker } from '@/components/fields/RelationPicker';
@@ -104,7 +105,10 @@ export function RecordFieldsForm({
         // v0.1.170 — los derivados (computed/lookup/rollup) no tienen nada que
         // cargar en el alta: aparecen sólo al editar, como lectura.
         .filter((f) => !(recordId === undefined && isDerivedFieldType(f.type)))
-        .sort((a, b) => a.position - b.position);
+        .sort((a, b) => a.position - b.position)
+        // v0.1.300 — «obligatorio si…»: el asterisco (y la validación de la fila)
+        // aparece en cuanto se cumple la condición del otro campo.
+        .map((f) => (f.is_required || !isRequiredNow(f, fields, values) ? f : { ...f, is_required: true }));
 
     const setValue = (slug: string, value: unknown): void => {
         onChange({ ...values, [slug]: value });
@@ -355,10 +359,16 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
                 </div>
             );
             break;
+        // v0.1.300 — también lo que pone la app (ID automático, creación/modificación).
         case 'computed':
         case 'lookup':
         case 'rollup':
         case 'time_tracked':
+        case 'autonumber':
+        case 'created_at':
+        case 'updated_at':
+        case 'created_by':
+        case 'updated_by':
             // Solo lectura: el backend los deriva en cada lectura.
             control = (
                 <div id={id} className="imcrm-min-h-[36px] imcrm-py-1.5 imcrm-text-sm">

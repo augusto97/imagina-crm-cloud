@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 import type { PortalPaymentsBlockData } from '@imagina-base/shared';
 
 import type { PortalBootData } from '@/portal/types';
@@ -53,7 +54,8 @@ export function useLayoutCtx(): LayoutCtx {
     return ctx;
 }
 
-const DERIVED: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai', 'time_tracked']);
+// v0.1.300 — también el ID automático y las columnas de sistema.
+const DERIVED: ReadonlySet<string> = DERIVED_FIELD_TYPES;
 
 /** ¿Este campo se puede editar aquí? Una sola regla para todos los bloques. */
 export function fieldEditable(ctx: LayoutCtx, field: FieldEntity): boolean {

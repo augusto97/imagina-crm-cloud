@@ -311,6 +311,32 @@ describe('Papelera', () => {
         expect(await countRaw('records', `id = ${r.id} AND data ? 'f${tel.id}'`)).toBe(0);
     });
 
+    it('un ID automático en la papelera no numera; al volver numera lo creado mientras tanto, sin repetir', async () => {
+        const l = await makeList('Pedidos');
+        const n = (data: Record<string, unknown>) => recs.create(tenantA, admin, String(l.id), { data });
+        const a = await n({ [`f${l.nombre.id}`]: 'A' });
+        const cod = await fieldsSvc.create(tenantA, String(l.id), { label: 'Código', type: 'autonumber', slug: 'codigo' });
+        const b = await n({ [`f${l.nombre.id}`]: 'B' });
+        const key = `f${cod.id}`;
+        expect((await recs.get(tenantA, admin, String(l.id), a.id)).data[key]).toBe('PED-0001');
+        expect(b.data[key]).toBe('PED-0002');
+
+        await fieldsSvc.remove(tenantA, String(l.id), 'codigo', { userId: admin.userId });
+        const c = await n({ [`f${l.nombre.id}`]: 'C' });
+        const d = await n({ [`f${l.nombre.id}`]: 'D' });
+        expect(await countRaw('records', `id IN (${c.id}, ${d.id}) AND data ? '${key}'`)).toBe(0);
+
+        await trash.restore(tenantA, admin, 'field', cod.id);
+        const read = async (id: number) => (await recs.get(tenantA, admin, String(l.id), id)).data[key];
+        expect([await read(a.id), await read(b.id), await read(c.id), await read(d.id)]).toEqual([
+            'PED-0001',
+            'PED-0002',
+            'PED-0003',
+            'PED-0004',
+        ]);
+        expect((await n({ [`f${l.nombre.id}`]: 'E' })).data[key]).toBe('PED-0005');
+    });
+
     it('permisos: el agente ve lo suyo y los registros que alcanza; restaura sólo lo que borró', async () => {
         const l = await makeList('Tareas agente');
         await withTenant(pg.db, tenantA, (tx) =>

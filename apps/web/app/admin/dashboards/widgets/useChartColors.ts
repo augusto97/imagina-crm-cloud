@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { chipSoftStyle, colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
 import { useMemberNames } from '@/hooks/useWpUsers';
@@ -108,7 +109,10 @@ export function useGroupLabelMap(
 ): Map<string, string> {
     const options = useGroupOptions(listId, groupByFieldId);
     const fields = useFields(listId && listId > 0 ? listId : undefined);
-    const groupField = fields.data?.find((f) => f.id === groupByFieldId);
+    const rawGroupField = fields.data?.find((f) => f.id === groupByFieldId);
+    // v0.1.300 — «Creado por / Modificado por» agrupan como persona; las fechas de
+    // sistema, como fecha y hora.
+    const groupField = rawGroupField ? asDisplayField(rawGroupField) : undefined;
     const isUser = groupField?.type === 'user';
     const names = useMemberNames(isUser ? keys.filter((k) => /^\d+$/.test(k)).map((k) => Number(k)) : []);
     const keysSig = keys.join('\u0000');
@@ -116,6 +120,8 @@ export function useGroupLabelMap(
         const map = new Map<string, string>();
         for (const [key, o] of options) map.set(key, o.label);
         for (const [id, name] of names.data ?? []) map.set(String(id), name);
+        // v0.1.300 — un cambio hecho por una automatización o una sincronización.
+        if (isUser && rawGroupField?.type !== 'user') map.set('0', __('Sistema'));
         // v0.1.286 — buckets de fecha legibles ("oct 2026", "Sem 43 · 2026",
         // "T3 2026") y la casilla como «Sí» / «No» (antes "true"/"false").
         for (const [key, label] of groupDisplayLabels(keysSig === '' ? [] : keysSig.split('\u0000'), groupField)) map.set(key, label);

@@ -4,8 +4,10 @@ import {
     datetimeFilterRange as sharedDatetimeFilterRange,
     FALLBACK_TIME_ZONE,
     isDataField,
+    isSystemField,
     isThroughField,
     jsonbKeyForField,
+    systemFieldBaseType,
     parseCustomDateRange,
     parseDateRangePreset,
     presetDateRange,
@@ -31,6 +33,11 @@ export interface FilterableField {
     expr?: SQL;
     /** Cómo comparar `expr`: numérico (count/sum/…) o texto (min/max de fecha). */
     valueKind?: 'numeric' | 'text';
+    /**
+     * v0.1.300 — clave de AGRUPADO propia (columnas de sistema: una fecha se agrupa
+     * por día en el reloj de la empresa). Sin ella, `(expr)::text`.
+     */
+    groupExpr?: SQL;
 }
 
 /**
@@ -120,6 +127,12 @@ function compileCondition(
     // v0.1.291 — y el tiempo registrado (suma de `time_entries`).
     if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
+    }
+    // v0.1.300 — columnas de sistema: la columna de `records` como fecha y hora o
+    // como persona. Sólo en la consulta principal (en la subconsulta de un
+    // rollup el registro tiene otro alias).
+    if (isSystemField(field.type)) {
+        return field.expr && dataRef === records.data ? compileSystem(field.expr, systemFieldBaseType(field.type), cond, now) : undefined;
     }
     // v0.1.252 — una relación vive en la tabla `relations`, no en `data`:
     // antes se descartaba y «sin vínculos» devolvía TODO (por API, por el MCP
@@ -288,6 +301,48 @@ function compileOverride(
             return cond.op === 'not_contains'
                 ? sql`(${expr} IS NULL OR ${expr} NOT ILIKE ${pattern})`
                 : sql`${expr} ILIKE ${pattern}`;
+        }
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * v0.1.300 — Condición sobre una columna de sistema (`created_at`, `updated_by`…).
+ * Una fecha compara igual que un campo «fecha y hora» (el día en el reloj de
+ * la empresa, «hoy», «este mes»); una persona, por su id como el campo
+ * persona.
+ */
+function compileSystem(expr: SQL, base: 'datetime' | 'user', cond: FilterCondition, now: QueryClock): SQL | undefined {
+    const op = cond.op;
+    if (op === 'is_null') return sql`(${expr}) IS NULL`;
+    if (op === 'is_not_null') return sql`(${expr}) IS NOT NULL`;
+    if (base === 'datetime') {
+        const ranged = compileDatetimeComparison(expr, op, cond.value, now.timeZone);
+        if (ranged !== null) return ranged;
+        if (op === 'between_relative') {
+            const custom = asCustomRange(cond.value);
+            if (custom !== null) {
+                const range = dayRangeInstants(custom.from, custom.to, now.timeZone);
+                return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
+            }
+            const range = computePresetRange(asPreset(cond.value), 'datetime', now);
+            return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
+        }
+        return undefined;
+    }
+    const asText = sql`(${expr})::text`;
+    switch (op) {
+        case 'eq':
+            return sql`${asText} = ${str(cond.value)}`;
+        case 'neq':
+            return sql`${asText} IS DISTINCT FROM ${str(cond.value)}`;
+        case 'in':
+        case 'nin': {
+            const values = toArray(cond.value).map(str);
+            if (values.length === 0) return op === 'in' ? sql`false` : undefined;
+            const membership = sql`${asText} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`;
+            return op === 'in' ? membership : sql`(${asText} IS NULL OR NOT (${membership}))`;
         }
         default:
             return undefined;

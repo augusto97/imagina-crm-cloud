@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+
+import { getBootData } from '@/lib/boot';
+import { draftErrors, fieldDefaultsBySlug } from '@/lib/fieldRules';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 import { Button } from '@/components/ui/button';
@@ -68,6 +71,7 @@ export function RecordCreateDialog({
     const [values, setValues] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+    const seededRef = useRef<Record<string, unknown>>({});
 
     useEffect(() => {
         if (!open) {
@@ -77,20 +81,30 @@ export function RecordCreateDialog({
             setError(null);
             setFieldErrors({});
             resetCreate();
-        } else if (initialValues !== undefined) {
+        } else {
             // Al abrir con prefill (add-inline de un grupo) sembramos el
             // form. `initialValues` vive en el state del caller — identidad
             // estable mientras el diálogo está abierto, no pisa el tipeo.
-            setValues(initialValues);
+            // v0.1.300 — y con los VALORES POR DEFECTO de los campos (fijo, hoy,
+            // quien lo crea…): lo que se ve es lo que se va a guardar.
+            const seed = { ...fieldDefaultsBySlug(fields, getBootData().user.id), ...(initialValues ?? {}) };
+            seededRef.current = seed;
+            setValues(seed);
         }
+        // `fields` fuera de las deps a propósito: re-sembrar al llegar un
+        // campo nuevo pisaría lo que la persona ya escribió.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, resetCreate, initialValues]);
+    // Lo sembrado al abrir (fijo: un «ahora» recalculado en cada render haría
+    // creer que la persona escribió algo).
+    const seeded = open ? seededRef.current : {};
 
     const contentRef = useRef<HTMLDivElement>(null);
     const confirm = useConfirm();
     /** ¿La persona escribió algo (más allá del prefill del grupo)? */
     const typed = Object.entries(values).some(
         ([k, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
-            && JSON.stringify(v) !== JSON.stringify(initialValues?.[k]),
+            && JSON.stringify(v) !== JSON.stringify(seeded[k]),
     );
     const requestClose = async (): Promise<void> => {
         if (typed && !create.isPending) {
@@ -110,6 +124,14 @@ export function RecordCreateDialog({
         e.preventDefault();
         setError(null);
         setFieldErrors({});
+        // v0.1.300 — las validaciones del campo (mínimo/máximo, formato, obligatorio
+        // si…) se avisan antes de mandar; el servidor las vuelve a exigir.
+        const local = draftErrors(fields, values);
+        if (Object.keys(local).length > 0) {
+            setFieldErrors(local);
+            setError(__('Revisa los campos marcados.'));
+            return;
+        }
         try {
             await create.mutateAsync(parentId != null ? { values, parentId } : values);
             onOpenChange(false);

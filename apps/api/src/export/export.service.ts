@@ -8,6 +8,7 @@ import {
     XlsxStreamWriter,
     formatDuration,
     isDataField,
+    isSystemField,
     jsonbKeyForField,
     resolveTitleFieldId,
     sanitizeSheetName,
@@ -377,8 +378,15 @@ export class ExportService {
             optionLabels.set(c.id, m);
         }
         // v0.1.299 — también un lookup hacia un campo persona (el .xlsx lo
-        // muestra con el nombre, como la ficha).
-        const hasUser = columns.some((c) => c.type === 'user' || (c.type === 'lookup' && targetTypeOf(c) === 'user'));
+        // muestra con el nombre, como la ficha), y las columnas de sistema
+        // «Creado por» / «Modificado por».
+        const hasUser = columns.some(
+            (c) =>
+                c.type === 'user' ||
+                c.type === 'created_by' ||
+                c.type === 'updated_by' ||
+                (c.type === 'lookup' && targetTypeOf(c) === 'user'),
+        );
         const members = new Map<number, string>();
         if (hasUser) {
             const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -427,6 +435,13 @@ export class ExportService {
                         return value === true || value === 1 || value === '1' ? 'Sí' : 'No';
                     case 'user': {
                         const id = Number(value);
+                        return Number.isInteger(id) && id > 0 ? (members.get(id) ?? String(id)) : null;
+                    }
+                    // v0.1.300 — «Creado por» / «Modificado por»: el nombre; 0 = el sistema.
+                    case 'created_by':
+                    case 'updated_by': {
+                        const id = Number(value);
+                        if (id === 0) return 'Sistema';
                         return Number.isInteger(id) && id > 0 ? (members.get(id) ?? String(id)) : null;
                     }
                     case 'file':
@@ -574,7 +589,11 @@ function safeFileName(name: string): string {
 
 /** Derivados que SÍ salen en el CSV (`relation` incluida: se exporta el título). */
 function isExportableDerived(type: string): boolean {
-    return type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation' || type === 'time_tracked';
+    return (
+        type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation' || type === 'time_tracked'
+        // v0.1.300 — columnas de sistema (creado/modificado por y cuándo).
+        || isSystemField(type)
+    );
 }
 
 /** Tipo del campo del OTRO lado, para formatear un lookup/rollup como la celda. */

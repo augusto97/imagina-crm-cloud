@@ -26,6 +26,7 @@ import {
     sanitizePortalLayout,
     tenantFormatSchema,
     isUserWritableType,
+    checkRequiredIf,
     jsonbKeyForField,
     resolveTitleFieldId,
     validateFieldValue,
@@ -1233,9 +1234,19 @@ export class PortalService implements OnModuleInit {
                 .limit(1)
                 .for('update');
             if (!current) throw portalGone();
+            // v0.1.300 — "obligatorio si…" sobre el registro como queda (sólo las
+            // reglas que tocan lo que el cliente cambió).
+            const failedIf = checkRequiredIf(ctx.fields, { ...(current.data as Record<string, unknown>), ...patch }, { touched: new Set(Object.keys(patch)) });
+            if (failedIf.length > 0) {
+                throw new BadRequestException({
+                    code: 'validation_failed',
+                    message: 'Datos inválidos',
+                    data: { status: 400, errors: Object.fromEntries(failedIf.map((e) => [e.field.slug ?? `f${e.field.id}`, e.message])) },
+                });
+            }
             const [updated] = await tx
                 .update(records)
-                .set({ data: sql`${records.data} || ${JSON.stringify(patch)}::jsonb`, updatedAt: new Date() })
+                .set({ data: sql`${records.data} || ${JSON.stringify(patch)}::jsonb`, updatedAt: new Date(), updatedBy: userId })
                 .where(eq(records.id, current.id))
                 .returning({ data: records.data });
             const after = (updated?.data ?? { ...current.data, ...patch }) as Record<string, unknown>;

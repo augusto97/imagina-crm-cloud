@@ -897,7 +897,7 @@ export class StoreSyncEngine {
                 if (Object.entries(patch).every(([k, v]) => sameValue(parent.data[k], v))) continue;
                 await tx
                     .update(records)
-                    .set({ data: { ...parent.data, ...patch }, updatedAt: new Date() })
+                    .set({ data: { ...parent.data, ...patch }, updatedAt: new Date(), updatedBy: 0 })
                     .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, parentId)));
                 any = true;
             }
@@ -1163,7 +1163,7 @@ export class StoreSyncEngine {
             for (const u of toUpdate) {
                 await tx
                     .update(records)
-                    .set({ data: u.after, updatedAt: new Date() })
+                    .set({ data: u.after, updatedAt: new Date(), updatedBy: 0 })
                     .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, u.id)));
                 if (ctx.dispatch) {
                     await this.activity.logInTx(tx, {
@@ -1508,7 +1508,7 @@ function minusOneSecond(at: string): string {
 }
 
 function isDataField(f: Field): boolean {
-    return !['relation', 'computed', 'lookup', 'rollup', 'time_tracked'].includes(f.type);
+    return !['relation', 'computed', 'lookup', 'rollup', 'time_tracked', 'created_at', 'updated_at', 'created_by', 'updated_by'].includes(f.type);
 }
 
 function sameValue(a: unknown, b: unknown): boolean {

@@ -18,7 +18,7 @@ import {
 import { useCreateField, useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
-import { FIELD_TYPE_OPTIONS, POPULAR_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
+import { DERIVED_FIELD_TYPES, FIELD_TYPE_OPTIONS, POPULAR_FIELD_TYPES, SYSTEM_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -99,11 +99,22 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
         () => filtered.filter((o) => POPULAR_FIELD_TYPES.includes(o.type)),
         [filtered],
     );
+    // v0.1.300 — las columnas de sistema van en su propia sección.
+    const regular = useMemo(() => filtered.filter((o) => !SYSTEM_FIELD_TYPES.has(o.type)), [filtered]);
+    const system = useMemo(() => filtered.filter((o) => SYSTEM_FIELD_TYPES.has(o.type)), [filtered]);
 
     const pick = (next: FieldTypeSlug, presetLabel = '', presetConfig: Record<string, unknown> = {}): void => {
         setType(next);
         setConfig(presetConfig);
-        setLabel(presetLabel);
+        // v0.1.300 — una columna de sistema o el ID automático ya traen su nombre.
+        const named = presetLabel !== ''
+            ? presetLabel
+            : SYSTEM_FIELD_TYPES.has(next)
+                ? FIELD_TYPE_OPTIONS.find((o) => o.type === next)?.label ?? ''
+                : next === 'autonumber'
+                    ? 'ID'
+                    : '';
+        setLabel(named);
         setError(null);
     };
 
@@ -112,7 +123,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
         if (type === '' || label.trim() === '') return;
         setError(null);
         try {
-            await create.mutateAsync({ label: label.trim(), type, is_required: isRequired, config });
+            await create.mutateAsync({ label: label.trim(), type, is_required: isRequired && !DERIVED_FIELD_TYPES.has(type), config });
             onOpenChange(false);
         } catch (err) {
             setError(err instanceof ApiError || err instanceof Error ? err.message : 'Error');
@@ -203,12 +214,24 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                                             {__('Ningún tipo coincide con la búsqueda.')}
                                         </p>
                                     ) : (
-                                        <TypeSection
-                                            title={__('Todos')}
-                                            options={filtered}
-                                            onPick={pick}
-                                            onHover={showPreview}
-                                        />
+                                        <>
+                                            {regular.length > 0 && (
+                                                <TypeSection
+                                                    title={__('Todos')}
+                                                    options={regular}
+                                                    onPick={pick}
+                                                    onHover={showPreview}
+                                                />
+                                            )}
+                                            {system.length > 0 && (
+                                                <TypeSection
+                                                    title={__('Información del registro')}
+                                                    options={system}
+                                                    onPick={pick}
+                                                    onHover={showPreview}
+                                                />
+                                            )}
+                                        </>
                                     )}
                                 </>
                             ) : (
@@ -256,14 +279,17 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                                 listId={listId}
                             />
 
-                            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                                <input
-                                    type="checkbox"
-                                    checked={isRequired}
-                                    onChange={(e) => setIsRequired(e.target.checked)}
-                                />
-                                {__('Obligatorio')}
-                            </label>
+                            {/* v0.1.300 — lo que llena la app (ID automático, columnas de sistema) no se exige. */}
+                            {!DERIVED_FIELD_TYPES.has(type) && (
+                                <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={isRequired}
+                                        onChange={(e) => setIsRequired(e.target.checked)}
+                                    />
+                                    {__('Obligatorio')}
+                                </label>
+                            )}
 
                             {error !== null && (
                                 <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

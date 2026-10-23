@@ -356,6 +356,29 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
         { key: 'number', label: 'Duración' },
         { key: 'big', label: 'Cifra grande' },
     ],
+    // v0.1.300 — ID automático (texto) y columnas de sistema (fecha y hora / persona).
+    autonumber: [
+        { key: 'text', label: 'Texto' },
+        { key: 'big', label: 'Destacado' },
+        { key: 'badge', label: 'Etiqueta' },
+        { key: 'copy', label: 'Con botón de copiar' },
+    ],
+    created_at: [
+        { key: 'date', label: 'Fecha y hora' },
+        { key: 'relative', label: 'Relativa (hace 3 horas)' },
+    ],
+    updated_at: [
+        { key: 'date', label: 'Fecha y hora' },
+        { key: 'relative', label: 'Relativa (hace 3 horas)' },
+    ],
+    created_by: [
+        { key: 'avatar', label: 'Avatar y nombre' },
+        { key: 'name', label: 'Sólo el nombre' },
+    ],
+    updated_by: [
+        { key: 'avatar', label: 'Avatar y nombre' },
+        { key: 'name', label: 'Sólo el nombre' },
+    ],
     // v0.1.291 — el tiempo registrado se lee como una duración.
     time_tracked: [
         { key: 'number', label: 'Duración' },

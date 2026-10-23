@@ -1,5 +1,6 @@
 import { formatDuration, formatPhone, type DurationFormat } from '@imagina-base/shared';
 
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
@@ -32,6 +33,11 @@ export function cellToText(field: FieldEntity, value: unknown, ctx: CellTextCont
         return values.map((v) => cellToText(display, v, ctx)).filter((t) => t !== '').join(', ');
     }
     if (field.type === 'rollup') return cellToText(rollupDisplayField(field), value, ctx);
+    // v0.1.300 — columnas de sistema: como fecha y hora o como persona (el 0 es un
+    // cambio del sistema); el ID automático, como texto.
+    if ((field.type === 'created_by' || field.type === 'updated_by') && (value === 0 || value === '0')) return 'Sistema';
+    const shown = asDisplayField(field);
+    if (shown !== field) return cellToText(shown, value, ctx);
     if (field.type === 'checkbox') return isCheckedValue(value) ? 'Sí' : 'No';
     if (value === null || value === undefined || value === '') return '';
 

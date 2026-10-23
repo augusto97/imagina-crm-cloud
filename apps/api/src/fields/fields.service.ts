@@ -1,5 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    analyzeUserPattern,
+    autonumberSettings,
+    defaultKindsFor,
+    fieldDefaultOf,
+    fieldValidationOf,
+    isUserWritableType,
+    suggestAutonumberPrefix,
+    validationKindsFor,
     fieldSlugSchema,
     formatDuration,
     formatPhone,
@@ -170,6 +178,114 @@ export class FieldsService {
         }
     }
 
+    /**
+     * v0.1.300 — Valida y normaliza las reglas comunes de la config
+     * (`default_value`, `validation`) contra el campo y su lista:
+     *  - el valor por defecto tiene que ser de un tipo que el campo admite y,
+     *    si es fijo, un valor válido (se guarda ya normalizado);
+     *  - una expresión regular propia pasa el análisis anti-ReDoS
+     *    (`analyzeUserPattern`) — un patrón peligroso nunca se guarda;
+     *  - mínimo/máximo del tipo correcto y en orden;
+     *  - "obligatorio si" apunta a OTRO campo de la misma lista.
+     * Lo que no aplica al tipo se descarta (cambiar el tipo no deja reglas
+     * huérfanas).
+     */
+    private async normalizeRules(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        selfId: number | null,
+        type: FieldType,
+        config: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+        if (!isUserWritableType(type)) return config;
+        const fail = (key: string, message: string): never => {
+            throw new BadRequestException({
+                code: 'invalid_field_config',
+                message,
+                data: { status: 400, errors: { [key]: message } },
+            });
+        };
+        const out: Record<string, unknown> = { ...config };
+        const base = { ...config };
+        delete base.validation;
+        delete base.default_value;
+
+        const def = fieldDefaultOf(config);
+        if (def) {
+            if (!defaultKindsFor(type).includes(def.kind)) {
+                delete out.default_value;
+            } else if (def.kind === 'value') {
+                const res = validateFieldValue({ type, config: base, is_required: false }, def.value);
+                if (!res.ok) return fail('default_value', `El valor por defecto no es válido: ${res.error}`);
+                if (res.value === null) delete out.default_value;
+                else out.default_value = { kind: 'value', value: res.value };
+            } else {
+                out.default_value = { kind: def.kind };
+            }
+        } else if (config.default_value === null) {
+            delete out.default_value;
+        }
+
+        const v = fieldValidationOf(config);
+        if (v) {
+            const kinds = validationKindsFor(type);
+            const rule: Record<string, unknown> = {};
+            const msg = (k: 'range_message' | 'length_message' | 'format_message'): void => {
+                if (typeof v[k] === 'string' && v[k]!.trim() !== '') rule[k] = v[k]!.trim();
+            };
+            if (kinds.range !== null) {
+                const want = kinds.range === 'number' ? 'number' : 'string';
+                for (const k of ['min', 'max'] as const) {
+                    const val = v[k];
+                    if (val === null || val === undefined) continue;
+                    if (typeof val !== want) fail(`validation.${k}`, kinds.range === 'number' ? 'El mínimo y el máximo tienen que ser números.' : 'El mínimo y el máximo tienen que ser fechas.');
+                    rule[k] = val;
+                }
+                if (rule.min !== undefined && rule.max !== undefined && (rule.min as number | string) > (rule.max as number | string)) {
+                    fail('validation.min', 'El mínimo no puede ser mayor que el máximo.');
+                }
+                msg('range_message');
+            }
+            if (kinds.length) {
+                if (typeof v.min_length === 'number') rule.min_length = v.min_length;
+                if (typeof v.max_length === 'number') rule.max_length = v.max_length;
+                if (typeof rule.min_length === 'number' && typeof rule.max_length === 'number' && rule.min_length > rule.max_length) {
+                    fail('validation.min_length', 'El largo mínimo no puede ser mayor que el máximo.');
+                }
+                msg('length_message');
+            }
+            if (kinds.format && v.format) {
+                rule.format = v.format;
+                if (v.format === 'regex') {
+                    const pattern = typeof v.pattern === 'string' ? v.pattern : '';
+                    const check = analyzeUserPattern(pattern);
+                    if (!check.ok) fail('validation.pattern', check.reason);
+                    rule.pattern = pattern;
+                    if (v.pattern_ignore_case === true) rule.pattern_ignore_case = true;
+                }
+                msg('format_message');
+            }
+            const ri = v.required_if;
+            if (kinds.requiredIf && ri && ri.field_id !== null && ri.field_id !== undefined) {
+                if (ri.field_id === selfId) fail('validation.required_if', 'Un campo no puede depender de sí mismo.');
+                const other = await this.repo.findById(tx, tenantId, listId, ri.field_id);
+                if (!other) fail('validation.required_if', 'El campo de la condición no es de esta lista.');
+                rule.required_if = {
+                    field_id: ri.field_id,
+                    op: ri.op,
+                    ...(ri.op !== 'not_empty' && ri.value !== undefined ? { value: ri.value } : {}),
+                    ...(typeof ri.message === 'string' && ri.message.trim() !== '' ? { message: ri.message.trim() } : {}),
+                };
+            }
+            if (Object.keys(rule).length > 0) out.validation = rule;
+            else delete out.validation;
+        } else if (config.validation === null) {
+            delete out.validation;
+        }
+        return out;
+    }
+
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
         // Este es el listado que consume la UI: aquí sí se marca cuál es el
         // campo TÍTULO (v0.1.136), derivado de `settings.title_field_id` de la
@@ -305,11 +421,17 @@ export class FieldsService {
     }
 
     async create(tenantId: number, listIdOrSlug: string, input: CreateFieldInput): Promise<Field> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const config = safeConfig(input.type, input.config);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const listId = list.id;
+        let config = safeConfig(input.type, input.config);
+        // v0.1.300 — ID automático: sin prefijo elegido, el de la lista («TIC»).
+        if (input.type === 'autonumber' && config.prefix === undefined) {
+            config = { ...config, prefix: suggestAutonumberPrefix(list.name) };
+        }
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
+            config = await this.normalizeRules(tx, tenantId, listId, null, input.type, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
             return this.repo
@@ -330,13 +452,20 @@ export class FieldsService {
                     // Doble envío: dos altas simultáneas con el mismo slug pasan
                     // el chequeo previo y la segunda choca con el índice único.
                     throw pgErrorCode(err) === '23505' ? slugConflict(slug) : err;
+                })
+                .then(async (inserted) => {
+                    // v0.1.300 — los registros que YA existían se numeran en el orden
+                    // en que se crearon (los nuevos los numera el trigger).
+                    if (input.type === 'autonumber') await numberExistingRecords(tx, tenantId, listId, inserted.id, config);
+                    return inserted;
                 });
         });
         this.realtime.fields(tenantId, listId);
         // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
         // cómo se leen los records: sin esto la tabla mostraba "—" en la
-        // columna nueva hasta recargar.
-        if (!isDataField(input.type)) this.realtime.records(tenantId, listId);
+        // columna nueva hasta recargar. v0.1.300 — y el ID automático numera los
+        // registros que ya existían.
+        if (!isDataField(input.type) || input.type === 'autonumber') this.realtime.records(tenantId, listId);
         return toField(row);
     }
 
@@ -395,12 +524,14 @@ export class FieldsService {
                         newConfig = { ...newConfig, options: texts.map((v) => ({ value: v, label: v })) };
                     }
                 }
+                newConfig = await this.normalizeRules(tx, tenantId, listId, current.id, toType, newConfig);
                 changes.type = toType;
                 changes.config = newConfig;
                 await migrateFieldData(tx, tenantId, listId, current.id, fromType, toType, newConfig, bridge);
             } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
                 await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
+                changes.config = await this.normalizeRules(tx, tenantId, listId, current.id, current.type as FieldType, changes.config);
             }
             if (patch.is_indexed !== undefined) {
                 changes.isIndexed = patch.is_indexed;
@@ -711,13 +842,35 @@ function fieldNotFound(idOrSlug: string): NotFoundException {
  * (relation vive en la tabla `relations`, computed jamás se persiste, file
  * son IDs de attachments que dejarían huérfanos silenciosos).
  */
-const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file', 'lookup', 'rollup', 'ai', 'time_tracked'];
+const NON_CONVERTIBLE: readonly FieldType[] = [
+    'computed', 'relation', 'file', 'lookup', 'rollup', 'ai', 'time_tracked',
+    // v0.1.300 — columnas de sistema (no tienen datos propios).
+    'created_at', 'updated_at', 'created_by', 'updated_by',
+];
 
 function assertConvertible(from: FieldType, to: FieldType): void {
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
         throw new BadRequestException({
             code: 'type_not_convertible',
-            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup y con IA no admiten conversión.`,
+            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup, con IA y las columnas de sistema no admiten conversión.`,
+            data: { status: 400 },
+        });
+    }
+    // v0.1.300 — a «ID automático» no se convierte: numerar los registros pisaría
+    // los valores que el campo ya tiene. Se crea un campo nuevo y numera solo.
+    if (to === 'autonumber') {
+        throw new BadRequestException({
+            code: 'type_not_convertible',
+            message: 'Un campo no se puede convertir en «ID automático»: crea un campo «ID automático» nuevo y numerará solo los registros que ya existen.',
+            data: { status: 400 },
+        });
+    }
+    // Desde el ID automático, sólo a texto: el número se conserva tal cual
+    // (y a partir de ahí se puede editar a mano).
+    if (from === 'autonumber' && to !== 'text' && to !== 'long_text') {
+        throw new BadRequestException({
+            code: 'type_not_convertible',
+            message: 'Un «ID automático» sólo se puede convertir en texto (conserva los números ya dados).',
             data: { status: 400 },
         });
     }
@@ -782,7 +935,9 @@ async function migrateFieldData(
     bridge: BridgeContext,
 ): Promise<void> {
     const key = jsonbKeyForField(fieldId);
-    const spec = { type: toType, config, is_required: false };
+    // v0.1.300 — sin las reglas: convertir conserva lo que se puede convertir; una
+    // validación nueva no vacía datos viejos (se exige al editarlos).
+    const spec = { type: toType, config: { ...config, validation: undefined }, is_required: false };
     let cursor = 0;
     for (;;) {
         // Sólo el valor de ESTE campo (no el `data` entero de cada fila).
@@ -940,4 +1095,55 @@ export function wpTermSlug(name: string): string {
         .replace(/-{2,}/g, '-')
         .replace(/^-+|-+$/g, '')
         .slice(0, 190);
+}
+
+/**
+ * v0.1.300 — Numera los registros VIVOS de la lista que todavía no tienen ID, en el
+ * orden en que se crearon (con el reinicio por año en el reloj de la
+ * empresa), y deja el contador de cada período en el siguiente número. UNA
+ * sentencia: un `UPDATE … FROM` con `row_number()` y el upsert de los
+ * contadores sobre lo que devolvió (los registros nuevos los numera el
+ * trigger `imcrm_records_autonumber`, que toma la misma fila del contador).
+ */
+export async function numberExistingRecords(
+    tx: Tx,
+    tenantId: number,
+    listId: number,
+    fieldId: number,
+    config: Record<string, unknown>,
+): Promise<void> {
+    const key = jsonbKeyForField(fieldId);
+    const settings = autonumberSettings(config);
+    const cfg = JSON.stringify(config);
+    // La zona sólo hace falta si reinicia por año (y se valida contra el
+    // catálogo de Postgres: una zona inválida no puede tirar el alta).
+    const tz = settings.yearly
+        ? sql`(SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = z.v) THEN z.v ELSE 'UTC' END
+               FROM (SELECT coalesce(nullif(t.settings #>> '{format,timezone}', ''), 'UTC') AS v FROM tenants t WHERE t.id = ${tenantId}) z)`
+        : sql`'UTC'`;
+    const period = settings.yearly ? sql`extract(year FROM (r.created_at AT TIME ZONE ${tz}))::integer` : sql`0`;
+    // El trigger descarta los números que no puso él; acá los pone esta
+    // sentencia (en orden de creación), así que se le pide que los respete.
+    await tx.execute(sql`select set_config('app.keep_autonumber', 'on', true)`);
+    await tx.execute(sql`
+        WITH ranked AS (
+            SELECT r.id, ${period} AS period,
+                   row_number() OVER (PARTITION BY ${period} ORDER BY r.created_at, r.id) AS rn
+            FROM records r
+            WHERE r.tenant_id = ${tenantId} AND r.list_id = ${listId} AND r.deleted_at IS NULL
+              AND coalesce(r.data ->> ${key}, '') = ''
+        ),
+        upd AS (
+            UPDATE records r
+            SET data = jsonb_set(r.data, ARRAY[${key}::text], to_jsonb(imcrm_autonumber_text(${cfg}::jsonb, ${settings.start}::bigint + ranked.rn - 1, ranked.period)))
+            FROM ranked
+            WHERE r.id = ranked.id
+            RETURNING ranked.period
+        )
+        INSERT INTO autonumber_counters (tenant_id, field_id, period, next_value)
+        SELECT ${tenantId}, ${fieldId}, upd.period, ${settings.start}::bigint + count(*)
+        FROM upd
+        GROUP BY upd.period
+        ON CONFLICT (field_id, period) DO UPDATE SET next_value = GREATEST(autonumber_counters.next_value, EXCLUDED.next_value)`);
+    await tx.execute(sql`select set_config('app.keep_autonumber', 'off', true)`);
 }

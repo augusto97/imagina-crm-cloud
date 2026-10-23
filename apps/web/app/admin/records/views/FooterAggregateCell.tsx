@@ -222,8 +222,8 @@ export function FooterAggregateCell({
                     </DropdownMenuSub>
                 )}
 
-                {/* Categoría: Fechas — solo date / datetime */}
-                {(field.type === 'date' || field.type === 'datetime') && (
+                {/* Categoría: Fechas — date / datetime y las fechas de sistema (v0.1.300) */}
+                {(field.type === 'date' || field.type === 'datetime' || field.type === 'created_at' || field.type === 'updated_at') && (
                     <DropdownMenuSub>
                         <DropdownMenuSubTrigger>{__('Fechas')}</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>

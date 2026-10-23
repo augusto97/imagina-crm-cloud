@@ -2,6 +2,12 @@ import { formatDuration, type DurationFormat } from '../field-types/duration';
 import { formatEmailFieldValue, formatYmd, groupNumber } from '../schemas/email-design';
 import { AGGREGATE_OTHERS_KEY } from '../schemas/aggregate';
 import type { TenantFormat } from '../schemas/tenant';
+import { valueBaseType, type FieldType } from '../schemas/field';
+
+/** v0.1.300 — columnas de sistema → fecha y hora / persona; ID automático → texto. */
+function base(type: string | undefined): string | undefined {
+    return type === undefined ? undefined : valueBaseType(type as FieldType);
+}
 
 /**
  * v0.1.292 — "Reporte" de un widget de tablero: sus datos ya listos para
@@ -218,6 +224,7 @@ export function reportBucketLabel(key: string, format: ReportFormat): string {
 
 /** El campo "de vista" de un rollup (se formatea como su destino). */
 function displayField(f: ReportField | undefined): ReportField | undefined {
+    if (f && base(f.type) !== f.type) return { ...f, type: base(f.type)!, config: {} };
     if (!f || f.type !== 'rollup') return f;
     const op = String(f.config.operation ?? 'count');
     const t = f.through?.target_field ?? null;
@@ -311,7 +318,7 @@ export function reportGroupLabel(key: string, field: ReportField | undefined, ct
     if (key === AGGREGATE_OTHERS_KEY) return typeof others === 'number' ? `Otros (${others})` : 'Otros';
     if (key === '' || key === EMPTY_GROUP_LABEL) return field?.type === 'checkbox' ? 'No' : EMPTY_GROUP_LABEL;
     if (!field) return key;
-    switch (field.type) {
+    switch (base(field.type)) {
         case 'select':
         case 'multi_select': {
             const opts = optionsOf(field);
@@ -391,7 +398,7 @@ export function sortReportKeys<T extends { key: string; value: number; label: st
     sort: unknown,
     field: ReportField | undefined,
 ): T[] {
-    if (field?.type === 'date' || field?.type === 'datetime') return rows;
+    if (base(field?.type) === 'date' || base(field?.type) === 'datetime') return rows;
     const others = rows.filter((r) => r.key === AGGREGATE_OTHERS_KEY);
     const rest = rows.filter((r) => r.key !== AGGREGATE_OTHERS_KEY);
     const hasOptions = optionsOf(field).size > 0;
@@ -641,7 +648,7 @@ export function reportUserIds(widget: Pick<ReportWidget, 'type' | 'config'>, dat
         const n = Number(v);
         if (Number.isInteger(n) && n > 0) ids.add(n);
     };
-    const isUser = (id: unknown): boolean => field(id)?.type === 'user';
+    const isUser = (id: unknown): boolean => base(field(id)?.type) === 'user';
     const cfg = widget.config ?? {};
     const d = data as Record<string, unknown>;
     const groupIsUser = isUser(cfg.group_by_field_id);
@@ -659,7 +666,7 @@ export function reportUserIds(widget: Pick<ReportWidget, 'type' | 'config'>, dat
         if (subIsUser) for (const c of pivot.cols ?? []) add(c.key);
     }
     if (widget.type === 'table' && Array.isArray(d.columns) && Array.isArray(d.rows)) {
-        const cols = (d.columns as Array<{ slug: string; type: string }>).filter((c) => c.type === 'user');
+        const cols = (d.columns as Array<{ slug: string; type: string }>).filter((c) => base(c.type) === 'user');
         for (const row of d.rows as Array<{ fields?: Record<string, unknown> }>) {
             for (const c of cols) {
                 const v = row.fields?.[c.slug];

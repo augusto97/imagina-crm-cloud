@@ -1,6 +1,14 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
     AUTOMATION_ACTIONS,
+    FIELD_DEFAULT_KINDS,
+    FIELD_FORMAT_PRESETS,
+    REQUIRED_IF_OPS,
+    analyzeUserPattern,
+    defaultKindsFor,
+    isUserWritableType,
+    validateFieldValue,
+    validationKindsFor,
     AGGREGATE_METRICS,
     BREAKDOWN_WIDGET_TYPES,
     STACKABLE_METRICS,
@@ -131,6 +139,12 @@ const AI_FIELD_TYPES = [
     // v0.1.291 — tiempo registrado (la suma de las entradas de tiempo del
     // registro, en minutos; sólo lectura, sin config obligatoria).
     'time_tracked',
+    // v0.1.300 — ID automático y columnas de sistema (sólo lectura).
+    'autonumber',
+    'created_at',
+    'updated_at',
+    'created_by',
+    'updated_by',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -173,6 +187,43 @@ const fieldSpec = z.object({
         })
         .optional()
         .describe('Sólo ai: el valor lo completa un modelo a partir de otros campos y se recalcula solo al cambiarlos (consume la cuota de IA)'),
+    autonumber: z
+        .object({
+            prefix: z.string().max(20).optional().describe('Prefijo (TCK, PED…). Sin él: las primeras letras del nombre de la lista.'),
+            digits: z.number().int().min(1).max(10).optional().describe('Dígitos mínimos (default 4: TCK-0001)'),
+            yearly: z.boolean().optional().describe('Reinicia cada año e incluye el año: PED-2026-0001'),
+            start: z.number().int().min(0).optional().describe('Número inicial (default 1)'),
+        })
+        .optional()
+        .describe('Sólo autonumber: ID automático que la app asigna al crear cada registro (no se escribe a mano). Numera solo los registros que ya existen.'),
+    default: z
+        .object({
+            kind: z.enum(FIELD_DEFAULT_KINDS).describe('value = valor fijo; today = hoy (date); now = ahora (datetime); creator = quien crea el registro (user)'),
+            value: z.unknown().optional().describe('Con kind=value: el valor (en select, el `value` o la etiqueta de la opción; en multi_select, una lista)'),
+        })
+        .optional()
+        .describe('Valor por defecto: se pone al crear un registro cuando ese campo no viene'),
+    validation: z
+        .object({
+            min: z.union([z.number(), z.string()]).optional().describe('Mínimo: número (number/currency/percent/rating/duration en minutos) o fecha AAAA-MM-DD (date/datetime)'),
+            max: z.union([z.number(), z.string()]).optional(),
+            min_length: z.number().int().min(0).optional().describe('text/long_text: largo mínimo'),
+            max_length: z.number().int().min(1).optional().describe('text/long_text: largo máximo'),
+            format: z.enum(FIELD_FORMAT_PRESETS).optional().describe('text: nit (con o sin dígito de verificación), nit_dv (con DV obligatorio), cedula, placa, digits (sólo números), letters (sólo letras), regex (usa pattern)'),
+            pattern: z.string().max(200).optional().describe('Con format=regex: la expresión (se compara con el valor COMPLETO; sin referencias hacia atrás ni repeticiones anidadas)'),
+            message: z.string().max(200).optional().describe('Mensaje de error propio (para el mínimo/máximo, el largo o el formato)'),
+            required_if: z
+                .object({
+                    field: fieldSlugSchema.describe('Slug del OTRO campo de la misma lista'),
+                    op: z.enum(REQUIRED_IF_OPS).describe('eq = es, neq = no es, not_empty = tiene valor'),
+                    value: z.unknown().optional().describe('Con eq/neq: el valor (en select, el `value` de la opción)'),
+                    message: z.string().max(200).optional(),
+                })
+                .optional()
+                .describe('Obligatorio sólo si otro campo cumple la condición'),
+        })
+        .optional()
+        .describe('Validaciones que se exigen al guardar (alta, edición, import, formularios, automatizaciones)'),
 });
 type FieldSpec = z.infer<typeof fieldSpec>;
 
@@ -2877,9 +2928,17 @@ export class StructureTools implements AiProposalApplier {
                 if (f.ai.task === 'classify' && (f.ai.options ?? []).length < 2) throw new AiToolError(`ai «${slug}»: clasificar necesita al menos dos options.`);
                 break;
             }
+            case 'autonumber':
+                if (f.autonumber?.prefix !== undefined) config.prefix = f.autonumber.prefix.trim().toUpperCase();
+                if (f.autonumber?.digits !== undefined) config.digits = f.autonumber.digits;
+                if (f.autonumber?.yearly) config.yearly = true;
+                if (f.autonumber?.start !== undefined) config.start = f.autonumber.start;
+                break;
             default:
                 break;
         }
+        // v0.1.300 — valor por defecto y validaciones (los campos que se escriben a mano).
+        if (isUserWritableType(f.type)) Object.assign(config, this.buildFieldRules(f, slug, config, opts));
         // Validación con el schema compartido, salvo lo que lleva tokens del
         // blueprint (se valida al materializar).
         const hasTokens = JSON.stringify(config).includes('"$');
@@ -2891,6 +2950,95 @@ export class StructureTools implements AiProposalApplier {
             }
         }
         return { config };
+    }
+
+    /**
+     * v0.1.300 — `default` y `validation` del vocabulario del modelo a la config del
+     * campo. Una opción por defecto se acepta por su `value` o su etiqueta;
+     * la condición de "obligatorio si" se resuelve a id (o `{$field}` en el
+     * blueprint). El servidor revalida al guardar (y una expresión regular
+     * peligrosa rebota con el motivo).
+     */
+    private buildFieldRules(
+        f: FieldSpec,
+        slug: string,
+        config: Record<string, unknown>,
+        opts: { localSlugs: () => Set<string>; forBlueprint: boolean; resolveInput?: (slug: string) => number | undefined },
+    ): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        if (f.default) {
+            const kinds = defaultKindsFor(f.type);
+            if (!kinds.includes(f.default.kind)) {
+                throw new AiToolError(`«${slug}» (${f.type}) admite como valor por defecto: ${kinds.join(', ') || 'ninguno'}.`);
+            }
+            let value = f.default.value;
+            if (f.default.kind === 'value') {
+                const options = (config.options as Array<{ value: string; label: string }> | undefined) ?? [];
+                const pick = (v: unknown): unknown => {
+                    const hit = options.find((o) => o.value === v || o.label.toLowerCase() === String(v).toLowerCase());
+                    return hit ? hit.value : v;
+                };
+                if (f.type === 'select') value = pick(value);
+                if (f.type === 'multi_select') value = (Array.isArray(value) ? value : [value]).map(pick);
+                const res = validateFieldValue({ type: f.type, config, is_required: false }, value);
+                if (!res.ok) throw new AiToolError(`Valor por defecto de «${slug}»: ${res.error}`);
+                value = res.value;
+            }
+            out.default_value = f.default.kind === 'value' ? { kind: 'value', value } : { kind: f.default.kind };
+        }
+        const v = f.validation;
+        if (v) {
+            const kinds = validationKindsFor(f.type);
+            const rule: Record<string, unknown> = {};
+            if ((v.min !== undefined || v.max !== undefined) && kinds.range === null) {
+                throw new AiToolError(`«${slug}» (${f.type}) no admite mínimo/máximo.`);
+            }
+            for (const k of ['min', 'max'] as const) {
+                if (v[k] === undefined) continue;
+                if (kinds.range === 'number' && typeof v[k] !== 'number') throw new AiToolError(`«${slug}»: ${k} tiene que ser un número.`);
+                if (kinds.range === 'date' && (typeof v[k] !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v[k] as string))) {
+                    throw new AiToolError(`«${slug}»: ${k} tiene que ser una fecha AAAA-MM-DD.`);
+                }
+                rule[k] = v[k];
+            }
+            if ((v.min_length !== undefined || v.max_length !== undefined) && !kinds.length) throw new AiToolError(`«${slug}» (${f.type}) no admite largo mínimo/máximo.`);
+            if (v.min_length !== undefined) rule.min_length = v.min_length;
+            if (v.max_length !== undefined) rule.max_length = v.max_length;
+            if (v.format !== undefined) {
+                if (!kinds.format) throw new AiToolError(`«${slug}» (${f.type}): el formato sólo aplica a campos de texto.`);
+                rule.format = v.format;
+                if (v.format === 'regex') {
+                    const check = analyzeUserPattern(v.pattern ?? '');
+                    if (!check.ok) throw new AiToolError(`«${slug}»: ${check.reason}`);
+                    rule.pattern = v.pattern;
+                }
+            }
+            if (v.message) {
+                if (rule.min !== undefined || rule.max !== undefined) rule.range_message = v.message;
+                if (rule.min_length !== undefined || rule.max_length !== undefined) rule.length_message = v.message;
+                if (rule.format !== undefined) rule.format_message = v.message;
+            }
+            if (v.required_if) {
+                if (!kinds.requiredIf) throw new AiToolError(`«${slug}» (${f.type}) no admite «obligatorio si».`);
+                const other = v.required_if.field;
+                if (other === slug) throw new AiToolError(`«${slug}»: no puede ser obligatorio según sí mismo.`);
+                if (!opts.localSlugs().has(other)) throw new AiToolError(`«${slug}»: «${other}» no es un campo de esta lista.`);
+                let fieldId: unknown;
+                if (opts.forBlueprint) fieldId = { $field: other };
+                else {
+                    fieldId = opts.resolveInput?.(other);
+                    if (fieldId === undefined) throw new AiToolError(`«${slug}»: «${other}» tiene que ser un campo YA existente de la lista.`);
+                }
+                rule.required_if = {
+                    field_id: fieldId,
+                    op: v.required_if.op,
+                    ...(v.required_if.op !== 'not_empty' && v.required_if.value !== undefined ? { value: v.required_if.value } : {}),
+                    ...(v.required_if.message ? { message: v.required_if.message } : {}),
+                };
+            }
+            if (Object.keys(rule).length > 0) out.validation = rule;
+        }
+        return out;
     }
 
     /** Config de vista con ids (o tokens `{$field}` en el blueprint). */
@@ -3435,6 +3583,23 @@ function describeFieldForModel(
     }
     if (f.type === 'time_tracked') {
         out.note = 'Sólo lectura: minutos registrados con el cronómetro o a mano en la ficha (se filtra, ordena y suma).';
+    }
+    // v0.1.300 — ID automático, columnas de sistema y reglas.
+    if (f.type === 'autonumber') {
+        out.autonumber = { prefix: cfg.prefix ?? '', digits: cfg.digits ?? 4, yearly: cfg.yearly === true, start: cfg.start ?? 1 };
+        out.note = 'Sólo lectura: la app lo asigna al crear el registro (no se escribe). Se busca, filtra y ordena.';
+    }
+    if (f.type === 'created_at' || f.type === 'updated_at') out.note = 'Sólo lectura: fecha y hora de creación / última modificación del registro (se filtra y agrupa por día).';
+    if (f.type === 'created_by' || f.type === 'updated_by') out.note = 'Sólo lectura: la persona que creó / modificó por última vez el registro (id; 0 = el sistema).';
+    const def = cfg.default_value as { kind?: string; value?: unknown } | undefined;
+    if (def && typeof def.kind === 'string') out.default = def.kind === 'value' ? { kind: 'value', value: def.value } : { kind: def.kind };
+    const val = cfg.validation as Record<string, unknown> | undefined;
+    if (val && typeof val === 'object') {
+        const ri = val.required_if as { field_id?: number; op?: string; value?: unknown } | undefined;
+        out.validation = {
+            ...val,
+            ...(ri ? { required_if: { field: typeof ri.field_id === 'number' ? fieldById.get(ri.field_id)?.slug ?? null : null, op: ri.op, ...(ri.value !== undefined ? { value: ri.value } : {}) } } : {}),
+        };
     }
     if (f.type === 'lookup' || f.type === 'rollup') {
         out.through = f.through ? `${f.through.relation_label} → ${f.through.other_list_name}${f.through.target_field ? '.' + f.through.target_field.label : ''}` : null;

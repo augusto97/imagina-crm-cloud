@@ -1,7 +1,9 @@
 import {
     evaluateComputed,
+    isSystemField,
     isThroughField,
     jsonbKeyForField,
+    type SystemFieldType,
     type Field,
     type FilterGroup,
     type RollupOperation,
@@ -70,7 +72,50 @@ export const LOOKUP_CAP = 50;
 /** Alias de los registros del OTRO lado dentro de las subconsultas. */
 const RR_DATA = sql.raw('"rr"."data"');
 
-type RowLike = { id: number; data: Record<string, unknown> };
+type RowLike = {
+    id: number;
+    data: Record<string, unknown>;
+    /** v0.1.300 — las columnas de sistema salen de acá (si la fila las trae). */
+    createdAt?: Date | string;
+    updatedAt?: Date | string;
+    createdBy?: number;
+    updatedBy?: number | null;
+};
+
+/**
+ * v0.1.300 — Valor de una columna de sistema para una fila: la fecha como instante
+ * ISO y la persona como id (0 = el sistema). «Modificado por» de un registro
+ * que nunca se modificó es quien lo creó (misma regla que el SQL).
+ */
+export function systemFieldValue(type: SystemFieldType, row: Omit<RowLike, 'id' | 'data'>): unknown {
+    const iso = (d: Date | string | undefined): string | null =>
+        d === undefined ? null : d instanceof Date ? d.toISOString() : new Date(d).toISOString();
+    switch (type) {
+        case 'created_at':
+            return iso(row.createdAt);
+        case 'updated_at':
+            return iso(row.updatedAt);
+        case 'created_by':
+            return row.createdBy ?? null;
+        case 'updated_by': {
+            if (row.updatedBy !== null && row.updatedBy !== undefined) return row.updatedBy;
+            const c = iso(row.createdAt);
+            return c !== null && c === iso(row.updatedAt) ? (row.createdBy ?? null) : null;
+        }
+    }
+}
+
+/** Escribe en `data` los valores de las columnas de sistema de la lista. */
+export function withSystemValues<T extends RowLike>(fields: ReadonlyArray<Pick<Field, 'id' | 'type'>>, rows: T[]): T[] {
+    const sys = fields.filter((f) => isSystemField(f.type));
+    if (sys.length === 0 || rows.length === 0) return rows;
+    return rows.map((r) => {
+        if (r.createdAt === undefined) return r;
+        const data = { ...r.data };
+        for (const f of sys) data[jsonbKeyForField(f.id)] = systemFieldValue(f.type as SystemFieldType, r);
+        return { ...r, data };
+    });
+}
 
 export class ThroughEngine {
     constructor(private readonly fields: ThroughFieldsSource) {}
@@ -273,6 +318,8 @@ export class ThroughEngine {
         rows: T[],
         allFields: Field[] = [],
     ): Promise<T[]> {
+        // v0.1.300 — columnas de sistema: salen de la propia fila (sin consultas).
+        rows = withSystemValues(allFields, rows);
         const planned = new Set(plans.map((p) => p.field.id));
         const unresolved = allFields.filter((f) => isThroughField(f.type) && !planned.has(f.id));
         // v0.1.291 — «Tiempo registrado»: también se resuelve en cada lectura

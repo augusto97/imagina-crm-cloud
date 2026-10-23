@@ -236,11 +236,17 @@ export function planXlsxColumns(writer: XlsxStreamWriter, fields: Field[], ctx: 
             case 'date':
                 return plan((r) => dateCell(raw(r)));
             case 'datetime':
+            // v0.1.300 — «Fecha de creación» / «Última modificación».
+            case 'created_at':
+            case 'updated_at':
                 return plan((r) => dateTimeCell(raw(r)));
             case 'select':
             case 'multi_select':
             case 'checkbox':
             case 'user':
+            // v0.1.300 — «Creado por» / «Modificado por»: el nombre (0 = Sistema).
+            case 'created_by':
+            case 'updated_by':
             case 'file':
                 return plan((r) => {
                     const v = raw(r);
@@ -325,6 +331,7 @@ export function planXlsxColumns(writer: XlsxStreamWriter, fields: Field[], ctx: 
             case 'long_text':
             case 'phone':
             case 'ai':
+            case 'autonumber':
                 return plan((r) => {
                     const v = raw(r);
                     return v === null || v === undefined || v === '' ? null : String(v);

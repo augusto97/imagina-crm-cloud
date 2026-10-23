@@ -1,6 +1,7 @@
 import { isoDateSchema, isoDateTimeSchema } from '../schemas/common';
 import type { FieldType } from '../schemas/field';
 import { parseDuration } from './duration';
+import { checkValueRules } from './field-rules';
 import { normalizePhone } from './phone';
 
 /**
@@ -43,8 +44,20 @@ function optionValues(config: Record<string, unknown>): string[] {
  * Valida y normaliza un valor para un campo. Devuelve el valor serializado
  * listo para guardar en `data` (nullish → null), o un error legible.
  * `checkbox` nunca falla por `required` (ausencia = false).
+ *
+ * v0.1.300 — Además de la forma del tipo, chequea las REGLAS del campo
+ * (`config.validation`: mínimo/máximo, largo, formato), con su mensaje
+ * propio. "Obligatorio si otro campo…" mira el registro entero y vive en
+ * `checkRequiredIf` (field-rules.ts).
  */
 export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueValidation {
+    const result = validateTypedValue(field, raw);
+    if (!result.ok || result.value === null || result.value === undefined) return result;
+    const ruleError = checkValueRules(field, result.value);
+    return ruleError === null ? result : fail(ruleError);
+}
+
+function validateTypedValue(field: FieldValueSpec, raw: unknown): ValueValidation {
     const { type, config, is_required } = field;
 
     // checkbox: caso especial, ausencia = false, jamás required-fail.
@@ -171,6 +184,8 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
             return ok(raw);
         }
         // v0.1.277 — lo escribe el servidor (el modelo); se acepta texto.
+        // v0.1.300 — el ID automático también lo escribe el servidor (texto).
+        case 'autonumber':
         case 'ai': {
             const v = typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : null;
             if (v === null) return fail('Se esperaba texto.');
@@ -182,6 +197,10 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
         case 'lookup':
         case 'rollup':
         case 'time_tracked':
+        case 'created_at':
+        case 'updated_at':
+        case 'created_by':
+        case 'updated_by':
             return fail(`El tipo '${type}' no se escribe en los datos del registro.`);
         default: {
             const _exhaustive: never = type;

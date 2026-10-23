@@ -117,6 +117,52 @@ describe('ImportService (Postgres real)', () => {
         expect(page.data[0]!.data[`f${f.monto!.id}`]).toBe(1000); // currency normalizado a number
     });
 
+    it('v0.1.300 — valores por defecto, validaciones y «obligatorio si» por fila; el ID automático se asigna', async () => {
+        await fieldsService.update(tenantId, 'clientes', 'estado', {
+            config: { options: [{ value: 'activo', label: 'Activo' }], default_value: { kind: 'value', value: 'activo' } },
+        });
+        const tipo = await fieldsService.create(tenantId, 'clientes', {
+            label: 'Tipo',
+            type: 'select',
+            slug: 'tipo',
+            config: { options: [{ value: 'persona', label: 'Persona' }, { value: 'empresa', label: 'Empresa' }] },
+        });
+        const nit = await fieldsService.create(tenantId, 'clientes', {
+            label: 'NIT',
+            type: 'text',
+            slug: 'nit',
+            config: { validation: { format: 'nit', required_if: { field_id: tipo.id, op: 'eq', value: 'empresa' } } },
+        });
+        const codigo = await fieldsService.create(tenantId, 'clientes', { label: 'Código', type: 'autonumber', slug: 'codigo' });
+
+        const res = await importService.importRows(tenantId, admin, 'clientes', {
+            mapping: { Nombre: f.nombre!.id, Tipo: tipo.id, NIT: nit.id, Monto: f.monto!.id },
+            rows: [
+                { Nombre: 'Ana', Tipo: 'persona', NIT: '', Monto: '1' },
+                { Nombre: 'Sin NIT', Tipo: 'empresa', NIT: '', Monto: '2' },
+                { Nombre: 'NIT malo', Tipo: 'empresa', NIT: '800197268-5', Monto: '3' },
+                { Nombre: 'Acme', Tipo: 'empresa', NIT: '800197268-4', Monto: '4' },
+            ],
+        });
+        expect(res.imported).toBe(2);
+        expect(res.errors.map((e) => [e.row, e.field])).toEqual([
+            [1, 'nit'],
+            [2, 'nit'],
+        ]);
+        expect(res.errors[0]!.message).toBe('«NIT» es obligatorio cuando «Tipo» es «Empresa».');
+        expect(res.errors[1]!.message).toMatch(/NIT válido/);
+
+        const page = await recordsService.list(tenantId, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(page.data.map((r) => [r.data[`f${f.nombre!.id}`], r.data[`f${f.estado!.id}`], r.data[`f${codigo.id}`]])).toEqual([
+            ['Ana', 'activo', 'CLI-0001'],
+            ['Acme', 'activo', 'CLI-0002'],
+        ]);
+        // El ID automático no se puede mapear: lo pone la app.
+        await expect(
+            importService.importRows(tenantId, admin, 'clientes', { mapping: { Codigo: codigo.id }, rows: [{ Codigo: 'X-1' }] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('reporta errores por fila y NO inserta las inválidas', async () => {
         const res = await importService.importRows(tenantId, admin, 'clientes', {
             mapping: { Nombre: f.nombre!.id, Importe: f.monto!.id, Estado: f.estado!.id },

@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { useFields } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -43,7 +44,8 @@ export function useBreakdownModel(widget: WidgetSpec, payload: BreakdownPayload 
     const seriesOrder = useGroupOptionOrder(widget.list_id, subFieldId);
     const groupOrder = useGroupOptionOrder(widget.list_id, groupFieldId);
     const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
-    const groupField = fields.data?.find((f) => f.id === groupFieldId);
+    const rawGroupField = fields.data?.find((f) => f.id === groupFieldId);
+    const groupField = rawGroupField ? asDisplayField(rawGroupField) : undefined;
     const chronological = groupField?.type === 'date' || groupField?.type === 'datetime';
     const sort = widget.config.sort as ChartSort | undefined;
     const hideZero = widget.config.hide_zero_groups === true;

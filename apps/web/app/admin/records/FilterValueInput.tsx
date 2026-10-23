@@ -3,6 +3,7 @@ import { RelationPicker } from '@/components/fields/RelationPicker';
 import { AutocompleteInput } from '@/components/ui/autocomplete-input';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { __ } from '@/lib/i18n';
 import { formatDateStr } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
@@ -40,11 +41,16 @@ interface FilterValueInputProps {
  */
 export function FilterValueInput({
     listId,
-    field,
+    field: rawField,
     op,
     value,
     onChange,
 }: FilterValueInputProps): JSX.Element {
+    // v0.1.300 — las columnas de sistema se filtran como lo que son: una fecha (se
+    // elige el DÍA: el servidor lo cuenta en el reloj de la empresa) o una
+    // persona; el ID automático, como texto.
+    const field: FieldEntity =
+        rawField.type === 'created_at' || rawField.type === 'updated_at' ? { ...rawField, type: 'date' } : asDisplayField(rawField);
     // Operador "rango relativo": el valor es el slug del preset
     // (`this_month`, `last_year`, etc.). Persistimos el slug, no las
     // fechas resueltas — el backend las computa en cada query.

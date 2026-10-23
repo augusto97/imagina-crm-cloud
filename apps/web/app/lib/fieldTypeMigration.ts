@@ -63,6 +63,11 @@ const MATRIX: Record<string, Record<string, TypeRisk>> = {
         text: 'safe',
         email: 'lossy',
     },
+    // v0.1.300 — un ID automático se puede volver texto (conserva los códigos y
+    // deja de asignarse solo). Hacia el ID automático no se convierte: se crea.
+    autonumber: {
+        text: 'safe',
+    },
 };
 
 export function isTransitionAllowed(from: string, to: string): boolean {

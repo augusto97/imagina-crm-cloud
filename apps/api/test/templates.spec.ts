@@ -370,6 +370,44 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         expect(rows[0]!.data).toEqual({ [`f${bySlug.get('titulo')!.id}`]: 'Primera', [`f${bySlug.get('horas')!.id}`]: 3 });
     });
 
+    it('v0.1.300 — duplicar lleva el ID automático (renumerado), los valores por defecto y «obligatorio si» re-apuntado', async () => {
+        const src = await listsService.create(tenantA, { name: 'Pedidos' });
+        const tipo = await fieldsService.create(tenantA, String(src.id), {
+            label: 'Tipo',
+            type: 'select',
+            config: { options: [{ value: 'persona', label: 'Persona' }, { value: 'empresa', label: 'Empresa' }], default_value: { kind: 'value', value: 'persona' } },
+        });
+        await fieldsService.create(tenantA, String(src.id), {
+            label: 'NIT',
+            type: 'text',
+            config: { validation: { format: 'nit', required_if: { field_id: tipo.id, op: 'eq', value: 'empresa', message: 'Falta el NIT' } } },
+        });
+        await fieldsService.create(tenantA, String(src.id), { label: 'Número', type: 'autonumber', config: { prefix: 'PED', digits: 3 } });
+        await fieldsService.create(tenantA, String(src.id), { label: 'Creado por', type: 'created_by' });
+        for (let i = 0; i < 2; i++) {
+            await withTenant(pg.db, tenantA, (tx) => tx.insert(records).values({ tenantId: tenantA, listId: src.id, data: { [`f${tipo.id}`]: 'persona' }, createdBy: actor }));
+        }
+
+        const { lists: created, warnings } = await templates.duplicate(tenantA, actor, String(src.id), {
+            include: { views: false, automations: false, settings: false, records: true },
+        });
+        expect(warnings).toEqual([]);
+        const cf = await fieldsService.listByListId(tenantA, created[0]!.id);
+        const bySlug = new Map(cf.map((f) => [f.slug, f]));
+        expect(bySlug.get('tipo')!.config.default_value).toEqual({ kind: 'value', value: 'persona' });
+        expect(bySlug.get('nit')!.config.validation).toEqual({
+            format: 'nit',
+            required_if: { field_id: bySlug.get('tipo')!.id, op: 'eq', value: 'empresa', message: 'Falta el NIT' },
+        });
+        expect(bySlug.get('numero')!.config).toMatchObject({ prefix: 'PED', digits: 3 });
+        expect(bySlug.get('creado_por')!.type).toBe('created_by');
+        // Las copias reciben números de SU lista (no los del origen).
+        const rows = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select().from(records).where(and(eq(records.listId, created[0]!.id), isNull(records.deletedAt))),
+        );
+        expect(rows.map((r) => r.data[`f${bySlug.get('numero')!.id}`]).sort()).toEqual(['PED-001', 'PED-002']);
+    });
+
     it('duplicar SIN registros ni automatizaciones respeta la elección', async () => {
         const src = await listsService.create(tenantA, { name: 'Solo estructura' });
         const t = await fieldsService.create(tenantA, String(src.id), { label: 'T', type: 'text' });

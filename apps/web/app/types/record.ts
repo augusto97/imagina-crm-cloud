@@ -183,6 +183,12 @@ export const GROUPABLE_FIELD_TYPES = [
     'rollup',
     // v0.1.291 — el tiempo registrado (minutos) agrupa como número.
     'time_tracked',
+    // v0.1.300 — columnas de sistema (las fechas, por día) y el ID automático.
+    'created_at',
+    'updated_at',
+    'created_by',
+    'updated_by',
+    'autonumber',
 ] as const;
 
 export type GroupableFieldType = (typeof GROUPABLE_FIELD_TYPES)[number];
