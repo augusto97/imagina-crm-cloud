@@ -275,6 +275,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 - Base de dev: `docker exec -it imagina-base-postgres-1 psql -U imagina -d imagina_base`.
 - El tenant de dev arranca en plan `trial` (500 registros): para pruebas
   grandes, subirlo a mano (`update tenants set plan='pro' where id=1`).
+- **Varias entregas en paralelo** (cada una en su worktree): `sh
+  scripts/dev/slot.sh <n 1-9> up|restart|stop|status|env` levanta una instancia
+  AISLADA — API en 3100+n, app en 5180+n, base `imagina_slot_<n>`, Redis DB n,
+  logs en `/tmp/imagina-dev-slot-<n>` — sobre el Postgres/Redis del entorno
+  principal. Para migrar la base del slot: `eval "$(sh scripts/dev/slot.sh <n>
+  env)" && pnpm db:migrate`. Desde un slot NUNCA correr `up.sh`/`restart.sh`:
+  matan los procesos de todos. La plantilla E2E lee `E2E_BASE`/`E2E_DB`.
 
 ### 7.3 Tests
 - API: `pnpm --filter @imagina-base/api test` (Vitest + Testcontainers: levanta
@@ -360,6 +367,19 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de click derecho abierto, y «Editar con un click» configurable por vista), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
+  ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
+  en paralelo en copias aisladas (worktrees), cada una con su instancia de
+  desarrollo propia (`scripts/dev/slot.sh <n>`: API 3100+n, app 5180+n, base
+  `imagina_slot_<n>`), y se publican de a una, en el orden en que terminan.
+  **Tanda 1**: Papelera A2 (slot 1), Campos A3+A4+A6 (slot 2), Datos
+  personales I10 (slot 3), Excel G6 (slot 4), Kanban de ventas B5 (slot 5).
+  **Tanda 2** (cuando la 1 esté integrada, porque comparten tipos de campo):
+  Botón A5 (slot 6), Fórmulas A1 (slot 7), Dependencias + Gantt A8+B1 (slot 8),
+  Calendario completo B4 (slot 9). Decisiones dadas al usuario: papelera de
+  30 días para todos los planes, restaura quien borró o un admin; el prefijo
+  del ID automático se sugiere del nombre de la lista. Al terminar las dos
+  fases: el usuario prueba y después se sigue con las fases 3-6.
 - 2026-10-22 — **Pedido del usuario: estudio de funcionalidades frente a la
   competencia** (premium y open source: Airtable, ClickUp, Notion, monday,
   SmartSuite, Smartsheet, Fibery, Attio, Kommo, NocoDB, Baserow, Teable,

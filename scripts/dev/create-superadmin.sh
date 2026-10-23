@@ -12,7 +12,7 @@ EMAIL=e2e@test.local
 PASS=Superadmin-pass-1
 PG=${IMAGINA_DEV_PG_CONTAINER:-imagina-base-postgres-1}
 HASH=$(cd "$ROOT/apps/api" && node -e "require('argon2').hash(process.argv[1]).then((h) => process.stdout.write(h))" "$PASS")
-docker exec -i "$PG" psql -q -U imagina -d imagina_base -v ON_ERROR_STOP=1 -v email="$EMAIL" -v hash="$HASH" <<'SQL'
+docker exec -i "$PG" psql -q -U imagina -d "${IMAGINA_DEV_DB:-imagina_base}" -v ON_ERROR_STOP=1 -v email="$EMAIL" -v hash="$HASH" <<'SQL'
 with u as (
     insert into users (email, password_hash, name, email_verified_at)
     select :'email', :'hash', 'E2E', now()

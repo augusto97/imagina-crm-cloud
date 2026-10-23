@@ -11,7 +11,9 @@
 import { chromium } from 'playwright-core';
 import { execSync } from 'node:child_process';
 
-const BASE = 'http://localhost:5174';
+// En un slot paralelo (scripts/dev/slot.sh <n> env) se usan E2E_BASE/E2E_DB.
+const BASE = process.env.E2E_BASE ?? 'http://localhost:5174';
+const DB = process.env.E2E_DB ?? 'imagina_base';
 const results = [];
 const check = (name, ok, extra = '') => {
     results.push(ok);
@@ -19,7 +21,7 @@ const check = (name, ok, extra = '') => {
 };
 // Consultas directas a la base de desarrollo (para preparar datos o verificar).
 const sql = (q) =>
-    execSync(`docker exec -i imagina-base-postgres-1 psql -U imagina -d imagina_base -Atc "${q}"`).toString().trim();
+    execSync(`docker exec -i imagina-base-postgres-1 psql -U imagina -d ${DB} -Atc "${q}"`).toString().trim();
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
