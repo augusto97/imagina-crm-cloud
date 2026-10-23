@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.300** (ID automático, columnas de sistema, valores por defecto y validaciones por campo — quinta entrega de las fases 1 y 2 del estudio, cierra la tanda 1), en `main`.
+versión publicada: **v0.1.301** (Calendario completo: mes, semana, día y agenda — primera entrega de la tanda 2 de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -382,8 +382,12 @@ versión publicada: **v0.1.300** (ID automático, columnas de sistema, valores p
   fases: el usuario prueba y después se sigue con las fases 3-6.
   **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
   personales (v0.1.298), Excel (v0.1.299) y Campos (v0.1.300) publicados:
-  **la tanda 1 está completa**. Gantt + dependencias (slot 8) y Calendario (slot 9)
-  arrancaron sobre la rama local `integ-base` (lo integrado y todavía no
+  **la tanda 1 está completa**. De la tanda 2 ya salió Calendario
+  (v0.1.301). El contenedor se reinició varias veces durante la tanda 2 y una
+  vez se cortó por el límite de uso: el avance de cada agente quedó en commits
+  de su rama (`wip-gantt`, `wip-calendario` y las ramas de cada worktree) y se
+  retomó. Gantt + dependencias (slot 8)
+  arrancó sobre la rama local `integ-base` (lo integrado y todavía no
   publicado). Botón (slot 6) y Fórmulas (slot 7) arrancaron sobre
   `integ-base` con Campos incluido. Los
   documentos de cada entrega toman el siguiente ADR libre (Papelera S52,
@@ -626,6 +630,17 @@ versión publicada: **v0.1.300** (ID automático, columnas de sistema, valores p
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.301** — **Calendario completo** (opción B4 del estudio,
+  ADR-S56). Mes, Semana, Día y Agenda sobre un bundle por rango en UNA consulta
+  (total real por día y por fuente, tope de 100 días y 4.000 filas), arrastrar
+  y estirar con deshacer que no pisa cambios ajenos, crear con clic o arrastre,
+  varias fuentes de fecha con color, horas en la zona de la empresa y versión
+  para el celular. Configuración en la vista, sin migración; asistente/MCP,
+  plantillas y migración de empresa al día. Mes sobre 100.000 registros: p50
+  ~200 ms. Pendiente: ocurrencias proyectadas de las recurrencias. **Aviso
+  para quien siga**: el adaptador `lib/api.ts` desenvuelve cualquier `{data}`
+  de primer nivel, así que la respuesta de un endpoint nuevo nunca debe
+  llamarse `data`.
 - **2026-10-23 · v0.1.300** — **ID automático, columnas de sistema, valores por
   defecto y validaciones** (opciones A3+A4+A6 del estudio, ADR-S55). Tipo «ID
   automático» asignado por un trigger de Postgres con contador atómico por campo

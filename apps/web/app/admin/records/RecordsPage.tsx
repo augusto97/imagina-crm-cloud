@@ -231,6 +231,8 @@ export function RecordsPage(): JSX.Element {
         fetching: false,
         ids: [],
     });
+    // B4 — el calendario: si está cargando y el orden de sus registros (anterior/siguiente del modal).
+    const [calendarStatus, setCalendarStatus] = useState<{ fetching: boolean; ids: number[] }>({ fetching: false, ids: [] });
     const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
         total: null,
         fetching: false,
@@ -308,7 +310,7 @@ export function RecordsPage(): JSX.Element {
     // Lo que abarca "todos los que coinciden" (acciones masivas) y el spinner
     // del buscador: en modo agrupado lo informa el bundle.
     const matchingCount = groupedMode ? groupedStatus.total : kanbanMode ? kanbanStatus.total : records.data?.meta?.total ?? null;
-    const listFetching = groupedMode ? groupedStatus.fetching : kanbanMode ? kanbanStatus.fetching : records.isFetching;
+    const listFetching = groupedMode ? groupedStatus.fetching : kanbanMode ? kanbanStatus.fetching : calendarMode ? calendarStatus.fetching : records.isFetching;
     const [createOpen, setCreateOpen] = useState(false);
     // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
     // dentro del grupo "Hecho" abre el form con estado=hecho seteado).
@@ -489,6 +491,7 @@ export function RecordsPage(): JSX.Element {
         setCreateOpen(true);
     });
     const [kanbanSettingsOpen, setKanbanSettingsOpen] = useState(false);
+    const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
     const onFrozenColumnsChange = useEventCallback((next: number | null) =>
         setState((s) => ({ ...s, frozenColumns: next })),
     );
@@ -755,7 +758,7 @@ const applyView = (view: SavedViewEntity | null): void => {
     // Anterior / siguiente del modal: el orden de la tabla plana (o de las
     // tarjetas, el kanban y el calendario, que leen la misma página). En la
     // vista agrupada cada grupo pagina aparte: ahí no hay un orden único.
-    const navIds = isTableGrouped ? [] : kanbanMode ? kanbanStatus.ids : (records.data?.data ?? []).map((r) => r.id);
+    const navIds = isTableGrouped ? [] : kanbanMode ? kanbanStatus.ids : calendarMode ? calendarStatus.ids : (records.data?.data ?? []).map((r) => r.id);
     const navIndex = drawerRecordId !== null ? navIds.indexOf(drawerRecordId) : -1;
     const drawerNav = {
         prev: navIndex > 0 ? navIds[navIndex - 1]! : null,
@@ -799,13 +802,6 @@ const applyView = (view: SavedViewEntity | null): void => {
         if (!id) return undefined;
         return fields.data.find((f) => f.id === id);
     }, [isKanban, fields.data, activeView?.config.group_by_field_id]);
-
-    const dateField = useMemo(() => {
-        if (!isCalendar || !fields.data) return undefined;
-        const id = activeView?.config.date_field_id;
-        if (!id) return undefined;
-        return fields.data.find((f) => f.id === id);
-    }, [isCalendar, fields.data, activeView?.config.date_field_id]);
 
     // Cards view: extraFields + coverField resueltos desde activeView.config.
     const cardsExtraFields = useMemo(() => {
@@ -1258,6 +1254,14 @@ const applyView = (view: SavedViewEntity | null): void => {
                               }
                             : undefined
                     }
+                    onConfigureCalendar={
+                        isCalendar && activeView && canManageViews && canWriteView(activeView)
+                            ? () => {
+                                  setViewSettingsOpen(false);
+                                  setCalendarSettingsOpen(true);
+                              }
+                            : undefined
+                    }
                 />
             )}
 
@@ -1412,14 +1416,21 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     settingsOpen={kanbanSettingsOpen}
                                     onSettingsOpenChange={setKanbanSettingsOpen}
                                 />
-                            ) : isCalendar && dateField ? (
+                            ) : isCalendar && activeView ? (
+                                // B4 — el calendario pide su propio rango (`calendar-bundle`).
                                 <CalendarView
+                                    key={activeView.id}
                                     listId={list.data.id}
                                     fields={fields.data}
-                                    dateField={dateField}
+                                    view={activeView}
                                     filterTree={state.filterTree}
                                     search={debouncedSearch}
                                     onCardClick={(record) => setDrawerRecordId(record.id)}
+                                    onAddRecord={canCreateRecords ? onKanbanAddRecord : undefined}
+                                    canEditView={canManageViews && canWriteView(activeView)}
+                                    settingsOpen={calendarSettingsOpen}
+                                    onSettingsOpenChange={setCalendarSettingsOpen}
+                                    onStatusChange={setCalendarStatus}
                                 />
                             ) : isCards ? (
                                 <CardsView

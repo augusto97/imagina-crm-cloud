@@ -1,4 +1,11 @@
-import type { KanbanMoveRule, KanbanWipLimit, ViewColorRule } from '@imagina-base/shared';
+import type {
+    CalendarColorBy,
+    CalendarMode,
+    CalendarSourceConfig,
+    KanbanMoveRule,
+    KanbanWipLimit,
+    ViewColorRule,
+} from '@imagina-base/shared';
 
 export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards';
 
@@ -85,6 +92,26 @@ export interface SavedViewConfig {
     color_rules?: ViewColorRule[];
     /** Sólo para vistas tipo `calendar`: id del campo `date`/`datetime` que ubica cada record. */
     date_field_id?: number;
+    /**
+     * B4 — Calendario completo (ver `calendarViewConfigSchema` en shared): fin
+     * o duración de la fuente principal, fuentes adicionales, fuentes
+     * apagadas, color, vista por defecto, semana, horario y duración por
+     * defecto.
+     */
+    calendar_end_field_id?: number | null;
+    calendar_duration_field_id?: number | null;
+    calendar_main_label?: string;
+    calendar_main_color?: CalendarSourceConfig['color'];
+    calendar_sources?: CalendarSourceConfig[];
+    calendar_hidden_sources?: string[];
+    calendar_color_by?: CalendarColorBy;
+    calendar_color_field_id?: number | null;
+    calendar_default_mode?: CalendarMode;
+    calendar_week_start?: 0 | 1 | 6;
+    calendar_day_start?: number;
+    calendar_day_end?: number;
+    calendar_show_weekends?: boolean;
+    calendar_default_duration?: number;
     /**
      * Sólo para vistas tipo `cards`: ids de los fields que se
      * muestran en cada tarjeta debajo del título. Vacío = solo

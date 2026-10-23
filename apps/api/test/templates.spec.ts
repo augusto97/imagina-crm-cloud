@@ -101,6 +101,29 @@ describe('Tokens del blueprint (puros)', () => {
             kanban_lane_field_id: 20,
             kanban_move_rules: [{ column: 'perdido', required_field_ids: [21] }],
         });
+
+        // B4 — calendario completo: el fin, las fuentes adicionales y el campo de color.
+        const calendar = tokenizeFieldRefs(
+            {
+                date_field_id: 10,
+                calendar_end_field_id: 11,
+                calendar_color_field_id: 10,
+                calendar_sources: [{ id: 's2', start_field_id: 11, end_field_id: 10, label: 'Llamar' }],
+            },
+            idToSlug,
+        );
+        expect(calendar).toEqual({
+            date_field_id: { $field: 'estado' },
+            calendar_end_field_id: { $field: 'monto' },
+            calendar_color_field_id: { $field: 'estado' },
+            calendar_sources: [{ id: 's2', start_field_id: { $field: 'monto' }, end_field_id: { $field: 'estado' }, label: 'Llamar' }],
+        });
+        expect(resolveFieldRefs(calendar, new Map([['estado', 20], ['monto', 21]]))).toEqual({
+            date_field_id: 20,
+            calendar_end_field_id: 21,
+            calendar_color_field_id: 20,
+            calendar_sources: [{ id: 's2', start_field_id: 21, end_field_id: 20, label: 'Llamar' }],
+        });
     });
 
     it('list_id / target_list_id del pack → $list y vuelta', () => {

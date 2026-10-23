@@ -104,10 +104,10 @@ export const kanban = (name: string, bySlug: string) => ({
     config: { group_by_field_id: ref(bySlug) },
     is_default: false,
 });
-export const calendar = (name: string, dateSlug: string) => ({
+export const calendar = (name: string, dateSlug: string, extra: Record<string, unknown> = {}) => ({
     name,
     type: 'calendar' as const,
-    config: { date_field_id: ref(dateSlug) },
+    config: { date_field_id: ref(dateSlug), ...extra },
     is_default: false,
 });
 

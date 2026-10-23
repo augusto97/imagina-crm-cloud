@@ -186,6 +186,18 @@ export function patchRecordInCache(
         }
         return touched ? { ...bundle, expanded } : undefined;
     }
+    // B4 — bundle del calendario (`{records: [...]}`) y las páginas de la agenda
+    // (`{pages: [{records}]}`): el evento arrastrado se ve en su lugar nuevo al
+    // instante (se reubica solo al recalcular su fecha).
+    const cal = data as { records?: RecordEntity[]; pages?: Array<{ records?: RecordEntity[] }> };
+    if (Array.isArray(cal.records)) {
+        if (! cal.records.some((r) => r.id === id)) return undefined;
+        return { ...cal, records: cal.records.map((r) => (r.id === id ? patch(r) : r)) };
+    }
+    if (Array.isArray(cal.pages) && cal.pages.every((p) => p && Array.isArray(p.records))) {
+        if (! cal.pages.some((p) => p.records!.some((r) => r.id === id))) return undefined;
+        return { ...cal, pages: cal.pages.map((p) => ({ ...p, records: p.records!.map((r) => (r.id === id ? patch(r) : r)) })) };
+    }
     // v0.1.297 — bundle del kanban (`{cells: {k: {records: [...]}}}`): el registro
     // movido cambia de valor al instante y el tablero lo reubica solo.
     const board = data as { cells?: Record<string, { records?: RecordEntity[] | null }> };

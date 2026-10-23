@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { RecordsState } from '../recordsState';
 import type { SavedViewConfig } from '@/types/view';
 
-import { hasChangesVsView, kanbanToViewConfig, stateToViewConfig, viewConfigToKanban, viewConfigToState } from './savedViewMapping';
+import { parseViewConfig, readCalendarSettings } from '@imagina-base/shared';
+
+import { calendarToViewConfig, hasChangesVsView, kanbanToViewConfig, stateToViewConfig, viewConfigToCalendar, viewConfigToKanban, viewConfigToState } from './savedViewMapping';
 
 const baseState: RecordsState = {
     page: 1,
@@ -279,5 +281,40 @@ describe('v0.1.297 — kanban para ventas: ajustes del tablero en la vista', () 
             kanban_title_field_id: null,
             kanban_meta_field_ids: [],
         });
+    });
+});
+
+// B4 — Calendario completo.
+describe('calendario completo: la config de la vista (B4)', () => {
+    it('round-trip de los ajustes del calendario y las reglas, sin tocar el resto, y el servidor los conserva', () => {
+        const base = { date_field_id: 2, filter_tree: { type: 'group', logic: 'and', children: [] }, search: 'ana', sort: [] };
+        const { settings } = viewConfigToCalendar(base);
+        const next = {
+            ...settings,
+            sources: [
+                { ...settings.sources[0]!, endFieldId: 3, label: 'Citas', color: 'violet' as const },
+                { id: 's2', startFieldId: 4, endFieldId: 5, durationFieldId: null, label: 'Vence', color: 'red' as const, enabled: false },
+            ],
+            colorBy: 'field' as const,
+            colorFieldId: 7,
+            defaultMode: 'week' as const,
+            weekStart: 0 as const,
+            dayStartHour: 8,
+            dayEndHour: 19,
+            showWeekends: false,
+            defaultDuration: 30,
+        };
+        const rules = [{ id: 'r1', enabled: true, condition: { type: 'condition' as const, field_id: 7, op: 'eq' as const, value: 'cerrado' }, color: 'gray' as const, target: 'row' as const }];
+        const config = calendarToViewConfig(base, next, rules);
+        expect(config.search).toBe('ana');
+        expect(config.filter_tree).toEqual(base.filter_tree);
+        // Lo que vuelve del servidor (Zod + JSONB) se lee igual.
+        const saved = JSON.parse(JSON.stringify(parseViewConfig('calendar', config))) as typeof config;
+        const back = viewConfigToCalendar(saved);
+        expect(back.settings).toEqual(next);
+        expect(back.colorRules).toEqual(rules);
+        expect(readCalendarSettings(saved).sources[1]!.enabled).toBe(false);
+        // Sin reglas, la clave se borra (no queda un array vacío).
+        expect(calendarToViewConfig(saved, back.settings, []).color_rules).toBeUndefined();
     });
 });

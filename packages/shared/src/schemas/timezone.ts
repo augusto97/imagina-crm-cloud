@@ -113,6 +113,16 @@ export function zonedInstant(ymd: string, tz: string, time: { h?: number; m?: nu
     return new Date(t);
 }
 
+/**
+ * B4 — Día (YYYY-MM-DD) y minuto del día (0-1439) de un INSTANTE en el reloj
+ * de `tz`. El calendario ubica y arrastra los eventos de fecha y hora con
+ * esto: en el reloj de la empresa, no en el del navegador.
+ */
+export function zonedDayAndMinute(at: Date, tz: string): { ymd: string; minute: number } {
+    const p = zonedParts(at, resolveTimeZone(tz));
+    return { ymd: `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}`, minute: p.hour * 60 + p.minute };
+}
+
 /** Suma días a un YYYY-MM-DD (calendario puro, sin zona). */
 export function addDaysYmd(ymd: string, days: number): string {
     const [y, m, d] = ymd.split('-').map(Number) as [number, number, number];

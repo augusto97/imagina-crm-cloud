@@ -18,6 +18,7 @@ import {
     type BulkEditTarget,
     evaluateComputed,
     isDataField,
+    isValidTimeZone,
     jsonbKeyForField,
     readStoreListMarker,
     richDocToPlainText,
@@ -71,6 +72,7 @@ import { RelationsRepository } from './relations.repository';
 import { compileSearch } from './search-sql';
 import { relatedScopeSql, type RelatedScope } from './related-scope';
 import { BillingService } from '../billing/billing.service';
+import { calendarPicksSql, readPicks, type CalendarPick, type CalendarSqlSource } from './calendar-sql';
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
 export interface Actor {
@@ -495,6 +497,119 @@ export class RecordsService {
                 out.set(k, list);
             });
             return out;
+        });
+    }
+
+    /**
+     * B4 — Calendario completo: los eventos del RANGO visible (ver
+     * `calendar-sql.ts`) con el mismo filtro, búsqueda, ACL y regla de
+     * subtareas que el listado. Una fuente cuyo campo no existe, no es de
+     * fecha o está oculto para quien mira se informa y no se pide.
+     */
+    async listCalendarRange(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        opts: {
+            sources: Array<{ key: string; startFieldId: number; endFieldId: number | null; durationFieldId?: number | null }>;
+            from: string;
+            to: string;
+            /** Zona del navegador, para una empresa que no eligió la suya. */
+            clientTimeZone?: string;
+            perDay: number;
+            dayLimits: Record<string, number>;
+            maxRows: number;
+            filter_tree?: ListRecordsQuery['filter_tree'];
+            search?: string;
+        },
+    ): Promise<{
+        timeZone: string;
+        fields: Field[];
+        sources: Array<{ key: string; start_field_id: number; end_field_id: number | null; duration_field_id: number | null; ok: boolean; reason?: string }>;
+        picks: CalendarPick[];
+        total: number;
+        /** Eventos del rango por fuente (las que se pidieron). */
+        perSource: Record<string, number>;
+        rows: RecordDto[];
+    }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            const own = this.timeZones ? await this.timeZones.get(tenantId, tx) : null;
+            const timeZone = own ?? (opts.clientTimeZone && isValidTimeZone(opts.clientTimeZone) ? opts.clientTimeZone : FALLBACK_TIME_ZONE);
+            const byId = new Map(ctx.fields.map((f) => [f.id, f]));
+            const dateField = (id: number | null): { id: number; type: 'date' | 'datetime' } | null | 'hidden' | 'invalid' => {
+                if (id === null) return null;
+                const f = byId.get(id);
+                if (!f || (f.type !== 'date' && f.type !== 'datetime')) return 'invalid';
+                if (ctx.hiddenIds.has(f.id)) return 'hidden';
+                return { id: f.id, type: f.type };
+            };
+            const sqlSources: CalendarSqlSource[] = [];
+            const durationField = (id: number | null | undefined): { id: number } | null | 'hidden' | 'invalid' => {
+                if (id === null || id === undefined) return null;
+                const f = byId.get(id);
+                if (!f || f.type !== 'duration') return 'invalid';
+                return ctx.hiddenIds.has(f.id) ? 'hidden' : { id: f.id };
+            };
+            const sources = opts.sources.map((s) => {
+                const start = dateField(s.startFieldId);
+                const end = dateField(s.endFieldId);
+                // Un fin explícito gana sobre la duración.
+                const dur = end === null ? durationField(s.durationFieldId) : null;
+                const reason =
+                    start === 'hidden' || end === 'hidden' || dur === 'hidden'
+                        ? 'hidden'
+                        : start === 'invalid' || start === null || end === 'invalid' || dur === 'invalid'
+                          ? 'invalid_field'
+                          : (end !== null && end.type !== start.type) || (dur !== null && start.type !== 'datetime')
+                            ? 'type_mismatch'
+                            : undefined;
+                if (reason === undefined && start !== null && typeof start === 'object') {
+                    sqlSources.push({
+                        key: s.key,
+                        start,
+                        end: end !== null && typeof end === 'object' ? end : null,
+                        duration: dur !== null && typeof dur === 'object' ? dur : null,
+                    });
+                }
+                return {
+                    key: s.key,
+                    start_field_id: s.startFieldId,
+                    end_field_id: s.endFieldId,
+                    duration_field_id: s.durationFieldId ?? null,
+                    ok: reason === undefined,
+                    ...(reason ? { reason } : {}),
+                };
+            });
+            if (sqlSources.length === 0) return { timeZone, fields: ctx.fields, sources, picks: [], total: 0, perSource: {}, rows: [] };
+            const result = await tx.execute(
+                calendarPicksSql({
+                    tenantId,
+                    listId: ctx.list.id,
+                    where: this.readWhere(ctx, { filter_tree: opts.filter_tree, search: opts.search }),
+                    sources: sqlSources,
+                    from: opts.from,
+                    to: opts.to,
+                    timeZone,
+                    perDay: opts.perDay,
+                    dayLimits: opts.dayLimits,
+                    maxRows: opts.maxRows,
+                }),
+            );
+            const { picks, total, perSource } = readPicks(result.rows as Array<Record<string, unknown>>);
+            const ids = [...new Set(picks.map((p) => p.id))];
+            const listed =
+                ids.length === 0
+                    ? []
+                    : await this.repo.list(tx, tenantId, ctx.list.id, {
+                          parent: 'any',
+                          where: inArray(records.id, ids),
+                          limit: ids.length,
+                          dir: 'asc',
+                      });
+            const order = new Map(ids.map((id, i) => [id, i]));
+            const sorted = listed.slice(0, ids.length).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+            return { timeZone, fields: ctx.fields, sources, picks, total, perSource, rows: await this.hydrate(tx, tenantId, ctx, sorted) };
         });
     }
 

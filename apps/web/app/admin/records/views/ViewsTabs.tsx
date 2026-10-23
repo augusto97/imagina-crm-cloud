@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import type { SavedViewConfig, SavedViewEntity } from '@/types/view';
 
 import { EditCardsViewDialog } from './EditCardsViewDialog';
+import { CalendarSettingsDialog } from './calendar/CalendarSettingsDialog';
 import { EditKanbanViewDialog } from './EditKanbanViewDialog';
 
 interface ViewsTabsProps {
@@ -71,6 +72,7 @@ export function ViewsTabs({
     const remove = useDeleteSavedView(listId);
     const [editingCardsView, setEditingCardsView] = useState<SavedViewEntity | null>(null);
     const [editingKanbanView, setEditingKanbanView] = useState<SavedViewEntity | null>(null);
+    const [editingCalendarView, setEditingCalendarView] = useState<SavedViewEntity | null>(null);
 
     const reorder = useReorderSavedViews(listId);
     const toast = useToast();
@@ -337,6 +339,12 @@ export function ViewsTabs({
                                             {__('Editar configuración')}
                                         </DropdownMenuItem>
                                     )}
+                                    {writable && view.type === 'calendar' && (
+                                        <DropdownMenuItem onSelect={() => setEditingCalendarView(view)}>
+                                            <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Configurar calendario')}
+                                        </DropdownMenuItem>
+                                    )}
 
                                     {canManage && (
                                         <>
@@ -521,6 +529,17 @@ export function ViewsTabs({
                     open={editingCardsView !== null}
                     onOpenChange={(open) => {
                         if (! open) setEditingCardsView(null);
+                    }}
+                />
+            )}
+
+            {editingCalendarView && (
+                <CalendarSettingsDialog
+                    listId={listId}
+                    view={editingCalendarView}
+                    open={editingCalendarView !== null}
+                    onOpenChange={(open) => {
+                        if (! open) setEditingCalendarView(null);
                     }}
                 />
             )}

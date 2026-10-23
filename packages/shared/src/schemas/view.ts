@@ -176,9 +176,73 @@ export const kanbanViewConfigSchema = z.object({
     kanban_card_size: z.enum(KANBAN_CARD_SIZES).optional(),
 });
 
+/**
+ * B4 — Calendario completo. Vistas de mes, semana, día y agenda; los ajustes
+ * viven en la config de la vista con claves `calendar_*` (ver
+ * `schemas/calendar.ts`: lectura tolerante y escritura).
+ */
+export const CALENDAR_MODES = ['month', 'week', 'day', 'agenda'] as const;
+export type CalendarMode = (typeof CALENDAR_MODES)[number];
+/**
+ * Cómo se pinta cada evento cuando ninguna regla de color lo pinta:
+ * `auto` = por el primer campo select de la lista (lo de siempre) o, con
+ * varias fuentes, por la fuente; `source` = el color de la fuente; `field` =
+ * el color de la opción del select elegido; `none` = el color primario.
+ */
+export const CALENDAR_COLOR_BY = ['auto', 'source', 'field', 'none'] as const;
+export type CalendarColorBy = (typeof CALENDAR_COLOR_BY)[number];
+/** Fuentes de fecha por vista (la principal + las adicionales). */
+export const CALENDAR_MAX_SOURCES = 6;
+
+/**
+ * Una fuente de fecha ADICIONAL («Próximo contacto» además de
+ * «Vencimiento»). La principal es `date_field_id` + `calendar_end_field_id`.
+ * Las claves terminan en `_field_id`: el re-mapeo de plantillas y de migrar
+ * empresa las traduce por convención. Una fuente sin inicio válido (un campo
+ * que no viajó) se descarta al leer en vez de invalidar la vista entera.
+ */
+export const calendarSourceSchema = z.object({
+    id: z.string().min(1).max(40),
+    start_field_id: idSchema,
+    end_field_id: idSchema.nullable().optional(),
+    /** Sin fin: un campo Duración (minutos) estira el evento desde un inicio con hora. */
+    duration_field_id: idSchema.nullable().optional(),
+    label: z.string().max(80).optional(),
+    color: viewRowColorSchema.optional(),
+});
+export type CalendarSourceConfig = z.infer<typeof calendarSourceSchema>;
+
+const calendarSourcesSchema = z.preprocess(
+    (v) =>
+        Array.isArray(v)
+            ? v.filter((s) => s && typeof s === 'object' && typeof (s as { start_field_id?: unknown }).start_field_id === 'number')
+            : v,
+    z.array(calendarSourceSchema).max(CALENDAR_MAX_SOURCES - 1),
+);
+
 export const calendarViewConfigSchema = z.object({
     ...viewStateCommon,
     date_field_id: idSchema,
+    /** B4 — fin de la fuente principal (duración / eventos de varios días). */
+    calendar_end_field_id: idSchema.nullable().optional(),
+    /** B4 — o, en vez de un fin, un campo Duración (minutos) para un inicio con hora. */
+    calendar_duration_field_id: idSchema.nullable().optional(),
+    calendar_main_label: z.string().max(80).optional(),
+    calendar_main_color: viewRowColorSchema.optional(),
+    calendar_sources: calendarSourcesSchema.optional(),
+    /** Fuentes apagadas desde la barra del calendario (`main` = la principal). */
+    calendar_hidden_sources: z.array(z.string().max(40)).max(CALENDAR_MAX_SOURCES).optional(),
+    calendar_color_by: z.enum(CALENDAR_COLOR_BY).optional(),
+    calendar_color_field_id: idSchema.nullable().optional(),
+    calendar_default_mode: z.enum(CALENDAR_MODES).optional(),
+    /** Primer día de la semana: 1 = lunes (default), 0 = domingo, 6 = sábado. */
+    calendar_week_start: z.union([z.literal(0), z.literal(1), z.literal(6)]).optional(),
+    /** Horario visible de semana y día (horas enteras, fin exclusivo). */
+    calendar_day_start: z.number().int().min(0).max(23).optional(),
+    calendar_day_end: z.number().int().min(1).max(24).optional(),
+    calendar_show_weekends: z.boolean().optional(),
+    /** Cuánto dura un evento de fecha y hora sin fin (minutos; 0 = todo el día). */
+    calendar_default_duration: z.number().int().min(0).max(1440).optional(),
 });
 
 export const cardsViewConfigSchema = z.object({

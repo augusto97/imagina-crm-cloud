@@ -773,6 +773,108 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         }
     });
 
+    it('B4 — calendario completo: fin, varias fuentes, color, vista por defecto, horario (y get_list_schema los describe)', async () => {
+        const ag = await lists.create(tenantId, { name: 'Citas' });
+        await fields.create(tenantId, String(ag.id), { label: 'Nombre', type: 'text' });
+        await fields.create(tenantId, String(ag.id), { label: 'Inicio', type: 'datetime' });
+        await fields.create(tenantId, String(ag.id), { label: 'Fin', type: 'datetime' });
+        await fields.create(tenantId, String(ag.id), { label: 'Vencimiento', type: 'date' });
+        await fields.create(tenantId, String(ag.id), { label: 'Próximo contacto', type: 'date' });
+        await fields.create(tenantId, String(ag.id), { label: 'Minutos', type: 'duration' });
+        await fields.create(tenantId, String(ag.id), {
+            label: 'Estado',
+            type: 'select',
+            config: { options: [{ value: 'abierta', label: 'Abierta' }, { value: 'cerrada', label: 'Cerrada' }] },
+        });
+        try {
+            const created = json(
+                await call('propose_create_view', {
+                    list: 'citas',
+                    view: {
+                        name: 'Agenda',
+                        type: 'calendar',
+                        date_field: 'inicio',
+                        end_date_field: 'fin',
+                        date_label: 'Citas',
+                        calendar_sources: [
+                            { start: 'vencimiento', label: 'Vence', color: 'red' },
+                            { start: 'proximo_contacto', label: 'Llamar' },
+                        ],
+                        color_field: 'estado',
+                        default_mode: 'week',
+                        week_start: 'sunday',
+                        day_hours: { start: 7, end: 20 },
+                        show_weekends: false,
+                        default_duration: 30,
+                        color_rules: [{ field: 'estado', op: 'eq', value: 'cerrada', color: 'gray' }],
+                    },
+                }),
+            );
+            const summary = (created.proposal as { summary: string }).summary;
+            expect(summary).toContain('abre en semana');
+            await apply(created.proposal_id);
+            const view = (await views.list(tenantId, 'citas')).find((v) => v.name === 'Agenda')!;
+            const id = new Map((await fields.listByListId(tenantId, ag.id)).map((f) => [f.slug, f.id]));
+            expect(view.config).toMatchObject({
+                date_field_id: id.get('inicio'),
+                calendar_end_field_id: id.get('fin'),
+                calendar_main_label: 'Citas',
+                calendar_sources: [
+                    { id: 's2', start_field_id: id.get('vencimiento'), label: 'Vence', color: 'red' },
+                    { id: 's3', start_field_id: id.get('proximo_contacto'), label: 'Llamar' },
+                ],
+                calendar_color_by: 'field',
+                calendar_color_field_id: id.get('estado'),
+                calendar_default_mode: 'week',
+                calendar_week_start: 0,
+                calendar_day_start: 7,
+                calendar_day_end: 20,
+                calendar_show_weekends: false,
+                calendar_default_duration: 30,
+                color_rules: [{ color: 'gray', condition: { field_id: id.get('estado'), op: 'eq', value: 'cerrada' } }],
+            });
+
+            const schema = json(await call('get_list_schema', { list: 'citas' }));
+            expect((schema.views as Array<Record<string, unknown>>).find((v) => v.name === 'Agenda')).toMatchObject({
+                date_field: 'inicio',
+                end_date_field: 'fin',
+                date_label: 'Citas',
+                calendar_sources: [{ start: 'vencimiento', label: 'Vence', color: 'red' }, { start: 'proximo_contacto', label: 'Llamar' }],
+                color_by: 'field',
+                color_field: 'estado',
+                default_mode: 'week',
+                week_start: 'sunday',
+                day_hours: { start: 7, end: 20 },
+                show_weekends: false,
+                default_duration: 30,
+            });
+
+            // Errores corregibles: fin de otro tipo, fuente que no es fecha, color por un texto,
+            // horario invertido, opciones de calendario en una tabla.
+            for (const bad of [
+                { name: 'X', type: 'calendar', date_field: 'inicio', end_date_field: 'vencimiento' },
+                { name: 'X', type: 'calendar', date_field: 'inicio', calendar_sources: [{ start: 'nombre' }] },
+                { name: 'X', type: 'calendar', date_field: 'inicio', color_field: 'nombre' },
+                { name: 'X', type: 'calendar', date_field: 'inicio', day_hours: { start: 18, end: 9 } },
+                { name: 'X', type: 'table', default_mode: 'week' },
+                { name: 'X', type: 'calendar', date_field: 'vencimiento', duration_field: 'minutos' },
+                { name: 'X', type: 'calendar', date_field: 'inicio', end_date_field: 'fin', duration_field: 'minutos' },
+            ]) {
+                expect(isError(await call('propose_create_view', { list: 'citas', view: bad }))).toBe(true);
+            }
+
+            // Cambiar sólo la vista por defecto conserva el campo de fecha.
+            const upd = json(await call('propose_update_view', { list: 'citas', view: view.id, config: { default_mode: 'agenda', duration_field: 'minutos' } }));
+            expect((upd.proposal as { preview: { changes: Array<{ to: string }> } }).preview.changes[0]!.to).toContain('dura «Minutos»');
+            await apply(upd.proposal_id);
+            const after = (await views.list(tenantId, 'citas')).find((v) => v.id === view.id)!;
+            expect(after.config).toMatchObject({ date_field_id: id.get('inicio'), calendar_default_mode: 'agenda', calendar_duration_field_id: id.get('minutos') });
+            expect((after.config as Record<string, unknown>).calendar_sources).toBeUndefined();
+        } finally {
+            await lists.remove(tenantId, 'citas');
+        }
+    });
+
     it('propose_update_list mueve a una carpeta existente (y rechaza una inexistente); list_dashboards lee los tableros', async () => {
         const [g] = await pg.db.insert(listGroups).values({ tenantId, name: 'Comercial', position: 0 }).returning();
         const bad = await call('propose_update_list', { list: 'gastos', folder: 'Inexistente' });
