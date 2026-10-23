@@ -329,6 +329,15 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                   (t) => matches(t.label) || matches(t.tag) || matches(__('Formulario')),
               )
             : [];
+    // Campo «Botón» (trigger «Al presionar el botón»).
+    const buttonTags =
+        context === 'automation'
+            ? [
+                  { tag: 'boton.nombre', label: __('Botón presionado'), hint: __('su texto') },
+                  { tag: 'boton.persona', label: __('Quién presionó el botón'), hint: __('su nombre') },
+                  { tag: 'boton.email', label: __('Correo de quien presionó'), hint: __('para responderle') },
+              ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('Botón')))
+            : [];
 
     // v0.1.251 — el cobro en contexto: el link que creó «Crear link de pago»
     // en una acción anterior, o el pago recién recibido (trigger «Cuando se
@@ -386,6 +395,7 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                 )}
                 {pdfTags.length > 0 && <Section title={__('Último PDF generado')} items={pdfTags} onPick={onPick} />}
                 {formTags.length > 0 && <Section title={__('Formulario')} items={formTags} onPick={onPick} />}
+                {buttonTags.length > 0 && <Section title={__('Botón')} items={buttonTags} onPick={onPick} />}
                 {context === 'automation' && visibleBefore.length > 0 && (
                     <Section
                         title={__('Valor anterior (antes del cambio)')}
