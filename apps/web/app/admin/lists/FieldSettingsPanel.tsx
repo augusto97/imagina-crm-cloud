@@ -203,6 +203,8 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                 </>
             )}
 
+            {/* Un botón no guarda valor: ni obligatorio ni sin repetidos. */}
+            {type !== 'button' && (
             <Section title={__('Comportamiento')}>
                 {!storeField && (
                     <>
@@ -238,6 +240,7 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                     </Button>
                 )}
             </Section>
+            )}
 
             <RoleVisibility listId={listId} fieldSlug={field.slug} />
 

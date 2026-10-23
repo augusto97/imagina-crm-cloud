@@ -272,6 +272,7 @@ export function FieldDialog({
                                             currentFieldId={field?.id}
                                         />
 
+                                        {type !== 'button' && (
                                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
                                             <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
                                                 <input
@@ -297,6 +298,7 @@ export function FieldDialog({
                                                 {!supportsUnique && type !== '' && ' ' + __('(no aplica a este tipo)')}
                                             </label>
                                         </div>
+                                        )}
                                     </>
                                 )}
 
