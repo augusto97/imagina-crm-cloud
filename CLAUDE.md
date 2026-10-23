@@ -8645,6 +8645,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con cancelar; entre carriles; persistencia; búsqueda; celular; oscuro;
         visor sin arrastre).
 
+  - [x] **Autorización de tratamiento de datos personales, Ley 1581
+        (v0.1.298, ADR-S54, opción I10 del estudio)**: antes de recoger datos,
+        la empresa pide una autorización previa, expresa e informada y guarda la
+        prueba de cada aceptación. (a) **Ajustes → Datos personales** (admin):
+        interruptores para pedirla y para pedirla también en el portal; datos
+        del responsable (nombre, NIT, dirección, ciudad, correo, teléfono),
+        finalidades editables, enlace a la política y el texto con una
+        **plantilla sugerida** editable (Ley 1581 de 2012, Decreto 1377 de 2013,
+        compilado en el 1074 de 2015) con variables de la empresa
+        (`{{empresa}}`, `{{nit}}`, `{{correo}}`…; un renglón con una variable
+        vacía desaparece), vista previa en vivo y el aviso «es un punto de
+        partida: conviene que la revise tu abogado». (b) **Versiones**: cada
+        cambio del texto crea una versión numerada por empresa
+        (`data_consent_versions`, RLS) con fecha, autor, la copia armada del
+        texto y su huella SHA-256 — lo publicado es siempre esa copia, y guardar
+        sin cambiar el texto no crea versión; se puede ver el texto de cada una.
+        (c) **Casilla obligatoria en los formularios públicos** (encendida por
+        defecto si la empresa tiene el texto, se apaga por formulario en el
+        constructor), con «Ver la autorización completa»; el servidor rechaza el
+        envío sin ella, y con confirmación por correo la prueba espera con la
+        respuesta y se registra al confirmar. (d) **Portal**: sin aceptar la
+        versión vigente no se usa (`403 consent_required` en todo lo del portal
+        salvo ver, aceptar, retirar y salir) y se vuelve a pedir al cambiar la
+        versión; «Mis datos personales» en el menú. (e) **Evidencia**
+        (`data_consents`, RLS): titular, registro, lista, origen, versión y
+        huella, fecha, IP y navegador; se guarda ANTES que el registro y se
+        descarta si el registro no se crea. Línea en la ficha («aceptada el … ·
+        versión 2 · desde el formulario …», en rojo si se retiró), listado con
+        filtros, «Registrar retiro» y CSV en Ajustes (la ficha no muestra IP ni
+        navegador; exportar queda en la bitácora). (f) **Retiro**: por el
+        enlace firmado que llega en el correo (abrirlo no cambia nada —los
+        antivirus de correo abren los enlaces—, retira el botón; un enlace
+        alterado da 404 opaco) o desde el portal; aviso `consent` a los admins
+        en la campana. Los datos NO se borran solos: la empresa decide y la
+        ficha lo dice. (g) El asistente/MCP ve qué formularios la piden; migrar
+        una empresa lleva versiones y autorizaciones re-mapeadas (son la prueba
+        legal) sin el enlace de retiro, y borrar la empresa limpia las tablas.
+        Migración 0080. 11 tests de API, 6 de shared y 4 del front + E2E
+        navegador 55/55 con un servidor de correo propio (texto y versiones,
+        rechazo sin la casilla, prueba con versión/IP/navegador, enlace de
+        retiro, portal que la exige, CSV, celular y oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
