@@ -55,6 +55,7 @@ import { TrashModule } from './trash/trash.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ViewsModule } from './views/views.module';
+import { GanttModule } from './gantt/gantt.module';
 import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 
@@ -93,6 +94,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RecordsModule,
         RecurrencesModule,
         ViewsModule,
+        GanttModule,
         SavedFiltersModule,
         ActivityModule,
         CommentsModule,

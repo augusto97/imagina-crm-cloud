@@ -80,6 +80,20 @@ export function actorOf(entry: ActivityEntity): string {
     return __('El sistema');
 }
 
+/**
+ * A8 — una dependencia agregada o quitada, contada desde ESTE registro:
+ * «marcó que está bloqueado por «Diseño»» / «quitó que bloqueaba a «Pruebas»».
+ */
+export function dependencyText(entry: ActivityEntity): string {
+    const dep = (entry.changes as { dependency?: { kind?: string; title?: string; record_id?: number } } | null)?.dependency;
+    const title = dep?.title ? `«${dep.title}»` : dep?.record_id ? sprintf(__('el registro #%d'), dep.record_id) : __('otro registro');
+    const added = entry.action === 'dependency_added';
+    if (dep?.kind === 'blocks') {
+        return added ? sprintf(__('marcó que bloquea a %s'), title) : sprintf(__('quitó que bloqueaba a %s'), title);
+    }
+    return added ? sprintf(__('marcó que está bloqueado por %s'), title) : sprintf(__('quitó que estaba bloqueado por %s'), title);
+}
+
 /** El verbo de la entrada, en pasado y con sujeto ya puesto aparte. */
 export function actionText(entry: ActivityEntity, changeCount: number): string {
     switch (entry.action) {
@@ -99,6 +113,9 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
             return __('eliminó un comentario');
         case 'automation.run':
             return __('ejecutó una automatización');
+        case 'dependency_added':
+        case 'dependency_removed':
+            return dependencyText(entry);
         default:
             // record_updated sin diff legible (o con campos que ya no existen).
             return changeCount === 0 ? __('actualizó este registro') : '';

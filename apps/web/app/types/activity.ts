@@ -8,6 +8,9 @@ export type ActivityAction =
     | 'record_updated'
     | 'record_deleted'
     | 'record_restored'
+    // A8 — dependencias: `changes.dependency = {kind, record_id, title}`.
+    | 'dependency_added'
+    | 'dependency_removed'
     | 'record.created'
     | 'record.updated'
     | 'record.deleted'

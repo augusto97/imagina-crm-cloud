@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlignLeft, ChevronRight, CornerDownRight } from 'lucide-react';
+import { AlignLeft, ChevronRight, CornerDownRight, Lock } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -77,6 +77,19 @@ export function RecordNameCell({
                 <span aria-hidden className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
             )}
             <span className="imcrm-min-w-0 imcrm-flex-1">{children}</span>
+            {/* A8 — bloqueado por registros abiertos (el dato viaja en el
+                listado: ningún pedido por fila). */}
+            {(record.blocked_by_open ?? 0) > 0 && (
+                <span
+                    role="img"
+                    title={blockedTitle(record.blocked_by_open ?? 0)}
+                    aria-label={blockedTitle(record.blocked_by_open ?? 0)}
+                    className="imcrm-inline-flex imcrm-shrink-0 imcrm-text-amber-600 dark:imcrm-text-amber-400"
+                    data-testid="imcrm-row-blocked"
+                >
+                    <Lock aria-hidden className="imcrm-h-3.5 imcrm-w-3.5" />
+                </span>
+            )}
             {/* Señal de que el registro tiene descripción (v0.1.133): el
                 contenido no viaja en el listado, sólo este booleano. */}
             {record.has_description && (
@@ -87,4 +100,11 @@ export function RecordNameCell({
             )}
         </span>
     );
+}
+
+/** «Bloqueado por 1 registro abierto» / «… por 3 registros abiertos». */
+export function blockedTitle(n: number): string {
+    return n === 1
+        ? __('Bloqueado por 1 registro abierto')
+        : sprintf(/* translators: %d: open blockers */ __('Bloqueado por %d registros abiertos'), n);
 }

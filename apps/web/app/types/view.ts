@@ -2,12 +2,15 @@ import type {
     CalendarColorBy,
     CalendarMode,
     CalendarSourceConfig,
+    GanttColorBy,
+    GanttColumn,
+    GanttZoom,
     KanbanMoveRule,
     KanbanWipLimit,
     ViewColorRule,
 } from '@imagina-base/shared';
 
-export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards';
+export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards' | 'gantt';
 
 export interface SavedViewConfig {
     visible_fields?: number[];
@@ -160,6 +163,21 @@ export interface SavedViewConfig {
     kanban_move_rules?: KanbanMoveRule[];
     kanban_cover_field_id?: number | null;
     kanban_card_size?: 'compact' | 'normal';
+    /** B1 — vista Gantt: campos de inicio y fin (date/datetime). */
+    gantt_start_field_id?: number;
+    gantt_end_field_id?: number | null;
+    /** B1 — agrupación del Gantt (select, persona o casilla). */
+    gantt_group_by_field_id?: number | null;
+    /** B1 — color de las barras: por un select, por las reglas de la vista o sin color. */
+    gantt_color_field_id?: number | null;
+    gantt_color_by?: GanttColorBy;
+    /** B1 — columnas del panel izquierdo (además del título) y sus anchos. */
+    gantt_columns?: GanttColumn[];
+    gantt_title_width?: number;
+    gantt_zoom?: GanttZoom;
+    gantt_show_subtasks?: boolean;
+    gantt_show_dependencies?: boolean;
+    gantt_show_baseline?: boolean;
 }
 
 export interface SavedViewEntity {

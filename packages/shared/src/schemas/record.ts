@@ -33,6 +33,17 @@ export const recordSchema = z.object({
      * indicador que necesita el icono de la fila.
      */
     has_description: z.boolean().default(false),
+    /**
+     * A8 — Cuántos registros que lo BLOQUEAN siguen abiertos (no terminados
+     * ni en la papelera). Viaja en el listado (una consulta por página) para
+     * el icono de «bloqueado» de la fila y la tarjeta; 0 = nada lo bloquea.
+     */
+    blocked_by_open: z.number().int().nonnegative().optional(),
+    /**
+     * A8 — Sólo en la respuesta de una edición: los registros que se
+     * corrieron por la reprogramación en cadena (ids).
+     */
+    rescheduled: z.array(idSchema).optional(),
     created_by: idSchema,
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,

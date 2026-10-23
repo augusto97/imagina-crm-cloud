@@ -46,6 +46,7 @@ import type { FieldEntity } from '@/types/field';
 import type { FilterTree, RecordEntity } from '@/types/record';
 import type { SavedViewEntity } from '@/types/view';
 
+import { isCloseCancelled } from '../dependencies/closeGuard';
 import { storeAccessFor, useStoreRules } from '../storeRules';
 import { EditKanbanViewDialog } from './EditKanbanViewDialog';
 import { createHScrollGroup } from './hscrollGroup';
@@ -292,6 +293,8 @@ export function KanbanView({
             await update.mutateAsync({ id: record.id, values });
             return true;
         } catch (err) {
+            // A8 — canceló el cierre de algo bloqueado: la tarjeta vuelve sola.
+            if (isCloseCancelled(err)) return false;
             // El optimista se revierte solo (la tarjeta vuelve); la persona
             // tiene que saber por qué (permiso, validación, red).
             setMoveError(err instanceof Error ? err.message : __('No se pudo mover el registro.'));
@@ -339,6 +342,10 @@ export function KanbanView({
             await update.mutateAsync({ id: pending.record.id, values });
             setPending(null);
         } catch (err) {
+            if (isCloseCancelled(err)) {
+                setPending(null);
+                return;
+            }
             setPendingError(err instanceof Error ? err.message : __('No se pudo mover el registro.'));
         } finally {
             setPendingSaving(false);

@@ -173,22 +173,28 @@ export function RelationSearch({
     selected,
     onToggle,
     initialQuery = '',
+    exclude,
+    withSubtasks = false,
 }: {
     target: number;
     selected: number[];
     onToggle: (id: number) => void;
     initialQuery?: string;
+    /** A8 — registros que no se ofrecen (p. ej. el propio registro en sus dependencias). */
+    exclude?: number[];
+    /** A8 — también las subtareas (una dependencia puede ser con una subtarea). */
+    withSubtasks?: boolean;
 }): JSX.Element {
     const [q, setQ] = useState(initialQuery);
     const debounced = useDebouncedValue(q.trim(), 250);
     const fields = useFields(target);
     const title = titleFieldOf(fields.data);
     const results = useQuery({
-        queryKey: ['relation-search', String(target), debounced] as const,
+        queryKey: ['relation-search', String(target), debounced, withSubtasks] as const,
         queryFn: async () =>
             (
                 await api.get<RecordEntity[]>(`/lists/${target}/records`, {
-                    query: { per_page: 20, ...(debounced ? { search: debounced } : {}) },
+                    query: { per_page: 20, ...(debounced ? { search: debounced } : {}), ...(withSubtasks ? { include_subtasks: 1 } : {}) },
                 })
             ).data,
         staleTime: 10_000,
@@ -213,7 +219,7 @@ export function RelationSearch({
                 {results.isFetching && <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin imcrm-text-muted-foreground" />}
             </div>
             <ul className="imcrm-max-h-64 imcrm-overflow-y-auto imcrm-py-1" role="listbox">
-                {(results.data ?? []).map((r) => {
+                {(results.data ?? []).filter((r) => !exclude?.includes(r.id)).map((r) => {
                     const on = selected.includes(r.id);
                     return (
                         <li key={r.id}>

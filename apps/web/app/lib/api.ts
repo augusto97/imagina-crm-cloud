@@ -295,6 +295,9 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         // v0.1.133 — el listado sólo dice SI hay descripción (el documento se
         // pide aparte al abrir la ficha).
         has_description: r.has_description === true,
+        // A8 — bloqueantes abiertos (icono «bloqueado») y lo reprogramado en cadena.
+        ...(typeof r.blocked_by_open === 'number' ? { blocked_by_open: r.blocked_by_open } : {}),
+        ...(Array.isArray(r.rescheduled) ? { rescheduled: r.rescheduled } : {}),
         created_by: r.created_by,
         // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,
         // herencia del plugin WP). El backend nuevo devuelve ISO con 'Z' → la

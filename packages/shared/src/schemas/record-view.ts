@@ -4,6 +4,7 @@ import { recordPaymentsSchema } from './collections';
 import { commentSchema } from './comment';
 import { idSchema } from './common';
 import type { RecordDataConsentDto } from './data-consent';
+import { recordDependenciesSchema } from './dependency';
 import { documentTemplateSummarySchema, issuedDocumentSchema } from './document-design';
 import { fieldSchema } from './field';
 import { listSchema } from './list';
@@ -91,5 +92,10 @@ export const recordViewBundleSchema = z.object({
      * clientes. null = no se pudo leer (la ficha la pide por su cuenta).
      */
     data_consents: z.array(z.custom<RecordDataConsentDto>()).nullable().default(null),
+    /**
+     * A8 — dependencias del registro («bloqueado por» y «bloquea») con el
+     * título y el estado del otro registro: la sección no sale a pedirlas.
+     */
+    dependencies: recordDependenciesSchema.nullable().default(null),
 });
 export type RecordViewBundle = z.infer<typeof recordViewBundleSchema>;

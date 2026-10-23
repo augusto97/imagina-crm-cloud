@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import type { RecordEntity } from '@/types/record';
 
+import { isCloseCancelled, type CloseCancelledError } from '../dependencies/closeGuard';
 import { layoutDataKeys } from './useLayoutData';
 
 const DELAY_MS = 700;
@@ -31,6 +32,8 @@ export function useRecordAutosave(listId: number, record: RecordEntity) {
     const [saving, setSaving] = useState(false);
     const pending = useRef<Record<string, unknown>>({});
     const timer = useRef<number | null>(null);
+    const serverRef = useRef(server);
+    serverRef.current = server;
 
     // Lo que llega del servidor reemplaza lo local, salvo lo que está pendiente.
     useEffect(() => {
@@ -60,6 +63,21 @@ export function useRecordAutosave(listId: number, record: RecordEntity) {
             // Los gráficos de la ficha pueden depender de lo que cambió.
             void qc.invalidateQueries({ queryKey: layoutDataKeys.all });
         } catch (err) {
+            // A8 — canceló el cierre de algo bloqueado: lo local vuelve a lo
+            // guardado (si no, la ficha mostraría «Completado» sin estarlo).
+            if (isCloseCancelled(err)) {
+                const slug = (err as CloseCancelledError).statusSlug;
+                if (!(slug in pending.current)) setValues((v) => ({ ...v, [slug]: serverRef.current[slug] }));
+                // Lo demás que se había escrito junto al estado se guarda igual.
+                const { [slug]: _skip, ...rest } = patch;
+                void _skip;
+                if (Object.keys(rest).length > 0) {
+                    pending.current = { ...rest, ...pending.current };
+                    if (timer.current !== null) window.clearTimeout(timer.current);
+                    timer.current = window.setTimeout(() => void flushRef.current(), DELAY_MS);
+                }
+                return;
+            }
             if (err instanceof ApiError) setErrors((e) => ({ ...e, ...err.errors }));
             toast.error(__('No se pudo guardar'), err instanceof Error ? err.message : undefined);
         } finally {

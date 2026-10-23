@@ -19,10 +19,20 @@ import { RecordSearchController } from './record-search.controller';
 import { RecordSearchService } from './record-search.service';
 import { RecordsCalendarController } from './records-calendar.controller';
 import { RecordsCalendarService } from './records-calendar.service';
+import { DependenciesController } from './dependencies.controller';
+import { DependenciesRepository } from './dependencies.repository';
+import { DependenciesService } from './dependencies.service';
 
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule, AggregateModule, RecurrencesModule],
-    controllers: [RecordsController, RecordsGroupedController, BulkHistoryController, RecordSearchController, RecordsCalendarController],
+    controllers: [
+        RecordsController,
+        RecordsGroupedController,
+        BulkHistoryController,
+        RecordSearchController,
+        RecordsCalendarController,
+        DependenciesController,
+    ],
     providers: [
         RecordsService,
         BulkEditService,
@@ -33,7 +43,9 @@ import { RecordsCalendarService } from './records-calendar.service';
         RecordsGroupedService,
         RecordSearchService,
         RecordsCalendarService,
+        DependenciesRepository,
+        DependenciesService,
     ],
-    exports: [RecordsService, BulkHistoryService, BulkEditService],
+    exports: [RecordsService, BulkHistoryService, BulkEditService, DependenciesService, DependenciesRepository, RecordsRepository],
 })
 export class RecordsModule {}

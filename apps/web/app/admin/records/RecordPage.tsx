@@ -26,6 +26,8 @@ import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
+import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
+import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { readStoreListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
@@ -256,6 +258,8 @@ export function RecordPage(): JSX.Element {
             draft.markSaved(patch, saved ?? null);
             void qc.invalidateQueries({ queryKey: notificationKeys.follow(rec.id) });
         } catch (err) {
+            // A8 — canceló el cierre de algo bloqueado: el borrador queda como estaba.
+            if (isCloseCancelled(err)) return;
             if (err instanceof ApiError) {
                 setError(err.message);
                 setFieldErrors(err.errors);
@@ -392,6 +396,9 @@ export function RecordPage(): JSX.Element {
                                 className="imcrm-mt-4"
                             />
                         )}
+
+                        {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
+                        <RecordDependencies listId={listInfo.id} listSlug={listInfo.slug} recordId={id} className="imcrm-mt-5" />
 
                         {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
                         <div className="imcrm-mt-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">

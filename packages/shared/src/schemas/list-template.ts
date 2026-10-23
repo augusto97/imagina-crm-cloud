@@ -81,6 +81,14 @@ export const blueprintRecordSchema = z.object({
      * mismo workspace, o sea al duplicar).
      */
     relations: z.record(z.array(z.union([z.string(), z.number()]))).optional(),
+    /**
+     * A8 — los registros de la MISMA lista que lo bloquean, por `key` (y el
+     * desfase en días). Al materializar se re-mapean a los ids nuevos.
+     */
+    blocked_by: z
+        .array(z.object({ key: z.string().min(1), lag_days: z.number().int().min(-365).max(365).optional() }))
+        .max(100)
+        .optional(),
 });
 export type BlueprintRecord = z.infer<typeof blueprintRecordSchema>;
 

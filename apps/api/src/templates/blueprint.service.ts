@@ -5,6 +5,7 @@ import {
     BLUEPRINT_EXCLUDED_TRIGGER_KEYS,
     BLUEPRINT_VERSION,
     createAutomationSchema,
+    findDependencyCycle,
     isDataField,
     jsonbKeyForField,
     resolveFieldRefs,
@@ -25,11 +26,12 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import { AutomationsService } from '../automations/automations.service';
 import { BillingService } from '../billing/billing.service';
 import { DashboardsService } from '../dashboards/dashboards.service';
-import { records } from '../db/schema';
+import { recordDependencies, records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsRepository } from '../records/records.repository';
+import { DependenciesRepository } from '../records/dependencies.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ViewsService } from '../views/views.service';
@@ -213,6 +215,23 @@ export class BlueprintService {
                 : new Map<number, Map<number, number[]>>();
 
         const keyOf = (id: number): string => `r${id}`;
+        // A8 — las dependencias entre los registros que viajan (las dos puntas
+        // en la tanda): se re-mapean por `key` al materializar.
+        const blockedBy = new Map<number, Array<{ key: string; lag_days?: number }>>();
+        if (rows.length > 0) {
+            const edges = await this.tenantDb.withTenant(tenantId, (tx) =>
+                new DependenciesRepository().edgesAmong(
+                    tx,
+                    tenantId,
+                    rows.map((r) => r.id),
+                ),
+            );
+            for (const e of edges) {
+                const list = blockedBy.get(e.blocked_id) ?? [];
+                list.push(e.lag_days !== 0 ? { key: keyOf(e.blocker_id), lag_days: e.lag_days } : { key: keyOf(e.blocker_id) });
+                blockedBy.set(e.blocked_id, list);
+            }
+        }
         return rows.map((r) => {
             const data: Record<string, unknown> = {};
             for (const f of fields) {
@@ -222,6 +241,8 @@ export class BlueprintService {
             }
             const rec: BlueprintRecord = { key: keyOf(r.id), data };
             if (r.parentId !== null && ids.has(r.parentId)) rec.parent_key = keyOf(r.parentId);
+            const deps = blockedBy.get(r.id);
+            if (deps && deps.length > 0) rec.blocked_by = deps;
             const byField = targets.get(r.id);
             if (byField) {
                 const rel: Record<string, Array<string | number>> = {};
@@ -707,6 +728,40 @@ export class BlueprintService {
                     );
                     const alive = ids.filter((id) => existing.has(id));
                     if (alive.length > 0) await this.relationsRepo.sync(tx, tenantId, r.fieldId, d.id, alive);
+                }
+            }
+
+            // A8 — dependencias entre los registros de cada lista (por key). Una
+            // plantilla escrita a mano podría traer un círculo: se salta con aviso.
+            for (const bl of blueprint.lists) {
+                const listId = keyToListId.get(bl.key);
+                if (listId === undefined) continue;
+                const out = new Map<number, number[]>();
+                for (const rec of bl.records) {
+                    if (!rec.key || !rec.blocked_by?.length) continue;
+                    const blocked = recordIds.get(`${bl.key}:${rec.key}`);
+                    if (blocked === undefined) continue;
+                    for (const dep of rec.blocked_by) {
+                        const blocker = recordIds.get(`${bl.key}:${dep.key}`);
+                        if (blocker === undefined || blocker === blocked) continue;
+                        if (findDependencyCycle(blocker, blocked, (id) => out.get(id) ?? [])) {
+                            warnings.push(`Una dependencia de muestra de «${bl.name}» cerraba un círculo y no se creó`);
+                            continue;
+                        }
+                        await tx
+                            .insert(recordDependencies)
+                            .values({
+                                tenantId,
+                                blockerListId: listId,
+                                blockerRecordId: blocker,
+                                blockedListId: listId,
+                                blockedRecordId: blocked,
+                                lagDays: dep.lag_days ?? 0,
+                                createdBy: actorId > 0 ? actorId : null,
+                            })
+                            .onConflictDoNothing();
+                        out.set(blocker, [...(out.get(blocker) ?? []), blocked]);
+                    }
                 }
             }
         });

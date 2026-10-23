@@ -275,6 +275,10 @@ export function remapViewConfig(
     if (isUserField(config.kanban_lane_field_id) && out.kanban_collapsed_lanes !== undefined) {
         out.kanban_collapsed_lanes = keys(out.kanban_collapsed_lanes);
     }
+    // B1 — Gantt agrupado por PERSONA: los grupos plegados son ids de usuario.
+    if (isUserField(config.gantt_group_by_field_id) && out.collapsed_groups !== undefined) {
+        out.collapsed_groups = keys(out.collapsed_groups);
+    }
     return out;
 }
 

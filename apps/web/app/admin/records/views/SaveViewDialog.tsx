@@ -46,6 +46,9 @@ export function SaveViewDialog({
     const [type, setType] = useState<SavedViewType | 'spreadsheet'>('table');
     const [groupByFieldId, setGroupByFieldId] = useState<number>(0);
     const [dateFieldId, setDateFieldId] = useState<number>(0);
+    // B1 — Gantt: fecha de inicio (obligatoria) y de fin (opcional: sin fin, hitos).
+    const [ganttStartId, setGanttStartId] = useState<number>(0);
+    const [ganttEndId, setGanttEndId] = useState<number>(0);
     const [cardFieldIds, setCardFieldIds] = useState<number[]>([]);
     const [cardCoverFieldId, setCardCoverFieldId] = useState<number>(0);
     const [cardSize, setCardSize] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
@@ -72,6 +75,8 @@ export function SaveViewDialog({
             setType('table');
             setGroupByFieldId(0);
             setDateFieldId(0);
+            setGanttStartId(0);
+            setGanttEndId(0);
             setCardFieldIds([]);
             setCardCoverFieldId(0);
             setCardSize('comfortable');
@@ -93,7 +98,11 @@ export function SaveViewDialog({
         if (type === 'calendar' && dateFieldId === 0 && dateFields.length > 0) {
             setDateFieldId(dateFields[0]!.id);
         }
-    }, [type, groupByFieldId, dateFieldId, selectFields, dateFields]);
+        if (type === 'gantt' && ganttStartId === 0 && dateFields.length > 0) {
+            setGanttStartId(dateFields[0]!.id);
+            if (dateFields.length > 1) setGanttEndId(dateFields[1]!.id);
+        }
+    }, [type, groupByFieldId, dateFieldId, ganttStartId, selectFields, dateFields]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
@@ -106,6 +115,11 @@ export function SaveViewDialog({
                 ? { group_by_field_id: groupByFieldId }
                 : type === 'calendar'
                   ? { date_field_id: dateFieldId }
+                  : type === 'gantt'
+                    ? {
+                        gantt_start_field_id: ganttStartId,
+                        ...(ganttEndId > 0 && ganttEndId !== ganttStartId ? { gantt_end_field_id: ganttEndId } : {}),
+                    }
                   : type === 'cards'
                     ? {
                         card_field_ids: cardFieldIds,
@@ -197,6 +211,11 @@ export function SaveViewDialog({
                                         : __('Calendario')}
                                 </option>
                                 <option value="cards">{__('Tarjetas')}</option>
+                                <option value="gantt" disabled={dateFields.length === 0}>
+                                    {dateFields.length === 0
+                                        ? __('Gantt (necesitas al menos un campo de fecha)')
+                                        : __('Gantt (línea de tiempo)')}
+                                </option>
                             </Select>
                         </div>
 
@@ -236,6 +255,45 @@ export function SaveViewDialog({
                                 </Select>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                     {__('Cada registro aparecerá en el día de este campo.')}
+                                </p>
+                            </div>
+                        )}
+
+                        {type === 'gantt' && (
+                            <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="view-gantt-start">{__('Fecha de inicio')}</Label>
+                                    <Select
+                                        id="view-gantt-start"
+                                        value={ganttStartId}
+                                        onChange={(e) => {
+                                            const id = Number(e.target.value);
+                                            setGanttStartId(id);
+                                            if (ganttEndId === id) setGanttEndId(0);
+                                        }}
+                                    >
+                                        {dateFields.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.label}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="view-gantt-end">{__('Fecha de fin')}</Label>
+                                    <Select id="view-gantt-end" value={ganttEndId} onChange={(e) => setGanttEndId(Number(e.target.value))}>
+                                        <option value={0}>{__('Sin fecha de fin (hitos)')}</option>
+                                        {dateFields
+                                            .filter((f) => f.id !== ganttStartId)
+                                            .map((f) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.label}
+                                                </option>
+                                            ))}
+                                    </Select>
+                                </div>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground sm:imcrm-col-span-2">
+                                    {__('Cada registro es una barra entre esas dos fechas. Después puedes agrupar, colorear y sumar columnas desde «Configurar Gantt».')}
                                 </p>
                             </div>
                         )}
@@ -288,7 +346,8 @@ export function SaveViewDialog({
                                     name.trim() === '' ||
                                     create.isPending ||
                                     (type === 'kanban' && groupByFieldId <= 0) ||
-                                    (type === 'calendar' && dateFieldId <= 0)
+                                    (type === 'calendar' && dateFieldId <= 0) ||
+                                    (type === 'gantt' && ganttStartId <= 0)
                                 }
                             >
                                 {create.isPending ? __('Guardando…') : __('Guardar vista')}

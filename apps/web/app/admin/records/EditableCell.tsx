@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
+import { isCloseCancelled } from './dependencies/closeGuard';
 import { gridCellKey, useCellEditRequest, useGridEditStore, type EditEndReason } from './grid/editStore';
 import { editLabel, useGridHistory } from './grid/history';
 import { isCheckedValue, renderCellValue } from './renderCellValue';
@@ -229,6 +230,14 @@ function EditableCellInner({
             }
             if (reason) endGrid(reason);
         } catch (err) {
+            // A8 — la persona canceló el cierre (lo bloquean registros
+            // abiertos): no es un error, la celda vuelve a como estaba.
+            if (isCloseCancelled(err)) {
+                setEditing(false);
+                setError(null);
+                if (reason) endGrid(reason);
+                return;
+            }
             // v0.1.300 — una regla de OTRO campo («NIT» es obligatorio cuando
             // «Tipo» es «Empresa») también se muestra junto a esta celda.
             const msg = err instanceof ApiError

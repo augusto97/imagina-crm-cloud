@@ -21,6 +21,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DependenciesService } from '../records/dependencies.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TimeTrackingService } from '../time-tracking/time-tracking.service';
@@ -61,6 +62,8 @@ export class RecordViewService {
         private readonly time: TimeTrackingService,
         // Ley 1581 — la línea «Autorización de datos» de la ficha.
         @Optional() private readonly dataConsent?: DataConsentService,
+        // A8 — la sección «Dependencias» (bloqueado por / bloquea).
+        @Optional() private readonly dependencies?: DependenciesService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<RecordViewBundle> {
@@ -128,6 +131,8 @@ export class RecordViewService {
                 ),
             // Autorizaciones de tratamiento de datos (el registro ya pasó el ACL arriba).
             () => (this.dataConsent ? soft('autorizaciones', () => this.dataConsent!.forRecord(tenantId, recordId)) : Promise.resolve(null)),
+            // A8 — dependencias con el título y el estado del otro registro.
+            () => (this.dependencies ? soft('dependencias', () => this.dependencies!.forRecord(tenantId, actor, listKey, recordId)) : Promise.resolve(null)),
         ];
         const [
             fields,
@@ -144,6 +149,7 @@ export class RecordViewService {
             layout,
             time,
             dataConsents,
+            dependencies,
         ] = (await mapLimit(tasks, PARALLEL, (t) => t())) as [
             RecordViewBundle['fields'],
             RecordViewBundle['description'],
@@ -159,6 +165,7 @@ export class RecordViewService {
             RecordViewBundle['layout_data'],
             RecordViewBundle['time'],
             RecordViewBundle['data_consents'],
+            RecordViewBundle['dependencies'],
         ];
 
         // Lo que depende de las relaciones: las listas del otro lado (cabecera
@@ -215,6 +222,7 @@ export class RecordViewService {
             layout_data: layout,
             time,
             data_consents: dataConsents,
+            dependencies,
         };
     }
 

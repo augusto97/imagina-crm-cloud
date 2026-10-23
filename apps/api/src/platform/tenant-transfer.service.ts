@@ -77,6 +77,9 @@ import {
     timeEntries,
     users,
     syncLinks,
+    recordDependencies,
+    ganttBaselines,
+    ganttBaselineItems,
 } from '../db/schema';
 import { FILE_STORAGE, TENANT_STORAGE, type FileStorage, type TenantStorageResolver } from '../files/file-storage';
 import {
@@ -323,6 +326,28 @@ export class TenantTransferService {
             await dump('sync_links', await this.byTenant(syncLinks, tenantId, liveRecord(syncLinks.recordId)));
             // v0.1.243 — sincronizaciones desde SQL Server.
             await dump('sql_syncs', await this.byTenant(sqlSyncs, tenantId, liveList(sqlSyncs.listId)));
+            // A8 — dependencias entre registros (las dos puntas vivas).
+            await dump(
+                'record_dependencies',
+                await this.byTenant(
+                    recordDependencies,
+                    tenantId,
+                    and(liveRecord(recordDependencies.blockerRecordId), liveRecord(recordDependencies.blockedRecordId)),
+                ),
+            );
+            // B1 — líneas base del Gantt (la de una vista en la papelera no viaja).
+            await dump('gantt_baselines', await this.byTenant(ganttBaselines, tenantId, liveView(ganttBaselines.viewId)));
+            await dump(
+                'gantt_baseline_items',
+                await this.byTenant(
+                    ganttBaselineItems,
+                    tenantId,
+                    and(
+                        liveRecord(ganttBaselineItems.recordId),
+                        sql`EXISTS (SELECT 1 FROM gantt_baselines b JOIN saved_views v ON v.id = b.view_id WHERE b.id = ${ganttBaselineItems.baselineId} AND v.deleted_at IS NULL)`,
+                    ),
+                ),
+            );
 
             // Tablas grandes: por páginas keyset, escribiendo a medida (las de
             // una empresa con cientos de miles de filas no entran en memoria).
@@ -824,6 +849,59 @@ export class TenantTransferService {
             (v) => maps.list.has(Number(v.listId)),
         );
 
+        // A8 — dependencias (las dos puntas re-mapeadas; una que no viajó se descarta).
+        counts.record_dependencies = await this.insertPlain(tx, rows('record_dependencies'), recordDependencies, (d) => {
+            const blockerListId = mapId(maps.list, d.blockerListId);
+            const blockedListId = mapId(maps.list, d.blockedListId);
+            const blockerRecordId = mapId(maps.record, d.blockerRecordId);
+            const blockedRecordId = mapId(maps.record, d.blockedRecordId);
+            if (blockerListId === null || blockedListId === null || blockerRecordId === null || blockedRecordId === null) return null;
+            return {
+                tenantId,
+                blockerListId,
+                blockerRecordId,
+                blockedListId,
+                blockedRecordId,
+                lagDays: Number(d.lagDays ?? 0) || 0,
+                createdBy: mapId(maps.user, d.createdBy),
+                createdAt: this.date(d.createdAt) ?? new Date(),
+            };
+        });
+
+        // B1 — líneas base del Gantt: la vista, los campos de inicio/fin y
+        // cada registro congelado se re-mapean (las fechas viajan tal cual).
+        const baselineMap = new Map<number, number>();
+        counts.gantt_baselines = await this.insertMapped(
+            tx,
+            await this.readAll(rows('gantt_baselines')),
+            ganttBaselines,
+            baselineMap,
+            (b) => ({
+                tenantId,
+                listId: maps.list.get(Number(b.listId))!,
+                viewId: maps.view.get(Number(b.viewId))!,
+                name: String(b.name ?? ''),
+                startFieldId: maps.field.get(Number(b.startFieldId))!,
+                endFieldId: mapId(maps.field, b.endFieldId),
+                itemCount: Number(b.itemCount ?? 0) || 0,
+                createdBy: mapId(maps.user, b.createdBy),
+                createdAt: this.date(b.createdAt) ?? new Date(),
+            }),
+            (b) => maps.list.has(Number(b.listId)) && maps.view.has(Number(b.viewId)) && maps.field.has(Number(b.startFieldId)),
+        );
+        counts.gantt_baseline_items = await this.insertPlain(tx, rows('gantt_baseline_items'), ganttBaselineItems, (it) => {
+            const baselineId = mapId(baselineMap, it.baselineId);
+            const recordId = mapId(maps.record, it.recordId);
+            if (baselineId === null || recordId === null) return null;
+            return {
+                tenantId,
+                baselineId,
+                recordId,
+                startValue: typeof it.startValue === 'string' ? it.startValue : null,
+                endValue: typeof it.endValue === 'string' ? it.endValue : null,
+            };
+        });
+
         counts.saved_filters = await this.insertPlain(tx, rows('saved_filters'), savedFilters, (f) => {
             const listId = mapId(maps.list, f.listId);
             if (listId === null) return null;
@@ -953,7 +1031,7 @@ export class TenantTransferService {
                     // `{from,to}`, no valores de campo: se traducen sólo las
                     // claves (mapa de tipos vacío) para que el feed siga
                     // nombrando el campo correcto sin tocar el contenido.
-                    diff: remapRecordData((a.diff as Row | null) ?? {}, new Map(), maps),
+                    diff: remapActivityDiff(String(a.action), (a.diff as Row | null) ?? {}, maps),
                     createdAt: this.date(a.createdAt) ?? new Date(),
                 }));
             if (!values.length) return 0;
@@ -1817,6 +1895,25 @@ function liveField(col: PgColumn): SQL {
 
 function liveAutomation(col: PgColumn): SQL {
     return sql`NOT EXISTS (SELECT 1 FROM automations x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
+}
+
+function liveView(col: PgColumn): SQL {
+    return sql`NOT EXISTS (SELECT 1 FROM saved_views x WHERE x.id = ${col} AND x.deleted_at IS NOT NULL)`;
+}
+
+/**
+ * El diff de una entrada de actividad. Los cambios de campos tienen claves
+ * `f{field_id}` (se traducen sólo las claves); una dependencia (A8) guarda
+ * `{dependency: {kind, record_id, title}}`: el registro del otro lado se
+ * re-mapea (o queda en null si no viajó).
+ */
+function remapActivityDiff(action: string, diff: Row, maps: IdMaps): Row {
+    if (action === 'dependency_added' || action === 'dependency_removed') {
+        const dep = (diff.dependency ?? null) as Row | null;
+        if (!dep || typeof dep !== 'object') return diff;
+        return { ...diff, dependency: { ...dep, record_id: mapId(maps.record, dep.record_id) } };
+    }
+    return remapRecordData(diff, new Map(), maps);
 }
 
 function liveDashboard(col: PgColumn): SQL {

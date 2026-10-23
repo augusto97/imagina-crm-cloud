@@ -27,6 +27,7 @@ import {
     User,
     type LucideIcon,
     Timer,
+    GitBranch,
 } from 'lucide-react';
 import {
     CHART_KIND_WIDGET,
@@ -46,6 +47,7 @@ import { PortalPaymentsBlockView, PortalPaymentsPreview } from './PortalPayments
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
+import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
 import { CommentsThreadBlock } from '@/portal/blocks/CommentsThreadBlock';
@@ -96,6 +98,7 @@ const TYPE_ICONS: Partial<Record<string, LucideIcon>> = {
     files: Paperclip,
     time_tracking: Timer,
     description: AlignLeft,
+    dependencies: GitBranch,
 };
 
 function blockIcon(block: LayoutBlock): LucideIcon | null {
@@ -227,6 +230,8 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
             return __('Pagos');
         case 'time_tracking':
             return __('Tiempo registrado');
+        case 'dependencies':
+            return __('Dependencias');
         default:
             return null;
     }
@@ -333,6 +338,18 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
             // v0.1.291 — el tiempo es del equipo: el portal no lo muestra.
             if (ctx.mode === 'portal') return null;
             return <TimeTrackingPanel listId={ctx.list.id} listKey={ctx.list.slug} recordId={ctx.record.id} compact />;
+        case 'dependencies':
+            // A8 — las dependencias son del trabajo del equipo: el portal no las muestra.
+            if (ctx.mode === 'portal') return null;
+            return (
+                <RecordDependencies
+                    listId={ctx.list.id}
+                    listSlug={ctx.list.slug}
+                    recordId={ctx.record.id}
+                    readOnly={ctx.preview === true}
+                    hideHeading
+                />
+            );
         case 'subtasks':
             if (ctx.mode === 'portal') return null;
             return (

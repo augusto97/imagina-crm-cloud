@@ -3636,6 +3636,48 @@ dibujaba en la zona del navegador.
 Las ocurrencias proyectadas de las recurrencias quedan fuera (sólo el icono), y
 en el celular no hay vista semana.
 
+### ADR-S57 — Dependencias entre registros y vista Gantt (v0.1.302)
+
+**Contexto.** Hacía falta decir «esto bloquea aquello» y ver el trabajo en el
+tiempo (opciones A8 y B1 del estudio). Un campo `relation` no alcanza: no tiene
+dirección ni desfase y no impide ciclos.
+
+**Decisión.**
+1. **Tabla `record_dependencies`** (`tenant_id`, RLS forzada) con lista y
+   registro en cada punta, `lag_days` y única por par. Hoy se exige la misma
+   lista; abrirlo a otra lista es levantar una validación. **Sin ciclos**:
+   búsqueda en el grafo de la lista bajo un candado por lista, y error con el
+   camino. ACL: ver las dos puntas y editar el bloqueado; un estado oculto para
+   el rol cuenta como abierto. Papelera: la dependencia queda inerte mientras
+   alguna punta esté borrada; la purga la borra en cascada.
+2. **«Terminado»** es el criterio de «Mi trabajo». El aviso al cerrar lo hace el
+   cliente; el servidor no bloquea el cierre, sólo informa (`blocked_by_open`).
+3. **Reprogramación** = ajuste de la lista (`settings.dependencies`:
+   `reschedule`, `start_field_id`, `end_field_id`, pide `manage_lists`). Al
+   cambiar el fin efectivo, el mismo delta se aplica a los dependientes en la
+   transacción de la edición, por niveles, con candados en orden de id, topes de
+   200 registros y 50 eslabones, ACL y reglas de la tienda; deja actividad,
+   dispara automatizaciones y devuelve `rescheduled`.
+4. **Gantt** = tipo de vista con su config en la vista (`gantt_*`). Un endpoint
+   de bundle por ventana de fechas con margen (lo que cruza el rango, lo sin
+   fecha, las subtareas y las aristas) en un solo pedido. Línea base por vista
+   (`gantt_baselines` + `gantt_baseline_items`, RLS, `manage_views`). PDF
+   vectorial con pdfmake en el servidor.
+5. **Cliente**: lienzo fijo de ±1830 días, filas virtualizadas, arrastre
+   optimista con pila de deshacer y celular de sólo lectura («Mover fechas…»).
+6. **Asistente/MCP**: una herramienta puede pedir una de varias capacidades
+   (`propose_set_dependencies` con `edit_records` o `edit_own_records`).
+   Calendario y Gantt comparten `color_by`/`color_field` en el vocabulario del
+   asistente y cada builder acepta sólo los valores de su vista.
+
+**Consecuencias.** Las dependencias viajan en plantillas, duplicar lista y
+migración de empresa con re-mapeo de ids. Migración 0082.
+
+**Alternativas descartadas.** Modelar la dependencia como campo `relation` (sin
+dirección, desfase ni regla de ciclos); calcular el Gantt con el listado plano
+(N+1 y sin ventana); guardar la reprogramación en la vista (es una regla de la
+lista y afecta a todas las vistas).
+
 ---
 
-**Versión del documento:** 1.98.0 (calendario completo)
+**Versión del documento:** 1.99.0 (dependencias y Gantt)

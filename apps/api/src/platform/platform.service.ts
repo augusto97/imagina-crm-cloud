@@ -73,6 +73,9 @@ import {
     personalAccessTokens,
     recurrences,
     relations,
+    recordDependencies,
+    ganttBaselines,
+    ganttBaselineItems,
     templates,
     connectionSyncs,
     sqlSyncs,
@@ -382,6 +385,10 @@ export class PlatformService {
             await tx.delete(comments).where(eq(comments.tenantId, id));
             await tx.delete(activity).where(eq(activity.tenantId, id));
             await tx.delete(relations).where(eq(relations.tenantId, id));
+            // A8/B1 — dependencias y líneas base del Gantt (antes que registros y vistas).
+            await tx.delete(recordDependencies).where(eq(recordDependencies.tenantId, id));
+            await tx.delete(ganttBaselineItems).where(eq(ganttBaselineItems.tenantId, id));
+            await tx.delete(ganttBaselines).where(eq(ganttBaselines.tenantId, id));
             await tx.delete(recurrences).where(eq(recurrences.tenantId, id));
             await tx.delete(portalLinks).where(eq(portalLinks.tenantId, id));
             // v0.1.289 — contraseñas del portal de esta empresa.

@@ -1494,6 +1494,9 @@ export class PortalService implements OnModuleInit {
             const rows = await this.activityRepo.list(tx, link.tenantId, link.listId, { recordId: link.recordId, limit: Math.min(cap * 3, 600) });
             const out: ActivityDto[] = [];
             for (const row of rows) {
+                // A8 — las dependencias son del trabajo del equipo (nombran
+                // registros internos): el cliente no las ve.
+                if (row.action === 'dependency_added' || row.action === 'dependency_removed') continue;
                 const diff = filterActivityDiff(row.diff, ctx.visible);
                 if (row.action === 'record_updated' && Object.keys(diff).length === 0) continue;
                 out.push({

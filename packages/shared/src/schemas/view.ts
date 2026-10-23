@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import { idSchema } from './common';
 import { filterConditionSchema, filterTreeSchema } from './filter';
+import { ganttViewConfigShape } from './gantt';
 
-/** Tipos de vista (CONTRACT.md §7). */
-export const VIEW_TYPES = ['table', 'kanban', 'calendar', 'cards'] as const;
+/**
+ * Tipos de vista (CONTRACT.md §7). `gantt` (B1): barras de inicio a fin con
+ * dependencias, agrupación, zoom y línea base.
+ */
+export const VIEW_TYPES = ['table', 'kanban', 'calendar', 'cards', 'gantt'] as const;
 export const viewTypeSchema = z.enum(VIEW_TYPES);
 export type ViewType = z.infer<typeof viewTypeSchema>;
 
@@ -252,11 +256,22 @@ export const cardsViewConfigSchema = z.object({
     card_size: z.enum(['compact', 'comfortable', 'spacious']).default('comfortable'),
 });
 
+/**
+ * B1 — Gantt / línea de tiempo: el inicio es obligatorio; el fin, la
+ * agrupación, el color y las columnas son opcionales (ver `gantt.ts`).
+ * `collapsed_groups` (común) guarda los grupos plegados.
+ */
+export const ganttViewConfigSchema = z.object({
+    ...viewStateCommon,
+    ...ganttViewConfigShape,
+});
+
 export const viewConfigSchemas = {
     table: tableViewConfigSchema,
     kanban: kanbanViewConfigSchema,
     calendar: calendarViewConfigSchema,
     cards: cardsViewConfigSchema,
+    gantt: ganttViewConfigSchema,
 } satisfies Record<ViewType, z.ZodTypeAny>;
 
 /** Valida la config contra el schema del tipo de vista. */

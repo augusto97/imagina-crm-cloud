@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
+import { blockedTitle } from '../RecordNameCell';
 import { formatKanbanValue } from './kanbanModel';
 
 export interface MoveTarget {
@@ -139,6 +140,18 @@ function KanbanCardImpl({
                     >
                         {title}
                     </h4>
+                    {/* A8 — bloqueado por registros abiertos (viaja en el bundle). */}
+                    {(record.blocked_by_open ?? 0) > 0 && (
+                        <span
+                            role="img"
+                            title={blockedTitle(record.blocked_by_open ?? 0)}
+                            aria-label={blockedTitle(record.blocked_by_open ?? 0)}
+                            className="imcrm-mt-0.5 imcrm-shrink-0 imcrm-text-amber-600 dark:imcrm-text-amber-400"
+                            data-testid="imcrm-kanban-card-blocked"
+                        >
+                            <Lock className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </span>
+                    )}
                     {lockReason !== null && (
                         <span title={lockReason} className="imcrm-mt-0.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-label={lockReason}>
                             <Lock className="imcrm-h-3.5 imcrm-w-3.5" />
