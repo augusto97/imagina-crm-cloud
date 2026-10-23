@@ -6,6 +6,7 @@ import {
     CalendarDays,
     Check,
     Columns3,
+    GanttChart,
     Copy,
     Download,
     FileUp,
@@ -92,7 +93,7 @@ interface ViewSettingsSheetProps {
      * cálculo y columnas no significan nada en kanban, calendario o
      * tarjetas, y ver ahí controles que no hacen nada confunde.
      */
-    viewType: 'table' | 'kanban' | 'calendar' | 'cards';
+    viewType: 'table' | 'kanban' | 'calendar' | 'cards' | 'gantt';
     wrapText: boolean;
     spreadsheet: boolean;
     onSpreadsheetChange: (next: boolean) => void;
@@ -498,6 +499,16 @@ export function ViewSettingsSheet({
                                     icon={Columns3}
                                     label={__('Tablero')}
                                     value={__('Carriles, totales, tarjetas y reglas')}
+                                    onClick={onConfigureBoard}
+                                />
+                            )}
+
+                            {/* B1 — en el Gantt, fechas, grupos, colores y columnas viven en su diálogo. */}
+                            {viewType === 'gantt' && onConfigureBoard && (
+                                <RowButton
+                                    icon={GanttChart}
+                                    label={__('Gantt')}
+                                    value={__('Fechas, grupos, colores, columnas y reprogramación')}
                                     onClick={onConfigureBoard}
                                 />
                             )}

@@ -84,6 +84,7 @@ import { CalendarView } from './views/CalendarView';
 import { CardsView } from './views/CardsView';
 import { pickPrimaryField } from '@/lib/recordCategorize';
 import { KanbanView } from './views/KanbanView';
+import { GanttView } from './views/gantt/GanttView';
 import { GroupedTableView } from './views/GroupedTableView';
 import { useEventCallback } from '@/hooks/useEventCallback';
 
@@ -216,6 +217,7 @@ export function RecordsPage(): JSX.Element {
     const groupedMode = activeViewType !== 'kanban'
         && activeViewType !== 'calendar'
         && activeViewType !== 'cards'
+        && activeViewType !== 'gantt'
         && state.groupByFieldId !== null
         && !state.spreadsheet;
     // v0.1.286 — el calendario pide los registros de SU rango (el mes visible):
@@ -233,6 +235,14 @@ export function RecordsPage(): JSX.Element {
     });
     // B4 — el calendario: si está cargando y el orden de sus registros (anterior/siguiente del modal).
     const [calendarStatus, setCalendarStatus] = useState<{ fetching: boolean; ids: number[] }>({ fetching: false, ids: [] });
+    // B1 — el Gantt pide su propio bundle (la ventana de tiempo que se ve): el
+    // listado plano no se usa ahí.
+    const ganttMode = activeViewType === 'gantt';
+    const [ganttStatus, setGanttStatus] = useState<{ total: number | null; fetching: boolean; ids: number[] }>({
+        total: null,
+        fetching: false,
+        ids: [],
+    });
     const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
         total: null,
         fetching: false,
@@ -259,7 +269,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied && !groupedMode && !calendarMode && !kanbanMode ? listSlug : undefined,
+        viewApplied && !groupedMode && !calendarMode && !kanbanMode && !ganttMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -287,7 +297,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch && !groupedMode && !calendarMode && !kanbanMode ? listSlug : undefined,
+        useServerSearch && !groupedMode && !calendarMode && !kanbanMode && !ganttMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -309,8 +319,22 @@ export function RecordsPage(): JSX.Element {
     }, [hasSearch, clientSearchable, baseRecords, serverSearch, state.search, fields.data]);
     // Lo que abarca "todos los que coinciden" (acciones masivas) y el spinner
     // del buscador: en modo agrupado lo informa el bundle.
-    const matchingCount = groupedMode ? groupedStatus.total : kanbanMode ? kanbanStatus.total : records.data?.meta?.total ?? null;
-    const listFetching = groupedMode ? groupedStatus.fetching : kanbanMode ? kanbanStatus.fetching : calendarMode ? calendarStatus.fetching : records.isFetching;
+    const matchingCount = groupedMode
+        ? groupedStatus.total
+        : kanbanMode
+          ? kanbanStatus.total
+          : ganttMode
+            ? ganttStatus.total
+            : records.data?.meta?.total ?? null;
+    const listFetching = groupedMode
+        ? groupedStatus.fetching
+        : kanbanMode
+          ? kanbanStatus.fetching
+          : calendarMode
+            ? calendarStatus.fetching
+            : ganttMode
+              ? ganttStatus.fetching
+              : records.isFetching;
     const [createOpen, setCreateOpen] = useState(false);
     // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
     // dentro del grupo "Hecho" abre el form con estado=hecho seteado).
@@ -492,6 +516,7 @@ export function RecordsPage(): JSX.Element {
     });
     const [kanbanSettingsOpen, setKanbanSettingsOpen] = useState(false);
     const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
+    const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
     const onFrozenColumnsChange = useEventCallback((next: number | null) =>
         setState((s) => ({ ...s, frozenColumns: next })),
     );
@@ -749,7 +774,8 @@ const applyView = (view: SavedViewEntity | null): void => {
     );
     const isCalendar = activeView?.type === 'calendar';
     const isCards = activeView?.type === 'cards';
-    const isAlternativeView = isKanban || isCalendar || isCards;
+    const isGantt = activeView?.type === 'gantt';
+    const isAlternativeView = isKanban || isCalendar || isCards || isGantt;
     // v0.1.137 — el modo hoja de cálculo ignora la agrupación a propósito:
     // una hoja de Excel no tiene bloques, tiene filas numeradas.
     const isTableGrouped = !isAlternativeView
@@ -758,7 +784,15 @@ const applyView = (view: SavedViewEntity | null): void => {
     // Anterior / siguiente del modal: el orden de la tabla plana (o de las
     // tarjetas, el kanban y el calendario, que leen la misma página). En la
     // vista agrupada cada grupo pagina aparte: ahí no hay un orden único.
-    const navIds = isTableGrouped ? [] : kanbanMode ? kanbanStatus.ids : calendarMode ? calendarStatus.ids : (records.data?.data ?? []).map((r) => r.id);
+    const navIds = isTableGrouped
+        ? []
+        : kanbanMode
+          ? kanbanStatus.ids
+          : calendarMode
+            ? calendarStatus.ids
+            : ganttMode
+              ? ganttStatus.ids
+              : (records.data?.data ?? []).map((r) => r.id);
     const navIndex = drawerRecordId !== null ? navIds.indexOf(drawerRecordId) : -1;
     const drawerNav = {
         prev: navIndex > 0 ? navIds[navIndex - 1]! : null,
@@ -1217,7 +1251,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onFrozenColumnsChange={onFrozenColumnsChange}
                     focusSection={viewSettingsFocus}
                     canGroup={!isAlternativeView}
-                    viewType={isKanban ? 'kanban' : isCalendar ? 'calendar' : isCards ? 'cards' : 'table'}
+                    viewType={isKanban ? 'kanban' : isCalendar ? 'calendar' : isCards ? 'cards' : isGantt ? 'gantt' : 'table'}
                     wrapText={state.wrapText}
                     onWrapTextChange={(next) => setState((s) => ({ ...s, wrapText: next }))}
                     spreadsheet={state.spreadsheet}
@@ -1252,7 +1286,12 @@ const applyView = (view: SavedViewEntity | null): void => {
                                   setViewSettingsOpen(false);
                                   setKanbanSettingsOpen(true);
                               }
-                            : undefined
+                            : isGantt && activeView && canManageViews && canWriteView(activeView)
+                              ? () => {
+                                    setViewSettingsOpen(false);
+                                    setGanttSettingsOpen(true);
+                                }
+                              : undefined
                     }
                     onConfigureCalendar={
                         isCalendar && activeView && canManageViews && canWriteView(activeView)
@@ -1400,7 +1439,22 @@ const applyView = (view: SavedViewEntity | null): void => {
                         // cambio. Eliminar la abstracción lazy elimina
                         // toda esa familia de bugs.
                         <>
-                            {isKanban && groupByField && activeView ? (
+                            {isGantt && activeView ? (
+                                <GanttView
+                                    key={activeView.id}
+                                    listId={list.data.id}
+                                    fields={fields.data}
+                                    view={activeView}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
+                                    onOpenRecord={setDrawerRecordId}
+                                    canEditView={canManageViews && canWriteView(activeView)}
+                                    canManageList={canManageList}
+                                    settingsOpen={ganttSettingsOpen}
+                                    onSettingsOpenChange={setGanttSettingsOpen}
+                                    onStatusChange={setGanttStatus}
+                                />
+                            ) : isKanban && groupByField && activeView ? (
                                 <KanbanView
                                     key={activeView.id}
                                     listId={list.data.id}

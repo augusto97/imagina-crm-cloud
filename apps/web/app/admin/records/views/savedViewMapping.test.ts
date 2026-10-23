@@ -5,7 +5,17 @@ import type { SavedViewConfig } from '@/types/view';
 
 import { parseViewConfig, readCalendarSettings } from '@imagina-base/shared';
 
-import { calendarToViewConfig, hasChangesVsView, kanbanToViewConfig, stateToViewConfig, viewConfigToCalendar, viewConfigToKanban, viewConfigToState } from './savedViewMapping';
+import {
+    calendarToViewConfig,
+    ganttToViewConfig,
+    hasChangesVsView,
+    kanbanToViewConfig,
+    stateToViewConfig,
+    viewConfigToCalendar,
+    viewConfigToGantt,
+    viewConfigToKanban,
+    viewConfigToState,
+} from './savedViewMapping';
 
 const baseState: RecordsState = {
     page: 1,
@@ -316,5 +326,61 @@ describe('calendario completo: la config de la vista (B4)', () => {
         expect(readCalendarSettings(saved).sources[1]!.enabled).toBe(false);
         // Sin reglas, la clave se borra (no queda un array vacío).
         expect(calendarToViewConfig(saved, back.settings, []).color_rules).toBeUndefined();
+    });
+});
+
+describe('B1 — vista Gantt: ajustes en la vista', () => {
+    const saved: SavedViewConfig = {
+        sort: [{ field_id: 3, dir: 'asc' }],
+        search: 'obra',
+        filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 5, op: 'eq', value: 'alta' }] },
+        collapsed_groups: ['__null__'],
+        color_rules: [{ id: 'r1', enabled: true, target: 'row', color: 'red', condition: { type: 'condition', field_id: 5, op: 'eq', value: 'alta' } }],
+        gantt_start_field_id: 10,
+        gantt_end_field_id: 11,
+        gantt_group_by_field_id: 12,
+        gantt_color_field_id: 13,
+        gantt_color_by: 'rules',
+        gantt_columns: [{ field_id: 12, width: 140 }, { field_id: 14 }],
+        gantt_title_width: 220,
+        gantt_zoom: 'month',
+        gantt_show_subtasks: false,
+        gantt_show_dependencies: false,
+        gantt_show_baseline: false,
+    };
+
+    it('config → ajustes → config deja la vista igual (round-trip)', () => {
+        const settings = viewConfigToGantt(saved);
+        expect(settings).toMatchObject({
+            startFieldId: 10,
+            endFieldId: 11,
+            groupByFieldId: 12,
+            colorFieldId: 13,
+            colorBy: 'rules',
+            columns: [{ field_id: 12, width: 140 }, { field_id: 14 }],
+            titleWidth: 220,
+            zoom: 'month',
+            showSubtasks: false,
+            showDependencies: false,
+            showBaseline: false,
+        });
+        expect(ganttToViewConfig(saved, settings)).toEqual(saved);
+    });
+
+    it('cambiar un ajuste del Gantt no toca filtros, búsqueda, orden ni reglas de color', () => {
+        const settings = viewConfigToGantt(saved);
+        const next = ganttToViewConfig(saved, { ...settings, zoom: 'week', groupByFieldId: null, showBaseline: true });
+        expect(next.filter_tree).toEqual(saved.filter_tree);
+        expect(next.search).toBe('obra');
+        expect(next.sort).toEqual(saved.sort);
+        expect(next.color_rules).toEqual(saved.color_rules);
+        expect(next.collapsed_groups).toEqual(['__null__']);
+        // Lo que vuelve al default no queda como clave vacía.
+        expect(next.gantt_zoom).toBeUndefined();
+        expect(next.gantt_group_by_field_id).toBeUndefined();
+        expect(next.gantt_show_baseline).toBeUndefined();
+        // Una vista recién creada (sólo inicio y fin) no gana claves al guardarse.
+        const fresh: SavedViewConfig = { gantt_start_field_id: 10, gantt_end_field_id: 11 };
+        expect(ganttToViewConfig(fresh, viewConfigToGantt(fresh))).toEqual(fresh);
     });
 });

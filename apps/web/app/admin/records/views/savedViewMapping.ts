@@ -1,9 +1,12 @@
 import {
     readCalendarSettings,
+    readGanttSettings,
     readKanbanSettings,
     withCalendarSettings,
+    withGanttSettings,
     withKanbanSettings,
     type CalendarSettings,
+    type GanttSettings,
     type KanbanSettings,
     type ViewColorRule,
 } from '@imagina-base/shared';
@@ -267,4 +270,18 @@ export function calendarToViewConfig(config: SavedViewConfig, settings: Calendar
         else delete next.color_rules;
     }
     return next;
+}
+
+/**
+ * B1 — Vista Gantt: inicio, fin, agrupación, color, columnas del panel, zoom y
+ * qué se dibuja viven en la config de la vista con claves `gantt_*`. Misma
+ * regla que el kanban: lectura tolerante y la escritura reemplaza SÓLO esas
+ * claves (filtros, búsqueda, orden, reglas de color y grupos plegados quedan).
+ */
+export function viewConfigToGantt(config: SavedViewConfig): GanttSettings {
+    return readGanttSettings(config);
+}
+
+export function ganttToViewConfig(config: SavedViewConfig, settings: GanttSettings): SavedViewConfig {
+    return withGanttSettings(config as Record<string, unknown>, settings) as SavedViewConfig;
 }

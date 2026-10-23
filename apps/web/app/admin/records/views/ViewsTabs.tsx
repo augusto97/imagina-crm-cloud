@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Calendar, Columns3, Copy, CopyPlus, Download, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Calendar, Columns3, Copy, GanttChart, CopyPlus, Download, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -27,6 +27,7 @@ import type { SavedViewConfig, SavedViewEntity } from '@/types/view';
 import { EditCardsViewDialog } from './EditCardsViewDialog';
 import { CalendarSettingsDialog } from './calendar/CalendarSettingsDialog';
 import { EditKanbanViewDialog } from './EditKanbanViewDialog';
+import { GanttSettingsDialog } from './gantt/GanttSettingsDialog';
 
 interface ViewsTabsProps {
     listId: number;
@@ -73,6 +74,7 @@ export function ViewsTabs({
     const [editingCardsView, setEditingCardsView] = useState<SavedViewEntity | null>(null);
     const [editingKanbanView, setEditingKanbanView] = useState<SavedViewEntity | null>(null);
     const [editingCalendarView, setEditingCalendarView] = useState<SavedViewEntity | null>(null);
+    const [editingGanttView, setEditingGanttView] = useState<SavedViewEntity | null>(null);
 
     const reorder = useReorderSavedViews(listId);
     const toast = useToast();
@@ -255,6 +257,8 @@ export function ViewsTabs({
                                 <Calendar className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.type === 'cards' ? (
                                 <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
+                            ) : view.type === 'gantt' ? (
+                                <GanttChart className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.config.spreadsheet === true ? (
                                 // Hoja de cálculo: es una vista `table` con
                                 // otra presentación, pero para el usuario es
@@ -343,6 +347,12 @@ export function ViewsTabs({
                                         <DropdownMenuItem onSelect={() => setEditingCalendarView(view)}>
                                             <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                             {__('Configurar calendario')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {writable && view.type === 'gantt' && (
+                                        <DropdownMenuItem onSelect={() => setEditingGanttView(view)}>
+                                            <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Editar configuración')}
                                         </DropdownMenuItem>
                                     )}
 
@@ -551,6 +561,17 @@ export function ViewsTabs({
                     open={editingKanbanView !== null}
                     onOpenChange={(open) => {
                         if (! open) setEditingKanbanView(null);
+                    }}
+                />
+            )}
+
+            {editingGanttView && (
+                <GanttSettingsDialog
+                    listId={listId}
+                    view={editingGanttView}
+                    open={editingGanttView !== null}
+                    onOpenChange={(open) => {
+                        if (! open) setEditingGanttView(null);
                     }}
                 />
             )}
