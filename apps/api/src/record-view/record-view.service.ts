@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
     DATA_BLOCK_TYPES,
     layoutBlocks,
@@ -14,6 +14,7 @@ import {
 import { ActivityService } from '../activity/activity.service';
 import { CollectionsService } from '../collections/collections.service';
 import { CommentsService } from '../comments/comments.service';
+import { DataConsentService } from '../data-consent/data-consent.service';
 import { mapLimit } from '../common/map-limit';
 import { RecordLayoutDataService } from '../dashboards/record-layout-data.service';
 import { DocumentsService } from '../documents/documents.service';
@@ -58,6 +59,8 @@ export class RecordViewService {
         private readonly collections: CollectionsService,
         private readonly layoutData: RecordLayoutDataService,
         private readonly time: TimeTrackingService,
+        // Ley 1581 — la línea «Autorización de datos» de la ficha.
+        @Optional() private readonly dataConsent?: DataConsentService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<RecordViewBundle> {
@@ -123,6 +126,8 @@ export class RecordViewService {
                 soft('tiempo', () =>
                     this.tenantDb.withTenant(tenantId, (tx) => this.time.recordTimeInTx(tx, tenantId, actor, recordId)),
                 ),
+            // Autorizaciones de tratamiento de datos (el registro ya pasó el ACL arriba).
+            () => (this.dataConsent ? soft('autorizaciones', () => this.dataConsent!.forRecord(tenantId, recordId)) : Promise.resolve(null)),
         ];
         const [
             fields,
@@ -138,6 +143,7 @@ export class RecordViewService {
             subtasks,
             layout,
             time,
+            dataConsents,
         ] = (await mapLimit(tasks, PARALLEL, (t) => t())) as [
             RecordViewBundle['fields'],
             RecordViewBundle['description'],
@@ -152,6 +158,7 @@ export class RecordViewService {
             RecordViewBundle['subtasks'],
             RecordViewBundle['layout_data'],
             RecordViewBundle['time'],
+            RecordViewBundle['data_consents'],
         ];
 
         // Lo que depende de las relaciones: las listas del otro lado (cabecera
@@ -207,6 +214,7 @@ export class RecordViewService {
             activity,
             layout_data: layout,
             time,
+            data_consents: dataConsents,
         };
     }
 

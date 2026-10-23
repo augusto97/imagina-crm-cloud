@@ -102,6 +102,7 @@ function PortalContent({
                         notifyEmail={boot.comments !== null ? boot.notify_email : null}
                         password={boot.password}
                         companyName={boot.branding?.app_name ?? boot.tenant_name ?? ''}
+                        dataConsent={boot.data_consent ?? null}
                     />
                 </div>
             </header>

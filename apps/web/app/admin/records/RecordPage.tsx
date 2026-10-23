@@ -21,6 +21,7 @@ import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
@@ -403,6 +404,8 @@ export function RecordPage(): JSX.Element {
                         <div className="imcrm-mt-4">
                             <PortalAccessButton list={listInfo} record={rec} />
                         </div>
+                        {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
+                        <RecordDataConsentLine className="imcrm-mt-4" listId={listInfo.id} recordId={id} />
                         <div className="imcrm-mt-4">
                             <RecordPaymentsPanel listId={listInfo.id} recordId={id} />
                         </div>

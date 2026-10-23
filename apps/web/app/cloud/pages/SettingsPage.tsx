@@ -27,6 +27,7 @@ import { IntegrationsPanel } from '@/cloud/components/IntegrationsPanel';
 import { TenantMailPanel } from '@/cloud/components/TenantMailPanel';
 import { CaptchaKeysCard } from '@/cloud/components/CaptchaKeysCard';
 import { PortalAuthCard } from '@/cloud/components/PortalAuthCard';
+import { DataConsentPanel } from '@/cloud/components/DataConsentPanel';
 import { TenantStoragePanel } from '@/cloud/components/TenantStoragePanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -180,6 +181,9 @@ export function SettingsPage(): JSX.Element {
                         <CaptchaKeysCard scope="tenant" />
                     </div>
                 )}
+
+                {/* Ley 1581 — autorización de tratamiento de datos personales. */}
+                {active === 'privacidad' && isAdmin && <DataConsentPanel />}
 
                 {/* v0.1.268 (ADR-S36) — dónde se guardan los archivos. */}
                 {active === 'almacenamiento' && isAdmin && <TenantStoragePanel />}

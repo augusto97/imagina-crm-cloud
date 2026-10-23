@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CaptchaAvailability, CreateFormInput, FormDto, UpdateFormInput } from '@imagina-base/shared';
+import type { CaptchaAvailability, CreateFormInput, FormDataConsentAvailability, FormDto, UpdateFormInput } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -29,6 +29,19 @@ export function useCaptchaAvailability(listId: number | undefined) {
     return useQuery({
         queryKey: ['forms-captcha', listId ?? 0],
         queryFn: async () => (await api.get<CaptchaAvailability>(`/lists/${listId}/forms/captcha`)).data,
+        enabled: listId !== undefined && listId > 0,
+        staleTime: 60_000,
+    });
+}
+
+/**
+ * Ley 1581 — ¿La empresa tiene activa la autorización de tratamiento de datos
+ * (y con qué texto)? Si la tiene, los formularios la piden por defecto.
+ */
+export function useDataConsentAvailability(listId: number | undefined) {
+    return useQuery({
+        queryKey: ['forms-data-consent', listId ?? 0],
+        queryFn: async () => (await api.get<FormDataConsentAvailability>(`/lists/${listId}/forms/data-consent`)).data,
         enabled: listId !== undefined && listId > 0,
         staleTime: 60_000,
     });

@@ -1,8 +1,9 @@
-import { Suspense, createContext, lazy, useContext, useEffect, useRef, useState } from 'react';
+import { Suspense, createContext, lazy, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { CloudApiError } from '@/lib/cloud/client';
 import { portalApi } from '@/cloud-portal/portalClient';
+import { PortalConsentGate } from '@/cloud-portal/PortalConsent';
 import { setPortalAccount } from '@/portal/portalAccount';
 import {
     HostBrandContext,
@@ -162,8 +163,20 @@ function PortalPage(): JSX.Element {
     useEffect(() => {
         if (stale) setParams({}, { replace: true });
     }, [stale, setParams]);
+    const logout = useCallback(() => {
+        setPortalAccount(null);
+        qc.clear();
+        setLoggedOut(true);
+    }, [qc]);
+    const refetchBoot = boot.refetch;
+    const onConsentAccepted = useCallback(() => void refetchBoot(), [refetchBoot]);
 
     if (loggedOut) return <RequestAccessScreen note="Cerraste sesión." />;
+    // Ley 1581 — sin la autorización de datos vigente aceptada, el portal no
+    // se usa: se muestra el texto para aceptarlo (o salir).
+    if (boot.error instanceof CloudApiError && boot.error.code === 'consent_required') {
+        return <PortalConsentGate onAccepted={onConsentAccepted} onLogout={logout} />;
+    }
     // v0.1.154 — el enlace vence a las 24 h y la sesión a los 30 días de
     // inactividad: en vez de un cartel muerto, el cliente pide uno nuevo aquí.
     if (boot.isError && !stale) return <RequestAccessScreen />;
@@ -175,11 +188,7 @@ function PortalPage(): JSX.Element {
                 key={boot.data.account_id ?? 0}
                 boot={boot.data}
                 onSelectAccount={(id) => setParams({ cuenta: String(id) })}
-                onLogout={() => {
-                    setPortalAccount(null);
-                    qc.clear();
-                    setLoggedOut(true);
-                }}
+                onLogout={logout}
             />
         </Suspense>
     );

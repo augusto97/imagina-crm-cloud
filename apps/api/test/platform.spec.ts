@@ -30,6 +30,8 @@ import {
     tenants,
     timeEntries,
     users,
+    dataConsents,
+    dataConsentVersions,
 } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
@@ -363,8 +365,21 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
             .returning();
         await pg.db.insert(publicDashboards).values({ token: `tablero-a-borrar-${id}`, tenantId: id, dashboardId: dash!.id, publishedBy: owner!.id });
         await pg.db.insert(dashboardSubscriptions).values({ tenantId: id, dashboardId: dash!.id, ownerId: owner!.id, recipientUserIds: [owner!.id] });
+        // Ley 1581 — la versión del texto y una autorización (con FK compuesta a la versión).
+        await pg.db.insert(dataConsentVersions).values({ tenantId: id, version: 1, text: 'T', checkboxLabel: 'L', textHash: 'h'.repeat(64) });
+        await pg.db.insert(dataConsents).values({
+            tenantId: id,
+            version: 1,
+            textHash: 'h'.repeat(64),
+            source: 'form',
+            listId: list!.id,
+            recordId: record!.id,
+            acceptedAt: new Date(),
+        });
 
         await platform.deleteTenant(id);
+        expect(await pg.db.select().from(dataConsents).where(eq(dataConsents.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(dataConsentVersions).where(eq(dataConsentVersions.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(commentReactions).where(eq(commentReactions.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(timeEntries).where(eq(timeEntries.tenantId, id))).toHaveLength(0);
         await expect(platform.getTenant(id)).rejects.toBeInstanceOf(NotFoundException);

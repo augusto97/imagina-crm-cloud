@@ -57,6 +57,10 @@ export function notificationTitle(
             // v0.1.285 — los avisos de falla arman su propio título (no hablan de un registro).
             out = `Algo dejó de funcionar: ${rec}`;
             break;
+        case 'consent':
+            // Los retiros de autorización arman su propio título (DataConsentService).
+            out = `Retiraron una autorización de datos en ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

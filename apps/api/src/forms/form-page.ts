@@ -194,6 +194,16 @@ export function renderFormPage(opts: PageOpts): string {
   .preview-item.selected { outline: 2px solid var(--accent); }
   .pv-tag { display: inline-block; margin-bottom: 6px; padding: 1px 6px; border-radius: 4px; background: rgba(127,127,127,.14); color: var(--muted); font-size: 11px; }
   .pv-empty { color: var(--muted); text-align: center; padding: 24px 0; font-size: 14px; }
+  .consent { margin-top: 22px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: #fafbfc; }
+  .consent .check span { font-size: 14px; }
+  .consent-links { margin: 8px 0 0 28px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+  .linkbtn { appearance: none; border: 0; background: none; padding: 0; font: inherit; color: var(--fg); text-decoration: underline; cursor: pointer; }
+  .consent-links a { color: var(--fg); }
+  .consent-text { white-space: pre-wrap; font-size: 13px; line-height: 1.55; border: 1px solid var(--border); border-radius: 8px;
+                  padding: 12px 14px; max-height: 280px; overflow: auto; margin: 10px 0 0; background: #fff; color: var(--fg); }
+  .consent-text:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .consent .err { margin-left: 28px; }
+  .item.invalid.consent { border-color: var(--danger); }
 </style>
 </head>
 <body>
@@ -232,6 +242,9 @@ const CLIENT_JS = String.raw`
   var current = 0;
   var stepsEl = null, stepsLabel = null, barEl = null;
   var prevBtn = null, nextBtn = null, submitBtn = null, captchaBox = null, alertBox = null;
+  // Autorización de tratamiento de datos (Ley 1581): la casilla antes de enviar.
+  var CONSENT = '__consent';
+  var consentBox = null, consentCb = null;
   // Captcha
   var captchaToken = null, captchaWidget = null, captchaMounted = false;
 
@@ -368,6 +381,7 @@ const CLIENT_JS = String.raw`
     if (nextBtn) nextBtn.hidden = last;
     if (submitBtn) submitBtn.hidden = !last;
     if (captchaBox) captchaBox.hidden = !last;
+    if (consentBox) consentBox.hidden = !last;
     if (last) mountCaptcha();
   }
   function goToPage(idx, focus) {
@@ -668,6 +682,7 @@ const CLIENT_JS = String.raw`
     root.textContent = '';
     itemEls = {}; errEls = {}; pageEls = []; stepsEl = stepsLabel = barEl = null;
     prevBtn = nextBtn = submitBtn = captchaBox = alertBox = null;
+    consentBox = consentCb = null;
     captchaMounted = false; captchaWidget = null; captchaToken = null;
     if (!meta) { root.appendChild(el('div', { cls: 'pv-empty', text: 'Cargando vista previa…' })); return; }
     var accent = meta.accent_color || '#0e7490';
@@ -722,6 +737,7 @@ const CLIENT_JS = String.raw`
       if (BOOT.preview) form.appendChild(el('div', { cls: 'captcha-ph', text: 'Aquí aparece la verificación anti-robots (' + (meta.captcha.provider === 'turnstile' ? 'Cloudflare Turnstile' : meta.captcha.provider === 'hcaptcha' ? 'hCaptcha' : 'Google reCAPTCHA') + ').' }));
       else { captchaBox = el('div', { cls: 'captcha', 'data-provider': meta.captcha.provider }); form.appendChild(captchaBox); }
     }
+    if (meta.data_consent) form.appendChild(consentNode(meta.data_consent));
     alertBox = el('div', { cls: 'alert', role: 'alert', hidden: true });
     form.appendChild(alertBox);
     submitBtn = el('button', { type: 'submit', cls: 'btn', text: meta.submit_label || 'Enviar' });
@@ -760,7 +776,9 @@ const CLIENT_JS = String.raw`
       if (paged() && !isLastPage()) { advance(); return; }
       if (BOOT.preview) return;
       clearErrs(); alertBox.hidden = true;
-      if (validate(meta.items)) {
+      var badConsent = !!(meta.data_consent && consentCb && !consentCb.checked);
+      if (badConsent) setErr(CONSENT, 'Para enviar, acepta la autorización para el tratamiento de tus datos personales.');
+      if (validate(meta.items) || badConsent) {
         var firstBad = meta.items.filter(function (i) { return itemEls[i.id] && itemEls[i.id].classList.contains('invalid'); })[0];
         if (firstBad && paged()) goToPage(pageOfItem(firstBad.id), false);
         focusFirstError(); return;
@@ -780,6 +798,7 @@ const CLIENT_JS = String.raw`
       if (prevBtn) prevBtn.disabled = true;
       var body = { values: outValues, uploads: outUploads, stamp: meta.stamp, hp: hp.querySelector('input').value };
       if (meta.captcha) body.captcha = captchaToken;
+      if (meta.data_consent && consentCb) { body.consent = consentCb.checked; body.consent_version = meta.data_consent.version; }
       fetch(API + '/submit', {
         method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -797,7 +816,12 @@ const CLIENT_JS = String.raw`
           if (errs) {
             var ids = Object.keys(errs);
             ids.forEach(function (id) { setErr(id, errs[id]); });
-            if (paged() && ids.length) goToPage(pageOfItem(ids[0]), false);
+            // La casilla de la autorización está en la última página.
+            var target = ids.filter(function (id) { return id !== CONSENT; })[0];
+            if (paged() && ids.length) {
+              if (target) goToPage(pageOfItem(target), false);
+              else { var vis = visiblePages(); if (vis.length) goToPage(vis[vis.length - 1], false); }
+            }
             focusFirstError();
           }
           alertBox.textContent = (res.b && res.b.message) || 'No se pudo enviar. Prueba de nuevo.';
@@ -814,6 +838,39 @@ const CLIENT_JS = String.raw`
         });
     });
   }
+  // Ley 1581 — la casilla de la autorización con su resumen, el texto completo
+  // desplegable y el enlace a la política. Sin marcarla no se envía (y el
+  // servidor lo vuelve a exigir).
+  function consentNode(dc) {
+    consentCb = el('input', { type: 'checkbox', id: 'q_' + CONSENT, 'aria-describedby': 'consent_err' });
+    consentCb.addEventListener('change', function () { setErr(CONSENT, ''); });
+    var full = el('div', { cls: 'consent-text', id: 'consent_text', hidden: true, tabindex: '0', text: dc.text, 'data-testid': 'form-consent-text' });
+    var toggle = el('button', { type: 'button', cls: 'linkbtn', text: 'Ver la autorización completa', 'aria-expanded': 'false', 'aria-controls': 'consent_text', 'data-testid': 'form-consent-toggle' });
+    toggle.addEventListener('click', function () {
+      var open = full.hidden;
+      full.hidden = !open;
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.textContent = open ? 'Ocultar la autorización' : 'Ver la autorización completa';
+      reportHeight();
+    });
+    var links = [toggle];
+    if (dc.policy_url && /^https:\/\//i.test(dc.policy_url)) {
+      links.push(el('a', { href: dc.policy_url, target: '_blank', rel: 'noopener noreferrer', text: 'Política de tratamiento de datos' }));
+    }
+    var err = el('div', { cls: 'err', id: 'consent_err', role: 'alert', hidden: true });
+    var kids = [
+      el('label', { cls: 'check', for: 'q_' + CONSENT }, [consentCb, el('span', { text: dc.label })]),
+      el('div', { cls: 'consent-links' }, links),
+      full,
+      err
+    ];
+    if (BOOT.preview) kids.unshift(el('span', { cls: 'pv-tag', text: 'Autorización de datos · el texto se edita en Ajustes → Datos personales' }));
+    consentBox = el('div', { cls: 'item consent', 'data-testid': 'form-consent' }, kids);
+    itemEls[CONSENT] = consentBox;
+    errEls[CONSENT] = err;
+    return consentBox;
+  }
+
   // Insertado en otro sitio, la redirección lleva a TODA la página (no al
   // marco): el script de inserción la hace; sin él, se intenta igual.
   function goTo(url) {

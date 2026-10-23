@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Reply, Settings2, TriangleAlert, UserPlus, type LucideIcon } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Reply, Scale, Settings2, TriangleAlert, UserPlus, type LucideIcon } from 'lucide-react';
 import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -18,6 +18,7 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
     reminder: AlarmClock,
     failure: TriangleAlert,
     reply: Reply,
+    consent: Scale,
 };
 
 /**
@@ -61,6 +62,8 @@ export function NotificationBell(): JSX.Element {
         if (!n.read_at) mark.mutate({ ids: [n.id] });
         // v0.1.285 — una falla lleva a la página de Problemas (ahí está a dónde ir a arreglarla).
         if (n.kind === 'failure') go('/settings?s=problemas');
+        // Ley 1581 — un retiro sin registro (p. ej. desde el portal) lleva a la evidencia.
+        else if (n.kind === 'consent' && !(n.list_slug && n.record_id)) go('/settings?s=privacidad');
         else if (n.list_slug && n.record_id) go(`/lists/${n.list_slug}/records/${n.record_id}`);
         else go('/my-work');
     };
@@ -152,7 +155,7 @@ export function NotificationBell(): JSX.Element {
                                                 <span
                                                     className={cn(
                                                         'imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full',
-                                                        n.kind === 'failure'
+                                                        n.kind === 'failure' || n.kind === 'consent'
                                                             ? 'imcrm-bg-destructive/10 imcrm-text-destructive'
                                                             : 'imcrm-bg-muted imcrm-text-muted-foreground',
                                                     )}

@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.297** (kanban para ventas: totales por columna y carril calculados en el servidor, carriles, límites y reglas al mover — segunda entrega de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.298** (autorización de tratamiento de datos personales, Ley 1581, en formularios y portal — tercera entrega de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -380,8 +380,11 @@ versión publicada: **v0.1.297** (kanban para ventas: totales por columna y carr
   30 días para todos los planes, restaura quien borró o un admin; el prefijo
   del ID automático se sugiere del nombre de la lista. Al terminar las dos
   fases: el usuario prueba y después se sigue con las fases 3-6.
-  **Avance**: Papelera (v0.1.296) y Kanban de ventas (v0.1.297) publicados.
-  Campos, Datos personales y Excel en curso. Los
+  **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
+  personales (v0.1.298) publicados. Excel terminado (sale como v0.1.299).
+  Campos en curso; Gantt + dependencias (slot 8) y Calendario (slot 9)
+  arrancaron sobre la rama local `integ-base` (lo integrado y todavía no
+  publicado). Botón y Fórmulas, cuando Campos esté integrado. Los
   documentos de cada entrega toman el siguiente ADR libre (Papelera S52,
   Kanban S53…) y la migración de cada una se renumera a la siguiente libre al
   integrarla.
@@ -622,6 +625,17 @@ versión publicada: **v0.1.297** (kanban para ventas: totales por columna y carr
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.298** — **Autorización de datos personales (Ley 1581)**
+  (opción I10 del estudio, ADR-S54). Ajustes → Datos personales con plantilla
+  sugerida editable (con el aviso de que la revise un abogado), versiones con
+  huella SHA-256 y evidencia de cada autorización (versión, origen, IP,
+  navegador). Casilla obligatoria en los formularios públicos (también la exige
+  el servidor; se apaga por formulario) y en la primera entrada al portal (y en
+  cada versión nueva). Retiro por enlace firmado en el correo o desde el portal,
+  con aviso a los admins; los datos no se borran solos. Migración 0080 (dos
+  tablas con RLS + `form_pending_submissions.consent`). **Al subirlo**: nada
+  cambia hasta que el admin active la autorización; desde ese momento los
+  formularios publicados empiezan a pedir la casilla (se apaga por formulario).
 - **2026-10-23 · v0.1.297** — **Kanban para ventas** (opción B5 del estudio,
   ADR-S53). El tablero contaba en el navegador sobre los primeros 200 registros:
   con más, las cantidades mentían y no había totales. Ahora sale de un pedido

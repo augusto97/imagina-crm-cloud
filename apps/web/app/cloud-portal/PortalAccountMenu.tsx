@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, KeyRound, LogOut, Mail } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Building2, Check, ChevronDown, KeyRound, LogOut, Mail, Scale } from 'lucide-react';
 import type { PortalAccount } from '@imagina-base/shared';
 
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { portalApi } from '@/cloud-portal/portalClient';
 import { PortalPasswordDialog } from '@/cloud-portal/PortalPasswordDialog';
+import { PortalConsentDialog } from '@/cloud-portal/PortalConsent';
 import { CloudApiError } from '@/lib/cloud/client';
 
 /**
@@ -29,6 +30,7 @@ export function PortalAccountMenu({
     notifyEmail,
     password,
     companyName = '',
+    dataConsent = null,
 }: {
     accountId: number | null;
     onSelect: (id: number) => void;
@@ -38,8 +40,12 @@ export function PortalAccountMenu({
     /** v0.1.289 — entrar con contraseña: si la empresa lo permite y si ya la creó. */
     password?: { enabled: boolean; has_password: boolean };
     companyName?: string;
+    /** Ley 1581 — la autorización de datos que aceptó (null = la empresa no la pide). */
+    dataConsent?: { version: number; accepted_at: string } | null;
 }): JSX.Element {
+    const qc = useQueryClient();
     const [pwOpen, setPwOpen] = useState(false);
+    const [consentOpen, setConsentOpen] = useState(false);
     const [hasPassword, setHasPassword] = useState(password?.has_password ?? false);
     const [notify, setNotify] = useState<boolean | null>(notifyEmail ?? null);
     const savePref = useMutation({
@@ -191,6 +197,21 @@ export function PortalAccountMenu({
                             </span>
                         </DropdownMenuItem>
                     )}
+                    {dataConsent && (
+                        <DropdownMenuItem
+                            data-testid="portal-consent-item"
+                            onSelect={() => setConsentOpen(true)}
+                            className="imcrm-flex imcrm-items-start imcrm-gap-2"
+                        >
+                            <Scale className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
+                            <span>
+                                <span className="imcrm-block">Mis datos personales</span>
+                                <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
+                                    Ver o retirar tu autorización
+                                </span>
+                            </span>
+                        </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                         data-testid="portal-logout"
                         onSelect={() => logout.mutate()}
@@ -214,6 +235,18 @@ export function PortalAccountMenu({
                                 : 'Listo: desde ahora también puedes entrar con tu correo y esta contraseña.',
                         );
                         setHasPassword(true);
+                    }}
+                />
+            )}
+            {dataConsent && (
+                <PortalConsentDialog
+                    open={consentOpen}
+                    onOpenChange={setConsentOpen}
+                    onWithdrawn={(dto) => {
+                        setConsentOpen(false);
+                        // Lo que se ve queda bloqueado hasta volver a aceptarla.
+                        qc.setQueryData(['portal-consent'], dto);
+                        void qc.invalidateQueries({ queryKey: ['portal-me'] });
                     }}
                 />
             )}

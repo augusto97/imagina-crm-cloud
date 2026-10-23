@@ -16,6 +16,8 @@ import {
     comments,
     connections,
     dashboards,
+    dataConsents,
+    dataConsentVersions,
     documentNumbers,
     documentTemplates,
     dashboardSubscriptions,
@@ -302,6 +304,36 @@ describe('Migración de empresa (v0.1.197)', () => {
                 seconds: 0,
             },
         ]);
+        // Ley 1581 — la versión del texto y la evidencia (una retirada por la
+        // empresa) viajan: son prueba legal.
+        await pg.db.insert(dataConsentVersions).values({
+            tenantId: tenantA,
+            version: 1,
+            text: 'Autorizo a ACME…',
+            checkboxLabel: 'Acepto',
+            textHash: 'a'.repeat(64),
+            createdBy: anaId,
+        });
+        await pg.db.insert(dataConsents).values({
+            tenantId: tenantA,
+            version: 1,
+            textHash: 'a'.repeat(64),
+            source: 'portal',
+            sourceLabel: 'Portal del cliente',
+            listId: clientesId,
+            recordId: clienteRecId,
+            userId: carlosId,
+            subjectEmail: 'carlos@acme.test',
+            subjectName: 'Carlos',
+            acceptedAt: new Date('2026-10-01T15:00:00Z'),
+            ip: '203.0.113.5',
+            userAgent: 'Firefox',
+            withdrawRef: 'ref-del-origen-123456',
+            withdrawnAt: new Date('2026-10-05T15:00:00Z'),
+            withdrawnVia: 'admin',
+            withdrawnBy: anaId,
+            withdrawnNote: 'por teléfono',
+        });
         await pg.db.insert(mentions).values({
             tenantId: tenantA,
             commentId: comentario!.id,
@@ -582,6 +614,27 @@ describe('Migración de empresa (v0.1.197)', () => {
         const timer = newTime.find((t) => t.source === 'timer')!;
         expect(timer.endedAt).not.toBeNull();
         expect(timer.seconds).toBeGreaterThanOrEqual(600);
+        // Autorización de datos: la evidencia viaja con sus referencias
+        // traducidas; el enlace de retiro (del servidor de origen) no.
+        const newVersions = await pg.db.select().from(dataConsentVersions).where(eq(dataConsentVersions.tenantId, tenantB));
+        expect(newVersions).toEqual([expect.objectContaining({ version: 1, text: 'Autorizo a ACME…', textHash: 'a'.repeat(64), createdBy: anaId })]);
+        const newConsents = await pg.db.select().from(dataConsents).where(eq(dataConsents.tenantId, tenantB));
+        expect(newConsents).toHaveLength(1);
+        expect(newConsents[0]).toMatchObject({
+            version: 1,
+            source: 'portal',
+            listId: newClientes.id,
+            recordId: newCliente.id,
+            subjectEmail: 'carlos@acme.test',
+            ip: '203.0.113.5',
+            withdrawnVia: 'admin',
+            withdrawnBy: anaId,
+            withdrawnNote: 'por teléfono',
+            withdrawRef: null,
+        });
+        expect(newConsents[0]!.userId).not.toBe(carlosId);
+        expect(newConsents[0]!.acceptedAt.toISOString()).toBe('2026-10-01T15:00:00.000Z');
+        expect(res.warnings.some((w) => w.includes('autorización(es) de tratamiento de datos'))).toBe(true);
         const newMentions = await pg.db.select().from(mentions).where(eq(mentions.tenantId, tenantB));
         expect(newMentions[0]!.commentId).toBe(raiz.id);
         expect(newMentions[0]!.authorUserId).toBe(anaId);

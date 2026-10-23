@@ -50,6 +50,7 @@ import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
@@ -605,6 +606,10 @@ export function RecordDetailDrawer({
                                         <div className="imcrm-mt-4">
                                             <PortalAccessButton list={listData.data} record={record} />
                                         </div>
+                                    )}
+                                    {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
+                                    {listData.data !== undefined && view.ready && (
+                                        <RecordDataConsentLine className="imcrm-mt-4" listId={listData.data.id} recordId={record.id} />
                                     )}
                                     {/* v0.1.251 — cobros (Mercado Pago / Wompi). Se oculta solo
                                         si la empresa no conectó ninguno. */}

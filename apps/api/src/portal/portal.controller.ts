@@ -22,6 +22,7 @@ import {
     portalCommentSchema,
     toggleCommentReactionSchema,
     type ToggleCommentReactionInput,
+    portalAcceptConsentSchema,
     portalCreateRecordSchema,
     portalPreferencesSchema,
     portalRequestAccessSchema,
@@ -39,6 +40,8 @@ import {
     type PortalAccounts,
     type PortalEmailLinkResult,
     type PortalSwitchResult,
+    type PortalAcceptConsentInput,
+    type PortalConsentDto,
     type PortalCommentInput,
     type PortalCreateRecordInput,
     type PortalPreferencesInput,
@@ -249,6 +252,35 @@ export class PortalController {
         return this.portal.emailAllAccounts(portalActor(req));
     }
 
+    /**
+     * Autorización de tratamiento de datos (Ley 1581): su estado y el texto
+     * vigente. Se puede pedir SIN haberla aceptado (es la pantalla de aceptarla).
+     */
+    @Get('portal/consent')
+    @UseGuards(SessionGuard)
+    consent(@Req() req: FastifyRequest): Promise<PortalConsentDto> {
+        return this.portal.consentStatus(portalActor(req));
+    }
+
+    /** El cliente acepta la versión vigente (queda la evidencia: IP y navegador). */
+    @Post('portal/consent')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    acceptConsent(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(portalAcceptConsentSchema)) input: PortalAcceptConsentInput,
+    ): Promise<PortalConsentDto> {
+        return this.portal.acceptConsent(portalActor(req), input.version, requestMeta(req));
+    }
+
+    /** El cliente retira su autorización (la empresa recibe el aviso). */
+    @Post('portal/consent/withdraw')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    withdrawConsent(@Req() req: FastifyRequest): Promise<PortalConsentDto> {
+        return this.portal.withdrawConsent(portalActor(req), requestMeta(req));
+    }
+
     /** Boot del portal para el client autenticado. */
     @Get('portal/me')
     @UseGuards(SessionGuard)
@@ -359,6 +391,12 @@ export class PortalController {
             .header('cache-control', 'private, no-store')
             .send(doc.buffer);
     }
+}
+
+/** IP y navegador de quien acepta o retira la autorización de datos (evidencia). */
+function requestMeta(req: FastifyRequest): { ip: string | null; userAgent: string | null } {
+    const ua = req.headers['user-agent'];
+    return { ip: req.ip || null, userAgent: typeof ua === 'string' && ua !== '' ? ua : null };
 }
 
 /**

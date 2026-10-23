@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
 
 /**
@@ -238,6 +239,14 @@ export const formSettingsSchema = z.object({
     confirm_email: z.boolean().default(false),
     /** Mandarle a quien responde una copia de sus respuestas. */
     send_copy: z.boolean().default(false),
+    /**
+     * Pedir la autorización de tratamiento de datos personales (Ley 1581) con
+     * el texto de la empresa (Ajustes → Datos personales). Encendida por
+     * defecto: apenas la empresa activa su texto, todos sus formularios la
+     * piden; se apaga por formulario (p. ej. uno que no recoge datos
+     * personales). Sin texto activo en la empresa no se pide.
+     */
+    data_consent: z.boolean().default(true),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -360,6 +369,8 @@ export interface PublicFormMeta {
     captcha?: PublicFormCaptcha | null;
     /** v0.1.289 — la respuesta se confirma desde el correo (doble opt-in). */
     confirm_email?: boolean;
+    /** Autorización de tratamiento de datos a aceptar antes de enviar (null = no se pide). */
+    data_consent?: PublicDataConsent | null;
 }
 
 export const submitFormSchema = z.object({
@@ -372,6 +383,10 @@ export const submitFormSchema = z.object({
     hp: z.string().max(500).optional(),
     /** v0.1.289 — el token del captcha (si el formulario lo pide). */
     captcha: z.string().max(4096).optional(),
+    /** Aceptó la autorización de tratamiento de datos (la casilla). */
+    consent: z.boolean().optional(),
+    /** La versión del texto que se le mostró. */
+    consent_version: z.number().int().positive().max(1_000_000).optional(),
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 

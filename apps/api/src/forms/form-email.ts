@@ -14,6 +14,22 @@ export interface FormAnswerLine {
     answer: string;
 }
 
+/**
+ * Ley 1581 — el enlace para RETIRAR la autorización de tratamiento de datos
+ * que la persona aceptó en el formulario (si se le pidió). Va al final de los
+ * correos que le llegan: confirmación y copia.
+ */
+function withdrawHtml(url: string | null | undefined): string {
+    if (!url) return '';
+    const e = escapeHtml;
+    return `<p style="margin:16px 0 0;padding-top:12px;border-top:1px solid #f0f1f3;font-size:12px;color:#6b7280">Aceptaste la autorización para el tratamiento de tus datos personales. Si cambias de opinión, puedes retirarla en cualquier momento desde <a href="${e(url)}" style="color:#6b7280">este enlace</a>.</p>`;
+}
+
+function withdrawText(url: string | null | undefined): string[] {
+    if (!url) return [];
+    return ['', 'Aceptaste la autorización para el tratamiento de tus datos personales. Si cambias de opinión, puedes retirarla en cualquier momento desde este enlace:', url];
+}
+
 function frame(brand: PortalEmailBrand, subject: string, inner: string, footer: string): string {
     const e = escapeHtml;
     const name = brand.name.trim();
@@ -40,7 +56,11 @@ ${inner}
 }
 
 /** «Confirma tu respuesta»: el botón lleva a la página que crea el registro. */
-export function formConfirmEmail(brand: PortalEmailBrand, url: string, opts: { formTitle: string }): PortalEmail {
+export function formConfirmEmail(
+    brand: PortalEmailBrand,
+    url: string,
+    opts: { formTitle: string; withdrawUrl?: string | null },
+): PortalEmail {
     const e = escapeHtml;
     const name = brand.name.trim();
     const title = opts.formTitle.trim().slice(0, 120);
@@ -56,6 +76,7 @@ export function formConfirmEmail(brand: PortalEmailBrand, url: string, opts: { f
         url,
         '',
         'El enlace vence en 48 horas y se usa una sola vez.',
+        ...withdrawText(opts.withdrawUrl),
         '',
         footer,
     ].join('\n');
@@ -63,12 +84,15 @@ export function formConfirmEmail(brand: PortalEmailBrand, url: string, opts: { f
 <p style="margin:0 0 20px">${e(who)} recibió tu respuesta${title ? ` a «${e(title)}»` : ''}. Para terminar de enviarla, confirma que este correo es tuyo.</p>
 <p style="margin:0 0 20px;text-align:center"><a href="${e(url)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px">Confirmar mi correo</a></p>
 <p style="margin:0 0 8px;font-size:13px;color:#6b7280">El enlace vence en 48 horas y se usa una sola vez. Si el botón no funciona, copia esta dirección en el navegador:</p>
-<p style="margin:0 0 20px;font-size:12px;color:#6b7280;word-break:break-all">${e(url)}</p>`;
+<p style="margin:0 0 20px;font-size:12px;color:#6b7280;word-break:break-all">${e(url)}</p>${withdrawHtml(opts.withdrawUrl)}`;
     return { subject, text, html: frame(brand, subject, inner, footer) };
 }
 
 /** Copia de las respuestas a quien respondió: cada pregunta con su respuesta legible. */
-export function formCopyEmail(brand: PortalEmailBrand, opts: { formTitle: string; answers: FormAnswerLine[] }): PortalEmail {
+export function formCopyEmail(
+    brand: PortalEmailBrand,
+    opts: { formTitle: string; answers: FormAnswerLine[]; withdrawUrl?: string | null },
+): PortalEmail {
     const e = escapeHtml;
     const name = brand.name.trim();
     const title = opts.formTitle.trim().slice(0, 120);
@@ -83,6 +107,8 @@ export function formCopyEmail(brand: PortalEmailBrand, opts: { formTitle: string
         `Esta es una copia de lo que respondiste${title ? ` en «${title}»` : ''}:`,
         '',
         ...answers.flatMap((a) => [`${a.question}:`, a.answer || '—', '']),
+        ...withdrawText(opts.withdrawUrl).slice(1),
+        ...(opts.withdrawUrl ? [''] : []),
         footer,
     ].join('\n');
     const rows = answers
@@ -95,6 +121,6 @@ export function formCopyEmail(brand: PortalEmailBrand, opts: { formTitle: string
         .join('\n');
     const inner = `<p style="margin:0 0 12px">Hola,</p>
 <p style="margin:0 0 16px">Esta es una copia de lo que respondiste${title ? ` en «${e(title)}»` : ''}:</p>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px">${rows}</table>`;
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px">${rows}</table>${withdrawHtml(opts.withdrawUrl)}`;
     return { subject, text, html: frame(brand, subject, inner, footer) };
 }

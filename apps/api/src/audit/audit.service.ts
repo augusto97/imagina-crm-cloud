@@ -119,7 +119,14 @@ export type AuditAction =
     // por cada cosa: deja uno por corrida).
     | 'trash.restore'
     | 'trash.purge'
-    | 'trash.empty';
+    | 'trash.empty'
+    // Autorización de tratamiento de datos (Ley 1581): el texto, sus
+    // versiones, un retiro que registra la empresa y la descarga de la
+    // evidencia (lleva correos e IP de los titulares).
+    | 'data_consent.update'
+    | 'data_consent.version'
+    | 'data_consent.withdraw_admin'
+    | 'data_consent.export';
 
 export interface AuditEntryDto {
     id: number;

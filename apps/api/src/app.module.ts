@@ -37,6 +37,7 @@ import { StoreSyncModule } from './sync/store-sync.module';
 import { SqlSyncModule } from './sql-sync/sql-sync.module';
 import { CollectionsModule } from './collections/collections.module';
 import { FormsModule } from './forms/forms.module';
+import { DataConsentModule } from './data-consent/data-consent.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AiFieldsModule } from './ai-fields/ai-fields.module';
 import { NotifyHubModule } from './notifications/notify-hub';
@@ -77,6 +78,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         CollectionsModule,
         DocumentsModule,
         FormsModule,
+        DataConsentModule,
         NotificationsModule,
         IncidentsModule,
         AiFieldsModule,

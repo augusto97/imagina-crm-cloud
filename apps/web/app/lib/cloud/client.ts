@@ -1,4 +1,13 @@
 import {
+    updateDataConsentSchema,
+    type DataConsentRecordDto,
+    type DataConsentRecordsPage,
+    type DataConsentState,
+    type DataConsentVersionDto,
+    type ListDataConsentsQuery,
+    type PortalConsentDto,
+    type RecordDataConsentDto,
+    type UpdateDataConsentInput,
     captchaKeysInputSchema,
     captchaKeysStatusSchema,
     portalAuthSettingsSchema,
@@ -1483,6 +1492,56 @@ export class CloudClient {
             body: { password_enabled: passwordEnabled },
             schema: portalAuthSettingsSchema,
         });
+    }
+    // --- Autorización de tratamiento de datos (Ley 1581) ---
+    /** Ajustes → Datos personales (admin): texto, versiones y estadísticas. */
+    dataConsentGet(): Promise<DataConsentState> {
+        return this.request('GET', '/workspaces/current/data-consent', { schema: z.custom<DataConsentState>() });
+    }
+    dataConsentSet(input: UpdateDataConsentInput): Promise<DataConsentState> {
+        return this.request('PUT', '/workspaces/current/data-consent', {
+            body: updateDataConsentSchema.parse(input),
+            schema: z.custom<DataConsentState>(),
+        });
+    }
+    dataConsentVersion(version: number): Promise<DataConsentVersionDto> {
+        return this.request('GET', `/workspaces/current/data-consent/versions/${version}`, { schema: z.custom<DataConsentVersionDto>() });
+    }
+    dataConsentRecords(query: Partial<ListDataConsentsQuery>): Promise<DataConsentRecordsPage> {
+        return this.request('GET', '/workspaces/current/data-consent/records', { query, schema: z.custom<DataConsentRecordsPage>() });
+    }
+    dataConsentWithdraw(id: number, note: string): Promise<DataConsentRecordDto> {
+        return this.request('POST', `/workspaces/current/data-consent/records/${id}/withdraw`, {
+            body: { note },
+            schema: z.custom<DataConsentRecordDto>(),
+        });
+    }
+    /** La evidencia en CSV (con los mismos filtros del listado). */
+    async dataConsentExport(query: Partial<ListDataConsentsQuery>): Promise<{ blob: Blob; filename: string }> {
+        const headers: Record<string, string> = { ...this.getExtraHeaders() };
+        const tenantId = this.getTenantId();
+        if (tenantId !== null && tenantId !== undefined) headers['X-Tenant-Id'] = String(tenantId);
+        const res = await fetch(buildUrl(this.baseUrl, '/workspaces/current/data-consent/records/export', query), {
+            headers,
+            credentials: 'include',
+        });
+        if (!res.ok) throw toApiError(await res.json().catch(() => null), res.status);
+        const filename = /filename="?([^";]+)"?/i.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'autorizaciones-datos.csv';
+        return { blob: await res.blob(), filename };
+    }
+    /** Las autorizaciones de datos que tocan a un registro (para la ficha, sin IP ni navegador). */
+    recordDataConsents(list: string | number, recordId: number): Promise<RecordDataConsentDto[]> {
+        return this.request('GET', `/lists/${list}/records/${recordId}/data-consents`, { schema: z.custom<RecordDataConsentDto[]>() });
+    }
+    /** Portal: el estado de la autorización y el texto vigente (se pide aunque no esté aceptada). */
+    portalConsent(): Promise<PortalConsentDto> {
+        return this.request('GET', '/portal/consent', { schema: z.custom<PortalConsentDto>() });
+    }
+    portalAcceptConsent(version: number): Promise<PortalConsentDto> {
+        return this.request('POST', '/portal/consent', { body: { version }, schema: z.custom<PortalConsentDto>() });
+    }
+    portalWithdrawConsent(): Promise<PortalConsentDto> {
+        return this.request('POST', '/portal/consent/withdraw', { schema: z.custom<PortalConsentDto>() });
     }
     /** Boot del portal para el client autenticado (record + campos + template). */
     portalMe(): Promise<PortalBoot> {

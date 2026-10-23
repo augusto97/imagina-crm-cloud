@@ -3515,6 +3515,42 @@ expresión en `boardStats`. Fuera de alcance: orden manual dentro de la columna,
 columnas por multi_select o fecha (una tarjeta en varias columnas rompe el
 arrastre) y notación compacta de montos.
 
+### ADR-S54 — Autorización de tratamiento de datos personales (Ley 1581 de 2012) (v0.1.298)
+
+**Contexto.** Los formularios públicos y el portal recogen datos personales. La
+ley colombiana exige una autorización previa, expresa e informada, conservar la
+prueba y permitir que el titular la revoque.
+
+**Decisión.**
+1. **Configuración** en `tenants.settings.data_consent`: activada,
+   responsable, finalidades, plantilla (`null` = la sugerida), etiqueta de la
+   casilla, pedirla en el portal y versión vigente. Al guardar un texto
+   distinto se crea una fila en `data_consent_versions` con número correlativo
+   **por empresa** (sobrevive a migrar la empresa), la copia armada del texto y
+   su SHA-256. Lo publicado es siempre esa copia.
+2. **Evidencia** en `data_consents` (RLS): versión, huella, origen (formulario
+   o portal), formulario, lista, registro, usuario, correo y nombre del
+   titular, fecha, IP y navegador, y el retiro (fecha, canal, IP, nota, quién
+   lo registró). Se inserta **antes** que el registro y se descarta si el
+   registro falla: nunca quedan datos sin su autorización.
+3. **Retiro**: enlace firmado `tenant.ref.hmac` con una referencia aleatoria
+   guardada (así un correo posterior puede volver a incluirlo); GET informa y
+   POST retira, por los antivirus de correo. Desde el portal se retira todo lo
+   del titular en esa empresa. No se borra información: la empresa decide
+   sobre la supresión.
+4. **Portal**: todo endpoint de `/portal/*` que use el acceso exige la versión
+   vigente aceptada; quedan exentos ver, aceptar y retirar la autorización, y
+   salir.
+5. **Migración de empresa**: la evidencia viaja re-mapeada porque es la prueba
+   legal; el enlace de retiro no (apunta al servidor anterior).
+
+**Consecuencias.** Cada empresa tiene prueba por aceptación y por versión
+exacta del texto. Cambiar el texto vuelve a pedirlo en el portal, pero no
+invalida autorizaciones de formularios ya dadas. La plantilla es un punto de
+partida, no asesoría legal: la interfaz lo dice. Fuera de alcance: borrar datos
+al retirar, casillas por finalidad, datos sensibles o de menores aparte,
+autorización para datos cargados por el equipo y leyes de otros países.
+
 ---
 
-**Versión del documento:** 1.94.0 (kanban para ventas)
+**Versión del documento:** 1.95.0 (datos personales)
