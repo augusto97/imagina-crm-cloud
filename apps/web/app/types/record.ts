@@ -8,6 +8,14 @@ export interface RecordEntity {
     subtask_count: number;
     /** ¿Tiene descripción? (el documento no viaja en el listado). */
     has_description: boolean;
+    /**
+     * A8 — cuántos registros que lo BLOQUEAN siguen abiertos (no terminados ni
+     * en la papelera): el icono «bloqueado» de la fila y la tarjeta. Viaja en
+     * el listado y los bundles (sin pedidos por fila).
+     */
+    blocked_by_open?: number;
+    /** A8 — sólo en la respuesta de una edición: los que se corrieron por la reprogramación en cadena. */
+    rescheduled?: number[];
     created_by: number;
     created_at: string;
     updated_at: string;

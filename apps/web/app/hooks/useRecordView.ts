@@ -20,6 +20,7 @@ import { fieldsKeys } from './useFields';
 import { listsKeys } from './useLists';
 import { notificationKeys } from './useNotifications';
 import { descriptionKeys } from './useRecordDescription';
+import { dependencyKeys } from './dependencyKeys';
 import { canonicalListId, joinInflight, listIdentifiersFor, recordsKeys } from './useRecords';
 
 /**
@@ -88,6 +89,8 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.relation_paths) qc.setQueryData(['relation-paths', lid], b.relation_paths);
     // v0.1.291 — registro de tiempo: viaja en el mismo bundle (sin otra request).
     if (b.time) qc.setQueryData(timeKeys.forRecord(lid, recordId), b.time);
+    // A8 — dependencias («bloqueado por» / «bloquea»): la sección no sale a pedirlas.
+    if (b.dependencies) qc.setQueryData(dependencyKeys.forRecord(lid, recordId), b.dependencies);
     if (b.comments) {
         const rows = normalizeDates(b.comments) as Array<Parameters<typeof fromApiComment>[0]>;
         qc.setQueryData(commentsKeys.forRecord(listId, recordId), rows.map(fromApiComment));

@@ -5,6 +5,7 @@ import { checkRestoreValue, sameFieldValue, type FieldHistoryEntry } from '@imag
 import { useToast } from '@/components/ui/toast';
 import { api, ApiError } from '@/lib/api';
 import { formatActivityValue } from '@/admin/activity/activityText';
+import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
 import { __, sprintf } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
@@ -70,6 +71,8 @@ export function useRestoreFieldValue(listId: string | number, recordId: number) 
                 );
                 return { ok: true, saved: saved ?? null };
             } catch (err) {
+                // A8 — canceló el cierre de algo bloqueado (no es un error).
+                if (isCloseCancelled(err)) return { ok: false, reason: __('Se canceló el cierre.') };
                 const reason = err instanceof ApiError
                     ? (Object.values(err.errors ?? {})[0] ?? err.message)
                     : err instanceof Error

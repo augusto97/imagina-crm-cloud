@@ -36,6 +36,7 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     create_document_template: 'Documento PDF nuevo',
     update_document_template: 'Cambio de documento PDF',
     delete_document_template: 'Eliminar documento PDF',
+    set_dependencies: 'Dependencias',
 };
 
 /**

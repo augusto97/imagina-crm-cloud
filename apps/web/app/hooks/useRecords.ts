@@ -1,5 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { guardClose } from '@/admin/records/dependencies/closeGuard';
+import { useOptionalConfirm } from '@/components/ui/confirm-dialog';
 import { api } from '@/lib/api';
 import type { AggregatesResponse } from '@/hooks/useAggregates';
 import { activityKeys } from '@/hooks/useActivity';
@@ -214,6 +216,19 @@ export function patchRecordInCache(
             }
         }
         return touched ? { ...board, cells } : undefined;
+    }
+    // B1 — bundle del Gantt (`{records: [...], unscheduled: [...]}`): la barra
+    // movida queda donde se soltó al instante.
+    const gantt = data as { records?: RecordEntity[]; unscheduled?: RecordEntity[] };
+    if (Array.isArray(gantt.records)) {
+        const inRecords = gantt.records.some((r) => r.id === id);
+        const inUnscheduled = Array.isArray(gantt.unscheduled) && gantt.unscheduled.some((r) => r.id === id);
+        if (!inRecords && !inUnscheduled) return undefined;
+        return {
+            ...gantt,
+            records: inRecords ? gantt.records.map((r) => (r.id === id ? patch(r) : r)) : gantt.records,
+            ...(inUnscheduled ? { unscheduled: gantt.unscheduled!.map((r) => (r.id === id ? patch(r) : r)) } : {}),
+        };
     }
     return undefined;
 }
@@ -511,6 +526,7 @@ interface UpdateRecordContext {
  */
 export function useUpdateRecord(listId: string | number) {
     const qc = useQueryClient();
+    const confirm = useOptionalConfirm();
     return useMutation<RecordEntity, Error, UpdateRecordVars, UpdateRecordContext>({
         mutationFn: async ({ id, values }) => {
             const res = await api.patch<RecordEntity>(`/lists/${listId}/records/${id}`, {
@@ -519,6 +535,11 @@ export function useUpdateRecord(listId: string | number) {
             return res.data;
         },
         onMutate: async ({ id, values }) => {
+            // A8 — «Aviso al cerrar»: si la edición pasa el registro a un
+            // estado terminado y lo bloquean registros abiertos, se pide
+            // confirmar ANTES del optimista. Cancelar lanza
+            // `CloseCancelledError` (no se manda nada; ver `isCloseCancelled`).
+            await guardClose(qc, confirm, listIdentifiersFor(qc, listId), listId, id, values);
             // v0.1.286 — marcar ANTES: el eco del realtime de ESTE cambio llega
             // a veces antes que la respuesta (y que `onSettled`), y refrescaba
             // la lista una vez más.

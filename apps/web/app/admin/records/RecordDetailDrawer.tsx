@@ -55,6 +55,8 @@ import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordSubtasks } from './RecordSubtasks';
+import { isCloseCancelled } from './dependencies/closeGuard';
+import { RecordDependencies } from './dependencies/RecordDependencies';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, useStoreRules } from './storeRules';
@@ -285,6 +287,8 @@ export function RecordDetailDrawer({
             void qc.invalidateQueries({ queryKey: notificationKeys.follow(record.id) });
             onOpenChange(false);
         } catch (err) {
+            // A8 — canceló el cierre de algo bloqueado: el borrador queda como estaba.
+            if (isCloseCancelled(err)) return;
             if (err instanceof ApiError) {
                 setError(err.message);
                 setFieldErrors(err.errors);
@@ -586,6 +590,17 @@ export function RecordDetailDrawer({
                                             listSlug={listSlug}
                                             record={record}
                                             fields={fields}
+                                            onOpenRecord={openOther}
+                                            className="imcrm-mt-5"
+                                        />
+                                    )}
+
+                                    {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
+                                    {view.ready && (
+                                        <RecordDependencies
+                                            listId={listId}
+                                            listSlug={listSlug}
+                                            recordId={record.id}
                                             onOpenRecord={openOther}
                                             className="imcrm-mt-5"
                                         />

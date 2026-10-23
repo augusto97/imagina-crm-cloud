@@ -35,6 +35,7 @@ import {
     Wallet,
     Activity,
     Timer,
+    GitBranch,
     type LucideIcon,
 } from 'lucide-react';
 import type { LayoutBlock, LayoutBlockType, LayoutDataSource } from '@imagina-base/shared';
@@ -207,6 +208,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Las subtareas del registro, con alta en línea.'),
         icon: ListChecks,
         create: () => block('subtasks'),
+    },
+    {
+        key: 'dependencies',
+        type: 'dependencies',
+        category: 'record',
+        label: __('Dependencias'),
+        description: __('Lo que bloquea a este registro y lo que él bloquea, con su estado.'),
+        icon: GitBranch,
+        create: () => block('dependencies'),
     },
     // Vinculados
     related('related_table', 'table', __('Tabla de vinculados'), __('Los registros de otra lista vinculados a éste.'), Table2),
