@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useUpdateField } from '@/hooks/useFields';
+import { useFields, useUpdateField } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useListPermissions, useUpdateListPermissions } from '@/hooks/usePermissions';
 import { ApiError } from '@/lib/api';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
-import { riskOf } from '@/lib/fieldTypeMigration';
+import { formulaConversionNote, riskOf } from '@/lib/fieldTypeMigration';
+import { formulaConfigFromComputed } from './formula/formulaConvert';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
@@ -55,6 +56,7 @@ interface Props {
 export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, storeField = false }: Props): JSX.Element {
     const update = useUpdateField(listId);
     const { data: fieldTypes } = useFieldTypes();
+    const listFields = useFields(listId);
 
     const [label, setLabel] = useState(field.label);
     const [description, setDescription] = useState(field.description ?? '');
@@ -174,7 +176,9 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                             onChange={(next) => {
                                 if (!next) return;
                                 setType(next);
-                                setConfig({});
+                                // Fórmulas (A1): «Convertir en fórmula» arranca con la
+                                // fórmula equivalente al calculado, para revisarla.
+                                setConfig(next === 'formula' && field.type === 'computed' ? formulaConfigFromComputed(field.config ?? {}, listFields.data ?? []) : {});
                             }}
                             editingFromType={field.type}
                         />
@@ -285,6 +289,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function TypeRiskNote({ fromType, toType }: { fromType: string; toType: string }): JSX.Element | null {
+    const formulaNote = formulaConversionNote(fromType, toType);
+    if (formulaNote) {
+        return (
+            <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2.5 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                {formulaNote}
+            </p>
+        );
+    }
     const risk = riskOf(fromType, toType);
     if (risk === null || risk === 'safe') return null;
     return (
