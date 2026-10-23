@@ -263,6 +263,7 @@ export class ImportUpdateService {
         const members = [...ctx.mapping.values()].some((slug) => ctx.bySlug.get(slug)?.type === 'user')
             ? await this.importer.memberLookup(tenantId)
             : undefined;
+        const readOpts = await this.importer.readOptions(tenantId, input.source);
         return slice.map((row, i): RowPlan => {
             const index = from + i;
             const rowNumber = index + 2;
@@ -285,7 +286,7 @@ export class ImportUpdateService {
                     if (input.clear_empty) values[`f${field.id}`] = null;
                     continue;
                 }
-                const coerced = coerceCellValue(raw, field, members);
+                const coerced = coerceCellValue(raw, field, members, readOpts);
                 const res = validateFieldValue({ type: field.type, config: field.config, is_required: false }, coerced);
                 if (!res.ok) return { ...base, error: `${field.label}: ${res.error}` };
                 values[`f${field.id}`] = res.value;

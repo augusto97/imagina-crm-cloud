@@ -34,6 +34,19 @@ export type ImportResult = z.infer<typeof importResultSchema>;
 // del fork: preview (cabeceras + muestra + sugerencias) → run (mapping por
 // columna→slug + campos nuevos on-the-fly).
 
+/**
+ * v0.1.296 — De dónde salió el texto del import. `xlsx`: lo convirtió el
+ * navegador desde una planilla de Excel (`xlsxSheetToImportTable`), con los
+ * números sin separador de miles y con el decimal de la empresa, y las fechas
+ * y horas en el reloj de pared de la empresa: el servidor lo lee entonces con
+ * el FORMATO REGIONAL y la ZONA de la empresa (como el pegar de la tabla). El
+ * CSV conserva la lectura histórica.
+ */
+export const IMPORT_SOURCES = ['csv', 'xlsx'] as const;
+/** Opcional: sin `source` es un CSV (lo que mandan los clientes de siempre). */
+export const importSourceSchema = z.enum(IMPORT_SOURCES).optional();
+export type ImportSource = (typeof IMPORT_SOURCES)[number];
+
 export const importCsvPreviewSchema = z.object({
     csv: z.string().min(1),
     /**
@@ -41,6 +54,7 @@ export const importCsvPreviewSchema = z.object({
      * existen (también en una lista de la tienda, donde crear no se puede).
      */
     mode: z.enum(['create', 'update']).default('create'),
+    source: importSourceSchema,
 });
 export type ImportCsvPreviewInput = z.infer<typeof importCsvPreviewSchema>;
 
@@ -57,6 +71,13 @@ export const IMPORT_CREATABLE_TYPES = [
     'checkbox',
     'url',
     'email',
+    // v0.1.296 — el diálogo los ofrecía (y el detector sugiere `phone`) pero
+    // el schema los rechazaba: una lista nueva desde un archivo con teléfonos
+    // fallaba con «Datos inválidos».
+    'phone',
+    'rating',
+    'percent',
+    'duration',
 ] as const;
 
 export const importCsvNewFieldSchema = z.object({
@@ -71,6 +92,7 @@ export const importCsvRunSchema = z.object({
     /** Mapa índice de columna (como string JSON) → slug del campo destino. */
     mapping: z.record(z.string(), z.string().min(1)),
     new_fields: z.array(importCsvNewFieldSchema).max(100).default([]),
+    source: importSourceSchema,
 });
 export type ImportCsvRunInput = z.infer<typeof importCsvRunSchema>;
 
@@ -168,6 +190,7 @@ export const importUpdateSchema = z.object({
     row_limit: z.number().int().positive().max(IMPORT_UPDATE_CHUNK).optional(),
     /** La edición del historial (v0.1.218): la primera tanda la abre, las siguientes la repiten. */
     edit_id: idSchema.optional(),
+    source: importSourceSchema,
 });
 export type ImportUpdateInput = z.infer<typeof importUpdateSchema>;
 
