@@ -3448,6 +3448,41 @@ Mayús + clic o arrastrar arman el rango, así copiar y pegar no se pierden. Y
 mientras el menú contextual está abierto la selección se sigue pintando aunque
 el foco esté en el menú: el menú actúa sobre ella y tiene que verse.
 
+### ADR-S52 — Papelera: borrado lógico oculto por la RLS con `app.trash` (v0.1.296)
+
+**Contexto.** Borrar una lista, un campo, una vista, una automatización o un
+tablero era definitivo y arrastraba en cascada todo lo de adentro; un registro
+se borraba de forma lógica pero sin forma de recuperarlo desde la interfaz.
+
+**Decisión.**
+1. `deleted_at`/`deleted_by` en `lists`, `fields`, `saved_views`,
+   `automations` y `dashboards` (los registros ya tenían `deleted_at`; ganan
+   `deleted_by`). Sin FK en `deleted_by`: el sistema y la IA borran sin fila de
+   usuario.
+2. La policy `tenant_isolation` de esas cinco tablas oculta la fila borrada
+   salvo que la transacción haya hecho `set_config('app.trash','on', true)`.
+   Sólo el módulo `trash` (listar, restaurar, purgar) enciende ese modo
+   (`enterTrashMode`/`inTrashMode`). Así todas las lecturas existentes tratan lo
+   borrado como inexistente sin cambios; la conexión base (superusuario) no
+   pasa por la RLS y sus barridos filtran `deleted_at IS NULL` a mano.
+3. Borrar una lista marca con el mismo `now()` sus campos, vistas,
+   automatizaciones y registros vivos; restaurar devuelve lo que tiene ese mismo
+   instante (lo borrado antes queda en la papelera).
+4. Unicidad de slugs y de «por defecto» sólo entre lo vivo (índices parciales);
+   restaurar resuelve el choque con un sufijo.
+5. Purgar = el borrado definitivo de antes, en tandas, con limpieza de archivos
+   sin referencias; un job diario purga lo que pasó `TRASH_RETENTION_DAYS`
+   (30). Retención por plan prevista en un único punto (`retentionDays()`).
+6. Restaurar: quien lo borró o un admin, con las capacidades del tipo y el ACL
+   de la fila; límites del plan al restaurar.
+
+**Consecuencias.** Una lista sincronizada con una tienda no va a la papelera
+(hay que dejar de sincronizarla). La migración entre empresas no exporta lo
+borrado; `deleteTenant` sigue borrando todo. Comentarios, formularios,
+plantillas de documento, carpetas y conexiones siguen borrándose para siempre.
+Regla para quien toque estas tablas: una lectura por la conexión base debe
+filtrar lo borrado; una operación que necesita verlo usa el modo papelera.
+
 ---
 
-**Versión del documento:** 1.92.0 (editar con un click por vista)
+**Versión del documento:** 1.93.0 (papelera)

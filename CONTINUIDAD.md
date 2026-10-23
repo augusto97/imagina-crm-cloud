@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de click derecho abierto, y «Editar con un click» configurable por vista), en `main`.
+versión publicada: **v0.1.296** (papelera de 30 días para registros, listas, campos, vistas, automatizaciones y tableros — primera entrega de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -380,6 +380,11 @@ versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de 
   30 días para todos los planes, restaura quien borró o un admin; el prefijo
   del ID automático se sugiere del nombre de la lista. Al terminar las dos
   fases: el usuario prueba y después se sigue con las fases 3-6.
+  **Avance**: Papelera publicada (v0.1.296). Kanban de ventas terminado,
+  sale como v0.1.297. Campos, Datos personales y Excel en curso. Los
+  documentos de cada entrega toman el siguiente ADR libre (Papelera S52,
+  Kanban S53…) y la migración de cada una se renumera a la siguiente libre al
+  integrarla.
 - 2026-10-22 — **Pedido del usuario: estudio de funcionalidades frente a la
   competencia** (premium y open source: Airtable, ClickUp, Notion, monday,
   SmartSuite, Smartsheet, Fibery, Attio, Kommo, NocoDB, Baserow, Teable,
@@ -617,6 +622,26 @@ versión publicada: **v0.1.295** (la selección se sigue viendo con el menú de 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.296** — **Papelera** (opción A2 del estudio, primera
+  entrega de las fases 1 y 2 que el usuario aprobó «de una»; ADR-S52). Todo
+  borrado de registros, listas, campos, vistas, automatizaciones y tableros va
+  a la papelera 30 días (`TRASH_RETENTION_DAYS`) y vuelve tal cual: aviso
+  «Deshacer» tras cada borrado, Ajustes → Papelera y «Registros borrados» en
+  Personalizar vista; purga diaria a las 04:17 UTC. Migración 0079 (columnas
+  `deleted_at`/`deleted_by`, índices parciales, policy RLS con `app.trash`):
+  sin reescritura de datos, pero el índice de `records` se construye en la
+  migración (bloquea escrituras mientras pasa una vez por la tabla).
+  **Al desplegar**: los registros ya borrados de forma lógica aparecen en la
+  papelera («Lo borró —») y los de más de 30 días se purgan en la primera
+  corrida diaria (antes quedaban guardados para siempre). **Cambio de
+  comportamiento**: una lista sincronizada con una tienda ya no se puede borrar
+  sin dejar de sincronizarla (409 `store_managed`). Pendiente: retención por
+  plan; restaurar una lista no chequea el máximo de automatizaciones del plan;
+  comentarios, formularios, plantillas de documento, carpetas y conexiones
+  siguen borrándose para siempre; restaurar desde el asistente/MCP. Regla: una
+  lectura por la conexión base (`@Inject(DRIZZLE)`) no pasa por la RLS y debe
+  filtrar `deleted_at IS NULL`; lo que necesita ver lo borrado usa
+  `enterTrashMode`/`inTrashMode` (`trash/trash-ops.ts`).
 - **2026-10-22 · v0.1.295** — **Selección visible con el menú + «Editar con
   un click» por vista** (pedidos del usuario con capturas: "déjalo
   configurable" y "al dar click derecho se pierde la selección"). El menú se
