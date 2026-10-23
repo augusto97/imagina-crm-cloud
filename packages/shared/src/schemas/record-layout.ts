@@ -85,6 +85,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'payments',
     // v0.1.291 — registro de tiempo (cronómetro, entradas y total por persona).
     'time_tracking',
+    // A8 — dependencias: «bloqueado por» y «bloquea», con alta y baja.
+    'dependencies',
 ] as const;
 export const layoutBlockTypeSchema = z.enum(LAYOUT_BLOCK_TYPES);
 export type LayoutBlockType = z.infer<typeof layoutBlockTypeSchema>;
