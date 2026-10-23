@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.303** (Campo «Botón» — tercera entrega de la tanda 2 de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.304** (Campo «Fórmula» — última entrega de las fases 1 y 2 del estudio), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
@@ -383,8 +383,9 @@ versión publicada: **v0.1.303** (Campo «Botón» — tercera entrega de la tan
   **Avance**: Papelera (v0.1.296), Kanban de ventas (v0.1.297) y Datos
   personales (v0.1.298), Excel (v0.1.299) y Campos (v0.1.300) publicados:
   **la tanda 1 está completa**. De la tanda 2 ya salieron Calendario
-  (v0.1.301), Dependencias + Gantt (v0.1.302) y Botón (v0.1.303); Fórmulas
-  sigue en curso y es la última de las dos fases. El contenedor se reinició varias veces durante la tanda 2 y una
+  (v0.1.301), Dependencias + Gantt (v0.1.302), Botón (v0.1.303) y Fórmulas
+  (v0.1.304): **las fases 1 y 2 están completas. Esperando que el usuario
+  pruebe para seguir con las fases 3-6.** El contenedor se reinició varias veces durante la tanda 2 y una
   vez se cortó por el límite de uso: el avance de cada agente quedó en commits
   de su rama (`wip-gantt`, `wip-calendario` y las ramas de cada worktree) y se
   retomó. Gantt + dependencias (slot 8)
@@ -631,6 +632,19 @@ versión publicada: **v0.1.303** (Campo «Botón» — tercera entrega de la tan
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-23 · v0.1.304** — **Campo «Fórmula»** (opción A1 del estudio,
+  ADR-S59). Lenguaje en español con 49 funciones (festivos de Colombia),
+  referencias guardadas por id y mostradas por nombre, un evaluador único en
+  shared (navegador y servidor) y compilación a SQL sólo cuando el resultado es
+  idéntico (filtra, ordena, agrupa y suma); lo que no compila se muestra igual
+  y dice por qué. Editor con autocompletado, error con posición, vista previa y
+  referencia. Al integrarlo con Botón, una fórmula no puede usar un campo
+  Botón. Arreglada de paso otra variante del «—» hasta recargar en la columna
+  de un campo nuevo. Sin migración. **Con esto quedan completas las fases 1 y
+  2.** Pendiente: operadores propios de fórmula en las condiciones de las
+  automatizaciones; el test de `portal.spec` «la actividad sólo muestra
+  cambios de campos que el cliente ve» es inestable (`not.toContain('900')`
+  puede coincidir con un id o un timestamp).
 - **2026-10-23 · v0.1.303** — **Campo «Botón»** (opción A5 del estudio,
   ADR-S58). Se presiona en la tabla, la agrupada, la ficha y (si se elige) el
   portal; abre enlaces con variables (WhatsApp, llamar, correo, mapa), cambia

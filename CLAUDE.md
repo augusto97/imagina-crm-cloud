@@ -8920,6 +8920,55 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         integración con Calendario y Gantt (y el del Gantt re-verificado
         39/39). Queda fuera: botones en kanban y tarjetas.
 
+  - [x] **Campo «Fórmula» (v0.1.304, ADR-S59, opción A1 del estudio)**: un
+        tipo de campo que se escribe como en una hoja de cálculo, en español
+        —`{Precio} * {Cantidad}`, `SI({Total} > 1000000, "Grande", "Chico")`,
+        `SUMAR_DIAS_HABILES({Radicado}, 15)`— con 49 funciones (lógica, texto,
+        números, fechas con festivos de Colombia, conversión; alias en inglés).
+        (a) **Referencias por id**: se guardan como `{#id}` (con las últimas
+        etiquetas para poder nombrar un campo borrado) y se muestran y escriben
+        por nombre — renombrar un campo no rompe nada; en plantillas viaja
+        `{@slug}` y migrar una empresa re-apunta los ids. (b) **Un solo
+        evaluador** en `packages/shared/src/formula`: el mismo corre en el
+        navegador (vista previa) y en el servidor (en cada lectura, sin
+        persistir, con topes de 50.000 pasos, 50 ms y 100 KB de texto). (c)
+        **SQL sólo si es idéntico**: cuando la fórmula se puede llevar fielmente
+        a SQL (`formula-sql.ts`: vacío = 0 en una cuenta, textos sin mayúsculas,
+        selects por etiqueta, «hoy» en la zona de la empresa, valores como
+        parámetros), filtra, ordena, agrupa y se suma en el pie y en los
+        tableros; si no (días hábiles, expresiones regulares, formato de fecha,
+        selección múltiple, personas, lookups de varios valores), se muestra
+        igual y el menú de la columna y el filtro dicen por qué. (d)
+        **Resultado con su formato** (moneda, fecha, porcentaje 0-100,
+        duración…), inferido o elegido; una fila con error dice «#ERROR» con el
+        motivo al pasar el mouse. (e) **Reglas**: ciclos rechazados (400 y aviso
+        en vivo), una fórmula que usa un campo oculto queda oculta también, de
+        forma transitiva (SEC-36), un campo en la papelera da «#ERROR» con su
+        nombre y la fórmula vuelve al restaurarlo, borrar un campo avisa qué
+        fórmulas lo usan (también a través de otra), un calculado se convierte
+        en fórmula con la equivalente y una fórmula se convierte a un tipo común
+        escribiendo el valor; un campo «Botón» no se puede usar (no tiene
+        valor). (f) **Editor** con resaltado, autocompletado de campos tras
+        «{» y de funciones con su firma, error con la posición, vista previa
+        con un registro real elegible y referencia de funciones con ejemplos;
+        se carga a pedido (el motor no entra en la carga inicial: el chunk de
+        la app bajó de 752 a 704 KB). CSV/Excel, plantillas, migración de
+        empresa y asistente/MCP (`formula {expression, result_type}` por nombre,
+        validada al proponer) al día. **Bug de paso**: la columna de un campo
+        nuevo podía seguir quedando en «—» hasta recargar —otra variante de la
+        carrera del mapa `f{id}`↔slug: sólo se actualizaba el mapa de la clave
+        pedida y la tabla traduce con el del slug—; arreglado con test de
+        regresión. Sin migración. 36 tests de shared, 9 de integración de la
+        API y 16 del front + E2E navegador 37/37 (escritorio, oscuro y
+        celular). Queda fuera: operadores propios en las condiciones de las
+        automatizaciones y funciones que agreguen listas vinculadas (para eso
+        están rollup y lookup).
+
+        **Con esto quedan completas las fases 1 y 2 del estudio de
+        funcionalidades: papelera, kanban de ventas, datos personales, Excel,
+        campos de sistema y validaciones, calendario, dependencias + Gantt,
+        botón y fórmulas.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
