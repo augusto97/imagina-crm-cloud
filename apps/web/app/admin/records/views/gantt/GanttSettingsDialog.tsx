@@ -51,7 +51,8 @@ export const GANTT_ZOOM_LABEL: Record<GanttZoom, string> = {
 type SortChoice = { fieldId: number; dir: 'asc' | 'desc' } | null;
 
 /** Tipos que no tienen sentido como columna del panel (no se leen en una línea). */
-const NO_COLUMN_TYPES = new Set(['long_text', 'relation', 'file', 'ai']);
+// v0.1.303 — el campo «Botón» no tiene valor: no es columna ni orden del Gantt.
+const NO_COLUMN_TYPES = new Set(['long_text', 'relation', 'file', 'ai', 'button']);
 
 /**
  * «Configurar Gantt» (B1): todo lo de la vista en un lugar —qué fechas dibujan
@@ -110,7 +111,7 @@ export function GanttSettingsDialog({ listId, view, fields: fieldsProp, open, on
         () => fields.filter((f) => !f.is_primary && !NO_COLUMN_TYPES.has(f.type)),
         [fields],
     );
-    const sortCandidates = fields.filter((f) => !['relation', 'file', 'long_text', 'ai'].includes(f.type));
+    const sortCandidates = fields.filter((f) => !['relation', 'file', 'long_text', 'ai', 'button'].includes(f.type));
     const fieldLabel = (id: number): string => fields.find((f) => f.id === id)?.label ?? `#${id}`;
     const columnIds = settings.columns.map((c) => c.field_id);
 

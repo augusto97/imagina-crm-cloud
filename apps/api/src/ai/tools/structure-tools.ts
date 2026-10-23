@@ -3496,6 +3496,7 @@ export class StructureTools implements AiProposalApplier {
             out.gantt_columns = v.columns.map((slug) => {
                 const f = resolve(slug);
                 if (f.type === 'long_text') throw new AiToolError(`Vista «${v.name}»: «${slug}» es texto largo; no entra como columna del gantt.`);
+                if (f.type === 'button') throw new AiToolError(`Vista «${v.name}»: «${slug}» es un botón (no tiene valor); no entra como columna del gantt.`);
                 return { field_id: f.id };
             });
         }
