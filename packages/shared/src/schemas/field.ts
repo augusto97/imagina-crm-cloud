@@ -4,6 +4,7 @@ import { filterTreeSchema } from './filter';
 import { fieldSlugSchema } from './slug';
 import { autonumberConfigSchema, fieldRulesSchema } from './field-rules';
 import { buttonConfigSchema } from './button';
+import { FORMULA_MAX_LENGTH, FORMULA_RESULT_TYPES } from '../formula/constants';
 
 /** Tipos de campo del plugin (CONTRACT.md §3). */
 export const FIELD_TYPES = [
@@ -64,6 +65,11 @@ export const FIELD_TYPES = [
     // abrir un enlace con variables, cambiar campos, correr automatizaciones
     // o generar un PDF. Ver schemas/button.ts.
     'button',
+    // Fórmulas (opción A1) — un lenguaje en español (`SI({Total} > 0, …)`)
+    // con referencias por nombre que se GUARDAN por id. Como `computed`, el
+    // valor no se persiste: se calcula en cada lectura y, cuando la fórmula
+    // compila a SQL, también filtra, ordena, agrupa y se suma.
+    'formula',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -240,6 +246,20 @@ export const fieldConfigSchemas = {
     created_by: z.object({}),
     updated_by: z.object({}),
     button: buttonConfigSchema,
+    /**
+     * Fórmula (opción A1). `formula` va en su forma GUARDADA: las referencias
+     * son `{#id}` (el servidor traduce los nombres al guardar). `result_type`
+     * vacío = se infiere; `currency`/`precision` mandan sobre lo inferido.
+     * `labels` recuerda el último nombre de cada campo usado: si uno va a la
+     * papelera, el error lo nombra («el campo «Precio» no existe»).
+     */
+    formula: z.object({
+        formula: z.string().max(FORMULA_MAX_LENGTH).optional(),
+        result_type: z.enum(FORMULA_RESULT_TYPES).optional(),
+        currency: z.string().length(3).optional(),
+        precision: z.number().int().min(0).max(10).optional(),
+        labels: z.record(z.string().max(190)).optional(),
+    }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
@@ -276,6 +296,8 @@ export const NON_DATA_FIELD_TYPES: readonly FieldType[] = [
     'created_at', 'updated_at', 'created_by', 'updated_by',
     // El botón no tiene valor: sólo su config y lo que hace al presionarlo.
     'button',
+    // Fórmulas: se calculan en cada lectura, como `computed`.
+    'formula',
 ];
 
 export function isDataField(type: FieldType): boolean {
@@ -362,6 +384,24 @@ export const throughInfoSchema = z.object({
 });
 export type ThroughInfo = z.infer<typeof throughInfoSchema>;
 
+/**
+ * Fórmulas — lo que el servidor deriva de una fórmula para la interfaz (nunca
+ * se persiste): el texto por NOMBRE, el tipo de resultado (efectivo e
+ * inferido) con su moneda/decimales, y si compila a SQL (filtra, ordena,
+ * agrupa y se suma) o por qué no.
+ */
+export const formulaInfoSchema = z.object({
+    display: z.string(),
+    result_type: z.enum(FORMULA_RESULT_TYPES),
+    inferred_type: z.enum(FORMULA_RESULT_TYPES),
+    display_config: z.record(z.unknown()).default({}),
+    sql: z.boolean(),
+    sql_reason: z.string().nullable(),
+    error: z.string().nullable(),
+    dependencies: z.array(idSchema).default([]),
+});
+export type FormulaInfo = z.infer<typeof formulaInfoSchema>;
+
 export const fieldSchema = z.object({
     id: idSchema,
     list_id: idSchema,
@@ -399,8 +439,21 @@ export const fieldSchema = z.object({
      * Ausente en las lecturas internas.
      */
     through: throughInfoSchema.nullable().optional(),
+    /** Sólo en fórmulas: ver `formulaInfoSchema`. */
+    formula: formulaInfoSchema.nullable().optional(),
 });
 export type Field = z.infer<typeof fieldSchema>;
+
+/**
+ * Fórmulas (A1) — la fórmula vista como el tipo de su RESULTADO (número,
+ * moneda con su código y decimales, fecha, sí/no…) para mostrarla, exportarla
+ * o filtrarla con lo que ya existe para ese tipo. Sin `formula` (lecturas
+ * internas) queda igual; cualquier otro campo, intacto.
+ */
+export function formulaShownAs<T extends { type: string; config: Record<string, unknown>; formula?: FormulaInfo | null }>(field: T): T {
+    if (field.type !== 'formula' || !field.formula) return field;
+    return { ...field, type: field.formula.result_type, config: field.formula.display_config ?? {} };
+}
 
 /**
  * Clave JSONB de un campo dentro de `records.data`: `"f{field_id}"`,

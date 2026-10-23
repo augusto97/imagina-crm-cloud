@@ -52,6 +52,12 @@ export const recordSchema = z.object({
      * sabe, registros modificados antes de que existiera el dato).
      */
     updated_by: z.number().int().nonnegative().nullable().optional(),
+    /**
+     * Fórmulas que dieron error en ESTA fila (por `f{field_id}`), con el
+     * motivo: la celda muestra «#ERROR» y el motivo al pasar el mouse. El
+     * valor de esas claves en `data` es null.
+     */
+    formula_errors: z.record(z.string()).optional(),
 });
 export type RecordDto = z.infer<typeof recordSchema>;
 
