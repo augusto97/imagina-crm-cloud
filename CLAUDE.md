@@ -8687,6 +8687,43 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         rechazo sin la casilla, prueba con versión/IP/navegador, enlace de
         retiro, portal que la exige, CSV, celular y oscuro).
 
+  - [x] **Excel: exportar e importar .xlsx (v0.1.299, addendum de ADR-S38,
+        opción G6 del estudio)**: «Exportar» y «Exportar vista» ofrecen **Excel
+        (.xlsx)** (por defecto; el último formato se recuerda) además de CSV,
+        con lo que se ve en la vista: filtros, búsqueda, orden, columnas
+        visibles en su orden y el ACL de quien exporta. Cada celda sale con su
+        **tipo real**: montos con el símbolo y los decimales del campo,
+        porcentajes, fechas, fecha y hora en la zona de la empresa, duraciones
+        `[h]:mm`, opciones por etiqueta, personas por nombre, relaciones por
+        título, lookup/rollup/calculados con su valor, teléfonos como texto
+        (con el +) y enlaces clickeables. Encabezado en negrita, inmovilizado y
+        con filtro, anchos ajustados, hoja con el nombre de la vista, columnas
+        fijas de la vista, subtareas con «ID»/«Subtarea de» y sangría, y la
+        opción de agregar el ID (sirve para «Actualizar desde un archivo»). Un
+        texto que empieza con `= + - @` sale como TEXTO, nunca como fórmula.
+        Streaming de punta a punta con memoria estable (100.000 registros en
+        ~10 s); más de 100.000 se rechaza antes de mandar un byte
+        (`export_too_large`: filtrar o usar CSV). El **import** y «Actualizar
+        desde un archivo» aceptan .xlsx: se abre en el NAVEGADOR (chunk a pedido
+        de 9 KB gz; el archivo nunca viaja al servidor), se elige la hoja (las
+        ocultas se marcan) y se convierte al mismo flujo del CSV con `source:
+        'xlsx'`, que el servidor lee con el formato regional y la zona de la
+        empresa: fechas y números reales, fórmulas con su valor calculado, el
+        título arriba de la tabla se salta, tipos sugeridos por el formato de
+        las celdas, y avisos de filas de más (tope 5.000), fórmulas sin
+        resultado guardado y celdas con error; un .xls viejo o cifrado explica
+        qué hacer. Lector y escritor propios en `packages/shared/src/xlsx` sobre
+        fflate (DTD rechazado, bombas de compresión cortadas). **De paso**:
+        crear campos teléfono, calificación, porcentaje o duración desde el
+        import fallaba con «Datos inválidos» (desde v0.1.158), un campo oculto
+        para el rol salía como columna vacía con su nombre en el export (también
+        en CSV), y el diálogo de exportar ignoraba la vista. Avisos de
+        dependencias de producción otra vez en 0 (SDK de MCP 1.32.1, fastify
+        5.12.7, dompurify 3.4.17, overrides de hono e ip-address). 16 tests en
+        shared, 3 en el front y `export-xlsx.spec` (8) + E2E navegador 43/43
+        verificado con openpyxl y LibreOffice, incluida la ida y vuelta
+        exportar → editar → actualizar.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
