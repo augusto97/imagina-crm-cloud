@@ -122,6 +122,19 @@ interface ReadContext {
     formula?: FormulaRuntime;
 }
 
+/** B2 — Lo que `readScoped` le da a quien arma su propia lectura (ver la carga de trabajo). */
+export interface ReadScope {
+    list: List;
+    fields: Field[];
+    /** Campos que quien pide no ve (tampoco se filtran ni se suman). */
+    hiddenIds: ReadonlySet<number>;
+    /** Campos filtrables y sus expresiones (derivados incluidos), sin los ocultos. */
+    fieldsById: Map<number, FilterableField>;
+    clock: QueryClock;
+    /** Filtros + búsqueda (sobre campos visibles) + alcance de lectura del ACL. */
+    where: (q: Pick<ListRecordsQuery, 'filter_tree' | 'search'>) => SQL | undefined;
+}
+
 @Injectable()
 export class RecordsService {
     private readonly logger = new Logger(RecordsService.name);
@@ -804,6 +817,27 @@ export class RecordsService {
                 .orderBy(records.id)
                 .limit(cap);
             return { list: ctx.list, rows };
+        });
+    }
+
+    /**
+     * B2 — Carga de trabajo: corre `fn` en UNA transacción con el contexto de
+     * LECTURA de la lista para quien pide (campos, ocultos, expresiones
+     * filtrables, reloj de la empresa) y el `where` del listado (filtros +
+     * búsqueda + alcance del ACL). Así el bundle de la carga arma su SQL sin
+     * duplicar las reglas del ACL ni de los campos ocultos.
+     */
+    async readScoped<T>(tenantId: number, actor: Actor, listIdOrSlug: string, fn: (tx: Tx, scope: ReadScope) => Promise<T>): Promise<T> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ctx = await this.readContext(tx, tenantId, actor, listIdOrSlug);
+            return fn(tx, {
+                list: ctx.list,
+                fields: ctx.fields,
+                hiddenIds: ctx.hiddenIds,
+                fieldsById: ctx.fieldsById,
+                clock: ctx.clock,
+                where: (q) => this.readWhere(ctx, q),
+            });
         });
     }
 

@@ -281,6 +281,11 @@ export function remapViewConfig(
     if (isUserField(config.gantt_group_by_field_id) && out.collapsed_groups !== undefined) {
         out.collapsed_groups = keys(out.collapsed_groups);
     }
+    // B2 — Carga de trabajo: las personas visibles son ids de usuario (la
+    // clave no sigue ninguna convención). Una que no viajó se descarta.
+    if (Array.isArray(out.workload_user_ids)) {
+        out.workload_user_ids = out.workload_user_ids.map((v) => mapId(maps.user, v)).filter((v): v is number => v !== null);
+    }
     return out;
 }
 
