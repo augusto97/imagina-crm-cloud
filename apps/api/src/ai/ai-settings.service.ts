@@ -1,10 +1,14 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
+    DEFAULT_AI_EFFORT,
     DEFAULT_AI_MODEL_CHOICE,
     FAST_AI_MODEL_FAMILY,
+    aiEffortSchema,
     aiModelChoiceSchema,
+    clampAiEffort,
     inferAiModelCaps,
     legacyModelToChoice,
+    type AiEffort,
     type AiKeySource,
     type AiModelCaps,
     type AiModelCatalog,
@@ -42,6 +46,8 @@ const storedPlatformSchema = z.object({
     api_key_enc: z.string().nullable().catch(null).default(null),
     model_choice: lenientChoice,
     model: lenientLegacy,
+    // v0.1.306 — antes de poder elegirlo el asistente pedía `medium`.
+    effort: aiEffortSchema.catch(DEFAULT_AI_EFFORT).default(DEFAULT_AI_EFFORT),
     share_platform_key: z.boolean().catch(true).default(true),
     allow_tenant_keys: z.boolean().catch(true).default(true),
 });
@@ -53,6 +59,7 @@ const storedTenantSchema = z.object({
     api_key_enc: z.string().nullable().catch(null).default(null),
     model_choice: lenientChoice,
     model: lenientLegacy,
+    effort: aiEffortSchema.nullable().catch(null).default(null),
 });
 type StoredTenant = z.infer<typeof storedTenantSchema>;
 
@@ -76,6 +83,11 @@ export interface ResolvedAiAccess {
     fallbackFrom: string | null;
     /** Lo que el modelo soporta (para armar el pedido: pensamiento, esfuerzo). */
     caps: AiModelCaps;
+    /**
+     * v0.1.306 — Nivel de esfuerzo que se manda, ya ajustado a lo que acepta
+     * el modelo. `null` = el modelo no usa esfuerzo.
+     */
+    effort: AiEffort | null;
     source: AiKeySource;
 }
 
@@ -138,6 +150,7 @@ export class AiSettingsService {
             key_hint: effective ? hint(effective) : null,
             key_unreadable: key.state === 'unreadable',
             model: platformChoice(stored),
+            effort: stored.effort,
             share_platform_key: stored.share_platform_key,
             allow_tenant_keys: stored.allow_tenant_keys,
         };
@@ -151,6 +164,7 @@ export class AiSettingsService {
             next.model_choice = patch.model;
             next.model = null;
         }
+        if (patch.effort !== undefined) next.effort = patch.effort;
         if (patch.share_platform_key !== undefined) next.share_platform_key = patch.share_platform_key;
         if (patch.allow_tenant_keys !== undefined) next.allow_tenant_keys = patch.allow_tenant_keys;
         if (patch.clear_key) next.api_key_enc = null;
@@ -170,11 +184,14 @@ export class AiSettingsService {
             key_hint: key.state === 'ok' && key.value ? hint(key.value) : null,
             key_unreadable: key.state === 'unreadable',
             model: tenantChoice(stored),
+            effort: stored.effort,
+            effort_editable: this.usesOwnKey(stored, platform),
             platform: {
                 enabled: platform.enabled,
                 share_platform_key: platform.share_platform_key,
                 allow_tenant_keys: platform.allow_tenant_keys,
                 default_model: platformChoice(platform),
+                default_effort: platform.effort,
             },
         };
     }
@@ -189,6 +206,21 @@ export class AiSettingsService {
         }
         if (patch.clear_key) next.api_key_enc = null;
         if (patch.api_key) next.api_key_enc = encryptSecret(patch.api_key, this.env.SECRETS_KEY);
+        if (patch.effort !== undefined) {
+            // v0.1.306 — con la clave de la plataforma el costo es del
+            // operador: el esfuerzo lo decide la plataforma. Se valida contra
+            // el estado RESULTANTE (cargar la clave y elegir el esfuerzo en el
+            // mismo guardado vale).
+            if (patch.effort !== null && !this.usesOwnKey(next, await this.readPlatform())) {
+                throw new BadRequestException({
+                    code: 'ai_effort_requires_own_key',
+                    message:
+                        'El nivel de esfuerzo sólo se puede elegir cuando la empresa usa su propia clave. Con la clave de la plataforma se usa el que fija la plataforma.',
+                    data: { status: 400 },
+                });
+            }
+            next.effort = patch.effort;
+        }
         await this.writeTenant(tenantId, next);
         return this.getTenant(tenantId);
     }
@@ -248,8 +280,14 @@ export class AiSettingsService {
     /** La empresa tiene clave propia USABLE → sus pedidos no consumen cuota. */
     async tenantHasOwnKey(tenantId: number): Promise<boolean> {
         const [stored, platform] = await Promise.all([this.readTenant(tenantId), this.readPlatform()]);
-        if (!platform.allow_tenant_keys) return false;
-        return this.decryptKey(stored.api_key_enc).state === 'ok' && stored.api_key_enc !== null;
+        return this.usesOwnKey(stored, platform);
+    }
+
+    /** La empresa habla con SU clave: la cargó, se lee y la plataforma lo permite. */
+    private usesOwnKey(stored: StoredTenant, platform: StoredPlatform): boolean {
+        if (!platform.allow_tenant_keys || stored.api_key_enc === null) return false;
+        const key = this.decryptKey(stored.api_key_enc);
+        return key.state === 'ok' && !!key.value;
     }
 
     // ── Resolución para un pedido ────────────────────────────────────────
@@ -278,7 +316,8 @@ export class AiSettingsService {
                     'tenant_key_unreadable',
                 );
             }
-            if (key.value) return this.withModel(key.value, choice, 'tenant');
+            // Con clave propia la empresa elige su esfuerzo (o hereda el de la plataforma).
+            if (key.value) return this.withModel(key.value, choice, tenant.effort ?? platform.effort, 'tenant');
         }
         if (!platform.share_platform_key) {
             throw new AiUnavailableError(
@@ -300,12 +339,22 @@ export class AiSettingsService {
                 'platform_key_missing',
             );
         }
-        return this.withModel(apiKey, choice, 'platform');
+        // Con la clave de la plataforma manda su esfuerzo, aunque la empresa haya guardado otro.
+        return this.withModel(apiKey, choice, platform.effort, 'platform');
     }
 
-    private async withModel(apiKey: string, choice: AiModelChoice, source: AiKeySource): Promise<ResolvedAiAccess> {
+    private async withModel(apiKey: string, choice: AiModelChoice, effort: AiEffort, source: AiKeySource): Promise<ResolvedAiAccess> {
         const m = await this.resolveModel(apiKey, choice);
-        return { apiKey, model: m.id, modelName: m.name, choice, fallbackFrom: m.fallbackFrom, caps: m.caps, source };
+        return {
+            apiKey,
+            model: m.id,
+            modelName: m.name,
+            choice,
+            fallbackFrom: m.fallbackFrom,
+            caps: m.caps,
+            effort: clampAiEffort(effort, m.caps),
+            source,
+        };
     }
 
     // ── Internos ─────────────────────────────────────────────────────────

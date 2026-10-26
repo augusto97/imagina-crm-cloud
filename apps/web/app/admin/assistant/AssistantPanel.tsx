@@ -8,7 +8,8 @@ import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { CloudApiError } from '@/lib/cloud/client';
-import { __ } from '@/lib/i18n';
+import { effortLabel } from '@/lib/aiModels';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { ProposalCard } from './ProposalCard';
 import { assistantPanel, readConversationId, useAssistantPanelOpen, writeConversationId } from './assistantPanelStore';
@@ -206,7 +207,7 @@ export function AssistantPanel(): JSX.Element | null {
                         data-testid="imcrm-ai-subtitle"
                     >
                         {st?.available
-                            ? [st.model_name, st.usage.limit === null ? __('Pedidos ilimitados') : `${st.usage.used} / ${st.usage.limit} ${__('pedidos este mes')}`]
+                            ? [st.model_name, st.effort ? sprintf(/* translators: %s: effort level */ __('esfuerzo %s'), effortLabel(st.effort).toLowerCase()) : null, st.usage.limit === null ? __('Pedidos ilimitados') : `${st.usage.used} / ${st.usage.limit} ${__('pedidos este mes')}`]
                                   .filter(Boolean)
                                   .join(' · ')
                             : __('Propón, revisa, aplica')}

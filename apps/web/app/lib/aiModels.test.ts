@@ -1,7 +1,7 @@
 import { buildAiModelCatalog, type AiModelCatalog } from '@imagina-base/shared';
 import { describe, expect, it } from 'vitest';
 
-import { buildModelOptions, describeModelChoice, modelNotes } from './aiModels';
+import { buildModelOptions, describeModelChoice, effortLabel, effortLevelsForChoice, modelNotes } from './aiModels';
 
 // Ids inventados: la UI no depende de ningún modelo concreto.
 const caps = { adaptive_thinking: true, budget_thinking: false, effort: true, image_input: true, pdf_input: true };
@@ -50,5 +50,28 @@ describe('selector de modelo (catálogo del proveedor)', () => {
             text: 'No se pudo actualizar la lista (caído). Se muestra la última conocida.',
         });
         expect(describeModelChoice('auto:sonnet', catalog)).toBe('Sonnet más reciente');
+    });
+});
+
+describe('nivel de esfuerzo (v0.1.306)', () => {
+    const withLevels = buildAiModelCatalog([
+        { id: 'claude-opus-9-5', display_name: 'Claude Opus 9.5', created_at: null, max_input_tokens: null, caps: { ...caps, effort_levels: ['low', 'medium', 'high', 'xhigh', 'max'] } },
+        { id: 'claude-haiku-3-9', display_name: 'Claude Haiku 3.9', created_at: null, max_input_tokens: null, caps: { ...caps, adaptive_thinking: false, budget_thinking: true, effort: false } },
+    ]);
+    const cat: AiModelCatalog = { ...withLevels, no_key: false, fetched_at: null, error: null };
+
+    it('ofrece los niveles del modelo que resulta de la elección', () => {
+        expect(effortLevelsForChoice('auto:opus', cat)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+        // Un modelo que piensa con presupuesto fijo no usa esfuerzo.
+        expect(effortLevelsForChoice('auto:haiku', cat)).toEqual([]);
+        // Sin catálogo todavía: «el más reciente» no se sabe; una versión fija se infiere del id.
+        expect(effortLevelsForChoice('auto:opus', undefined)).toBeNull();
+        expect(effortLevelsForChoice('claude-sonnet-4-1', undefined)).toEqual([]);
+        // Un modelo que acepta esfuerzo sin informar niveles: el juego habitual.
+        expect(effortLevelsForChoice('auto:opus', catalog)).toEqual(['low', 'medium', 'high', 'max']);
+    });
+
+    it('nombra cada nivel en español', () => {
+        expect(['low', 'medium', 'high', 'xhigh', 'max'].map((l) => effortLabel(l as never))).toEqual(['Bajo', 'Medio', 'Alto', 'Muy alto', 'Máximo']);
     });
 });

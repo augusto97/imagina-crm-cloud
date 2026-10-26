@@ -2,9 +2,12 @@ import {
     AI_AUTO_PREFIX,
     AI_MODEL_FAMILY_ORDER,
     aiChoiceFamily,
+    aiEffortLevels,
     aiFamilyLabelFallback,
+    inferAiModelCaps,
     isAutoModelChoice,
     resolveAiModelChoice,
+    type AiEffort,
     type AiModelCatalog,
 } from '@imagina-base/shared';
 
@@ -123,4 +126,52 @@ export function modelNotes(catalog: AiModelCatalog | undefined, value: string, f
         });
     }
     return notes;
+}
+
+// ── Nivel de esfuerzo (v0.1.306, ADR-S61) ─────────────────────────────────
+
+/** Nombre corto del nivel («Medio»). */
+export function effortLabel(level: AiEffort): string {
+    switch (level) {
+        case 'low':
+            return __('Bajo');
+        case 'medium':
+            return __('Medio');
+        case 'high':
+            return __('Alto');
+        case 'xhigh':
+            return __('Muy alto');
+        case 'max':
+            return __('Máximo');
+    }
+}
+
+/** Para qué sirve cada nivel, en una línea. */
+export function effortDescription(level: AiEffort): string {
+    switch (level) {
+        case 'low':
+            return __('responde más rápido y gasta menos');
+        case 'medium':
+            return __('equilibrio entre calidad y velocidad (recomendado)');
+        case 'high':
+            return __('piensa más los pedidos complejos');
+        case 'xhigh':
+            return __('para pedidos muy complejos');
+        case 'max':
+            return __('el más cuidadoso, el más lento y el que más gasta');
+    }
+}
+
+/**
+ * Niveles que acepta el modelo que resulta de una elección (`''` sin
+ * catálogo cargado → los que se infieren del id). `null` = todavía no se
+ * sabe (catálogo sin cargar y elección «el más reciente»).
+ */
+export function effortLevelsForChoice(choice: string, catalog: AiModelCatalog | undefined): AiEffort[] | null {
+    if (!catalog || catalog.models.length === 0) {
+        return isAutoModelChoice(choice) ? null : aiEffortLevels(inferAiModelCaps(choice));
+    }
+    const resolved = resolveAiModelChoice(choice, catalog.models);
+    if (!resolved) return null;
+    return aiEffortLevels(resolved.caps ?? inferAiModelCaps(resolved.id));
 }

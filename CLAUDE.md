@@ -9026,6 +9026,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el chat lo usa, versión fija retirada con aviso y reemplazo, modelo con
         presupuesto fijo sin `effort`, clave rechazada, celular y oscuro).
 
+  - [x] **Nivel de esfuerzo del asistente (v0.1.306, ADR-S61, pedido del
+        usuario: "implementalo; la empresa sólo lo puede cambiar si usa su
+        propia API")**: cuánto piensa el asistente antes de responder — Bajo,
+        Medio, Alto, Muy alto y Máximo — deja de estar fijo en «Medio».
+        (a) **Lo fija la plataforma** (Plataforma → Asistente IA, default
+        `medium`, el comportamiento anterior) para todas las empresas que usan
+        su clave. (b) **Una empresa elige el suyo sólo con su propia clave**
+        (Ajustes → Asistente IA): con la de la plataforma el selector se ve
+        deshabilitado con «El de la plataforma (Alto)» y explica cómo elegir
+        otro, y el servidor rechaza guardarlo (400
+        `ai_effort_requires_own_key`); cargar la clave y elegir el nivel en el
+        mismo guardado vale, y si después quita la clave lo guardado se ignora.
+        Es la decisión de costo de quien paga la clave: la cuota del plan
+        cuenta pedidos, no tokens. (c) **Sólo los niveles que acepta el
+        modelo**: el catálogo trae `capabilities.effort.<nivel>` y se guarda
+        `effort_levels` (sin el detalle se asume el juego habitual, sin «muy
+        alto»); un nivel que el modelo no tiene se ajusta al más cercano —el
+        menor ante un empate— y la interfaz avisa «El modelo elegido no tiene
+        «Muy alto»: se usa «Alto»»; un modelo con presupuesto fijo no recibe
+        esfuerzo y el selector lo dice. (d) **El tope de salida crece con el
+        esfuerzo** (16k / 24k / 32k tokens: el pensamiento cuenta dentro). (e)
+        El estado del asistente informa el nivel efectivo y el panel lo
+        muestra junto al modelo («Claude … · esfuerzo alto»). Los campos con IA
+        y el botón «Probar» siguen en Bajo (ajustado si el modelo no lo
+        tiene). Selector compartido `AiEffortSelect`. Sin migración (`effort`
+        en `platform:ai` y `tenants.settings.ai`, leídos con tolerancia). 2
+        tests de shared, 5 de integración del asistente, 2 unitarios del
+        servidor y 2 del front (403 shared, 500 front en verde) + E2E navegador
+        20/20 contra un Anthropic simulado (5 niveles con un modelo y 4 con
+        otro, deshabilitado sin esfuerzo, empresa sin clave propia bloqueada en
+        la interfaz y por API, pedido real con `high` y 24k, clave propia con
+        `max` y 32k, ajuste de «muy alto» a «alto» con aviso, vuelta al de la
+        plataforma al quitar la clave, celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -87,6 +87,17 @@ export function aiFamilyLabelFallback(family: string): string {
     return family.charAt(0).toUpperCase() + family.slice(1);
 }
 
+// ── Nivel de esfuerzo (v0.1.306, ADR-S61) ─────────────────────────────────
+
+/**
+ * Cuánto piensa el modelo antes de responder (`output_config.effort`). Más
+ * esfuerzo = respuestas más cuidadas en pedidos complejos, pero más lentas y
+ * con más consumo de la clave. En orden de menos a más.
+ */
+export const AI_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export const aiEffortSchema = z.enum(AI_EFFORT_LEVELS);
+export type AiEffort = z.infer<typeof aiEffortSchema>;
+
 /** Lo que cada modelo declara que soporta (de la API; `null` si no lo informa). */
 export const aiModelCapsSchema = z.object({
     /** Pensamiento adaptativo (`thinking: {type: 'adaptive'}`). */
@@ -95,10 +106,55 @@ export const aiModelCapsSchema = z.object({
     budget_thinking: z.boolean(),
     /** Parámetro `effort`. */
     effort: z.boolean(),
+    /**
+     * v0.1.306 — Niveles de esfuerzo que el modelo acepta, en orden. `null`
+     * = no lo informó (se asume el juego habitual: bajo a máximo, sin «muy
+     * alto»). Opcional para leer catálogos cacheados por versiones anteriores.
+     */
+    effort_levels: z.array(aiEffortSchema).nullable().optional(),
     image_input: z.boolean(),
     pdf_input: z.boolean(),
 });
 export type AiModelCaps = z.infer<typeof aiModelCapsSchema>;
+
+/** El que usaba el asistente antes de que se pudiera elegir. */
+export const DEFAULT_AI_EFFORT: AiEffort = 'medium';
+/** Lo que se asume cuando el modelo acepta esfuerzo pero no dice qué niveles. */
+const ASSUMED_EFFORT_LEVELS: readonly AiEffort[] = ['low', 'medium', 'high', 'max'];
+
+/** Niveles que acepta un modelo (vacío = no usa esfuerzo). */
+export function aiEffortLevels(caps: AiModelCaps | null | undefined): AiEffort[] {
+    if (!caps?.effort) return [];
+    const declared = caps.effort_levels;
+    if (!declared || declared.length === 0) return [...ASSUMED_EFFORT_LEVELS];
+    return AI_EFFORT_LEVELS.filter((l) => declared.includes(l));
+}
+
+/**
+ * El nivel que se manda de verdad: el pedido si el modelo lo acepta; si no,
+ * el más cercano (ante un empate, el MENOR: no se gasta de más sin que nadie
+ * lo pidiera). `null` si el modelo no usa esfuerzo.
+ */
+export function clampAiEffort(wanted: AiEffort, caps: AiModelCaps | null | undefined): AiEffort | null {
+    return nearestAiEffort(wanted, aiEffortLevels(caps));
+}
+
+/** El nivel de `levels` más cercano a `wanted` (el menor ante un empate); `null` si no hay ninguno. */
+export function nearestAiEffort(wanted: AiEffort, levels: readonly AiEffort[]): AiEffort | null {
+    if (levels.length === 0) return null;
+    if (levels.includes(wanted)) return wanted;
+    const at = AI_EFFORT_LEVELS.indexOf(wanted);
+    let best = levels[0]!;
+    let bestDist = Infinity;
+    for (const l of levels) {
+        const d = Math.abs(AI_EFFORT_LEVELS.indexOf(l) - at);
+        if (d < bestDist) {
+            best = l;
+            bestDist = d;
+        }
+    }
+    return best;
+}
 
 export const aiModelInfoSchema = z.object({
     id: z.string(),
@@ -264,6 +320,7 @@ export function inferAiModelCaps(id: string): AiModelCaps {
         adaptive_thinking: modern,
         budget_thinking: !modern,
         effort: modern,
+        effort_levels: null,
         image_input: true,
         pdf_input: true,
     };

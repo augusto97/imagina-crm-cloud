@@ -9,7 +9,7 @@ import { AiQuotaExceededError, AiQuotaService } from '../src/ai/ai-quota.service
 import { AiSettingsService, AiUnavailableError } from '../src/ai/ai-settings.service';
 import { AssistantService, buildSystemPrompt, type AiClientFactory } from '../src/ai/assistant.service';
 import { ConversationsStore, INTERRUPTED_TURN_NOTE, prepareHistoryForNewTurn, trimHistory } from '../src/ai/conversations.store';
-import { assistantModelParams } from '../src/ai/model-params';
+import { assistantMaxTokens, assistantModelParams } from '../src/ai/model-params';
 import { ProposalsService } from '../src/ai/proposals.service';
 import { ProposalsStore } from '../src/ai/proposals.store';
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
@@ -111,6 +111,11 @@ function fakeClient(
 
 /** Catálogo que «devuelve el proveedor» en los tests (ids inventados). */
 const ADAPTIVE = { thinking: { supported: true, types: { adaptive: { supported: true }, enabled: { supported: false } } }, effort: { supported: true } };
+/** Declara sus niveles: sin «muy alto». */
+const LEVELS = {
+    thinking: { supported: true, types: { adaptive: { supported: true }, enabled: { supported: false } } },
+    effort: { supported: true, low: { supported: true }, medium: { supported: true }, high: { supported: true }, xhigh: null, max: { supported: true } },
+};
 const BUDGET = { thinking: { supported: true, types: { adaptive: { supported: false }, enabled: { supported: true } } }, effort: { supported: false } };
 const providerModels: ProviderModel[] = [];
 function setProviderModels(models: ProviderModel[]): void {
@@ -169,10 +174,25 @@ describe('Herramientas del asistente (puras)', () => {
     });
 
     it('v0.1.305 — el pedido se arma por lo que el modelo DECLARA que soporta, no por su nombre', () => {
-        expect(assistantModelParams(capsFrom(ADAPTIVE)!)).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } });
-        expect(assistantModelParams(capsFrom(BUDGET)!)).toEqual({ thinking: { type: 'enabled', budget_tokens: 2048 } });
-        expect(assistantModelParams(capsFrom({})!)).toEqual({});
+        expect(assistantModelParams(capsFrom(ADAPTIVE)!, 'medium')).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } });
+        expect(assistantModelParams(capsFrom(BUDGET)!, 'medium')).toEqual({ thinking: { type: 'enabled', budget_tokens: 2048 } });
+        expect(assistantModelParams(capsFrom({})!, 'medium')).toEqual({});
         expect(capsFrom(null)).toBeNull();
+    });
+
+    it('v0.1.306 — el esfuerzo se ajusta a los niveles que el modelo declara', () => {
+        const declared = capsFrom(LEVELS)!;
+        expect(declared.effort_levels).toEqual(['low', 'medium', 'high', 'max']);
+        // «Muy alto» no existe en este modelo: va el más cercano y, ante el empate, el menor.
+        expect(assistantModelParams(declared, 'xhigh')).toMatchObject({ output_config: { effort: 'high' } });
+        expect(assistantModelParams(declared, 'max')).toMatchObject({ output_config: { effort: 'max' } });
+        // Un modelo que acepta esfuerzo sin decir niveles recibe lo pedido dentro del juego habitual.
+        expect(capsFrom(ADAPTIVE)!.effort_levels).toBeNull();
+        expect(assistantModelParams(capsFrom(ADAPTIVE)!, 'low')).toMatchObject({ output_config: { effort: 'low' } });
+        // Sin esfuerzo elegido, no se manda.
+        expect(assistantModelParams(declared, null)).toEqual({ thinking: { type: 'adaptive' } });
+        expect(assistantMaxTokens('medium')).toBeLessThan(assistantMaxTokens('high'));
+        expect(assistantMaxTokens('high')).toBeLessThan(assistantMaxTokens('max'));
     });
 
     it('v0.1.305 — un turno nuevo arranca sin el pensamiento de los anteriores y con el anterior bien cerrado', () => {
@@ -811,6 +831,65 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         // Primera llamada del turno siguiente: ningún pensamiento de antes.
         expect(JSON.stringify(fake.seen[2])).not.toContain('"thinking"');
         expect(JSON.stringify(fake.seen[2])).toContain('Tienes 0 listas.');
+    });
+
+    // ── Nivel de esfuerzo (v0.1.306) ───────────────────────────────────
+
+    it('el esfuerzo lo fija la plataforma y viaja en el pedido, con el tope de salida acorde', async () => {
+        expect((await settings.getPlatform()).effort).toBe('medium');
+        await settings.updatePlatform({ effort: 'high' });
+        const { svc, fake } = assistantWith([{ text: 'hola' }]);
+        await run(svc, ctx, 'hola');
+        expect(fake.params[0]).toMatchObject({ output_config: { effort: 'high' }, max_tokens: assistantMaxTokens('high') });
+        expect(await svc.status(ctx)).toMatchObject({ available: true, effort: 'high' });
+        expect(await settings.getTenant(tenantId)).toMatchObject({ effort: null, effort_editable: false, platform: { default_effort: 'high' } });
+    });
+
+    it('la empresa sólo elige su esfuerzo con clave propia; con la de la plataforma manda el de la plataforma', async () => {
+        await settings.updatePlatform({ effort: 'low' });
+        // Con la clave de la plataforma, elegir el esfuerzo se rechaza con el motivo.
+        await expect(settings.updateTenant(tenantId, { effort: 'max' })).rejects.toMatchObject({
+            response: { code: 'ai_effort_requires_own_key' },
+        });
+        // Volver al de la plataforma siempre se puede.
+        await settings.updateTenant(tenantId, { effort: null });
+
+        // Cargar la clave y elegir el esfuerzo en el mismo guardado vale.
+        await settings.updateTenant(tenantId, { api_key: 'sk-ant-empresa-1111111111111111111', effort: 'max' });
+        expect(await settings.getTenant(tenantId)).toMatchObject({ effort: 'max', effort_editable: true });
+        const { svc, fake } = assistantWith([{ text: 'hola' }]);
+        await run(svc, ctx, 'hola');
+        expect(fake.params[0]).toMatchObject({ output_config: { effort: 'max' }, max_tokens: assistantMaxTokens('max') });
+
+        // Sin la clave propia, lo guardado se ignora: vuelve el de la plataforma.
+        await settings.updateTenant(tenantId, { clear_key: true });
+        expect(await settings.getTenant(tenantId)).toMatchObject({ effort: 'max', effort_editable: false });
+        expect((await settings.resolve(tenantId)).effort).toBe('low');
+
+        // Y si la plataforma deja de permitir claves propias, también.
+        await settings.updateTenant(tenantId, { api_key: 'sk-ant-empresa-1111111111111111111' });
+        expect((await settings.resolve(tenantId)).effort).toBe('max');
+        await settings.updatePlatform({ allow_tenant_keys: false });
+        expect((await settings.resolve(tenantId)).effort).toBe('low');
+        await settings.updatePlatform({ allow_tenant_keys: true });
+    });
+
+    it('un nivel que el modelo no tiene se ajusta al más cercano; un modelo sin esfuerzo no lo recibe', async () => {
+        setProviderModels([{ id: 'claude-opus-9-5', display_name: 'Claude Opus 9.5', created_at: null, capabilities: LEVELS }, ...BASE_MODELS.slice(2)]);
+        await settings.platformCatalog(true);
+        await settings.updatePlatform({ effort: 'xhigh' });
+        expect((await settings.resolve(tenantId)).effort).toBe('high');
+
+        await settings.updateTenant(tenantId, { model: 'auto:haiku' });
+        const { svc, fake } = assistantWith([{ text: 'hola' }]);
+        await run(svc, ctx, 'hola');
+        expect(fake.params[0]!.output_config).toBeUndefined();
+        expect(await svc.status(ctx)).toMatchObject({ effort: null });
+    });
+
+    it('un esfuerzo ilegible guardado no rompe la configuración', async () => {
+        await redis.set('platform:ai', JSON.stringify({ ...JSON.parse((await redis.get('platform:ai'))!), effort: 'turbo' }));
+        expect(await settings.getPlatform()).toMatchObject({ enabled: true, has_key: true, effort: 'medium' });
     });
 
     it('status explica por qué no está disponible', async () => {
