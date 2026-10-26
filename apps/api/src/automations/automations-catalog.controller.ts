@@ -31,6 +31,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'checklist_completed', label: 'Cuando se completa un checklist', event: 'imagina_crm/checklist_completed', config_schema: {} },
     // D5 — una cita de una página de agenda se agendó, se reprogramó o se canceló.
     { slug: 'booking_event', label: 'Cuando se agenda, reprograma o cancela una cita', event: 'imagina_crm/booking_event', config_schema: {} },
+    // D3 — un contacto escribió por WhatsApp oficial (el registro ya se encontró o creó).
+    { slug: 'whatsapp_message_received', label: 'Cuando llega un mensaje de WhatsApp', event: 'imagina_crm/whatsapp_message_received', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { BookingEventInfo, ChecklistCompletedInfo } from '@imagina-base/shared';
+import type { BookingEventInfo, ChecklistCompletedInfo, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
 import type { Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -26,6 +26,8 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     checklist_completed: ['checklist_completed'],
     // D5 — una cita de la agenda se agendó, se reprogramó o se canceló.
     booking_event: ['booking_event'],
+    // D3 — un contacto escribió por WhatsApp (oficial).
+    whatsapp_message_received: ['whatsapp_message_received'],
 };
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
@@ -61,7 +63,16 @@ export interface TriggerEvent {
     tenantId: number;
     listId: number;
     recordId: number;
-    trigger: 'record_created' | 'record_updated' | 'payment_received' | 'form_submitted' | 'button_pressed' | 'approval_resolved' | 'checklist_completed' | 'booking_event';
+    trigger:
+        | 'record_created'
+        | 'record_updated'
+        | 'payment_received'
+        | 'form_submitted'
+        | 'button_pressed'
+        | 'approval_resolved'
+        | 'checklist_completed'
+        | 'booking_event'
+        | 'whatsapp_message_received';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -96,6 +107,12 @@ export interface TriggerEvent {
      * y por evento, y `{{cita.x}}`.
      */
     booking?: BookingEventInfo;
+    /**
+     * D3 — el mensaje de WhatsApp que acaba de llegar (trigger
+     * `whatsapp_message_received`): `{{whatsapp.texto}}`, el filtro por conexión.
+     * Viaja sólo en el evento (la cola), nunca en la base.
+     */
+    whatsapp?: WhatsappEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */

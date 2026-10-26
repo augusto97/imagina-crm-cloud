@@ -198,6 +198,19 @@ const envSchema = z.object({
      * producción se ignora: los tokens se verifican siempre con el proveedor.
      */
     CAPTCHA_SITEVERIFY_URL: z.string().default(''),
+    /**
+     * D3 — WhatsApp oficial: sólo desarrollo/pruebas, una Graph API SIMULADA
+     * (los E2E no tienen una cuenta de Meta). En producción se ignora.
+     */
+    META_GRAPH_URL: z.string().default(''),
+    /**
+     * Versión de la Graph API (vacío = la de la app, hoy v26.0). Se puede
+     * adelantar sin un release cuando Meta anuncia que la vigente vence.
+     */
+    META_GRAPH_VERSION: z
+        .string()
+        .default('')
+        .refine((v) => v === '' || /^v\d{1,3}\.\d{1,2}$/.test(v), { message: 'META_GRAPH_VERSION se escribe como v26.0' }),
 
     // --- Superadmins de plataforma (no de workspace): emails separados por coma.
     // Único rol que puede operar la auto-actualización del servidor.

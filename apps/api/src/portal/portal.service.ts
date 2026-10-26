@@ -1557,6 +1557,9 @@ export class PortalService implements OnModuleInit {
                 // A8 — las dependencias son del trabajo del equipo (nombran
                 // registros internos): el cliente no las ve.
                 if (row.action === 'dependency_added' || row.action === 'dependency_removed') continue;
+                // D3 — el registro de WhatsApp (qué plantilla se mandó, cuándo
+                // escribió) es del equipo: el cliente ya tiene la conversación.
+                if (row.action === 'whatsapp') continue;
                 let diff = filterActivityDiff(row.diff, ctx.visible);
                 if (row.action === 'record_updated' && Object.keys(diff).length === 0) continue;
                 // Campo «Botón»: sólo los botones que el cliente ve, y sólo su nombre.

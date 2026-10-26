@@ -54,6 +54,8 @@ import {
     dataConsentVersions,
     connectionSyncs,
     sqlSyncs,
+    whatsappContacts,
+    whatsappTemplates,
     dashboards,
     dashboardSubscriptions,
     publicDashboards,
@@ -109,6 +111,7 @@ import {
     type IdMaps,
     remapSyncSettings,
     remapViewConfig,
+    remapWhatsappConnectionConfig,
 } from './tenant-transfer.remap';
 
 /**
@@ -352,6 +355,11 @@ export class TenantTransferService {
             await dump('sync_links', await this.byTenant(syncLinks, tenantId, liveRecord(syncLinks.recordId)));
             // v0.1.243 — sincronizaciones desde SQL Server.
             await dump('sql_syncs', await this.byTenant(sqlSyncs, tenantId, liveList(sqlSyncs.listId)));
+            // D3 — WhatsApp oficial: la copia de las plantillas y, por contacto,
+            // la ventana de 24 h y el último envío (sin texto). La URL de avisos
+            // (`whatsapp_hooks`) NO viaja: es de ESTE servidor.
+            await dump('whatsapp_templates', await this.byTenant(whatsappTemplates, tenantId));
+            await dump('whatsapp_contacts', await this.byTenant(whatsappContacts, tenantId));
             // A8 — dependencias entre registros (las dos puntas vivas).
             await dump(
                 'record_dependencies',
@@ -825,8 +833,13 @@ export class TenantTransferService {
                 name: String(c.name),
                 baseUrl: String(c.baseUrl ?? ''),
                 authType: String(c.authType ?? 'none'),
-                config: (c.config as Row | null) ?? {},
-                secrets: sameKey ? ((c.secrets as Record<string, string> | null) ?? {}) : {},
+                config: remapWhatsappConnectionConfig(String(c.provider ?? ''), (c.config as Row | null) ?? {}, maps),
+                // D3 — el token de WhatsApp (un usuario del sistema de Meta que
+                // manda mensajes cobrados a la empresa) NO viaja: se vuelve a pegar.
+                secrets:
+                    sameKey && String(c.provider ?? '') !== 'whatsapp_cloud'
+                        ? ((c.secrets as Record<string, string> | null) ?? {})
+                        : {},
                 visibility: String(c.visibility ?? 'workspace'),
                 ownerUserId: mapId(maps.user, c.ownerUserId),
                 createdBy: mapId(maps.user, c.createdBy),
@@ -1632,6 +1645,43 @@ export class TenantTransferService {
             return { tenantId, userId, listId, recordId, lastAccessAt: this.date(p.lastAccessAt) };
         });
 
+        // D3 — WhatsApp oficial: plantillas (copia) y contactos (ventana de 24 h
+        // y último envío, con su registro re-mapeado).
+        counts.whatsapp_templates = await this.insertPlain(tx, rows('whatsapp_templates'), whatsappTemplates, (t) => {
+            const connectionId = mapId(maps.connection, t.connectionId);
+            if (connectionId === null) return null;
+            return {
+                tenantId,
+                connectionId,
+                metaId: String(t.metaId ?? ''),
+                name: String(t.name),
+                language: String(t.language),
+                category: String(t.category ?? ''),
+                status: String(t.status ?? ''),
+                parameterFormat: String(t.parameterFormat ?? 'POSITIONAL'),
+                components: Array.isArray(t.components) ? (t.components as Array<Record<string, unknown>>) : [],
+                rejectedReason: (t.rejectedReason as string | null) ?? null,
+                syncedAt: this.date(t.syncedAt) ?? new Date(),
+            };
+        });
+        counts.whatsapp_contacts = await this.insertPlain(tx, rows('whatsapp_contacts'), whatsappContacts, (c) => {
+            const connectionId = mapId(maps.connection, c.connectionId);
+            if (connectionId === null) return null;
+            return {
+                tenantId,
+                connectionId,
+                phone: String(c.phone),
+                profileName: (c.profileName as string | null) ?? null,
+                lastInboundAt: this.date(c.lastInboundAt),
+                lastOutboundAt: this.date(c.lastOutboundAt),
+                lastOutboundWamid: (c.lastOutboundWamid as string | null) ?? null,
+                lastOutboundStatus: (c.lastOutboundStatus as string | null) ?? null,
+                lastOutboundError: (c.lastOutboundError as string | null) ?? null,
+                lastOutboundListId: mapId(maps.list, c.lastOutboundListId),
+                lastOutboundRecordId: mapId(maps.record, c.lastOutboundRecordId),
+            };
+        });
+
         // 9. Enlaces públicos: token NUEVO (el viejo es del otro servidor).
         const publicRows = await this.readAll(rows('public_lists'));
         const publicTokens = new Map<number, string>();
@@ -1879,6 +1929,17 @@ export class TenantTransferService {
             .select({ n: sql<number>`count(*)::int` })
             .from(connections)
             .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])));
+        // D3 — WhatsApp oficial: la conexión viaja SIN su token ni la clave de
+        // la app, y la URL de avisos es nueva.
+        const [whatsapp] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(connections)
+            .where(and(eq(connections.tenantId, tenantId), eq(connections.provider, 'whatsapp_cloud')));
+        if (Number(whatsapp?.n ?? 0) > 0) {
+            warnings.push(
+                'WhatsApp Business (oficial): la conexión viajó sin el token ni la clave secreta de la app. En Integraciones toca «Actualizar clave» y pégalos de nuevo; después abre «WhatsApp» y pega en Meta la URL de avisos y el token de verificación nuevos (los anteriores apuntan al servidor de origen).',
+            );
+        }
         if (Number(collections?.n ?? 0) > 0) {
             warnings.push(
                 'Cobros (Mercado Pago / Wompi): la conexión viajó, pero el historial de links de pago no — y la URL de avisos es nueva. En Wompi pega la nueva en Desarrolladores → «URL de Eventos» (la ves en Integraciones → Cobros).',

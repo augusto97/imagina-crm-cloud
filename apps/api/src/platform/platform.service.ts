@@ -91,6 +91,9 @@ import {
     sqlSyncs,
     paymentLinks,
     collectionHooks,
+    whatsappContacts,
+    whatsappHooks,
+    whatsappTemplates,
     syncLinks,
     bulkEditItems,
     bulkEdits,
@@ -388,6 +391,10 @@ export class PlatformService {
             // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
             await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
             await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));
+            // D3 — WhatsApp oficial (contactos antes que registros/listas; todo antes que las conexiones).
+            await tx.delete(whatsappContacts).where(eq(whatsappContacts.tenantId, id));
+            await tx.delete(whatsappTemplates).where(eq(whatsappTemplates.tenantId, id));
+            await tx.delete(whatsappHooks).where(eq(whatsappHooks.tenantId, id));
             await tx.delete(bulkEditItems).where(eq(bulkEditItems.tenantId, id));
             await tx.delete(bulkEdits).where(eq(bulkEdits.tenantId, id));
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));

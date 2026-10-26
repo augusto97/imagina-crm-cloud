@@ -113,6 +113,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { DocumentsService } from '../../documents/documents.service';
 import { ConnectorsService } from '../../connectors/connectors.service';
+import { assertWhatsappTemplateAction, whatsappSchema } from './whatsapp-ai';
 import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
 import { AutomationsService } from '../../automations/automations.service';
@@ -547,7 +548,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -562,7 +563,8 @@ const automationSpec = z.object({
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
                 'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
-                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled] (sin él, los tres), field_filters?}.',
+                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled] (sin él, los tres), field_filters?}. ' +
+                'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -575,7 +577,7 @@ const automationSpec = z.object({
                 'create_record {target_list: slug, values: {slug: valor}, template_id? (id de una plantilla de registro de la lista destino: el registro nace con sus valores, subtareas y checklists; values pisa la plantilla)} | ' +
                 'create_subtasks_from_template {template_id (id de una de las `record_templates` de get_list_schema), include_checklists?: true} — crea las subtareas de esa plantilla (y, si se pide, sus checklists) DEBAJO del registro que disparó la automatización | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
-                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla) | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
@@ -964,7 +966,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1339,6 +1341,8 @@ export class StructureTools implements AiProposalApplier {
                 // registros desde una (`template` en propose_create_records) o
                 // nombrarlas en create_subtasks_from_template / create_record.
                 record_templates: recordTpls.map((t) => templateForModel(t, fields)),
+                // D3 — WhatsApp oficial: números y plantillas APROBADAS (sin credenciales).
+                whatsapp: await whatsappSchema(this.tenantDb, ctx.tenantId, connections, settings, fields).catch(() => null),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -4105,9 +4109,15 @@ export class StructureTools implements AiProposalApplier {
                 if (missing.length > 0) {
                     throw new AiToolError(`A «${act.label}» le faltan datos obligatorios: ${missing.map((p) => p.key).join(', ')}.`);
                 }
+                // D3 — una plantilla de WhatsApp tiene que existir, estar aprobada y llevar todas sus variables.
+                if (conn.integration_key === 'whatsapp_cloud' && act.key === 'send_template') {
+                    pendingWhatsapp.push({ connectionId: conn.id, values, where });
+                }
             });
         };
+        const pendingWhatsapp: Array<{ connectionId: number; values: Record<string, unknown>; where: string }> = [];
         walk(actions, '');
+        for (const p of pendingWhatsapp) await assertWhatsappTemplateAction(this.tenantDb, ctx.tenantId, p.connectionId, p.values, p.where);
         return label;
     }
 
@@ -4707,6 +4717,8 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return 'Al recibir un webhook';
         case 'payment_received':
             return 'Cuando se recibe un pago';
+        case 'whatsapp_message_received':
+            return 'Cuando llega un mensaje de WhatsApp';
         case 'form_submitted':
             return 'Cuando se envía un formulario';
         case 'button_pressed': {

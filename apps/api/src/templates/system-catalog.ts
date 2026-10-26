@@ -1302,6 +1302,76 @@ inventario.blueprint.dashboards.push(
     ]),
 );
 
+
+/**
+ * D3 — Contactos por WhatsApp oficial: las columnas que escribe el canal ya
+ * creadas y mapeadas (`settings.whatsapp`), así basta con elegir esta lista en
+ * Integraciones → WhatsApp como «lista de entrada». Sólo el ÚLTIMO mensaje: la
+ * conversación sigue en WhatsApp.
+ */
+const contactosWhatsapp: SystemTemplate = {
+    key: 'contactos-whatsapp',
+    name: 'Contactos por WhatsApp',
+    description: 'Cada persona que te escribe por WhatsApp queda como un contacto, con su último mensaje, cuándo llegó y el estado de lo que le mandaste. Lista para conectar con WhatsApp Business (oficial).',
+    icon: 'whatsapp',
+    color: '#25D366',
+    category: 'clientes',
+    blueprint: single(
+        list(
+            'contactos_whatsapp',
+            'Contactos por WhatsApp',
+            'whatsapp',
+            '#25D366',
+            [
+                f('Nombre', 'nombre', 'text', { is_required: true }),
+                f('Teléfono', 'telefono', 'phone'),
+                f('Email', 'email', 'email'),
+                select('Estado', 'estado', [
+                    opt('nuevo', 'Nuevo', 'sky'),
+                    opt('en_conversacion', 'En conversación', 'amber'),
+                    opt('cliente', 'Cliente', 'emerald'),
+                    opt('cerrado', 'Cerrado', 'slate'),
+                ]),
+                f('Responsable', 'responsable', 'user'),
+                f('Último mensaje de WhatsApp', 'whatsapp_ultimo_mensaje', 'long_text'),
+                f('Fecha del último mensaje', 'whatsapp_fecha', 'datetime'),
+                select('Dirección del último mensaje', 'whatsapp_direccion', [
+                    opt('entrante', 'Entrante', 'sky'),
+                    opt('saliente', 'Saliente', 'emerald'),
+                ]),
+                f('Nombre en WhatsApp', 'whatsapp_nombre', 'text'),
+                select('Estado del último envío', 'whatsapp_estado', [
+                    opt('enviado', 'Enviado', 'slate'),
+                    opt('entregado', 'Entregado', 'sky'),
+                    opt('leido', 'Leído', 'emerald'),
+                    opt('fallido', 'Fallido', 'rose'),
+                ]),
+                f('Detalle del envío', 'whatsapp_detalle', 'text'),
+                f('Notas', 'notas', 'long_text'),
+            ],
+            {
+                settings: {
+                    title_field_id: ref('nombre'),
+                    whatsapp: {
+                        phone_field_id: ref('telefono'),
+                        message_field_id: ref('whatsapp_ultimo_mensaje'),
+                        message_at_field_id: ref('whatsapp_fecha'),
+                        direction_field_id: ref('whatsapp_direccion'),
+                        profile_field_id: ref('whatsapp_nombre'),
+                        status_field_id: ref('whatsapp_estado'),
+                        status_detail_field_id: ref('whatsapp_detalle'),
+                    },
+                },
+                views: [table(), kanban('Por estado', 'estado')],
+                records: [
+                    { data: { nombre: 'Ana Gómez', telefono: '+573001112233', estado: 'en_conversacion' } },
+                    { data: { nombre: 'Luis Pérez', telefono: '+573104445566', estado: 'nuevo' } },
+                ],
+            },
+        ),
+    ),
+};
+
 export const SYSTEM_TEMPLATES: readonly SystemTemplate[] = [
     crmClientes,
     pipelineVentas,
@@ -1320,6 +1390,7 @@ export const SYSTEM_TEMPLATES: readonly SystemTemplate[] = [
     inmuebles,
     citas,
     okrs,
+    contactosWhatsapp,
 ];
 
 export function systemTemplate(key: string): SystemTemplate | undefined {
