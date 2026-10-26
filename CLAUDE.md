@@ -9245,3 +9245,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    públicas, plantillas, prompts del asistente) y para las respuestas al
    usuario: "elige / puedes / tienes / aquí", jamás "elegí / podés / tenés /
    acá / vos / plata / en criollo". Ver ADR-S42.
+7. **Banco de ideas: `docs/ideas.md`** (pedido del usuario, 2026-10-26).
+   Cuando el usuario pida ideas, partir de ese documento (y sumar lo nuevo);
+   al hacer una idea, sacarla de ahí; si la descarta, moverla a «Descartado
+   por el usuario» y no volver a proponerla.

@@ -367,6 +367,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
+  («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
+  facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
+  citas pública estilo Calendly (D5)**: "lo otro puedes ponerlo en un documento
+  de ideas para retomar después si surge la necesidad". Se lanzó un agente
+  (slot 2, migración 0086). El resto quedó en **`docs/ideas.md`**, el banco de
+  ideas: todo lo no descartado (pospuestos de la fase 4, oleadas 5-6, el resto
+  del estudio por área, lo que quedó afuera de cada versión, pendientes
+  técnicos, lo no recomendado y lo descartado). **Cuando el usuario pida ideas,
+  partir de ahí** (regla 7 de `CLAUDE.md` §6).
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
   completa de una»).** El usuario no respondió las tres preguntas pendientes,
   así que se tomaron decisiones por defecto (se le informan; se pueden cambiar):
@@ -684,6 +694,11 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · conversación** — Fase 4: el usuario eligió sólo la agenda de
+  citas pública (D5) y pidió un documento con todas las ideas no descartadas
+  para retomarlas cuando vuelva a pedir ideas → `docs/ideas.md` (regla 7 de
+  `CLAUDE.md` §6). Pospuestos: API pública + n8n/Make/Zapier, firma
+  electrónica y facturación DIAN.
 - **2026-10-26 · v0.1.310** — **Checklists dentro del registro + plantillas de
   registro** (ADR-S64, opciones A9 + C6; tercera entrega de la fase 3).
   Checklists con nombre por registro (casilla, responsable, fecha, orden) en la
