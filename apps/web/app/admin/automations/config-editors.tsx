@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 
 import { BulkEditActionConfig } from './BulkEditActionConfig';
+import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { FilterOptionPicker } from '../records/FilterOptionPicker';
@@ -217,6 +218,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando un cliente agenda una cita en una página de agenda de esta lista, cuando la cambia o la cancela desde el enlace de su correo, o cuando el equipo la mueve o la cancela en la app. El registro es la cita. Puedes usar {{cita.servicio}}, {{cita.inicio}}, {{cita.persona}}, {{cita.enlace_reprogramar}} y {{cita.enlace_cancelar}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
+        case 'whatsapp_message_received':
+            return __('Se ejecuta cuando un contacto le escribe a tu número de WhatsApp Business. La app ya lo encontró por su teléfono en la lista (o lo creó, si así está configurado) y dejó el último mensaje en su registro. En las acciones puedes usar {{whatsapp.texto}}, {{whatsapp.nombre}} y {{whatsapp.de}}; durante 24 h puedes contestarle con «Enviar mensaje de texto de WhatsApp».');
         default:
             return '';
     }
@@ -318,6 +321,7 @@ export function TriggerConfigEditor({
 
             {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
             {triggerType === 'checklist_completed' && <ChecklistCompletedConfig config={config} onChange={onChange} />}
+            {triggerType === 'whatsapp_message_received' && <WhatsappTriggerConfig config={config} onChange={onChange} />}
         </div>
     );
 }
@@ -2323,6 +2327,12 @@ function ConnectorActionConfig({
                 )}
             </p>
         );
+    }
+
+    // D3 — WhatsApp oficial tiene su propio editor: la plantilla REAL de Meta,
+    // sus variables y la vista previa, y «Probar ahora» manda de verdad.
+    if (connection?.integration_key === 'whatsapp_cloud') {
+        return <WhatsappActionConfig spec={spec} onChange={onChange} fields={fields} />;
     }
 
     return (

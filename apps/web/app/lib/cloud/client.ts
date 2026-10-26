@@ -32,6 +32,15 @@ import {
     type StoreSyncStatus,
     type CreateSqlSyncInput,
     type CollectionConnection,
+    type UpdateWhatsappConfigInput,
+    type WhatsappConnectionDetail,
+    type WhatsappListColumns,
+    type WhatsappListFields,
+    type WhatsappRecordInfo,
+    type WhatsappSendInput,
+    type WhatsappSendResult,
+    type WhatsappTemplate,
+    type WhatsappTestSendInput,
     type CollectionConnectionDetail,
     type CollectionFields,
     type CreatePaymentLinkInput,
@@ -1056,6 +1065,44 @@ export class CloudClient {
     }
     setupCollectionFields(list: string | number): Promise<CollectionFields> {
         return this.request('POST', `/lists/${list}/collections/setup`, { body: {}, schema: z.custom<CollectionFields>() });
+    }
+    // ── WhatsApp oficial: Meta WhatsApp Cloud API (D3) ──────────────────
+    async whatsappConnections(): Promise<Array<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {
+        return (
+            await this.request('GET', '/whatsapp/connections', {
+                schema: z.object({ data: z.array(z.custom<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>()) }),
+            })
+        ).data;
+    }
+    whatsappConnection(id: number): Promise<WhatsappConnectionDetail> {
+        return this.request('GET', `/whatsapp/connections/${id}`, { schema: z.custom<WhatsappConnectionDetail>() });
+    }
+    whatsappUpdateConfig(id: number, input: UpdateWhatsappConfigInput): Promise<WhatsappConnectionDetail> {
+        return this.request('PUT', `/whatsapp/connections/${id}/config`, { body: input, schema: z.custom<WhatsappConnectionDetail>() });
+    }
+    async whatsappRefreshTemplates(id: number): Promise<WhatsappTemplate[]> {
+        return (await this.request('POST', `/whatsapp/connections/${id}/templates/refresh`, { body: {}, schema: z.object({ data: z.array(z.custom<WhatsappTemplate>()) }) })).data;
+    }
+    whatsappSubscribe(id: number, override: boolean): Promise<WhatsappConnectionDetail> {
+        return this.request('POST', `/whatsapp/connections/${id}/subscribe`, { body: { override }, schema: z.custom<WhatsappConnectionDetail>() });
+    }
+    whatsappListColumns(list: string | number): Promise<WhatsappListColumns> {
+        return this.request('GET', `/lists/${list}/whatsapp/columns`, { schema: z.custom<WhatsappListColumns>() });
+    }
+    whatsappSaveListColumns(list: string | number, fields: WhatsappListFields): Promise<WhatsappListColumns> {
+        return this.request('PUT', `/lists/${list}/whatsapp/columns`, { body: { fields }, schema: z.custom<WhatsappListColumns>() });
+    }
+    whatsappSetupListColumns(list: string | number): Promise<WhatsappListColumns> {
+        return this.request('POST', `/lists/${list}/whatsapp/setup`, { body: {}, schema: z.custom<WhatsappListColumns>() });
+    }
+    whatsappRecord(list: string | number, recordId: number): Promise<WhatsappRecordInfo> {
+        return this.request('GET', `/lists/${list}/records/${recordId}/whatsapp`, { schema: z.custom<WhatsappRecordInfo>() });
+    }
+    whatsappSend(list: string | number, recordId: number, input: WhatsappSendInput): Promise<WhatsappSendResult> {
+        return this.request('POST', `/lists/${list}/records/${recordId}/whatsapp/send`, { body: input, schema: z.custom<WhatsappSendResult>() });
+    }
+    whatsappTestSend(list: string | number, input: WhatsappTestSendInput): Promise<WhatsappSendResult> {
+        return this.request('POST', `/lists/${list}/automations/whatsapp-test`, { body: input, schema: z.custom<WhatsappSendResult>() });
     }
     /**
      * v0.1.293 — Lo que necesita la pantalla «sin empresa» de un superadmin

@@ -9,7 +9,7 @@ import {
     type IntegrationDef,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { ChevronDown, ChevronRight, Lock, HardDrive, RefreshCw, Settings2, Wallet } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, HardDrive, MessageCircle, RefreshCw, Settings2, Wallet } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
@@ -407,6 +407,14 @@ function ConnectedRow({
                     <Link to="/settings?s=almacenamiento" data-testid="imcrm-storage-open">
                         <HardDrive className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Almacenamiento')}
+                    </Link>
+                </Button>
+            )}
+            {c.integration_key === 'whatsapp_cloud' && c.can_edit && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to={`/settings/whatsapp/${c.id}`} data-testid="imcrm-whatsapp-open">
+                        <MessageCircle className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Configurar WhatsApp')}
                     </Link>
                 </Button>
             )}

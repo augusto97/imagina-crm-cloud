@@ -71,6 +71,7 @@ export function RouteTracker(): null {
         if (pathname.startsWith('/settings/stores/')) return `${__('Tienda')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/sql/')) return `${__('Sincronización SQL')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/collections/')) return `${__('Cobros')} · ${__('Ajustes')}`;
+        if (pathname.startsWith('/settings/whatsapp/')) return `${__('WhatsApp')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings')) {
             const groupsS = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams });
             const id = resolveSettingsSection(groupsS, params.get('s'));

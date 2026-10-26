@@ -24,6 +24,7 @@ import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
@@ -239,6 +240,7 @@ export function RecordPage(): JSX.Element {
                                     compact
                                 />
                             )}
+                            {!isGuest && <SendWhatsappButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!storeRules && !isGuest && (
                                 <SaveRecordAsTemplateButton
                                     listId={list.data.id}
@@ -315,6 +317,7 @@ export function RecordPage(): JSX.Element {
                         {!isGuest && (
                             <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
                         )}
+                        {!isGuest && <SendWhatsappButton listId={listInfo.id} recordId={rec.id} compact />}
                         {!storeRules && !isGuest && (
                             <SaveRecordAsTemplateButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} title={title} compact />
                         )}

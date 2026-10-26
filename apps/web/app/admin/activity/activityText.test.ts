@@ -170,3 +170,20 @@ describe('A9 / C6 · actividad de checklists y plantillas', () => {
         );
     });
 });
+
+describe('D3 — WhatsApp en la actividad', () => {
+    const wa = (over: Partial<ActivityEntity>): ActivityEntity => entry({ action: 'whatsapp' as ActivityEntity['action'], ...over });
+
+    it('lo que llegó lo hizo el contacto; lo enviado nombra la plantilla y nunca el texto', () => {
+        const received = wa({ user_id: null, user_name: null, changes: { whatsapp: { event: 'received', kind: 'text', connection: 'Ventas' } } });
+        expect(actorOf(received)).toBe('El contacto');
+        expect(actionText(received, 0)).toBe('escribió por WhatsApp');
+        const sent = wa({ user_id: 2, user_name: 'Ana', changes: { whatsapp: { event: 'sent', kind: 'template', template: 'recordatorio_pago', language: 'es' } } });
+        expect(actorOf(sent)).toBe('Ana');
+        expect(actionText(sent, 0)).toBe('envió la plantilla «recordatorio_pago» por WhatsApp');
+        const text = wa({ user_id: null, user_name: null, changes: { whatsapp: { event: 'sent', kind: 'text' } } });
+        expect(actorOf(text)).toBe('El sistema');
+        expect(actionText(text, 0)).toBe('envió un mensaje por WhatsApp');
+        expect(changesOf(sent, FIELDS)).toEqual([]);
+    });
+});
