@@ -1,4 +1,5 @@
 import {
+    CalendarCheck,
     CalendarClock,
     Clock,
     FileText,
@@ -99,6 +100,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: ClipboardCheck,
         title: 'Cuando se aprueba o se rechaza',
         description: 'Dispara cuando una solicitud de aprobación de esta lista se aprueba, se rechaza, se devuelve o se cancela.',
+    },
+    // D5 — agenda de citas pública.
+    booking_event: {
+        icon: CalendarCheck,
+        title: 'Se agenda, reprograma o cancela una cita',
+        description: 'Dispara cuando un cliente agenda en una página de agenda de esta lista, o cuando la cita se mueve o se cancela.',
     },
     // A9 — checklists del registro.
     checklist_completed: {
@@ -293,6 +300,13 @@ export function summarizeTrigger(
             return __('Cuando un cliente paga un link de cobro');
         case 'form_submitted':
             return __('Cuando alguien envía un formulario');
+        case 'booking_event': {
+            const events = Array.isArray(config.events) ? (config.events as string[]) : [];
+            const words: Record<string, string> = { booked: __('se agenda'), rescheduled: __('se reprograma'), cancelled: __('se cancela') };
+            const which = events.filter((e) => words[e]).map((e) => words[e]!);
+            if (which.length === 0 || which.length === 3) return __('Cuando se agenda, reprograma o cancela una cita');
+            return sprintf(__('Cuando %s una cita'), which.join(` ${__('o')} `));
+        }
         case 'approval_resolved': {
             const results = readApprovalTriggerResults(config).map((r) => APPROVAL_STATUS_LABELS[r].toLowerCase());
             return sprintf(

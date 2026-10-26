@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
-import { APPROVAL_MERGE_TAGS, PAYMENT_MERGE_TAGS } from '@imagina-base/shared';
+import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, PAYMENT_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -360,6 +360,8 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
     const visiblePayment = PAYMENT_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Cobro')));
     // C5 — la aprobación en contexto (disparador, «Pedir» o «Esperar aprobación»).
     const visibleApproval = APPROVAL_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Aprobación')));
+    // D5 — la cita (disparador «Cuando se agenda, reprograma o cancela una cita»).
+    const visibleBooking = BOOKING_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Cita')));
 
     return (
         <div className="imcrm-flex imcrm-flex-col">
@@ -429,6 +431,13 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                     <Section
                         title={__('Cobro (link de pago / pago recibido)')}
                         items={visiblePayment.map((t) => ({ tag: t.tag, label: t.label, hint: `{{${t.tag}}}` }))}
+                        onPick={onPick}
+                    />
+                )}
+                {context === 'automation' && visibleBooking.length > 0 && (
+                    <Section
+                        title={__('Cita (agenda en línea)')}
+                        items={visibleBooking.map((t) => ({ tag: t.tag, label: t.label, hint: `{{${t.tag}}}` }))}
                         onPick={onPick}
                     />
                 )}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import {
+    CalendarClock,
     ChartColumn,
     CircleCheck,
     ClipboardList,
@@ -38,6 +39,7 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     recurrence: Repeat,
     collections: CreditCard,
     dashboard: ChartColumn,
+    booking: CalendarClock,
 };
 
 /**
