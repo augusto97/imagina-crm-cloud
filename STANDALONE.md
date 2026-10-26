@@ -3970,4 +3970,39 @@ roles propios como aprobadores (se conectan al integrar esa entrega).
 
 ---
 
-**Versión del documento:** 1.106.0 (aprobaciones)
+### ADR-S64 — Checklists dentro del registro y plantillas de registro (v0.1.310)
+
+**Contexto.** Los equipos repetían a mano los mismos pasos en cada registro
+(alta de un cliente, un proyecto, un ingreso) y no tenían dónde marcar el avance
+fino sin crear subtareas para todo.
+
+**Decisión.**
+1. Los checklists viven en tablas propias con RLS (`record_checklists`,
+   `record_checklist_items`, migración 0084), no en `records.data`: tienen orden
+   propio, quién y cuándo marcó, responsable y fecha. Los ítems repiten
+   `list_id` y `record_id` para que el progreso del listado y «Mi trabajo» se
+   resuelvan con un índice. Ver un registro es ver sus checklists; cambiarlos
+   exige poder editarlo.
+2. El progreso es un campo derivado (`checklist_progress`, subconsulta SQL,
+   0-100, NULL sin ítems) que se filtra, ordena y agrega como cualquier otro,
+   más un `checklist {done,total}` que viaja en el listado y en los bundles con
+   una consulta por página.
+3. Las plantillas (`record_templates`, `kind` record o checklist) referencian
+   campos y personas por ID (regla de oro nº 1). Las fechas relativas y las
+   personas dinámicas se resuelven al crear con una función pura compartida
+   (`resolveTemplateValues`), en la zona de la empresa (ADR-S33) y con días
+   hábiles de Colombia. El alta desde una plantilla crea el registro, sus
+   subtareas y sus checklists en UNA transacción con el límite del plan, por el
+   mismo `RecordsService` (validación, ACL, actividad, automatizaciones),
+   partido en `prepareCreate` / `insertPreparedInTx` / `afterCreate`.
+4. Un checklist que queda completo dispara «Cuando se completa un checklist»
+   después del commit, una vez por checklist.
+5. Las plantillas viajan en el blueprint (por key) y en la migración de empresa.
+
+**Consecuencias.** Lo que hoy se repite a mano se arma con un clic y sale igual
+cada vez. Los checklists no se exponen en el portal ni en las listas públicas;
+en las listas de una tienda son sólo internos y no hay altas desde plantilla.
+
+---
+
+**Versión del documento:** 1.107.0 (checklists y plantillas de registro)

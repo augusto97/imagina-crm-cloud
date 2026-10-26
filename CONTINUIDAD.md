@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.309** (aprobaciones), en `main`.
+versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
@@ -399,6 +399,19 @@ versión publicada: **v0.1.309** (aprobaciones), en `main`.
   test; con los roles propios, decidir si el aprobador «rol» los acepta (hoy,
   sólo los base de `APPROVER_ROLES`). Queda fuera de Aprobaciones: verlas en el
   portal del cliente, delegar/escalar por plazo y campos por paso.
+  Checklists + plantillas de registro publicadas (v0.1.310, migración 0084).
+  Sólo falta **Equipos + roles + invitados** (migración 0085), que además
+  conecta los equipos con Aprobaciones y con Carga de trabajo.
+- 2026-10-26 — **Hilos abiertos que dejó la fase 3** (no urgentes):
+  (a) **eco del realtime**: la ventana de 2,5 s que ignora el eco de una edición
+  propia (v0.1.253) también se come el aviso de una automatización que dispara
+  esa misma edición (p. ej. completar un checklist pide una aprobación y la
+  ficha abierta no la muestra hasta recargar). Es general a cualquier
+  `record_updated`; el arreglo es llenar el `origin` que `RtInvalidate` ya tiene
+  y nadie usa. (b) «Crear subtarea» del menú de fila (`RecordRowMenu`) abre el
+  alta desde un menú y podría perder el foco del título como el bug que se
+  corrigió en «Nuevo registro ▾». (c) Checklists en el portal (sólo lectura) y
+  mover un ítem a otro checklist desde la interfaz (la API ya lo permite).
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
   ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
   en paralelo en copias aisladas (worktrees), cada una con su instancia de
@@ -671,6 +684,22 @@ versión publicada: **v0.1.309** (aprobaciones), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.310** — **Checklists dentro del registro + plantillas de
+  registro** (ADR-S64, opciones A9 + C6; tercera entrega de la fase 3).
+  Checklists con nombre por registro (casilla, responsable, fecha, orden) en la
+  ficha (modal, página y bloque de la ficha diseñada), «☑ 3/8» en tabla,
+  agrupada y kanban, campo «Progreso del checklist», ítems asignados en «Mi
+  trabajo» con aviso al asignar. Plantillas de registro (valores, fechas
+  relativas en días hábiles, personas, subtareas, checklists) y de checklist en
+  Ajustes de la lista → «Plantillas», «Guardar como plantilla», alta «Desde una
+  plantilla» en una transacción, plantilla en formularios y en «Crear un
+  registro», acción «Crear subtareas desde una plantilla» y disparador «Cuando
+  se completa un checklist». Migración 0084. Asistente/MCP:
+  `propose_create_record_template` y `template` en `propose_create_records`. El
+  agente rebasó su trabajo sobre Aprobaciones (chocaba en ~30 archivos) y
+  verificó los dos juntos (E2E combinado 34/34). Tests: API 1497, front 534,
+  shared 437; E2E 40/40. Hilos abiertos en §10 (eco del realtime, foco del
+  menú de fila, checklists en el portal).
 - **2026-10-26 · v0.1.309** — **Aprobaciones** (ADR-S63, opción C5 del
   estudio + su disparador y su acción; segunda entrega de la fase 3). Flujos por
   lista con pasos en serie (campo Persona, rol o personas; «cualquiera» o

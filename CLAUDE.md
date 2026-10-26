@@ -9176,6 +9176,55 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         enlace del correo sin sesión → login → confirmar, filtro «Pendiente»,
         automatización con espera → si/sino, celular y oscuro).
 
+  - [x] **Checklists dentro del registro + plantillas de registro (v0.1.310,
+        ADR-S64, opciones A9 y C6 del estudio, tercera entrega de la fase 3)**:
+        (a) **checklists**: un registro tiene uno o varios checklists con nombre
+        (`record_checklists` + `record_checklist_items`, migración 0084, RLS);
+        cada ítem lleva casilla (quién y cuándo), responsable, fecha (con o sin
+        hora) y orden. Sección en el modal, la página y la ficha diseñada
+        (bloque «Checklists»): barra de progreso, Enter agrega el siguiente,
+        pegar varias líneas agrega uno por línea (`[x]` llega marcado), edición
+        en el lugar, responsable y fecha, reordenar arrastrando (Subir/Bajar en
+        táctil), ocultar hechos, convertir en subtarea y guardar como plantilla.
+        Marcar o editar exige poder editar el registro; asignar un ítem avisa a
+        la persona; cada cambio deja actividad en lenguaje claro. (b)
+        **Progreso**: el «☑ 3/8» viaja en el listado y en los bundles (una
+        consulta por página, junto al `approval_pending` de v0.1.309) y se ve
+        junto al título en la tabla, la agrupada y el kanban; campo derivado
+        **«Progreso del checklist»** (0-100) que filtra, ordena y se promedia.
+        (c) **«Mi trabajo»** suma los ítems asignados en los mismos grupos de
+        vencimiento y se marcan desde ahí. (d) **Plantillas de registro** por
+        lista: valores fijos, fechas relativas en días o días hábiles (festivos
+        de Colombia, zona de la empresa), personas (quien crea, el valor de un
+        campo o alguien fijo), subtareas y checklists; y **plantillas de
+        checklist**. Se usan en «Nuevo registro ▾ → Desde una plantilla» (y el
+        selector del alta), en formularios y en automatizaciones; el registro,
+        sus subtareas y sus checklists nacen en UNA transacción con el límite
+        del plan; lo escrito en el alta pisa la plantilla. «Guardar como
+        plantilla» desde la ficha o desde un checklist (las fechas pasan a
+        relativas a hoy). (e) **Automatizaciones**: disparador «Cuando se
+        completa un checklist» (cualquiera, uno por nombre o todos;
+        `{{checklist.nombre}}`), acción «Crear subtareas desde una plantilla» y
+        plantilla en «Crear un registro». (f) Viajan en duplicar lista, en
+        plantillas de lista (por key; el flujo de aprobación no viaja) y en la
+        migración de empresa, y se borran con la empresa; el asistente y el MCP
+        proponen plantillas (`propose_create_record_template`) y crean
+        registros desde ellas (regla 18 del prompt). En una lista de tienda los
+        checklists sí existen (nunca viajan a WooCommerce), pero no se
+        convierten en subtarea ni hay plantillas de registro; en el portal del
+        cliente no se muestran (son trabajo interno). **Bugs atrapados en el
+        E2E**: la casilla atada sólo al cache no cambiaba al instante (ahora es
+        optimista); el alta abierta desde un menú perdía el foco del título (un
+        espacio al escribir el nombre la cerraba); el adaptador no traducía
+        `records/from-template` y los bundles no llevaban el progreso. Al
+        integrar con Aprobaciones se completaron dos listas de tipos que no se
+        escriben a las que les faltaba `approval` (formulario editable del
+        portal y reglas al mover en el kanban). 17 tests de API y 12 de shared
+        nuevos (API 1497, front 534, shared 437) + E2E navegador 40/40 y otro
+        34/34 combinado con Aprobaciones (un registro con checklist y solicitud
+        a la vez en tabla, agrupada, kanban, modal y ficha diseñada; completar
+        un checklist pide la aprobación y crea subtareas desde una plantilla).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
