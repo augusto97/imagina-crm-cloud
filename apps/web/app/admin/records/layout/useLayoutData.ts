@@ -5,6 +5,7 @@ import { DATA_BLOCK_TYPES, layoutBlocks, type RecordLayoutV3 } from '@imagina-ba
 import type { WidgetDataOverride } from '@/hooks/useDashboards';
 import { widgetErrorOf } from '@/hooks/useDashboards';
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 import type { FieldEntity } from '@/types/field';
 import type { WidgetData } from '@/types/dashboard';
 
@@ -53,6 +54,8 @@ export function useLayoutData(
         [layout],
     );
     const sig = useMemo(() => JSON.stringify(blocks), [blocks]);
+    // C3 — un invitado no recibe gráficos ni tablas de otras listas.
+    const isGuest = useIsGuest();
     const query = useQuery({
         queryKey: [...layoutDataKeys.forRecord(listId, recordId, sig), scope],
         queryFn: async (): Promise<Record<string, unknown>> => {
@@ -65,7 +68,7 @@ export function useLayoutData(
             }
             return (await api.post<Record<string, unknown>>(`/lists/${listSlug}/records/${recordId}/layout-data`, { blocks })).data;
         },
-        enabled: blocks.length > 0 && recordId > 0,
+        enabled: blocks.length > 0 && recordId > 0 && !isGuest,
         staleTime: 20_000,
         placeholderData: (prev) => prev,
     });

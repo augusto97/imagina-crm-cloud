@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Users } from 'lucide-react';
 import { api, useSession } from '@/cloud/session';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useCustomRoles } from '@/hooks/useCustomRoles';
 import { MemberInviteForm, MemberRow } from './MemberControls';
 
 /**
@@ -25,6 +26,8 @@ export function MembersPanel(): JSX.Element {
         queryFn: () => api.listMembers(),
     });
     const pending = membersQ.data?.filter((m) => m.pending).length ?? 0;
+    // C2 — el selector de rol ofrece también los roles propios.
+    const customRoles = useCustomRoles().data?.custom ?? [];
 
     return (
         <Card>
@@ -46,6 +49,7 @@ export function MembersPanel(): JSX.Element {
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
                 <MemberInviteForm
                     idPrefix="member"
+                    customRoles={customRoles}
                     onSubmit={async (input) => {
                         const r = await api.addMember(input);
                         await invalidate();
@@ -65,8 +69,9 @@ export function MembersPanel(): JSX.Element {
                                 key={m.user_id}
                                 member={m}
                                 isSelf={m.user_id === meId}
-                                onRole={async (role) => {
-                                    await api.updateMemberRole(m.user_id, { role });
+                                customRoles={customRoles}
+                                onRole={async (role, customRoleId) => {
+                                    await api.updateMemberRole(m.user_id, { role, custom_role_id: customRoleId });
                                     await invalidate();
                                 }}
                                 onResend={() => api.resendMemberInvite(m.user_id)}

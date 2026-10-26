@@ -63,6 +63,7 @@ import { blockStyleClass, blockStyleCss, readBlockStyle } from '@/lib/blockStyle
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
+import { useIsGuest } from '@/lib/guest';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 import type { FieldEntity } from '@/types/field';
@@ -113,6 +114,19 @@ function blockIcon(block: LayoutBlock): LucideIcon | null {
     return ICONS[key] ?? TYPE_ICONS[block.type] ?? null;
 }
 
+/** C3 — Bloques que la ficha no le muestra a un invitado de afuera. */
+const GUEST_HIDDEN_BLOCKS = new Set<string>([
+    'chart',
+    'related',
+    'payments',
+    'time_tracking',
+    'dependencies',
+    'portal_access',
+    'subtasks',
+    'approval',
+    'checklist',
+]);
+
 /**
  * v0.1.230 — Un bloque de la ficha dentro de su marco (tarjeta del tema,
  * título, capa de estilo compartida con los tableros).
@@ -120,6 +134,7 @@ function blockIcon(block: LayoutBlock): LucideIcon | null {
 export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element | null {
     const ctx = useLayoutCtx();
     const dark = useTheme().resolved === 'dark';
+    const isGuest = useIsGuest();
     const style = readBlockStyle({ style: block.style });
     const styled = block.style !== undefined && Object.keys(block.style).length > 0;
     const card =
@@ -137,6 +152,9 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     const portalHidden = usePortalButtonHidden(buttonField?.type === 'button' ? buttonField.id : null);
 
     if (portalHidden) return null;
+    // C3 — a un invitado no se le dibuja lo que mira otras listas o la
+    // operación interna (el servidor igual se lo niega).
+    if (isGuest && ctx.mode !== 'portal' && GUEST_HIDDEN_BLOCKS.has(block.type)) return null;
     if (isEmptyActionButton(block, ctx)) return null;
     // Sin conexión de cobro (o sin nada que mostrar) el cliente no ve «Pagos».
     if (ctx.mode === 'portal' && !ctx.preview && block.type === 'payments' && !ctx.portalPayments?.[block.id]) return null;

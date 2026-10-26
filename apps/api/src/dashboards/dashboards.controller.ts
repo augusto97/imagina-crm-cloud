@@ -31,6 +31,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { DashboardsService, type DashboardViewer } from './dashboards.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Dashboards del workspace (CONTRACT.md §5). Requiere sesión + tenant; la
@@ -47,19 +48,19 @@ export class DashboardsController {
     constructor(private readonly dashboards: DashboardsService) {}
 
     @Get()
-    @RequireCapability('access_admin')
+    @RequireCapability('view_dashboards')
     list(@Req() req: FastifyRequest): Promise<Dashboard[]> {
         return this.dashboards.list(tenantId(req), viewer(req));
     }
 
     @Get(':id')
-    @RequireCapability('access_admin')
+    @RequireCapability('view_dashboards')
     get(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<Dashboard> {
         return this.dashboards.get(tenantId(req), id, viewer(req));
     }
 
     @Get(':id/widgets/:widgetId/data')
-    @RequireCapability('access_admin')
+    @RequireCapability('view_dashboards')
     widgetData(
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
@@ -76,7 +77,7 @@ export class DashboardsController {
      */
     @Post(':id/widgets/data')
     @HttpCode(200)
-    @RequireCapability('access_admin')
+    @RequireCapability('view_dashboards')
     // ADR-S09: es una LECTURA (POST por el body); una empresa en solo-lectura
     // sigue viendo sus tableros.
     @AllowReadOnly()
@@ -97,7 +98,7 @@ export class DashboardsController {
      */
     @Post(':id/widgets/preview')
     @HttpCode(200)
-    @RequireCapability('access_admin')
+    @RequireCapability('view_dashboards')
     @AllowReadOnly()
     preview(
         @Req() req: FastifyRequest,
@@ -151,5 +152,5 @@ function tenantId(req: FastifyRequest): number {
 }
 
 function viewer(req: FastifyRequest): DashboardViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

@@ -26,7 +26,7 @@ export class McpService {
     ) {}
 
     toolsFor(ctx: AiToolContext, scope: PersonalTokenScope): AiToolDef[] {
-        const defs = this.registry.listFor(ctx.role);
+        const defs = this.registry.listFor(ctx);
         return scope === 'full' ? defs : defs.filter((d) => !d.name.startsWith('propose_'));
     }
 

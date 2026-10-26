@@ -16,7 +16,6 @@ import {
     jsonbKeyForField,
     readApprovalFlowConfig,
     resolveTitleFieldId,
-    roleHasCapability,
     stepLabel,
     updateApprovalFlowSchema,
     validateFieldValue,
@@ -57,6 +56,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ApprovalHub, type ApprovalEventInfo } from './approval-hub';
+import { can } from '../authz/can';
 import { approvalFlowRefs } from './approval-refs';
 import { askTitle, decisionMessage, resolvedTitle } from './approval-text';
 import { ApprovalsRepository } from './approvals.repository';
@@ -67,13 +67,24 @@ import { ApprovalsRepository } from './approvals.repository';
  */
 export type ApprovalActor = AclSubject;
 
-/** Una persona del equipo que puede aprobar (miembro activo, no cliente). */
+/**
+ * Una persona del equipo que puede aprobar: miembro activo, ni cliente del
+ * portal ni INVITADO (C3 — decidir es un acto de la empresa; un invitado sólo
+ * ve y edita lo que le compartieron).
+ */
 interface Member {
     userId: number;
+    /**
+     * Rol BASE. C2 — un aprobador «por rol» cuenta a quien tiene un rol propio
+     * por su rol base (como el acceso a las listas que no lo nombran); para un
+     * grupo puntual está «Un equipo».
+     */
     role: Role;
     name: string;
     /** C1 — sus equipos: el acceso por equipo a la lista cuenta para ver el registro. */
     teamIds: number[];
+    /** C2 — su rol propio: la fila de ese rol en el acceso de la lista cuenta para ver. */
+    customRoleId: number | null;
 }
 
 /** Lo mínimo del registro para resolver aprobadores y el ACL. */
@@ -346,7 +357,7 @@ export class ApprovalsService {
         if (userIds.length > 0) {
             const members = await this.loadMembers(tx, tenantId);
             const missing = userIds.filter((id) => !members.has(id));
-            if (missing.length > 0) problems.push(`Hay ${missing.length === 1 ? 'una persona que no es' : `${missing.length} personas que no son`} del equipo de la empresa entre los aprobadores.`);
+            if (missing.length > 0) problems.push(`Hay ${missing.length === 1 ? 'una persona que no es' : `${missing.length} personas que no son`} del equipo de la empresa entre los aprobadores (las personas invitadas de afuera no aprueban).`);
         }
         return problems;
     }
@@ -1047,7 +1058,7 @@ export class ApprovalsService {
             const m = members.get(id);
             if (!m) continue;
             if (requesterId !== null && id === requesterId && !config.self_approval) continue;
-            if (!canViewRecord(list, { userId: m.userId, role: m.role, teamIds: m.teamIds }, record)) continue;
+            if (!canViewRecord(list, { userId: m.userId, role: m.role, teamIds: m.teamIds, customRoleId: m.customRoleId }, record)) continue;
             out.push(m);
         }
         return out;
@@ -1090,10 +1101,18 @@ export class ApprovalsService {
                 email: users.email,
                 // C1 — sus equipos (para el acceso por equipo a la lista).
                 teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                customRoleId: memberships.customRoleId,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
-            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client'), isNull(users.disabledAt)));
+            .where(
+                and(
+                    eq(memberships.tenantId, tenantId),
+                    ne(memberships.role, 'client'),
+                    ne(memberships.role, 'guest'),
+                    isNull(users.disabledAt),
+                ),
+            );
         return new Map(
             rows.map((r) => [
                 r.userId,
@@ -1102,6 +1121,7 @@ export class ApprovalsService {
                     role: r.role as Role,
                     name: r.name?.trim() || r.email,
                     teamIds: (r.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+                    customRoleId: r.customRoleId ?? null,
                 },
             ]),
         );
@@ -1292,7 +1312,8 @@ function canViewRecord(list: List, actor: ApprovalActor, record: RecordRowLite):
 }
 
 function canEditRecord(records: RecordsService, list: List, actor: ApprovalActor, record: RecordRowLite): boolean {
-    const caps = roleHasCapability(actor.role, 'edit_records') || roleHasCapability(actor.role, 'edit_own_records');
+    // C2 — las capacidades EFECTIVAS (las del rol propio, si tiene).
+    const caps = can(actor, 'edit_records') || can(actor, 'edit_own_records');
     return caps && records.canReach(list, actor, 'edit', { data: record.data, createdBy: record.createdBy });
 }
 

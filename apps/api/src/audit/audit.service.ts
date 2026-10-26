@@ -144,7 +144,19 @@ export type AuditAction =
     // C1 — equipos.
     | 'team.create'
     | 'team.update'
-    | 'team.delete';
+    | 'team.delete'
+    // C2 — roles propios.
+    | 'role.create'
+    | 'role.update'
+    | 'role.delete'
+    // C3 — invitados externos: compartir una lista o un registro con alguien
+    // de afuera, cambiarle el nivel, quitárselo o pasarlo a miembro.
+    | 'guest.share_list'
+    | 'guest.share_record'
+    | 'guest.level_change'
+    | 'guest.unshare'
+    | 'guest.remove'
+    | 'guest.promote';
 
 export interface AuditEntryDto {
     id: number;

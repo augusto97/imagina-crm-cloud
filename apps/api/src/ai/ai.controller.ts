@@ -36,6 +36,9 @@ import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
 import { AssistantService } from './assistant.service';
 import { ProposalsService } from './proposals.service';
 import type { AiToolContext } from './tools/registry';
+import { aclOf } from '../tenancy/acl-of';
+import { CapabilitiesGuard } from '../authz/capabilities.guard';
+import { RequireCapability } from '../authz/require-capability.decorator';
 
 /**
  * Asistente IA por empresa (ADR-S21). Todo con sesión + tenant: el
@@ -43,7 +46,7 @@ import type { AiToolContext } from './tools/registry';
  * herramienta (capability por tool) y `ProposalsService.apply`.
  */
 @Controller('ai')
-@UseGuards(SessionGuard, TenantGuard)
+@UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class AiController {
     constructor(
         private readonly assistant: AssistantService,
@@ -53,6 +56,7 @@ export class AiController {
     ) {}
 
     @Get('status')
+    @RequireCapability('use_ai_assistant')
     status(@Req() req: FastifyRequest): Promise<AiStatus> {
         return this.assistant.status(ctxOf(req));
     }
@@ -65,6 +69,7 @@ export class AiController {
      * `error` — el cliente ya está escuchando el stream.
      */
     @Post('chat')
+    @RequireCapability('use_ai_assistant')
     async chat(
         @Req() req: FastifyRequest,
         @Res() reply: FastifyReply,
@@ -94,6 +99,7 @@ export class AiController {
     }
 
     @Get('conversations/:id')
+    @RequireCapability('use_ai_assistant')
     async conversation(@Req() req: FastifyRequest, @Param('id') id: string): Promise<AiConversation> {
         const conv = await this.assistant.conversation(ctxOf(req), id);
         if (!conv) {
@@ -103,6 +109,7 @@ export class AiController {
     }
 
     @Post('proposals/:id/apply')
+    @RequireCapability('use_ai_assistant')
     async apply(@Req() req: FastifyRequest, @Param('id') id: string): Promise<AiApplyResult> {
         return { proposal: await this.proposals.apply(ctxOf(req), id) };
     }
@@ -163,7 +170,7 @@ export class AiController {
 }
 
 function ctxOf(req: FastifyRequest): AiToolContext {
-    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
 }
 
 function assertAdmin(req: FastifyRequest): void {

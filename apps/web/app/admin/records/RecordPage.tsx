@@ -19,6 +19,9 @@ import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
+import { RecordShareButton } from '@/admin/guests/RecordShareButton';
+import { useIsGuest } from '@/lib/guest';
+import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
@@ -86,9 +89,14 @@ export function RecordPage(): JSX.Element {
     const list = useList(view.ready ? listSlug : undefined);
     const fields = useFields(view.ready ? list.data?.id : undefined);
     const record = useRecord(view.ready ? list.data?.id : undefined, liveId);
-    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    // C3 — un invitado edita sólo con «Puede editar» (lista o registro).
+    const guestAccess = useGuestAccess(list.data?.id, id);
+    const canEditRecords = canEditByCaps && (!guestAccess.isGuest || guestAccess.record === 'edit');
     const update = useUpdateRecord(list.data?.id ?? 0);
     const remove = useDeleteRecord(list.data?.id ?? 0);
+    // C3 — un invitado no sigue, no genera PDF ni comparte.
+    const isGuest = useIsGuest();
     const confirm = useConfirm();
     const toast = useToast();
     const trashed = useTrashedToast();
@@ -221,15 +229,17 @@ export function RecordPage(): JSX.Element {
                     actions={
                         <>
                             {/* Seguir / recordarme y el PDF, en la barra de la ficha. */}
-                            <RecordFollowControls listId={list.data.id} recordId={record.data.id} compact />
-                            <GeneratePdfButton
-                                listId={list.data.id}
-                                listSlug={list.data.slug}
-                                recordId={record.data.id}
-                                fields={fields.data}
-                                compact
-                            />
-                            {!storeRules && (
+                            {!isGuest && <RecordFollowControls listId={list.data.id} recordId={record.data.id} compact />}
+                            {!isGuest && (
+                                <GeneratePdfButton
+                                    listId={list.data.id}
+                                    listSlug={list.data.slug}
+                                    recordId={record.data.id}
+                                    fields={fields.data}
+                                    compact
+                                />
+                            )}
+                            {!storeRules && !isGuest && (
                                 <SaveRecordAsTemplateButton
                                     listId={list.data.id}
                                     listSlug={list.data.slug}
@@ -238,6 +248,7 @@ export function RecordPage(): JSX.Element {
                                     compact
                                 />
                             )}
+                            <RecordShareButton listId={list.data.id} recordId={record.data.id} compact />
                         </>
                     }
                 />
@@ -300,10 +311,15 @@ export function RecordPage(): JSX.Element {
                         </Link>
                     </Button>
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-1.5">
-                        <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />
-                        <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
-                        {!storeRules && <SaveRecordAsTemplateButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} title={title} compact />}
-                        {!storeRules && (
+                        {!isGuest && <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />}
+                        {!isGuest && (
+                            <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
+                        )}
+                        {!storeRules && !isGuest && (
+                            <SaveRecordAsTemplateButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} title={title} compact />
+                        )}
+                        <RecordShareButton listId={listInfo.id} recordId={rec.id} title={title} compact />
+                        {!storeRules && !isGuest && (
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -315,10 +331,12 @@ export function RecordPage(): JSX.Element {
                                 <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
                             </Button>
                         )}
-                        <Button size="sm" onClick={() => void handleSave()} disabled={!dirty || update.isPending} className="imcrm-gap-2 imcrm-whitespace-nowrap">
-                            <Save className="imcrm-h-4 imcrm-w-4" />
-                            {update.isPending ? __('Guardando…') : __('Guardar cambios')}
-                        </Button>
+                        {(!isGuest || canEditRecords) && (
+                            <Button size="sm" onClick={() => void handleSave()} disabled={!dirty || update.isPending} className="imcrm-gap-2 imcrm-whitespace-nowrap">
+                                <Save className="imcrm-h-4 imcrm-w-4" />
+                                {update.isPending ? __('Guardando…') : __('Guardar cambios')}
+                            </Button>
+                        )}
                     </div>
                 </div>
                 {/* El título ES el campo primario y se edita aquí (v0.1.136). */}
@@ -346,12 +364,12 @@ export function RecordPage(): JSX.Element {
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
                     {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
                     <RecordMetaGrid record={rec} />
-                    {rec.parent_id && (
+                    {rec.parent_id && !isGuest && (
                         <RecordSubtasks listId={listInfo.id} listSlug={listInfo.slug} record={rec} fields={fields.data ?? []} />
                     )}
 
-                    {/* C5 — aprobación (sin flujos en la lista, no aparece). */}
-                    <RecordApprovals listId={listInfo.id} recordId={rec.id} />
+                    {/* C5 — aprobación (sin flujos en la lista, no aparece; no para un invitado). */}
+                    {!isGuest && <RecordApprovals listId={listInfo.id} recordId={rec.id} />}
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el
                         modal del registro. */}
@@ -403,41 +421,54 @@ export function RecordPage(): JSX.Element {
                             />
                         )}
 
-                        {!rec.parent_id && (
-                            <RecordSubtasks
-                                listId={listInfo.id}
-                                listSlug={listInfo.slug}
-                                record={rec}
-                                fields={fields.data ?? []}
-                                className="imcrm-mt-4"
-                            />
+                        {/* C3 — a un invitado no se le muestra la operación interna
+                            del registro (subtareas, dependencias, tiempo,
+                            portal, cobros, documentos, vínculos). */}
+                        {!isGuest && (
+                            <>
+                                {!rec.parent_id && (
+                                    <RecordSubtasks
+                                        listId={listInfo.id}
+                                        listSlug={listInfo.slug}
+                                        record={rec}
+                                        fields={fields.data ?? []}
+                                        className="imcrm-mt-4"
+                                    />
+                                )}
+
+                                {/* A9 — checklists del registro. */}
+                                <RecordChecklists
+                                    listId={listInfo.id}
+                                    recordId={id}
+                                    isSubtask={rec.parent_id !== null}
+                                    storeManaged={storeRules !== null}
+                                    className="imcrm-mt-5"
+                                />
+
+                                {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
+                                <RecordDependencies listId={listInfo.id} listSlug={listInfo.slug} recordId={id} className="imcrm-mt-5" />
+
+                                {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
+                                <div className="imcrm-mt-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+                                    <TimeTrackingPanel listId={listInfo.id} listKey={listInfo.slug} recordId={id} />
+                                </div>
+
+                                {/* Acceso al portal del cliente — también sin
+                                    plantilla CRM (se auto-oculta si el portal de
+                                    la lista no está habilitado). */}
+                                <div className="imcrm-mt-4">
+                                    <PortalAccessButton list={listInfo} record={rec} />
+                                </div>
+                                {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
+                                <RecordDataConsentLine className="imcrm-mt-4" listId={listInfo.id} recordId={id} />
+                                <div className="imcrm-mt-4">
+                                    <RecordPaymentsPanel listId={listInfo.id} recordId={id} />
+                                </div>
+                                {/* v0.1.290 — documentos emitidos (numerados): congelados, anulados. */}
+                                <IssuedDocumentsSection className="imcrm-mt-4" listId={listInfo.id} listSlug={listInfo.slug} recordId={id} />
+                                <RecordBacklinks listId={listInfo.id} recordId={id} />
+                            </>
                         )}
-
-                        {/* A9 — checklists del registro. */}
-                        <RecordChecklists listId={listInfo.id} recordId={id} isSubtask={rec.parent_id !== null} storeManaged={storeRules !== null} className="imcrm-mt-5" />
-
-                        {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
-                        <RecordDependencies listId={listInfo.id} listSlug={listInfo.slug} recordId={id} className="imcrm-mt-5" />
-
-                        {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
-                        <div className="imcrm-mt-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
-                            <TimeTrackingPanel listId={listInfo.id} listKey={listInfo.slug} recordId={id} />
-                        </div>
-
-                        {/* Acceso al portal del cliente — también sin
-                            plantilla CRM (se auto-oculta si el portal de
-                            la lista no está habilitado). */}
-                        <div className="imcrm-mt-4">
-                            <PortalAccessButton list={listInfo} record={rec} />
-                        </div>
-                        {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
-                        <RecordDataConsentLine className="imcrm-mt-4" listId={listInfo.id} recordId={id} />
-                        <div className="imcrm-mt-4">
-                            <RecordPaymentsPanel listId={listInfo.id} recordId={id} />
-                        </div>
-                        {/* v0.1.290 — documentos emitidos (numerados): congelados, anulados. */}
-                        <IssuedDocumentsSection className="imcrm-mt-4" listId={listInfo.id} listSlug={listInfo.slug} recordId={id} />
-                        <RecordBacklinks listId={listInfo.id} recordId={id} />
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
                                 {error}

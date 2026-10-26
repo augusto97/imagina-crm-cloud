@@ -1,4 +1,5 @@
 import {
+    customRoleKey,
     dueBucket,
     isDoneOptionLabel,
     pickDueField,
@@ -15,7 +16,7 @@ import { AutomationDispatcher, type TriggerEvent } from '../src/automations/auto
 import { CommentsRepository } from '../src/comments/comments.repository';
 import { CommentsService } from '../src/comments/comments.service';
 import { loadEnv } from '../src/config/env';
-import { lists as listsTable, memberships, notifications, recordFollows, records, reminders, tenants, users } from '../src/db/schema';
+import { customRoles, lists as listsTable, memberships, notifications, recordFollows, records, reminders, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -119,6 +120,7 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
     let svc: NotificationsService;
     let recs: RecordsService;
     let comments: CommentsService;
+    let listsSvc: ListsService;
     let tenantId: number;
     let otherTenant: number;
     let listId: number;
@@ -144,6 +146,7 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         const tenantDb = new TenantDb(pg.db);
         const rt = new RealtimeService();
         const lists = new ListsService(tenantDb, new ListsRepository(), rt);
+        listsSvc = lists;
         const fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         const changes = new RecordChangeHub();
         const hub = new NotifyHub();
@@ -286,6 +289,35 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         const kinds = (await inbox(beto)).map((n) => n.kind);
         expect(kinds).toEqual(['assigned', 'comment', 'mention']);
         expect((await inbox(beto)).at(-1)!.body).toBe('@beto@acme.test ¿lo ves hoy?');
+    });
+
+    it('C2 — el acceso del ROL PROPIO a la lista cuenta para recibir un aviso', async () => {
+        const [rol] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(customRoles).values({ tenantId, name: 'Coordinación', baseRole: 'agent', capabilities: ['access_admin', 'view_own_records'] }).returning(),
+        );
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(memberships).set({ customRoleId: rol!.id }).where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, caro))),
+        );
+        try {
+            const id = await create({ [`f${f.titulo!.id}`]: 'Contrato' });
+            // Base Agente (sólo lo suyo): no ve el registro, no se entera.
+            await comments.create(tenantId, admin(), 'tareas', id, { body: '@caro@acme.test mira esto', kind: 'note' });
+            await settle();
+            expect(await inbox(caro)).toHaveLength(0);
+            // Con la fila de su rol propio en la lista, sí.
+            await listsSvc.updatePermissions(tenantId, 'tareas', {
+                permissions: { [customRoleKey(rol!.id)]: { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] } },
+            });
+            await comments.create(tenantId, admin(), 'tareas', id, { body: '@caro@acme.test ¿y ahora?', kind: 'note' });
+            await settle();
+            expect((await inbox(caro)).map((n) => n.kind)).toEqual(['mention']);
+        } finally {
+            await listsSvc.updatePermissions(tenantId, 'tareas', { reset_roles: [customRoleKey(rol!.id)] });
+            await withTenant(pg.db, tenantId, async (tx) => {
+                await tx.update(memberships).set({ customRoleId: null }).where(eq(memberships.tenantId, tenantId));
+                await tx.delete(customRoles).where(eq(customRoles.tenantId, tenantId));
+            });
+        }
     });
 
     it('v0.1.291 — respuestas: avisan «respondió» al autor del raíz y a quienes respondieron (no un «comentó» más)', async () => {

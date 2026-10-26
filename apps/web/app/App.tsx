@@ -13,6 +13,8 @@ import { PlatformGate } from '@/admin/platform/PlatformGate';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { useTimeZoneAutoSetup } from '@/cloud/useTimeZoneAutoSetup';
 import { useRealtime } from '@/cloud/useRealtime';
+import { useIsGuest } from '@/lib/guest';
+import { disableTeamsApi } from '@/hooks/useTeams';
 
 // Lazy-loaded pages. React.lazy + Vite produce un chunk por cada
 // import — esos chunks viven en `dist/assets/*-<hash>.js` y se
@@ -44,6 +46,36 @@ const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage'
 const StoreSyncPage = lazyWithReload(() => import('@/cloud/pages/StoreSyncPage').then(m => ({ default: m.StoreSyncPage })));
 const SqlSyncPage = lazyWithReload(() => import('@/cloud/pages/SqlSyncPage').then(m => ({ default: m.SqlSyncPage })));
 const CollectionsPage = lazyWithReload(() => import('@/cloud/pages/CollectionsPage').then(m => ({ default: m.CollectionsPage })));
+const GuestShell = lazyWithReload(() => import('@/admin/guests/GuestShell').then(m => ({ default: m.GuestShell })));
+const SharedWithMePage = lazyWithReload(() => import('@/admin/guests/GuestShell').then(m => ({ default: m.SharedWithMePage })));
+
+/**
+ * C3 — Rutas de una persona INVITADA: «Compartido conmigo», las listas y los
+ * registros que le compartieron (la misma tabla y la misma ficha, con lo que
+ * el servidor le deja ver) y su cuenta. Cualquier otra ruta vuelve a la
+ * portada. Los equipos de la empresa no se piden (el servidor daría 403).
+ */
+function GuestApp(): JSX.Element {
+    disableTeamsApi();
+    return (
+        <Suspense fallback={<RouteFallback />}>
+            <Routes>
+                <Route element={<GuestShell />}>
+                    <Route index element={<Navigate to="/shared" replace />} />
+                    <Route path="shared" element={<SharedWithMePage />} />
+                    <Route path="lists/:listSlug/records" element={<RecordsPage />} />
+                    <Route path="lists/:listSlug/records/:recordId" element={
+                        <Suspense fallback={<RouteFallback />}><RecordPage /></Suspense>
+                    } />
+                    <Route path="settings" element={
+                        <Suspense fallback={<RouteFallback />}><CloudSettingsPage /></Suspense>
+                    } />
+                    <Route path="*" element={<Navigate to="/shared" replace />} />
+                </Route>
+            </Routes>
+        </Suspense>
+    );
+}
 
 /**
  * Fallback minimal mientras un chunk lazy se descarga. Suficiente:
@@ -65,6 +97,9 @@ export function App(): JSX.Element {
     useRealtime();
     // v0.1.263 — la primera vez que entra un admin, la empresa toma su zona horaria.
     useTimeZoneAutoSetup();
+    // C3 — una persona invitada de afuera tiene su propio shell.
+    const isGuest = useIsGuest();
+    if (isGuest) return <GuestApp />;
     return (
         <Routes>
             <Route element={<AdminShell />}>

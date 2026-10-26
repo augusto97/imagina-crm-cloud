@@ -31,6 +31,8 @@ import {
     recurrences,
     teamMembers,
     teams,
+    customRoles,
+    recordShares,
     templates,
     tenants,
     timeEntries,
@@ -38,7 +40,7 @@ import {
     dataConsents,
     dataConsentVersions,
 } from '../src/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -389,11 +391,17 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         // C1 — un equipo con su persona.
         const [team] = await pg.db.insert(teams).values({ tenantId: id, name: 'Ventas' }).returning();
         await pg.db.insert(teamMembers).values({ tenantId: id, teamId: team!.id, userId: owner!.id });
+        // C2 — un rol propio en uso; C3 — un registro compartido.
+        const [role] = await pg.db.insert(customRoles).values({ tenantId: id, name: 'Coord', baseRole: 'agent', capabilities: [] }).returning();
+        await pg.db.update(memberships).set({ customRoleId: role!.id }).where(and(eq(memberships.tenantId, id), eq(memberships.userId, owner!.id)));
+        await pg.db.insert(recordShares).values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, level: 'view' });
 
         await platform.deleteTenant(id);
         expect(await pg.db.select().from(recordChecklistItems).where(eq(recordChecklistItems.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklists).where(eq(recordChecklists.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(customRoles).where(eq(customRoles.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(recordShares).where(eq(recordShares.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(teams).where(eq(teams.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(teamMembers).where(eq(teamMembers.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(dataConsents).where(eq(dataConsents.tenantId, id))).toHaveLength(0);
@@ -512,7 +520,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('crear plan + asignarlo: billing usa los límites del plan de DB (y update los cambia)', async () => {
         const id = await seedTenant({ name: 'Custo', ownerEmail: 'custo@c.test' });
-        await platform.createPlan({ slug: 'probe', name: 'Probe', max_records: 5, max_users: 2, max_automations: 1, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, price_usd: null, price_cop: null, is_active: true });
+        await platform.createPlan({ slug: 'probe', name: 'Probe', max_records: 5, max_users: 2, max_automations: 1, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, max_guests: null, price_usd: null, price_cop: null, is_active: true });
 
         const t = await platform.updateTenant(id, { plan: 'probe' });
         expect(t.plan).toBe('probe');
@@ -528,7 +536,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     });
 
     it('precios de checkout: create/update los persiste (para vender planes custom)', async () => {
-        await platform.createPlan({ slug: 'growth', name: 'Growth', max_records: 50000, max_users: 25, max_automations: 100, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, price_usd: 29, price_cop: 119000, is_active: true });
+        await platform.createPlan({ slug: 'growth', name: 'Growth', max_records: 50000, max_users: 25, max_automations: 100, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, max_guests: null, price_usd: 29, price_cop: 119000, is_active: true });
         const created = (await platform.listPlans()).find((p) => p.slug === 'growth');
         expect(created).toMatchObject({ price_usd: 29, price_cop: 119000 });
 
@@ -540,7 +548,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('removePlan: rechaza si está en uso, borra si no', async () => {
         const id = await seedTenant({ name: 'Temp' });
-        await platform.createPlan({ slug: 'temp', name: 'Temp', max_records: 1, max_users: 1, max_automations: 1, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, price_usd: null, price_cop: null, is_active: true });
+        await platform.createPlan({ slug: 'temp', name: 'Temp', max_records: 1, max_users: 1, max_automations: 1, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, max_guests: null, price_usd: null, price_cop: null, is_active: true });
         await platform.updateTenant(id, { plan: 'temp' });
         await expect(platform.removePlan('temp')).rejects.toThrow(); // en uso
         await platform.updateTenant(id, { plan: 'trial' });

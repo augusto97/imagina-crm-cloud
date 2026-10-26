@@ -25,6 +25,7 @@ import type { RelatedScope } from '../records/related-scope';
 import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { DashboardsService, type DashboardViewer } from './dashboards.service';
+import { aclExtras } from '../lists/list-acl';
 
 interface ResolvedSource {
     listId: number;
@@ -124,7 +125,7 @@ export class RecordLayoutDataService {
         recordId: number,
         req: LayoutDataRequest,
     ): Promise<Record<string, unknown>> {
-        const actor = { userId: viewer.userId, role: viewer.role as Role, teamIds: viewer.teamIds };
+        const actor = { ...aclExtras(viewer), userId: viewer.userId, role: viewer.role as Role };
         // El registro base tiene que ser visible (404 si no — no filtramos info).
         await this.records.get(tenantId, actor, listIdOrSlug, recordId);
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -362,7 +363,7 @@ export class RecordLayoutDataService {
         const sortOk = cfg.sort_field_id !== undefined && visible.some((f) => f.id === cfg.sort_field_id);
         const page = await this.records.list(
             tenantId,
-            { userId: viewer.userId, role: viewer.role as Role, teamIds: viewer.teamIds },
+            { ...aclExtras(viewer), userId: viewer.userId, role: viewer.role as Role },
             String(src.listId),
             {
                 limit,

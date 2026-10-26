@@ -8,6 +8,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordLayoutDataService } from './record-layout-data.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * v0.1.230 — datos de los bloques de la ficha (gráficos y vinculados) en un
@@ -31,7 +32,7 @@ export class RecordLayoutController {
         @Body(new ZodValidationPipe(layoutDataRequestSchema)) body: LayoutDataRequest,
     ): Promise<{ data: Record<string, unknown> }> {
         return this.service
-            .data(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, id, body)
+            .data(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, id, body)
             .then((data) => ({ data }));
     }
 }

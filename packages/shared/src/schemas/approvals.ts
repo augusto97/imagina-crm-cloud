@@ -64,7 +64,10 @@ export const APPROVAL_DECISION_LABELS: Record<ApprovalDecisionKind, string> = {
 
 // ── Configuración del flujo ───────────────────────────────────────────────
 
-/** Los roles base que pueden aprobar (el cliente del portal no). */
+/**
+ * Los roles base que pueden aprobar (ni el cliente del portal ni un invitado).
+ * C2 — quien tiene un rol propio cuenta por su rol base.
+ */
 export const APPROVER_ROLES = ['admin', 'manager', 'agent', 'viewer'] as const;
 export type ApproverRole = (typeof APPROVER_ROLES)[number];
 
@@ -81,7 +84,7 @@ export const APPROVER_ROLE_LABELS: Record<ApproverRole, string> = {
  * manda el valor de ahora.
  *
  * - `users`: una o varias personas puntuales.
- * - `role`: todas las personas con ese rol en la empresa.
+ * - `role`: todas las personas con ese rol (BASE) en la empresa.
  * - `team`: los miembros de un equipo (los equipos los agrega otra entrega:
  *   el tipo ya se valida aquí y se resuelve en un único punto del servidor).
  * - `field`: la persona del campo Persona del registro («Jefe»).

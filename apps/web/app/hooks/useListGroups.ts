@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 import type { ListGroup } from '@/types/list';
 
 import { listsKeys } from './useLists';
@@ -16,12 +17,15 @@ export const listGroupsKeys = {
 };
 
 export function useListGroups() {
+    // C3 — un invitado no ve las carpetas de la empresa (el servidor da 403).
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: listGroupsKeys.list(),
         queryFn: async () => {
             const res = await api.get<ListGroup[]>('/list-groups');
             return res.data;
         },
+        enabled: !isGuest,
         staleTime: 60_000,
     });
 }

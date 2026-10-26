@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, ForbiddenException, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { filterTreeSchema, roleHasCapability, type FilterGroup } from '@imagina-base/shared';
+import { filterTreeSchema, type FilterGroup } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -8,6 +8,8 @@ import type { Actor } from '../records/records.service';
 import { contentDispositionHeader } from '../files/safe-content-type';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ExportService } from './export.service';
+import { aclOf } from '../tenancy/acl-of';
+import { can } from '../authz/can';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -45,7 +47,7 @@ export class ExportController {
         @Query('with_id') withId?: string,
         @Query('freeze') freeze?: string,
     ): Promise<void> {
-        const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+        const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
         const fieldIds = (fields ?? '')
             .split(',')
             .map((s) => Number(s.trim()))
@@ -116,7 +118,7 @@ export class ExportController {
         // plantilla del portal, publicación). No pasa por el ACL por lista, así
         // que es para quien administra listas; el resto exporta en CSV, que sí
         // respeta su scope y sus campos ocultos.
-        if (!roleHasCapability(req.tenant!.role, 'manage_lists')) {
+        if (!can(req.tenant!, 'manage_lists')) {
             throw new ForbiddenException({
                 code: 'export_json_requires_manage_lists',
                 message: 'El export completo (JSON) es para quien administra listas; exporta en CSV',

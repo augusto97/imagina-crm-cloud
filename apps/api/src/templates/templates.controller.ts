@@ -27,6 +27,7 @@ import { AutomationTemplatesService } from './automation-templates.service';
 import type { MaterializeResult } from './blueprint.service';
 import { DashboardTemplatesService, type ApplyDashboardResult } from './dashboard-templates.service';
 import { TemplatesService } from './templates.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Duplicar listas y plantillas (v0.1.166) + plantillas de dashboards y de
@@ -167,5 +168,5 @@ function actorId(req: FastifyRequest): number {
 }
 
 function viewer(req: FastifyRequest): DashboardViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

@@ -4,6 +4,7 @@ import {
     Delete,
     Get,
     HttpCode,
+    NotFoundException,
     Param,
     Patch,
     Post,
@@ -29,6 +30,9 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { aclOf } from '../tenancy/acl-of';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
+import { guestCanOpenList, guestSafeListSettings } from './list-acl';
 import { ListsService } from './lists.service';
 
 /**
@@ -45,8 +49,20 @@ export class ListsController {
     ) {}
 
     @Get()
-    all(@Req() req: FastifyRequest): Promise<{ data: List[] }> {
-        return this.lists.list(tenantId(req)).then((data) => ({ data }));
+    @AllowGuest()
+    async all(@Req() req: FastifyRequest): Promise<{ data: List[] }> {
+        const data = await this.lists.list(tenantId(req));
+        // C3 — un invitado ve SÓLO las listas que le compartieron (enteras o
+        // con algún registro suelto), sin los ajustes internos.
+        if (req.tenant!.role === 'guest') {
+            const who = { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
+            return {
+                data: data
+                    .filter((l) => guestCanOpenList(l.settings as Record<string, unknown>, who, l.id))
+                    .map((l) => ({ ...l, group_id: null, settings: guestSafeListSettings(l.settings as Record<string, unknown>) })),
+            };
+        }
+        return { data };
     }
 
     /** v0.1.107 — reordenar el menú de listas (orden compartido del workspace).
@@ -61,8 +77,18 @@ export class ListsController {
     }
 
     @Get(':idOrSlug')
-    get(@Req() req: FastifyRequest, @Param('idOrSlug') idOrSlug: string): Promise<List> {
-        return this.lists.get(tenantId(req), idOrSlug);
+    @AllowGuest()
+    async get(@Req() req: FastifyRequest, @Param('idOrSlug') idOrSlug: string): Promise<List> {
+        const list = await this.lists.get(tenantId(req), idOrSlug);
+        if (req.tenant!.role === 'guest') {
+            const who = { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
+            // 404 opaco: lo que no le compartieron no existe para el invitado.
+            if (!guestCanOpenList(list.settings as Record<string, unknown>, who, list.id)) {
+                throw new NotFoundException({ code: 'list_not_found', message: `Lista '${idOrSlug}' no encontrada`, data: { status: 404 } });
+            }
+            return { ...list, group_id: null, settings: guestSafeListSettings(list.settings as Record<string, unknown>) };
+        }
+        return list;
     }
 
     /** ACL por lista (permisos por rol). Solo admin (manage_lists). */

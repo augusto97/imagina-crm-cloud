@@ -6,6 +6,8 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordViewService } from './record-view.service';
+import { aclOf } from '../tenancy/acl-of';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 
 /**
  * `GET /lists/:list/records/:id/view` — todo lo que la ficha del registro
@@ -18,13 +20,14 @@ export class RecordViewController {
     constructor(private readonly service: RecordViewService) {}
 
     @Get()
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     async view(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: RecordViewBundle }> {
-        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
         return { data: await this.service.bundle(req.tenant!.tenantId, actor, list, id) };
     }
 }

@@ -1,12 +1,12 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { WORKLOAD_UNASSIGNED, type WorkloadBundle } from '@imagina-base/shared';
+import { customRoleKey, WORKLOAD_UNASSIGNED, type WorkloadBundle } from '@imagina-base/shared';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
-import { auditLog, fields, lists, memberships, records, teamMembers, teams, tenants, timeEntries, users } from '../src/db/schema';
+import { auditLog, customRoles, fields, lists, memberships, records, teamMembers, teams, tenants, timeEntries, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -372,6 +372,64 @@ describe('Carga de trabajo — bundle (B2)', () => {
         const withTeam = await b({});
         expect(withTeam.people.find((p) => p.user_id === carla.userId)?.member).toBe(true);
         expect(parseBundleQuery({ from: '2026-10-26', to: '2026-11-08', person_field_id: '5', team: '9' }).teamId).toBe(9);
+    });
+
+    it('C2/C3 — rol propio (su fila en la lista y sus capacidades) e invitados: fila sólo con la lista compartida', async () => {
+        const [rol] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(customRoles).values({ tenantId, name: 'Coordinación', baseRole: 'viewer', capabilities: ['access_admin', 'view_records'] }).returning(),
+        );
+        const mkU = async (email: string, name: string) => (await pg.db.insert(users).values({ email, name, passwordHash: 'x' }).returning())[0]!.id;
+        const dani = await mkU('dani@t.local', 'Dani');
+        const gina = await mkU('gina@afuera.local', 'Gina');
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(memberships).values([
+                { tenantId, userId: dani, role: 'viewer', customRoleId: rol!.id },
+                { tenantId, userId: gina, role: 'guest' },
+            ]),
+        );
+        try {
+            const b = () => wl.bundle(tenantId, admin, 'tareas', query({ metric: 'count', zoom: 'week', estimateFieldId: null, showUnassigned: false }));
+            const row = (bb: WorkloadBundle, id: number) => bb.people.find((p) => p.user_id === id);
+            const all = { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] };
+            const setPerms = async (extra: Record<string, unknown>) => {
+                const l = await lists_.get(tenantId, 'tareas');
+                await lists_.update(tenantId, 'tareas', { settings: { ...l.settings, permissions: { permissions: { viewer: { ...all, view: 'none' } }, ...extra } } });
+            };
+
+            // Lectores sin acceso: Dani no es fila; la invitada sin nada, tampoco.
+            await setPerms({});
+            let bb = await b();
+            expect(row(bb, dani)).toBeUndefined();
+            expect(row(bb, gina)).toBeUndefined();
+            // La fila del ROL PROPIO en la lista cuenta (y en la lista del diálogo).
+            await setPerms({ permissions: { viewer: { ...all, view: 'none' }, [customRoleKey(rol!.id)]: all } });
+            expect(row(await b(), dani)?.member).toBe(true);
+            expect((await wl.people(tenantId, admin, 'tareas')).map((p) => p.user_id)).toContain(dani);
+
+            // Un registro asignado a la invitada: aparece como alguien de AFUERA…
+            const data: Record<string, unknown> = { [key('titulo')]: 'Externo', [key('responsable')]: gina, [key('inicio')]: '2026-10-27' };
+            await recs.create(tenantId, admin, 'tareas', { data });
+            bb = await b();
+            expect(row(bb, gina)?.member).toBe(false);
+            expect((await wl.people(tenantId, admin, 'tareas')).map((p) => p.user_id)).not.toContain(gina);
+            // …y es del equipo de la vista sólo si le compartieron la lista entera.
+            await setPerms({ users: { [String(gina)]: all } });
+            expect(row(await b(), gina)?.member).toBe(true);
+
+            // Las capacidades EFECTIVAS: un manager con un rol propio sin «editar» no edita ni cambia capacidades.
+            await setPerms({});
+            const sinEditar: Actor = { ...beto, capabilities: ['access_admin', 'view_records'] };
+            const ro = await wl.bundle(tenantId, sinEditar, 'tareas', query({ metric: 'count', zoom: 'week', estimateFieldId: null }));
+            expect(ro.items.length).toBeGreaterThan(0);
+            expect(ro.items.every((i) => !i.editable)).toBe(true);
+            expect((await bundle(beto, { metric: 'count', zoom: 'week', estimateFieldId: null })).items.some((i) => i.editable)).toBe(true);
+            await expect(wl.setCapacity(tenantId, sinEditar, ana.userId, null)).rejects.toBeInstanceOf(ForbiddenException);
+        } finally {
+            await withTenant(pg.db, tenantId, async (tx) => {
+                await tx.delete(memberships).where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, [dani, gina])));
+                await tx.delete(customRoles).where(eq(customRoles.tenantId, tenantId));
+            });
+        }
     });
 
     it('parámetros del bundle', () => {

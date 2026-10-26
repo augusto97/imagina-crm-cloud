@@ -22,6 +22,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { Actor } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { StoreBulkService } from './store-bulk.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Edición masiva de la tienda (v0.1.217): cambia productos y variaciones EN
@@ -94,5 +95,5 @@ export class StoreBulkController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

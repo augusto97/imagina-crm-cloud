@@ -38,6 +38,7 @@ import {
 } from '../records/query-builder';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import type { AclExtras } from '../lists/list-acl';
 
 const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration'];
 const MINMAX_TYPES: readonly FieldType[] = [
@@ -50,11 +51,9 @@ const MINMAX_TYPES: readonly FieldType[] = [
  * lo suyo / lo asignado / nada) y sus campos ocultos. Sin viewer (motores
  * internos: automatizaciones, sincronización) no hay recorte.
  */
-export interface AggregateViewer {
+export interface AggregateViewer extends AclExtras {
     role: Role;
     userId: number;
-    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
-    teamIds?: readonly number[];
 }
 
 /**

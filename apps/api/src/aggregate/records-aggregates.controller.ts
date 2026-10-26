@@ -6,6 +6,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AggregateService, type FooterAggregates } from './aggregate.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Footer de agregados de la tabla (shape del fork): `GET` batch por varios
@@ -60,7 +61,7 @@ export class RecordsAggregatesController {
             group_by_field_id: Number.isInteger(groupBy) && (groupBy as number) > 0 ? groupBy : undefined,
             // v0.1.286 — el pie suma lo que la tabla MUESTRA: con la búsqueda activa.
             search: typeof q.search === 'string' ? q.search : undefined,
-            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, ...aclOf(req), userId: req.authUserId! },
         });
     }
 }

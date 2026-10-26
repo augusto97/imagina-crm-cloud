@@ -28,6 +28,11 @@ export const rolePermissionsSchema = z.object({
     delete: scopeSchema,
     /** Slugs de campos ocultos para este rol (no se devuelven ni se pueden editar). */
     fields_hidden: z.array(z.string()).default([]),
+    /**
+     * C3 — Sólo para invitados: «puede comentar» aunque no edite. Del lado del
+     * equipo no aplica (quien ve un registro puede comentarlo, como siempre).
+     */
+    comment: z.boolean().optional(),
 });
 export type RolePermissions = z.infer<typeof rolePermissionsSchema>;
 
@@ -67,6 +72,11 @@ export const updateListPermissionsSchema = z.object({
     /** C1 — mapa completo de accesos por equipo (reemplaza el guardado). */
     teams: z.record(rolePermissionsSchema).optional(),
     assignment_team_field_id: idSchema.nullable().optional(),
+    /**
+     * C2 — filas de roles PROPIOS (`custom:12`) que vuelven a heredar la de
+     * su rol base (se borran del mapa).
+     */
+    reset_roles: z.array(z.string().max(40)).max(60).optional(),
 });
 export type UpdateListPermissionsInput = z.infer<typeof updateListPermissionsSchema>;
 
@@ -74,6 +84,10 @@ export interface ListRoleMeta {
     slug: string;
     label: string;
     can_configure: boolean;
+    /** C2 — fila de un rol PROPIO: su rol base y si hoy hereda la fila de ese base. */
+    custom_role_id?: number;
+    base_role?: string;
+    inherited?: boolean;
 }
 
 export interface ListPermissionsDoc {
@@ -87,6 +101,10 @@ export interface ListPermissionsDoc {
         name: string;
         email: string;
         permissions: RolePermissions;
+        /** C3 — persona INVITADA de afuera (se gestiona en su propia sección). */
+        is_guest?: boolean;
+        /** C3 — todavía no definió su contraseña. */
+        pending?: boolean;
     }>;
     /** C1 — accesos por equipo, con el nombre y color para mostrarlos. */
     teams: Array<{

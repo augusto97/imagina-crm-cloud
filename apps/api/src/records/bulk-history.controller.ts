@@ -14,6 +14,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BulkHistoryService } from './bulk-history.service';
 import type { Actor } from './records.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Historial de ediciones masivas de una lista y DESHACER (v0.1.218). Ver y
@@ -60,5 +61,5 @@ function tenantId(req: FastifyRequest): number {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

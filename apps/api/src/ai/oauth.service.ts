@@ -1,10 +1,10 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { OauthApproveInput, OauthAuthorizationRequest, OauthDecision, PersonalTokenScope, Role } from '@imagina-base/shared';
+import { effectiveCapabilities, type OauthApproveInput, type OauthAuthorizationRequest, type OauthDecision, type PersonalTokenScope, type Role } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Db } from '../db/client';
-import { memberships, oauthClients } from '../db/schema';
+import { customRoles, memberships, oauthClients } from '../db/schema';
 import { REDIS } from '../redis/redis.module';
 import {
     OauthError,
@@ -263,13 +263,15 @@ export class OauthService {
     async approve(requestId: string, userId: number, input: OauthApproveInput): Promise<OauthDecision> {
         const pending = await this.pending(requestId);
         const [member] = await this.db
-            .select({ tenantId: memberships.tenantId, role: memberships.role })
+            .select({ tenantId: memberships.tenantId, role: memberships.role, customCaps: customRoles.capabilities })
             .from(memberships)
+            .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
             .where(and(eq(memberships.userId, userId), eq(memberships.tenantId, input.tenant_id)))
             .limit(1);
         if (!member) throw new NotFoundException({ code: 'not_a_member', message: 'No eres miembro de ese workspace', data: { status: 404 } });
         // v0.1.185 — el usuario del portal (rol client) no autoriza conectores.
-        assertNotClient(member.role as Role);
+        // C2/C3 — ni invitados ni roles propios sin «Usar el asistente IA».
+        assertNotClient(member.role as Role, effectiveCapabilities(member.role as Role, Array.isArray(member.customCaps) ? member.customCaps : null));
         // GETDEL: el pedido se consume — un segundo "Autorizar" (doble click,
         // pestaña duplicada) no emite dos codes.
         const raw = await this.redis.getdel(reqKey(requestId));

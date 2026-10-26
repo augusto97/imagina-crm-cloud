@@ -1,7 +1,8 @@
 import type { AiProposal, Capability, Role } from '@imagina-base/shared';
-import { roleHasCapability } from '@imagina-base/shared';
 import type { ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { AclExtras } from '../../lists/list-acl';
+import { can, canAny } from '../../authz/can';
 
 /**
  * Registro de herramientas del asistente (ADR-S21).
@@ -14,12 +15,10 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
  */
 
 /** Quién habla: el mismo scope que un request normal de la app. */
-export interface AiToolContext {
+export interface AiToolContext extends AclExtras {
     tenantId: number;
     userId: number;
     role: Role;
-    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
-    teamIds?: readonly number[];
     /** Dónde está parada la persona (lista abierta), para no preguntar lo obvio. */
     listSlug?: string;
     /** Conversación que originó la propuesta (para reflejar el "aplicado" en el transcript). */
@@ -57,11 +56,22 @@ export class AiToolError extends Error {
     }
 }
 
-/** ¿El rol puede usar una herramienta con esta exigencia? (`null` = cualquiera; lista = alguna). */
-export function toolAllowed(role: Role, capability: Capability | readonly Capability[] | null): boolean {
+/**
+ * Quién usa las herramientas: un rol base (tests) o la persona con sus
+ * capacidades EFECTIVAS (C2: rol propio).
+ */
+export type ToolSubject = Role | { role: Role; capabilities?: readonly Capability[] };
+
+function subjectOf(who: ToolSubject): { role: Role; capabilities?: readonly Capability[] } {
+    return typeof who === 'string' ? { role: who } : who;
+}
+
+/** ¿Puede usar una herramienta con esta exigencia? (`null` = cualquiera; lista = alguna). */
+export function toolAllowed(who: ToolSubject, capability: Capability | readonly Capability[] | null): boolean {
     if (capability === null) return true;
-    if (typeof capability === 'string') return roleHasCapability(role, capability);
-    return capability.some((c) => roleHasCapability(role, c));
+    const subject = subjectOf(who);
+    if (typeof capability === 'string') return can(subject, capability);
+    return canAny(subject, capability);
 }
 
 export class AiToolRegistry {
@@ -81,13 +91,13 @@ export class AiToolRegistry {
     }
 
     /** Herramientas que ESTE rol puede usar (las demás ni se le ofrecen al modelo). */
-    listFor(role: Role): AiToolDef[] {
-        return this.list().filter((t) => toolAllowed(role, t.capability));
+    listFor(who: ToolSubject): AiToolDef[] {
+        return this.list().filter((t) => toolAllowed(who, t.capability));
     }
 
     /** Definiciones en el formato de la API de Anthropic (`input_schema` = JSON Schema). */
-    toAnthropicTools(role: Role): Array<{ name: string; description: string; input_schema: Record<string, unknown> }> {
-        return this.listFor(role).map((t) => ({
+    toAnthropicTools(who: ToolSubject): Array<{ name: string; description: string; input_schema: Record<string, unknown> }> {
+        return this.listFor(who).map((t) => ({
             name: t.name,
             description: t.description,
             input_schema: toInputSchema(t.input),
@@ -102,7 +112,7 @@ export class AiToolRegistry {
     async execute(ctx: AiToolContext, name: string, rawInput: unknown): Promise<AiToolResult> {
         const tool = this.tools.get(name);
         if (!tool) return { content: { error: `Herramienta desconocida: ${name}` }, isError: true };
-        if (!toolAllowed(ctx.role, tool.capability)) {
+        if (!toolAllowed(ctx, tool.capability)) {
             const needs = Array.isArray(tool.capability) ? tool.capability.join(' o ') : String(tool.capability);
             return {
                 content: {

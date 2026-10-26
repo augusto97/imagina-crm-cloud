@@ -40,6 +40,7 @@ import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr, getTenantTimeZone } from '@/lib/tenantFormat';
 import { CAP, useCan, useCanAny } from '@/lib/permissions';
+import { useGuestEditableRows } from '@/hooks/useGuests';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { FilterTree, RecordEntity } from '@/types/record';
@@ -203,7 +204,10 @@ export function TableView({
     // Gating de edición inline por capability (Fase 7 — follow-up).
     // El backend rechaza un PATCH sin la cap con 403; aquí deshabilitamos
     // el doble-click → input UX para evitar la confusión del 403-on-submit.
-    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    // C3 — un invitado edita sólo las filas compartidas en «Puede editar».
+    const guestEditable = useGuestEditableRows(listId);
+    const canEditRecords = canEditByCaps && (guestEditable === null || guestEditable.size > 0);
     // v0.1.213 — lista de una tienda: los registros se crean y se borran allá,
     // y cada celda dice si se puede editar (mismas reglas que el backend).
     const storeRules = useStoreRules();
@@ -276,7 +280,7 @@ export function TableView({
                             recordId={ctx.row.original.id}
                             field={field}
                             value={ctx.getValue()}
-                            canEdit={canEditRecords}
+                            canEdit={canEditRecords && (guestEditable === null || guestEditable.has(ctx.row.original.id))}
                             lockedReason={access?.access === 'locked' ? access.reason : null}
                             record={ctx.row.original}
                         />
@@ -345,7 +349,7 @@ export function TableView({
                 meta: { fieldId: null },
             },
         ];
-    }, [fields, listId, canEditRecords, expandedIds, storeRules]);
+    }, [fields, listId, canEditRecords, guestEditable, expandedIds, storeRules]);
 
     // Footer aggregations: pedimos sum/avg/count/min/max para todos
     // los fields visibles que son numéricos / fecha / checkbox / etc.

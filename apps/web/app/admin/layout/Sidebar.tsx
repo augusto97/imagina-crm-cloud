@@ -251,7 +251,9 @@ export function Sidebar({
     const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
     const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
     const canManageLists = useCan(CAP.MANAGE_LISTS);
-    const canSeeDashboards = (canManageDashboards || canAccessAdmin) && moduleEnabled('dashboards');
+    // C2 — «Ver tableros» es una capacidad (rol propio); los roles base la tienen.
+    const canViewDashboards = useCan(CAP.VIEW_DASHBOARDS);
+    const canSeeDashboards = (canManageDashboards || (canAccessAdmin && canViewDashboards)) && moduleEnabled('dashboards');
     // v0.1.286 — "Ajustes" se ve SIEMPRE: agentes y lectores también tienen su
     // cuenta ahí (seguridad, avisos, firma, apariencia). Antes se ocultaba.
     // Sección de operador (superadmin de plataforma): `is_superadmin` de

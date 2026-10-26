@@ -3,6 +3,7 @@ import type { ActiveTimerDto, RecordTimeDto, TimeEntryDto } from '@imagina-base/
 
 import { invalidateForList, markLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 import { getBootData } from '@/lib/boot';
 
 /**
@@ -19,20 +20,23 @@ export const timeKeys = {
 };
 
 export function useRecordTime(listId: string | number | undefined, recordId: number | undefined) {
+    // C3 — un invitado no registra tiempo en la empresa (403 en el servidor).
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: timeKeys.forRecord(listId ?? '', recordId ?? 0),
         queryFn: async () => (await api.get<RecordTimeDto>(`/lists/${listId}/records/${recordId}/time`)).data,
-        enabled: listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0,
+        enabled: listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0 && !isGuest,
         staleTime: 30_000,
     });
 }
 
 /** El cronómetro en curso de quien mira (o null). Lo refresca el realtime. */
 export function useActiveTimer(enabled = true) {
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: timeKeys.active,
         queryFn: async () => (await api.get<ActiveTimerDto | null>('/me/timer')).data ?? null,
-        enabled: enabled && getBootData().tenantId !== null,
+        enabled: enabled && getBootData().tenantId !== null && !isGuest,
         staleTime: 60_000,
         refetchOnWindowFocus: true,
     });

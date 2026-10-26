@@ -6,6 +6,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { IncidentsService } from './incidents.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * v0.1.285 (ADR-S44) — Problemas de la empresa. El admin ve todos; el resto,
@@ -35,5 +36,5 @@ export class IncidentsController {
 }
 
 function viewer(req: FastifyRequest): { userId: number; role: Role; teamIds?: readonly number[] } {
-    return { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { idSchema } from './common';
-import { roleSchema } from './membership';
+import { capabilitySchema, roleSchema } from './membership';
 import { tenantSlugSchema } from './slug';
 
 export const emailSchema = z.string().trim().toLowerCase().email().max(255);
@@ -53,6 +53,10 @@ export const membershipSummarySchema = z.object({
     tenant_slug: tenantSlugSchema,
     tenant_name: z.string(),
     role: roleSchema,
+    /** C2 — rol propio (nombre para mostrar) y capacidades EFECTIVAS en esa empresa. */
+    custom_role_id: z.number().int().positive().nullable().optional(),
+    custom_role_name: z.string().nullable().optional(),
+    capabilities: z.array(capabilitySchema).optional(),
 });
 export type MembershipSummary = z.infer<typeof membershipSummarySchema>;
 

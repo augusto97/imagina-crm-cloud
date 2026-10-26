@@ -11,7 +11,6 @@ import {
     computeButtonValue,
     jsonbKeyForField,
     readStoreListMarker,
-    roleHasCapability,
     storeCellAccess,
     tenantFormatSchema,
     zonedToday,
@@ -42,6 +41,7 @@ import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { buildButtonUrl } from './button-url';
+import { can } from '../authz/can';
 
 const DEFAULT_FORMAT: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'> = {
     number_format: 'comma_dot',
@@ -249,7 +249,7 @@ export class ButtonsService {
         }
         if (scope.portal) return;
         if (buttonChangesRecord(prep.config)) {
-            const caps = roleHasCapability(actor.role, 'edit_records') || roleHasCapability(actor.role, 'edit_own_records');
+            const caps = can(actor, 'edit_records') || can(actor, 'edit_own_records');
             const reach = listRowInScope(prep.list.settings, actor, 'edit', { createdBy: record.created_by, data: record.data });
             if (!caps || !reach) {
                 throw forbidden('button_needs_edit', `«${prep.label}» cambia el registro y tú no puedes editarlo.`);

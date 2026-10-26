@@ -7,6 +7,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordsGroupedService } from './records-grouped.service';
 import type { Actor } from './records.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Vista agrupada (CONTRACT.md §7): buckets + bundle de records/agregados por
@@ -129,7 +130,7 @@ function tenantId(req: FastifyRequest): number {
     return req.tenant!.tenantId;
 }
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 function intParam(v: unknown, name: string): number {
     const n = Number(v);

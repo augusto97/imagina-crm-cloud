@@ -29,6 +29,9 @@ function capsForRole(role: MembershipSummary['role']): Record<string, boolean> {
         case 'agent':
             grant([
                 CAP.ACCESS_ADMIN,
+                // C2 — ver tableros y usar el asistente: lo tenía todo el equipo.
+                CAP.VIEW_DASHBOARDS,
+                CAP.USE_AI_ASSISTANT,
                 CAP.VIEW_RECORDS,
                 CAP.VIEW_OWN_RECORDS,
                 CAP.CREATE_RECORDS,
@@ -42,12 +45,32 @@ function capsForRole(role: MembershipSummary['role']): Record<string, boolean> {
             ]);
             break;
         case 'viewer':
-            grant([CAP.ACCESS_ADMIN, CAP.VIEW_RECORDS, CAP.EXPORT_RECORDS]);
+            grant([CAP.ACCESS_ADMIN, CAP.VIEW_RECORDS, CAP.EXPORT_RECORDS, CAP.VIEW_DASHBOARDS, CAP.USE_AI_ASSISTANT]);
+            break;
+        case 'guest':
+            // C3 — invitado de afuera: sólo lo que le compartieron (el
+            // servidor decide fila por fila; aquí sólo se ocultan controles).
+            grant([CAP.ACCESS_ADMIN, CAP.VIEW_OWN_RECORDS, CAP.CREATE_RECORDS, CAP.EDIT_OWN_RECORDS]);
+            caps.guest = true;
             break;
         case 'client':
             grant([CAP.ACCESS_PORTAL]);
             break;
     }
+    return caps;
+}
+
+/**
+ * C2 — Con un rol PROPIO, el mapa sale de las capacidades efectivas que
+ * resolvió el servidor (las mismas que aplica en cada request). Sin rol
+ * propio, el mapa de siempre del rol base (sin cambios).
+ */
+export function capsForMembership(membership: MembershipSummary): Record<string, boolean> {
+    if (!membership.custom_role_id || !membership.capabilities) return capsForRole(membership.role);
+    const caps: Record<string, boolean> = {};
+    for (const c of membership.capabilities) caps[`imcrm_${c}`] = true;
+    // El base manager mira «como admin» las vistas y el tiempo del equipo.
+    if (membership.role === 'manager') caps.workspace_admin = true;
     return caps;
 }
 
@@ -59,7 +82,7 @@ export function hydrateAdminBoot(user: SessionUser, membership: MembershipSummar
             id: user.id,
             displayName: user.name || user.email,
             avatar: '',
-            capabilities: membership ? capsForRole(membership.role) : {},
+            capabilities: membership ? capsForMembership(membership) : {},
         },
     });
 }

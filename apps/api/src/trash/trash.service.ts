@@ -14,7 +14,6 @@ import {
     listSlugSchema,
     readStoreListMarker,
     resolveTitleFieldId,
-    roleHasCapability,
     type Capability,
     type ListTrashQuery,
     type Role,
@@ -37,6 +36,7 @@ import { assignmentKeys, listRowInScope, effectivePermissions, scopeWhere } from
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { enterTrashMode, exitTrashMode } from './trash-ops';
+import { can } from '../authz/can';
 
 export interface TrashViewer {
     userId: number;
@@ -911,12 +911,12 @@ export class TrashService {
     }
 
     private assertCapability(viewer: TrashViewer, type: Exclude<TrashItemType, 'record'>): void {
-        if (!roleHasCapability(viewer.role, CAPABILITY_FOR[type])) throw notAllowed();
+        if (!can(viewer, CAPABILITY_FOR[type])) throw notAllowed();
     }
 
     private assertCanRestore(viewer: TrashViewer, type: TrashItemType, deletedBy: unknown): void {
         if (viewer.role === 'admin') return;
-        if (type !== 'record' && !roleHasCapability(viewer.role, CAPABILITY_FOR[type])) throw notAllowed();
+        if (type !== 'record' && !can(viewer, CAPABILITY_FOR[type])) throw notAllowed();
         if (deletedBy === null || Number(deletedBy) !== viewer.userId) throw notAllowed();
     }
 

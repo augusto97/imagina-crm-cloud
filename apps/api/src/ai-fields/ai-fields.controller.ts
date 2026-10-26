@@ -8,6 +8,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AiFieldsService, type AiFieldStatus } from './ai-fields.service';
+import { aclOf } from '../tenancy/acl-of';
 
 const fillSchema = z.object({ only_empty: z.boolean().default(true) });
 
@@ -29,7 +30,7 @@ export class AiFieldsController {
         @Param('recordId', ParseIntPipe) recordId: number,
         @Param('fieldId', ParseIntPipe) fieldId: number,
     ): Promise<{ data: { value: string | null } }> {
-        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
         return { data: await this.svc.runNow(req.tenant!.tenantId, actor, list, recordId, fieldId) };
     }
 

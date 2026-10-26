@@ -37,6 +37,8 @@ interface UserPickerProps {
     onOpenChange?: (open: boolean) => void;
     /** v0.1.294 — lo que se tecleó en la celda para abrirlo: va al buscador. */
     initialQuery?: string;
+    /** C3 — no ofrece invitados de afuera (p. ej. para aprobar: decide la empresa). */
+    excludeGuests?: boolean;
 }
 
 /**
@@ -62,6 +64,7 @@ export function UserPicker({
     defaultOpen = false,
     onOpenChange,
     initialQuery = '',
+    excludeGuests = false,
 }: UserPickerProps): JSX.Element {
     const [open, setOpen] = useState(defaultOpen);
     const [query, setQuery] = useState(initialQuery);
@@ -97,7 +100,7 @@ export function UserPicker({
         }
     }, [open]);
 
-    const hits = search.data ?? [];
+    const hits = (search.data ?? []).filter((u) => !excludeGuests || !u.is_guest);
 
     const pick = (user: WpUserSummary): void => {
         onChange(user.id);
@@ -234,12 +237,15 @@ export function UserPicker({
                                 >
                                     <Avatar user={user} />
                                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                                        <span className="imcrm-truncate">
+                                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-truncate">
                                             {user.display_name || user.login}
+                                            {user.is_guest && <GuestBadge />}
                                         </span>
-                                        <span className="imcrm-truncate imcrm-text-[10px] imcrm-text-muted-foreground">
-                                            @{user.login}
-                                        </span>
+                                        {user.login !== '' && (
+                                            <span className="imcrm-truncate imcrm-text-[10px] imcrm-text-muted-foreground">
+                                                @{user.login}
+                                            </span>
+                                        )}
                                     </div>
                                 </button>
                             </li>
@@ -282,15 +288,26 @@ export function UserPicker({
 
 // ─── Sub-components ──────────────────────────────────────────────────
 
+/** C3 — marca a una persona invitada de afuera. */
+function GuestBadge(): JSX.Element {
+    return (
+        <span className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-px imcrm-text-[9px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+            {__('Invitado')}
+        </span>
+    );
+}
+
 function UserChip({ user, compact }: { user: WpUserSummary; compact?: boolean }): JSX.Element {
     return (
         <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2">
             <Avatar user={user} />
             <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
-                <span className="imcrm-truncate imcrm-text-foreground">
+                <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-truncate imcrm-text-foreground">
                     {user.display_name || user.login}
+                    {user.is_guest && <GuestBadge />}
                 </span>
-                {!compact && (
+                {/* C3 — a un invitado no le llegan los correos del equipo. */}
+                {!compact && user.login !== '' && (
                     <span className="imcrm-truncate imcrm-text-[10px] imcrm-text-muted-foreground">
                         @{user.login}
                     </span>

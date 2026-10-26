@@ -13,6 +13,9 @@ export const workspaceMemberSchema = z.object({
     name: z.string(),
     email: z.string(),
     role: roleSchema,
+    /** C2 — rol PROPIO de la persona (sus capacidades); `role` es su base. */
+    custom_role_id: z.number().int().positive().nullable().optional(),
+    custom_role_name: z.string().nullable().optional(),
     /**
      * v0.1.240 — la persona fue invitada y todavía no definió su contraseña
      * (no puede entrar hasta abrir el enlace del correo).
@@ -34,6 +37,8 @@ export const addMemberSchema = z.object({
     email: emailSchema,
     role: staffRoleSchema,
     name: z.string().trim().max(120).optional(),
+    /** C2 — un rol propio (su base tiene que ser `role`). */
+    custom_role_id: z.number().int().positive().nullable().optional(),
 });
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 
@@ -48,5 +53,13 @@ export const addMemberResultSchema = workspaceMemberSchema.extend({
 });
 export type AddMemberResult = z.infer<typeof addMemberResultSchema>;
 
-export const updateMemberRoleSchema = z.object({ role: staffRoleSchema });
+/**
+ * Cambiar el rol: un rol base o, con `custom_role_id`, un rol propio (el
+ * servidor pone como `role` el base de ese rol propio). C3 — pasar un
+ * invitado a miembro también va por aquí (y ahí ocupa un usuario del plan).
+ */
+export const updateMemberRoleSchema = z.object({
+    role: staffRoleSchema,
+    custom_role_id: z.number().int().positive().nullable().optional(),
+});
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;

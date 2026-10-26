@@ -19,6 +19,7 @@ import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } f
 import { canWriteView, isViewOwner } from './viewAccess';
 import { listColor, listIcon } from '@/lib/listIcons';
 import { CAP, useCan } from '@/lib/permissions';
+import { useIsGuest } from '@/lib/guest';
 import { IconColorSubmenu } from '@/admin/layout/IconColorSubmenu';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -87,6 +88,8 @@ export function ViewsTabs({
     const favs = favorites.data ?? EMPTY_FAVORITES;
     const confirm = useConfirm();
     const canManage = useCan(CAP.MANAGE_VIEWS);
+    // C3 — un invitado cambia de vista, pero no crea, guarda ni ancla vistas.
+    const isGuest = useIsGuest();
     const [renamingId, setRenamingId] = useState<number | null>(null);
     const [dragId, setDragId] = useState<number | null>(null);
     const [dropAt, setDropAt] = useState<{ id: number; after: boolean } | null>(null);
@@ -272,7 +275,7 @@ export function ViewsTabs({
                                 <Table className="imcrm-h-3.5 imcrm-w-3.5" />
                             )
                         }
-                        renderMenu={(close) => {
+                        renderMenu={isGuest ? undefined : (close) => {
                             const writable = canManage && canWriteView(view);
                             const owner = canManage && isViewOwner(view);
                             const pinned = favs.views.includes(view.id);
@@ -465,6 +468,7 @@ export function ViewsTabs({
               el estado actual (filtros/orden/columnas) como una vista
               nombrada via el SaveViewDialog del padre.
             */}
+            {!isGuest && (
             <button
                 type="button"
                 onClick={onAskCreateView}
@@ -475,6 +479,7 @@ export function ViewsTabs({
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                 {__('Vista')}
             </button>
+            )}
 
             {isDirty && activeView !== null && !(canManage && canWriteView(activeView)) && (
                 <div className="imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-pl-3">
@@ -491,15 +496,17 @@ export function ViewsTabs({
                         <Undo2 className="imcrm-h-3 imcrm-w-3" />
                         {__('Descartar')}
                     </Button>
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={onAskCreateView}
-                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
-                    >
-                        <Copy className="imcrm-h-3 imcrm-w-3" />
-                        {__('Guardar como vista…')}
-                    </Button>
+                    {!isGuest && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={onAskCreateView}
+                            className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
+                        >
+                            <Copy className="imcrm-h-3 imcrm-w-3" />
+                            {__('Guardar como vista…')}
+                        </Button>
+                    )}
                 </div>
             )}
 
@@ -528,7 +535,7 @@ export function ViewsTabs({
                 </div>
             )}
 
-            {isDirty && activeView === null && (
+            {isDirty && activeView === null && !isGuest && (
                 <div className="imcrm-ml-auto imcrm-shrink-0 imcrm-pl-3">
                     <Button
                         size="sm"

@@ -8,7 +8,8 @@
 #   sh scripts/dev/slot.sh <n> status         # puertos, base y salud
 #   sh scripts/dev/slot.sh <n> env            # imprime las variables (para `eval`)
 #
-# Cada slot tiene: API en 3100+n, app en 5180+n, base `imagina_slot_<n>` en el
+# Cada slot tiene: API en 3100+n, app en 5180+n, base `imagina_slot_<n>` (o la de
+# IMAGINA_SLOT_DB) en el
 # Postgres del entorno principal, Redis DB n y logs en /tmp/imagina-dev-slot-<n>.
 # Usuario de pruebas: e2e@test.local / Superadmin-pass-1 (tenant 1 del slot).
 #
@@ -27,7 +28,8 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MAIN_ROOT=$(cd "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
 API_PORT=$((3100 + N))
 WEB_PORT=$((5180 + N))
-DB=imagina_slot_$N
+# IMAGINA_SLOT_DB: otra base para el mismo slot (p. ej. una nueva y limpia).
+DB=${IMAGINA_SLOT_DB:-imagina_slot_$N}
 LOGS=/tmp/imagina-dev-slot-$N
 PG=${IMAGINA_DEV_PG_CONTAINER:-imagina-base-postgres-1}
 mkdir -p "$LOGS"

@@ -14,6 +14,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { Actor } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ButtonsService } from './buttons.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Campo «Botón» — presionar un botón de un registro (uno o en lote) y
@@ -57,5 +58,5 @@ export class ButtonsController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

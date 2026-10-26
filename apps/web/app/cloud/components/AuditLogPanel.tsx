@@ -61,6 +61,17 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'team.create': { text: 'creó el equipo' },
     'team.update': { text: 'cambió el equipo' },
     'team.delete': { text: 'borró el equipo', danger: true },
+    // C2 — roles propios.
+    'role.create': { text: 'creó el rol' },
+    'role.update': { text: 'cambió el rol' },
+    'role.delete': { text: 'borró el rol', danger: true },
+    // C3 — invitados externos.
+    'guest.share_list': { text: 'compartió con un invitado la lista', danger: true },
+    'guest.share_record': { text: 'compartió con un invitado el registro', danger: true },
+    'guest.level_change': { text: 'cambió el acceso del invitado' },
+    'guest.unshare': { text: 'le quitó el acceso al invitado' },
+    'guest.remove': { text: 'quitó al invitado', danger: true },
+    'guest.promote': { text: 'pasó a miembro al invitado' },
     'member.invite_resend': { text: 'reenvió la invitación a' },
     'member.role_change': { text: 'cambió el rol de' },
     // B2 — capacidad de una persona en la carga de trabajo.

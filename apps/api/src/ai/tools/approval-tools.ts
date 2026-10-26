@@ -19,6 +19,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { ApprovalsService } from '../../approvals/approvals.service';
 import { FieldsService } from '../../fields/fields.service';
+import { aclExtras } from '../../lists/list-acl';
 import { ListsService } from '../../lists/lists.service';
 import { TeamsService } from '../../teams/teams.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
@@ -129,7 +130,7 @@ export class ApprovalTools implements AiProposalApplier {
     // ── Lectura ──────────────────────────────────────────────────────────
 
     private async listRequests(ctx: AiToolContext, input: ListRequestsSpec): Promise<AiToolResult> {
-        const mine = await this.approvals.myApprovals(ctx.tenantId, { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds });
+        const mine = await this.approvals.myApprovals(ctx.tenantId, { ...aclExtras(ctx), userId: ctx.userId, role: ctx.role });
         const keep = (i: ApprovalInboxItem): boolean => !input.list || i.list_slug === input.list;
         const shape = (i: ApprovalInboxItem): Record<string, unknown> => ({
             id: i.id,
@@ -260,7 +261,7 @@ export class ApprovalTools implements AiProposalApplier {
 
     async apply(ctx: AiToolContext, stored: StoredProposal): Promise<AiApplyOutcome> {
         const p = stored.payload as Payload;
-        const actor = { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds };
+        const actor = { ...aclExtras(ctx), userId: ctx.userId, role: ctx.role };
         const link = { label: 'Ver las aprobaciones de la lista', href: `/lists/${p.listSlug}/edit?s=aprobaciones` };
         if (p.op === 'create') {
             const flow = await this.approvals.createFlow(ctx.tenantId, actor, String(p.listId), {

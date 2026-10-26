@@ -110,6 +110,7 @@ export function PlatformPlansCard(): JSX.Element {
                                     <th className="imcrm-py-2 imcrm-pr-3 imcrm-font-medium">{__('Plan')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Registros')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Usuarios')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Invitados')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Automat.')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Storage')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Correos/mes')}</th>
@@ -139,6 +140,8 @@ export function PlatformPlansCard(): JSX.Element {
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_records)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_users)}</td>
+                                        {/* C3 — invitados de afuera: no ocupan usuario, tienen su tope. */}
+                                        <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_guests ?? null)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_automations)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
                                             {p.max_storage_mb === null ? '∞' : `${formatNumber(p.max_storage_mb)} MB`}
@@ -201,6 +204,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
     const [name, setName] = useState('');
     const [rec, setRec] = useState('');
     const [usr, setUsr] = useState('');
+    const [gst, setGst] = useState('');
     const [aut, setAut] = useState('');
     const [sto, setSto] = useState('');
     const [eml, setEml] = useState('');
@@ -215,6 +219,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
         setName(plan?.name ?? '');
         setRec(limitStr(plan?.max_records ?? null));
         setUsr(limitStr(plan?.max_users ?? null));
+        setGst(limitStr(plan?.max_guests ?? null));
         setAut(limitStr(plan?.max_automations ?? null));
         setSto(limitStr(plan?.max_storage_mb ?? null));
         setEml(limitStr(plan?.max_emails_month ?? null));
@@ -233,6 +238,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
             name: name.trim(),
             max_records: toLimit(rec),
             max_users: toLimit(usr),
+            max_guests: toLimit(gst),
             max_automations: toLimit(aut),
             max_storage_mb: toLimit(sto),
             max_emails_month: toLimit(eml),
@@ -293,6 +299,10 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                 <Label htmlFor="ps-usr" className="imcrm-text-xs">{__('Usuarios')}</Label>
                                 <Input id="ps-usr" type="number" min={0} value={usr} onChange={(e) => setUsr(e.target.value)} placeholder="∞" />
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label htmlFor="ps-gst" className="imcrm-text-xs">{__('Invitados')}</Label>
+                                <Input id="ps-gst" type="number" min={0} value={gst} onChange={(e) => setGst(e.target.value)} placeholder="∞" />
                             </div>
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                 <Label htmlFor="ps-aut" className="imcrm-text-xs">{__('Automatizaciones')}</Label>

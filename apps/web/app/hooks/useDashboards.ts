@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 
 import { api } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
-import { CAP, useCan } from '@/lib/permissions';
+import { CAP, useCan, useCanAny } from '@/lib/permissions';
+import { useIsGuest } from '@/lib/guest';
 import type {
     CreateDashboardInput,
     DashboardEntity,
@@ -58,6 +59,9 @@ export function bundleBody(scope: DashboardBundleScope): Record<string, unknown>
 }
 
 export function useDashboards() {
+    // C2 — sin «Ver tableros» (rol propio) ni invitado: no se piden (sería un 403).
+    const canView = useCanAny(CAP.VIEW_DASHBOARDS, CAP.MANAGE_DASHBOARDS);
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: dashboardsKeys.all,
         queryFn: async () => {
@@ -65,6 +69,7 @@ export function useDashboards() {
             return res.data;
         },
         staleTime: 60_000, // Fase 16.D
+        enabled: canView && !isGuest,
     });
 }
 

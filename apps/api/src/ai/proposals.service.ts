@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { roleHasCapability, type AiProposal } from '@imagina-base/shared';
+import { type AiProposal } from '@imagina-base/shared';
 import { AuditService } from '../audit/audit.service';
 import { ConversationsStore } from './conversations.store';
 import { ProposalsStore } from './proposals.store';
@@ -7,6 +7,7 @@ import { ApprovalTools } from './tools/approval-tools';
 import { DataTools } from './tools/data-tools';
 import { StructureTools } from './tools/structure-tools';
 import type { AiToolContext } from './tools/registry';
+import { can } from '../authz/can';
 
 /**
  * Aplicar una propuesta del asistente (ADR-S21). Es el ÚNICO punto por el
@@ -41,7 +42,7 @@ export class ProposalsService {
         if (stored.proposal.applied) {
             throw new ConflictException({ code: 'ai_proposal_applied', message: 'Esta propuesta ya se aplicó', data: { status: 409 } });
         }
-        if (stored.capability && !roleHasCapability(ctx.role, stored.capability)) {
+        if (stored.capability && !can(ctx, stored.capability)) {
             throw new ForbiddenException({
                 code: 'ai_proposal_forbidden',
                 message: `Tu rol no tiene permiso para aplicar esta propuesta (requiere ${stored.capability})`,

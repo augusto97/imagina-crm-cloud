@@ -6,10 +6,19 @@ import {
     Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { isEffectivelyReadOnly, type BillingStatus } from '@imagina-base/shared';
+import {
+    effectiveCapabilities,
+    isEffectivelyReadOnly,
+    MAX_RECORD_SHARES_PER_GUEST,
+    type BillingStatus,
+    type Capability,
+    type GuestLevel,
+} from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { memberships, tenants } from '../db/schema';
+import { memberships, recordShares, tenants } from '../db/schema';
+import type { GuestShares } from '../lists/list-acl';
+import { ALLOW_GUEST } from './allow-guest.decorator';
 import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
 import { TenantDb } from './tenant-db.service';
 
@@ -24,6 +33,12 @@ export interface TenantContext {
      * request, en la misma consulta que la membresía.
      */
     teamIds: number[];
+    /** C2 — rol PROPIO de la persona (null = sólo su rol base). */
+    customRoleId: number | null;
+    /** C2 — capacidades EFECTIVAS (las del rol propio o las del base). */
+    capabilities: Capability[];
+    /** C3 — sólo invitados: los registros sueltos que le compartieron. */
+    shares?: GuestShares;
 }
 
 /** Los magic-link / consumo del portal no pasan por aquí; sí las mutaciones. */
@@ -69,6 +84,9 @@ export class TenantGuard implements CanActivate {
                     // C1 — `team_members_self` deja leer los equipos propios
                     // sin empresa activa (mismo plano que `memberships_self`).
                     teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                    // C2 — rol propio: `custom_roles_self` deja leerlo sin empresa activa.
+                    customRoleId: memberships.customRoleId,
+                    customCaps: sql<string[] | null>`(SELECT cr.capabilities FROM custom_roles cr WHERE cr.id = ${memberships.customRoleId} AND cr.tenant_id = ${memberships.tenantId})`,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
@@ -98,6 +116,19 @@ export class TenantGuard implements CanActivate {
             });
         }
 
+        // C3 — un INVITADO sólo usa los endpoints marcados para invitados;
+        // todo lo demás le responde 403 (fail-closed).
+        if (
+            membership.role === 'guest' &&
+            this.reflector.getAllAndOverride<boolean>(ALLOW_GUEST, [context.getHandler(), context.getClass()]) !== true
+        ) {
+            throw new ForbiddenException({
+                code: 'guest_forbidden',
+                message: 'Como invitado sólo ves lo que te compartieron',
+                data: { status: 403 },
+            });
+        }
+
         const status = membership.status as BillingStatus;
 
         // ADR-S09: impago/archivada/suscripción-vencida → solo-lectura. Se
@@ -120,13 +151,29 @@ export class TenantGuard implements CanActivate {
             });
         }
 
+        const customCaps = Array.isArray(membership.customCaps) && membership.customRoleId ? membership.customCaps : null;
         req.tenant = {
             tenantId: membership.tenantId,
             tenantSlug: membership.tenantSlug,
             role: membership.role,
             status,
             teamIds: (membership.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+            customRoleId: customCaps ? membership.customRoleId : null,
+            capabilities: effectiveCapabilities(membership.role, customCaps),
+            ...(membership.role === 'guest' ? { shares: await this.guestShares(membership.tenantId, userId) } : {}),
         };
         return true;
+    }
+
+    /** C3 — Registros sueltos compartidos con el invitado (tope por persona). */
+    private async guestShares(tenantId: number, userId: number): Promise<GuestShares> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ recordId: recordShares.recordId, listId: recordShares.listId, level: recordShares.level })
+                .from(recordShares)
+                .where(and(eq(recordShares.tenantId, tenantId), eq(recordShares.userId, userId)))
+                .limit(MAX_RECORD_SHARES_PER_GUEST),
+        );
+        return new Map(rows.map((r) => [r.recordId, { listId: r.listId, level: r.level as GuestLevel }]));
     }
 }

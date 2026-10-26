@@ -86,6 +86,8 @@ import {
     recordTemplates,
     teamMembers,
     teams,
+    customRoles,
+    recordShares,
     ganttBaselines,
     ganttBaselineItems,
     approvalFlows,
@@ -288,6 +290,8 @@ export class TenantTransferService {
             await dump('tenant', [tenant]);
             await dump('users', userRows);
             await dump('memberships', members);
+            // C2 — roles propios (antes que las membresías que los usan).
+            await dump('custom_roles', await this.byTenant(customRoles, tenantId));
             // C1 — equipos y sus personas (sólo las que viajan: miembros de ésta).
             await dump('teams', await this.byTenant(teams, tenantId));
             await dump('team_members', await this.byTenant(teamMembers, tenantId));
@@ -333,6 +337,8 @@ export class TenantTransferService {
                 await this.byTenant(relations, tenantId, and(liveRecord(relations.sourceRecordId), liveRecord(relations.targetRecordId), liveField(relations.fieldId))),
             );
             await dump('mentions', await this.byTenant(mentions, tenantId, liveRecord(mentions.recordId)));
+            // C3 — registros sueltos compartidos con invitados de afuera.
+            await dump('record_shares', await this.byTenant(recordShares, tenantId, liveRecord(recordShares.recordId)));
             await dump('email_usage', await this.byTenant(emailUsage, tenantId));
             await dump('ai_usage', await this.byTenant(aiUsage, tenantId));
             // v0.1.206 — sincronizaciones con tiendas y sus vínculos: sin
@@ -641,6 +647,17 @@ export class TenantTransferService {
         // apunta a alguien que ya no viajó.
         const fallbackUser = maps.user.values().next().value ?? null;
 
+        // C2 — roles propios (antes que las membresías: `custom_role_id`).
+        counts.custom_roles = await this.insertMapped(tx, await this.readAll(rows('custom_roles')), customRoles, maps.customRole, (r) => ({
+            tenantId,
+            name: String(r.name).slice(0, 60),
+            description: (r.description as string | null) ?? null,
+            color: (r.color as string | null) ?? null,
+            baseRole: ['manager', 'agent', 'viewer'].includes(String(r.baseRole)) ? String(r.baseRole) : 'viewer',
+            capabilities: Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [],
+            createdBy: mapId(maps.user, r.createdBy),
+        }));
+
         // 3. Membresías
         const memberRows = await this.readAll(rows('memberships'));
         const memberValues = memberRows
@@ -649,6 +666,7 @@ export class TenantTransferService {
                 tenantId,
                 role: String(m.role),
                 settings: (m.settings as Row | null) ?? {},
+                customRoleId: mapId(maps.customRole, m.customRoleId),
             }))
             .filter((m) => m.userId !== undefined);
         if (memberValues.length) await this.insertValues(tx, memberships, memberValues);
@@ -945,6 +963,16 @@ export class TenantTransferService {
                 reason: String(d.reason ?? ''),
                 createdAt: this.date(d.createdAt) ?? new Date(),
             };
+        });
+
+        // C3 — registros compartidos con invitados (la persona tiene que haber viajado).
+        counts.record_shares = await this.insertPlain(tx, rows('record_shares'), recordShares, (r) => {
+            const listId = mapId(maps.list, r.listId);
+            const recordId = mapId(maps.record, r.recordId);
+            const userId = mapId(maps.user, r.userId);
+            if (listId === null || recordId === null || userId === null) return null;
+            const level = ['view', 'comment', 'edit'].includes(String(r.level)) ? String(r.level) : 'view';
+            return { tenantId, listId, recordId, userId, level, createdBy: mapId(maps.user, r.createdBy) };
         });
 
         counts.saved_views = await this.insertMapped(

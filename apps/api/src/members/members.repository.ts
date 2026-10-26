@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq, ne } from 'drizzle-orm';
+import { and, asc, count, eq, notInArray } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { memberships, users } from '../db/schema';
+import { customRoles, memberships, users } from '../db/schema';
 
 export interface MemberRow {
     userId: number;
@@ -10,6 +10,9 @@ export interface MemberRow {
     role: (typeof memberships.$inferSelect)['role'];
     /** v0.1.240 — invitación pendiente (todavía no definió su contraseña). */
     invitedAt: Date | null;
+    /** C2 — rol propio (sus capacidades); `role` es su base. */
+    customRoleId: number | null;
+    customRoleName: string | null;
 }
 
 /**
@@ -28,13 +31,17 @@ export class MembersRepository {
                 email: users.email,
                 role: memberships.role,
                 invitedAt: users.invitedAt,
+                customRoleId: memberships.customRoleId,
+                customRoleName: customRoles.name,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
+            .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
             // El EQUIPO: los clientes del portal se administran desde la ficha
             // de su registro, no desde aquí (v0.1.240; antes podían ser cientos
-            // de filas mezcladas con las personas del equipo).
-            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client')))
+            // de filas mezcladas con las personas del equipo). C3 — los
+            // invitados externos tampoco: tienen su propia sección.
+            .where(and(eq(memberships.tenantId, tenantId), notInArray(memberships.role, ['client', 'guest'])))
             .orderBy(asc(users.name), asc(memberships.userId));
     }
 
@@ -50,9 +57,12 @@ export class MembersRepository {
                 email: users.email,
                 role: memberships.role,
                 invitedAt: users.invitedAt,
+                customRoleId: memberships.customRoleId,
+                customRoleName: customRoles.name,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
+            .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
             .limit(1);
         return row ?? null;
@@ -63,10 +73,11 @@ export class MembersRepository {
         tenantId: number,
         userId: number,
         role: MemberRow['role'],
+        customRoleId: number | null = null,
     ): Promise<void> {
         await tx
             .update(memberships)
-            .set({ role, updatedAt: new Date() })
+            .set({ role, customRoleId, updatedAt: new Date() })
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
     }
 

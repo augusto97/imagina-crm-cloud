@@ -7,6 +7,7 @@ import type {
 } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 
 import { dependencyKeys, fetchRecordDependencies } from './dependencyKeys';
 import { listsKeys } from './useLists';
@@ -25,10 +26,12 @@ export { dependencyKeys, fetchRecordDependencies };
 export const EMPTY_DEPENDENCIES: RecordDependencies = { blocked_by: [], blocks: [] };
 
 export function useRecordDependencies(listId: string | number | undefined, recordId: number | undefined) {
+    // C3 — un invitado no ve las dependencias (podrían nombrar registros no compartidos).
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: dependencyKeys.forRecord(listId ?? '', recordId ?? 0),
         queryFn: () => fetchRecordDependencies(listId!, recordId!),
-        enabled: listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0,
+        enabled: listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0 && !isGuest,
         staleTime: 15_000,
     });
 }
@@ -89,10 +92,11 @@ export function useRemoveDependencyById(listId: string | number) {
 }
 
 export function useDependencySettings(listId: string | number | undefined) {
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: dependencyKeys.settings(listId ?? ''),
         queryFn: async () => (await api.get<DependencySettings>(`/lists/${listId}/dependencies/settings`)).data,
-        enabled: listId !== undefined && listId !== '',
+        enabled: listId !== undefined && listId !== '' && !isGuest,
     });
 }
 

@@ -672,6 +672,8 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 </h3>
                                 <UsageRow label={__('Registros')} used={t.usage.records} limit={detail.data.limits.max_records} />
                                 <UsageRow label={__('Usuarios')} used={t.usage.users} limit={detail.data.limits.max_users} />
+                                {/* C3 — invitados de afuera: su propio tope, no ocupan usuario. */}
+                                <UsageRow label={__('Invitados')} used={t.usage.guests ?? 0} limit={detail.data.limits.max_guests ?? null} />
                                 <UsageRow label={__('Automatizaciones')} used={t.usage.automations} limit={detail.data.limits.max_automations} />
                                 <UsageRow label={__('Storage')} used={formatMb(t.usage.storage_bytes)} limit={detail.data.limits.max_storage_mb} suffix=" MB" />
                                 {/* Correos por el SMTP de la PLATAFORMA (ADR-S18): es lo que

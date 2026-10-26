@@ -31,6 +31,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { DomainsService } from '../domains/domains.service';
 import { TenantGuard, type TenantContext } from '../tenancy/tenant.guard';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { MailService } from '../mail/mail.service';
 import { SmtpDnsService, type SmtpDnsReport } from '../mail/smtp-dns.service';
 import { SmtpProbeService } from '../mail/smtp-probe.service';
@@ -93,6 +94,7 @@ export class WorkspacesController {
     /** Tenant activo resuelto vía X-Tenant-Id + membership (TenantGuard). */
     @Get('current')
     @UseGuards(TenantGuard)
+    @AllowGuest()
     current(@Req() req: FastifyRequest): TenantContext {
         return req.tenant as TenantContext;
     }
@@ -100,6 +102,7 @@ export class WorkspacesController {
     /** Branding del workspace — lo lee cualquier miembro (lo aplica el boot). */
     @Get('current/branding')
     @UseGuards(TenantGuard)
+    @AllowGuest()
     getBranding(@Req() req: FastifyRequest): Promise<BrandingResponse> {
         return this.branding.get(req.tenant!.tenantId);
     }
@@ -121,6 +124,7 @@ export class WorkspacesController {
      */
     @Get('current/format')
     @UseGuards(TenantGuard)
+    @AllowGuest()
     getFormat(@Req() req: FastifyRequest): Promise<TenantFormat> {
         return this.branding.getFormat(req.tenant!.tenantId);
     }

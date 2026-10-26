@@ -12,6 +12,8 @@ export const meUserSummarySchema = z.object({
     login: z.string(),
     display_name: z.string(),
     avatar_url: z.string(),
+    /** C3 — es una persona INVITADA de afuera (badge «Invitado» en los selectores). */
+    is_guest: z.boolean().optional(),
 });
 export type MeUserSummary = z.infer<typeof meUserSummarySchema>;
 

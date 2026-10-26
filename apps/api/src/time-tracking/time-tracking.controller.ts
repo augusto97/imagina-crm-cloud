@@ -31,9 +31,10 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { Actor } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { TimeTrackingService } from './time-tracking.service';
+import { aclOf } from '../tenancy/acl-of';
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /**

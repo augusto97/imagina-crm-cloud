@@ -58,6 +58,8 @@ import { TrashModule } from './trash/trash.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { TeamsModule } from './teams/teams.module';
+import { RolesModule } from './roles/roles.module';
+import { GuestsModule } from './guests/guests.module';
 import { ViewsModule } from './views/views.module';
 import { GanttModule } from './gantt/gantt.module';
 import { WorkloadModule } from './workload/workload.module';
@@ -84,6 +86,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AuditModule,
         // C1 — equipos (global: ACL, avisos, «Mi trabajo», import/export).
         TeamsModule,
+        // C2 — roles propios (global: miembros, permisos por lista, consola).
+        RolesModule,
         ConnectorsModule,
         StoreSyncModule,
         SqlSyncModule,
@@ -100,6 +104,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         MeModule,
         FilesModule,
         MembersModule,
+        // C3 — invitados externos (compartir listas y registros con gente de afuera).
+        GuestsModule,
         ListsModule,
         FieldsModule,
         RecordsModule,

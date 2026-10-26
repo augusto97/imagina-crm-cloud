@@ -15,6 +15,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { TrashService, type TrashViewer } from './trash.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Papelera de la empresa. Cualquier miembro la abre: ve lo que borró y, de
@@ -61,5 +62,5 @@ export class TrashController {
 }
 
 function viewer(req: FastifyRequest): TrashViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
 }

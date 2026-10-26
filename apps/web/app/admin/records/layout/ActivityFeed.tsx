@@ -16,6 +16,8 @@ import { useToast } from '@/components/ui/toast';
 import { useRecordActivity } from '@/hooks/useActivity';
 import { useCommentAuthors, useComments, useCreateComment, useDeleteComment, useUpdateComment } from '@/hooks/useComments';
 import { useFields } from '@/hooks/useFields';
+import { useGuestCanComment } from '@/hooks/useGuests';
+import { useIsGuest } from '@/lib/guest';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr, formatTimeOfDay } from '@/lib/tenantFormat';
@@ -78,7 +80,11 @@ export function ActivityFeed({
     // Nombres de los autores: del DTO, y en LOTE lo que falte (antes era una
     // request por autor con useWpUser).
     const authorOf = useCommentAuthors(comments.data);
-    const portalEnabled = useListPortalEnabled(listId);
+    const isGuest = useIsGuest();
+    // C3 — un invitado no publica para el cliente del portal, y comenta
+    // sólo con «Puede comentar» o «Puede editar».
+    const portalEnabled = useListPortalEnabled(listId) && !isGuest;
+    const canPost = useGuestCanComment(listId, recordId);
     const [filter, setFilter] = useState<FeedFilter>(initialFilter);
     const [visible, setVisible] = useState(PAGE);
 
@@ -94,7 +100,13 @@ export function ActivityFeed({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-activity-feed">
-            <Composer listId={listId} recordId={recordId} portalEnabled={portalEnabled} />
+            {canPost ? (
+                <Composer listId={listId} recordId={recordId} portalEnabled={portalEnabled} />
+            ) : (
+                <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-comment-readonly">
+                {__('Puedes ver este registro, pero no comentar en él.')}
+            </p>
+            )}
             <div className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs" role="tablist" aria-label={__('Filtrar actividad')}>
                 <FilterTab active={filter === 'all'} onClick={() => setFilter('all')}>{__('Todo')}</FilterTab>
                 <FilterTab active={filter === 'comments'} onClick={() => setFilter('comments')} count={counts.comments}>

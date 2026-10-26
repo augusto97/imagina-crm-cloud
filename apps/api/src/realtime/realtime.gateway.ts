@@ -118,7 +118,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         if (!parsed.success || !userId) {
             return { ok: false };
         }
-        const isMember = await this.tenantDb.withUser(userId, async (tx) => {
+        const memberRole = await this.tenantDb.withUser(userId, async (tx) => {
             const [row] = await tx
                 .select({ tenantId: memberships.tenantId, role: memberships.role })
                 .from(memberships)
@@ -131,16 +131,18 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
                 .limit(1);
             // SEC-25 (v0.1.226): el rol `client` es sólo portal — no recibe los
             // avisos de toda la empresa (qué listas cambian y cuándo).
-            return row !== undefined && row.role !== 'client';
+            return row === undefined || row.role === 'client' ? null : row.role;
         });
-        if (!isMember) {
+        if (!memberRole) {
             return { ok: false };
         }
         // Deja sólo la room del workspace activo (evita ecos de otros).
         for (const room of client.rooms) {
             if (room.startsWith('tenant:') || room.startsWith('user:')) await client.leave(room);
         }
-        await client.join(tenantRoom(parsed.data.tenantId));
+        // C3 — un invitado tampoco entra a la sala de la empresa (qué listas
+        // cambian y cuándo); sólo a la suya (su bandeja de avisos).
+        if (memberRole !== 'guest') await client.join(tenantRoom(parsed.data.tenantId));
         // v0.1.276 — su bandeja de avisos en esta empresa.
         await client.join(userRoom(parsed.data.tenantId, userId));
         client.data.tenantId = parsed.data.tenantId;

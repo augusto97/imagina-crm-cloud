@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { __ } from '@/lib/i18n';
+import { CAP, useCan } from '@/lib/permissions';
+import { useIsGuest } from '@/lib/guest';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 
 /**
@@ -47,6 +49,10 @@ export function SecurityCard(): JSX.Element {
     const toast = useToast();
     const user = useSession((s) => s.user);
     const [resent, setResent] = useState(false);
+    // C2/C3 — conectar Claude o Cursor por MCP es usar el asistente IA.
+    const canAssistant = useCan(CAP.USE_AI_ASSISTANT);
+    const isGuest = useIsGuest();
+    const canUseAssistant = canAssistant && !isGuest;
     const [current, setCurrent] = useState('');
     const [next, setNext] = useState('');
     const [repeat, setRepeat] = useState('');
@@ -213,7 +219,7 @@ export function SecurityCard(): JSX.Element {
             <TwoFactorCard />
 
             {/* ── Tokens de acceso personal / MCP (v0.1.183) ─────────── */}
-            <PersonalTokensCard />
+            {canUseAssistant && <PersonalTokensCard />}
 
             {/* ── Dispositivos ───────────────────────────────────────── */}
             <section className="imcrm-flex imcrm-flex-col imcrm-gap-3">

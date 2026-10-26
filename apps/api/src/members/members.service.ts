@@ -1,13 +1,17 @@
-import { ConflictException, ForbiddenException, Injectable, Optional } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type {
     AddMemberInput,
     AddMemberResult,
     UpdateMemberRoleInput,
     WorkspaceMember,
 } from '@imagina-base/shared';
+import { and, eq } from 'drizzle-orm';
 import { AuthService } from '../auth/auth.service';
 import { BillingService } from '../billing/billing.service';
 import type { Tx } from '../db/client';
+import { recordShares } from '../db/schema';
+import { RealtimeService } from '../realtime/realtime.service';
+import { CustomRolesService } from '../roles/custom-roles.service';
 import { TeamsService } from '../teams/teams.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MembersRepository, type MemberRow } from './members.repository';
@@ -26,6 +30,8 @@ export class MembersService {
         private readonly auth: AuthService,
         private readonly billing: BillingService,
         @Optional() private readonly teams?: TeamsService,
+        @Optional() private readonly roles?: CustomRolesService,
+        @Optional() private readonly realtime?: RealtimeService,
     ) {}
 
     async list(tenantId: number): Promise<WorkspaceMember[]> {
@@ -47,16 +53,24 @@ export class MembersService {
         input: AddMemberInput,
         opts: { invitedById?: number | null; enforcePlan?: boolean; allowReserved?: boolean } = {},
     ): Promise<AddMemberResult> {
+        // C2 — con un rol propio, el rol base es el de ese rol (lo decide el servidor).
+        const custom = await this.resolveCustomRole(tenantId, input.role, input.custom_role_id);
         if (opts.enforcePlan !== false) await this.billing.assertCanAddMember(tenantId);
-        const r = await this.auth.addToTenant(tenantId, input, {
-            invitedById: opts.invitedById ?? null,
-            allowReserved: opts.allowReserved === true,
-        });
+        const r = await this.auth.addToTenant(
+            tenantId,
+            { email: input.email, name: input.name, role: custom?.baseRole ?? input.role, customRoleId: custom?.id ?? null },
+            {
+                invitedById: opts.invitedById ?? null,
+                allowReserved: opts.allowReserved === true,
+            },
+        );
         return {
             user_id: r.user.id,
             name: r.user.name,
             email: r.user.email,
             role: r.role,
+            custom_role_id: custom?.id ?? null,
+            custom_role_name: custom?.name ?? null,
             pending: r.pending,
             invited: r.invited,
             notified: r.notified,
@@ -72,18 +86,63 @@ export class MembersService {
         tenantId: number,
         targetUserId: number,
         input: UpdateMemberRoleInput,
+        opts: { enforcePlan?: boolean } = {},
     ): Promise<WorkspaceMember> {
-        return this.tenantDb.withTenant(tenantId, async (tx) => {
+        const custom = await this.resolveCustomRole(tenantId, input.role, input.custom_role_id);
+        const role = custom?.baseRole ?? input.role;
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.repo.findMembership(tx, tenantId, targetUserId));
+        // C3 — pasar un invitado a miembro ocupa un usuario del plan.
+        if (current?.role === 'guest' && opts.enforcePlan !== false) await this.billing.assertCanAddMember(tenantId);
+        const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const member = await this.repo.findMembership(tx, tenantId, targetUserId);
             if (!member) throw notMember(targetUserId);
             if (member.role === 'client') throw portalClient();
             // No dejar el workspace sin ningún admin.
-            if (member.role === 'admin' && input.role !== 'admin') {
+            if (member.role === 'admin' && role !== 'admin') {
                 await this.assertNotLastAdmin(tx, tenantId);
             }
-            await this.repo.updateRole(tx, tenantId, targetUserId, input.role);
-            return { ...toMember(member), role: input.role };
+            await this.repo.updateRole(tx, tenantId, targetUserId, role, custom?.id ?? null);
+            // C3 — al pasar a miembro, los registros sueltos que tenía
+            // compartidos dejan de aplicar (ve lo que su rol le deja ver); las
+            // listas compartidas con él quedan como acceso por persona.
+            if (member.role === 'guest') {
+                await tx
+                    .delete(recordShares)
+                    .where(and(eq(recordShares.tenantId, tenantId), eq(recordShares.userId, targetUserId)));
+            }
+            return {
+                ...toMember(member),
+                role,
+                custom_role_id: custom?.id ?? null,
+                custom_role_name: custom?.name ?? null,
+                promoted: member.role === 'guest',
+            };
         });
+        // Sus capacidades y su acceso cambiaron: la app se refresca (y la
+        // sesión, que trae las capacidades de su rol).
+        this.realtime?.lists(tenantId);
+        this.realtime?.invalidate(tenantId, 'roles');
+        const { promoted: _promoted, ...member } = out;
+        return member;
+    }
+
+    /** C2 — el rol propio pedido (de ESTA empresa) o 404; null si no se pidió. */
+    private async resolveCustomRole(
+        tenantId: number,
+        role: string,
+        customRoleId: number | null | undefined,
+    ): Promise<{ id: number; baseRole: 'manager' | 'agent' | 'viewer'; name: string } | null> {
+        if (!customRoleId || role === 'admin') return null;
+        if (!this.roles) return null;
+        const hit = await this.tenantDb.withTenant(tenantId, (tx) => this.roles!.findInTx(tx, tenantId, customRoleId));
+        if (!hit) {
+            throw new NotFoundException({
+                code: 'role_not_found',
+                message: 'Ese rol no existe en esta empresa',
+                data: { status: 404, errors: { custom_role_id: 'No existe' } },
+            });
+        }
+        return hit;
     }
 
     async remove(tenantId: number, actingUserId: number, targetUserId: number): Promise<WorkspaceMember> {
@@ -100,6 +159,10 @@ export class MembersService {
             }
             if (member.role === 'admin') await this.assertNotLastAdmin(tx, tenantId);
             await this.repo.remove(tx, tenantId, targetUserId);
+            // C3 — si era invitado, sus registros compartidos se van con él.
+            await tx
+                .delete(recordShares)
+                .where(and(eq(recordShares.tenantId, tenantId), eq(recordShares.userId, targetUserId)));
             // C1 — deja de ser del equipo de trabajo: sale de sus equipos.
             await this.teams?.removeUserEverywhere(tx, tenantId, targetUserId);
             return toMember(member);
@@ -124,6 +187,8 @@ function toMember(row: MemberRow): WorkspaceMember {
         name: row.name,
         email: row.email,
         role: row.role,
+        custom_role_id: row.customRoleId,
+        custom_role_name: row.customRoleName,
         pending: row.invitedAt !== null,
     };
 }

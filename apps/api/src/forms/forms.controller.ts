@@ -59,7 +59,7 @@ export class FormsController {
     ) {}
 
     @Get()
-    @RequireCapability('manage_lists', 'manage_automations')
+    @RequireCapability('manage_forms', 'manage_automations')
     async list(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: FormDto[] }> {
         return { data: await this.forms.list(req.tenant!.tenantId, list) };
     }
@@ -70,7 +70,7 @@ export class FormsController {
      * muestra la opción deshabilitada con el motivo).
      */
     @Get('captcha')
-    @RequireCapability('manage_lists')
+    @RequireCapability('manage_forms')
     captchaAvailability(@Req() req: FastifyRequest): Promise<CaptchaAvailability> {
         return this.captcha.availability(req.tenant!.tenantId, req.tenant!.role);
     }
@@ -80,21 +80,21 @@ export class FormsController {
      * datos (Ley 1581)? El texto vigente, para la vista previa del constructor.
      */
     @Get('data-consent')
-    @RequireCapability('manage_lists')
+    @RequireCapability('manage_forms')
     async dataConsentAvailability(@Req() req: FastifyRequest): Promise<FormDataConsentAvailability> {
         if (!this.dataConsent) return { active: false, consent: null, can_configure: req.tenant!.role === 'admin' };
         return this.dataConsent.availabilityForForms(req.tenant!.tenantId, req.tenant!.role);
     }
 
     @Get(':id')
-    @RequireCapability('manage_lists', 'manage_automations')
+    @RequireCapability('manage_forms', 'manage_automations')
     get(@Req() req: FastifyRequest, @Param('list') list: string, @Param('id', ParseIntPipe) id: number): Promise<FormDto> {
         return this.forms.get(req.tenant!.tenantId, list, id);
     }
 
     @Post()
     @HttpCode(201)
-    @RequireCapability('manage_lists')
+    @RequireCapability('manage_forms')
     create(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
@@ -104,7 +104,7 @@ export class FormsController {
     }
 
     @Patch(':id')
-    @RequireCapability('manage_lists')
+    @RequireCapability('manage_forms')
     async update(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
@@ -143,7 +143,7 @@ export class FormsController {
 
     @Delete(':id')
     @HttpCode(204)
-    @RequireCapability('manage_lists')
+    @RequireCapability('manage_forms')
     async remove(@Req() req: FastifyRequest, @Param('list') list: string, @Param('id', ParseIntPipe) id: number): Promise<void> {
         const { name } = await this.forms.remove(req.tenant!.tenantId, list, id);
         await this.audit.log({

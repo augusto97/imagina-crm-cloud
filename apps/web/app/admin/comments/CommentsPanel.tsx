@@ -17,6 +17,8 @@ import {
     useUpdateComment,
 } from '@/hooks/useComments';
 import { ApiError } from '@/lib/api';
+import { useGuestCanComment } from '@/hooks/useGuests';
+import { useIsGuest } from '@/lib/guest';
 import { __ } from '@/lib/i18n';
 import type { CommentEntity } from '@/types/comment';
 import { parseUtcDate } from '@/lib/utcDate';
@@ -59,7 +61,10 @@ export function CommentsPanel({
 
     const [draft, setDraft] = useState('');
     // Todo comentario nace INTERNO (sólo el equipo); el cliente ve lo que se marca.
-    const portalEnabled = useListPortalEnabled(listId);
+    const isGuest = useIsGuest();
+    // C3 — un invitado no publica para el cliente del portal.
+    const portalEnabled = useListPortalEnabled(listId) && !isGuest;
+    const canPost = useGuestCanComment(listId, recordId);
     const [forClient, setForClient] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [cursor, setCursor] = useState(0);
@@ -168,6 +173,11 @@ export function CommentsPanel({
                 )}
             </div>
 
+            {!canPost ? (
+                <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-comment-readonly">
+                    {__('Puedes ver este registro, pero no comentar en él.')}
+                </p>
+            ) : (
             <form
                 onSubmit={handleSubmit}
                 className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3"
@@ -246,6 +256,7 @@ export function CommentsPanel({
                     </Button>
                 </div>
             </form>
+            )}
         </div>
     );
 }

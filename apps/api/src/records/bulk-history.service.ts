@@ -2,7 +2,6 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import {
     BULK_HISTORY_DAYS,
     BULK_REVERT_CHUNK,
-    roleHasCapability,
     sameBulkValue,
     type BulkEditKind,
     type BulkEditLog,
@@ -17,6 +16,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { RecordsService, type Actor } from './records.service';
+import { can } from '../authz/can';
 
 /** Cuántas ediciones muestra el historial de una lista. */
 const HISTORY_LIMIT = 30;
@@ -349,8 +349,8 @@ export class BulkHistoryService {
     private canRevert(actor: Actor, ownerId: number | null, kind: BulkEditKind): boolean {
         // La propia se deshace siempre; la de otro, sólo con permiso de acciones
         // masivas (quien puede editar todo un filtro puede volverlo atrás).
-        if (kind === 'store') return roleHasCapability(actor.role, 'bulk_actions');
-        return ownerId === actor.userId || roleHasCapability(actor.role, 'bulk_actions');
+        if (kind === 'store') return can(actor, 'bulk_actions');
+        return ownerId === actor.userId || can(actor, 'bulk_actions');
     }
 
     private reverterFor(kind: BulkEditKind): BulkReverter {

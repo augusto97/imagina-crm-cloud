@@ -3,6 +3,7 @@ import {
     brandingSchema,
     buildWidgetReport,
     CONTENT_WIDGET_TYPES,
+    effectiveCapabilities,
     reportUserIds,
     tenantFormatSchema,
     type Branding,
@@ -16,10 +17,11 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { AggregateService } from '../aggregate/aggregate.service';
-import { lists, memberships, tenants, users } from '../db/schema';
+import { customRoles, lists, memberships, tenants, users } from '../db/schema';
 import { DashboardsService, type DashboardViewer } from '../dashboards/dashboards.service';
 import { FieldsService } from '../fields/fields.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { aclExtras } from '../lists/list-acl';
 
 /** Lo que hace falta para mostrar un tablero FUERA de la app (sin sesión o por correo). */
 export interface DashboardSnapshot {
@@ -86,14 +88,26 @@ export class DashboardSnapshotService {
                     role: memberships.role,
                     // C1 — el ACL por equipo de quien publicó.
                     teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                    // C2 — su rol propio (fila en las listas y capacidades).
+                    customRoleId: memberships.customRoleId,
+                    customCaps: customRoles.capabilities,
                 })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
+                .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId), isNull(users.disabledAt)))
                 .limit(1),
         );
-        if (!row || row.role === 'client') return null;
-        return { userId, role: row.role, teamIds: (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0) };
+        // C3 — un invitado no publica ni envía tableros.
+        if (!row || row.role === 'client' || row.role === 'guest') return null;
+        const custom = row.customCaps ? (row.customCaps as string[]) : null;
+        return {
+            userId,
+            role: row.role,
+            teamIds: (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+            customRoleId: custom ? row.customRoleId : null,
+            capabilities: effectiveCapabilities(row.role as Role, custom),
+        };
     }
 
     async snapshot(
@@ -115,7 +129,7 @@ export class DashboardSnapshotService {
         for (const listId of listIds) {
             let hidden: Set<number>;
             try {
-                const ctx = await this.aggregate.listContext(tenantId, String(listId), { userId: viewer.userId, role: viewer.role as Role, teamIds: viewer.teamIds });
+                const ctx = await this.aggregate.listContext(tenantId, String(listId), { ...aclExtras(viewer), userId: viewer.userId, role: viewer.role as Role });
                 hidden = ctx.hidden;
             } catch {
                 continue; // lista borrada o sin acceso: sus widgets ya traen su error

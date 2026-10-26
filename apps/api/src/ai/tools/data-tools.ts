@@ -45,6 +45,7 @@ import { AiToolError, AiToolRegistry, toolAllowed, type AiToolContext, type AiTo
 import { recordTemplateSpec, templateSpecToContent, type RecordTemplateSpec } from './record-template-spec';
 import { bulkOpsSpec, translateBulkOps } from './bulk-ops';
 import { filterRuleSpec, rulesToFilterTree, type FilterRuleSpec } from './structure-tools';
+import { aclExtras } from '../../lists/list-acl';
 
 /** Tope de filas que una herramienta devuelve al modelo (contexto y costo). */
 const MAX_QUERY_ROWS = 50;
@@ -329,7 +330,7 @@ export class DataTools implements AiProposalApplier {
             ...(groupField ? { group_by_field_id: groupField.id } : {}),
             ...(groupField && (groupField.type === 'date' || groupField.type === 'datetime') ? { time_bucket: input.time_bucket ?? 'month' } : {}),
             ...(filterTree ? { filter_tree: filterTree } : {}),
-        }, { viewer: { role: ctx.role, userId: ctx.userId } });
+        }, { viewer: { ...aclExtras(ctx), role: ctx.role, userId: ctx.userId } });
         const labelOf = groupField ? optionLabeler(groupField) : (v: unknown): unknown => v;
         return {
             content: {
@@ -916,7 +917,7 @@ export class DataTools implements AiProposalApplier {
 // ── Helpers puros ───────────────────────────────────────────────────────
 
 function actorOf(ctx: AiToolContext): Actor {
-    return { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds };
+    return { ...aclExtras(ctx), userId: ctx.userId, role: ctx.role };
 }
 
 function emptyPreview(partial: Partial<AiProposalPreview>): AiProposalPreview {

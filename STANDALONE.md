@@ -4035,4 +4035,37 @@ aprobadores; los equipos viajan en la migración de empresa con ids re-mapeados
 
 ---
 
-**Versión del documento:** 1.108.0 (equipos)
+### ADR-S66 — Roles propios e invitados externos (v0.1.312)
+
+**Contexto.** Los roles fijos no alcanzaban para «un agente que no vea
+tableros» ni para trabajar con gente de afuera (proveedor, contador) sin darle
+una cuenta del equipo.
+
+**Decisión.**
+1. **Rol propio** = rol base (Gerente, Agente o Lector) + lista explícita de
+   capacidades (`custom_roles`, `memberships.custom_role_id`, migración 0086).
+   El base decide el alcance y el acceso por defecto a cada lista; el propio,
+   las capacidades, y puede tener su fila en los permisos de una lista. `admin`
+   es fijo. Las capacidades efectivas se resuelven una vez por pedido en el
+   TenantGuard y todo chequeo pasa por `can()` (`authz/can.ts`); los roles base
+   conservan exactamente su comportamiento (capacidades nuevas como ver
+   tableros o usar el asistente las tienen todos los base).
+2. **Invitado** = rol `guest` que no ocupa usuario (tope `max_guests` por
+   plan). Ve sólo listas compartidas con él o registros sueltos
+   (`record_shares`), con nivel ver / comentar / editar, y nunca más que un
+   Lector: sin relaciones, botones ni el resumen de la operación interna.
+   **Fail-closed**: el TenantGuard le niega todo endpoint sin `@AllowGuest()`,
+   y un test exige que la lista de rutas abiertas sea exactamente la revisada.
+3. Decidir una aprobación es un acto de la empresa: un invitado nunca aprueba;
+   un aprobador «por rol» cuenta al rol propio por su base (para un grupo
+   puntual está «Un equipo», que no se rompe si se borra un rol).
+
+**Consecuencias.** Todo actor armado desde un pedido pasa por `aclOf(req)` y
+todo actor que el servidor arma desde la membresía (avisos, resumen, tableros
+publicados, aprobadores, carga) lleva el rol propio; hay tests que lo auditan.
+Abrir un endpoint nuevo a invitados obliga a revisar su ACL y a sumarlo al test.
+El portal del cliente sigue aparte (rol `client`).
+
+---
+
+**Versión del documento:** 1.109.0 (roles propios e invitados)

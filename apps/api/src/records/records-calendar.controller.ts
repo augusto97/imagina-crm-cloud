@@ -6,6 +6,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordsCalendarService, type CalendarBundle } from './records-calendar.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * B4 — Calendario completo: el rango visible en UNA request. Ruta estática:
@@ -20,7 +21,7 @@ export class RecordsCalendarController {
     @RequireCapability('view_records', 'view_own_records')
     bundle(@Req() req: FastifyRequest, @Param('list') list: string, @Query() q: Record<string, unknown>): Promise<CalendarBundle> {
         const perDay = Number(q.per_day);
-        return this.calendar.bundle(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, {
+        return this.calendar.bundle(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, {
             from: typeof q.from === 'string' ? q.from : '',
             to: typeof q.to === 'string' ? q.to : '',
             sources: parseSources(q.sources),

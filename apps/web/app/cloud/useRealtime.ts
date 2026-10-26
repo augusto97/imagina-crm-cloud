@@ -27,6 +27,7 @@ import { viewsKeys } from '@/hooks/useSavedViews';
 import { notificationKeys } from '@/hooks/useNotifications';
 import { invalidateDashboardsForList } from '@/hooks/useDashboards';
 import { teamsKeys } from '@/hooks/useTeams';
+import { customRolesKeys } from '@/hooks/useCustomRoles';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -143,6 +144,13 @@ export function useRealtime(): void {
                     // C1 — alguien creó, cambió o borró un equipo (nombre,
                     // color, personas): chips, selectores y permisos.
                     void qc.invalidateQueries({ queryKey: teamsKeys.all });
+                    break;
+                case 'roles':
+                    // C2 — un rol propio cambió (permisos, nombre o quién lo
+                    // tiene): la tabla de Roles y las capacidades de quien
+                    // mira (se re-arman con la sesión).
+                    void qc.invalidateQueries({ queryKey: customRolesKeys.all });
+                    void qc.invalidateQueries({ queryKey: ['me'] });
                     break;
                 case 'timer':
                     // v0.1.291 — el cronómetro de esta persona cambió en otra

@@ -56,12 +56,15 @@ import type { Tx } from '../db/client';
 import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
 import { memberships, mentions, records, teams } from '../db/schema';
 import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
-import { assignmentKeys, listRowInScope,
+import {
     andWhere,
+    assignmentKeys,
     effectivePermissions,
+    guestExtraHidden,
     hiddenFieldsFor,
+    listRowInScope,
     scopeWhere,
-    withDependentComputed
+    withDependentComputed,
 } from '../lists/list-acl';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -85,6 +88,7 @@ import { compileSearch } from './search-sql';
 import { relatedScopeSql, type RelatedScope } from './related-scope';
 import { BillingService } from '../billing/billing.service';
 import { calendarPicksSql, readPicks, type CalendarPick, type CalendarSqlSource } from './calendar-sql';
+import type { AclExtras } from '../lists/list-acl';
 
 /** A8 — un registro que corrió la reprogramación en cadena. */
 interface ShiftedRecord {
@@ -107,11 +111,9 @@ export interface PreparedCreate {
 }
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
-export interface Actor {
+export interface Actor extends AclExtras {
     userId: number;
     role: Role;
-    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
-    teamIds?: readonly number[];
 }
 
 export interface RecordsPage {
@@ -137,6 +139,11 @@ interface ReadContext {
     clock: QueryClock;
     /** Fórmulas (A1): formato, zona y nombres para calcularlas (sólo si hay). */
     formula?: FormulaRuntime;
+    /**
+     * C3 — quien lee es un INVITADO: la fila no lleva los indicadores de la
+     * operación interna (bloqueantes, aprobaciones pendientes, checklists).
+     */
+    guest?: boolean;
 }
 
 /** B2 — Lo que `readScoped` le da a quien arma su propia lectura (ver la carga de trabajo). */
@@ -293,6 +300,8 @@ export class RecordsService {
         input: CreateRecordInput,
         opts: { lenientRequired?: boolean } = {},
     ): Promise<PreparedCreate> {
+        // C3 — un invitado no escribe en lo que no ve.
+        assertGuestWritable(list.settings, fields, actor, input.data);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
         const rel = splitRelationValues(fields, input.data);
@@ -387,6 +396,7 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
+        const guest = actor.role === 'guest';
         const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, approvalPending, checklist, rt } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
@@ -415,9 +425,10 @@ export class RecordsService {
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
-                blockedOpen: r ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
-                approvalPending: r ? (await pendingApprovalCounts(tx, [r.id])).get(r.id) ?? 0 : 0,
-                checklist: r ? (await this.checklists.progressOf(tx, tenantId, [r.id])).get(r.id) : undefined,
+                // C3 — un invitado no ve los indicadores de la operación interna.
+                blockedOpen: r && !guest ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
+                approvalPending: r && !guest ? (await pendingApprovalCounts(tx, [r.id])).get(r.id) ?? 0 : 0,
+                checklist: r && !guest ? (await this.checklists.progressOf(tx, tenantId, [r.id])).get(r.id) : undefined,
                 rt: r ? await this.formulaRuntime(tx, tenantId, list.id, fields, plans) : undefined,
             };
         });
@@ -951,6 +962,8 @@ export class RecordsService {
         // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
         // con el valor), aunque después la respuesta lo quite de `data`.
         const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+        // C3 — un invitado tampoco ve las relaciones (registros de otras listas).
+        for (const id of guestExtraHidden(fields, actor)) hiddenIds.add(id);
         // SEC-36 (v0.1.239): lookup/rollup hacia una lista que esta persona
         // no ve completa — ocultos igual que un campo oculto.
         for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
@@ -980,6 +993,7 @@ export class RecordsService {
             scopeW: scopeWhere(perms.view, actor, assignmentKeys(list.settings)),
             clock,
             formula: await this.formulaRuntime(tx, tenantId, list.id, fields, plans),
+            guest: actor.role === 'guest',
         };
     }
 
@@ -1002,12 +1016,14 @@ export class RecordsService {
         const ids = result.map((r) => r.id);
         const rels = await this.relationsRepo.batchTargets(tx, tenantId, ids, relFieldIds);
         const subtaskCounts = await this.repo.subtaskCounts(tx, tenantId, ids);
+        // C3 — a un invitado no se le cuentan ni muestran (ver `ReadContext.guest`).
+        const internal = !ctx.guest;
         // A8 — bloqueantes abiertos de la tanda (icono «bloqueado»), una consulta.
-        const blocked = await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids);
+        const blocked = internal ? await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids) : new Map<number, number>();
         // C5 — aprobaciones pendientes de la tanda (indicador de la fila), una consulta.
-        const pendingApprovals = await pendingApprovalCounts(tx, ids);
+        const pendingApprovals = internal ? await pendingApprovalCounts(tx, ids) : new Map<number, number>();
         // A9 — progreso de los checklists de la tanda («☑ 3/8»), una consulta.
-        const progress = await this.checklists.progressOf(tx, tenantId, ids);
+        const progress = internal ? await this.checklists.progressOf(tx, tenantId, ids) : new Map<number, { done: number; total: number }>();
         const hiddenKeys = new Set([...ctx.hiddenIds].map((id) => jsonbKeyForField(id)));
         return result.map((r) =>
             stripHidden(
@@ -1078,6 +1094,8 @@ export class RecordsService {
         const listId = list.id;
         const fields = opts.prepared?.fields ?? (await this.fields.listByListId(tenantId, listId));
 
+        // C3 — un invitado no escribe en lo que no ve.
+        assertGuestWritable(list.settings, fields, actor, input.data);
         // Los campos `relation` presentes en el patch se sincronizan aparte
         // (semántica parcial: los ausentes no se tocan).
         const rel = splitRelationValues(fields, input.data);
@@ -1129,9 +1147,11 @@ export class RecordsService {
             const subtasks = updated && (updated.parentId ?? null) === null
                 ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
                 : 0;
-            const blockedOpen = updated ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
-            const approvalPending = updated ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
-            const checklist = updated ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
+            // C3 — un invitado no ve los indicadores de la operación interna.
+            const internal = updated && actor.role !== 'guest';
+            const blockedOpen = internal ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
+            const approvalPending = internal ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
+            const checklist = internal ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
             const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
             return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt };
         });
@@ -1942,9 +1962,10 @@ export class RecordsService {
         list: List,
         actor: Actor,
         action: 'view' | 'edit' | 'delete',
-        row: Pick<RecordRow, 'data' | 'createdBy'>,
+        row: Pick<RecordRow, 'data' | 'createdBy'> & { id?: number },
     ): boolean {
-        return listRowInScope(list.settings, actor, action, { createdBy: row.createdBy, data: row.data });
+        // C3 — el id cuenta para los registros sueltos compartidos con un invitado.
+        return listRowInScope(list.settings, actor, action, { id: row.id, createdBy: row.createdBy, data: row.data });
     }
 
     /**
@@ -2195,6 +2216,32 @@ function effectiveUpdatedBy(row: { updatedBy?: number | null; createdBy: number;
  * otro shape rechaza con error por campo. Devuelve el `data` restante y los
  * sets a sincronizar.
  */
+/**
+ * C3 — Un INVITADO no escribe en los campos que no ve: los ocultos para su
+ * acceso (los del lector incluidos) ni las relaciones. 403 con el campo.
+ */
+function assertGuestWritable(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    actor: Actor,
+    rawData: Record<string, unknown>,
+): void {
+    if (actor.role !== 'guest') return;
+    const hidden = hiddenFieldsFor(settings, actor);
+    const blocked = new Set(guestExtraHidden(fields, actor));
+    const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
+    for (const key of Object.keys(rawData)) {
+        const f = byKey.get(key);
+        if (f && (hidden.has(f.slug) || blocked.has(f.id))) {
+            throw new ForbiddenException({
+                code: 'field_hidden',
+                message: `No tienes acceso al campo «${f.label}»`,
+                data: { status: 403, errors: { [f.slug]: 'Sin acceso' } },
+            });
+        }
+    }
+}
+
 function splitRelationValues(
     fields: Field[],
     rawData: Record<string, unknown>,
@@ -2286,7 +2333,12 @@ function hiddenKeysWithDerived(
     restricted: ReadonlySet<number>,
 ): Set<string> {
     const slugs = hiddenFieldsFor(settings, actor);
-    const ids = new Set([...fields.filter((f) => slugs.has(f.slug)).map((f) => f.id), ...restricted]);
+    const ids = new Set([
+        ...fields.filter((f) => slugs.has(f.slug)).map((f) => f.id),
+        ...restricted,
+        // C3 — un invitado no ve las relaciones.
+        ...guestExtraHidden(fields, actor),
+    ]);
     return new Set([...withDependentComputed(fields, ids)].map((id) => jsonbKeyForField(id)));
 }
 

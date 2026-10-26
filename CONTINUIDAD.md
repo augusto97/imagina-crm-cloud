@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.311** (equipos), en `main`.
+versión publicada: **v0.1.312** (roles propios e invitados; fase 3 completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
@@ -431,7 +431,13 @@ versión publicada: **v0.1.311** (equipos), en `main`.
   portal del cliente, delegar/escalar por plazo y campos por paso.
   Checklists + plantillas de registro publicadas (v0.1.310, migración 0084).
   Equipos publicada (v0.1.311, migración 0085, ya conectada con Aprobaciones y
-  Carga de trabajo). Falta **Roles propios + invitados** (v0.1.312, 0086).
+  Carga de trabajo) y Roles propios + invitados (v0.1.312, 0086): **fase 3
+  completa**. Quedó afuera a propósito: invitados en el portal del cliente
+  (mundos separados), roles propios basados en admin (fijo), aprobador «por rol
+  propio» con nombre, y kanban/calendario/Gantt para invitados (sólo tabla).
+  **Regla nueva para todo código**: capacidades con `can()` y actor con
+  `aclOf(req)`; endpoints nuevos cerrados a invitados salvo `@AllowGuest()`
+  revisado (hay tests que lo auditan).
 - 2026-10-26 — **Hilos abiertos que dejó la fase 3** (no urgentes):
   (a) **eco del realtime**: la ventana de 2,5 s que ignora el eco de una edición
   propia (v0.1.253) también se come el aviso de una automatización que dispara
@@ -714,6 +720,15 @@ versión publicada: **v0.1.311** (equipos), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.312** — **Roles propios + invitados externos** (ADR-S66,
+  opciones C2 + C3; última entrega de la fase 3). Roles «Basado en…» con
+  capacidades por módulo (todo chequeo pasa por `can()`) y rol `guest` para
+  gente de afuera (una lista o un registro compartido, fail-closed por
+  `@AllowGuest()`, tope `max_guests` por plan). Migración 0086. Los roles base
+  no cambian. Corregido de paso: avisos, resumen diario y tableros publicados
+  ignoraban el acceso del rol propio; un invitado podía recibir un tablero por
+  correo o figurar como aprobador. `slot.sh` acepta `IMAGINA_SLOT_DB`. E2E 74/74
+  y 31/31. **Fase 3 completa.**
 - **2026-10-26 · v0.1.311** — **Equipos** (ADR-S65, opción C1; cuarta entrega de
   la fase 3). Equipos con color, icono y líder (Ajustes → Equipos); campo
   «Equipo»; acceso por equipo en las listas (persona > equipo > rol, lo más

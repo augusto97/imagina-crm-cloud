@@ -9,7 +9,6 @@ import {
     IMPORT_PARENT_COLUMN,
     isUserWritableType,
     jsonbKeyForField,
-    roleHasCapability,
     validateFieldValue,
     type Field,
     type ImportCsvCellWarning,
@@ -43,6 +42,7 @@ import { readTenantFormat } from '../tenancy/tenant-format';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { eq } from 'drizzle-orm';
 import { memberships, teams, users } from '../db/schema';
+import { can } from '../authz/can';
 
 /**
  * Import de filas a una lista (CONTRACT §11). Valida cada valor con el
@@ -262,7 +262,7 @@ export class ImportService {
         // campos ocultos a ese rol y el `manage_fields` que la interfaz exige
         // para tocar el esquema.
         assertCanCreate(list.settings, actor);
-        const canManageFields = roleHasCapability(actor.role, 'manage_fields');
+        const canManageFields = can(actor, 'manage_fields');
         if (input.new_fields.length > 0 && !canManageFields) {
             throw new ForbiddenException({
                 code: 'import_new_fields_forbidden',

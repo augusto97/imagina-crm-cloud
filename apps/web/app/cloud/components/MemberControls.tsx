@@ -23,7 +23,15 @@ export const ROLE_LABELS: Record<string, string> = {
     agent: 'Agente',
     viewer: 'Lector',
     client: 'Cliente (portal)',
+    guest: 'Invitado',
 };
+
+/** C2 — un rol propio para el selector (su base decide el acceso por defecto). */
+export interface CustomRoleOption {
+    id: number;
+    name: string;
+    base_role: string;
+}
 
 const ROLE_HINTS: Record<StaffRole, string> = {
     admin: 'Todo, incluidos miembros, plan y ajustes de la empresa',
@@ -51,31 +59,65 @@ export function RoleSelect({
     disabled,
     label,
     compact = false,
+    customRoles = [],
+    customRoleId = null,
 }: {
     value: StaffRole;
-    onChange: (r: StaffRole) => void;
+    /** C2 — con un rol propio elegido, `customRoleId` es su id y `role` su base. */
+    onChange: (r: StaffRole, customRoleId: number | null) => void;
     disabled?: boolean;
     label: string;
     compact?: boolean;
+    customRoles?: CustomRoleOption[];
+    customRoleId?: number | null;
 }): JSX.Element {
+    const current = customRoleId ? customRoles.find((r) => r.id === customRoleId) : undefined;
     return (
         <select
             aria-label={label}
-            value={value}
-            onChange={(e) => onChange(e.target.value as StaffRole)}
+            value={current ? `custom:${current.id}` : value}
+            onChange={(e) => {
+                const v = e.target.value;
+                if (v.startsWith('custom:')) {
+                    const picked = customRoles.find((r) => `custom:${r.id}` === v);
+                    if (picked) onChange(picked.base_role as StaffRole, picked.id);
+                    return;
+                }
+                onChange(v as StaffRole, null);
+            }}
             disabled={disabled}
-            title={ROLE_HINTS[value]}
+            title={current ? `${__('Rol propio basado en')} ${ROLE_LABELS[current.base_role] ?? current.base_role}` : ROLE_HINTS[value]}
+            data-testid="member-role-select"
             className={
                 compact
                     ? 'imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2 imcrm-text-sm'
                     : 'imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2 imcrm-text-sm'
             }
         >
-            {STAFF_ROLES.map((r) => (
-                <option key={r} value={r}>
-                    {ROLE_LABELS[r]}
-                </option>
-            ))}
+            {customRoles.length > 0 ? (
+                <>
+                    <optgroup label={__('Roles fijos')}>
+                        {STAFF_ROLES.map((r) => (
+                            <option key={r} value={r}>
+                                {ROLE_LABELS[r]}
+                            </option>
+                        ))}
+                    </optgroup>
+                    <optgroup label={__('Roles propios')}>
+                        {customRoles.map((r) => (
+                            <option key={r.id} value={`custom:${r.id}`}>
+                                {r.name}
+                            </option>
+                        ))}
+                    </optgroup>
+                </>
+            ) : (
+                STAFF_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                        {ROLE_LABELS[r]}
+                    </option>
+                ))
+            )}
         </select>
     );
 }
@@ -88,15 +130,19 @@ export function MemberInviteForm({
     onSubmit,
     idPrefix,
     stacked = false,
+    customRoles = [],
 }: {
-    onSubmit: (input: { email: string; name?: string; role: StaffRole }) => Promise<AddMemberResult>;
+    onSubmit: (input: { email: string; name?: string; role: StaffRole; custom_role_id?: number | null }) => Promise<AddMemberResult>;
     idPrefix: string;
     /** Siempre en columna (paneles angostos, como el detalle de la consola). */
     stacked?: boolean;
+    /** C2 — los roles propios de la empresa, para invitar directo con uno. */
+    customRoles?: CustomRoleOption[];
 }): JSX.Element {
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const [role, setRole] = useState<StaffRole>('agent');
+    const [customRoleId, setCustomRoleId] = useState<number | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
@@ -108,7 +154,12 @@ export function MemberInviteForm({
         setError(null);
         setNotice(null);
         try {
-            const r = await onSubmit({ email: email.trim(), name: name.trim() || undefined, role });
+            const r = await onSubmit({
+                email: email.trim(),
+                name: name.trim() || undefined,
+                role,
+                ...(customRoleId ? { custom_role_id: customRoleId } : {}),
+            });
             setEmail('');
             setName('');
             setNotice(addedNotice(r));
@@ -154,7 +205,16 @@ export function MemberInviteForm({
                         placeholder={__('Opcional')}
                     />
                 </div>
-                <RoleSelect value={role} onChange={setRole} label={__('Rol')} />
+                <RoleSelect
+                    value={role}
+                    customRoles={customRoles}
+                    customRoleId={customRoleId}
+                    onChange={(r, c) => {
+                        setRole(r);
+                        setCustomRoleId(c);
+                    }}
+                    label={__('Rol')}
+                />
                 <Button type="submit" size="sm" className="imcrm-h-9 imcrm-gap-1.5" disabled={!email.trim() || busy}>
                     {busy ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <UserPlus className="imcrm-h-4 imcrm-w-4" />}
                     {__('Invitar')}
@@ -178,6 +238,9 @@ export interface MemberRowData {
     role: string;
     pending?: boolean;
     disabled?: boolean;
+    /** C2 — su rol propio (si tiene uno). */
+    custom_role_id?: number | null;
+    custom_role_name?: string | null;
 }
 
 /**
@@ -192,20 +255,23 @@ export function MemberRow({
     onResend,
     onRemove,
     extra,
+    customRoles = [],
 }: {
     member: MemberRowData;
     isSelf?: boolean;
-    onRole: (role: StaffRole) => Promise<unknown>;
+    onRole: (role: StaffRole, customRoleId: number | null) => Promise<unknown>;
     onResend: () => Promise<unknown>;
     onRemove: () => Promise<unknown>;
     /** Acciones extra al final de la fila (p. ej. "Impersonar" en la consola). */
     extra?: React.ReactNode;
+    /** C2 — los roles propios de la empresa (el selector los ofrece). */
+    customRoles?: CustomRoleOption[];
 }): JSX.Element {
     const confirm = useConfirm();
     const [busy, setBusy] = useState<null | 'role' | 'resend' | 'remove'>(null);
     const [error, setError] = useState<string | null>(null);
     const [resent, setResent] = useState(false);
-    const staff = member.role !== 'client';
+    const staff = member.role !== 'client' && member.role !== 'guest';
 
     const run = async (kind: 'role' | 'resend' | 'remove', fn: () => Promise<unknown>): Promise<boolean> => {
         setBusy(kind);
@@ -276,12 +342,14 @@ export function MemberRow({
                     <RoleSelect
                         compact
                         value={member.role as StaffRole}
-                        onChange={(r) => void run('role', () => onRole(r))}
+                        customRoles={customRoles}
+                        customRoleId={member.custom_role_id ?? null}
+                        onChange={(r, c) => void run('role', () => onRole(r, c))}
                         disabled={busy !== null}
                         label={`${__('Rol de')} ${member.name}`}
                     />
                 ) : (
-                    <span className="imcrm-text-xs imcrm-text-muted-foreground">{ROLE_LABELS.client}</span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">{ROLE_LABELS[member.role] ?? member.role}</span>
                 )}
                 {extra}
                 {!isSelf && staff && (

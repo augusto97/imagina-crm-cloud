@@ -10,6 +10,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useCreateComment, useDeleteComment, useToggleCommentReaction, useUpdateComment } from '@/hooks/useComments';
+import { useGuestCanComment } from '@/hooks/useGuests';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import type { CommentEntity } from '@/types/comment';
@@ -39,6 +40,8 @@ export function CommentThreadFooter({
 }): JSX.Element {
     const react = useToggleCommentReaction(listId, recordId);
     const toast = useToast();
+    // C3 — un invitado con «Puede ver» lee el hilo pero no responde ni reacciona.
+    const canPost = useGuestCanComment(listId, recordId);
     const [expanded, setExpanded] = useState(false);
     const [replying, setReplying] = useState(false);
 
@@ -57,16 +60,20 @@ export function CommentThreadFooter({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="imcrm-comment-thread">
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1">
-                {!root.deleted && <CommentReactions reactions={root.reactions} onToggle={(e) => toggle(root.id, e)} />}
-                <button
-                    type="button"
-                    onClick={openReply}
-                    className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                    data-testid="imcrm-comment-reply"
-                >
-                    <Reply className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Responder')}
-                </button>
+                {!root.deleted && (
+                    <CommentReactions reactions={root.reactions} onToggle={(e) => toggle(root.id, e)} disabled={!canPost} />
+                )}
+                {canPost && (
+                    <button
+                        type="button"
+                        onClick={openReply}
+                        className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                        data-testid="imcrm-comment-reply"
+                    >
+                        <Reply className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Responder')}
+                    </button>
+                )}
                 {count > 0 && (
                     <button
                         type="button"
@@ -93,7 +100,7 @@ export function CommentThreadFooter({
                                 name={authorOf(r)}
                                 canEdit={canEdit(r)}
                                 onReact={(emoji) => toggle(r.id, emoji)}
-                                onReply={openReply}
+                                onReply={canPost ? openReply : undefined}
                             />
                         ))}
                     {replying && (
@@ -126,7 +133,8 @@ function ReplyItem({
     name: string;
     canEdit: boolean;
     onReact: (emoji: CommentReactionEmoji) => void;
-    onReply: () => void;
+    /** Sin función, no se ofrece «Responder» (ni se reacciona). */
+    onReply?: () => void;
 }): JSX.Element {
     const update = useUpdateComment(listId, recordId);
     const remove = useDeleteComment(listId, recordId);
@@ -187,15 +195,17 @@ function ReplyItem({
                 )}
                 {!editing && (
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1">
-                        <CommentReactions reactions={reply.reactions} onToggle={onReact} />
-                        <button
-                            type="button"
-                            onClick={onReply}
-                            className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                        >
-                            <Reply className="imcrm-h-3 imcrm-w-3" />
-                            {__('Responder')}
-                        </button>
+                        <CommentReactions reactions={reply.reactions} onToggle={onReact} disabled={!onReply} />
+                        {onReply && (
+                            <button
+                                type="button"
+                                onClick={onReply}
+                                className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                            >
+                                <Reply className="imcrm-h-3 imcrm-w-3" />
+                                {__('Responder')}
+                            </button>
+                        )}
                         {canEdit && (
                             <span className="imcrm-flex imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground [@media(hover:hover)]:imcrm-opacity-0 [@media(hover:hover)]:group-hover/reply:imcrm-opacity-100 focus-within:imcrm-opacity-100">
                                 <button type="button" onClick={() => setEditing(true)} className="hover:imcrm-text-foreground">

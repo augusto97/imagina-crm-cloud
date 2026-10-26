@@ -50,6 +50,7 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { ViewsService } from '../views/views.service';
 import { GanttBaselinesRepository } from './gantt-baselines.repository';
 import { renderGanttPdf, type GanttPdfRow } from './gantt-pdf';
+import { aclExtras, type AclExtras } from '../lists/list-acl';
 
 export interface GanttBundleQuery {
     startFieldId: number;
@@ -370,8 +371,8 @@ export class GanttService {
     }
 }
 
-function viewer(actor: Actor): { userId: number; role: string; teamIds?: readonly number[] } {
-    return { userId: actor.userId, role: actor.role, teamIds: actor.teamIds };
+function viewer(actor: Actor): { userId: number; role: string } & AclExtras {
+    return { ...aclExtras(actor), userId: actor.userId, role: actor.role };
 }
 
 function assertRange(from: string, to: string): void {

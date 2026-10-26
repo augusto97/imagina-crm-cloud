@@ -17,9 +17,11 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { BillingService } from '../billing/billing.service';
 import { type FileActor, FilesService, type AttachmentDto, type OpenedFile } from './files.service';
 import { contentDispositionHeader, parseByteRange, safeDisposition } from './safe-content-type';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Archivos propios (ADR-S16). Upload multipart, resolución batch para la UI
@@ -146,6 +148,7 @@ export class FilesController {
 
     /** Upload multipart (campo `file`). Subir pasa por poder editar records. */
     @Post()
+    @AllowGuest()
     @HttpCode(201)
     @RequireCapability('create_records', 'edit_records', 'edit_own_records')
     async upload(@Req() req: FastifyRequest): Promise<AttachmentDto> {
@@ -188,6 +191,7 @@ export class FilesController {
 
     /** Resolución batch: `?ids=1,2,3` → metadata + URL de descarga. */
     @Get()
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     async resolve(
         @Req() req: FastifyRequest,
@@ -216,6 +220,7 @@ export class FilesController {
 
     /** Descarga streameada (inline; el browser decide por content-type). */
     @Get(':id/download')
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     async download(
         @Req() req: FastifyRequest,
@@ -241,5 +246,5 @@ export class FilesController {
 }
 
 function fileActor(req: FastifyRequest): FileActor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
