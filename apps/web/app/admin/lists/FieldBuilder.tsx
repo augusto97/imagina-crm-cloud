@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { isStoreField, readStoreListMarker } from '@imagina-base/shared';
+import { isStoreField, readScanFieldId, readStoreListMarker, SCAN_SEARCH_FIELD_TYPES } from '@imagina-base/shared';
 import {
     Columns3,
     GripVertical,
     Hash,
     Heading1,
+    ScanLine,
     KeyRound,
     Layers,
     List as ListIcon,
@@ -220,6 +221,24 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
             { onSuccess: () => invalidateForList(qc, fieldsKeys.all, listId) },
         );
     };
+
+    /**
+     * H3 — El campo «Código» de la lista: el que busca el escáner de la barra
+     * y el que se llena con lo escaneado (y muestra la cámara en la ficha).
+     * Vive en `settings.scan_field_id`, como el título.
+     */
+    const scanFieldId = readScanFieldId(listData?.settings);
+    const toggleScanCode = (field: FieldEntity): void => {
+        const { scan_field_id: _old, ...rest } = (listData?.settings ?? {}) as Record<string, unknown>;
+        updateList.mutate(
+            { settings: scanFieldId === field.id ? rest : { ...rest, scan_field_id: field.id } },
+            {
+                onSuccess: () =>
+                    toast.success(scanFieldId === field.id ? __('El campo ya no es el código de la lista') : __('Campo del código guardado')),
+            },
+        );
+    };
+    const canBeScanCode = (field: FieldEntity): boolean => (SCAN_SEARCH_FIELD_TYPES as readonly string[]).includes(field.type);
 
     const handleDuplicate = async (field: FieldEntity): Promise<void> => {
         try {
@@ -462,6 +481,8 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                                                 ? () => makeTitle(field)
                                                                 : undefined
                                                         }
+                                                        isScanCode={scanFieldId === field.id}
+                                                        onToggleScanCode={canBeScanCode(field) ? () => toggleScanCode(field) : undefined}
                                                     />
                                                 ))}
                                                 <li>
@@ -689,6 +710,9 @@ interface FieldRowProps {
     onCopyId: () => void;
     onDelete: () => void;
     onMakeTitle?: () => void;
+    /** H3 — es el campo «Código» del escáner / elegirlo o dejar de usarlo. */
+    isScanCode?: boolean;
+    onToggleScanCode?: () => void;
     /** Viene de la tienda: se marca y no se borra. */
     storeField?: boolean;
 }
@@ -706,6 +730,8 @@ function FieldRow({
     onCopyId,
     onDelete,
     onMakeTitle,
+    isScanCode = false,
+    onToggleScanCode,
     storeField = false,
 }: FieldRowProps): JSX.Element {
     const Icon = fieldTypeIcon(field.type);
@@ -745,6 +771,12 @@ function FieldRow({
                         <Badge variant="secondary" className="imcrm-shrink-0 imcrm-gap-1">
                             <KeyRound className="imcrm-h-3 imcrm-w-3" />
                             {__('Título')}
+                        </Badge>
+                    )}
+                    {isScanCode && (
+                        <Badge variant="secondary" className="imcrm-shrink-0 imcrm-gap-1" title={__('El escáner de la lista busca por este campo')} data-testid="field-scan-badge">
+                            <ScanLine className="imcrm-h-3 imcrm-w-3" />
+                            {__('Código')}
                         </Badge>
                     )}
                     {storeField && (
@@ -803,6 +835,12 @@ function FieldRow({
                         <DropdownMenuItem onSelect={onMakeTitle}>
                             <Heading1 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                             {__('Usar como título')}
+                        </DropdownMenuItem>
+                    )}
+                    {onToggleScanCode && (
+                        <DropdownMenuItem onSelect={onToggleScanCode} data-testid="field-menu-scan-code">
+                            <ScanLine className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            {isScanCode ? __('Dejar de usar como código') : __('Usar como código para escanear')}
                         </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onSelect={onDuplicate}>

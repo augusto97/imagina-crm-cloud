@@ -19,6 +19,7 @@ export * from './schemas/data-consent';
 export * from './schemas/captcha';
 export * from './schemas/notifications';
 export * from './schemas/push';
+export * from './schemas/scan';
 export * from './schemas/filter';
 export * from './schemas/saved-filter';
 export * from './schemas/search';

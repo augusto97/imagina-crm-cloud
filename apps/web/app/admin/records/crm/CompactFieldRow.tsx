@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 import { FieldHistoryButton } from '@/admin/records/history/FieldHistory';
+import { ScanFieldButton } from '@/admin/scan/ScanFieldButton';
 
 import { DurationControl } from '@/components/fields/DurationControl';
 import { PhoneControl } from '@/components/fields/PhoneControl';
@@ -69,6 +70,11 @@ interface CompactFieldRowProps {
      * el alta ni en el portal.
      */
     history?: { canRestore: boolean; onRestored?: (value: unknown, saved: RecordEntity | null) => void } | null;
+    /**
+     * H3 — el icono de la cámara para llenar el campo «Código» de la lista
+     * (texto o número). El portal del cliente lo apaga (no es del equipo).
+     */
+    scan?: boolean;
 }
 
 /**
@@ -96,6 +102,7 @@ export function CompactFieldRow({
     allowCreateOptions = true,
     variant = 'row',
     history = null,
+    scan = true,
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
     const property = variant === 'property';
@@ -127,7 +134,7 @@ export function CompactFieldRow({
     // una lista de tienda, lo que se edita en WooCommerce (v0.1.213).
     const isReadOnly = isDerivedFieldType(field.type) || lockedReason !== null;
 
-    const control = field.type === 'button' ? (
+    const baseControl = field.type === 'button' ? (
         // Campo «Botón»: se presiona (el registro lo trae el control).
         <div className="imcrm-flex imcrm-min-h-[24px] imcrm-items-center imcrm-py-0.5">
             <ButtonFieldControl field={field} listId={listId} recordId={recordId} size="md" />
@@ -157,6 +164,17 @@ export function CompactFieldRow({
     ) : (
         <ReadButton field={field} value={value} property={property} onEdit={() => setEditing(true)} />
     );
+
+    // H3 — la cámara al lado del campo «Código» (texto o número escribible).
+    const control =
+        scan && !isReadOnly && (field.type === 'text' || field.type === 'number') ? (
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-start imcrm-gap-1">
+                <div className="imcrm-min-w-0 imcrm-flex-1">{baseControl}</div>
+                <ScanFieldButton field={field} listId={listId} onValue={(v) => onChange(v)} />
+            </div>
+        ) : (
+            baseControl
+        );
 
     // El historial de un campo es lo que guardó la actividad: sólo los que
     // viven en los datos del registro (no los calculados ni las relaciones).

@@ -35,6 +35,9 @@ import {
     parseFieldConfig,
     parseViewConfig,
     readPortalConfig,
+    readScanFieldId,
+    pickScanField,
+    SCAN_SEARCH_FIELD_TYPES,
     migrateCrmV2ToV3,
     migratePortalTemplateToV3,
     readRecordLayout,
@@ -841,7 +844,8 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_update_list',
             label: 'Armando el cambio de la lista',
-            description: 'Propone cambiar el nombre, icono, color, campo de título o carpeta del menú de una lista existente.',
+            description:
+                'Propone cambiar el nombre, icono, color, campo de título, campo «Código» del escáner (QR o código de barras) o carpeta del menú de una lista existente.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
@@ -849,6 +853,10 @@ export class StructureTools implements AiProposalApplier {
                 icon: z.string().max(64).nullable().optional(),
                 color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
                 title_field: fieldSlugSchema.optional().describe('Campo de texto que hace de título'),
+                scan_field: fieldSlugSchema
+                    .nullable()
+                    .optional()
+                    .describe('H3 — campo «Código» (texto, número o ID automático) que busca el escáner de la lista y que se llena con lo escaneado al crear; null = quitarlo'),
                 folder: z.string().max(190).nullable().optional().describe('Nombre de una carpeta EXISTENTE del menú; null = sacarla de su carpeta'),
             }),
             run: (ctx, input) => this.proposeUpdateList(ctx, input as UpdateListSpec),
@@ -1177,7 +1185,16 @@ export class StructureTools implements AiProposalApplier {
             .catch(() => 0);
         return {
             content: {
-                list: { slug: list.slug, name: list.name, icon: list.icon, color: list.color, records_count: count, folder },
+                list: {
+                    slug: list.slug,
+                    name: list.name,
+                    icon: list.icon,
+                    color: list.color,
+                    records_count: count,
+                    folder,
+                    // H3 — el campo que busca el escáner de la lista (el elegido o el que lo dice en el nombre).
+                    scan_code_field: pickScanField(fields, settings)?.slug ?? null,
+                },
                 dependencies: {
                     _nota:
                         'Dependencias «bloquea / bloqueado por» entre registros de esta lista (sin ciclos). Cada registro de query_records trae blocked_by_open (bloqueantes sin terminar). Se crean o quitan con propose_set_dependencies.',
@@ -2011,6 +2028,25 @@ export class StructureTools implements AiProposalApplier {
             if (current !== field.id) {
                 patch.settings = { ...list.settings, title_field_id: field.id };
                 changes.push({ label: 'Campo de título', from: null, to: field.label });
+            }
+        }
+        if (input.scan_field !== undefined) {
+            const current = readScanFieldId(list.settings as Record<string, unknown>);
+            if (input.scan_field === null) {
+                if (current !== null) {
+                    const { scan_field_id: _drop, ...rest } = (patch.settings ?? list.settings) as Record<string, unknown>;
+                    patch.settings = rest;
+                    changes.push({ label: 'Campo del código (escáner)', from: null, to: '(ninguno)' });
+                }
+            } else {
+                const field = await this.resolveField(ctx, list, input.scan_field);
+                if (!SCAN_SEARCH_FIELD_TYPES.includes(field.type)) {
+                    throw new AiToolError(`El campo del código debe ser de texto, número o ID automático («${field.slug}» es ${field.type}).`);
+                }
+                if (current !== field.id) {
+                    patch.settings = { ...((patch.settings ?? list.settings) as Record<string, unknown>), scan_field_id: field.id };
+                    changes.push({ label: 'Campo del código (escáner)', from: null, to: field.label });
+                }
             }
         }
         if (input.folder !== undefined) {
@@ -4180,6 +4216,8 @@ interface UpdateListSpec {
     icon?: string | null;
     color?: string | null;
     title_field?: string;
+    /** H3 — campo «Código» del escáner; null = quitarlo. */
+    scan_field?: string | null;
     /** v0.1.195 — nombre de una carpeta existente; null = raíz. */
     folder?: string | null;
 }

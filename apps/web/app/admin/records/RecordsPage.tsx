@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
-import { parseTeamGroupKey, readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
+import { parseTeamGroupKey, readStoreListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     BookmarkPlus,
@@ -15,6 +15,7 @@ import {
     Search,
     Settings,
     Share2,
+    ScanLine,
     SlidersHorizontal,
     Zap,
 } from 'lucide-react';
@@ -126,6 +127,8 @@ const ButtonBulkDialog = lazyWithReload(() => import('./buttons/ButtonBulkDialog
 const StoreVariationsDialog = lazyWithReload(() => import('./bulk/StoreVariationsDialog').then((m) => ({ default: m.StoreVariationsDialog })));
 const ImportDialog = lazyWithReload(() => import('./ImportDialog').then((m) => ({ default: m.ImportDialog })));
 const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ default: m.ShareDialog })));
+// H3 — escáner de códigos de la lista (cámara + lector): sólo se baja al abrirlo.
+const ListScanDialog = lazyWithReload(() => import('@/admin/scan/ListScanDialog'));
 
 
 
@@ -546,6 +549,12 @@ export function RecordsPage(): JSX.Element {
         setCreateOpen(true);
     });
     const [kanbanSettingsOpen, setKanbanSettingsOpen] = useState(false);
+    // H3 — escáner de códigos de la lista (barra).
+    const [scanOpen, setScanOpen] = useState(false);
+    const hasScannableField = useMemo(
+        () => (fields.data ?? []).some((f) => (SCAN_SEARCH_FIELD_TYPES as readonly string[]).includes(f.type)),
+        [fields.data],
+    );
     const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
     const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
     const [workloadSettingsOpen, setWorkloadSettingsOpen] = useState(false);
@@ -1170,6 +1179,20 @@ const applyView = (view: SavedViewEntity | null): void => {
                               usuario): es un ajuste ocasional, no compite
                               con Filtrar, que sí se usa a diario.
                             */}
+                            {/* H3 — escanear un código (QR o de barras) en esta lista. */}
+                            {hasScannableField && !guest.isGuest && (
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => setScanOpen(true)}
+                                    className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
+                                    aria-label={__('Escanear un código')}
+                                    title={__('Escanear un código QR o de barras')}
+                                    data-testid="records-scan"
+                                >
+                                    <ScanLine className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                            )}
                             {!guest.isGuest && (
                                 <Button
                                     variant="outline"
@@ -1301,6 +1324,28 @@ const applyView = (view: SavedViewEntity | null): void => {
                         listId={list.data.id}
                         listName={list.data.name}
                         canPublish={canManageList}
+                    />
+                </Suspense>
+            )}
+
+            {scanOpen && fields.data && (
+                <Suspense fallback={null}>
+                    <ListScanDialog
+                        open={scanOpen}
+                        onOpenChange={setScanOpen}
+                        list={list.data}
+                        fields={fields.data}
+                        canCreate={canCreateRecords}
+                        canManageList={canManageList}
+                        onOpenRecord={(id) => setDrawerRecordId(id)}
+                        onCreate={(prefill) => {
+                            setCreateDefaults(prefill);
+                            setCreateParentId(null);
+                            setCreateTemplateId(null);
+                            // Cuando el escáner ya soltó el foco (si no, la trampa de
+                            // foco del diálogo que se cierra se lleva el del alta).
+                            window.setTimeout(() => setCreateOpen(true), 0);
+                        }}
                     />
                 </Suspense>
             )}

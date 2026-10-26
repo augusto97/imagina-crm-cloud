@@ -6,6 +6,7 @@ import {
     listSlugSchema,
     readStoreListMarker,
     slugify,
+    SCAN_SEARCH_FIELD_TYPES,
     TITLE_FIELD_TYPES,
     recordLayoutV3Schema,
     type CreateListInput,
@@ -421,6 +422,24 @@ export class ListsService {
                         throw new BadRequestException({
                             code: 'invalid_title_field',
                             message: 'El campo de título tiene que ser un campo de texto de esta lista',
+                            data: { status: 400 },
+                        });
+                    }
+                }
+                // H3 — `scan_field_id` (el campo «Código» que busca el
+                // escáner y que se llena al crear con lo escaneado): de texto,
+                // número o ID automático de ESTA lista.
+                const scanChosen = Number((patch.settings as Record<string, unknown>).scan_field_id);
+                if (Number.isInteger(scanChosen) && scanChosen > 0) {
+                    const [f] = await tx
+                        .select({ id: fields.id, type: fields.type })
+                        .from(fields)
+                        .where(and(eq(fields.tenantId, tenantId), eq(fields.listId, current.id), eq(fields.id, scanChosen)))
+                        .limit(1);
+                    if (!f || !SCAN_SEARCH_FIELD_TYPES.includes(f.type as FieldType)) {
+                        throw new BadRequestException({
+                            code: 'invalid_scan_field',
+                            message: 'El campo del código tiene que ser de texto, número o ID automático de esta lista',
                             data: { status: 400 },
                         });
                     }

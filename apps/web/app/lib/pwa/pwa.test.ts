@@ -1,0 +1,100 @@
+// @vitest-environment jsdom
+import { describe, expect, it } from 'vitest';
+
+import { describeDevice } from '@/lib/deviceLabel';
+import { codeForField, parseRecordLinkCode } from '@/lib/scan/codeSearch';
+
+import { applyAppMeta, currentAppName } from './appMeta';
+import { deviceInfo, pushSupport } from './platform';
+import { base64UrlToBytes } from './push';
+import { isOpenMessage, safeAppPath, takeTenantParam } from './serviceWorker';
+
+const IPHONE_17 = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+const IPHONE_15 = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1';
+const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
+
+function fakeNav(ua: string, extra: Record<string, unknown> = {}): Navigator {
+    return { userAgent: ua, maxTouchPoints: 5, ...extra } as unknown as Navigator;
+}
+function fakeWin(standalone: boolean, extra: Record<string, unknown> = {}): Window {
+    return {
+        matchMedia: () => ({ matches: standalone }),
+        isSecureContext: true,
+        navigator: { serviceWorker: {} },
+        PushManager: function () {},
+        Notification: function () {},
+        ...extra,
+    } as unknown as Window;
+}
+
+describe('H1 — qué puede este dispositivo', () => {
+    it('iPhone: push sólo con la app instalada y en iOS 16.4+', () => {
+        const inSafari = deviceInfo(fakeNav(IPHONE_17), fakeWin(false));
+        expect(inSafari).toMatchObject({ ios: true, iosSafari: true, standalone: false, iosVersion: 17.4 });
+        expect(pushSupport(fakeWin(false), inSafari)).toBe('ios-install');
+        const installed = deviceInfo(fakeNav(IPHONE_17), fakeWin(true));
+        expect(pushSupport(fakeWin(true), installed)).toBe('ok');
+        expect(pushSupport(fakeWin(true), deviceInfo(fakeNav(IPHONE_15), fakeWin(true)))).toBe('ios-old');
+    });
+
+    it('Android y escritorio: depende de la API (y de https)', () => {
+        const info = deviceInfo(fakeNav(ANDROID), fakeWin(false));
+        expect(info).toMatchObject({ ios: false, android: true });
+        expect(pushSupport(fakeWin(false), info)).toBe('ok');
+        expect(pushSupport(fakeWin(false, { isSecureContext: false }), info)).toBe('unsupported');
+        expect(pushSupport(fakeWin(false, { PushManager: undefined }), info)).not.toBe('ok');
+    });
+
+    it('nombre del dispositivo: un iPhone no se confunde con un Mac', () => {
+        expect(describeDevice(IPHONE_17).label).toBe('Safari · iOS');
+        expect(describeDevice(ANDROID)).toEqual({ label: 'Chrome · Android', mobile: true });
+        expect(describeDevice('').label).toBe('Dispositivo desconocido');
+    });
+});
+
+describe('H1 — puente con el service worker', () => {
+    it('sólo rutas de este origen', () => {
+        expect(safeAppPath('/#/lists/x/records/1')).toBe('/#/lists/x/records/1');
+        expect(safeAppPath('//evil.test/x')).toBe('/');
+        expect(safeAppPath('https://evil.test')).toBe('/');
+        expect(isOpenMessage({ type: 'imcrm:open', url: '/', tenant_id: 3 })).toBe(true);
+        expect(isOpenMessage({ type: 'otro' })).toBe(false);
+    });
+
+    it('?t= de una notificación: se lee y se quita de la URL', () => {
+        window.history.replaceState(null, '', '/?t=7&x=1#/lists/a/records/2');
+        expect(takeTenantParam()).toBe(7);
+        expect(window.location.search).toBe('?x=1');
+        expect(window.location.hash).toBe('#/lists/a/records/2');
+        expect(takeTenantParam()).toBeNull();
+    });
+
+    it('clave VAPID base64url → bytes', () => {
+        expect(Array.from(base64UrlToBytes('AQID_-8'))).toEqual([1, 2, 3, 255, 239]);
+    });
+
+    it('metas de la app con la marca', () => {
+        applyAppMeta('#aa2200', 'Acme CRM');
+        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#aa2200');
+        expect(currentAppName()).toBe('Acme CRM');
+        applyAppMeta('rojo', null);
+        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#0c7e97');
+        expect(currentAppName()).toBe('Imagina Base');
+    });
+});
+
+describe('H3 — códigos escaneados', () => {
+    const origin = 'https://app.acme.test';
+    it('un QR con el enlace de un registro de ESTA app se abre directo', () => {
+        expect(parseRecordLinkCode(`${origin}/#/lists/inventario/records/42`, origin)).toEqual({ listSlug: 'inventario', recordId: 42 });
+        expect(parseRecordLinkCode(`${origin}/#/lists/inventario/records?view=3&record=9`, origin)).toEqual({ listSlug: 'inventario', recordId: 9 });
+        expect(parseRecordLinkCode('https://otro.test/#/lists/x/records/1', origin)).toBeNull();
+        expect(parseRecordLinkCode('7701234567890', origin)).toBeNull();
+    });
+
+    it('llenar un campo: texto tal cual; número sólo si lo es', () => {
+        expect(codeForField('TZ-001', 'text')).toEqual({ ok: true, value: 'TZ-001' });
+        expect(codeForField('0123', 'number')).toEqual({ ok: true, value: 123 });
+        expect(codeForField('TZ-001', 'number').ok).toBe(false);
+    });
+});
