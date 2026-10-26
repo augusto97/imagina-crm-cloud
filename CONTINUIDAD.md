@@ -364,9 +364,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.304** (Campo «Fórmula» — última entrega de las fases 1 y 2 del estudio), en `main`.
+versión publicada: **v0.1.305** (el asistente detecta solo los modelos nuevos de Anthropic), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-26 — **Fase 3 del estudio, esperando tres decisiones del usuario.**
+  Preguntó «¿qué hay para la fase 3?» y se le presentó la oleada 3 (equipos,
+  roles personalizados, invitados y aprobaciones). Quedaron pendientes: (1)
+  ¿los invitados cuentan para el límite de usuarios del plan o tienen su
+  propio tope?; (2) ¿el rol admin queda fijo y los roles propios se arman
+  partiendo de uno existente?; (3) ¿quién puede aprobar: una persona, un rol,
+  un equipo o el campo Persona del registro? Antes de responder pidió que el
+  asistente detecte solo los modelos nuevos (v0.1.305). También falta que pruebe
+  lo de las fases 1 y 2.
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
   ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
   en paralelo en copias aisladas (worktrees), cada una con su instancia de
@@ -632,6 +641,25 @@ versión publicada: **v0.1.304** (Campo «Fórmula» — última entrega de las 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.305** — **El asistente detecta solo los modelos
+  nuevos** (ADR-S60). Pedido del usuario: "en la sección de asistente de IA no
+  están los modelos actualizados; debería detectarlos y no tener que pedirte que
+  actualices las versiones". La lista fija de tres modelos se reemplazó por el
+  catálogo que devuelve la API de Anthropic con la clave en uso (cache 12 h en
+  Redis, por hash de la clave). Se elige «el más reciente» de una familia (se
+  actualiza solo; default para todos, incluidas las instalaciones existentes) o
+  una versión fija, que si se retira pasa a la más reciente de su familia y lo
+  avisa. El pensamiento y el esfuerzo se arman por las capacidades que declara
+  el modelo (los actuales rechazan el presupuesto fijo). La conversación ya no
+  reenvía el pensamiento de turnos terminados: los modelos actuales lo atan al
+  prefijo exacto y en cuentas nuevas eso era un 400. Campos con IA: el modelo
+  rápido también sale del catálogo, con margen de tokens para el pensamiento.
+  Sin migración. **Para el usuario**: al actualizar, el asistente pasa solo al
+  modelo más nuevo de la familia que tenía elegida; en Plataforma → Asistente IA
+  puede ver la lista, actualizarla o fijar una versión. **Límite de la
+  verificación**: el proveedor real no alcanza el entorno; se probó contra un
+  Anthropic simulado con la misma forma de la API (lista paginada, capacidades
+  por modelo y streaming).
 - **2026-10-23 · v0.1.304** — **Campo «Fórmula»** (opción A1 del estudio,
   ADR-S59). Lenguaje en español con 49 funciones (festivos de Colombia),
   referencias guardadas por id y mostradas por nombre, un evaluador único en

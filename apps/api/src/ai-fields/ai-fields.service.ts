@@ -22,6 +22,7 @@ import type { Readable } from 'node:stream';
 import { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from '../ai/assistant.service';
 import { AiQuotaService } from '../ai/ai-quota.service';
 import { AiSettingsService } from '../ai/ai-settings.service';
+import { fieldModelParams } from '../ai/model-params';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { attachments, records, users } from '../db/schema';
@@ -43,8 +44,6 @@ import {
     type AiFieldInput,
 } from './ai-field-prompt';
 
-/** Modelo de los campos en calidad «rápida»: muchas filas, poco texto. */
-export const AI_FIELD_FAST_MODEL = 'claude-haiku-4-5';
 /** Archivos que se le pasan al modelo por campo, y su tamaño máximo. */
 const MAX_FILES = 3;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -255,10 +254,16 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         const access = await this.settings.resolve(tenantId);
         if (access.source === 'platform') await this.quota.assertWithinQuota(tenantId);
         const { system, user } = buildAiFieldPrompt(cfg, { fieldLabel: field.label, listName: list.name, inputs, attachments: blocks.length });
+        // Calidad «rápida» (default): el más reciente de la familia económica,
+        // resuelto contra lo que ve la clave — muchas filas, poco texto.
+        const model =
+            cfg.quality === 'best' ? { id: access.model, caps: access.caps } : await this.settings.fastModel(access.apiKey);
+        const params = fieldModelParams(model.caps, AI_FIELD_MAX_TOKENS[cfg.length ?? 'short']);
         const client = this.clientFactory(access.apiKey);
         const res = await client.messages.create({
-            model: cfg.quality === 'best' ? access.model : AI_FIELD_FAST_MODEL,
-            max_tokens: AI_FIELD_MAX_TOKENS[cfg.length ?? 'short'],
+            model: model.id,
+            max_tokens: params.max_tokens,
+            ...params.extra,
             system,
             messages: [{ role: 'user', content: [...blocks, { type: 'text', text: user }] }],
         });

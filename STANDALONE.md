@@ -886,8 +886,9 @@ pensamiento adaptativo y `effort: medium`, system prompt + definiciones de
 herramientas con `cache_control`, bucle de hasta 8 vueltas por mensaje,
 conversación en Redis por usuario y empresa (24 h) con historial para el
 modelo y transcript para la UI. SSE por `reply.hijack()` de Fastify. El
-modelo se elige por plataforma con override por empresa (Opus 5 default;
-Sonnet/Haiku como palanca de costo).
+modelo se elige por plataforma con override por empresa; desde v0.1.305 la
+lista sale del catálogo del proveedor y la elección por defecto es «el más
+reciente» de la familia más capaz (ADR-S60).
 
 **Consecuencias.** El asistente no puede hacer NADA que la persona no pueda
 hacer desde la interfaz, y todo lo que hace queda como una acción de esa
@@ -2917,7 +2918,8 @@ clasificar un ticket, sacar el NIT de una factura en PDF, traducir. Es el
    5 MB). Sin nada que leer, el campo queda vacío sin gastar un pedido.
 5. **Clave y cuota**: la misma de ADR-S21 — clave propia de la empresa o la
    compartida de la plataforma contra `max_ai_requests_month`. Calidad
-   «rápida» (default) usa Haiku 4.5; «el del asistente», el modelo elegido por
+   «rápida» (default) usa el más reciente de la familia económica (ADR-S60);
+   «el del asistente», el modelo elegido por
    la empresa. «Completar los vacíos» / «Recalcular todos» encola hasta 500 y,
    con la clave compartida, no más de lo que queda de la cuota.
 6. **Errores a la vista**: «Recalcular» en la ficha responde con el motivo
@@ -3755,6 +3757,53 @@ librería de hojas de cálculo (sin control de topes ni de SQL equivalente);
 funciones que agreguen listas vinculadas dentro de la fórmula (ya existen
 rollup y lookup).
 
+### ADR-S60 — Modelos del asistente: catálogo del proveedor y «el más reciente» (v0.1.305)
+
+**Contexto.** El asistente (ADR-S21) y los campos con IA (ADR-S41) usaban una
+lista fija de modelos en `shared` y decidían cómo pedir el pensamiento por el
+nombre del modelo. Cada modelo nuevo de Anthropic exigía un release, y los
+modelos actuales cambiaron reglas que rompen pedidos viejos: rechazan el
+pensamiento con presupuesto fijo (400) y atan cada bloque de pensamiento al
+modelo, a la cuenta y al prefijo exacto de la conversación (en cuentas nuevas,
+reenviar un bloque cuyo prefijo cambió es un 400).
+
+**Decisión.**
+1. **Catálogo por clave**: `GET /v1/models` con la clave que se va a usar
+   (plataforma o empresa), en Redis bajo un hash de la clave, fresco 12 h,
+   conservado 30 días. Si el proveedor falla se usa lo último conocido y no se
+   reintenta en cada pedido (5 min). Sin catálogo y con «el más reciente», el
+   asistente no está disponible y lo dice (`models_unavailable`).
+2. **Se guarda una elección**, no un modelo: `auto:<familia>` (resuelto en
+   cada pedido: el de versión más alta de la familia) o un id fijo. La familia
+   y la versión se leen del patrón del id (`claude-<familia>-<mayor>[-<menor>]`);
+   lo que no lo sigue (previews) nunca se elige solo. Un id fijo que el
+   catálogo ya no tiene se reemplaza por el más reciente de su familia y se
+   avisa. Lo que guardaban versiones anteriores pasa a `auto:<familia>`.
+3. **El pedido se arma por capacidades declaradas** (`capabilities` del
+   catálogo): adaptativo + `effort` si existe, presupuesto fijo si es lo único
+   que acepta, nada si no piensa. Sólo si el proveedor no las informa, una regla
+   por versión.
+4. **Los turnos terminados viajan sin pensamiento** (`prepareHistoryForNewTurn`):
+   entre turnos cambian el sistema, el recorte del historial, el modelo y la
+   clave. Dentro del bucle de herramientas se reenvía intacto.
+5. **Campos con IA**: la calidad rápida es `auto:` de la familia económica; en
+   modelos que piensan igual, esfuerzo `low` y margen de tokens.
+6. El código y los tests no fijan modelos concretos: todo sale del catálogo
+   (los tests usan ids inventados).
+
+**Consecuencias.** Un modelo nuevo se usa el día que Anthropic lo publica, sin
+release. Una familia nueva aparece sola en el selector. Se pierde el
+pensamiento entre turnos (el modelo no reutiliza su razonamiento de un mensaje
+anterior; sí ve sus respuestas). Una actualización automática puede cambiar el
+comportamiento del asistente sin aviso — quien necesite estabilidad fija una
+versión.
+
+**Alternativas descartadas.** Seguir con una lista fija actualizada en cada
+release (justo lo que el usuario pidió evitar); alias del proveedor tipo
+«latest» (no existen para todas las familias); `drop_block` del beta de
+vinculación de pensamiento (depende de un beta y de qué modelos lo aceptan;
+quitar el pensamiento de turnos terminados funciona con todos).
+
 ---
 
-**Versión del documento:** 1.101.0 (campo Fórmula)
+**Versión del documento:** 1.102.0 (modelos del asistente detectados solos)

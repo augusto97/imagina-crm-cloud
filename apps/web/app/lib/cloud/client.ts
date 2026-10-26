@@ -79,6 +79,8 @@ import {
     aiChatEventSchema,
     aiConversationSchema,
     aiStatusSchema,
+    aiModelCatalogSchema,
+    type AiModelCatalog,
     createPersonalTokenSchema,
     createdPersonalTokenSchema,
     oauthApproveInputSchema,
@@ -1100,6 +1102,10 @@ export class CloudClient {
     aiApply(proposalId: string): Promise<AiApplyResult> {
         return this.request('POST', `/ai/proposals/${encodeURIComponent(proposalId)}/apply`, { schema: aiApplyResultSchema });
     }
+    /** v0.1.305 — modelos que ve la clave de la empresa (o la de la plataforma). */
+    aiModels(refresh = false): Promise<AiModelCatalog> {
+        return this.request('GET', `/ai/models${refresh ? '?refresh=1' : ''}`, { schema: aiModelCatalogSchema });
+    }
     aiSettingsGet(): Promise<TenantAiSettings> {
         return this.request('GET', '/ai/settings', { schema: tenantAiSettingsSchema });
     }
@@ -1188,6 +1194,10 @@ export class CloudClient {
             body: updatePlatformAiSettingsSchema.parse(input),
             schema: platformAiSettingsSchema,
         });
+    }
+    /** v0.1.305 — modelos que ve la clave de la plataforma. */
+    platformAiModels(refresh = false): Promise<AiModelCatalog> {
+        return this.request('GET', `/platform/ai/models${refresh ? '?refresh=1' : ''}`, { schema: aiModelCatalogSchema });
     }
     platformAiTest(apiKey?: string): Promise<{ ok: boolean; model: string; message: string }> {
         return this.request('POST', '/platform/ai/test', {

@@ -12,6 +12,7 @@ import { RecordsModule } from '../records/records.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ViewsModule } from '../views/views.module';
 import { AiQuotaService } from './ai-quota.service';
+import { AiModelCatalogService } from './ai-model-catalog.service';
 import { AiSettingsService } from './ai-settings.service';
 import { AiController } from './ai.controller';
 import { AssistantService } from './assistant.service';
@@ -44,6 +45,7 @@ import { StructureTools } from './tools/structure-tools';
     imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule],
     controllers: [AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
     providers: [
+        AiModelCatalogService,
         AiSettingsService,
         AiQuotaService,
         ProposalsStore,

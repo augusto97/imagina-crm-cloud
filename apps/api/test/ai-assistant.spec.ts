@@ -4,10 +4,12 @@ import { and, eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { AiModelCatalogService, capsFrom, type ProviderModel } from '../src/ai/ai-model-catalog.service';
 import { AiQuotaExceededError, AiQuotaService } from '../src/ai/ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from '../src/ai/ai-settings.service';
 import { AssistantService, buildSystemPrompt, type AiClientFactory } from '../src/ai/assistant.service';
-import { ConversationsStore, trimHistory } from '../src/ai/conversations.store';
+import { ConversationsStore, INTERRUPTED_TURN_NOTE, prepareHistoryForNewTurn, trimHistory } from '../src/ai/conversations.store';
+import { assistantModelParams } from '../src/ai/model-params';
 import { ProposalsService } from '../src/ai/proposals.service';
 import { ProposalsStore } from '../src/ai/proposals.store';
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
@@ -60,18 +62,26 @@ class FakeHookStore implements HookCaptureStore {
  * — validación de input, capability, propuesta, tool_result, transcript,
  * cuota — sin hablar con la API.
  */
-type Turn = { text: string } | { tool: string; input: unknown; text?: string };
+type Turn = ({ text: string } | { tool: string; input: unknown; text?: string }) & { think?: boolean };
 
-function fakeClient(script: Turn[], seen: MessageParam[][] = []): { factory: AiClientFactory; seen: MessageParam[][]; calls: { n: number } } {
+type StreamParams = { model: string; messages: MessageParam[]; system: unknown; tools: unknown; thinking?: unknown; output_config?: unknown; max_tokens: number };
+
+function fakeClient(
+    script: Turn[],
+    seen: MessageParam[][] = [],
+): { factory: AiClientFactory; seen: MessageParam[][]; params: StreamParams[]; calls: { n: number } } {
     const calls = { n: 0 };
+    const params: StreamParams[] = [];
     const factory: AiClientFactory = () =>
         ({
             messages: {
-                stream: (params: { messages: MessageParam[]; system: unknown; tools: unknown }) => {
+                stream: (p: StreamParams) => {
                     const turn = script[calls.n] ?? { text: '(fin del guion)' };
                     calls.n += 1;
-                    seen.push([...params.messages]);
+                    seen.push(JSON.parse(JSON.stringify(p.messages)) as MessageParam[]);
+                    params.push(p);
                     const content: Message['content'] = [];
+                    if (turn.think) content.push({ type: 'thinking', thinking: '', signature: `firma_${calls.n}` } as never);
                     const text = 'text' in turn ? turn.text : undefined;
                     if (text) content.push({ type: 'text', text, citations: null });
                     if ('tool' in turn) content.push({ type: 'tool_use', id: `tu_${calls.n}`, name: turn.tool, input: turn.input } as never);
@@ -96,8 +106,29 @@ function fakeClient(script: Turn[], seen: MessageParam[][] = []): { factory: AiC
                 create: async () => ({ content: [{ type: 'text', text: 'ok' }], model: 'fake' }),
             },
         }) as never;
-    return { factory, seen, calls };
+    return { factory, seen, params, calls };
 }
+
+/** Catálogo que «devuelve el proveedor» en los tests (ids inventados). */
+const ADAPTIVE = { thinking: { supported: true, types: { adaptive: { supported: true }, enabled: { supported: false } } }, effort: { supported: true } };
+const BUDGET = { thinking: { supported: true, types: { adaptive: { supported: false }, enabled: { supported: true } } }, effort: { supported: false } };
+const providerModels: ProviderModel[] = [];
+function setProviderModels(models: ProviderModel[]): void {
+    providerModels.length = 0;
+    providerModels.push(...models);
+}
+const BASE_MODELS: ProviderModel[] = [
+    { id: 'claude-opus-9', display_name: 'Claude Opus 9', created_at: '2030-01-01T00:00:00Z', capabilities: ADAPTIVE },
+    { id: 'claude-opus-9-5', display_name: 'Claude Opus 9.5', created_at: '2030-06-01T00:00:00Z', capabilities: ADAPTIVE },
+    { id: 'claude-sonnet-9-5', display_name: 'Claude Sonnet 9.5', created_at: '2030-06-01T00:00:00Z', capabilities: ADAPTIVE },
+    { id: 'claude-haiku-3-9', display_name: 'Claude Haiku 3.9', created_at: '2028-01-01T00:00:00Z', capabilities: BUDGET },
+];
+let listerCalls = 0;
+const fakeLister = async (): Promise<ProviderModel[]> => {
+    listerCalls += 1;
+    if (providerModels.length === 0) throw Object.assign(new Error('caído'), { status: 503 });
+    return [...providerModels];
+};
 
 describe('Herramientas del asistente (puras)', () => {
     it('toSlug: sin acentos, snake_case, arranca con letra', () => {
@@ -137,6 +168,33 @@ describe('Herramientas del asistente (puras)', () => {
         expect(a.input_schema).toMatchObject({ type: 'object', properties: { q: { type: 'string' } } });
     });
 
+    it('v0.1.305 — el pedido se arma por lo que el modelo DECLARA que soporta, no por su nombre', () => {
+        expect(assistantModelParams(capsFrom(ADAPTIVE)!)).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } });
+        expect(assistantModelParams(capsFrom(BUDGET)!)).toEqual({ thinking: { type: 'enabled', budget_tokens: 2048 } });
+        expect(assistantModelParams(capsFrom({})!)).toEqual({});
+        expect(capsFrom(null)).toBeNull();
+    });
+
+    it('v0.1.305 — un turno nuevo arranca sin el pensamiento de los anteriores y con el anterior bien cerrado', () => {
+        const thinking = { type: 'thinking', thinking: '', signature: 's' };
+        const history = [
+            { role: 'user' as const, content: 'hola' },
+            { role: 'assistant' as const, content: [thinking, { type: 'text', text: 'listo' }] },
+            { role: 'user' as const, content: 'otra cosa' },
+            { role: 'assistant' as const, content: [thinking, { type: 'tool_use', id: 't1', name: 'list_lists', input: {} }] },
+            { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1', content: '{}' }] },
+        ];
+        const out = prepareHistoryForNewTurn(history);
+        expect(JSON.stringify(out)).not.toContain('"thinking"');
+        // El turno que quedó en un tool_result se cierra con una nota.
+        expect(out.at(-1)).toEqual({ role: 'assistant', content: [{ type: 'text', text: INTERRUPTED_TURN_NOTE }] });
+        // Un tool_use sin su resultado se quita (la API lo rechazaría).
+        const dangling = prepareHistoryForNewTurn(history.slice(0, 4));
+        expect(dangling.at(-1)).toEqual({ role: 'user', content: 'otra cosa' });
+        // No toca el original.
+        expect(JSON.stringify(history)).toContain('"thinking"');
+    });
+
     it('el system prompt lleva las reglas, el rol y la lista abierta', () => {
         const registry = new AiToolRegistry();
         const p = buildSystemPrompt({ tenantId: 1, userId: 1, role: 'manager', listSlug: 'facturas' }, registry);
@@ -157,6 +215,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
     let automations: AutomationsService;
     let dashboards: DashboardsService;
     let settings: AiSettingsService;
+    let catalogs: AiModelCatalogService;
     let quota: AiQuotaService;
     let registry: AiToolRegistry;
     let proposals: ProposalsService;
@@ -195,7 +254,10 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         const blueprint = new BlueprintService(
             tenantDb, lists, fields, views, automations, new RecordsRepository(), new RelationsRepository(), billing, rt, dashboards,
         );
-        settings = new AiSettingsService(redis, pg.db, env);
+        catalogs = new AiModelCatalogService(redis, fakeLister);
+        catalogs.memoMs = 0;
+        catalogs.manualRefreshMinMs = 0;
+        settings = new AiSettingsService(redis, pg.db, env, catalogs);
         quota = new AiQuotaService(pg.db, plans);
         const store = new ProposalsStore(redis);
         conversations = new ConversationsStore(redis);
@@ -226,6 +288,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         ]);
         ctx = { tenantId, userId, role: 'admin' };
         await redis.flushdb();
+        setProviderModels(BASE_MODELS);
         // Plataforma encendida con clave compartida; la empresa opt-in.
         await settings.updatePlatform({ enabled: true, api_key: 'sk-ant-plataforma-0000000000000000', share_platform_key: true, allow_tenant_keys: true });
         await settings.updateTenant(tenantId, { enabled: true });
@@ -272,7 +335,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
 
     it('una clave guardada con OTRA SECRETS_KEY se informa como ilegible (no se finge que anda)', async () => {
         await settings.updateTenant(tenantId, { api_key: 'sk-ant-empresa-1111111111111111111' });
-        const otra = new AiSettingsService(redis, pg.db, loadEnv({ SECRETS_KEY: 'otra-clave-distinta-totalmente' }));
+        const otra = new AiSettingsService(redis, pg.db, loadEnv({ SECRETS_KEY: 'otra-clave-distinta-totalmente' }), catalogs);
         expect((await otra.getTenant(tenantId)).key_unreadable).toBe(true);
         await expect(otra.resolve(tenantId)).rejects.toMatchObject({ reason: 'tenant_key_unreadable' });
     });
@@ -653,6 +716,101 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         expect(await quota.usedThisMonth(tenantId)).toBe(2);
         expect(await own.svc.status(ctx)).toMatchObject({ available: true, source: 'tenant', usage: { limit: null } });
         await plans.update('trial', { max_ai_requests_month: 20 });
+    });
+
+    // ── Modelos detectados solos (v0.1.305) ───────────────────────────
+
+    it('«el más reciente» se resuelve contra lo que devuelve el proveedor y se actualiza solo', async () => {
+        expect((await settings.getPlatform()).model).toBe('auto:opus');
+        const { svc, fake } = assistantWith([{ text: 'hola' }]);
+        await run(svc, ctx, 'hola');
+        expect(fake.params[0]).toMatchObject({ model: 'claude-opus-9-5', thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } });
+        expect(await svc.status(ctx)).toMatchObject({ available: true, model: 'claude-opus-9-5', model_name: 'Claude Opus 9.5', model_fallback_from: null });
+
+        // El proveedor publica uno nuevo: al refrescar el catálogo se usa solo, sin tocar código ni configuración.
+        setProviderModels([...BASE_MODELS, { id: 'claude-opus-10', display_name: 'Claude Opus 10', created_at: '2031-01-01T00:00:00Z', capabilities: ADAPTIVE }]);
+        const cat = await settings.platformCatalog(true);
+        expect(cat.families.find((f) => f.family === 'opus')).toMatchObject({ label: 'Opus', latest_id: 'claude-opus-10', latest_name: 'Claude Opus 10' });
+        expect((await settings.resolve(tenantId)).model).toBe('claude-opus-10');
+    });
+
+    it('una versión fija se respeta; si el proveedor la retira se usa la más reciente de su familia y se avisa', async () => {
+        await settings.updateTenant(tenantId, { model: 'claude-opus-9' });
+        expect(await settings.resolve(tenantId)).toMatchObject({ model: 'claude-opus-9', choice: 'claude-opus-9', fallbackFrom: null });
+        setProviderModels(BASE_MODELS.filter((m) => m.id !== 'claude-opus-9'));
+        await settings.platformCatalog(true);
+        expect(await settings.resolve(tenantId)).toMatchObject({ model: 'claude-opus-9-5', fallbackFrom: 'claude-opus-9' });
+        const { svc } = assistantWith([]);
+        expect(await svc.status(ctx)).toMatchObject({ model: 'claude-opus-9-5', model_fallback_from: 'claude-opus-9' });
+    });
+
+    it('un modelo que sólo acepta presupuesto fijo recibe ese pedido (y no uno que le daría 400)', async () => {
+        await settings.updateTenant(tenantId, { model: 'auto:haiku' });
+        const { svc, fake } = assistantWith([{ text: 'hola' }]);
+        await run(svc, ctx, 'hola');
+        expect(fake.params[0]).toMatchObject({ model: 'claude-haiku-3-9', thinking: { type: 'enabled', budget_tokens: 2048 } });
+        expect(fake.params[0]!.output_config).toBeUndefined();
+        expect(fake.params[0]!.max_tokens).toBeGreaterThan(2048);
+    });
+
+    it('lo que guardaban las versiones anteriores sigue andando y pasa a «el más reciente» de su familia', async () => {
+        await redis.set('platform:ai', JSON.stringify({ ...JSON.parse((await redis.get('platform:ai'))!), model: 'claude-sonnet-1', model_choice: undefined }));
+        expect((await settings.getPlatform()).model).toBe('auto:sonnet');
+        expect((await settings.resolve(tenantId)).model).toBe('claude-sonnet-9-5');
+        // Un valor ilegible NO borra la clave ni los interruptores (antes, sí).
+        await redis.set('platform:ai', JSON.stringify({ ...JSON.parse((await redis.get('platform:ai'))!), model: 42, model_choice: 'cualquier-cosa' }));
+        expect(await settings.getPlatform()).toMatchObject({ enabled: true, has_key: true, model: 'auto:opus' });
+    });
+
+    it('si el proveedor no responde se sigue con lo último que se supo; sin nada sabido, el motivo es claro', async () => {
+        await settings.platformCatalog(true);
+        setProviderModels([]);
+        const cat = await settings.platformCatalog(true);
+        expect(cat.error).toContain('503');
+        expect(cat.models.length).toBeGreaterThan(0);
+        expect((await settings.resolve(tenantId)).model).toBe('claude-opus-9-5');
+
+        await redis.flushdb();
+        await settings.updatePlatform({ enabled: true, api_key: 'sk-ant-plataforma-otra-000000000000', share_platform_key: true });
+        await settings.updateTenant(tenantId, { enabled: true });
+        await expect(settings.resolve(tenantId)).rejects.toMatchObject({ reason: 'models_unavailable' });
+        const { svc } = assistantWith([]);
+        expect((await svc.status(ctx)).reason).toContain('No se pudo consultar qué modelos ofrece el proveedor');
+    });
+
+    it('el catálogo se guarda por clave (hash, nunca la clave) y no se consulta en cada mensaje', async () => {
+        listerCalls = 0;
+        const { svc } = assistantWith([{ text: 'a' }, { text: 'b' }, { text: 'c' }]);
+        await run(svc, ctx, 'uno');
+        await run(svc, ctx, 'dos');
+        await run(svc, ctx, 'tres');
+        expect(listerCalls).toBeLessThanOrEqual(1);
+        const keys = await redis.keys('ai:models:*');
+        expect(keys.length).toBe(1);
+        expect(await redis.get(keys[0]!)).not.toContain('sk-ant-');
+        // La empresa con clave propia ve SU catálogo.
+        await settings.updateTenant(tenantId, { api_key: 'sk-ant-empresa-1111111111111111111' });
+        setProviderModels([{ id: 'claude-sonnet-9-5', display_name: 'Claude Sonnet 9.5', created_at: null, capabilities: ADAPTIVE }]);
+        const own = await settings.tenantCatalog(tenantId);
+        expect(own.families.map((f) => f.family)).toEqual(['sonnet']);
+        // Su elección «Opus» no existe para su clave → cae a la primera familia que sí ve, avisando.
+        expect(await settings.resolve(tenantId)).toMatchObject({ source: 'tenant', model: 'claude-sonnet-9-5', fallbackFrom: 'auto:opus' });
+    });
+
+    it('cada turno nuevo manda la conversación sin el pensamiento de los anteriores; dentro del turno, intacto', async () => {
+        const { svc, fake } = assistantWith([
+            { tool: 'list_lists', input: {}, think: true },
+            { text: 'Tienes 0 listas.', think: true },
+            { text: 'De nada.' },
+        ]);
+        const first = await run(svc, ctx, '¿cuántas listas tengo?');
+        const id = (first.at(-1) as { conversation_id: string }).conversation_id;
+        // Segunda llamada del MISMO turno: el pensamiento del tool_use viaja intacto.
+        expect(JSON.stringify(fake.seen[1])).toContain('firma_1');
+        await run(svc, ctx, 'gracias', id);
+        // Primera llamada del turno siguiente: ningún pensamiento de antes.
+        expect(JSON.stringify(fake.seen[2])).not.toContain('"thinking"');
+        expect(JSON.stringify(fake.seen[2])).toContain('Tienes 0 listas.');
     });
 
     it('status explica por qué no está disponible', async () => {

@@ -8,6 +8,7 @@ import {
     Param,
     Post,
     Patch,
+    Query,
     Req,
     Res,
     UseGuards,
@@ -19,6 +20,7 @@ import {
     type AiChatEvent,
     type AiChatRequest,
     type AiConversation,
+    type AiModelCatalog,
     type AiStatus,
     type Role,
     type TenantAiSettings,
@@ -111,6 +113,17 @@ export class AiController {
     getSettings(@Req() req: FastifyRequest): Promise<TenantAiSettings> {
         assertAdmin(req);
         return this.settings.getTenant(req.tenant!.tenantId);
+    }
+
+    /**
+     * v0.1.305 — los modelos que se pueden elegir: los que ve la clave propia
+     * de la empresa o, si no tiene, la de la plataforma. `?refresh=1` vuelve
+     * a preguntarle al proveedor ahora.
+     */
+    @Get('models')
+    models(@Req() req: FastifyRequest, @Query('refresh') refresh?: string): Promise<AiModelCatalog> {
+        assertAdmin(req);
+        return this.settings.tenantCatalog(req.tenant!.tenantId, refresh === '1' || refresh === 'true');
     }
 
     @Patch('settings')

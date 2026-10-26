@@ -1,10 +1,16 @@
-import { Body, Controller, Get, Inject, Optional, Patch, Post, UseGuards } from '@nestjs/common';
-import { updatePlatformAiSettingsSchema, type PlatformAiSettings, type UpdatePlatformAiSettingsInput } from '@imagina-base/shared';
+import { Body, Controller, Get, Inject, Optional, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+    updatePlatformAiSettingsSchema,
+    type AiModelCatalog,
+    type PlatformAiSettings,
+    type UpdatePlatformAiSettingsInput,
+} from '@imagina-base/shared';
 import { z } from 'zod';
 import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { AiSettingsService } from './ai-settings.service';
+import { describeProviderError } from './ai-model-catalog.service';
+import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
 import { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from './assistant.service';
 
 const testSchema = z.object({
@@ -41,36 +47,58 @@ export class PlatformAiController {
         return this.settings.getPlatform();
     }
 
+    /**
+     * v0.1.305 — los modelos que ve la clave de la plataforma, consultados al
+     * proveedor (cache 12 h). `?refresh=1` vuelve a preguntar ahora.
+     */
+    @Get('models')
+    models(@Query('refresh') refresh?: string): Promise<AiModelCatalog> {
+        return this.settings.platformCatalog(refresh === '1' || refresh === 'true');
+    }
+
     @Patch()
     update(@Body(new ZodValidationPipe(updatePlatformAiSettingsSchema)) input: UpdatePlatformAiSettingsInput): Promise<PlatformAiSettings> {
         return this.settings.updatePlatform(input);
     }
 
-    /** Llamada mínima al proveedor con la clave indicada (o la guardada) para comprobar que sirve. */
+    /**
+     * Prueba la clave indicada (o la guardada): consulta qué modelos ve y hace
+     * una llamada mínima con el modelo elegido, ya resuelto.
+     */
     @Post('test')
     async test(@Body(new ZodValidationPipe(testSchema)) input: z.infer<typeof testSchema>): Promise<PlatformAiTestResult> {
         const platform = await this.settings.getPlatform();
         const key = input.api_key?.trim() || (await this.settings.platformKey());
         if (!key) return { ok: false, model: platform.model, message: 'No hay ninguna clave para probar.' };
+        const catalog = await this.settings.catalogFor(key, true);
+        if (catalog.error && catalog.models.length === 0) return { ok: false, model: platform.model, message: catalog.error };
+        let model;
+        try {
+            model = await this.settings.resolveModel(key, platform.model);
+        } catch (err) {
+            return { ok: false, model: platform.model, message: err instanceof AiUnavailableError ? err.message : describeProviderError(err) };
+        }
         try {
             const client = this.clientFactory(key);
             const res = await client.messages.create({
-                model: platform.model,
-                max_tokens: 16,
+                model: model.id,
+                // Margen para el pensamiento (en algunos modelos no se puede apagar).
+                max_tokens: 256,
+                ...(model.caps.effort ? { output_config: { effort: 'low' as const } } : {}),
                 messages: [{ role: 'user', content: 'Responde sólo "ok".' }],
             });
             const text = res.content.find((b) => b.type === 'text');
-            return { ok: true, model: res.model, message: `El proveedor respondió (${text && text.type === 'text' ? text.text.trim() : 'sin texto'}).` };
+            const seen = catalog.models.length > 0 ? ` La clave ve ${catalog.models.length} modelos.` : '';
+            return {
+                ok: true,
+                model: res.model,
+                message: `${model.name} respondió (${text && text.type === 'text' ? text.text.trim() : 'sin texto'}).${seen}`,
+            };
         } catch (err) {
             const status = (err as { status?: number }).status;
-            const detail = err instanceof Error ? err.message : String(err);
             const message =
-                status === 401
-                    ? 'El proveedor rechazó la clave (401). Revisa que esté completa y vigente.'
-                    : status === 404
-                      ? `El modelo ${platform.model} no está disponible para esta clave (404).`
-                      : `No se pudo hablar con el proveedor: ${detail}`;
-            return { ok: false, model: platform.model, message };
+                status === 404 ? `El modelo ${model.name} no está disponible para esta clave (404).` : describeProviderError(err);
+            return { ok: false, model: model.id, message };
         }
     }
 }

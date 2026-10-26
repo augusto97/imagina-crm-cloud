@@ -9,11 +9,13 @@ import IORedis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
+import { AiModelCatalogService, type ProviderModel } from '../src/ai/ai-model-catalog.service';
 import { AiQuotaService } from '../src/ai/ai-quota.service';
 import { AiSettingsService } from '../src/ai/ai-settings.service';
 import type { AiClientFactory } from '../src/ai/assistant.service';
 import { aiFieldConfigProblem, buildAiFieldPrompt, parseAiFieldAnswer } from '../src/ai-fields/ai-field-prompt';
-import { AI_FIELD_FAST_MODEL, AiFieldsService, aiFieldsToRun, inputText } from '../src/ai-fields/ai-fields.service';
+import { AiFieldsService, aiFieldsToRun, inputText } from '../src/ai-fields/ai-fields.service';
+import { FIELD_THINKING_HEADROOM } from '../src/ai/model-params';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { PlansService } from '../src/billing/plans.service';
 import { loadEnv } from '../src/config/env';
@@ -138,7 +140,15 @@ describe('v0.1.277 — campos con IA (Postgres + Redis reales, modelo falso)', (
             undefined, changes,
         );
         files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-aif-'))), env);
-        settings = new AiSettingsService(redis as never, pg.db, env);
+        // Catálogo FALSO (sin red): ids inventados; la calidad «rápida» tiene
+        // que elegir sola el más reciente de la familia económica.
+        const caps = { thinking: { supported: true, types: { adaptive: { supported: true }, enabled: { supported: false } } }, effort: { supported: true } };
+        const models: ProviderModel[] = [
+            { id: 'claude-haiku-8-5', display_name: 'Claude Haiku 8.5', created_at: '2029-01-01T00:00:00Z', capabilities: caps },
+            { id: 'claude-haiku-9-5', display_name: 'Claude Haiku 9.5', created_at: '2030-01-01T00:00:00Z', capabilities: caps },
+            { id: 'claude-opus-9-5', display_name: 'Claude Opus 9.5', created_at: '2030-01-01T00:00:00Z', capabilities: caps },
+        ];
+        settings = new AiSettingsService(redis as never, pg.db, env, new AiModelCatalogService(redis as never, async () => models));
         const quota = new AiQuotaService(pg.db, new PlansService(pg.db));
         svc = new AiFieldsService(pg.db, tenantDb, lists, fieldsSvc, recs, files, rt, settings, quota, redis as never, env, undefined, fakeClient);
 
@@ -181,7 +191,11 @@ describe('v0.1.277 — campos con IA (Postgres + Redis reales, modelo falso)', (
         expect(await svc.compute(tenantId, listId, r.id, f.prioridad!.id)).toBe('Alta');
         expect((await dataOf(r.id))[`f${f.prioridad!.id}`]).toBe('Alta');
         expect(calls).toHaveLength(1);
-        expect(calls[0]!.model).toBe(AI_FIELD_FAST_MODEL);
+        // El más reciente de la familia económica, y como piensa igual: esfuerzo
+        // mínimo y margen para que el pensamiento no se coma la respuesta.
+        expect(calls[0]!.model).toBe('claude-haiku-9-5');
+        expect(calls[0]!.max_tokens).toBe(300 + FIELD_THINKING_HEADROOM);
+        expect((calls[0] as unknown as { output_config?: unknown }).output_config).toEqual({ effort: 'low' });
         const text = JSON.stringify(calls[0]!.messages);
         expect(text).toContain('Se cayó la web');
         expect(text).toContain('- Media');
