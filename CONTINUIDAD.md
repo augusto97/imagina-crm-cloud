@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main`.
+versión publicada: **v0.1.311** (equipos), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
@@ -430,8 +430,8 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
   sólo los base de `APPROVER_ROLES`). Queda fuera de Aprobaciones: verlas en el
   portal del cliente, delegar/escalar por plazo y campos por paso.
   Checklists + plantillas de registro publicadas (v0.1.310, migración 0084).
-  Sólo falta **Equipos + roles + invitados** (migración 0085), que además
-  conecta los equipos con Aprobaciones y con Carga de trabajo.
+  Equipos publicada (v0.1.311, migración 0085, ya conectada con Aprobaciones y
+  Carga de trabajo). Falta **Roles propios + invitados** (v0.1.312, 0086).
 - 2026-10-26 — **Hilos abiertos que dejó la fase 3** (no urgentes):
   (a) **eco del realtime**: la ventana de 2,5 s que ignora el eco de una edición
   propia (v0.1.253) también se come el aviso de una automatización que dispara
@@ -714,6 +714,16 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.311** — **Equipos** (ADR-S65, opción C1; cuarta entrega de
+  la fase 3). Equipos con color, icono y líder (Ajustes → Equipos); campo
+  «Equipo»; acceso por equipo en las listas (persona > equipo > rol, lo más
+  permisivo entre equipos); @equipo en comentarios y descripción; «De mis
+  equipos» en Mi trabajo; aviso `team_assigned` (correo apagado por defecto);
+  aprobador «Un equipo» y filtro «Equipo» en la carga de trabajo. Migración
+  0085. Al integrar se corrigió que Checklists y Plantillas armaban el actor sin
+  equipos, y que la migración de empresa no re-mapeaba el equipo de un paso de
+  aprobación. La entrega vino junto con «Roles propios + invitados» (v0.1.312),
+  publicada aparte. E2E 26/26 y 15/15.
 - **2026-10-26 · conversación** — Fase 4: el usuario eligió sólo la agenda de
   citas pública (D5) y pidió un documento con todas las ideas no descartadas
   para retomarlas cuando vuelva a pedir ideas → `docs/ideas.md` (regla 7 de

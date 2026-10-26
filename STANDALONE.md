@@ -4005,4 +4005,34 @@ en las listas de una tienda son sólo internos y no hay altas desde plantilla.
 
 ---
 
-**Versión del documento:** 1.107.0 (checklists y plantillas de registro)
+### ADR-S65 — Equipos (v0.1.311)
+
+**Contexto.** El acceso y la asignación sólo conocían personas y roles: un grupo
+(«Ventas») obligaba a repetir accesos persona por persona y no se le podía
+asignar un registro.
+
+**Decisión.**
+1. Tablas `teams` y `team_members` (migración 0085, RLS; sólo personas del
+   equipo de trabajo, nunca clientes del portal ni invitados), con una política
+   de sólo lectura para que el TenantGuard lea los equipos de quien pide.
+2. Un registro se asigna a un equipo con un campo «Equipo» (ids en
+   `records.data`, como Persona).
+3. El acceso a una lista también se da por equipo (`settings.permissions.teams`):
+   persona > equipo > rol; entre varios equipos, lo más permisivo de cada eje, y
+   un campo se oculta sólo si todos lo ocultan. «Los asignados» suma un campo
+   Equipo de asignación propio (`assignment_team_field_id`) para no cambiar el
+   tipo del campo Persona existente.
+4. Los equipos viajan en el actor (misma consulta que la membresía) y cuentan
+   en todos los caminos del ACL: listado, ficha, agregados, Mi trabajo, avisos,
+   aprobaciones (aprobador «Un equipo», resuelto en vivo) y carga de trabajo
+   (filtro por equipo, resuelto en el servidor).
+5. `team_assigned` sale por la campana siempre y por correo sólo si la persona
+   lo enciende.
+
+**Consecuencias.** Un cambio en un equipo se refleja al instante en accesos y
+aprobadores; los equipos viajan en la migración de empresa con ids re-mapeados
+(también en vistas y flujos de aprobación) y se borran con ella.
+
+---
+
+**Versión del documento:** 1.108.0 (equipos)

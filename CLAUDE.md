@@ -9225,6 +9225,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         a la vez en tabla, agrupada, kanban, modal y ficha diseñada; completar
         un checklist pide la aprobación y crea subtareas desde una plantilla).
 
+  - [x] **Equipos (v0.1.311, ADR-S65, opción C1 del estudio, cuarta entrega de
+        la fase 3)**: grupos de personas del equipo de trabajo («Ventas»,
+        «Soporte») con nombre, color, icono, descripción y líder (tablas `teams`
+        y `team_members`, migración 0085, RLS). (a) **Ajustes → Equipos**:
+        crear, editar y borrar, sumar y quitar personas, con contador y
+        avatares; lo hace el admin o un rol con la capacidad nueva
+        `manage_teams`; nunca entran clientes del portal ni invitados. (b)
+        **Campo «Equipo»** (uno o varios; guarda ids): chip con color e icono;
+        filtra («es / es alguno de / es uno de mis equipos»), agrupa (también en
+        kanban), ordena y exporta CSV/Excel por nombre; el import y pegar
+        aceptan el nombre; funciona en formularios públicos, edición masiva y
+        automatizaciones (`{{equipo.nombre}}`). (c) **Acceso por equipo** en
+        Permisos y en Compartir → Con tu equipo: prioridad persona > equipo >
+        rol; con varios equipos vale lo MÁS permisivo de cada eje y un campo se
+        oculta sólo si TODOS lo ocultan; «los asignados» suma un campo Equipo de
+        asignación propio (`assignment_team_field_id`, para no cambiar el tipo
+        del campo Persona que ya usan las listas). Los equipos viajan en el
+        actor (TenantGuard, misma consulta que la membresía) y cuentan en todos
+        los caminos del ACL. (d) **@equipo** en comentarios y descripción avisa
+        a cada persona del equipo que ve el registro. (e) Aviso `team_assigned`
+        (campana siempre; correo apagado por defecto: con un equipo grande
+        gastaría la cuota) y «De mis equipos» en Mi trabajo. (f) Conectado con
+        lo que entró antes: aprobador **«Un equipo»** (sus personas EN VIVO que
+        ven el registro) y filtro **«Equipo»** en la carga de trabajo
+        (`workload_team_id`, resuelto en el servidor). (g) Asistente/MCP:
+        `list_teams`, equipos en `list_members` y en
+        `propose_set_list_permissions`, el campo en `propose_add_fields`.
+        Viajan en la migración de empresa (también el equipo de un paso de
+        aprobación, que no se re-mapeaba) y se borran con ella. Bug de
+        integración corregido: Checklists y Plantillas armaban el actor sin
+        equipos, así que el acceso por equipo no contaba ahí. 1512 tests de API
+        en verde + E2E navegador 26/26 y 15/15 (escritorio, celular y oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
