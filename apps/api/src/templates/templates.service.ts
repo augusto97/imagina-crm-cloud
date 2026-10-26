@@ -265,6 +265,7 @@ function summarize(t: ResolvedTemplate): ListTemplateSummary {
             views: l.views.map((v) => ({ name: v.name, type: v.type })),
             automations: l.automations.map((a) => a.name),
             records_count: l.records.length,
+            booking_pages: (l.booking_pages ?? []).map((b) => b.name),
         })),
         dashboards: t.blueprint.dashboards.map((d) => d.name),
     };

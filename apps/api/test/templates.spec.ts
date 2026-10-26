@@ -23,7 +23,9 @@ import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
-import { automationHooks, memberships, recordChecklistItems, recordChecklists, records, relations, tenants, users } from '../src/db/schema';
+import { automationHooks, bookingPages, fields as fieldsTable, memberships, recordChecklistItems, recordChecklists, records, relations, tenants, users } from '../src/db/schema';
+import { BookingAvailabilityService } from '../src/booking/booking-availability.service';
+import { BookingService } from '../src/booking/booking.service';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -238,7 +240,7 @@ describe('Tokens del blueprint (puros)', () => {
                     }
                     for (const inner of Object.values(o)) walk(inner, where);
                 };
-                walk([l.settings, l.views, l.automations, l.fields.map((f) => f.config)], `${t.key}/${l.key}`);
+                walk([l.settings, l.views, l.automations, l.fields.map((f) => f.config), l.booking_pages.map((b) => b.config)], `${t.key}/${l.key}`);
                 for (const r of l.records) {
                     for (const slug of Object.keys(r.data)) {
                         expect(slugs.has(slug), `${t.key}/${l.key}: registro con campo ${slug}`).toBe(true);
@@ -317,6 +319,8 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             rt,
             dashboardsService,
             recordTemplatesSvc,
+            // D5 — las páginas de agenda viajan en el blueprint.
+            new BookingService(pg.db, tenantDb, listsService, fieldsService, new BookingAvailabilityService(tenantDb, null as never)),
         );
         const audit = new AuditService(tenantDb);
         templates = new TemplatesService(tenantDb, listsService, blueprints, audit);
@@ -679,6 +683,44 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         const in10 = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
         expect(values).toContain(in10);
         expect(values).toContain(actor);
+    });
+
+    it('D5 — «Agenda de citas» trae su página de agenda: sin publicar, con los campos NUEVOS y quien la aplica atendiendo', async () => {
+        await pg.db.insert(memberships).values({ userId: actor, tenantId: tenantB, role: 'admin' }).onConflictDoNothing();
+        const { lists: created, warnings } = await templates.apply(tenantB, actor, 'sys:agenda-citas', { include_records: false });
+        expect(warnings).toEqual([]);
+        const listId = created[0]!.id;
+        const [page] = await withTenant(pg.db, tenantB, (tx) => tx.select().from(bookingPages).where(eq(bookingPages.listId, listId)));
+        expect(page!.enabled).toBe(false);
+        const cfg = page!.config as {
+            mapping: Record<string, unknown>;
+            staff: Array<{ staff_user_id: number | null }>;
+            services: Array<{ name: string; option_value: string | null }>;
+            questions: Array<{ field_id: number }>;
+        };
+        const fieldRows = await withTenant(pg.db, tenantB, (tx) => tx.select().from(fieldsTable).where(eq(fieldsTable.listId, listId)));
+        const idOf = (slug: string) => fieldRows.find((x) => x.slug === slug)!.id;
+        expect(cfg.mapping).toMatchObject({
+            start_field_id: idOf('fecha'),
+            person_field_id: idOf('profesional'),
+            service_field_id: idOf('servicio'),
+            status_field_id: idOf('estado'),
+            status_confirmed: 'confirmada',
+            status_rescheduled: 'reprogramada',
+            status_cancelled: 'cancelada',
+        });
+        expect(cfg.staff.map((x) => x.staff_user_id)).toEqual([actor]);
+        expect(cfg.services.map((x) => [x.name, x.option_value])).toEqual([
+            ['Consulta', 'consulta'],
+            ['Control', 'control'],
+            ['Tratamiento', 'tratamiento'],
+        ]);
+        expect(cfg.questions[0]!.field_id).toBe(idOf('notas'));
+        // Y al duplicar la lista la página viaja con ella.
+        const dup = await templates.duplicate(tenantB, actor, String(listId), { include: { views: true, automations: true, settings: true, records: false } });
+        const pages = await withTenant(pg.db, tenantB, (tx) => tx.select().from(bookingPages).where(eq(bookingPages.listId, dup.lists[0]!.id)));
+        expect(pages).toHaveLength(1);
+        expect(pages[0]!.token).not.toBe(page!.token);
     });
 
     // ── v0.1.167 ─────────────────────────────────────────────────────────

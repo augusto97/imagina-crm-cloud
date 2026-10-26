@@ -119,6 +119,17 @@ export const blueprintRecordTemplateSchema = z.object({
 });
 export type BlueprintRecordTemplate = z.infer<typeof blueprintRecordTemplateSchema>;
 
+/**
+ * D5 — Página de agenda de una lista del blueprint. `config` es la de la
+ * página con los campos como `{ $field: slug }`; la dirección pública NO viaja
+ * (la copia recibe una propia y nace sin publicar).
+ */
+export const blueprintBookingPageSchema = z.object({
+    name: z.string().min(1).max(120),
+    config: z.record(z.unknown()).default({}),
+});
+export type BlueprintBookingPage = z.infer<typeof blueprintBookingPageSchema>;
+
 export const blueprintListSchema = z.object({
     /** Identificador dentro del blueprint (para `$list`). */
     key: z.string().min(1).max(63),
@@ -132,6 +143,8 @@ export const blueprintListSchema = z.object({
     records: z.array(blueprintRecordSchema).default([]),
     /** C6 — plantillas de registro y de checklist de la lista. */
     record_templates: z.array(blueprintRecordTemplateSchema).default([]),
+    /** D5 — páginas de agenda de la lista. */
+    booking_pages: z.array(blueprintBookingPageSchema).max(10).default([]),
 });
 export type BlueprintList = z.infer<typeof blueprintListSchema>;
 
@@ -216,6 +229,8 @@ export const listTemplateSummarySchema = z.object({
             views: z.array(z.object({ name: z.string(), type: viewTypeSchema })),
             automations: z.array(z.string()),
             records_count: z.number().int().nonnegative(),
+            /** D5 — páginas de agenda que trae la lista. */
+            booking_pages: z.array(z.string()).default([]),
         }),
     ),
     /** v0.1.167 — nombres de los tableros que trae el pack. */
@@ -391,4 +406,9 @@ export function resolveListRefs(value: unknown, keyToId: ReadonlyMap<string, num
 export const BLUEPRINT_EXCLUDED_SETTINGS: readonly string[] = ['public', 'store_sync'];
 
 /** Claves del `trigger_config` que son credenciales y se regeneran. */
-export const BLUEPRINT_EXCLUDED_TRIGGER_KEYS: readonly string[] = ['webhook_token'];
+export const BLUEPRINT_EXCLUDED_TRIGGER_KEYS: readonly string[] = [
+    'webhook_token',
+    // D5 — la página de agenda de la copia es otra: el disparador queda para
+    // cualquier página de la lista.
+    'booking_page_id',
+];

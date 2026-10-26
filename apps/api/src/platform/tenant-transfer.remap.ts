@@ -37,6 +37,8 @@ export interface IdMaps {
     team: Map<number, number>;
     /** C2 — roles propios (`memberships.custom_role_id` y filas `custom:<id>` de los permisos). */
     customRole: Map<number, number>;
+    /** D5 — páginas de agenda (el disparador «Cuando se agenda… una cita» las nombra). */
+    bookingPage: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -56,6 +58,7 @@ export function emptyMaps(): IdMaps {
         recordTemplate: new Map(),
         team: new Map(),
         customRole: new Map(),
+        bookingPage: new Map(),
     };
 }
 
@@ -101,6 +104,10 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     // C1 — el equipo que aprueba un paso («Un equipo») de un flujo de aprobación
     // (y la copia de los pasos de cada solicitud).
     team_id: 'team',
+    // D5 — la página de agenda que filtra el disparador `booking_event` y las
+    // personas del equipo que atienden en una página de agenda.
+    booking_page_id: 'bookingPage',
+    staff_user_id: 'user',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {

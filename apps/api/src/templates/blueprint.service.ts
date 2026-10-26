@@ -4,7 +4,10 @@ import {
     BLUEPRINT_EXCLUDED_SETTINGS,
     BLUEPRINT_EXCLUDED_TRIGGER_KEYS,
     BLUEPRINT_VERSION,
+    bookingConfigSchema,
+    bookingStaffSchema,
     createAutomationSchema,
+    newBookingItemId,
     findDependencyCycle,
     isDataField,
     jsonbKeyForField,
@@ -32,7 +35,8 @@ import { withoutApprovalFlowRefs } from '../approvals/approval-refs';
 import { AutomationsService } from '../automations/automations.service';
 import { BillingService } from '../billing/billing.service';
 import { DashboardsService } from '../dashboards/dashboards.service';
-import { memberships, recordDependencies, records, recordTemplates, users } from '../db/schema';
+import { bookingPages, memberships, recordDependencies, records, recordTemplates, users } from '../db/schema';
+import { BookingService } from '../booking/booking.service';
 import { ChecklistsRepository } from '../checklists/checklists.repository';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { FieldsService } from '../fields/fields.service';
@@ -103,6 +107,8 @@ export class BlueprintService {
         // C6 — plantillas de registro de la lista (Optional + al final: los
         // specs que arman el servicio a mano siguen andando).
         @Optional() private readonly recordTemplates?: RecordTemplatesService,
+        // D5 — páginas de agenda de la lista (Optional por la misma razón).
+        @Optional() private readonly booking?: BookingService,
     ) {}
 
     // ── Serializar ───────────────────────────────────────────────────────
@@ -196,6 +202,7 @@ export class BlueprintService {
                 automations: [],
                 records: [],
                 record_templates: [],
+                booking_pages: [],
             };
 
             if (include.views) {
@@ -247,6 +254,19 @@ export class BlueprintService {
                     color: r.color ?? null,
                     content: portableTemplateContent(readTemplateContent(r.content), (id) => idToSlug.get(id)),
                 }));
+            }
+
+            // D5 — páginas de agenda (van con los ajustes). La dirección pública
+            // no viaja: la copia recibe una propia y nace sin publicar.
+            if (include.settings) {
+                const pages = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ name: bookingPages.name, config: bookingPages.config })
+                        .from(bookingPages)
+                        .where(and(eq(bookingPages.tenantId, tenantId), eq(bookingPages.listId, list.id)))
+                        .orderBy(asc(bookingPages.id)),
+                );
+                bp.booking_pages = pages.slice(0, 10).map((p) => ({ name: p.name, config: tokenize(p.config) as Record<string, unknown> }));
             }
 
             if (include.records) {
@@ -472,6 +492,26 @@ export class BlueprintService {
                     await this.lists.update(tenantId, String(list.id), { settings });
                 } catch (err) {
                     warnings.push(`Ajustes de «${bl.name}»: ${message(err)}`);
+                }
+            }
+
+            // D5 — páginas de agenda: sin publicar y, si no trae quién atiende,
+            // con quien aplica la plantilla (como una página nueva).
+            for (const bpage of bl.booking_pages ?? []) {
+                if (!this.booking) break;
+                const parsed = bookingConfigSchema.safeParse(resolve(bpage.config));
+                if (!parsed.success) {
+                    warnings.push(`Agenda «${bpage.name}» de «${bl.name}»: datos inválidos`);
+                    continue;
+                }
+                const config = parsed.data;
+                if (config.staff.length === 0 && actorId > 0) {
+                    config.staff = [bookingStaffSchema.parse({ id: newBookingItemId('stf'), kind: 'user', staff_user_id: actorId })];
+                }
+                try {
+                    await this.booking.create(tenantId, actorId, String(list.id), { name: bpage.name, config });
+                } catch (err) {
+                    warnings.push(`Agenda «${bpage.name}» de «${bl.name}»: ${message(err)}`);
                 }
             }
 

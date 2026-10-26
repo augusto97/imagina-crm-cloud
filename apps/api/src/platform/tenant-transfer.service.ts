@@ -75,6 +75,8 @@ import {
     autonumberCounters,
     documentTemplates,
     forms,
+    bookingPages,
+    bookingAppointments,
     templates,
     tenants,
     timeEntries,
@@ -313,6 +315,8 @@ export class TenantTransferService {
             await dump('autonumber_counters', await this.byTenant(autonumberCounters, tenantId, liveField(autonumberCounters.fieldId)));
             // v0.1.275 — formularios públicos (el diseño apunta a campos por id).
             await dump('forms', await this.byTenant(forms, tenantId, liveList(forms.listId)));
+            // D5 — páginas de agenda (la configuración apunta a campos y personas por id).
+            await dump('booking_pages', await this.byTenant(bookingPages, tenantId, liveList(bookingPages.listId)));
             // Autorización de tratamiento de datos (Ley 1581): las versiones
             // del texto (la evidencia va abajo, por páginas).
             await dump('data_consent_versions', await this.byTenant(dataConsentVersions, tenantId));
@@ -401,6 +405,8 @@ export class TenantTransferService {
                 sql`NOT EXISTS (SELECT 1 FROM comments c JOIN records r ON r.id = c.record_id WHERE c.id = ${commentReactions.commentId} AND r.deleted_at IS NOT NULL)`,
             );
             counts.time_entries = await this.dumpPaged(work, 'time_entries', timeEntries, tenantId, liveRecord(timeEntries.recordId));
+            // D5 — las citas de la agenda (cada una cuelga de su registro).
+            counts.booking_appointments = await this.dumpPaged(work, 'booking_appointments', bookingAppointments, tenantId, liveRecord(bookingAppointments.recordId));
             counts.activity = await this.dumpPaged(work, 'activity', activity, tenantId, and(liveList(activity.listId), liveRecord(activity.recordId)));
             // La EVIDENCIA de cada autorización de datos: es prueba legal de la
             // empresa (la tiene que conservar), así que viaja con ella — también
@@ -1313,6 +1319,57 @@ export class TenantTransferService {
             (f) => maps.list.has(Number(f.listId)),
         );
 
+        // 7c-bis. Páginas de agenda (D5), antes que las automatizaciones: el
+        //     disparador «Cuando se agenda…» las nombra por id. Igual que un
+        //     formulario, la dirección pública es nueva; las citas se traen con
+        //     su registro, su persona y el evento de su calendario.
+        const bookingRows = await this.readAll(rows('booking_pages'));
+        counts.booking_pages = await this.insertMapped(
+            tx,
+            bookingRows,
+            bookingPages,
+            maps.bookingPage,
+            (b) => ({
+                tenantId,
+                listId: maps.list.get(Number(b.listId))!,
+                name: String(b.name),
+                token: randomBytes(18).toString('base64url'),
+                enabled: b.enabled === true,
+                config: remapJson((b.config as Row | null) ?? {}, maps) as Row,
+                bookingsCount: Number(b.bookingsCount ?? 0),
+                lastBookedAt: this.date(b.lastBookedAt),
+                createdBy: mapId(maps.user, b.createdBy),
+            }),
+            (b) => maps.list.has(Number(b.listId)),
+        );
+        counts.booking_appointments = await this.insertPlain(tx, rows('booking_appointments'), bookingAppointments, (a) => {
+            const pageId = mapId(maps.bookingPage, a.pageId);
+            const listId = mapId(maps.list, a.listId);
+            const recordId = mapId(maps.record, a.recordId);
+            if (pageId === null || listId === null || recordId === null) return null;
+            const status = ['confirmed', 'rescheduled', 'cancelled'].includes(String(a.status)) ? String(a.status) : 'confirmed';
+            return {
+                tenantId,
+                pageId,
+                listId,
+                recordId,
+                staffId: String(a.staffId ?? '').slice(0, 32),
+                staffUserId: mapId(maps.user, a.staffUserId),
+                serviceId: String(a.serviceId ?? '').slice(0, 32),
+                startAt: this.date(a.startAt) ?? new Date(),
+                endAt: this.date(a.endAt) ?? new Date(),
+                status,
+                clientName: (a.clientName as string | null) ?? null,
+                clientEmail: (a.clientEmail as string | null) ?? null,
+                clientTz: (a.clientTz as string | null) ?? null,
+                externalEvent: a.externalEvent ? (remapJson(a.externalEvent as Row, maps) as Row) : null,
+                remindersSent: Array.isArray(a.remindersSent) ? a.remindersSent : [],
+                cancelledAt: this.date(a.cancelledAt),
+                createdAt: this.date(a.createdAt) ?? new Date(),
+                updatedAt: this.date(a.updatedAt) ?? new Date(),
+            };
+        });
+
         // 7d. Autorización de tratamiento de datos (Ley 1581). Las versiones y
         //     la EVIDENCIA de cada aceptación viajan: son la prueba que la
         //     empresa tiene que conservar. El número de versión se conserva
@@ -1343,7 +1400,7 @@ export class TenantTransferService {
                 tenantId,
                 version,
                 textHash: String(c.textHash ?? ''),
-                source: c.source === 'portal' ? 'portal' : 'form',
+                source: c.source === 'portal' ? 'portal' : c.source === 'booking' ? 'booking' : 'form',
                 sourceLabel: String(c.sourceLabel ?? '').slice(0, 300),
                 formId: mapId(maps.form, c.formId),
                 listId: mapId(maps.list, c.listId),
@@ -1783,6 +1840,11 @@ export class TenantTransferService {
         if (formRows.length > 0) {
             warnings.push(
                 `${formRows.length} formulario(s) tienen una dirección NUEVA: hay que volver a repartirla (y a insertarla en los sitios que lo usan).`,
+            );
+        }
+        if (bookingRows.length > 0) {
+            warnings.push(
+                `${bookingRows.length} página(s) de agenda tienen una dirección NUEVA: hay que volver a repartirla (y a insertarla en los sitios que la usan). Los enlaces para cambiar o cancelar citas que ya se mandaron por correo apuntan al servidor anterior.`,
             );
         }
         const hooks = autoRows.filter((a) => String(a.triggerType) === 'incoming_webhook').length;

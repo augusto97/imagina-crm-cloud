@@ -129,6 +129,7 @@ export const list = (
     automations: [],
     records: [],
     record_templates: [],
+    booking_pages: [],
     ...rest,
 });
 
