@@ -16,6 +16,8 @@ import {
     doneRuleFor,
     effectiveEndMs,
     FALLBACK_TIME_ZONE,
+    HELPDESK_MANAGED_REASON,
+    helpdeskManagedFieldIds,
     isSystemField,
     isUserWritableType,
     systemFieldBaseType,
@@ -304,7 +306,8 @@ export class RecordsService {
         assertGuestWritable(list.settings, fields, actor, input.data);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
-        const rel = splitRelationValues(fields, input.data);
+        // D2/E5 — las columnas del SLA las llena el motor del SLA, no el alta.
+        const rel = splitRelationValues(fields, withoutHelpdeskManaged(list.settings, input.data));
         // v0.1.300 — valores por defecto: lo que NO viene en el alta (fijo, hoy en
         // el reloj de la empresa, quien lo crea, una opción).
         const clock = await this.clock(tenantId);
@@ -1107,6 +1110,8 @@ export class RecordsService {
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
             if (opts.expect) await this.assertUnchanged(tx, tenantId, fields, current, opts.expect);
 
+            // D2/E5 — las columnas del SLA no se escriben a mano.
+            assertNotHelpdeskManaged(list.settings, fields, Object.keys(rel.data));
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             const patch = this.validateData(fields, rel.data, { partial: true });
             await this.assertUniqueInTx(tx, tenantId, listId, fields, patch, id);
@@ -1266,6 +1271,7 @@ export class RecordsService {
                 let merged: Record<string, unknown>;
                 try {
                     const valid = this.validateData(fields, patch, { partial: true });
+                    assertNotHelpdeskManaged(list.settings, fields, Object.keys(valid));
                     merged = mergeData(data, valid);
                     this.assertStoreEdit(list, fields, data, merged, Object.keys(valid).map((k) => Number(k.slice(1))));
                     await this.assertUniqueInTx(tx, tenantId, list.id, fields, valid, cur.id);
@@ -2252,6 +2258,28 @@ function assertGuestWritable(
             });
         }
     }
+}
+
+/** D2/E5 — saca del alta los valores de las columnas que mantiene el SLA. */
+function withoutHelpdeskManaged(settings: Record<string, unknown>, data: Record<string, unknown>): Record<string, unknown> {
+    const managed = helpdeskManagedFieldIds(settings);
+    if (managed.length === 0) return data;
+    const out = { ...data };
+    for (const id of managed) delete out[jsonbKeyForField(id)];
+    return out;
+}
+
+/** D2/E5 — una edición que toca una columna del SLA se rechaza con el motivo. */
+function assertNotHelpdeskManaged(settings: Record<string, unknown>, fields: Field[], keys: string[]): void {
+    const managed = new Set(helpdeskManagedFieldIds(settings).map(jsonbKeyForField));
+    const hit = keys.find((k) => managed.has(k));
+    if (!hit) return;
+    const label = fields.find((f) => jsonbKeyForField(f.id) === hit)?.label ?? hit;
+    throw new ForbiddenException({
+        code: 'helpdesk_field_locked',
+        message: `«${label}»: ${HELPDESK_MANAGED_REASON}`,
+        data: { status: 403, errors: { [hit]: HELPDESK_MANAGED_REASON } },
+    });
 }
 
 function splitRelationValues(

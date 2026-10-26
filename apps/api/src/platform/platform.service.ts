@@ -89,6 +89,9 @@ import {
     templates,
     connectionSyncs,
     sqlSyncs,
+    helpdeskMailboxes,
+    helpdeskMessages,
+    helpdeskTickets,
     paymentLinks,
     collectionHooks,
     whatsappContacts,
@@ -400,6 +403,10 @@ export class PlatformService {
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.tenantId, id));
             await tx.delete(sqlSyncs).where(eq(sqlSyncs.tenantId, id));
+            // D2/E5 — mesa de ayuda (antes que comentarios, registros y listas).
+            await tx.delete(helpdeskMessages).where(eq(helpdeskMessages.tenantId, id));
+            await tx.delete(helpdeskTickets).where(eq(helpdeskTickets.tenantId, id));
+            await tx.delete(helpdeskMailboxes).where(eq(helpdeskMailboxes.tenantId, id));
             await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
             // v0.1.288 — historial de versiones (antes que las automatizaciones).

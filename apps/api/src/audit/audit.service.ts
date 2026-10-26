@@ -166,7 +166,12 @@ export type AuditAction =
     // suscribir la app de Meta a la cuenta.
     | 'whatsapp.config'
     | 'whatsapp.columns'
-    | 'whatsapp.subscribe';
+    | 'whatsapp.subscribe'
+    // D2/E5 — mesa de ayuda: el buzón de la lista (credencial) y sus ajustes (mapeo, SLA).
+    | 'helpdesk.mailbox_connect'
+    | 'helpdesk.mailbox_update'
+    | 'helpdesk.mailbox_delete'
+    | 'helpdesk.settings';
 
 export interface AuditEntryDto {
     id: number;

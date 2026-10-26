@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { BookingEventInfo, ChecklistCompletedInfo, WhatsappEventInfo } from '@imagina-base/shared';
+import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
 import type { Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -28,6 +28,10 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     booking_event: ['booking_event'],
     // D3 — un contacto escribió por WhatsApp (oficial).
     whatsapp_message_received: ['whatsapp_message_received'],
+    // D2 — llegó un correo al buzón de la mesa de ayuda (ticket nuevo o respuesta).
+    email_received: ['email_received'],
+    // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.
+    sla_alert: ['sla_alert'],
 };
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
@@ -72,7 +76,9 @@ export interface TriggerEvent {
         | 'approval_resolved'
         | 'checklist_completed'
         | 'booking_event'
-        | 'whatsapp_message_received';
+        | 'whatsapp_message_received'
+        | 'email_received'
+        | 'sla_alert';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -113,6 +119,16 @@ export interface TriggerEvent {
      * Viaja sólo en el evento (la cola), nunca en la base.
      */
     whatsapp?: WhatsappEventInfo;
+    /**
+     * D2 — el correo que acaba de llegar (trigger `email_received`): el filtro
+     * por ticket nuevo o respuesta y `{{correo.de}}`, `{{correo.asunto}}`…
+     */
+    email?: EmailEventInfo;
+    /**
+     * E5 — la alerta de SLA (trigger `sla_alert`): el filtro por alerta y
+     * objetivo, y `{{sla.alerta}}`, `{{sla.vence}}`…
+     */
+    sla?: SlaEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */

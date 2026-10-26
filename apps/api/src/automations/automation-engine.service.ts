@@ -9,7 +9,16 @@ import {
     BOOKING_EVENTS,
     BOOKING_EVENT_LABELS,
     type BookingEventInfo,
+    emailTriggerMatches,
+    helpdeskManagedFieldIds,
+    slaTriggerMatches,
+    HELPDESK_MANAGED_REASON,
     type ChecklistCompletedInfo,
+    type EmailEventInfo,
+    type SlaEventInfo,
+    SLA_ALERT_LABELS,
+    SLA_STATUS_LABELS,
+    SLA_TARGET_LABELS,
     type FromTemplateResult,
     fieldDefaultOf,
     isSystemField,
@@ -79,6 +88,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { BOOKING_SIMULATOR, type BookingSimulator } from '../booking/booking-simulator';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { HelpdeskReplyService } from '../helpdesk/helpdesk-reply.service';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
@@ -140,6 +150,10 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     booking_event: ['booking_event'],
     // D3 — un contacto escribió por WhatsApp (oficial).
     whatsapp_message_received: ['whatsapp_message_received'],
+    // D2 — llegó un correo al buzón de soporte (ticket nuevo o respuesta).
+    email_received: ['email_received'],
+    // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.
+    sla_alert: ['sla_alert'],
 };
 
 interface PersonInfo {
@@ -180,6 +194,10 @@ interface RunContext {
     booking?: BookingEventInfo;
     /** D3 — el mensaje de WhatsApp que llegó (`{{whatsapp.texto}}`, `{{whatsapp.de}}`…). */
     whatsapp?: WhatsappEventInfo;
+    /** D2 — el correo que llegó (`{{correo.de}}`, `{{correo.asunto}}`, `{{correo.texto}}`). */
+    email?: EmailEventInfo;
+    /** E5 — la alerta de SLA (`{{sla.alerta}}`, `{{sla.vence}}`…). */
+    sla?: SlaEventInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
@@ -211,6 +229,8 @@ interface RunContext {
     teamNames?: Map<number, string>;
     /** Marca de tienda por lista, leída una vez por corrida. */
     storeMarkers?: Map<number, StoreListMarker | null>;
+    /** E5 — columnas que mantiene el SLA de la mesa de ayuda, por lista (nadie las escribe). */
+    helpdeskManaged?: Map<number, number[]>;
     /**
      * v0.1.288 — la respuesta del ÚLTIMO webhook/conector (`{{webhook.status}}`,
      * `{{webhook.body.x}}`) y las guardadas con nombre
@@ -319,6 +339,8 @@ export interface ResumeState {
         button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
         checklist?: ChecklistCompletedInfo;
         booking?: BookingEventInfo;
+        email?: EmailEventInfo;
+        sla?: SlaEventInfo;
         pdf?: Record<string, unknown>;
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
@@ -372,6 +394,7 @@ const ACTION_NAMES: Record<string, string> = {
     for_each_linked: 'Repetir por cada vinculado',
     request_approval: 'Pedir aprobación',
     wait_approval: 'Esperar aprobación',
+    reply_email: 'Responder por correo',
     engine: 'Motor de automatizaciones',
 };
 
@@ -464,6 +487,22 @@ export class AutomationEngine {
     }
 
     /** C6 — plantillas de registro (se resuelve al usarlo, igual que RecordsService). */
+    /**
+     * D2 — La mesa de ayuda («Responder por correo al hilo del registro»).
+     * Vive en su propio módulo, que depende de este: se resuelve al usarla.
+     */
+    private helpdeskSvc: HelpdeskReplyService | null | undefined;
+    private helpdesk(): HelpdeskReplyService | null {
+        if (this.helpdeskSvc === undefined) {
+            try {
+                this.helpdeskSvc = this.moduleRef?.get(HelpdeskReplyService, { strict: false }) ?? null;
+            } catch {
+                this.helpdeskSvc = null;
+            }
+        }
+        return this.helpdeskSvc;
+    }
+
     private recordTemplates(): RecordTemplatesService | null {
         if (this.recordTemplatesSvc === undefined) {
             try {
@@ -501,6 +540,7 @@ export class AutomationEngine {
         );
         const marker = readStoreListMarker(row?.settings);
         ctx.storeMarkers.set(listId, marker);
+        (ctx.helpdeskManaged ??= new Map()).set(listId, helpdeskManagedFieldIds(row?.settings));
         return marker;
     }
 
@@ -549,6 +589,8 @@ export class AutomationEngine {
                 ...(event.checklist ? { checklist: event.checklist } : {}),
                 ...(event.booking ? { booking: event.booking } : {}),
                 ...(event.whatsapp ? { whatsapp: event.whatsapp } : {}),
+                ...(event.email ? { email: event.email } : {}),
+                ...(event.sla ? { sla: event.sla } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -854,6 +896,8 @@ export class AutomationEngine {
             ...(state.ctx.button ? { button: state.ctx.button } : {}),
             ...(state.ctx.checklist ? { checklist: state.ctx.checklist } : {}),
             ...(state.ctx.booking ? { booking: state.ctx.booking } : {}),
+            ...(state.ctx.email ? { email: state.ctx.email } : {}),
+            ...(state.ctx.sla ? { sla: state.ctx.sla } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
@@ -1170,6 +1214,44 @@ export class AutomationEngine {
                 }
                 break;
             }
+            case 'email_received': {
+                // D2 — el último correo que llegó al ticket, o uno supuesto.
+                const kind = cfg.email_kind === 'new' ? 'nuevo' : cfg.email_kind === 'reply' ? 'respuesta' : null;
+                const last = ctx.recordId !== null ? await this.helpdesk()?.lastInbound(ctx.tenantId, ctx.recordId) : null;
+                ctx.email = {
+                    tipo: kind ?? (last?.tipo ?? 'nuevo'),
+                    de: last?.de ?? 'cliente@ejemplo.com',
+                    nombre: last?.nombre ?? 'Cliente',
+                    asunto: last?.asunto ?? '(el asunto del correo)',
+                    texto: last?.texto ?? '(el texto del correo)',
+                    message_id: last?.message_id ?? null,
+                };
+                notes.push(
+                    last
+                        ? `Se usan los datos del último correo que llegó a este registro (de ${last.de}).`
+                        : 'Este registro todavía no recibió correos: {{correo.x}} usa datos de ejemplo.',
+                );
+                break;
+            }
+            case 'sla_alert': {
+                // E5 — una alerta supuesta: la primera que escucha el disparador.
+                const alerts = Array.isArray(cfg.sla_alerts) ? (cfg.sla_alerts as unknown[]).map(String) : [];
+                const targets = Array.isArray(cfg.sla_targets) ? (cfg.sla_targets as unknown[]).map(String) : [];
+                const alerta = alerts.includes('at_risk') || alerts.length === 0 ? 'at_risk' : 'breached';
+                const objetivo = targets.includes('first_response') || targets.length === 0 ? 'first_response' : 'resolution';
+                const sla = ctx.recordId !== null ? await this.helpdesk()?.slaSnapshot(ctx.tenantId, ctx.recordId, objetivo) : null;
+                ctx.sla = {
+                    alerta,
+                    objetivo,
+                    vence: sla?.due ?? null,
+                    prioridad: sla?.priority ?? null,
+                    estado: alerta === 'breached' ? 'vencido' : 'en_riesgo',
+                };
+                notes.push(
+                    `Se asume que la ${SLA_TARGET_LABELS[objetivo]} de este registro quedó ${SLA_ALERT_LABELS[alerta]}${sla?.due ? '' : ' (el registro no tiene SLA calculado: {{sla.vence}} queda vacío)'}.`,
+                );
+                break;
+            }
             default:
                 break;
         }
@@ -1273,6 +1355,14 @@ export class AutomationEngine {
             if (!ctx.whatsapp) return false;
             const wanted = Number(cfg.connection_id);
             if (Number.isInteger(wanted) && wanted > 0 && ctx.whatsapp.conexion_id !== wanted) return false;
+        }
+        // D2 — «Cuando llega un correo»: cualquiera, sólo tickets nuevos o sólo respuestas.
+        if (auto.triggerType === 'email_received') {
+            if (!ctx.email || !emailTriggerMatches(cfg, ctx.email)) return false;
+        }
+        // E5 — «Cuando un SLA está en riesgo o se vence»: las alertas y objetivos elegidos.
+        if (auto.triggerType === 'sla_alert') {
+            if (!ctx.sla || !slaTriggerMatches(cfg, ctx.sla)) return false;
         }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
@@ -1384,6 +1474,10 @@ export class AutomationEngine {
             if (token.startsWith('cita.')) {
                 return bookingMergeValue(ctx.booking, token.slice('cita.'.length), ctx.format?.time_format ?? 'h24');
             }
+            // D2 — el correo que llegó al buzón de soporte.
+            if (token.startsWith('correo.')) return emailValue(ctx.email, token.slice('correo.'.length));
+            // E5 — la alerta de SLA (el vencimiento, en el formato y la zona de la empresa).
+            if (token.startsWith('sla.')) return slaValue(ctx, token.slice('sla.'.length));
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -1616,6 +1710,8 @@ export class AutomationEngine {
                 ...(ctx.button ? { button: ctx.button } : {}),
                 ...(ctx.checklist ? { checklist: ctx.checklist } : {}),
                 ...(ctx.booking ? { booking: ctx.booking } : {}),
+                ...(ctx.email ? { email: ctx.email } : {}),
+                ...(ctx.sla ? { sla: ctx.sla } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),
@@ -1728,6 +1824,17 @@ export class AutomationEngine {
         if (spec.type === 'request_approval') {
             try {
                 return { log: tag([await this.requestApproval(ctx, spec.config ?? {})]) };
+            } catch (err) {
+                return { log: tag([{ action: spec.type, status: 'failed', message: explainError(err), details: {} }]) };
+            }
+        }
+
+        // D2 — responder por correo al hilo del ticket: la mesa de ayuda manda
+        // el correo y escribe el comentario en sus propias transacciones (no
+        // dentro de una del motor: el reloj del SLA vuelve a escribir la fila).
+        if (spec.type === 'reply_email') {
+            try {
+                return { log: tag([await this.replyEmail(ctx, spec.config ?? {})]) };
             } catch (err) {
                 return { log: tag([{ action: spec.type, status: 'failed', message: explainError(err), details: {} }]) };
             }
@@ -2312,6 +2419,17 @@ export class AutomationEngine {
                 storeSkipped.push(`${slug} (${err})`);
             }
         }
+        // E5 — los vencimientos y el estado del SLA los calcula la mesa de ayuda.
+        const managed = ctx.helpdeskManaged?.get(target.listId) ?? [];
+        if (managed.length > 0) {
+            for (const slug of Object.keys(applied)) {
+                const key = target.slugToKey.get(slug)!;
+                if (!managed.includes(Number(key.slice(1)))) continue;
+                delete patch[key];
+                delete applied[slug];
+                storeSkipped.push(`${slug} (${HELPDESK_MANAGED_REASON})`);
+            }
+        }
 
         // Lo que ya tenía ese valor no se re-escribe (ni dispara nada).
         for (const [slug, value] of Object.entries(applied)) {
@@ -2506,6 +2624,41 @@ export class AutomationEngine {
             record_id: created.id,
             ...(skipped.length > 0 ? { warnings: skipped } : {}),
         });
+    }
+
+    /**
+     * D2 — «Responder por correo al hilo del registro»: el texto (con las
+     * variables del registro, del correo que llegó y del ticket) va al cliente
+     * por el correo de la empresa, con las cabeceras del hilo. En «Probar»
+     * sólo se arma: no sale nada.
+     */
+    private async replyEmail(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const svc = this.helpdesk();
+        if (!svc) return fail('reply_email', 'La mesa de ayuda no está disponible en este servidor.');
+        if (ctx.recordId === null) return skip('reply_email', 'No hay un registro: la respuesta va al hilo de un ticket.');
+        const raw = typeof cfg.body === 'string' ? cfg.body : '';
+        if (raw.trim() === '') return fail('reply_email', 'La acción no tiene el texto de la respuesta.');
+        const vars = await svc.ticketVars(ctx.tenantId, ctx.listId, ctx.recordId);
+        const base = this.accessor(ctx);
+        const fv = (token: string): unknown => (Object.prototype.hasOwnProperty.call(vars, token) ? vars[token] : base(token));
+        const { merge } = this.mergers(ctx, fv);
+        const body = merge(raw).trim();
+        if (body === '') return skip('reply_email', 'La respuesta quedó vacía con los datos de este registro.');
+        const subject = typeof cfg.subject === 'string' && cfg.subject.trim() !== '' ? merge(cfg.subject) : undefined;
+        const cc = typeof cfg.cc === 'string' && cfg.cc.trim() !== '' ? merge(cfg.cc) : undefined;
+        const sim = ctx.sim;
+        const c = await svc.replyFromAutomation(
+            ctx.tenantId,
+            ctx.listId,
+            ctx.recordId,
+            { body, ...(subject ? { subject } : {}), ...(cc ? { cc } : {}), ...(ctx.automation ? { automationName: ctx.automation.name } : {}) },
+            { simulate: !!sim },
+        );
+        const details = { to: c.to, cc: c.cc, subject: c.subject, in_reply_to: c.inReplyTo };
+        if (sim) {
+            return ok('reply_email', `Respondería por correo a ${c.to.join(', ')}: «${c.subject}».`, { ...details, body, _sim: 'would_run' });
+        }
+        return ok('reply_email', `Respondió por correo a ${c.to.join(', ')}: «${c.subject}».`, { ...details, message_id: c.messageId });
     }
 
     /** C6 — «Crear un registro» con plantilla: el registro, sus subtareas y checklists en una transacción. */
@@ -3549,6 +3702,56 @@ function approvalValue(info: ApprovalEventInfo | undefined, key: string): unknow
             return info.status;
         case 'id':
             return info.request_id > 0 ? info.request_id : '';
+        default:
+            return '';
+    }
+}
+
+/** D2 — `{{correo.de}}`, `{{correo.nombre}}`, `{{correo.asunto}}`, `{{correo.texto}}`, `{{correo.tipo}}`. */
+function emailValue(info: EmailEventInfo | undefined, key: string): unknown {
+    if (!info) return '';
+    switch (key) {
+        case 'de':
+            return info.de;
+        case 'nombre':
+            return info.nombre || info.de;
+        case 'asunto':
+            return info.asunto;
+        case 'texto':
+            return info.texto;
+        case 'tipo':
+            return info.tipo;
+        default:
+            return '';
+    }
+}
+
+/**
+ * E5 — `{{sla.alerta}}` («en riesgo» / «vencido»), `{{sla.objetivo}}`
+ * («primera respuesta» / «resolución»), `{{sla.vence}}` (en el formato y la
+ * zona de la empresa), `{{sla.prioridad}}` y `{{sla.estado}}`.
+ */
+function slaValue(ctx: RunContext, key: string): unknown {
+    const info = ctx.sla;
+    if (!info) return '';
+    switch (key) {
+        case 'alerta':
+            return SLA_ALERT_LABELS[info.alerta];
+        case 'objetivo':
+            return SLA_TARGET_LABELS[info.objetivo];
+        case 'vence': {
+            if (!info.vence) return '';
+            const at = new Date(info.vence);
+            if (Number.isNaN(at.getTime())) return '';
+            return formatEmailFieldValue({ type: 'datetime', config: {} }, at.toISOString(), {
+                ...(ctx.format ?? DEFAULT_FORMAT),
+                timezone: ctx.timeZone ?? FALLBACK_TIME_ZONE,
+            });
+        }
+        case 'prioridad':
+            return info.prioridad ?? '';
+        case 'estado':
+            return info.estado ? SLA_STATUS_LABELS[info.estado] : '';
         default:
             return '';
     }

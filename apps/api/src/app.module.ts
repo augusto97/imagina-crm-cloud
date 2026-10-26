@@ -4,6 +4,7 @@ import { AggregateModule } from './aggregate/aggregate.module';
 import { AiModule } from './ai/ai.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
 import { ApprovalsModule } from './approvals/approvals.module';
+import { HelpdeskModule } from './helpdesk/helpdesk.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
@@ -155,6 +156,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         TrashModule,
         // C5 — aprobaciones: flujos por lista, solicitudes y decisiones.
         ApprovalsModule,
+        // D2 + E5 — mesa de ayuda por correo + SLA.
+        HelpdeskModule,
     ],
 })
 export class AppModule {}

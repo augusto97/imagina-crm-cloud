@@ -82,6 +82,8 @@ describe('H1 — manifiesto (puro)', () => {
             approval: true,
             // Algo asignado a TU EQUIPO no es directo: sólo campana (como el correo).
             team_assigned: false,
+            // E5 — un ticket que vence (o venció) y te toca.
+            sla: true,
         });
         expect(readNotificationPrefs({ push: { update: true } }).push).toMatchObject({ update: true, mention: true });
     });

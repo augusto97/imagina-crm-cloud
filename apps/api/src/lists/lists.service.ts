@@ -4,6 +4,7 @@ import {
     customRoleKey,
     parseCustomRoleKey,
     listSlugSchema,
+    readHelpdeskMailboxMarker,
     readStoreListMarker,
     slugify,
     SCAN_SEARCH_FIELD_TYPES,
@@ -385,7 +386,13 @@ export class ListsService {
         return rows.map(toList);
     }
 
-    async update(tenantId: number, idOrSlug: string, patch: UpdateListInput): Promise<List> {
+    async update(
+        tenantId: number,
+        idOrSlug: string,
+        patch: UpdateListInput,
+        /** D2 — sólo la mesa de ayuda escribe la marca de su buzón (`settings.helpdesk.mailbox`). */
+        opts: { helpdeskMailbox?: boolean } = {},
+    ): Promise<List> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolve(tx, tenantId, idOrSlug);
 
@@ -465,7 +472,7 @@ export class ListsService {
                         });
                     }
                 }
-                changes.settings = patch.settings;
+                changes.settings = opts.helpdeskMailbox ? patch.settings : keepHelpdeskMailbox(current.settings, patch.settings);
             }
 
             if (patch.slug !== undefined && patch.slug !== current.slug) {
@@ -633,4 +640,20 @@ function notFound(idOrSlug: string) {
  */
 function ensureListSlug(slug: string): string {
     return listSlugSchema.safeParse(slug).success ? slug : `lista_${slug}`.slice(0, 63);
+}
+
+/**
+ * D2 — La marca del buzón de soporte (`settings.helpdesk.mailbox`) la escribe
+ * SÓLO la mesa de ayuda al conectar o quitar el buzón: una edición general de
+ * los ajustes (o una pestaña con los ajustes viejos) no la cambia ni la borra.
+ */
+function keepHelpdeskMailbox(current: Record<string, unknown>, next: Record<string, unknown>): Record<string, unknown> {
+    const marker = readHelpdeskMailboxMarker(current);
+    const incoming = next.helpdesk;
+    if (incoming === undefined || incoming === null || typeof incoming !== 'object') {
+        // Sin `helpdesk` en lo que llega: con un buzón conectado se conserva lo que había.
+        return marker && current.helpdesk !== undefined ? { ...next, helpdesk: current.helpdesk } : next;
+    }
+    const { mailbox: _ignored, ...rest } = incoming as Record<string, unknown>;
+    return { ...next, helpdesk: marker ? { ...rest, mailbox: marker } : rest };
 }

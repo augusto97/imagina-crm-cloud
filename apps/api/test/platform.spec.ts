@@ -34,6 +34,9 @@ import {
     teams,
     customRoles,
     recordShares,
+    helpdeskMailboxes,
+    helpdeskMessages,
+    helpdeskTickets,
     templates,
     tenants,
     timeEntries,
@@ -408,6 +411,13 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         const [role] = await pg.db.insert(customRoles).values({ tenantId: id, name: 'Coord', baseRole: 'agent', capabilities: [] }).returning();
         await pg.db.update(memberships).set({ customRoleId: role!.id }).where(and(eq(memberships.tenantId, id), eq(memberships.userId, owner!.id)));
         await pg.db.insert(recordShares).values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, level: 'view' });
+        // D2/E5 — mesa de ayuda: buzón, un correo (con su comentario) y el SLA del ticket.
+        const [mb] = await pg.db
+            .insert(helpdeskMailboxes)
+            .values({ tenantId: id, listId: list!.id, host: 'imap.t.test', port: 993, username: 's@t.test', supportAddress: 's@t.test', createdBy: owner!.id })
+            .returning();
+        await pg.db.insert(helpdeskMessages).values({ tenantId: id, listId: list!.id, mailboxId: mb!.id, recordId: record!.id, commentId: comment!.id, direction: 'in', status: 'reply' });
+        await pg.db.insert(helpdeskTickets).values({ tenantId: id, listId: list!.id, recordId: record!.id, mailboxId: mb!.id });
 
         // D5 — una página de agenda con una cita.
         const [bpage] = await pg.db.insert(bookingPages).values({ tenantId: id, listId: list!.id, name: 'Agenda', token: `agenda-a-borrar-${id}-xyz`, config: {} }).returning();
@@ -425,6 +435,9 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await platform.deleteTenant(id);
         expect(await pg.db.select().from(bookingAppointments).where(eq(bookingAppointments.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(bookingPages).where(eq(bookingPages.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(helpdeskMailboxes).where(eq(helpdeskMailboxes.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(helpdeskMessages).where(eq(helpdeskMessages.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(helpdeskTickets).where(eq(helpdeskTickets.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklistItems).where(eq(recordChecklistItems.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklists).where(eq(recordChecklists.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, id))).toHaveLength(0);

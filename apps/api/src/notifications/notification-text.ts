@@ -69,6 +69,10 @@ export function notificationTitle(
             // C1 — el título real lo arma `teamAssignedTitle` (nombra al equipo).
             out = `${who(o.actorName)} asignó ${rec} a tu equipo`;
             break;
+        case 'sla':
+            // E5 — los avisos del SLA arman su propio título (HelpdeskSlaService).
+            out = `SLA de ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

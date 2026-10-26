@@ -33,6 +33,10 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'booking_event', label: 'Cuando se agenda, reprograma o cancela una cita', event: 'imagina_crm/booking_event', config_schema: {} },
     // D3 — un contacto escribió por WhatsApp oficial (el registro ya se encontró o creó).
     { slug: 'whatsapp_message_received', label: 'Cuando llega un mensaje de WhatsApp', event: 'imagina_crm/whatsapp_message_received', config_schema: {} },
+    // D2 — llegó un correo al buzón de soporte (ticket nuevo o respuesta del cliente).
+    { slug: 'email_received', label: 'Cuando llega un correo', event: 'imagina_crm/email_received', config_schema: {} },
+    // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.
+    { slug: 'sla_alert', label: 'Cuando un SLA está en riesgo o se vence', event: 'imagina_crm/sla_alert', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [
@@ -52,6 +56,8 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'wait_approval', label: 'Esperar aprobación', config_schema: {} },
     // C6 — las subtareas (y checklists) de una plantilla de registro sobre el registro.
     { slug: 'create_subtasks_from_template', label: 'Crear subtareas desde una plantilla', config_schema: {} },
+    // D2 — responder por correo al hilo del ticket (mesa de ayuda).
+    { slug: 'reply_email', label: 'Responder por correo al hilo del registro', config_schema: {} },
 ];
 
 @Controller()

@@ -631,6 +631,13 @@
       "when": 1784200000230,
       "tag": "0089_whatsapp_cloud",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1784200000240,
+      "tag": "0090_helpdesk_sla",
+      "breakpoints": true
     }
   ]
 }

@@ -95,6 +95,7 @@ export function buildAccountRfc2822(
     if (parts.bcc.length > 0) lines.push(`Bcc: ${parts.bcc.join(', ')}`);
     if (parts.replyTo) lines.push(`Reply-To: ${parts.replyTo}`);
     lines.push(`Subject: ${mimeWord(headerSafe(message.subject ?? ''))}`);
+    lines.push(...threadHeaderLines(message));
     lines.push('MIME-Version: 1.0');
     const html = message.html ?? '';
     const text = message.text ?? (html !== '' ? htmlToText(html) : '');
@@ -137,6 +138,33 @@ export function buildAccountRfc2822(
     return lines.join('\r\n');
 }
 
+/** Un Message-ID sin `<>`, espacios ni saltos (lo que va entre los corchetes). */
+/** Un Message-ID: sólo el PRIMER identificador (`a@b`), sin `<>` ni lo que venga después. */
+function msgIdSafe(v: string): string {
+    const first = v.trim().replace(/^</, '').split(/[>\s]/)[0] ?? '';
+    return headerSafe(first).replace(/[<>\s]/g, '');
+}
+
+/** Cabeceras que el mensaje no puede pisar con `headers` (las arma esta función). */
+const RESERVED_HEADER = /^(?:from|to|cc|bcc|subject|reply-to|content-.*|mime-version|message-id|in-reply-to|references|date|received|return-path)$/i;
+
+/**
+ * D2 — Hilo (Message-ID, In-Reply-To, References) y cabeceras extra de la
+ * mesa de ayuda. Saneadas: un valor no puede inyectar otra cabecera.
+ */
+export function threadHeaderLines(message: Pick<MailMessage, 'messageId' | 'inReplyTo' | 'references' | 'headers'>): string[] {
+    const out: string[] = [];
+    if (message.messageId) out.push(`Message-ID: <${msgIdSafe(message.messageId)}>`);
+    if (message.inReplyTo) out.push(`In-Reply-To: <${msgIdSafe(message.inReplyTo)}>`);
+    const refs = (message.references ?? []).map(msgIdSafe).filter((r) => r !== '').slice(-20);
+    if (refs.length > 0) out.push(`References: ${refs.map((r) => `<${r}>`).join(' ')}`);
+    for (const [k, v] of Object.entries(message.headers ?? {})) {
+        if (!/^[A-Za-z0-9-]{1,60}$/.test(k) || RESERVED_HEADER.test(k)) continue;
+        out.push(`${k}: ${headerSafe(String(v))}`);
+    }
+    return out;
+}
+
 /** Graph envía el mensaje en UN pedido de hasta 4 MB: los adjuntos tienen que entrar. */
 export const GRAPH_MAX_ATTACHMENT_BASE64 = 3 * 1024 * 1024;
 
@@ -166,6 +194,16 @@ export function buildAccountMailRequest(
         throw new Error(
             'Outlook no acepta adjuntos de más de 3 MB por esta vía: achica el PDF (imágenes más livianas) o envia desde el SMTP de la empresa.',
         );
+    }
+    // D2 — con hilo (una respuesta de la mesa de ayuda), Graph recibe el MIME
+    // entero: su JSON no deja fijar In-Reply-To/References (sólo `x-…`).
+    if (message.inReplyTo || (message.references?.length ?? 0) > 0) {
+        return {
+            url: 'https://graph.microsoft.com/v1.0/me/sendMail',
+            method: 'POST',
+            headers: { ...headers, 'content-type': 'text/plain' },
+            body: Buffer.from(buildAccountRfc2822(message, parts, address), 'utf8').toString('base64'),
+        };
     }
     const list = (emails: string[]): Array<{ emailAddress: { address: string } }> =>
         emails.map((a) => ({ emailAddress: { address: a } }));
