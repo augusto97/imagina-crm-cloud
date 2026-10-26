@@ -2786,6 +2786,30 @@ el zip, y pone topes de archivo, filas y columnas. Regla: un formato de archivo
 nuevo se resuelve con código propio sobre una primitiva chica y auditada antes
 que con una librería grande sin mantenimiento.
 
+**Addendum (v0.1.308) — Dos excepciones más y un freno propio.** Avisos
+publicados después de v0.1.299: `nodemailer` (10.0.13 → 10.2.1) y, por
+override, `body-parser` ≥2.4.0 (DoS con bytes después de un cuerpo comprimido,
+vía el SDK de MCP → express) y `fast-uri` ≥4.2.3 (cuatro avisos de esquemas y
+hosts, vía el SDK de MCP → ajv). Dos excepciones nuevas, con el criterio (c):
+(1) `GHSA-xcx6-jx8p-x3h5` (`@azure/msal-node` <7.1.0, vía mssql → tedious →
+`@azure/identity`): afecta sólo al flujo `auth_code` (login interactivo de
+Microsoft) y el conector SQL usa autenticación SQL con usuario y contraseña,
+sin pasar nunca por `acquireTokenByCode`; la última `@azure/identity` exige
+msal-node ^6 y forzar la 7 es un salto de versión mayor debajo de una librería
+que no lo espera. Se saca cuando `@azure/identity` acepte la 7.1. (2)
+`GHSA-mrhx-c7xc-m3w5` (`zod` <4.6.6): validar un array que falla en cada
+elemento acumula un «issue» por elemento —medido: un cuerpo de 2 MB con un
+millón de ceros ocupa ~300 MB y 1,5 s de CPU por request—. El arreglo de la
+4.6.6 sólo corta los arrays CON `.max()` (medido también: sin tope, la 4.6.7
+consume lo mismo que la 3) y pasar de Zod 3 a 4 toca ~100 archivos. Por eso
+el vector se cierra en la entrada, sin depender de la versión: el hook de
+higiene (`common/request-input.ts`) rechaza con 413 `too_many_items` todo
+cuerpo con más de 100.000 elementos de array sumados a cualquier profundidad
+(el import más grande son 10.000 filas, una descripción 5.000 nodos). La
+excepción se saca con la migración a Zod 4, después de la fase 3. Regla nueva:
+**cuando un parche no cubre nuestro uso, el freno va en la entrada y se mide
+antes y después**.
+
 ### ADR-S39 — Formularios públicos que crean registros (v0.1.275)
 
 **Contexto.** El pedido más común de quien arma una base de datos de clientes,
@@ -3892,4 +3916,4 @@ arrastrar en el tiempo (para eso está el Gantt), la capacidad por día puntual
 
 ---
 
-**Versión del documento:** 1.104.0 (carga de trabajo por persona)
+**Versión del documento:** 1.105.0 (dependencias y freno de arrays en el cuerpo)
