@@ -124,15 +124,21 @@ export function AdminCloudApp(): JSX.Element {
     }, [me.isSuccess, me.isError, me.data, setSession, markReady]);
 
     // Hidratar el boot del admin cuando hay usuario + workspace activo. Se
-    // re-ejecuta al cambiar de workspace (switcher) para reapuntar el tenant.
+    // re-ejecuta al cambiar de workspace (switcher) para reapuntar el tenant,
+    // y cuando la sesión vuelve con otras capacidades (C2 — un rol propio que
+    // cambió llega por realtime): `capsVersion` re-dibuja la app, que lee las
+    // capacidades del boot (no son estado de React).
+    const memberships = useSession((s) => s.memberships);
+    const [, setCapsVersion] = useState(0);
     useEffect(() => {
         if (user && activeTenantId !== null) {
             hydrateAdminBoot(user, activeMembership());
             setBooted(true);
+            setCapsVersion((v) => v + 1);
         } else {
             setBooted(false);
         }
-    }, [user, activeTenantId]);
+    }, [user, activeTenantId, memberships]);
 
     if (!ready) return <LoadingScreen />;
     if (!user) return <LoginPage />;

@@ -12,6 +12,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import {
+    effectiveCapabilities,
     slugifyTenant,
     type AuthSession,
     type BackupCodes,
@@ -29,7 +30,7 @@ import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { impersonationLog, memberships, personalAccessTokens, tenants, users } from '../db/schema';
+import { customRoles, impersonationLog, memberships, personalAccessTokens, tenants, users } from '../db/schema';
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
@@ -467,7 +468,7 @@ export class AuthService implements OnModuleInit {
         email: string,
         name: string,
         kind: 'invite' | 'reset',
-        opts: { tenantName?: string; invitedBy?: string | null } = {},
+        opts: { tenantName?: string; invitedBy?: string | null; shared?: { label: string } | null } = {},
     ): Promise<void> {
         const token = randomBytes(32).toString('base64url');
         const invite = kind === 'invite';
@@ -478,7 +479,12 @@ export class AuthService implements OnModuleInit {
         const expires = invite ? '7 días' : '30 minutos';
         let subject: string;
         let intro: string;
-        if (invite && opts.tenantName) {
+        if (invite && opts.tenantName && opts.shared) {
+            // C3 — invitado externo: el correo dice QUÉ le compartieron.
+            const who = opts.invitedBy ? `${escapeHtml(opts.invitedBy)} compartió contigo` : 'Compartieron contigo';
+            subject = `${opts.invitedBy ? `${oneLine(opts.invitedBy)} compartió contigo` : 'Compartieron contigo'} «${oneLine(opts.shared.label)}»`;
+            intro = `${who} «${escapeHtml(opts.shared.label)}» de «${escapeHtml(opts.tenantName)}» en Imagina Base. Define tu contraseña para entrar`;
+        } else if (invite && opts.tenantName) {
             const who = opts.invitedBy ? `${escapeHtml(opts.invitedBy)} te invitó` : 'Te invitaron';
             subject = `Te invitaron a «${oneLine(opts.tenantName)}» en Imagina Base`;
             intro = `${who} a sumarte a «${escapeHtml(opts.tenantName)}» en Imagina Base. Define tu contraseña para entrar`;
@@ -514,14 +520,27 @@ export class AuthService implements OnModuleInit {
      */
     async addToTenant(
         tenantId: number,
-        input: { email: string; name?: string; role: 'admin' | 'manager' | 'agent' | 'viewer' },
-        opts: { invitedById?: number | null; allowReserved?: boolean } = {},
+        input: {
+            email: string;
+            name?: string;
+            role: 'admin' | 'manager' | 'agent' | 'viewer' | 'guest';
+            /** C2 — rol propio (ya validado contra la empresa; su base es `role`). */
+            customRoleId?: number | null;
+        },
+        opts: {
+            invitedById?: number | null;
+            allowReserved?: boolean;
+            /** C3 — lo que se le compartió a un invitado (para el correo). */
+            shared?: { label: string } | null;
+        } = {},
     ): Promise<{
         user: { id: number; name: string; email: string };
-        role: 'admin' | 'manager' | 'agent' | 'viewer';
+        role: 'admin' | 'manager' | 'agent' | 'viewer' | 'guest';
         invited: boolean;
         pending: boolean;
         notified: boolean;
+        /** C3 — ya era invitado de esta empresa: no se creó membresía nueva. */
+        alreadyGuest: boolean;
     }> {
         const email = input.email.trim().toLowerCase();
         // Un admin de una empresa NO puede sumar a un superadmin: sumar una
@@ -604,6 +623,27 @@ export class AuthService implements OnModuleInit {
                     data: { status: 409, errors: { email: 'Cliente del portal' } },
                 });
             }
+            // C3 — compartir con alguien que YA es invitado: se reusa su membresía.
+            if (membership?.role === 'guest' && input.role === 'guest') {
+                return { user, invited, alreadyGuest: true };
+            }
+            // C3 — alguien del equipo no se invita como persona de afuera: ya
+            // ve lo que su rol le deja ver (se le comparte desde los permisos).
+            if (membership && input.role === 'guest') {
+                throw new ConflictException({
+                    code: 'already_team_member',
+                    message: `${email} ya es del equipo de esta empresa: compártele la lista desde «Personas con acceso».`,
+                    data: { status: 409, errors: { email: 'Ya es del equipo' } },
+                });
+            }
+            // C3 — un invitado se pasa a miembro desde Miembros → Invitados.
+            if (membership?.role === 'guest') {
+                throw new ConflictException({
+                    code: 'already_guest',
+                    message: `${email} ya es invitado de esta empresa: pásalo a miembro desde Miembros → Invitados.`,
+                    data: { status: 409, errors: { email: 'Ya es invitado' } },
+                });
+            }
             if (membership) {
                 throw new ConflictException({
                     code: 'already_member',
@@ -611,16 +651,23 @@ export class AuthService implements OnModuleInit {
                     data: { status: 409, errors: { email: 'Ya es miembro' } },
                 });
             }
-            await tx.insert(memberships).values({ userId: user.id, tenantId, role: input.role });
-            return { user, invited };
+            await tx.insert(memberships).values({
+                userId: user.id,
+                tenantId,
+                role: input.role,
+                customRoleId: input.role === 'guest' || input.role === 'admin' ? null : input.customRoleId ?? null,
+            });
+            return { user, invited, alreadyGuest: false };
         });
 
-        const { user, invited } = result;
+        const { user, invited, alreadyGuest } = result;
+        const shared = input.role === 'guest' ? opts.shared ?? null : null;
         let notified = false;
         if (invited) {
             await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
                 tenantName: tenant.name,
                 invitedBy,
+                shared,
             });
             notified = true;
         } else if (user.invitedAt) {
@@ -629,10 +676,11 @@ export class AuthService implements OnModuleInit {
             await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
                 tenantName: tenant.name,
                 invitedBy,
+                shared,
             }).catch(() => undefined);
             notified = true;
         } else {
-            notified = await this.notifyAddedToTenant(user, tenant.name, invitedBy);
+            notified = await this.notifyAddedToTenant(user, tenant.name, invitedBy, shared);
         }
         this.logger.log(`Usuario ${user.id} sumado a la empresa ${tenantId} (${invited ? 'invitado' : 'cuenta existente'})`);
         return {
@@ -641,6 +689,7 @@ export class AuthService implements OnModuleInit {
             invited,
             pending: invited || user.invitedAt !== null,
             notified,
+            alreadyGuest,
         };
     }
 
@@ -701,11 +750,13 @@ export class AuthService implements OnModuleInit {
         user: { email: string; name: string },
         tenantName: string,
         invitedBy: string | null,
+        shared: { label: string } | null = null,
     ): Promise<boolean> {
         try {
             const status = await this.mail.accountMailStatus();
             if (!status.available) return false;
             const base = this.env.APP_BASE_URL.replace(/\/$/, '');
+            if (shared) return await this.sendSharedMail(user, tenantName, invitedBy, shared.label, base);
             const who = invitedBy ? `${escapeHtml(invitedBy)} te sumó` : 'Te sumaron';
             await this.mail.enqueue({
                 to: user.email,
@@ -718,6 +769,43 @@ export class AuthService implements OnModuleInit {
             this.logger.warn(`No se pudo avisar a ${user.email} del alta en «${tenantName}»: ${(err as Error).message}`);
             return false;
         }
+    }
+
+    /**
+     * C3 — avisa a un invitado (con cuenta) que le compartieron algo más.
+     * Best-effort, como el alta: si el correo no sale, el acceso igual vale.
+     */
+    async notifyGuestShared(
+        user: { email: string; name: string },
+        tenantName: string,
+        invitedBy: string | null,
+        label: string,
+    ): Promise<boolean> {
+        try {
+            const status = await this.mail.accountMailStatus();
+            if (!status.available) return false;
+            return await this.sendSharedMail(user, tenantName, invitedBy, label, this.env.APP_BASE_URL.replace(/\/$/, ''));
+        } catch (err) {
+            this.logger.warn(`No se pudo avisar a ${user.email} de lo compartido en «${tenantName}»: ${(err as Error).message}`);
+            return false;
+        }
+    }
+
+    private async sendSharedMail(
+        user: { email: string; name: string },
+        tenantName: string,
+        invitedBy: string | null,
+        label: string,
+        base: string,
+    ): Promise<boolean> {
+        const who = invitedBy ? `${oneLine(invitedBy)} compartió contigo` : 'Compartieron contigo';
+        await this.mail.enqueue({
+            to: user.email,
+            subject: `${who} «${oneLine(label)}»`,
+            html: `<p>Hola ${escapeHtml(user.name)},</p><p>${escapeHtml(who)} «${escapeHtml(label)}» de «${escapeHtml(tenantName)}» en Imagina Base. Entra con tu cuenta y elige «${escapeHtml(tenantName)}» en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
+            text: `${who} «${label}» de «${tenantName}» en Imagina Base. Entra: ${base}/`,
+        });
+        return true;
     }
 
     /**
@@ -790,6 +878,7 @@ export class AuthService implements OnModuleInit {
                     tenant_slug: result.tenant.slug,
                     tenant_name: result.tenant.name,
                     role: 'admin',
+                    capabilities: effectiveCapabilities('admin'),
                 },
             ],
             token,
@@ -1228,20 +1317,31 @@ export class AuthService implements OnModuleInit {
                     role: memberships.role,
                     tenantSlug: tenants.slug,
                     tenantName: tenants.name,
+                    // C2 — rol propio: nombre y capacidades (`custom_roles_self`).
+                    customRoleId: memberships.customRoleId,
+                    customRoleName: customRoles.name,
+                    customCaps: customRoles.capabilities,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+                .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
                 // v0.1.227 — el acceso de PORTAL (rol client) no es un workspace
                 // de la app de equipo: el TenantGuard lo rechaza (SEC-24), así
                 // que listarlo sólo hacía que la app abriera una empresa donde
                 // todo responde 403. El portal tiene su propia entrada.
                 .where(and(eq(memberships.userId, userId), ne(memberships.role, 'client')));
-            return rows.map((r) => ({
-                tenant_id: r.tenantId,
-                tenant_slug: r.tenantSlug,
-                tenant_name: r.tenantName,
-                role: r.role,
-            }));
+            return rows.map((r) => {
+                const custom = r.customRoleName !== null && Array.isArray(r.customCaps) ? r.customCaps : null;
+                return {
+                    tenant_id: r.tenantId,
+                    tenant_slug: r.tenantSlug,
+                    tenant_name: r.tenantName,
+                    role: r.role,
+                    custom_role_id: custom ? r.customRoleId : null,
+                    custom_role_name: custom ? r.customRoleName : null,
+                    capabilities: effectiveCapabilities(r.role, custom),
+                };
+            });
         });
     }
 

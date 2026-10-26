@@ -12,9 +12,10 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { DashboardViewer } from '../dashboards/dashboards.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { DashboardSubscriptionsService, type SubscriptionSendResult } from './dashboard-subscriptions.service';
+import { aclOf } from '../tenancy/acl-of';
 
 function viewer(req: FastifyRequest): DashboardViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /**

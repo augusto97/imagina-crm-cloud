@@ -18,6 +18,7 @@ import { parseTenantTimeZone } from '../tenancy/tenant-time-zone.service';
 import { effectivePermissions } from '../lists/list-acl';
 import type { Role } from '@imagina-base/shared';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query-builder';
+import { aclExtras, type AclExtras } from '../lists/list-acl';
 
 /**
  * Campos "a través de una relación" — lookup / rollup (v0.1.170, ADR-S19).
@@ -246,7 +247,7 @@ export class ThroughEngine {
         tx: Tx,
         tenantId: number,
         plans: ThroughPlan[],
-        viewer: { role: Role; userId?: number; teamIds?: readonly number[] } | undefined,
+        viewer: ({ role: Role; userId?: number } & AclExtras) | undefined,
     ): Promise<Set<number>> {
         const out = new Set<number>();
         if (!viewer || viewer.role === 'admin' || plans.length === 0) return out;
@@ -262,7 +263,7 @@ export class ThroughEngine {
                 out.add(p.field.id);
                 continue;
             }
-            const perms = effectivePermissions(settings, { role: viewer.role, userId: viewer.userId ?? 0, teamIds: viewer.teamIds });
+            const perms = effectivePermissions(settings, { ...aclExtras(viewer), role: viewer.role, userId: viewer.userId ?? 0 });
             if (perms.view !== 'all' || (p.targetField && perms.fields_hidden.includes(p.targetField.slug))) {
                 out.add(p.field.id);
             }

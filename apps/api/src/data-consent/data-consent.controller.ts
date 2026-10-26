@@ -39,6 +39,7 @@ import { RecordsService } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { renderWithdrawInvalid, renderWithdrawLanding, renderWithdrawResult } from './consent-page';
 import { DataConsentService } from './data-consent.service';
+import { aclOf } from '../tenancy/acl-of';
 
 function assertAdmin(req: FastifyRequest): void {
     if (req.tenant!.role !== 'admin') {
@@ -189,7 +190,7 @@ export class RecordDataConsentController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: RecordDataConsentDto[] }> {
-        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
         // 404 si la persona no ve el registro (mismo ACL que la ficha).
         const record = await this.records.get(req.tenant!.tenantId, actor, list, id);
         return { data: await this.consents.forRecord(req.tenant!.tenantId, record.id) };

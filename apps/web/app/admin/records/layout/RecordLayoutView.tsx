@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { WidgetDataOverrideContext } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
+import { useGuestAccess } from '@/hooks/useGuests';
+import { useIsGuest } from '@/lib/guest';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
@@ -52,7 +54,10 @@ interface Props {
  */
 export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin, onDelete, deleting, actions }: Props): JSX.Element {
     const { layout, origin } = useRecordLayout(list, fields);
-    const canEdit = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    // C3 — un invitado edita sólo con «Puede editar» y nunca borra.
+    const guest = useGuestAccess(list.id, record.id);
+    const canEdit = canEditByCaps && (!guest.isGuest || guest.record === 'edit');
     const canDesign = useCanAny(CAP.MANAGE_LISTS);
     const storeRules = useStoreRules();
     const save = useRecordAutosave(list.id, record);
@@ -85,7 +90,7 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                     <Toolbar
                         list={list}
                         saving={save.saving}
-                        onDelete={storeRules ? null : onDelete}
+                        onDelete={storeRules || guest.isGuest ? null : onDelete}
                         deleting={deleting}
                         canDesign={canDesign}
                         origin={origin}
@@ -105,11 +110,13 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                                 </>
                             )}
                             footer={
-                                <>
-                                    <ImplicitSubtasks layout={layout} />
-                                    {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
-                                    <RecordDataConsentLine listId={list.id} recordId={record.id} />
-                                </>
+                                guest.isGuest ? null : (
+                                    <>
+                                        <ImplicitSubtasks layout={layout} />
+                                        {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
+                                        <RecordDataConsentLine listId={list.id} recordId={record.id} />
+                                    </>
+                                )
                             }
                         />
                     )}
@@ -146,8 +153,10 @@ function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
  */
 function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
     const ctx = useLayoutCtx();
+    const isGuest = useIsGuest();
     const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'approval'))));
-    if (placed) return null;
+    // C3 — las aprobaciones son de la empresa: un invitado no las ve.
+    if (placed || isGuest) return null;
     return <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} />;
 }
 

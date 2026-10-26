@@ -9,6 +9,7 @@ import type {
 } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 
 import { activityKeys } from './useActivity';
 import { invalidateForList, markLocalRecordsChange, recordsKeys } from './useRecords';
@@ -33,10 +34,12 @@ export const checklistKeys = {
 export const EMPTY_CHECKLISTS: RecordChecklists = { checklists: [], done: 0, total: 0 };
 
 export function useRecordChecklists(listId: string | number | undefined, recordId: number | undefined) {
+    // C3 — los checklists son del trabajo interno: un invitado no los pide.
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: checklistKeys.forRecord(listId ?? '', recordId ?? 0),
         queryFn: async () => (await api.get<RecordChecklists>(`/lists/${listId}/records/${recordId}/checklists`)).data,
-        enabled: listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0,
+        enabled: !isGuest && listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0,
         staleTime: 15_000,
     });
 }

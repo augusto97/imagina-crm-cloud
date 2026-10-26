@@ -10,6 +10,7 @@ import type {
 } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 import type { RecordEntity } from '@/types/record';
 
 import { activityKeys } from './useActivity';
@@ -26,11 +27,13 @@ export const recordTemplateKeys = {
 };
 
 export function useRecordTemplates(listId: string | number | undefined, kind?: RecordTemplateKind) {
+    // C3 — las plantillas son de la empresa: un invitado no las usa.
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: [...recordTemplateKeys.forList(listId ?? ''), kind ?? 'all'] as const,
         queryFn: async () =>
             (await api.get<RecordTemplate[]>(`/lists/${listId}/record-templates`, kind ? { query: { kind } } : undefined)).data,
-        enabled: listId !== undefined && listId !== '',
+        enabled: !isGuest && listId !== undefined && listId !== '',
         staleTime: 30_000,
     });
 }

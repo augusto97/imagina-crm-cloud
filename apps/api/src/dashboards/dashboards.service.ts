@@ -38,6 +38,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { mapLimit } from '../common/map-limit';
 import { fillTimeBuckets, zeroFillable } from './time-buckets';
 import { trashRow } from '../trash/trash-ops';
+import { aclExtras, type AclExtras } from '../lists/list-acl';
 
 /**
  * v0.1.286 — El bundle agrupa los widgets por LISTA: cada lista resuelve su
@@ -54,11 +55,9 @@ const DEFAULT_TOP_N = 50;
 type Row = typeof dashboards.$inferSelect;
 
 /** Quién mira: para filtrar por visibilidad (el backend SIEMPRE decide). */
-export interface DashboardViewer {
+export interface DashboardViewer extends AclExtras {
     userId: number;
     role: string;
-    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
-    teamIds?: readonly number[];
 }
 
 /**
@@ -75,6 +74,10 @@ function canSee(row: Row, viewer: DashboardViewer): boolean {
 
 /** v0.1.292 — La misma regla de `canSee`, sobre el DTO (destinatarios de un envío programado). */
 export function dashboardVisibleTo(dash: Pick<Dashboard, 'created_by' | 'visibility' | 'allowed_roles'>, viewer: DashboardViewer): boolean {
+    // C3 — un invitado (o un cliente del portal) no ve tableros: ni en la app
+    // ni por correo. C2 — un rol propio sin «Ver tableros», tampoco.
+    if (viewer.role === 'guest' || viewer.role === 'client') return false;
+    if (viewer.capabilities && !viewer.capabilities.includes('view_dashboards')) return false;
     if (viewer.role === 'admin') return true;
     if (dash.created_by === viewer.userId) return true;
     if (dash.visibility === 'workspace') return true;
@@ -695,7 +698,7 @@ export class DashboardsService {
 
         const page = await this.records.list(
             env.tenantId,
-            { userId: env.viewer.userId, role: env.viewer.role as Role, teamIds: env.viewer.teamIds },
+            { ...aclExtras(env.viewer), userId: env.viewer.userId, role: env.viewer.role as Role },
             String(widget.list_id),
             {
                 limit,
@@ -741,8 +744,8 @@ interface WidgetEnv {
     rootsDefault: boolean;
 }
 
-function aggViewer(viewer: DashboardViewer): { role: Role; userId: number } {
-    return { role: viewer.role as Role, userId: viewer.userId };
+function aggViewer(viewer: DashboardViewer): { role: Role; userId: number } & AclExtras {
+    return { ...aclExtras(viewer), role: viewer.role as Role, userId: viewer.userId };
 }
 
 function bundleOptions(req: DashboardBundleRequest): BundleOptions {

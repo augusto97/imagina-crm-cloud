@@ -22,10 +22,12 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { NotificationsService } from './notifications.service';
+import { aclOf } from '../tenancy/acl-of';
 
 function actor(req: FastifyRequest): { tenantId: number; userId: number; role: Role; teamIds?: readonly number[] } {
-    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
+    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
 }
 
 const followSchema = z.object({ following: z.boolean() });
@@ -42,6 +44,7 @@ export class NotificationsController {
     constructor(private readonly svc: NotificationsService) {}
 
     @Get('me/notifications')
+    @AllowGuest()
     async list(
         @Req() req: FastifyRequest,
         @Query(new ZodValidationPipe(listNotificationsQuerySchema)) q: z.infer<typeof listNotificationsQuerySchema>,
@@ -51,6 +54,7 @@ export class NotificationsController {
     }
 
     @Post('me/notifications/read')
+    @AllowGuest()
     @HttpCode(200)
     @AllowReadOnly()
     async read(@Req() req: FastifyRequest, @Body(new ZodValidationPipe(markNotificationsSchema)) body: MarkNotificationsInput): Promise<{ data: { unread: number } }> {
@@ -59,12 +63,14 @@ export class NotificationsController {
     }
 
     @Get('me/notification-prefs')
+    @AllowGuest()
     async prefs(@Req() req: FastifyRequest): Promise<{ data: NotificationPrefs }> {
         const a = actor(req);
         return { data: await this.svc.getPrefs(a.tenantId, a.userId) };
     }
 
     @Patch('me/notification-prefs')
+    @AllowGuest()
     @AllowReadOnly()
     async setPrefs(
         @Req() req: FastifyRequest,

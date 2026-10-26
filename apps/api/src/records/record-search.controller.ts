@@ -7,6 +7,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordSearchService } from './record-search.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * `GET /search?q=` — registros de TODAS las listas visibles, por título
@@ -24,6 +25,6 @@ export class RecordSearchController {
         @Req() req: FastifyRequest,
         @Query(new ZodValidationPipe(globalSearchQuerySchema)) query: GlobalSearchQuery,
     ): Promise<GlobalSearchHit[]> {
-        return this.search.search(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, query);
+        return this.search.search(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, query);
     }
 }

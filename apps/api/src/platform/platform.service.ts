@@ -78,6 +78,8 @@ import {
     recordChecklists,
     recordTemplates,
     teamMembers,
+    customRoles,
+    recordShares,
     teams,
     ganttBaselines,
     ganttBaselineItems,
@@ -175,9 +177,9 @@ export class PlatformService {
             return { data: [], meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset } };
         }
 
-        const [recMap, userMap, autoMap, storageMap, emailMap, aiMap, ownerMap] = await Promise.all([
+        const [recMap, userMap, autoMap, storageMap, emailMap, aiMap, ownerMap, guestMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
-            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'))).groupBy(memberships.tenantId)),
+            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'), ne(memberships.role, 'guest'))).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(and(inArray(automations.tenantId, ids), isNull(automations.deletedAt))).groupBy(automations.tenantId)),
             this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(and(inArray(attachments.tenantId, ids), isNull(attachments.storageConnectionId), isNull(attachments.pendingFormId))).groupBy(attachments.tenantId)),
             // Correos de plataforma del mes en curso (ADR-S18): lookup por PK,
@@ -198,6 +200,8 @@ export class PlatformService {
                     .groupBy(aiUsage.tenantId),
             ),
             this.ownersByTenant(),
+            // C3 — invitados (no ocupan usuario: su propio tope).
+            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), eq(memberships.role, 'guest'))).groupBy(memberships.tenantId)),
         ]);
 
         return {
@@ -209,6 +213,7 @@ export class PlatformService {
                     storage_bytes: Number(storageMap.get(t.id) ?? 0),
                     emails_month: Number(emailMap.get(t.id) ?? 0),
                     ai_requests_month: Number(aiMap.get(t.id) ?? 0),
+                    guests: Number(guestMap.get(t.id) ?? 0),
                 }),
             ),
             meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset },
@@ -295,6 +300,7 @@ export class PlatformService {
             own_smtp: smtp,
             ai_requests_month: aiUsed,
             own_ai_key: ownAiKey,
+            guests: rows.filter((m) => m.role === 'guest').length,
         };
     }
 
@@ -397,6 +403,8 @@ export class PlatformService {
             await tx.delete(approvalDecisions).where(eq(approvalDecisions.tenantId, id));
             await tx.delete(approvalRequests).where(eq(approvalRequests.tenantId, id));
             await tx.delete(approvalFlows).where(eq(approvalFlows.tenantId, id));
+            // C3 — registros compartidos con invitados (antes que los registros).
+            await tx.delete(recordShares).where(eq(recordShares.tenantId, id));
             // A8/B1 — dependencias y líneas base del Gantt (antes que registros y vistas).
             await tx.delete(recordDependencies).where(eq(recordDependencies.tenantId, id));
             // A9 / C6 — checklists (ítems primero) y plantillas de registro.
@@ -447,6 +455,8 @@ export class PlatformService {
             await tx.delete(teamMembers).where(eq(teamMembers.tenantId, id));
             await tx.delete(teams).where(eq(teams.tenantId, id));
             await tx.delete(memberships).where(eq(memberships.tenantId, id));
+            // C2 — roles propios (después de las membresías que los usan).
+            await tx.delete(customRoles).where(eq(customRoles.tenantId, id));
             await tx.delete(tenants).where(eq(tenants.id, id));
         });
 
@@ -484,7 +494,8 @@ export class PlatformService {
         operatorId: number,
     ): Promise<WorkspaceMember> {
         await this.getTenant(tenantId);
-        const member = await this.requireMembers().updateRole(tenantId, userId, input);
+        // La consola decide: pasar un invitado a miembro no choca con el límite del plan.
+        const member = await this.requireMembers().updateRole(tenantId, userId, input, { enforcePlan: false });
         await this.logMember(tenantId, operatorId, 'member.role_change', member, { role: member.role });
         return member;
     }

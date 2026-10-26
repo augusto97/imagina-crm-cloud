@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 
 /**
  * v0.1.107 — Favoritos del usuario en el workspace activo: listas y
@@ -33,12 +34,15 @@ export const favoritesKeys = {
 };
 
 export function useFavorites() {
+    // C3 — un invitado no tiene favoritos en la empresa (el servidor da 403).
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: favoritesKeys.all,
         queryFn: async (): Promise<Favorites> => {
             const res = await api.get<Favorites>('/me/favorites');
             return { lists: res.data.lists ?? [], dashboards: res.data.dashboards ?? [], views: res.data.views ?? [] };
         },
+        enabled: !isGuest,
         staleTime: 60_000,
     });
 }
@@ -48,13 +52,14 @@ export function useFavorites() {
  * `favoritesKeys.all`, así que anclar/desanclar la invalida sola.
  */
 export function useFavoriteViews(enabled = true) {
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: [...favoritesKeys.all, 'views'] as const,
         queryFn: async (): Promise<FavoriteView[]> => {
             const res = await api.get<FavoriteView[]>('/me/favorites/views');
             return Array.isArray(res.data) ? res.data : [];
         },
-        enabled,
+        enabled: enabled && !isGuest,
         staleTime: 60_000,
     });
 }

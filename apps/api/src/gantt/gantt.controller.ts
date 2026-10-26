@@ -32,6 +32,7 @@ import { contentDispositionHeader } from '../files/safe-content-type';
 import type { Actor } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { GanttService } from './gantt.service';
+import { aclOf } from '../tenancy/acl-of';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -124,7 +125,7 @@ export class GanttController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 function intParam(v: unknown, name: string): number {

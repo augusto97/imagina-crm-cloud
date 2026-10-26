@@ -19,6 +19,7 @@ const UNLIMITED: PlanLimits = {
     max_storage_mb: null,
     max_emails_month: null,
     max_ai_requests_month: null,
+    max_guests: null,
 };
 
 /**
@@ -46,6 +47,7 @@ export class PlansService {
             max_storage_mb: r.maxStorageMb,
             max_emails_month: r.maxEmailsMonth,
             max_ai_requests_month: r.maxAiRequestsMonth,
+            max_guests: r.maxGuests,
             price_usd: r.priceUsd,
             price_cop: r.priceCop,
             is_active: r.isActive,
@@ -61,6 +63,7 @@ export class PlansService {
                     max_storage_mb: p.max_storage_mb,
                     max_emails_month: p.max_emails_month,
                     max_ai_requests_month: p.max_ai_requests_month,
+                    max_guests: p.max_guests,
                 },
             ]),
         );
@@ -120,6 +123,7 @@ export class PlansService {
             maxStorageMb: input.max_storage_mb,
             maxEmailsMonth: input.max_emails_month,
             maxAiRequestsMonth: input.max_ai_requests_month,
+            maxGuests: input.max_guests,
             priceUsd: input.price_usd,
             priceCop: input.price_cop,
             isActive: input.is_active,
@@ -138,6 +142,7 @@ export class PlansService {
         if (input.max_storage_mb !== undefined) changes.maxStorageMb = input.max_storage_mb;
         if (input.max_emails_month !== undefined) changes.maxEmailsMonth = input.max_emails_month;
         if (input.max_ai_requests_month !== undefined) changes.maxAiRequestsMonth = input.max_ai_requests_month;
+        if (input.max_guests !== undefined) changes.maxGuests = input.max_guests;
         if (input.price_usd !== undefined) changes.priceUsd = input.price_usd;
         if (input.price_cop !== undefined) changes.priceCop = input.price_cop;
         if (input.is_active !== undefined) changes.isActive = input.is_active;

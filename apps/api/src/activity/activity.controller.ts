@@ -5,7 +5,9 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { ActivityService } from './activity.service';
+import { aclOf } from '../tenancy/acl-of';
 
 type Page = { data: ActivityDto[]; meta: { next_cursor: string | null } };
 
@@ -26,7 +28,7 @@ export class ActivityController {
         return this.activity.list(req.tenant!.tenantId, list, {
             cursor: cursor ? Number(cursor) : undefined,
             limit: limit ? Number(limit) : undefined,
-            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, ...aclOf(req), userId: req.authUserId! },
         });
     }
 
@@ -35,6 +37,7 @@ export class ActivityController {
      * paginado por cursor. Lo usa «Ver historial» de cada campo de la ficha.
      */
     @Get('records/:id/fields/:fieldId/history')
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     fieldHistory(
         @Req() req: FastifyRequest,
@@ -48,12 +51,13 @@ export class ActivityController {
         return this.activity.fieldHistory(req.tenant!.tenantId, list, id, fieldId, {
             cursor: c !== undefined && Number.isSafeInteger(c) && c > 0 ? c : undefined,
             limit: limit ? Number(limit) : undefined,
-            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, ...aclOf(req), userId: req.authUserId! },
         });
     }
 
     /** Actividad de un record puntual. */
     @Get('records/:id/activity')
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     recordActivity(
         @Req() req: FastifyRequest,
@@ -66,7 +70,7 @@ export class ActivityController {
             recordId: id,
             cursor: cursor ? Number(cursor) : undefined,
             limit: limit ? Number(limit) : undefined,
-            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, ...aclOf(req), userId: req.authUserId! },
         });
     }
 }

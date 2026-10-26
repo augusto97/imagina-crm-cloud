@@ -30,6 +30,10 @@ import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { FieldsService, type RelationPath } from './fields.service';
+import { aclOf } from '../tenancy/acl-of';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
+import { fieldsForGuest, listForRequest } from '../guests/guest-gate';
+import { ListsService } from '../lists/lists.service';
 
 /**
  * CRUD de campos por lista (CONTRACT.md §1). Rutas anidadas bajo la lista;
@@ -41,11 +45,17 @@ export class FieldsController {
     constructor(
         private readonly fields: FieldsService,
         private readonly audit: AuditService,
+        private readonly lists: ListsService,
     ) {}
 
     @Get()
-    all(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: Field[] }> {
-        return this.fields.list(tenantId(req), list).then((data) => ({ data }));
+    @AllowGuest()
+    async all(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: Field[] }> {
+        // C3 — un invitado: sólo si la lista se la compartieron, y sin los
+        // campos que no ve.
+        const owner = req.tenant!.role === 'guest' ? await listForRequest(this.lists, req, list) : null;
+        const data = await this.fields.list(tenantId(req), list);
+        return { data: owner ? fieldsForGuest(owner, data, req) : data };
     }
 
     /**
@@ -64,7 +74,7 @@ export class FieldsController {
     ): Promise<{ data: Array<{ value: string; count: number }> }> {
         return this.fields
             .distinctValues(tenantId(req), list, field, search ?? '', Number(limit ?? 50), {
-                role: req.tenant!.role, teamIds: req.tenant!.teamIds,
+                role: req.tenant!.role, ...aclOf(req),
                 userId: req.authUserId!,
             })
             .then((data) => ({ data }));

@@ -27,6 +27,7 @@ import { ChecklistsService } from '../checklists/checklists.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TimeTrackingService } from '../time-tracking/time-tracking.service';
+import { aclExtras, effectivePermissions, guestExtraHidden, guestSafeListSettings, withDependentComputed } from '../lists/list-acl';
 
 /** Piezas que se piden en paralelo, con tope (el pool de conexiones es compartido). */
 const PARALLEL = 4;
@@ -77,6 +78,7 @@ export class RecordViewService {
         const record = await this.records.get(tenantId, actor, listIdOrSlug, recordId);
         const list = await this.lists.get(tenantId, String(record.list_id));
         const listKey = String(list.id);
+        if (actor.role === 'guest') return this.guestBundle(tenantId, actor, list, record);
 
         const soft = async <T>(what: string, fn: () => Promise<T>): Promise<T | null> => {
             try {
@@ -113,7 +115,7 @@ export class RecordViewService {
                         await this.activity.list(tenantId, listKey, {
                             recordId,
                             limit: RECORD_VIEW_ACTIVITY_LIMIT,
-                            viewer: { role: actor.role, userId: actor.userId },
+                            viewer: { ...aclExtras(actor), role: actor.role, userId: actor.userId },
                         })
                     ).data,
                 ),
@@ -242,6 +244,78 @@ export class RecordViewService {
             dependencies,
             approvals,
             checklists,
+        };
+    }
+
+    /**
+     * C3 — La ficha que ve un INVITADO: el registro, sus campos visibles, la
+     * descripción, comentarios, actividad y subtareas (las que también le
+     * compartieron). Nada que cruce a otras listas (vinculados, relaciones,
+     * diseños con datos), ni lo interno de la empresa (cobros, documentos,
+     * tiempo, recordatorios, autorizaciones, dependencias, aprobaciones,
+     * checklists).
+     */
+    private async guestBundle(
+        tenantId: number,
+        actor: Actor,
+        list: Awaited<ReturnType<ListsService['get']>>,
+        record: RecordViewBundle['record'],
+    ): Promise<RecordViewBundle> {
+        const listKey = String(list.id);
+        const allFields = await this.fields.list(tenantId, listKey);
+        const settings = (list.settings ?? {}) as Record<string, unknown>;
+        const who = { ...aclExtras(actor), role: actor.role, userId: actor.userId };
+        const hidden = new Set(effectivePermissions(settings, who).fields_hidden);
+        const blocked = withDependentComputed(
+            allFields,
+            new Set([...allFields.filter((f) => hidden.has(f.slug)).map((f) => f.id), ...guestExtraHidden(allFields, who)]),
+        );
+        const fields = allFields.filter((f) => !blocked.has(f.id));
+        const soft = async <T>(fn: () => Promise<T>): Promise<T | null> => {
+            try {
+                return await fn();
+            } catch {
+                return null;
+            }
+        };
+        const description = await soft(() => this.records.getDescription(tenantId, actor, listKey, record.id));
+        const comments = await soft(() => this.tenantDb.withTenant(tenantId, (tx) => this.comments.listInTx(tx, tenantId, record.id)));
+        const activity = await soft(async () =>
+            (await this.activity.list(tenantId, listKey, { recordId: record.id, limit: RECORD_VIEW_ACTIVITY_LIMIT, viewer: who })).data,
+        );
+        const subtasks =
+            record.parent_id !== null
+                ? null
+                : await soft(() =>
+                      this.records.list(
+                          tenantId,
+                          actor,
+                          listKey,
+                          listRecordsQuerySchema.parse({ parent: record.id, limit: RECORD_VIEW_SUBTASKS, page: 1 }),
+                      ),
+                  );
+        return {
+            list: { ...list, group_id: null, settings: guestSafeListSettings(settings) },
+            fields,
+            record,
+            description: description ?? null,
+            follow: null,
+            reminders: null,
+            documents: [],
+            issued_documents: [],
+            payments: null,
+            relation_paths: [],
+            linked_lists: [],
+            backlinks: [],
+            subtasks: subtasks as RecordViewBundle['subtasks'],
+            comments,
+            activity,
+            layout_data: null,
+            time: null,
+            data_consents: [],
+            dependencies: null,
+            approvals: null,
+            checklists: null,
         };
     }
 

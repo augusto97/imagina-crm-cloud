@@ -57,6 +57,10 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { BulkEditService } from './bulk-edit.service';
 import { BulkStructureService } from './bulk-structure.service';
 import { RecordsService, type Actor, type RecordsPage } from './records.service';
+import { aclOf } from '../tenancy/acl-of';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
+import { listForRequest } from '../guests/guest-gate';
+import { ListsService } from '../lists/lists.service';
 
 /**
  * CRUD de registros por lista (CONTRACT.md §1). El listado usa cursor
@@ -70,16 +74,25 @@ export class RecordsController {
         private readonly records: RecordsService,
         private readonly bulkEdit: BulkEditService,
         private readonly bulkStructure: BulkStructureService,
+        private readonly lists: ListsService,
     ) {}
 
     @Get()
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
-    list(
+    async list(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
         @Query() rawQuery: Record<string, unknown>,
     ): Promise<RecordsPage> {
-        return this.records.list(tenantId(req), actor(req), list, parseListQuery(rawQuery));
+        const query = parseListQuery(rawQuery);
+        if (req.tenant!.role === 'guest') {
+            // C3 — una lista que no le compartieron no existe; y un invitado
+            // no recorre registros por sus relaciones (no las ve).
+            await listForRequest(this.lists, req, list);
+            query.related_to = undefined;
+        }
+        return this.records.list(tenantId(req), actor(req), list, query);
     }
 
     @Post('bulk')
@@ -165,6 +178,7 @@ export class RecordsController {
      * resuelve antes que `PATCH /:id`.
      */
     @Patch('batch')
+    @AllowGuest()
     @RequireCapability('edit_records', 'edit_own_records')
     batchUpdate(
         @Req() req: FastifyRequest,
@@ -202,6 +216,7 @@ export class RecordsController {
     }
 
     @Get(':id')
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     get(
         @Req() req: FastifyRequest,
@@ -217,6 +232,7 @@ export class RecordsController {
      * se guarda solo (autosave), sin arrastrar el resto de los campos.
      */
     @Get(':id/description')
+    @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')
     async getDescription(
         @Req() req: FastifyRequest,
@@ -228,6 +244,7 @@ export class RecordsController {
     }
 
     @Patch(':id/description')
+    @AllowGuest()
     @RequireCapability('edit_records', 'edit_own_records')
     async updateDescription(
         @Req() req: FastifyRequest,
@@ -247,18 +264,27 @@ export class RecordsController {
 
     @Post()
     @HttpCode(201)
+    @AllowGuest()
     @RequireCapability('create_records')
     async create(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createRecordSchema)) input: CreateRecordInput,
     ): Promise<RecordDto> {
+        if (req.tenant!.role === 'guest') {
+            await listForRequest(this.lists, req, list);
+            // C3 — un invitado no crea subtareas de registros que no ve.
+            if (input.parent_id !== undefined && input.parent_id !== null) {
+                await this.records.get(tenantId(req), actor(req), list, input.parent_id);
+            }
+        }
         // Límite de records por plan (STANDALONE §11): lo aplica el service
         // (v0.1.228), así vale también para los caminos que no pasan por aquí.
         return this.records.create(tenantId(req), actor(req), list, input);
     }
 
     @Patch(':id')
+    @AllowGuest()
     @RequireCapability('edit_records', 'edit_own_records')
     update(
         @Req() req: FastifyRequest,
@@ -286,7 +312,7 @@ function tenantId(req: FastifyRequest): number {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /**

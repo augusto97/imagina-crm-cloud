@@ -107,6 +107,25 @@ export class BlueprintService {
 
     // ── Serializar ───────────────────────────────────────────────────────
 
+    /** C3 — Saca de `permissions.users` a las personas invitadas de afuera. */
+    private async dropGuestAccess(tenantId: number, settings: Record<string, unknown>): Promise<void> {
+        const perms = settings.permissions as { users?: Record<string, unknown> } | undefined;
+        const users = perms?.users;
+        if (!users || typeof users !== 'object') return;
+        const ids = Object.keys(users).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        if (ids.length === 0) return;
+        const guests = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: memberships.userId })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.role, 'guest'), inArray(memberships.userId, ids))),
+        );
+        if (guests.length === 0) return;
+        const next = { ...users };
+        for (const g of guests) delete next[String(g.id)];
+        settings.permissions = { ...perms, users: next };
+    }
+
     async serialize(
         tenantId: number,
         listIds: number[],
@@ -147,6 +166,9 @@ export class BlueprintService {
                 for (const [k, v] of Object.entries(list.settings)) {
                     if (!BLUEPRINT_EXCLUDED_SETTINGS.includes(k)) settings[k] = v;
                 }
+                // C3 — lo compartido con un INVITADO no viaja a la copia: se le
+                // compartió ESA lista, no las que se armen a partir de ella.
+                await this.dropGuestAccess(tenantId, settings);
             }
 
             const bp: BlueprintList = {

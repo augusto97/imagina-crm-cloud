@@ -14,7 +14,7 @@ import { viewSchema } from './view';
  */
 export const bootstrapSchema = z.object({
     user: sessionUserSchema,
-    tenant: tenantSchema.extend({ role: roleSchema }),
+    tenant: tenantSchema.extend({ role: roleSchema, custom_role_id: z.number().int().positive().nullable().optional() }),
     capabilities: z.record(capabilitySchema, z.boolean()),
     lists: z.array(listSchema),
     fields: z.array(fieldSchema),

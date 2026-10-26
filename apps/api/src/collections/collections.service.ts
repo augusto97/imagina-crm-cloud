@@ -17,7 +17,6 @@ import {
     jsonbKeyForField,
     readCollectionFields,
     resolveTitleFieldId,
-    roleHasCapability,
     validateFieldValue,
     type CollectionConnection,
     type CollectionConnectionDetail,
@@ -70,6 +69,7 @@ import {
     type LinkInput,
 } from './collection-gateways';
 import { gatewayBases } from './gateway-bases';
+import { can } from '../authz/can';
 
 export interface CollectionActor {
     userId: number;
@@ -441,7 +441,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                 links: rows.map((r) => toDto(r.link, r.connName ?? null)),
                 connections: conns,
                 fields: hasAny ? mapped : null,
-                can_setup: roleHasCapability(actor.role, 'manage_fields'),
+                can_setup: can(actor, 'manage_fields'),
                 suggested: suggestFrom(fieldRows, list.settings, ctx.data, recordId),
             };
         });

@@ -4,7 +4,6 @@ import {
     BULK_STRUCTURE_MAX_TARGET,
     readStoreListMarker,
     resolveTitleFieldId,
-    roleHasCapability,
     type BulkEditTarget,
     type BulkRevertPreview,
     type BulkRevertResult,
@@ -21,6 +20,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BulkHistoryService, type BulkEditHeader, type BulkItemInput, type BulkItemRow } from './bulk-history.service';
 import { RecordsService, type Actor } from './records.service';
+import { can } from '../authz/can';
 
 const SAMPLE_SIZE = 20;
 const ERROR_LIST = 50;
@@ -388,17 +388,16 @@ export class BulkStructureService {
     }
 
     private assertCan(actor: Actor, action: BulkStructureAction, byFilter: boolean): void {
-        const role = actor.role;
-        const can =
+        const allowed =
             action === 'duplicate'
-                ? roleHasCapability(role, 'create_records')
+                ? can(actor, 'create_records')
                 : action === 'delete'
-                  ? roleHasCapability(role, 'delete_records') || roleHasCapability(role, 'delete_own_records')
-                  : roleHasCapability(role, 'edit_records') || roleHasCapability(role, 'edit_own_records');
-        if (!can) {
+                  ? can(actor, 'delete_records') || can(actor, 'delete_own_records')
+                  : can(actor, 'edit_records') || can(actor, 'edit_own_records');
+        if (!allowed) {
             throw new ForbiddenException({ code: 'forbidden', message: 'Tu rol no puede hacer esto.', data: { status: 403 } });
         }
-        if (byFilter && !roleHasCapability(role, 'bulk_actions')) {
+        if (byFilter && !can(actor, 'bulk_actions')) {
             throw new ForbiddenException({
                 code: 'forbidden_bulk',
                 message: 'Tu rol no puede actuar sobre todos los registros de un filtro: selecciona las filas.',

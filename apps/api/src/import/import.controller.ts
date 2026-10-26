@@ -22,6 +22,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ImportUpdateService } from './import-update.service';
 import { ImportService } from './import.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * Import de filas a una lista (CONTRACT §11). POST → bloqueado en solo-lectura
@@ -47,7 +48,7 @@ export class ImportController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(importUpdateSchema)) input: ImportUpdateInput,
     ): Promise<ImportUpdatePreview> {
-        return this.updater.preview(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, input);
+        return this.updater.preview(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, input);
     }
 
     @Post('update')
@@ -58,7 +59,7 @@ export class ImportController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(importUpdateSchema)) input: ImportUpdateInput,
     ): Promise<ImportUpdateResult> {
-        return this.updater.apply(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, input);
+        return this.updater.apply(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, input);
     }
 
     @Post()
@@ -69,7 +70,7 @@ export class ImportController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(importRowsSchema)) input: ImportRowsInput,
     ): Promise<ImportResult> {
-        return this.importService.importRows(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, input);
+        return this.importService.importRows(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, input);
     }
 
     /** Paso 1 del ImportDialog: inspección del CSV sin escribir nada. */
@@ -93,6 +94,6 @@ export class ImportController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(importCsvRunSchema)) input: ImportCsvRunInput,
     ): Promise<ImportCsvRunResult> {
-        return this.importService.runCsv(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, input);
+        return this.importService.runCsv(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, input);
     }
 }

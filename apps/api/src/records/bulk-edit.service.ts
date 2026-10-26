@@ -7,7 +7,6 @@ import {
     isThroughField,
     readStoreListMarker,
     resolveTitleFieldId,
-    roleHasCapability,
     storeCellAccess,
     storeValueError,
     summarizeBulkOperations,
@@ -24,6 +23,7 @@ import { hiddenFieldsFor } from '../lists/list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { BulkHistoryService, type BulkItemInput } from './bulk-history.service';
 import { RecordsService, type Actor } from './records.service';
+import { can } from '../authz/can';
 
 export interface AutomationBulkOutcome {
     total: number;
@@ -68,7 +68,7 @@ export class BulkEditService {
     ): Promise<BulkEditPreview> {
         // Editar TODO lo que coincide con un filtro es la acción masiva de
         // verdad: exige `bulk_actions` (un agente edita su selección, no la lista).
-        if (!('ids' in target) && !roleHasCapability(actor.role, 'bulk_actions')) {
+        if (!('ids' in target) && !can(actor, 'bulk_actions')) {
             throw new ForbiddenException({
                 code: 'forbidden_bulk',
                 message: 'Tu rol no puede editar en lote todos los registros de un filtro: selecciona las filas.',

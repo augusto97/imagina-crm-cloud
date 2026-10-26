@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    CONFIGURABLE_ROLES,
+    customRoleKey,
+    parseCustomRoleKey,
     listSlugSchema,
     readStoreListMarker,
     slugify,
@@ -10,12 +13,13 @@ import {
     type List,
     type ListPermissionsDoc,
     type ListRoleMeta,
+    type RolePermissions,
     type UpdateListInput,
     type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { fields, listGroups, listSlugHistory, memberships, teamMembers, teams, users } from '../db/schema';
+import { customRoles, fields, listGroups, listSlugHistory, memberships, teamMembers, teams, users } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -77,17 +81,34 @@ export class ListsService {
             .map((k) => Number(k))
             .filter((n) => Number.isInteger(n) && n > 0);
         const teamRows = teamIds.length > 0 ? await this.teamsByIds(tenantId, teamIds) : [];
+        // C2 — una fila por rol PROPIO: la suya si la tiene; si no, la de su
+        // rol base (y la UI la marca como heredada).
+        const custom = await this.customRolesOf(tenantId);
+        const permissions = { ...doc.permissions };
+        const roles: ListRoleMeta[] = [...CONFIGURABLE_ROLE_META];
+        for (const r of custom) {
+            const key = customRoleKey(r.id);
+            const inherited = !doc.permissions[key];
+            if (inherited) permissions[key] = { ...doc.permissions[r.baseRole]! };
+            roles.push({ slug: key, label: r.name, can_configure: true, custom_role_id: r.id, base_role: r.baseRole, inherited });
+        }
+        // Sólo las filas de roles que existen (una de un rol borrado no se muestra).
+        for (const key of Object.keys(permissions)) {
+            const id = parseCustomRoleKey(key);
+            if (id !== null && !custom.some((r) => r.id === id)) delete permissions[key];
+        }
         return {
             list_id: list.id,
-            permissions: doc.permissions,
+            permissions,
             assignment_field_id: doc.assignment_field_id,
             assignment_team_field_id: doc.assignment_team_field_id,
-            roles: CONFIGURABLE_ROLE_META,
+            roles,
             users: people.map((u) => ({
                 user_id: u.id,
                 name: u.name,
                 email: u.email,
                 permissions: doc.users[String(u.id)]!,
+                ...(u.role === 'guest' ? { is_guest: true, pending: u.invitedAt !== null } : {}),
             })),
             teams: teamRows.map((t) => ({
                 team_id: t.id,
@@ -127,25 +148,53 @@ export class ListsService {
      */
     async workspaceMembers(
         tenantId: number,
-    ): Promise<Array<{ id: number; name: string; email: string; role: string }>> {
+    ): Promise<Array<{ id: number; name: string; email: string; role: string; customRole: string | null }>> {
         return this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
-                .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
+                .select({ id: users.id, name: users.name, email: users.email, role: memberships.role, customRole: customRoles.name })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
+                // C2 — el rol propio de cada persona (si tiene uno).
+                .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
                 .where(eq(memberships.tenantId, tenantId))
                 .orderBy(asc(users.name)),
         );
+    }
+
+    /** C3 — de estos ids, los que son INVITADOS de la empresa. */
+    private async guestIdsAmong(tenantId: number, ids: number[]): Promise<Set<number>> {
+        if (ids.length === 0) return new Set();
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: memberships.userId })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.role, 'guest'), inArray(memberships.userId, ids))),
+        );
+        return new Set(rows.map((r) => r.id));
+    }
+
+    /** C2 — roles propios de la empresa (para las filas de permisos por lista). */
+    private async customRolesOf(tenantId: number): Promise<Array<{ id: number; name: string; baseRole: (typeof CONFIGURABLE_ROLES)[number] }>> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: customRoles.id, name: customRoles.name, baseRole: customRoles.baseRole })
+                .from(customRoles)
+                .where(eq(customRoles.tenantId, tenantId))
+                .orderBy(asc(customRoles.name)),
+        );
+        return rows
+            .filter((r) => (CONFIGURABLE_ROLES as readonly string[]).includes(r.baseRole))
+            .map((r) => ({ id: r.id, name: r.name, baseRole: r.baseRole as (typeof CONFIGURABLE_ROLES)[number] }));
     }
 
     /** Miembros del workspace por id (para resolver los accesos por persona). */
     private async membersByIds(
         tenantId: number,
         ids: number[],
-    ): Promise<Array<{ id: number; name: string; email: string }>> {
+    ): Promise<Array<{ id: number; name: string; email: string; role: string; invitedAt: Date | null }>> {
         return this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
-                .select({ id: users.id, name: users.name, email: users.email })
+                .select({ id: users.id, name: users.name, email: users.email, role: memberships.role, invitedAt: users.invitedAt })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
                 .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids))),
@@ -160,9 +209,28 @@ export class ListsService {
     ): Promise<ListPermissionsDoc> {
         const list = await this.get(tenantId, idOrSlug);
         const current = resolvePermissions(list.settings);
-        const nextPermissions = input.permissions
+        // C2 — filas válidas: los roles base configurables y los roles PROPIOS
+        // de esta empresa (`custom:<id>`). Cualquier otra clave se rechaza.
+        const customIds = new Set((await this.customRolesOf(tenantId)).map((r) => r.id));
+        const badKeys = [...Object.keys(input.permissions ?? {}), ...(input.reset_roles ?? [])].filter((key) => {
+            if ((CONFIGURABLE_ROLES as readonly string[]).includes(key)) return false;
+            const id = parseCustomRoleKey(key);
+            return id === null || !customIds.has(id);
+        });
+        if (badKeys.length > 0) {
+            throw new BadRequestException({
+                code: 'invalid_role',
+                message: 'Sólo se configuran los roles de esta empresa',
+                data: { status: 400, errors: { permissions: badKeys.join(', ') } },
+            });
+        }
+        const nextPermissions: Record<string, RolePermissions> = input.permissions
             ? { ...current.permissions, ...input.permissions }
-            : current.permissions;
+            : { ...current.permissions };
+        // Volver a heredar la fila del rol base (sólo roles propios).
+        for (const key of input.reset_roles ?? []) {
+            if (parseCustomRoleKey(key) !== null) delete nextPermissions[key];
+        }
         const nextAssignment =
             input.assignment_field_id !== undefined
                 ? input.assignment_field_id
@@ -185,9 +253,17 @@ export class ListsService {
                     data: { status: 400, errors: { users: invalid.join(', ') } },
                 });
             }
-            nextUsers = Object.fromEntries(
-                ids.map((id) => [String(id), input.users![String(id)]!]),
+            // C3 — los accesos de INVITADOS no se tocan desde aquí (tienen su
+            // propio camino, con su nivel): se conservan tal cual estaban.
+            const guestIds = new Set(members.filter((m) => m.role === 'guest').map((m) => m.id));
+            const currentGuests = await this.guestIdsAmong(
+                tenantId,
+                Object.keys(current.users).map(Number).filter((n) => Number.isInteger(n) && n > 0),
             );
+            nextUsers = Object.fromEntries([
+                ...ids.filter((id) => !guestIds.has(id)).map((id) => [String(id), input.users![String(id)]!] as const),
+                ...[...currentGuests].filter((id) => current.users[String(id)]).map((id) => [String(id), current.users[String(id)]!] as const),
+            ]);
         }
         // C1 — accesos por EQUIPO (mapa completo, como el de personas): sólo
         // equipos de esta empresa.

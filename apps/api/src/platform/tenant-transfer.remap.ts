@@ -35,6 +35,8 @@ export interface IdMaps {
     recordTemplate: Map<number, number>;
     /** C1 — equipos (valor del campo «Equipo», acceso por equipo, @equipo). */
     team: Map<number, number>;
+    /** C2 — roles propios (`memberships.custom_role_id` y filas `custom:<id>` de los permisos). */
+    customRole: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -53,6 +55,7 @@ export function emptyMaps(): IdMaps {
         approval_request: new Map(),
         recordTemplate: new Map(),
         team: new Map(),
+        customRole: new Map(),
     };
 }
 
@@ -259,6 +262,22 @@ export function remapListSettings(
                 if (newId !== null) remapped[String(newId)] = perms;
             }
             p.teams = remapped;
+        }
+        // C2 — las filas de roles PROPIOS van por clave `custom:<id>`.
+        const rolePerms = p.permissions;
+        if (rolePerms !== null && typeof rolePerms === 'object') {
+            const remapped: Record<string, unknown> = {};
+            for (const [key, perms] of Object.entries(rolePerms as Record<string, unknown>)) {
+                const m = /^custom:(\d+)$/.exec(key);
+                if (!m) {
+                    remapped[key] = perms;
+                    continue;
+                }
+                // Una fila de un rol que no viajó se descarta (heredaría otro rol).
+                const newId = mapId(maps.customRole, m[1]);
+                if (newId !== null) remapped[`custom:${newId}`] = perms;
+            }
+            p.permissions = remapped;
         }
         out.permissions = p;
     }

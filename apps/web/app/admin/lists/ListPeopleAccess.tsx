@@ -42,7 +42,8 @@ export function ListPeopleAccess({ listId }: ListPeopleAccessProps): JSX.Element
     const [level, setLevel] = useState(DEFAULT_LEVEL);
     const results = useWpUsersSearch(search);
 
-    const current = useMemo(() => perms.data?.users ?? [], [perms.data]);
+    // C3 — los invitados de afuera tienen su propia sección (con su nivel).
+    const current = useMemo(() => (perms.data?.users ?? []).filter((u) => !u.is_guest), [perms.data]);
     const currentIds = useMemo(() => new Set(current.map((u) => u.user_id)), [current]);
 
     const save = (next: Record<string, RolePermissions>, done: string): void => {
@@ -109,7 +110,7 @@ export function ListPeopleAccess({ listId }: ListPeopleAccessProps): JSX.Element
                                     {__('Nadie coincide. Sólo aparecen miembros de esta empresa.')}
                                 </p>
                             )}
-                            {(results.data ?? []).map((u) => (
+                            {(results.data ?? []).filter((u) => !u.is_guest).map((u) => (
                                 <button
                                     key={u.id}
                                     type="button"

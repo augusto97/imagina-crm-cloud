@@ -367,6 +367,7 @@ function SubscriptionForm({
                         <UserPicker
                             value={null}
                             placeholder={__('Agregar una persona…')}
+                            excludeGuests
                             onChange={(uid) => {
                                 if (uid !== null && !v.recipient_user_ids.includes(uid)) set({ recipient_user_ids: [...v.recipient_user_ids, uid] });
                             }}

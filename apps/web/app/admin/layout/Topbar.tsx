@@ -12,6 +12,8 @@ import { useBrandingData } from '@/hooks/useBranding';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { PALETTE_SHORTCUT_LABEL } from '@/lib/shortcuts';
+import { CAP, useCan } from '@/lib/permissions';
+import { useIsGuest } from '@/lib/guest';
 
 /**
  * Topbar:
@@ -40,6 +42,9 @@ export function Topbar({
     const membership = memberships.find((m) => m.tenant_id === activeTenantId);
     const workspaceTitle = branding.data?.app_name ?? membership?.tenant_name ?? 'Imagina Base';
     const logoUrl = branding.data?.logo_url ?? null;
+    // C2 — «Usar el asistente IA» (rol propio); C3 — un invitado no lo usa.
+    const canUseAssistant = useCan(CAP.USE_AI_ASSISTANT);
+    const isGuest = useIsGuest();
 
     return (
         <header className="imcrm-admin-topbar imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-2 sm:imcrm-gap-4 sm:imcrm-px-6 lg:imcrm-h-10 lg:imcrm-px-4">
@@ -91,10 +96,10 @@ export function Topbar({
 
             <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 sm:imcrm-gap-2">
                 {/* v0.1.291 — el cronómetro en curso (registro de tiempo). */}
-                <ActiveTimerChip />
+                {!isGuest && <ActiveTimerChip />}
 
                 {/* v0.1.285 — algo que corre solo dejó de funcionar. */}
-                <IncidentsPill />
+                {!isGuest && <IncidentsPill />}
 
                 {/* Buscador (mobile/tablet): sólo la lupa. */}
                 {onSearchClick && (
@@ -112,6 +117,7 @@ export function Topbar({
                 )}
 
                 {/* v0.1.181 — asistente IA (ADR-S21). */}
+                {canUseAssistant && !isGuest && (
                 <Button
                     variant="ghost"
                     size="icon"
@@ -124,6 +130,7 @@ export function Topbar({
                 >
                     <Sparkles className="imcrm-h-4 imcrm-w-4" />
                 </Button>
+                )}
 
                 {moduleEnabled('mentions') && <NotificationBell />}
 

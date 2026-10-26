@@ -4,6 +4,7 @@ import {
     DoorOpen,
     Gauge,
     Globe,
+    KeyRound,
     HardDrive,
     Mail,
     History,
@@ -34,6 +35,7 @@ export type SettingsSectionId =
     | 'plan'
     | 'suscripcion'
     | 'miembros'
+    | 'roles'
     | 'equipos'
     | 'marca'
     | 'formato'
@@ -59,13 +61,29 @@ export function settingsSectionGroups({
     isAdmin,
     canManageAutomations = false,
     canManageTeams = false,
+    isGuest = false,
 }: {
     isAdmin: boolean;
     /** v0.1.196 — Conectores: quien arma automatizaciones ve el inventario. */
     canManageAutomations?: boolean;
     /** C1 — Equipos: el admin o quien tiene «Gestionar equipos». */
     canManageTeams?: boolean;
+    /** C3 — un invitado de afuera sólo ve SU cuenta. */
+    isGuest?: boolean;
 }): SettingsSectionGroup[] {
+    if (isGuest) {
+        return [
+            {
+                label: 'Cuenta',
+                items: [
+                    { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
+                    { id: 'avisos', label: 'Avisos', icon: Bell },
+                    { id: 'datos', label: 'Tus datos', icon: DatabaseZap },
+                    { id: 'apariencia', label: 'Apariencia', icon: SunMoon },
+                ],
+            },
+        ];
+    }
     const groups: SettingsSectionGroup[] = [
         {
             label: 'Workspace',
@@ -78,6 +96,8 @@ export function settingsSectionGroups({
                           { id: 'plan', label: 'Plan y uso', icon: Gauge },
                           { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
                           { id: 'miembros', label: 'Miembros', icon: Users },
+                          // C2 — roles propios (capacidades por módulo).
+                          { id: 'roles', label: 'Roles', icon: KeyRound },
                           { id: 'marca', label: 'Marca', icon: Palette },
                           { id: 'formato', label: 'Formato regional', icon: Globe },
                           { id: 'correo', label: 'Correo', icon: Mail },

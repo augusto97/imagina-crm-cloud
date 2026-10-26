@@ -16,6 +16,7 @@ import {
     type CreateReminderInput,
     type Field,
     type FollowStateDto,
+    type GuestLevel,
     type List,
     type ListNotificationsQuery,
     type MarkNotificationsInput,
@@ -44,6 +45,7 @@ import {
     recordChecklists,
     records,
     recordFollows,
+    recordShares,
     reminders,
     tenants,
     users,
@@ -100,6 +102,8 @@ interface Recipient {
     prefs: NotificationPrefs;
     /** C1 — sus equipos: el ACL del registro también se mira por equipo. */
     teamIds: number[];
+    /** C2 — su rol propio: la fila de ese rol en el acceso de la lista cuenta. */
+    customRoleId: number | null;
 }
 
 /**
@@ -364,6 +368,11 @@ export class NotificationsService implements OnModuleInit {
         const ids = [...new Set(rawRecipients)].filter((u) => Number.isInteger(u) && u > 0 && u !== n.actorId).slice(0, MAX_RECIPIENTS);
         if (ids.length === 0) return 0;
         const recipients = await this.recipients(tenantId, ids);
+        // C3 — a un invitado le cuenta el registro suelto que le compartieron.
+        const guestShares =
+            n.recordId !== null && recipients.some((r) => r.role === 'guest')
+                ? await this.guestSharesOf(tenantId, n.recordId, recipients.filter((r) => r.role === 'guest').map((r) => r.userId))
+                : new Map<number, { listId: number; level: GuestLevel }>();
         // El ACL del registro para TODOS los destinatarios en una sola lectura
         // (antes un `records.get` completo por persona).
         const viewers =
@@ -372,7 +381,16 @@ export class NotificationsService implements OnModuleInit {
                       tenantId,
                       n.listId,
                       n.recordId,
-                      recipients.map((r) => ({ userId: r.userId, role: r.role, teamIds: r.teamIds })),
+                      recipients.map((r) => {
+                          const share = guestShares.get(r.userId);
+                          return {
+                              userId: r.userId,
+                              role: r.role,
+                              teamIds: r.teamIds,
+                              customRoleId: r.customRoleId,
+                              ...(share && n.recordId !== null ? { shares: new Map([[n.recordId, share]]) } : {}),
+                          };
+                      }),
                   )
                 : null;
         const allowed: Recipient[] = recipients.filter((r) => viewers === null || viewers.has(r.userId));
@@ -461,10 +479,33 @@ export class NotificationsService implements OnModuleInit {
         }
     }
 
+    /** C3 — el acceso de cada invitado a ESTE registro (si se lo compartieron suelto). */
+    private async guestSharesOf(
+        tenantId: number,
+        recordId: number,
+        userIds: number[],
+    ): Promise<Map<number, { listId: number; level: GuestLevel }>> {
+        if (userIds.length === 0) return new Map();
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ userId: recordShares.userId, listId: recordShares.listId, level: recordShares.level })
+                .from(recordShares)
+                .where(and(eq(recordShares.tenantId, tenantId), eq(recordShares.recordId, recordId), inArray(recordShares.userId, userIds))),
+        );
+        return new Map(rows.map((r) => [r.userId, { listId: r.listId, level: r.level as GuestLevel }]));
+    }
+
     private async recipients(tenantId: number, ids: number[]): Promise<Recipient[]> {
         const { rows, teamsOf } = await this.tenantDb.withTenant(tenantId, async (tx) => ({
             rows: await tx
-                .select({ userId: memberships.userId, role: memberships.role, settings: memberships.settings, email: users.email, disabledAt: users.disabledAt })
+                .select({
+                    userId: memberships.userId,
+                    role: memberships.role,
+                    customRoleId: memberships.customRoleId,
+                    settings: memberships.settings,
+                    email: users.email,
+                    disabledAt: users.disabledAt,
+                })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
                 .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids))),
@@ -479,6 +520,7 @@ export class NotificationsService implements OnModuleInit {
                 email: r.email,
                 prefs: readNotificationPrefs((r.settings as Record<string, unknown> | null)?.notifications),
                 teamIds: teamsOf.get(r.userId) ?? [],
+                customRoleId: r.customRoleId ?? null,
             }));
     }
 
@@ -1103,7 +1145,15 @@ export class NotificationsService implements OnModuleInit {
             const weekday = new Date(`${ymd}T00:00:00Z`).getUTCDay();
             const members = await this.tenantDb.withTenant(t.id, (tx) =>
                 tx
-                    .select({ userId: memberships.userId, role: memberships.role, settings: memberships.settings, email: users.email, name: users.name, disabledAt: users.disabledAt })
+                    .select({
+                        userId: memberships.userId,
+                        role: memberships.role,
+                        customRoleId: memberships.customRoleId,
+                        settings: memberships.settings,
+                        email: users.email,
+                        name: users.name,
+                        disabledAt: users.disabledAt,
+                    })
                     .from(memberships)
                     .innerJoin(users, eq(users.id, memberships.userId))
                     .where(and(eq(memberships.tenantId, t.id), sql`${memberships.settings}->'notifications'->>'digest' = 'daily'`)),
@@ -1118,7 +1168,8 @@ export class NotificationsService implements OnModuleInit {
                 const fresh = await this.redis.set(`digest:${t.id}:${m.userId}:${ymd}`, '1', 'EX', 2 * 86_400, 'NX').catch(() => 'OK');
                 if (fresh !== 'OK') continue;
                 try {
-                    if (await this.sendDigest(t.id, t.name, { userId: m.userId, role: m.role as Role, email: m.email, teamIds: teamsOf.get(m.userId) ?? [] }, tz, now)) sent++;
+                    const who = { userId: m.userId, role: m.role as Role, email: m.email, teamIds: teamsOf.get(m.userId) ?? [], customRoleId: m.customRoleId ?? null };
+                    if (await this.sendDigest(t.id, t.name, who, tz, now)) sent++;
                 } catch (err) {
                     // Una persona con un problema no deja sin resumen al resto.
                     this.logger.error(`Resumen diario de ${m.userId} (empresa ${t.id}): ${String(err)}`);
@@ -1131,7 +1182,7 @@ export class NotificationsService implements OnModuleInit {
     async sendDigest(
         tenantId: number,
         company: string,
-        who: { userId: number; role: Role; email: string; teamIds?: readonly number[] },
+        who: { userId: number; role: Role; email: string; teamIds?: readonly number[]; customRoleId?: number | null },
         tz: string,
         now: Date,
     ): Promise<boolean> {

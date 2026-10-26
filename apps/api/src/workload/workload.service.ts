@@ -6,7 +6,6 @@ import {
     isValidTimeZone,
     readWorkloadCapacity,
     resolveTitleFieldId,
-    roleHasCapability,
     summarizeWorkload,
     workloadItemLoad,
     WORKLOAD_DATE_TYPES,
@@ -29,6 +28,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
+import { can } from '../authz/can';
 import type { Tx } from '../db/client';
 import { memberships, users } from '../db/schema';
 import { effectivePermissions, resolvePermissions, rowInScope } from '../lists/list-acl';
@@ -319,6 +319,7 @@ export class WorkloadService {
                 email: users.email,
                 disabledAt: users.disabledAt,
                 teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                customRoleId: memberships.customRoleId,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -332,8 +333,17 @@ export class WorkloadService {
                     role: r.role,
                     name: r.name?.trim() ? r.name : r.email,
                     email: r.email,
-                    // C1 — con sus equipos: el acceso por equipo a la lista cuenta.
-                    canView: effectivePermissions(listSettings, { userId: r.userId, role: r.role, teamIds: teamIdsOf(r.teamIds) }).view !== 'none',
+                    // C1 — con sus equipos: el acceso por equipo a la lista cuenta;
+                    // C2 — y la fila de su rol propio. C3 — un INVITADO es fila
+                    // sólo si le compartieron la lista entera (acceso por persona);
+                    // con registros sueltos asignados aparece como alguien de afuera.
+                    canView:
+                        effectivePermissions(listSettings, {
+                            userId: r.userId,
+                            role: r.role,
+                            teamIds: teamIdsOf(r.teamIds),
+                            customRoleId: r.customRoleId ?? null,
+                        }).view !== 'none',
                     capacity: cap.capacity,
                     custom: cap.custom,
                 };
@@ -371,7 +381,7 @@ export class WorkloadService {
         userId: number,
         capacity: WorkloadCapacity | null,
     ): Promise<WorkloadMemberDto> {
-        if (!roleHasCapability(actor.role, 'edit_records')) {
+        if (!can(actor, 'edit_records')) {
             throw new ForbiddenException({ code: 'forbidden', message: 'Sólo quien administra el trabajo del equipo cambia la capacidad.', data: { status: 403 } });
         }
         const next = capacity ? readWorkloadCapacity(capacity) : null;
@@ -461,7 +471,8 @@ function numericFilterable(f: FilterableField): boolean {
 
 /** ¿Quien mira puede editar ESTA fila? (capacidad del rol + alcance de edición de la lista) */
 function editability(scope: ReadScope, actor: Actor): (row: Pick<RawItem, 'created_by' | 'assigned'>) => boolean {
-    const canEditAny = roleHasCapability(actor.role, 'edit_records') || roleHasCapability(actor.role, 'edit_own_records');
+    // C2 — las capacidades EFECTIVAS (las del rol propio, si tiene).
+    const canEditAny = can(actor, 'edit_records') || can(actor, 'edit_own_records');
     // C1 — con sus equipos: el acceso por equipo a la lista cuenta (el PATCH
     // vuelve a chequear todo, incluido «los asignados» por un campo Equipo).
     const editScope = effectivePermissions(scope.list.settings, actor).edit;

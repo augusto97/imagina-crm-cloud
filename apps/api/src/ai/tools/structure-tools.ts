@@ -160,6 +160,7 @@ import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type Des
 import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
+import { aclExtras } from '../../lists/list-acl';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
 
@@ -1000,7 +1001,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'list_members',
             label: 'Leyendo los miembros',
             description:
-                'Lista las personas del workspace con su id, nombre, email y rol. Úsala para asignar registros a alguien (campo de tipo user) o para compartir una lista con una persona puntual: esas dos cosas piden el ID, no el nombre.',
+                'Lista las personas del workspace con su id, nombre, email, rol (y su rol propio si tiene uno). Úsala para asignar registros a alguien (campo de tipo user) o para compartir una lista con una persona puntual: esas dos cosas piden el ID, no el nombre. Los invitados de afuera aparecen con role "guest".',
             capability: null,
             input: z.object({}),
             run: (ctx) => this.listMembers(ctx),
@@ -2874,8 +2875,16 @@ export class StructureTools implements AiProposalApplier {
         for (const t of teams) for (const m of t.members) teamsOf.set(m.user_id, [...(teamsOf.get(m.user_id) ?? []), t.name]);
         return {
             content: {
-                members: rows.map((m) => ({ id: m.id, name: m.name, email: m.email, role: m.role, teams: teamsOf.get(m.id) ?? [] })),
-                note: 'Los ids son los que piden los campos de tipo user y propose_set_list_permissions. Los equipos (con su id) están en list_teams.',
+                members: rows.map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        email: m.email,
+                        role: m.role,
+                        // C2 — su rol PROPIO (sus capacidades); `role` es su rol base.
+                        ...(m.customRole ? { custom_role: m.customRole } : {}),
+                        teams: teamsOf.get(m.id) ?? [],
+                    })),
+                note: 'Los ids son los que piden los campos de tipo user y propose_set_list_permissions. Los equipos (con su id) están en list_teams. role "guest" = persona INVITADA de afuera: sólo ve lo que se le compartió (no se le dan accesos por rol). custom_role = rol propio de la empresa basado en `role`.',
             },
         };
     }
@@ -2903,7 +2912,7 @@ export class StructureTools implements AiProposalApplier {
         const list = await this.resolveList(ctx, input.list);
         const all = await this.comments.list(
             ctx.tenantId,
-            { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds },
+            { ...aclExtras(ctx), userId: ctx.userId, role: ctx.role },
             String(list.id),
             input.record_id,
         );

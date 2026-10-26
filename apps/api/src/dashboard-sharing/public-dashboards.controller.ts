@@ -16,9 +16,10 @@ import type { DashboardViewer } from '../dashboards/dashboards.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { devPublicPage, loadBuiltPublicPage, missingBuildPage, publicDashboardCsp, unavailableDashboardPage } from './public-dashboard-page';
 import { PublicDashboardsService } from './public-dashboards.service';
+import { aclOf } from '../tenancy/acl-of';
 
 function viewer(req: FastifyRequest): DashboardViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /**

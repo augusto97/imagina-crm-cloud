@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
+    effectiveCapabilities,
     formatEmailFieldValue,
     renderDashboardEmail,
     reportFileName,
@@ -9,12 +10,14 @@ import {
     type Dashboard,
     type DashboardSubscription,
     type DashboardSubscriptionInput,
+    type Capability,
+    type Role,
 } from '@imagina-base/shared';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { dashboardSubscriptions, dashboards, memberships, users } from '../db/schema';
+import { customRoles, dashboardSubscriptions, dashboards, memberships, users } from '../db/schema';
 import { DashboardsService, dashboardVisibleTo, type DashboardViewer } from '../dashboards/dashboards.service';
 import { DomainsService } from '../domains/domains.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -297,19 +300,28 @@ export class DashboardSubscriptionsService {
     private async recipientEmails(tenantId: number, dash: Dashboard, sub: Pick<Row, 'recipientUserIds' | 'recipientEmails'>): Promise<string[]> {
         const ids = [...new Set(sub.recipientUserIds ?? [])];
         const members = ids.length ? await this.membersByIds(tenantId, ids) : [];
-        const emails = members.filter((m) => dashboardVisibleTo(dash, { userId: m.id, role: m.role })).map((m) => m.email.toLowerCase());
+        const emails = members.filter((m) => dashboardVisibleTo(dash, viewerOf(m))).map((m) => m.email.toLowerCase());
         for (const e of sub.recipientEmails ?? []) emails.push(e.toLowerCase());
         return [...new Set(emails)].slice(0, 25);
     }
 
-    private async membersByIds(tenantId: number, ids: number[]): Promise<Array<{ id: number; email: string; name: string; role: string }>> {
-        return this.tenantDb.withTenant(tenantId, (tx) =>
+    /** C2 — con las capacidades EFECTIVAS (rol propio): «Ver tableros» decide. */
+    private async membersByIds(tenantId: number, ids: number[]): Promise<RecipientMember[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
-                .select({ id: users.id, email: users.email, name: users.name, role: memberships.role })
+                .select({ id: users.id, email: users.email, name: users.name, role: memberships.role, customCaps: customRoles.capabilities })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
+                .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
                 .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids), isNull(users.disabledAt))),
         );
+        return rows.map((r) => ({
+            id: r.id,
+            email: r.email,
+            name: r.name,
+            role: r.role,
+            capabilities: effectiveCapabilities(r.role as Role, (r.customCaps as string[] | null) ?? null),
+        }));
     }
 
     /** Sólo miembros (no clientes del portal) que pueden ver el tablero. */
@@ -320,10 +332,18 @@ export class DashboardSubscriptionsService {
         const byId = new Map(members.map((m) => [m.id, m]));
         for (const id of ids) {
             const m = byId.get(id);
-            if (!m || m.role === 'client') {
+            if (!m || m.role === 'client' || m.role === 'guest') {
                 throw new BadRequestException({ code: 'not_a_member', message: 'Uno de los destinatarios no es miembro de la empresa.', data: { status: 400 } });
             }
-            if (!dashboardVisibleTo(dash, { userId: m.id, role: m.role })) {
+            // C2 — con un rol propio sin «Ver tableros», cambiar la visibilidad no alcanza.
+            if (!m.capabilities.includes('view_dashboards')) {
+                throw new BadRequestException({
+                    code: 'recipient_cannot_see',
+                    message: `${m.name} no puede ver tableros con su rol: dale «Ver tableros» o quítalo de los destinatarios.`,
+                    data: { status: 400 },
+                });
+            }
+            if (!dashboardVisibleTo(dash, viewerOf(m))) {
                 throw new BadRequestException({ code: 'recipient_cannot_see', message: `${m.name} no puede ver este tablero: cambia su visibilidad o quítalo de los destinatarios.`, data: { status: 400 } });
             }
         }
@@ -419,4 +439,17 @@ function inputOf(r: Row): DashboardSubscriptionInput {
 function friendly(err: unknown): string {
     if (err instanceof EmailQuotaExceededError) return `${errorText(err)} Configura el correo de tu empresa en Ajustes → Correo para no depender de la cuota.`;
     return errorText(err);
+}
+
+/** Un destinatario miembro: su rol y sus capacidades efectivas. */
+interface RecipientMember {
+    id: number;
+    email: string;
+    name: string;
+    role: string;
+    capabilities: readonly Capability[];
+}
+
+function viewerOf(m: RecipientMember): DashboardViewer {
+    return { userId: m.id, role: m.role, capabilities: m.capabilities };
 }

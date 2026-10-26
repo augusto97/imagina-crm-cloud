@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
 import {
@@ -40,6 +40,8 @@ import {
     savedViews,
     teamMembers,
     teams,
+    customRoles,
+    recordShares,
     tenants,
     timeEntries,
     users,
@@ -89,6 +91,7 @@ describe('Migración de empresa (v0.1.197)', () => {
     let tplClientesId: number;
     let tplFacturasId: number;
     let teamAId: number;
+    let roleAId: number;
     let equipoFieldId: number;
 
     // Destino
@@ -524,6 +527,18 @@ describe('Migración de empresa (v0.1.197)', () => {
             })
             .where(eq(records.id, clienteRecId));
 
+        // C2 — Carlos con un rol propio (y su fila en el ACL de la lista); C3 —
+        // un registro compartido suelto (la fila viaja re-mapeada).
+        const [coord] = await pg.db
+            .insert(customRoles)
+            .values({ tenantId: tenantA, name: 'Coordinador', baseRole: 'agent', capabilities: ['access_admin', 'view_records'] })
+            .returning();
+        roleAId = coord!.id;
+        await pg.db.update(memberships).set({ customRoleId: roleAId }).where(eq(memberships.userId, carlosId));
+        await pg.db
+            .insert(recordShares)
+            .values({ tenantId: tenantA, listId: clientesId, recordId: clienteRecId, userId: carlosId, level: 'comment' });
+
         // `lists.settings` con las tres formas propias: id por convención,
         // ids como CLAVE y el token público.
         await pg.db
@@ -533,6 +548,7 @@ describe('Migración de empresa (v0.1.197)', () => {
                     title_field_id: nombreFieldId,
                     permissions: {
                         agent: { view: 'own' },
+                        permissions: { [`custom:${roleAId}`]: { view: 'all' }, 'custom:424242': { view: 'all' } },
                         users: { [String(carlosId)]: { view: 'all' } },
                         teams: { [String(teamAId)]: { view: 'all' } },
                         assignment_team_field_id: equipoFieldId,
@@ -845,6 +861,21 @@ describe('Migración de empresa (v0.1.197)', () => {
         const newEquipo = bySlug.get('equipo')!;
         expect(newCliente.data[`f${newEquipo.id}`]).toEqual([newTeams[0]!.id]);
         expect(Object.keys(permissions.teams as object)).toEqual([String(newTeams[0]!.id)]);
+        // C2 — el rol propio viaja con id nuevo; la membresía y la fila del ACL lo siguen
+        // (una fila de un rol que no viajó se descarta).
+        const newRoles = await pg.db.select().from(customRoles).where(eq(customRoles.tenantId, tenantB));
+        expect(newRoles.map((r) => [r.name, r.baseRole])).toEqual([['Coordinador', 'agent']]);
+        expect(newRoles[0]!.id).not.toBe(roleAId);
+        const newCarlos = newMentions[0]!.mentionedUserId;
+        const [carlosMember] = await pg.db
+            .select()
+            .from(memberships)
+            .where(and(eq(memberships.tenantId, tenantB), eq(memberships.userId, newCarlos)));
+        expect(carlosMember!.customRoleId).toBe(newRoles[0]!.id);
+        expect(Object.keys(permissions.permissions as object)).toEqual([`custom:${newRoles[0]!.id}`]);
+        // C3 — el registro compartido apunta al registro, la lista y la persona nuevos.
+        const newShares = await pg.db.select().from(recordShares).where(eq(recordShares.tenantId, tenantB));
+        expect(newShares.map((x) => [x.recordId, x.listId, x.userId, x.level])).toEqual([[newCliente.id, newClientes.id, newCarlos, 'comment']]);
         expect(permissions.assignment_team_field_id).toBe(newEquipo.id);
         const pub = settings.public as Record<string, unknown>;
         expect(pub.token).toBe(newPublic[0]!.token);

@@ -19,12 +19,13 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { Actor } from '../records/records.service';
+import { aclOf } from '../tenancy/acl-of';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ChecklistsService } from './checklists.service';
 
 function actor(req: FastifyRequest): Actor {
-    // C1 — con sus equipos: el acceso por equipo a la lista cuenta.
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    // C1/C2/C3 — con sus equipos, rol propio y capacidades efectivas.
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /**

@@ -26,6 +26,7 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { AccountDataService, type AccountExport } from './account-data.service';
 import { MeService } from './me.service';
 
@@ -43,13 +44,14 @@ export class MeController {
 
     @Get('users-search')
     @UseGuards(SessionGuard, TenantGuard)
+    @AllowGuest()
     async searchUsers(
         @Req() req: FastifyRequest,
         @Query('q') q?: string,
         @Query('limit') limit?: string,
     ): Promise<{ data: MeUserSummary[] }> {
         const parsedLimit = limit === undefined ? undefined : Number(limit);
-        return { data: await this.me.searchUsers(tenantId(req), q ?? '', parsedLimit) };
+        return { data: await this.me.searchUsers(tenantId(req), q ?? '', parsedLimit, req.tenant!.role) };
     }
 
     /**
@@ -71,21 +73,23 @@ export class MeController {
     /** v0.1.252 — `GET /me/users?ids=1,2,3`: varios miembros en una request. */
     @Get('users')
     @UseGuards(SessionGuard, TenantGuard)
+    @AllowGuest()
     async getUsers(
         @Req() req: FastifyRequest,
         @Query('ids') ids?: string,
     ): Promise<{ data: MeUserSummary[] }> {
         const parsed = (ids ?? '').split(',').map((s) => Number(s.trim()));
-        return { data: await this.me.getUsers(tenantId(req), parsed) };
+        return { data: await this.me.getUsers(tenantId(req), parsed, req.tenant!.role) };
     }
 
     @Get('users/:id')
     @UseGuards(SessionGuard, TenantGuard)
+    @AllowGuest()
     getUser(
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<MeUserSummary> {
-        return this.me.getUser(tenantId(req), id);
+        return this.me.getUser(tenantId(req), id, req.tenant!.role);
     }
 
     /** v0.1.107 — favoritos del menú (listas + dashboards) del usuario en el tenant activo. */

@@ -24,6 +24,11 @@ export const CAP = {
     MANAGE_DASHBOARDS: 'imcrm_manage_dashboards',
     // C1 — crear y editar equipos.
     MANAGE_TEAMS: 'imcrm_manage_teams',
+    // C2 — capacidades por módulo (roles propios).
+    VIEW_DASHBOARDS: 'imcrm_view_dashboards',
+    USE_AI_ASSISTANT: 'imcrm_use_ai_assistant',
+    MANAGE_FORMS: 'imcrm_manage_forms',
+    MANAGE_DOCUMENTS: 'imcrm_manage_documents',
 
     // Records
     VIEW_RECORDS: 'imcrm_view_records',

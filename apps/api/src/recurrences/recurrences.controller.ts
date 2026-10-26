@@ -24,6 +24,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecurrencesService } from './recurrences.service';
+import { aclOf } from '../tenancy/acl-of';
 
 const MAX_BATCH_IDS = 500;
 
@@ -90,7 +91,7 @@ function tenantId(req: FastifyRequest): number {
 
 /** Quién pide: el alcance por fila del ACL de la lista se aplica con esto. */
 function actorOf(req: FastifyRequest): { userId: number; role: NonNullable<FastifyRequest['tenant']>['role']; teamIds?: readonly number[] } {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /** Parsea `?ids=1,2,3` a números positivos únicos (cap defensivo). */

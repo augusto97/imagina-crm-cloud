@@ -20,6 +20,9 @@ import { PersonalDataCard } from '@/admin/settings/PersonalDataCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
+import { GuestsPanel } from '@/cloud/components/GuestsPanel';
+import { RolesPanel } from '@/cloud/components/RolesPanel';
+import { useIsGuest } from '@/lib/guest';
 import { TeamsPanel } from '@/cloud/components/TeamsPanel';
 import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
@@ -68,7 +71,8 @@ export function SettingsPage(): JSX.Element {
 
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canManageTeams = useCan(CAP.MANAGE_TEAMS);
-    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams });
+    const isGuest = useIsGuest();
+    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, isGuest });
     const visible = groups.flatMap((g) => g.items);
     // Fallback a "plan" (admin) o "seguridad" si el param no existe o apunta a
     // una sección que este rol no ve.
@@ -162,7 +166,14 @@ export function SettingsPage(): JSX.Element {
                         {billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
                     </>
                 )}
-                {active === 'miembros' && isAdmin && <MembersPanel />}
+                {active === 'miembros' && isAdmin && (
+                    <>
+                        <MembersPanel />
+                        {/* C3 — personas de afuera con algo compartido. */}
+                        <GuestsPanel />
+                    </>
+                )}
+                {active === 'roles' && isAdmin && <RolesPanel />}
                 {active === 'equipos' && (isAdmin || canManageTeams) && <TeamsPanel />}
                 {/* Branding white-label del workspace (nombre, color, logo) +
                     dominio personalizado (ADR-S17) + dominio del portal de
@@ -251,6 +262,8 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                 )}
                 <UsageBar label="Registros" used={summary.usage.records} limit={summary.limits.max_records} />
                 <UsageBar label="Usuarios" used={summary.usage.users} limit={summary.limits.max_users} />
+                {/* C3 — personas de afuera con algo compartido (no ocupan usuario). */}
+                <UsageBar label="Invitados" used={summary.usage.guests ?? 0} limit={summary.limits.max_guests ?? null} />
                 <UsageBar
                     label="Automatizaciones"
                     used={summary.usage.automations}

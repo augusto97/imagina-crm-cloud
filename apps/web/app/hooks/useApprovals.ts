@@ -14,6 +14,7 @@ import type {
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
+import { useIsGuest } from '@/lib/guest';
 
 import { activityKeys } from './useActivity';
 
@@ -38,10 +39,12 @@ export const approvalKeys = {
 };
 
 export function useRecordApprovals(listId: string | number | undefined, recordId: number | undefined, enabled = true) {
+    // C3 — las aprobaciones son de la empresa: un invitado no las pide.
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: approvalKeys.forRecord(listId ?? '', recordId ?? 0),
         queryFn: async () => (await api.get<RecordApprovalsDto>(`/lists/${listId}/records/${recordId}/approvals`)).data,
-        enabled: enabled && listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0,
+        enabled: enabled && !isGuest && listId !== undefined && listId !== '' && recordId !== undefined && recordId > 0,
         staleTime: 30_000,
     });
 }

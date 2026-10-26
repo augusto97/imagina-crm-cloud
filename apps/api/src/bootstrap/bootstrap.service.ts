@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import {
-    capabilitiesMap,
+    CAPABILITIES,
+    type Capability,
     resolveTitleFieldId,
     type Bootstrap,
     type FieldType,
@@ -82,8 +83,10 @@ export class BootstrapService {
                     // SMTP de la empresa, clave de IA cifrada, conectores…
                     settings: publicTenantSettings(tenant.settings),
                     role: ctx.role,
+                    custom_role_id: ctx.customRoleId,
                 },
-                capabilities: capabilitiesMap(ctx.role),
+                // C2 — las capacidades EFECTIVAS (rol propio o base).
+                capabilities: capabilitiesFrom(ctx.capabilities),
                 lists: listRows.map((l) => ({
                     id: l.id,
                     slug: l.slug,
@@ -139,5 +142,11 @@ function publicTenantSettings(settings: unknown): Record<string, unknown> {
     for (const key of ['branding', 'format'] as const) {
         if (src[key] !== undefined) out[key] = src[key];
     }
+    return out;
+}
+
+function capabilitiesFrom(have: readonly Capability[]): Record<Capability, boolean> {
+    const out = {} as Record<Capability, boolean>;
+    for (const cap of CAPABILITIES) out[cap] = have.includes(cap);
     return out;
 }

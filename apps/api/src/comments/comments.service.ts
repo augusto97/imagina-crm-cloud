@@ -18,6 +18,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { CommentsRepository, type CommentRow } from './comments.repository';
 import { NotifyHub } from '../notifications/notify-hub';
 import { TeamsService } from '../teams/teams.service';
+import { canCommentOn } from '../lists/list-acl';
 
 @Injectable()
 export class CommentsService {
@@ -82,7 +83,7 @@ export class CommentsService {
         recordId: number,
         input: CreateCommentInput,
     ): Promise<CommentDto> {
-        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
+        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId, { comment: true });
 
         let mentioned: number[] = [];
         let mentionedTeams: Array<{ teamId: number; name: string; userIds: number[] }> = [];
@@ -103,7 +104,15 @@ export class CommentsService {
                 kind: input.kind,
                 parentId: root?.id ?? null,
                 metadata: input.metadata ?? {},
-                visibility: root ? (root.visibility === 'client' ? 'client' : 'internal') : (input.visibility ?? 'internal'),
+                // C3 — un invitado no escribe para el portal del cliente.
+                visibility:
+                    actor.role === 'guest'
+                        ? 'internal'
+                        : root
+                          ? root.visibility === 'client'
+                              ? 'client'
+                              : 'internal'
+                          : (input.visibility ?? 'internal'),
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
             mentioned = await this.storeMentions(tx, tenantId, row);
@@ -177,7 +186,7 @@ export class CommentsService {
         id: number,
         emoji: CommentReactionEmoji,
     ): Promise<{ reactions: CommentReactionSummary[] }> {
-        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
+        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId, { comment: true });
         const reactions = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.recordId !== recordId) throw commentNotFound(id);
@@ -196,7 +205,7 @@ export class CommentsService {
         id: number,
         patch: UpdateCommentInput,
     ): Promise<CommentDto> {
-        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
+        const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId, { comment: true });
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.recordId !== recordId) throw commentNotFound(id);
@@ -207,6 +216,14 @@ export class CommentsService {
             const changes: Partial<typeof import('../db/schema').comments.$inferInsert> = {};
             if (patch.body !== undefined) changes.body = patch.body;
             if (patch.metadata !== undefined) changes.metadata = patch.metadata;
+            if (patch.visibility !== undefined && actor.role === 'guest' && patch.visibility === 'client') {
+                // C3 — un invitado no escribe para el portal del cliente.
+                throw new ForbiddenException({
+                    code: 'guest_cannot_publish',
+                    message: 'Como invitado no puedes mostrar comentarios en el portal del cliente',
+                    data: { status: 403 },
+                });
+            }
             if (patch.visibility !== undefined) {
                 // v0.1.291 — una respuesta no tiene visibilidad propia: es la
                 // del comentario original.
@@ -330,10 +347,22 @@ export class CommentsService {
         actor: Actor,
         listIdOrSlug: string,
         recordId: number,
+        opts: { comment?: boolean } = {},
     ): Promise<number> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         // Reusa la lógica de visibilidad de records (404 si no lo puede ver).
-        await this.records.get(tenantId, actor, listIdOrSlug, recordId);
+        const record = await this.records.get(tenantId, actor, listIdOrSlug, recordId);
+        // C3 — un invitado comenta sólo con nivel «comentar» o «editar».
+        if (
+            opts.comment &&
+            !canCommentOn(list.settings, actor, { id: record.id, createdBy: record.created_by ?? 0, data: {} })
+        ) {
+            throw new ForbiddenException({
+                code: 'guest_cannot_comment',
+                message: 'Tu acceso a este registro es sólo para ver',
+                data: { status: 403 },
+            });
+        }
         return list.id;
     }
 }

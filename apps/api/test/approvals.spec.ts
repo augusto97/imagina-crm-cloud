@@ -1,6 +1,6 @@
-import { ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
-import type { CreateFieldInput, Field } from '@imagina-base/shared';
-import { eq, sql } from 'drizzle-orm';
+import { ConflictException, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { customRoleKey, type CreateFieldInput, type Field } from '@imagina-base/shared';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
     activity,
@@ -9,6 +9,7 @@ import {
     approvalRequests,
     automationRuns,
     automations,
+    customRoles,
     fields as fieldsTable,
     lists as listsTable,
     memberships,
@@ -393,6 +394,72 @@ describe('Aprobaciones (Postgres real + RLS)', () => {
             );
         } finally {
             approvals.setTeamMembersResolver(async () => []);
+        }
+    });
+
+    it('C2/C3 — un rol propio aprueba como su rol base y con SU fila en la lista; un invitado nunca aprueba', async () => {
+        const [rol] = await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(customRoles).values({ tenantId: tenantA, name: 'Contaduría', baseRole: 'viewer', capabilities: ['access_admin', 'view_records'] }).returning(),
+        );
+        const mkU = async (email: string, name: string) => (await pg.db.insert(users).values({ email, name, passwordHash: 'x' }).returning())[0]!.id;
+        const carla: Actor = { userId: await mkU('carla@acme.test', 'Carla Contadora'), role: 'viewer', customRoleId: rol!.id, capabilities: ['access_admin', 'view_records'] };
+        const gina: Actor = { userId: await mkU('gina@afuera.test', 'Gina Invitada'), role: 'guest' };
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(memberships).values([
+                { tenantId: tenantA, userId: carla.userId, role: 'viewer', customRoleId: rol!.id },
+                { tenantId: tenantA, userId: gina.userId, role: 'guest' },
+            ]),
+        );
+        try {
+            // Lectores sin acceso a los gastos, salvo el rol propio; la lista compartida con Gina.
+            const l = await lists.get(tenantA, 'gastos');
+            const perms = (l.settings as { permissions: { permissions: Record<string, unknown> } }).permissions;
+            const all = { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] };
+            await lists.update(tenantA, 'gastos', {
+                settings: {
+                    ...l.settings,
+                    permissions: {
+                        ...perms,
+                        permissions: { ...perms.permissions, viewer: { ...all, view: 'none' }, [customRoleKey(rol!.id)]: all },
+                        users: { [String(gina.userId)]: all },
+                    },
+                },
+            });
+
+            // «Por rol: lector» → Carla (rol propio con base lector) sí; Vera (lectora sin acceso) no.
+            const porRol = await approvals.createFlow(tenantA, ana, 'gastos', { name: 'Por lectores', config: { steps: [{ id: 's1', approver: { type: 'role', role: 'viewer' }, mode: 'any' }] } });
+            const g1 = await gasto('Licencias');
+            const r1 = await approvals.request(tenantA, ana, 'gastos', g1.id, { flow_id: porRol.id });
+            expect(delivered).toEqual([expect.objectContaining({ kind: 'approval', users: [carla.userId] })]);
+            const hist = await approvals.recordApprovals(tenantA, ana, 'gastos', g1.id);
+            expect(hist.requests[0]!.steps[0]!.approvers.map((a) => a.id)).toEqual([carla.userId]);
+            // Vera no ve el registro: 404 opaco. Gina lo ve (lista compartida) pero no decide.
+            await expectCode(approvals.decide(tenantA, vera, r1.id, { decision: 'approve', step: 0 }), NotFoundException, 'approval_not_found');
+            await expectCode(approvals.decide(tenantA, gina, r1.id, { decision: 'approve', step: 0 }), ForbiddenException, 'approval_not_approver');
+            expect((await approvals.myApprovals(tenantA, gina)).pending).toHaveLength(0);
+            expect((await approvals.decide(tenantA, carla, r1.id, { decision: 'approve', step: 0 })).request.status).toBe('approved');
+
+            // Nombrar a la invitada como aprobadora no se guarda, y no aparece para elegir.
+            const err = await approvals
+                .createFlow(tenantA, ana, 'gastos', { name: 'A mano', config: { steps: [{ id: 's1', approver: { type: 'users', approver_user_ids: [gina.userId, carla.userId] } }] } })
+                .then(() => null, (e: unknown) => e as BadRequestException);
+            expect(err).toBeInstanceOf(BadRequestException);
+            expect((err!.getResponse() as { message: string }).message).toMatch(/invitadas de afuera no aprueban/);
+            expect((await approvals.memberDirectory(tenantA)).map((m) => m.id)).not.toContain(gina.userId);
+            const aMano = await approvals.createFlow(tenantA, ana, 'gastos', { name: 'A mano', config: { steps: [{ id: 's1', approver: { type: 'users', approver_user_ids: [carla.userId] } }] } });
+
+            // Pedir exige poder editar con las capacidades EFECTIVAS: un manager con un rol propio sin «editar» no pide.
+            const g3 = await gasto('Monitor');
+            await expectCode(
+                approvals.request(tenantA, { ...m1, capabilities: ['access_admin', 'view_records'] }, 'gastos', g3.id, { flow_id: aMano.id }),
+                ForbiddenException,
+                'approval_forbidden',
+            );
+        } finally {
+            await withTenant(pg.db, tenantA, async (tx) => {
+                await tx.delete(memberships).where(and(eq(memberships.tenantId, tenantA), inArray(memberships.userId, [carla.userId, gina.userId])));
+                await tx.delete(customRoles).where(eq(customRoles.tenantId, tenantA));
+            });
         }
     });
 

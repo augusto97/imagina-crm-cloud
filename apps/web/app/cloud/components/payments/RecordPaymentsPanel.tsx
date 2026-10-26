@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { fieldsKeys } from '@/hooks/useFields';
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { CloudApiError } from '@/lib/cloud/client';
+import { useIsGuest } from '@/lib/guest';
 import { __ } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -46,9 +47,12 @@ export function RecordPaymentsPanel({
     const confirm = useConfirm();
     const [collecting, setCollecting] = useState(false);
     const key = ['record-payments', listId, recordId] as const;
+    // C3 — los cobros no se le muestran a un invitado (403 en el servidor).
+    const isGuest = useIsGuest();
     const q = useQuery({
         queryKey: key,
         queryFn: () => api.recordPayments(listId, recordId),
+        enabled: !isGuest,
         retry: false,
         // Mientras haya un link pendiente, mirar seguido: el cliente puede
         // estar pagando ahora mismo (el aviso llega en segundos).
@@ -83,7 +87,7 @@ export function RecordPaymentsPanel({
         onError: (err) => toast.error(__('No se pudieron agregar'), errText(err)),
     });
 
-    if (q.isLoading || q.isError || !q.data) return null;
+    if (isGuest || q.isLoading || q.isError || !q.data) return null;
     const data = q.data;
     if (data.connections.length === 0 && data.links.length === 0) {
         if (!showEmptyHint) return null;

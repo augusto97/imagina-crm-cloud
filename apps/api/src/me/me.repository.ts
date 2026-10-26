@@ -7,6 +7,8 @@ export interface MeUserRow {
     id: number;
     name: string;
     email: string;
+    /** C3 — para marcar a los invitados en los selectores. */
+    role?: string;
 }
 
 /** Escapa los comodines de LIKE (`%`, `_`) y la barra de escape del needle. */
@@ -31,7 +33,7 @@ export class MeRepository {
     searchMembers(tx: Tx, tenantId: number, q: string, limit: number): Promise<MeUserRow[]> {
         const pattern = `%${escapeLike(q)}%`;
         return tx
-            .select({ id: users.id, name: users.name, email: users.email })
+            .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(
@@ -49,7 +51,7 @@ export class MeRepository {
     /** Miembro del tenant por user id — null si no hay membership. */
     async findMember(tx: Tx, tenantId: number, userId: number): Promise<MeUserRow | null> {
         const [row] = await tx
-            .select({ id: users.id, name: users.name, email: users.email })
+            .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
@@ -61,7 +63,7 @@ export class MeRepository {
     async findMembers(tx: Tx, tenantId: number, userIds: number[]): Promise<MeUserRow[]> {
         if (userIds.length === 0) return [];
         return tx
-            .select({ id: users.id, name: users.name, email: users.email })
+            .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, userIds)));

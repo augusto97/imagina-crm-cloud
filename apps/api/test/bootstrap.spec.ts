@@ -1,3 +1,4 @@
+import { effectiveCapabilities } from '@imagina-base/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bootstrapSchema } from '@imagina-base/shared';
 import { memberships, tenants, users } from '../src/db/schema';
@@ -77,6 +78,8 @@ describe('Bootstrap + Slugs (Postgres real)', () => {
             role: 'admin',
             status: 'active',
             teamIds: [],
+            customRoleId: null,
+            capabilities: effectiveCapabilities('admin'),
         });
 
         // El shape completo cumple el schema compartido (contrato front↔back).

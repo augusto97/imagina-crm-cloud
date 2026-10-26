@@ -8,6 +8,7 @@ import { useRecords, useRecordsGroupedBundle } from '@/hooks/useRecords';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 
 import { CAP, useCan, useCanAny } from '@/lib/permissions';
+import { useGuestEditableRows } from '@/hooks/useGuests';
 
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
@@ -1020,7 +1021,11 @@ function GroupBucketSection({
     // pegar, rellenar, deshacer): mismo controlador que la tabla plana.
     const gridColumns = useMemo<GridColumnRef[]>(() => columns.map((c) => ({ id: c.id, field: c.field })), [columns]);
     const gridRows = useMemo(() => flatRows.map((r) => r.record), [flatRows]);
-    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    // C3 — un invitado edita sólo las filas compartidas en «Puede editar».
+    const guestEditable = useGuestEditableRows(listId);
+    const canEditRecords = canEditByCaps && (guestEditable === null || guestEditable.size > 0);
+    const canEditRow = (id: number): boolean => canEditRecords && (guestEditable === null || guestEditable.has(id));
     const canManageFields = useCan(CAP.MANAGE_FIELDS);
     const titleField = useMemo(() => titleFieldOf(allFields), [allFields]);
     const grid = useGridController({
@@ -1405,10 +1410,10 @@ function GroupBucketSection({
                                                                 expanded={expandedIds.includes(record.id)}
                                                                 onToggle={() => toggleSubtasks(record.id)}
                                                             >
-                                                                {renderColumnCell(c, record, listId, storeRules)}
+                                                                {renderColumnCell(c, record, listId, storeRules, canEditRow(record.id))}
                                                             </RecordNameCell>
                                                         ) : (
-                                                            renderColumnCell(c, record, listId, storeRules)
+                                                            renderColumnCell(c, record, listId, storeRules, canEditRow(record.id))
                                                         )}
                                                         <CellMarkOverlay mark={mark} />
                                                         {hasHandle && (
@@ -1736,6 +1741,7 @@ function renderColumnCell(
     record: RecordEntity,
     listId: number,
     storeRules: StoreRules | null,
+    canEdit: boolean,
 ): JSX.Element | null {
     if (column.id === 'id') {
         return (
@@ -1761,6 +1767,7 @@ function renderColumnCell(
             recordId={record.id}
             field={column.field}
             value={column.field.type === 'relation' ? record.relations?.[column.field.slug] : record.fields[column.field.slug]}
+            canEdit={canEdit}
             lockedReason={lockedReasonOf(storeRules, column.field, record)}
             record={record}
         />

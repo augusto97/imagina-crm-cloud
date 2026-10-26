@@ -10,12 +10,12 @@ import {
     Optional,
     ServiceUnavailableException,
 } from '@nestjs/common';
-import { roleHasCapability, type Role } from '@imagina-base/shared';
+import { type Role } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { attachments, dashboards, documentNumbers, fields, lists, records } from '../db/schema';
 import type { Tx } from '../db/client';
-import { assignmentKeys, effectivePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, effectivePermissions, scopeWhere, type AclExtras } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import {
     FILE_STORAGE,
@@ -27,6 +27,7 @@ import {
 } from './file-storage';
 import { describeS3Error } from './s3-file-storage';
 import { safeDisposition, contentDispositionHeader } from './safe-content-type';
+import { can } from '../authz/can';
 
 export interface AttachmentDto {
     id: number;
@@ -75,11 +76,9 @@ const MOVE_BATCH = 20;
 const MAX_BATCH = 100;
 
 /** Quién pide un archivo (SEC-25). Sin actor = uso interno (sin recorte). */
-export interface FileActor {
+export interface FileActor extends AclExtras {
     userId: number;
     role: Role;
-    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
-    teamIds?: readonly number[];
 }
 
 /**
@@ -101,7 +100,7 @@ async function readableBy(
     tenantId: number,
     actor: FileActor | undefined,
 ): Promise<SQL | undefined> {
-    if (!actor || roleHasCapability(actor.role, 'view_records')) return undefined;
+    if (!actor || can(actor, 'view_records')) return undefined;
     const vars = sql`jsonb_build_object('x', ${attachments.id})`;
     const listRows = await tx
         .select({ id: lists.id, settings: lists.settings })
@@ -117,8 +116,11 @@ async function readableBy(
     for (const l of listRows) {
         const settings = (l.settings ?? {}) as Record<string, unknown>;
         const perms = effectivePermissions(settings, actor);
-        if (perms.view === 'none') continue;
-        visibleLists.push(l.id);
+        // C3 — un invitado con registros sueltos compartidos en esta lista
+        // ve los archivos de ESOS registros (el alcance los suma por id).
+        const sharedHere = [...(actor.shares?.values() ?? [])].some((x) => x.listId === l.id);
+        if (perms.view === 'none' && !sharedHere) continue;
+        if (perms.view !== 'none') visibleLists.push(l.id);
         const hidden = new Set(perms.fields_hidden);
         const refs: SQL[] = fileFields
             .filter((f) => f.listId === l.id && !hidden.has(f.slug))
@@ -146,8 +148,9 @@ async function readableBy(
         )`);
     }
     // Bloques de imagen de los tableros que puede abrir (misma regla que el
-    // listado de tableros: del workspace, privados suyos o de su rol).
-    conds.push(sql`EXISTS (
+    // listado de tableros: del workspace, privados suyos o de su rol). C3 —
+    // un invitado no abre tableros.
+    if (actor.role !== 'guest') conds.push(sql`EXISTS (
         SELECT 1 FROM ${dashboards}
         WHERE ${dashboards.tenantId} = ${tenantId}
           AND (${dashboards.visibility} = 'workspace'
@@ -526,7 +529,7 @@ export class FilesService {
             // borra quien lo subió o quien puede editar TODOS los registros —
             // antes un agente con "sólo lo suyo" borraba adjuntos ajenos y el
             // logo de la empresa recorriendo ids.
-            if (actor && found.createdBy !== actor.userId && !roleHasCapability(actor.role, 'edit_records')) {
+            if (actor && found.createdBy !== actor.userId && !can(actor, 'edit_records')) {
                 throw new ForbiddenException({
                     code: 'file_not_yours',
                     message: 'Sólo quien subió el archivo (o quien edita todos los registros) puede borrarlo',

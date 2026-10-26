@@ -8,6 +8,7 @@ import { useList } from '@/hooks/useLists';
 import { usePublicList } from '@/hooks/usePublicList';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { CAP, useCan } from '@/lib/permissions';
 
 import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
 import { FormsPanel } from '../forms/FormsPanel';
@@ -47,7 +48,12 @@ export function ListBuilderPage(): JSX.Element {
     const [params, setParams] = useSearchParams();
     const list = useList(listSlug);
 
-    const active = resolveListSettingsSection(params.get('s'));
+    // C2 — Formularios y Documentos tienen su propia capacidad (rol propio).
+    const canForms = useCan(CAP.MANAGE_FORMS);
+    const canDocs = useCan(CAP.MANAGE_DOCUMENTS);
+    const allowed = (id: string): boolean => (id !== 'formularios' || canForms) && (id !== 'documentos' || canDocs);
+    const requested = resolveListSettingsSection(params.get('s'));
+    const active = allowed(requested) ? requested : 'campos';
     const activeSection = listSettingsSection(active);
 
     const select = (id: ListSettingsSectionId): void => {
@@ -144,7 +150,7 @@ export function ListBuilderPage(): JSX.Element {
                 aria-label={__('Secciones de configuración')}
                 className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border"
             >
-                {LIST_SETTINGS_SECTIONS.map((section) => {
+                {LIST_SETTINGS_SECTIONS.filter((s) => allowed(s.id)).map((section) => {
                     const Icon = section.icon;
                     const isActive = section.id === active;
                     return (

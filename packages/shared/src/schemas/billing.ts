@@ -37,14 +37,16 @@ export interface PlanLimits {
      * `null` = ilimitado. Con clave propia de la empresa no aplica.
      */
     max_ai_requests_month: number | null;
+    /** C3 — invitados externos (no ocupan usuario del plan). `null` = ilimitado. */
+    max_guests: number | null;
 }
 
 /** Semilla + fallback de límites de los planes built-in (la fuente viva es la DB). */
 export const PLAN_LIMITS: Record<BuiltinPlan, PlanLimits> = {
-    trial: { max_records: 500, max_users: 3, max_automations: 3, max_storage_mb: 100, max_emails_month: 100, max_ai_requests_month: 20 },
-    starter: { max_records: 10_000, max_users: 10, max_automations: 20, max_storage_mb: 1_024, max_emails_month: 1_000, max_ai_requests_month: 100 },
-    pro: { max_records: 200_000, max_users: 50, max_automations: 200, max_storage_mb: 10_240, max_emails_month: 10_000, max_ai_requests_month: 500 },
-    enterprise: { max_records: null, max_users: null, max_automations: null, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null },
+    trial: { max_records: 500, max_users: 3, max_automations: 3, max_storage_mb: 100, max_emails_month: 100, max_ai_requests_month: 20, max_guests: 5 },
+    starter: { max_records: 10_000, max_users: 10, max_automations: 20, max_storage_mb: 1_024, max_emails_month: 1_000, max_ai_requests_month: 100, max_guests: 20 },
+    pro: { max_records: 200_000, max_users: 50, max_automations: 200, max_storage_mb: 10_240, max_emails_month: 10_000, max_ai_requests_month: 500, max_guests: 100 },
+    enterprise: { max_records: null, max_users: null, max_automations: null, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null, max_guests: null },
 };
 
 /** Un status con acceso de escritura (los demás → solo-lectura). */
@@ -106,6 +108,8 @@ export const usageSchema = z.object({
     emails_month: z.number().int().nonnegative().default(0),
     /** Pedidos al asistente IA con la clave de la plataforma en el mes (ADR-S21). */
     ai_requests_month: z.number().int().nonnegative().default(0),
+    /** C3 — invitados externos activos (no cuentan como usuarios). */
+    guests: z.number().int().nonnegative().default(0),
 });
 export type Usage = z.infer<typeof usageSchema>;
 
@@ -120,6 +124,7 @@ export const billingSummarySchema = z.object({
         max_storage_mb: z.number().int().nullable(),
         max_emails_month: z.number().int().nullable(),
         max_ai_requests_month: z.number().int().nullable().default(null),
+        max_guests: z.number().int().nullable().default(null),
     }),
     usage: usageSchema,
     /**

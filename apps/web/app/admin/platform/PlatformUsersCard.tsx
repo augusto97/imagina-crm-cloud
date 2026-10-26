@@ -456,8 +456,8 @@ function UserWorkspacesSection({ user }: { user: PlatformUser }): JSX.Element {
                                 {w.archived && ` · ${__('archivada')}`}
                             </div>
                         </div>
-                        {w.role === 'client' ? (
-                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{ROLE_LABELS.client}</span>
+                        {w.role === 'client' || w.role === 'guest' ? (
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{ROLE_LABELS[w.role]}</span>
                         ) : (
                             <>
                                 <RoleSelect

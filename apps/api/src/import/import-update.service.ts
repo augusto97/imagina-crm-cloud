@@ -6,7 +6,6 @@ import {
     IMPORT_UPDATE_MAX_ROWS,
     readStoreListMarker,
     resolveTitleFieldId,
-    roleHasCapability,
     sameBulkValue,
     validateFieldValue,
     type Field,
@@ -27,6 +26,7 @@ import { storeRuleError } from '../records/store-rule-check';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { parseCsv } from './csv-parser';
 import { ImportService, coerceCellValue } from './import.service';
+import { can } from '../authz/can';
 
 const SAMPLE_SIZE = 20;
 const ERROR_LIST = 100;
@@ -120,7 +120,7 @@ export class ImportUpdateService {
         // opciones es cambiar el esquema: sólo con `manage_fields` (igual que el
         // import y el «Crear» del selector); sin ese permiso el valor
         // desconocido queda como error de la fila.
-        if (!ctx.store && from === 0 && roleHasCapability(actor.role, 'manage_fields')) {
+        if (!ctx.store && from === 0 && can(actor, 'manage_fields')) {
             const expanded = await this.importer.expandSelectOptions(tenantId, ctx.list.id, ctx.rows, ctx.mapping, ctx.fields);
             if (Object.keys(expanded).length > 0) ctx.fields = await this.importer.importableFields(tenantId, ctx.list.id);
         }

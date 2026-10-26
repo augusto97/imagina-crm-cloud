@@ -498,11 +498,17 @@ function StepEditor({
                         </Select>
                     )}
                     {a.type === 'role' && (
-                        <Select value={a.role} onChange={(e) => onChange({ approver: { type: 'role', role: e.target.value } })} data-testid="imcrm-approval-approver-role">
-                            {APPROVER_ROLES.map((r) => (
-                                <option key={r} value={r}>{APPROVER_ROLE_LABELS[r]}</option>
-                            ))}
-                        </Select>
+                        <>
+                            <Select value={a.role} onChange={(e) => onChange({ approver: { type: 'role', role: e.target.value } })} data-testid="imcrm-approval-approver-role">
+                                {APPROVER_ROLES.map((r) => (
+                                    <option key={r} value={r}>{APPROVER_ROLE_LABELS[r]}</option>
+                                ))}
+                            </Select>
+                            {/* C2 — un rol propio parte de un rol base: cuenta por él. */}
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-approval-role-hint">
+                                {__('Incluye a quien tiene un rol propio basado en este. Para un grupo puntual, usa «Un equipo».')}
+                            </span>
+                        </>
                     )}
                     {a.type === 'users' && (
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
@@ -526,6 +532,7 @@ function StepEditor({
                             <UserPicker
                                 value={null}
                                 placeholder={__('Agregar una persona…')}
+                                excludeGuests
                                 onChange={(id) => {
                                     if (id && !ids.includes(id)) onChange({ approver: { type: 'users', approver_user_ids: [...ids, id] } });
                                 }}

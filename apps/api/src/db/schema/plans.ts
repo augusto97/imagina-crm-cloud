@@ -19,6 +19,8 @@ export const plans = pgTable('plans', {
     maxEmailsMonth: integer('max_emails_month'),
     /** Pedidos al asistente IA por mes con la clave de la PLATAFORMA (ADR-S21). NULL = ilimitado. */
     maxAiRequestsMonth: integer('max_ai_requests_month'),
+    /** C3 — invitados externos (no ocupan usuario). NULL = ilimitado. */
+    maxGuests: integer('max_guests'),
     // Precio de checkout self-serve (ADR-S12). `null` = no vendible en esa moneda
     // (enterprise = "contactar ventas"). Entero: USD sin centavos, COP sin decimales.
     priceUsd: integer('price_usd'),

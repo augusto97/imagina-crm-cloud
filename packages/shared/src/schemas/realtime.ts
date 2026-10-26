@@ -10,7 +10,8 @@ import { idSchema } from './common';
 // v0.1.276 — `notifications` va a la sala de UNA persona (su bandeja).
 // v0.1.291 — `timer` también: su cronómetro cambió (en otra pestaña o equipo).
 // C1 — `teams`: se creó, cambió o borró un equipo (chips, selectores, ACL).
-export const RT_TOPICS = ['lists', 'fields', 'records', 'views', 'notifications', 'timer', 'teams'] as const;
+// C2 — `roles`: se creó, cambió o borró un rol propio (Ajustes → Roles, Miembros).
+export const RT_TOPICS = ['lists', 'fields', 'records', 'views', 'notifications', 'timer', 'teams', 'roles'] as const;
 export const rtTopicSchema = z.enum(RT_TOPICS);
 export type RtTopic = z.infer<typeof rtTopicSchema>;
 

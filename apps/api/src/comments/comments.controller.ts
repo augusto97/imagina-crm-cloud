@@ -27,12 +27,17 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import type { Actor } from '../records/records.service';
 import { CommentsService } from './comments.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /** Comentarios por record (CONTRACT.md §1). Ver requiere ver el record. */
 @Controller('lists/:list/records/:recordId/comments')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+// C3 — un invitado lee y comenta los registros que le compartieron (el
+// service exige verlos, y comentar exige nivel «comentar» o «editar»).
+@AllowGuest()
 export class CommentsController {
     constructor(private readonly comments: CommentsService) {}
 
@@ -103,5 +108,5 @@ export class CommentsController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

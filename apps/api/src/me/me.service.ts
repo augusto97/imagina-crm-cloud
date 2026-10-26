@@ -29,14 +29,16 @@ export class MeService {
      * case-insensitive). Query vacío → [] sin tocar la DB: el endpoint no
      * soporta "todos los users" a propósito.
      */
-    async searchUsers(tenantId: number, q: string, rawLimit?: number): Promise<MeUserSummary[]> {
+    async searchUsers(tenantId: number, q: string, rawLimit?: number, viewerRole?: string): Promise<MeUserSummary[]> {
+        // C3 — un invitado no recorre el directorio del equipo.
+        if (viewerRole === 'guest') return [];
         const needle = q.trim();
         if (needle === '') return [];
         const limit = clampLimit(rawLimit);
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.searchMembers(tx, tenantId, needle, limit),
         );
-        return rows.map(toSummary);
+        return rows.map((r) => toSummary(r));
     }
 
     /**
@@ -44,17 +46,17 @@ export class MeService {
      * agrupados por un campo persona mostraban el id («1») en vez del
      * nombre. Los ids que no son miembros simplemente no vuelven.
      */
-    async getUsers(tenantId: number, ids: number[]): Promise<MeUserSummary[]> {
+    async getUsers(tenantId: number, ids: number[], viewerRole?: string): Promise<MeUserSummary[]> {
         const clean = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].slice(0, 100);
         if (clean.length === 0) return [];
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findMembers(tx, tenantId, clean),
         );
-        return rows.map(toSummary);
+        return rows.map((r) => toSummary(r, viewerRole));
     }
 
     /** Lookup de un miembro del tenant activo por id — 404 si no es miembro. */
-    async getUser(tenantId: number, userId: number): Promise<MeUserSummary> {
+    async getUser(tenantId: number, userId: number, viewerRole?: string): Promise<MeUserSummary> {
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findMember(tx, tenantId, userId),
         );
@@ -65,7 +67,7 @@ export class MeService {
                 data: { status: 404 },
             });
         }
-        return toSummary(row);
+        return toSummary(row, viewerRole);
     }
 
     getEmailSignature(userId: number): Promise<string> {
@@ -180,8 +182,15 @@ function parseFavorites(settings: Record<string, unknown> | undefined | null): F
 }
 
 /** login = email y display_name = name (shape del picker heredado del plugin). */
-function toSummary(row: MeUserRow): MeUserSummary {
-    return { id: row.id, login: row.email, display_name: row.name, avatar_url: '' };
+function toSummary(row: MeUserRow, viewerRole?: string): MeUserSummary {
+    return {
+        id: row.id,
+        // C3 — a un invitado le llegan los nombres, nunca los correos del equipo.
+        login: viewerRole === 'guest' ? '' : row.email,
+        display_name: row.name,
+        avatar_url: '',
+        ...(row.role === 'guest' ? { is_guest: true } : {}),
+    };
 }
 
 function clampLimit(raw?: number): number {

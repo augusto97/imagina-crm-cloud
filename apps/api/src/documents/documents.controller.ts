@@ -34,6 +34,7 @@ import type { Actor } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { contentDispositionHeader } from '../files/safe-content-type';
 import { DocumentsService } from './documents.service';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * v0.1.266 (ADR-S35) — Plantillas de documentos PDF de una lista.
@@ -54,7 +55,7 @@ export class DocumentsController {
 
     @Post('preview')
     @HttpCode(200)
-    @RequireCapability('manage_lists', 'manage_automations')
+    @RequireCapability('manage_documents', 'manage_automations')
     preview(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
@@ -106,7 +107,7 @@ export class DocumentsController {
 
     @Post()
     @HttpCode(201)
-    @RequireCapability('manage_lists', 'manage_automations')
+    @RequireCapability('manage_documents', 'manage_automations')
     create(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
@@ -116,7 +117,7 @@ export class DocumentsController {
     }
 
     @Patch(':id')
-    @RequireCapability('manage_lists', 'manage_automations')
+    @RequireCapability('manage_documents', 'manage_automations')
     update(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
@@ -128,7 +129,7 @@ export class DocumentsController {
 
     @Delete(':id')
     @HttpCode(204)
-    @RequireCapability('manage_lists', 'manage_automations')
+    @RequireCapability('manage_documents', 'manage_automations')
     async remove(@Req() req: FastifyRequest, @Param('list') list: string, @Param('id', ParseIntPipe) id: number): Promise<void> {
         await this.documents.remove(req.tenant!.tenantId, req.authUserId!, list, id);
     }
@@ -208,5 +209,5 @@ export class PublicDocumentsController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

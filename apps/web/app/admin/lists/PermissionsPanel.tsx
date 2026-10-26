@@ -42,15 +42,25 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
     const [assignmentTeamFieldId, setAssignmentTeamFieldId] = useState<number | null>(null);
     const [dirty, setDirty] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    // C2 — filas de roles PROPIOS que heredan la de su rol base (no se guardan).
+    const [inherit, setInherit] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         if (query.data) {
             setPerms(query.data.permissions);
             setAssignmentFieldId(query.data.assignment_field_id);
             setAssignmentTeamFieldId(query.data.assignment_team_field_id ?? null);
+            setInherit(Object.fromEntries(query.data.roles.filter((r) => r.custom_role_id).map((r) => [r.slug, r.inherited === true])));
             setDirty(false);
         }
     }, [query.data]);
+
+    const setInherited = (slug: string, on: boolean, base: string | undefined): void => {
+        setInherit((prev) => ({ ...prev, [slug]: on }));
+        // Al volver a heredar, la fila muestra otra vez la de su base.
+        if (on && base && perms[base]) setPerms((prev) => ({ ...prev, [slug]: { ...prev[base]! } }));
+        setDirty(true);
+    };
 
     const configurableRoles = useMemo(
         () => (query.data?.roles ?? []).filter((r) => r.can_configure),
@@ -103,10 +113,15 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
     const handleSave = async (): Promise<void> => {
         setSubmitError(null);
         try {
+            const inheritedKeys = Object.entries(inherit)
+                .filter(([, on]) => on)
+                .map(([k]) => k);
             await update.mutateAsync({
-                permissions: perms,
+                // Las filas de roles propios que heredan no se guardan: siguen a su base.
+                permissions: Object.fromEntries(Object.entries(perms).filter(([k]) => !inheritedKeys.includes(k))),
                 assignment_field_id: assignmentFieldId,
                 assignment_team_field_id: assignmentTeamFieldId,
+                ...(inheritedKeys.length > 0 ? { reset_roles: inheritedKeys } : {}),
             });
             setDirty(false);
         } catch (err) {
@@ -139,18 +154,66 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
                 const p = perms[role.slug];
                 if (!p) return null;
                 const level = levelOf(p);
+                const isCustom = role.custom_role_id !== undefined && role.custom_role_id !== null;
+                const baseLabel = configurableRoles.find((r) => r.slug === role.base_role)?.label ?? role.base_role ?? '';
+                if (isCustom && inherit[role.slug]) {
+                    // C2 — rol propio que todavía usa la fila de su base (en vivo).
+                    const baseLevel = levelOf(perms[role.base_role ?? ''] ?? p);
+                    return (
+                        <section
+                            key={role.slug}
+                            data-testid="perm-role-inherited"
+                            data-role={role.slug}
+                            className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-4"
+                        >
+                            <div className="imcrm-min-w-0">
+                                <h3 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                                    {role.label}
+                                    <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground">
+                                        {__('Rol propio')}
+                                    </span>
+                                </h3>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    {`${__('Usa los mismos permisos que')} «${baseLabel}»${baseLevel !== null ? ` — ${ACCESS_LEVELS.find((l) => l.id === baseLevel)?.label ?? ''}` : ''}.`}
+                                </p>
+                            </div>
+                            <Button size="sm" variant="outline" onClick={() => setInherited(role.slug, false, role.base_role)}>
+                                {__('Personalizar para este rol')}
+                            </Button>
+                        </section>
+                    );
+                }
                 return (
                     <section
                         key={role.slug}
+                        data-role={role.slug}
                         className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4"
                     >
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-baseline imcrm-justify-between imcrm-gap-2">
-                            <h3 className="imcrm-text-sm imcrm-font-semibold">{role.label}</h3>
-                            {level === null && (
-                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    {__('Configuración personalizada')}
-                                </span>
-                            )}
+                            <h3 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                                {role.label}
+                                {isCustom && (
+                                    <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground">
+                                        {`${__('Rol propio · basado en')} ${baseLabel}`}
+                                    </span>
+                                )}
+                            </h3>
+                            <span className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                                {level === null && (
+                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        {__('Configuración personalizada')}
+                                    </span>
+                                )}
+                                {isCustom && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setInherited(role.slug, true, role.base_role)}
+                                        className="imcrm-text-xs imcrm-text-primary hover:imcrm-underline"
+                                    >
+                                        {`${__('Volver a usar los de')} «${baseLabel}»`}
+                                    </button>
+                                )}
+                            </span>
                         </div>
 
                         <div

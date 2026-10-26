@@ -48,6 +48,9 @@ import type { RecordEntity } from '@/types/record';
 import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
+import { RecordShareButton } from '@/admin/guests/RecordShareButton';
+import { useIsGuest } from '@/lib/guest';
+import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
@@ -154,8 +157,13 @@ export function RecordDetailDrawer({
     onOpenRecord,
 }: RecordDetailDrawerProps): JSX.Element {
     const update = useUpdateRecord(listId);
-    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canEditByCaps = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const remove = useDeleteRecord(listId);
+    // C3 — un invitado no sigue, no genera PDF, no comparte, no borra y
+    // edita sólo con «Puede editar» (la lista entera o este registro).
+    const isGuest = useIsGuest();
+    const guestAccess = useGuestAccess(listId, record?.id);
+    const canEditRecords = canEditByCaps && (!isGuest || guestAccess.record === 'edit');
     const confirm = useConfirm();
     const toast = useToast();
     const trashed = useTrashedToast();
@@ -444,10 +452,15 @@ export function RecordDetailDrawer({
                             </span>
                             {view.ready && (
                                 <>
-                                    <RecordFollowControls listId={listId} recordId={record.id} compact />
-                                    <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
-                                    {/* C6 — «Guardar como plantilla» (no en listas de una tienda). */}
-                                    {!storeRules && <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />}
+                                    {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
+                                    {!isGuest && (
+                                        <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
+                                    )}
+                                    {/* C6 — «Guardar como plantilla» (no en listas de una tienda ni para un invitado). */}
+                                    {!storeRules && !isGuest && (
+                                        <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />
+                                    )}
+                                    <RecordShareButton listId={listId} recordId={record.id} compact />
                                 </>
                             )}
                             {listSlug !== undefined && (
@@ -526,7 +539,7 @@ export function RecordDetailDrawer({
                                     {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
                                     <RecordMetaGrid record={record} twoCols className="imcrm-mb-3 imcrm-mt-4" />
                                     {/* Subtarea de… (el registro es una subtarea). */}
-                                    {record.parent_id && listSlug !== undefined && (
+                                    {record.parent_id && listSlug !== undefined && !isGuest && (
                                         <RecordSubtasks
                                             listId={listId}
                                             listSlug={listSlug}
@@ -539,7 +552,7 @@ export function RecordDetailDrawer({
 
                                     {/* C5 — aprobación: «Pendiente de tu aprobación», las
                                         solicitudes y «Pedir aprobación». Sin flujos, no ocupa lugar. */}
-                                    {view.ready && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
+                                    {view.ready && !isGuest && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
 
                                     {/* Descripción rica (v0.1.133) — el cuerpo tipo
                                         documento de la ficha, arriba de los campos
@@ -593,7 +606,7 @@ export function RecordDetailDrawer({
                                     )}
 
                                     {/* Subtareas (registro de primer nivel). */}
-                                    {!record.parent_id && listSlug !== undefined && view.ready && (
+                                    {!record.parent_id && listSlug !== undefined && view.ready && !isGuest && (
                                         <RecordSubtasks
                                             listId={listId}
                                             listSlug={listSlug}
@@ -604,8 +617,8 @@ export function RecordDetailDrawer({
                                         />
                                     )}
 
-                                    {/* A9 — checklists del registro. */}
-                                    {view.ready && (
+                                    {/* A9 — checklists del registro (no para un invitado). */}
+                                    {view.ready && !isGuest && (
                                         <RecordChecklists
                                             listId={listId}
                                             recordId={record.id}
@@ -617,7 +630,7 @@ export function RecordDetailDrawer({
                                     )}
 
                                     {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
-                                    {view.ready && (
+                                    {view.ready && !isGuest && (
                                         <RecordDependencies
                                             listId={listId}
                                             listSlug={listSlug}
@@ -628,7 +641,7 @@ export function RecordDetailDrawer({
                                     )}
 
                                     {/* v0.1.291 — registro de tiempo (cronómetro + cargas a mano). */}
-                                    {view.ready && (
+                                    {view.ready && !isGuest && (
                                         <div className="imcrm-mt-5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
                                             <TimeTrackingPanel listId={listId} listKey={listSlug ?? String(listId)} recordId={record.id} />
                                         </div>
@@ -638,29 +651,29 @@ export function RecordDetailDrawer({
                                         también en el layout SIN plantilla CRM. El
                                         botón se auto-oculta si la lista no tiene
                                         portal habilitado. */}
-                                    {listData.data !== undefined && (
+                                    {listData.data !== undefined && !isGuest && (
                                         <div className="imcrm-mt-4">
                                             <PortalAccessButton list={listData.data} record={record} />
                                         </div>
                                     )}
                                     {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
-                                    {listData.data !== undefined && view.ready && (
+                                    {listData.data !== undefined && view.ready && !isGuest && (
                                         <RecordDataConsentLine className="imcrm-mt-4" listId={listData.data.id} recordId={record.id} />
                                     )}
                                     {/* v0.1.251 — cobros (Mercado Pago / Wompi). Se oculta solo
                                         si la empresa no conectó ninguno. */}
-                                    {listData.data !== undefined && view.ready && (
+                                    {listData.data !== undefined && view.ready && !isGuest && (
                                         <div className="imcrm-mt-4">
                                             <RecordPaymentsPanel listId={listData.data.id} recordId={record.id} />
                                         </div>
                                     )}
 
                                     {/* v0.1.290 — documentos emitidos (numerados): congelados, anulados. */}
-                                    {listData.data !== undefined && view.ready && (
+                                    {listData.data !== undefined && view.ready && !isGuest && (
                                         <IssuedDocumentsSection className="imcrm-mt-4" listId={listData.data.id} listSlug={listData.data.slug} recordId={record.id} />
                                     )}
 
-                                    {view.ready && <RecordBacklinks listId={listId} recordId={record.id} />}
+                                    {view.ready && !isGuest && <RecordBacklinks listId={listId} recordId={record.id} />}
 
                                     {error !== null && (
                                         <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
@@ -670,8 +683,9 @@ export function RecordDetailDrawer({
                                 </div>
 
                                 <SheetFooter>
-                                    {storeRules ? (
-                                        // Los registros de una tienda se borran en WooCommerce.
+                                    {storeRules || isGuest ? (
+                                        // Los registros de una tienda se borran en WooCommerce;
+                                        // un invitado de afuera nunca borra.
                                         <span className="imcrm-mr-auto" />
                                     ) : (
                                         <Button

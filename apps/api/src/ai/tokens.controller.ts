@@ -6,6 +6,8 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { PersonalTokensService } from './tokens.service';
+import { CapabilitiesGuard } from '../authz/capabilities.guard';
+import { RequireCapability } from '../authz/require-capability.decorator';
 
 /**
  * Tokens de acceso personal del usuario EN el workspace activo (ADR-S21
@@ -14,7 +16,7 @@ import { PersonalTokensService } from './tokens.service';
  * el secreto) porque un token es una puerta de entrada más a sus datos.
  */
 @Controller('me/tokens')
-@UseGuards(SessionGuard, TenantGuard)
+@UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class PersonalTokensController {
     constructor(
         private readonly tokens: PersonalTokensService,
@@ -28,11 +30,13 @@ export class PersonalTokensController {
 
     @Post()
     @HttpCode(201)
+    // C2 — conectar Claude/Cursor por MCP es usar el asistente.
+    @RequireCapability('use_ai_assistant')
     async create(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(createPersonalTokenSchema)) input: CreatePersonalTokenInput,
     ): Promise<CreatedPersonalToken> {
-        const created = await this.tokens.create(req.authUserId!, req.tenant!.tenantId, input, req.tenant!.role);
+        const created = await this.tokens.create(req.authUserId!, req.tenant!.tenantId, input, req.tenant!.role, req.tenant!.capabilities);
         await this.audit.log({
             tenantId: req.tenant!.tenantId,
             userId: req.authUserId!,

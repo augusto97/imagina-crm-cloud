@@ -2,6 +2,7 @@ import { createContext, createElement, useContext, useMemo, type ReactNode } fro
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 import type { Recurrence, RecurrenceUpsertInput } from '@/types/recurrence';
 
 const keys = {
@@ -20,6 +21,7 @@ const keys = {
 };
 
 export function useRecurrences(listId: number | undefined, recordId: number | undefined) {
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: keys.forRecord(listId ?? 0, recordId ?? 0),
         queryFn: async () => {
@@ -28,7 +30,7 @@ export function useRecurrences(listId: number | undefined, recordId: number | un
             );
             return res.data;
         },
-        enabled: listId !== undefined && listId > 0 && recordId !== undefined && recordId > 0,
+        enabled: listId !== undefined && listId > 0 && recordId !== undefined && recordId > 0 && !isGuest,
     });
 }
 
@@ -43,6 +45,8 @@ export function useRecurrencesBatch(
     listId: number | undefined,
     recordIds: number[],
 ) {
+    // C3 — las recurrencias no se le muestran a un invitado (403 en el servidor).
+    const isGuest = useIsGuest();
     return useQuery({
         queryKey: keys.batch(listId ?? 0, recordIds),
         queryFn: async () => {
@@ -52,7 +56,7 @@ export function useRecurrencesBatch(
             return res.data;
         },
         enabled:
-            listId !== undefined && listId > 0 && recordIds.length > 0,
+            listId !== undefined && listId > 0 && recordIds.length > 0 && !isGuest,
     });
 }
 

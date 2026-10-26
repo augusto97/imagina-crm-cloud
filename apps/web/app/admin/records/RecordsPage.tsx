@@ -42,6 +42,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { CAP, useCan } from '@/lib/permissions';
+import { useGuestAccess } from '@/hooks/useGuests';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 import type { SavedViewEntity } from '@/types/view';
@@ -399,6 +400,9 @@ export function RecordsPage(): JSX.Element {
     // del backend si un viewer intenta editar.
     const canManageList = useCan(CAP.MANAGE_LISTS);
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS) && moduleEnabled('automations');
+    // C3 — un invitado sólo crea en una lista compartida entera en «Puede
+    // editar»; no comparte, no personaliza ni agrega columnas.
+    const guest = useGuestAccess(list.data?.id);
     // v0.1.213 — lista sincronizada con una tienda: los registros se crean,
     // se borran y se importan en WooCommerce; las celdas siguen las reglas
     // de `store-rules` (las mismas que aplica el backend).
@@ -418,9 +422,9 @@ export function RecordsPage(): JSX.Element {
     // En una lista de la tienda, actualizar desde archivo exige «Editar desde la app».
     const canCsvUpdate = useCan(CAP.IMPORT_RECORDS) && (canEditAny || canEditOwn) && (!storeMarker || storeMarker.write_back === true);
     const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
-    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
-    // C6 — plantillas de registro de la lista (el «▾» junto a «Nuevo registro»).
-    const recordTemplates = useRecordTemplates(canCreateRecords ? list.data?.id : undefined, 'record').data ?? [];
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker && (!guest.isGuest || guest.list === 'edit');
+    // C6 — plantillas de registro de la lista (el «▾» junto a «Nuevo registro»; no para un invitado).
+    const recordTemplates = useRecordTemplates(canCreateRecords && !guest.isGuest ? list.data?.id : undefined, 'record').data ?? [];
     const canDeleteAny = useCan(CAP.DELETE_RECORDS);
     const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
     // Reestructurar (mover/duplicar/borrar) no aplica a las listas de la tienda:
@@ -966,10 +970,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                     className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[13px]"
                 >
                     <Link
-                        to="/lists"
+                        to={guest.isGuest ? '/shared' : '/lists'}
                         className="imcrm-shrink-0 imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
                     >
-                        {__('Listas')}
+                        {guest.isGuest ? __('Compartido conmigo') : __('Listas')}
                     </Link>
                     <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground">
                         /
@@ -984,15 +988,17 @@ const applyView = (view: SavedViewEntity | null): void => {
                     {/* "Compartir" lo ve cualquiera que pueda abrir la lista: el
                         enlace del equipo sirve a todos y publicar hacia afuera
                         se gatea DENTRO del diálogo. */}
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShareOpen(true)}
-                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
-                    >
-                        <Share2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                        {__('Compartir')}
-                    </Button>
+                    {!guest.isGuest && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShareOpen(true)}
+                            className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
+                        >
+                            <Share2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Compartir')}
+                        </Button>
+                    )}
 
                 {(canManageAutomations || canManageList || canImportRecords || canExportRecords) && (
                     <>
@@ -1164,16 +1170,18 @@ const applyView = (view: SavedViewEntity | null): void => {
                               usuario): es un ajuste ocasional, no compite
                               con Filtrar, que sí se usa a diario.
                             */}
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => setViewSettingsOpen(true)}
-                                className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
-                                aria-label={__('Personalizar vista')}
-                                title={__('Personalizar vista')}
-                            >
-                                <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
-                            </Button>
+                            {!guest.isGuest && (
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => setViewSettingsOpen(true)}
+                                    className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
+                                    aria-label={__('Personalizar vista')}
+                                    title={__('Personalizar vista')}
+                                >
+                                    <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                            )}
                             {canCreateRecords && (
                                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center">
                                     <Button
@@ -1631,7 +1639,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     columnOrder={state.columnOrder}
                                     collapsedGroups={state.collapsedGroups}
                                     onCollapsedGroupsChange={onGroupedCollapsed}
-                                    onAddColumn={onGroupedAddColumn}
+                                    onAddColumn={guest.isGuest ? undefined : onGroupedAddColumn}
                                     onEditField={canManageList ? onGroupedEditField : undefined}
                                     onAddRecord={canCreateRecords ? onGroupedAddRecord : undefined}
                                     wrapText={state.wrapText}
@@ -1685,7 +1693,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);
                                     }}
-                                    onAddColumn={openFieldCreate}
+                                    onAddColumn={guest.isGuest ? undefined : openFieldCreate}
                                     onEditField={canManageList ? openFieldEdit : undefined}
                                     wrapText={state.wrapText}
                                     spreadsheet={state.spreadsheet}

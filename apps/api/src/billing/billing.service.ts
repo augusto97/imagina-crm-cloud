@@ -186,12 +186,40 @@ export class BillingService {
         return a?.n ?? 0;
     }
 
+    /** Usuarios del plan: el equipo de trabajo (ni clientes del portal ni invitados — C3). */
     private async countStaff(tx: Tx, tenantId: number): Promise<number> {
         const [u] = await tx
             .select({ n: sql<number>`count(*)::int` })
             .from(memberships)
-            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client')));
+            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client'), ne(memberships.role, 'guest')));
         return u?.n ?? 0;
+    }
+
+    /** C3 — invitados externos de la empresa. */
+    private async countGuests(tx: Tx, tenantId: number): Promise<number> {
+        const [u] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(memberships)
+            .where(and(eq(memberships.tenantId, tenantId), eq(memberships.role, 'guest')));
+        return u?.n ?? 0;
+    }
+
+    /**
+     * C3 — Tope de INVITADOS del plan (`max_guests`), al invitar a alguien de
+     * afuera. No cuentan como usuarios: tienen su propio tope.
+     */
+    async assertCanAddGuest(tenantId: number): Promise<void> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_guests;
+        if (limit === null) return;
+        const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countGuests(tx, tenantId));
+        if (count >= limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `Alcanzaste el límite de ${limit} invitados del plan ${plan}. Quita a alguien o pasa a un plan mayor.`,
+                data: { status: 403, errors: { limit: 'max_guests' } },
+            });
+        }
     }
 
     /** Stand-in del webhook de Stripe: setea plan/estado del workspace. */
@@ -238,6 +266,7 @@ export class BillingService {
     private async usage(tx: Tx, tenantId: number): Promise<Usage> {
         const recordCount = await this.countRecords(tx, tenantId);
         const staff = await this.countStaff(tx, tenantId);
+        const guests = await this.countGuests(tx, tenantId);
         // Cuentan las ACTIVAS: es lo que limita el plan (una pausada no corre).
         const a = { n: await this.countActiveAutomations(tx, tenantId) };
         // v0.1.268 (ADR-S36) — sólo lo guardado en el servidor de la
@@ -262,6 +291,7 @@ export class BillingService {
             // contador lo escribe el worker de correo por la conexión base).
             emails_month: 0,
             ai_requests_month: 0,
+            guests,
         };
     }
 

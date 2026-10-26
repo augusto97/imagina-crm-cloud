@@ -1,9 +1,9 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { isEffectivelyReadOnly, type BillingStatus, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
+import { effectiveCapabilities, isEffectivelyReadOnly, type BillingStatus, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
 import { DRIZZLE, type Db } from '../db/client';
-import { memberships, oauthClients, personalAccessTokens, tenants, users } from '../db/schema';
+import { customRoles, memberships, oauthClients, personalAccessTokens, tenants, users } from '../db/schema';
 
 /** Prefijo reconocible del secreto (como `ghp_` / `sk-ant-`): `ib_pat_`. */
 export const TOKEN_PREFIX = 'ib_pat_';
@@ -27,6 +27,9 @@ export interface ResolvedToken {
     scope: PersonalTokenScope;
     /** C1 — equipos de la persona (ACL por equipo). */
     teamIds: number[];
+    /** C2 — rol propio y capacidades efectivas (las herramientas se ofrecen por ellas). */
+    customRoleId: number | null;
+    capabilities: Capability[];
 }
 
 /**
@@ -138,8 +141,14 @@ export class PersonalTokensService {
         return rows.length > 0;
     }
 
-    async create(userId: number, tenantId: number, input: CreatePersonalTokenInput, role: Role): Promise<CreatedPersonalToken> {
-        assertNotClient(role);
+    async create(
+        userId: number,
+        tenantId: number,
+        input: CreatePersonalTokenInput,
+        role: Role,
+        capabilities?: readonly Capability[],
+    ): Promise<CreatedPersonalToken> {
+        assertNotClient(role, capabilities);
         const secret = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`;
         const expiresAt = input.expires_in_days === null ? null : new Date(Date.now() + input.expires_in_days * 86_400_000);
         const [row] = await this.db
@@ -191,6 +200,9 @@ export class PersonalTokensService {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                // C2 — rol propio (capacidades) de la persona, leído en vivo.
+                customRoleId: memberships.customRoleId,
+                customCaps: customRoles.capabilities,
                 // C1 — los equipos de la persona (ACL por equipo en el MCP).
                 teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${personalAccessTokens.userId} AND tm.tenant_id = ${personalAccessTokens.tenantId})`,
             })
@@ -201,13 +213,18 @@ export class PersonalTokensService {
                 memberships,
                 and(eq(memberships.userId, personalAccessTokens.userId), eq(memberships.tenantId, personalAccessTokens.tenantId)),
             )
+            .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
             .where(eq(personalAccessTokens.tokenHash, hashToken(secret)))
             .limit(1);
         if (!row || row.revokedAt || row.disabledAt || !row.role) return null;
         // v0.1.185 — el rol `client` (portal) es "solo portal": aunque una
         // fila existiera, jamás entra al MCP (defensa en profundidad del
         // bloqueo de crear/autorizar).
-        if (row.role === 'client') return null;
+        if (row.role === 'client' || row.role === 'guest') return null;
+        // C2 — capacidades efectivas: sin «Usar el asistente IA», el token no sirve.
+        const custom = Array.isArray(row.customCaps) ? row.customCaps : null;
+        const capabilities = effectiveCapabilities(row.role as Role, custom);
+        if (!capabilities.includes('use_ai_assistant')) return null;
         if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
         void this.touch(row.id);
         // SEC-25 (v0.1.226) — ADR-S09: una empresa impaga/archivada queda en
@@ -223,7 +240,16 @@ export class PersonalTokensService {
         });
         const scope = readOnly ? 'read' : (row.scope as PersonalTokenScope);
         const teamIds = (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
-        return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope, teamIds };
+        return {
+            tokenId: row.id,
+            userId: row.userId,
+            tenantId: row.tenantId,
+            role: row.role as Role,
+            scope,
+            teamIds,
+            customRoleId: custom ? row.customRoleId : null,
+            capabilities,
+        };
     }
 
     private async touch(id: number): Promise<void> {
@@ -247,9 +273,17 @@ export class PersonalTokensService {
  * `get_list_schema`, que no filtran por rol → vería nombres y campos de
  * TODAS las listas de la empresa. Se rechaza en la puerta.
  */
-export function assertNotClient(role: Role): void {
+export function assertNotClient(role: Role, capabilities?: readonly Capability[]): void {
     if (role === 'client') {
         throw new ForbiddenException({ code: 'client_role_not_allowed', message: 'El acceso por MCP es para miembros del equipo, no para usuarios del portal', data: { status: 403 } });
+    }
+    // C3 — un invitado externo tampoco: sólo ve lo que le compartieron.
+    if (role === 'guest') {
+        throw new ForbiddenException({ code: 'guest_role_not_allowed', message: 'El acceso por MCP es para miembros del equipo, no para invitados', data: { status: 403 } });
+    }
+    // C2 — conectar un asistente exige «Usar el asistente IA» (rol propio).
+    if (capabilities && !capabilities.includes('use_ai_assistant')) {
+        throw new ForbiddenException({ code: 'ai_assistant_not_allowed', message: 'Tu rol no puede usar el asistente IA', data: { status: 403 } });
     }
 }
 

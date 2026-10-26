@@ -134,20 +134,22 @@ export class ActivityService {
         const key = jsonbKeyForField(fieldId);
         const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [field] = await tx
-                .select({ id: fieldsTable.id, slug: fieldsTable.slug })
+                .select({ id: fieldsTable.id, slug: fieldsTable.slug, type: fieldsTable.type })
                 .from(fieldsTable)
                 .where(and(eq(fieldsTable.id, fieldId), eq(fieldsTable.listId, list.id)))
                 .limit(1);
             if (!field) throw historyNotFound();
             const perms = effectivePermissions(list.settings, opts.viewer);
             if (perms.fields_hidden.includes(field.slug)) throw historyNotFound();
+            // C3 — un invitado no ve las relaciones (registros de otras listas).
+            if (opts.viewer.role === 'guest' && field.type === 'relation') throw historyNotFound();
             const [rec] = await tx
                 .select({ id: records.id, data: records.data, createdBy: records.createdBy })
                 .from(records)
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, recordId), sql`${records.deletedAt} IS NULL`))
                 .limit(1);
             if (!rec) throw historyNotFound();
-            if (!listRowInScope(list.settings, opts.viewer, 'view', { createdBy: rec.createdBy, data: rec.data })) {
+            if (!listRowInScope(list.settings, opts.viewer, 'view', { id: rec.id, createdBy: rec.createdBy, data: rec.data })) {
                 throw historyNotFound();
             }
             return this.repo.fieldHistory(tx, tenantId, list.id, recordId, key, { cursor: opts.cursor, limit: limit + 1 });
@@ -197,6 +199,14 @@ export class ActivityService {
                             ),
                         );
                     hiddenKeys = new Set(hidden.map((h) => jsonbKeyForField(h.id)));
+                }
+                // C3 — a un invitado tampoco le llegan los cambios de relaciones.
+                if (opts.viewer.role === 'guest') {
+                    const rels = await tx
+                        .select({ id: fieldsTable.id })
+                        .from(fieldsTable)
+                        .where(and(eq(fieldsTable.listId, list.id), eq(fieldsTable.type, 'relation')));
+                    for (const r of rels) hiddenKeys.add(jsonbKeyForField(r.id));
                 }
             }
             const rows = await this.repo.list(tx, tenantId, list.id, {

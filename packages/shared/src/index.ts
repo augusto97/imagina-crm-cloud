@@ -109,3 +109,5 @@ export * from './schemas/gantt';
 export * from './schemas/workload';
 export * from './xlsx';
 export * from './schemas/team';
+export * from './schemas/custom-role';
+export * from './schemas/guest';

@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 
 import { AGGREGATES_NS, canonicalListId } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
+import { useIsGuest } from '@/lib/guest';
 import type { FilterTree } from '@/types/record';
 
 /**
@@ -62,6 +63,8 @@ export function useAggregates({
     search,
 }: UseAggregatesArgs) {
     const qc = useQueryClient();
+    // C3 — un invitado no recibe totales de la lista (verían más de lo compartido).
+    const isGuest = useIsGuest();
     // Key por id numérico canónico (PERF-06); la URL sigue usando el slug.
     const keyId = canonicalListId(qc, listSlug ?? '');
     const filterKey = filterTree && filterTree.children.length > 0
@@ -88,7 +91,7 @@ export function useAggregates({
             );
             return res.data;
         },
-        enabled: listSlug !== undefined && fieldIds.length > 0,
+        enabled: listSlug !== undefined && fieldIds.length > 0 && !isGuest,
         // Al cambiar la búsqueda o los filtros, el pie anterior se ve hasta
         // que llega el nuevo (sin parpadeo a "—").
         placeholderData: keepPreviousData,

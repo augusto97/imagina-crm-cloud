@@ -8,6 +8,8 @@ export interface WpUserSummary {
     login: string;
     display_name: string;
     avatar_url: string;
+    /** C3 — persona invitada de afuera (badge «Invitado»). */
+    is_guest?: boolean;
 }
 
 /**

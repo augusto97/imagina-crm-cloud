@@ -20,6 +20,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { Actor } from '../records/records.service';
+import { aclOf } from '../tenancy/acl-of';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { WorkloadService, type WorkloadBundleQuery, type WorkloadMemberDto } from './workload.service';
 
@@ -59,7 +60,8 @@ export class WorkloadController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
+    // C1/C2/C3 — con sus equipos, rol propio y capacidades efectivas.
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
 /**
