@@ -9060,6 +9060,43 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `max` y 32k, ajuste de «muy alto» a «alto» con aviso, vuelta al de la
         plataforma al quitar la clave, celular oscuro).
 
+  - [x] **Carga de trabajo por persona (v0.1.307, ADR-S62, opción B2 del
+        estudio, primera entrega de la fase 3)**: vista nueva «Carga de
+        trabajo» (tipo `workload`): una fila por persona del equipo que ve la
+        lista + «Sin asignar», columnas por día, semana o mes con «Hoy»,
+        navegación y fines de semana atenuados, sobre un campo Persona y las
+        fechas del registro (inicio y fin, o una sola). Mide **registros**,
+        **esfuerzo estimado** (un campo de horas o duración repartido en los
+        días hábiles del tramo) o **tiempo registrado** (de `time_entries`, por
+        quien lo cargó). Todo se calcula en el servidor
+        (`GET /lists/:l/records/workload-bundle`, tres consultas) con los
+        filtros, la búsqueda, el ACL y los campos ocultos de quien mira
+        (`RecordsService.readScoped`), sin la papelera, en la zona de la empresa
+        y con «ocultar terminados» (el criterio de «Mi trabajo»; si el estado
+        está oculto para el rol no se aplica y se avisa). El reparto es UNA
+        función pura de shared (`workloadItemLoad`) que usan el servidor y la
+        reasignación optimista. **Capacidad por persona** (horas por día + días
+        laborables, o registros por semana) en `memberships.settings.capacity`,
+        editable por admin/manager desde la fila (`PATCH
+        /workload/capacity/:userId`, bitácora `workload.capacity`): cada celda
+        con su barra en verde, ámbar o rojo, legible en claro y oscuro, y
+        totales por persona y del equipo. Clic en una celda → panel con sus
+        registros; arrastrarlos a otra fila (o «Reasignar a…») cambia la
+        persona en el acto, con «Deshacer» y Ctrl/⌘+Z que no pisan un cambio
+        ajeno (`expect`). «Configurar carga» desde la vista, Personalizar y el
+        menú de la pestaña; en el celular, una tarjeta por persona con el uso
+        de la semana. Asistente/MCP (`propose_create_view`/`update_view` con
+        persona, fechas, medida, estimación, zoom y personas), plantillas y
+        migración de empresa re-mapean campos y personas. El filtro por equipo
+        queda enchufado (`users` en el bundle, `workload_user_ids` en la vista)
+        para cuando entre Equipos. Sin migración. 8 tests de API + 3 del
+        asistente + 1 de re-mapeo, 14 de shared y 6 del front + E2E navegador
+        38/38 contra SQL (200 registros, 6 personas, 6 semanas: las tres
+        medidas celda por celda incluido el reparto en días hábiles, rojo por
+        capacidad, capacidad persistida, arrastrar y deshacer, celular y
+        oscuro). Queda fuera: arrastrar en el tiempo (para eso está el Gantt),
+        capacidad por día puntual (vacaciones) y recurrencias proyectadas.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

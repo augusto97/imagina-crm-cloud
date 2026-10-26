@@ -1,4 +1,4 @@
-import { Calendar, Columns3, GanttChart, LayoutGrid, Table, type LucideIcon } from 'lucide-react';
+import { Calendar, Columns3, GanttChart, Gauge, LayoutGrid, Table, type LucideIcon } from 'lucide-react';
 
 /**
  * Icono por tipo de vista (tabla / kanban / calendario / tarjetas). Es el
@@ -15,6 +15,8 @@ export function viewTypeIcon(type: string): LucideIcon {
             return LayoutGrid;
         case 'gantt':
             return GanttChart;
+        case 'workload':
+            return Gauge;
         default:
             return Table;
     }

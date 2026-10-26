@@ -49,6 +49,10 @@ export function SaveViewDialog({
     // B1 — Gantt: fecha de inicio (obligatoria) y de fin (opcional: sin fin, hitos).
     const [ganttStartId, setGanttStartId] = useState<number>(0);
     const [ganttEndId, setGanttEndId] = useState<number>(0);
+    // B2 — Carga de trabajo: la persona asignada y las fechas (inicio y fin, o una sola).
+    const [workloadPersonId, setWorkloadPersonId] = useState<number>(0);
+    const [workloadStartId, setWorkloadStartId] = useState<number>(0);
+    const [workloadEndId, setWorkloadEndId] = useState<number>(0);
     const [cardFieldIds, setCardFieldIds] = useState<number[]>([]);
     const [cardCoverFieldId, setCardCoverFieldId] = useState<number>(0);
     const [cardSize, setCardSize] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
@@ -67,6 +71,7 @@ export function SaveViewDialog({
         () => (fields.data ?? []).filter((f) => f.type === 'date' || f.type === 'datetime'),
         [fields.data],
     );
+    const personFields = useMemo(() => (fields.data ?? []).filter((f) => f.type === 'user'), [fields.data]);
 
     useEffect(() => {
         if (!open) {
@@ -77,6 +82,9 @@ export function SaveViewDialog({
             setDateFieldId(0);
             setGanttStartId(0);
             setGanttEndId(0);
+            setWorkloadPersonId(0);
+            setWorkloadStartId(0);
+            setWorkloadEndId(0);
             setCardFieldIds([]);
             setCardCoverFieldId(0);
             setCardSize('comfortable');
@@ -102,7 +110,12 @@ export function SaveViewDialog({
             setGanttStartId(dateFields[0]!.id);
             if (dateFields.length > 1) setGanttEndId(dateFields[1]!.id);
         }
-    }, [type, groupByFieldId, dateFieldId, ganttStartId, selectFields, dateFields]);
+        if (type === 'workload' && workloadPersonId === 0 && personFields.length > 0) {
+            setWorkloadPersonId(personFields[0]!.id);
+            if (dateFields.length > 0) setWorkloadStartId(dateFields[0]!.id);
+            if (dateFields.length > 1) setWorkloadEndId(dateFields[1]!.id);
+        }
+    }, [type, groupByFieldId, dateFieldId, ganttStartId, workloadPersonId, selectFields, dateFields, personFields]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
@@ -119,6 +132,12 @@ export function SaveViewDialog({
                     ? {
                         gantt_start_field_id: ganttStartId,
                         ...(ganttEndId > 0 && ganttEndId !== ganttStartId ? { gantt_end_field_id: ganttEndId } : {}),
+                    }
+                  : type === 'workload'
+                    ? {
+                        workload_person_field_id: workloadPersonId,
+                        ...(workloadStartId > 0 ? { workload_start_field_id: workloadStartId } : {}),
+                        ...(workloadEndId > 0 && workloadEndId !== workloadStartId ? { workload_end_field_id: workloadEndId } : {}),
                     }
                   : type === 'cards'
                     ? {
@@ -216,6 +235,11 @@ export function SaveViewDialog({
                                         ? __('Gantt (necesitas al menos un campo de fecha)')
                                         : __('Gantt (línea de tiempo)')}
                                 </option>
+                                <option value="workload" disabled={personFields.length === 0 || dateFields.length === 0}>
+                                    {personFields.length === 0 || dateFields.length === 0
+                                        ? __('Carga de trabajo (necesitas un campo Persona y uno de fecha)')
+                                        : __('Carga de trabajo (por persona)')}
+                                </option>
                             </Select>
                         </div>
 
@@ -298,6 +322,55 @@ export function SaveViewDialog({
                             </div>
                         )}
 
+                        {type === 'workload' && (
+                            <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 sm:imcrm-col-span-2">
+                                    <Label htmlFor="view-workload-person">{__('Persona asignada')}</Label>
+                                    <Select id="view-workload-person" value={workloadPersonId} onChange={(e) => setWorkloadPersonId(Number(e.target.value))}>
+                                        {personFields.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.label}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="view-workload-start">{__('Fecha de inicio')}</Label>
+                                    <Select
+                                        id="view-workload-start"
+                                        value={workloadStartId}
+                                        onChange={(e) => {
+                                            const id = Number(e.target.value);
+                                            setWorkloadStartId(id);
+                                            if (workloadEndId === id) setWorkloadEndId(0);
+                                        }}
+                                    >
+                                        {dateFields.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                                {f.label}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="view-workload-end">{__('Fecha de fin')}</Label>
+                                    <Select id="view-workload-end" value={workloadEndId} onChange={(e) => setWorkloadEndId(Number(e.target.value))}>
+                                        <option value={0}>{__('Sin fecha de fin (una sola fecha)')}</option>
+                                        {dateFields
+                                            .filter((f) => f.id !== workloadStartId)
+                                            .map((f) => (
+                                                <option key={f.id} value={f.id}>
+                                                    {f.label}
+                                                </option>
+                                            ))}
+                                    </Select>
+                                </div>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground sm:imcrm-col-span-2">
+                                    {__('Una fila por persona y una columna por semana, frente a su capacidad. Después eliges qué se mide (registros, esfuerzo o tiempo) desde «Configurar carga».')}
+                                </p>
+                            </div>
+                        )}
+
                         {type === 'cards' && (
                             <CardsConfigPanel
                                 fields={fields.data ?? []}
@@ -347,7 +420,8 @@ export function SaveViewDialog({
                                     create.isPending ||
                                     (type === 'kanban' && groupByFieldId <= 0) ||
                                     (type === 'calendar' && dateFieldId <= 0) ||
-                                    (type === 'gantt' && ganttStartId <= 0)
+                                    (type === 'gantt' && ganttStartId <= 0) ||
+                                    (type === 'workload' && (workloadPersonId <= 0 || workloadStartId <= 0))
                                 }
                             >
                                 {create.isPending ? __('Guardando…') : __('Guardar vista')}

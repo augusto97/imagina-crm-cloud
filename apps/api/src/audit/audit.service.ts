@@ -130,7 +130,9 @@ export type AuditAction =
     // A8/B1 — reprogramación por dependencias (ajuste de la lista) y línea base del Gantt.
     | 'list.dependencies_settings'
     | 'gantt.baseline_save'
-    | 'gantt.baseline_delete';
+    | 'gantt.baseline_delete'
+    // B2 — capacidad de una persona en la vista «Carga de trabajo».
+    | 'workload.capacity';
 
 export interface AuditEntryDto {
     id: number;

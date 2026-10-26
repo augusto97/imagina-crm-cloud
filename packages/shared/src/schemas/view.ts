@@ -2,12 +2,14 @@ import { z } from 'zod';
 import { idSchema } from './common';
 import { filterConditionSchema, filterTreeSchema } from './filter';
 import { ganttViewConfigShape } from './gantt';
+import { workloadViewConfigShape } from './workload';
 
 /**
  * Tipos de vista (CONTRACT.md §7). `gantt` (B1): barras de inicio a fin con
- * dependencias, agrupación, zoom y línea base.
+ * dependencias, agrupación, zoom y línea base. `workload` (B2): carga de
+ * trabajo por persona frente a su capacidad.
  */
-export const VIEW_TYPES = ['table', 'kanban', 'calendar', 'cards', 'gantt'] as const;
+export const VIEW_TYPES = ['table', 'kanban', 'calendar', 'cards', 'gantt', 'workload'] as const;
 export const viewTypeSchema = z.enum(VIEW_TYPES);
 export type ViewType = z.infer<typeof viewTypeSchema>;
 
@@ -266,12 +268,23 @@ export const ganttViewConfigSchema = z.object({
     ...ganttViewConfigShape,
 });
 
+/**
+ * B2 — Carga de trabajo: el campo Persona es obligatorio; las fechas, la
+ * métrica, la estimación, el zoom y las personas visibles son opcionales (ver
+ * `workload.ts`).
+ */
+export const workloadViewConfigSchema = z.object({
+    ...viewStateCommon,
+    ...workloadViewConfigShape,
+});
+
 export const viewConfigSchemas = {
     table: tableViewConfigSchema,
     kanban: kanbanViewConfigSchema,
     calendar: calendarViewConfigSchema,
     cards: cardsViewConfigSchema,
     gantt: ganttViewConfigSchema,
+    workload: workloadViewConfigSchema,
 } satisfies Record<ViewType, z.ZodTypeAny>;
 
 /** Valida la config contra el schema del tipo de vista. */

@@ -3849,4 +3849,47 @@ persona (la decisión de costo es de quien paga la clave, no de cada usuario).
 
 ---
 
-**Versión del documento:** 1.103.0 (nivel de esfuerzo del asistente)
+### ADR-S62 — Carga de trabajo por persona (v0.1.307)
+
+**Contexto.** Con listas de tareas, tickets o proyectos asignadas por un campo
+Persona no había forma de ver, de un vistazo, quién está sobrecargado y quién
+tiene espacio, ni de redistribuir trabajo sin abrir registro por registro.
+
+**Decisión.**
+1. Tipo de vista `workload` (config `workload_*` en `saved_views.config`, schema
+   en shared): campo Persona obligatorio, fechas (inicio y fin, o una sola),
+   medida (`count` / `estimate` / `time`), campo y unidad de la estimación, zoom
+   (`day`/`week`/`month`), personas elegidas (`workload_user_ids`), «Sin
+   asignar» y «ocultar terminados».
+2. Cálculo en el servidor con un bundle (`GET /lists/:l/records/workload-bundle`)
+   de tres consultas: ítems con su tramo en la zona de la empresa, registros sin
+   fecha por persona y tiempo por persona y día. Corre dentro de
+   `RecordsService.readScoped`, que expone el mismo contexto de lectura del
+   listado (filtros, búsqueda, alcance del ACL, campos ocultos de SEC-36 y
+   reloj), así no se duplican reglas.
+3. Reparto puro en shared (`workloadItemLoad`): «registros» = 1 por período
+   activo; «esfuerzo» = estimación ÷ días hábiles del tramo COMPLETO (o de
+   calendario si no tiene ninguno), sumado por período. El mismo código hace la
+   reasignación optimista del front: lo que se ve al arrastrar coincide con lo
+   que recalcula el servidor.
+4. Capacidad por persona en `memberships.settings.capacity` (horas por día y
+   días laborables, o registros por semana; default 8 h de lunes a viernes y 10
+   por semana), con merge atómico de jsonb, editable con `edit_records`,
+   auditada y avisada por realtime. Nivel por celda: vacío / con espacio /
+   cerca (≥85 %) / por encima.
+5. «Ocultar terminados» usa el criterio de «Mi trabajo»; si el estado está
+   oculto para el rol no se aplica (no sirve de oráculo) y el bundle lo informa.
+6. Reasignar es una edición común del campo Persona (`PATCH .../records/batch`
+   con `expect`): ACL, reglas de la tienda, actividad y automatizaciones como
+   cualquier cambio, y deshacer no pisa un cambio posterior.
+7. Topes: 400 días de rango, 20.000 filas leídas, 3.000 ítems devueltos y 500
+   personas; si se pasan, la vista lo informa.
+
+**Consecuencias.** Sin migración ni tablas nuevas. El filtro por equipo se
+enchufa traduciendo el equipo a `users` / `workload_user_ids`. Queda fuera
+arrastrar en el tiempo (para eso está el Gantt), la capacidad por día puntual
+(vacaciones) y las recurrencias proyectadas.
+
+---
+
+**Versión del documento:** 1.104.0 (carga de trabajo por persona)

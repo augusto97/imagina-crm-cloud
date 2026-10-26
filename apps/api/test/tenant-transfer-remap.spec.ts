@@ -138,6 +138,32 @@ describe('remapJson', () => {
         expect(byUser).toEqual({ group_by_field_id: 111, kanban_wip_limits: [{ column: '131', limit: 3 }], kanban_hidden_columns: ['130'] });
     });
 
+    it('B2 — carga de trabajo: campos por convención y personas visibles por el mapa de usuarios', () => {
+        const types = new Map<number, string>([[10, 'user'], [11, 'date'], [12, 'number']]);
+        const out = remapViewConfig(
+            {
+                workload_person_field_id: 10,
+                workload_start_field_id: 11,
+                workload_end_field_id: 999,
+                workload_estimate_field_id: 12,
+                workload_metric: 'estimate',
+                workload_user_ids: [31, 999, 30],
+            },
+            types,
+            maps(),
+        );
+        expect(out).toEqual({
+            workload_person_field_id: 110,
+            workload_start_field_id: 111,
+            // Un campo que no viajó queda en null (no apunta a otro).
+            workload_end_field_id: null,
+            workload_estimate_field_id: 112,
+            workload_metric: 'estimate',
+            // La persona 999 no viajó: se descarta (si no, se vería a OTRA).
+            workload_user_ids: [131, 130],
+        });
+    });
+
     it('B4 — calendario: fin, fuentes adicionales, campo de color y reglas por convención', () => {
         const types = new Map<number, string>([[10, 'datetime'], [11, 'datetime'], [12, 'select']]);
         const out = remapViewConfig(

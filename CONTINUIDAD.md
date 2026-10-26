@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.306** (nivel de esfuerzo del asistente IA), en `main`.
+versión publicada: **v0.1.307** (vista «Carga de trabajo»), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
@@ -387,6 +387,12 @@ versión publicada: **v0.1.306** (nivel de esfuerzo del asistente IA), en `main`
   aprobadores por equipo (si Aprobaciones termina antes que Equipos) y el
   filtro por equipo de la Carga de trabajo. También falta que el usuario
   pruebe lo de las fases 1 y 2.
+  **Avance**: Carga de trabajo publicada (v0.1.307); el enchufe para el filtro
+  por equipo es el parámetro `users` del bundle y `workload_user_ids` en la
+  vista (falta traducir «equipo → ids» cuando entre Equipos). Los otros tres
+  agentes siguen. **Pendiente aparte**: `pnpm audit --prod` volvió a dar avisos
+  publicados después de v0.1.299 (zod, nodemailer, body-parser y fast-uri vía el
+  SDK de MCP, msal-node vía mssql) → release de dependencias.
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
   ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
   en paralelo en copias aisladas (worktrees), cada una con su instancia de
@@ -652,6 +658,20 @@ versión publicada: **v0.1.306** (nivel de esfuerzo del asistente IA), en `main`
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.307** — **Carga de trabajo por persona** (ADR-S62,
+  opción B2 del estudio, primera entrega de la fase 3). Vista nueva `workload`:
+  personas × días/semanas/meses sobre un campo Persona y las fechas del
+  registro, con tres medidas —registros, esfuerzo estimado repartido en días
+  hábiles y tiempo registrado— calculadas en el servidor
+  (`/records/workload-bundle`, tres consultas) con filtros, búsqueda, ACL,
+  campos ocultos y la zona de la empresa. Capacidad por persona en
+  `memberships.settings.capacity` (admin/manager, bitácora `workload.capacity`)
+  con verde/ámbar/rojo; reasignar arrastrando o con «Reasignar a…», con
+  Deshacer y Ctrl+Z que no pisan un cambio ajeno; tarjetas en el celular.
+  Asistente/MCP, plantillas y migración de empresa al día. Sin migración. E2E
+  38/38 contra SQL. Queda fuera: arrastrar en el tiempo (para eso está el
+  Gantt), capacidad por día puntual (vacaciones) y recurrencias proyectadas.
+  Para Equipos: el bundle ya acepta `users` y la vista `workload_user_ids`.
 - **2026-10-26 · v0.1.306** — **Nivel de esfuerzo del asistente** (ADR-S61).
   Pedido del usuario tras preguntar si la API tiene nivel de esfuerzo:
   "implementalo; en el caso de la empresa sólo lo puede cambiar si usa su propia

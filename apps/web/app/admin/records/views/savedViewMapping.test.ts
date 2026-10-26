@@ -15,6 +15,8 @@ import {
     viewConfigToGantt,
     viewConfigToKanban,
     viewConfigToState,
+    viewConfigToWorkload,
+    workloadToViewConfig,
 } from './savedViewMapping';
 
 const baseState: RecordsState = {
@@ -382,5 +384,55 @@ describe('B1 — vista Gantt: ajustes en la vista', () => {
         // Una vista recién creada (sólo inicio y fin) no gana claves al guardarse.
         const fresh: SavedViewConfig = { gantt_start_field_id: 10, gantt_end_field_id: 11 };
         expect(ganttToViewConfig(fresh, viewConfigToGantt(fresh))).toEqual(fresh);
+    });
+});
+
+describe('B2 — carga de trabajo en la vista', () => {
+    const saved: SavedViewConfig = {
+        filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 5, op: 'eq', value: 'activo' }] },
+        search: 'web',
+        sort: [],
+        workload_person_field_id: 20,
+        workload_start_field_id: 21,
+        workload_end_field_id: 22,
+        workload_metric: 'estimate',
+        workload_estimate_field_id: 23,
+        workload_estimate_unit: 'minutes',
+        workload_zoom: 'day',
+        workload_user_ids: [3, 7],
+        workload_show_unassigned: false,
+        workload_hide_done: false,
+    };
+
+    it('config → ajustes → config deja la vista igual (round-trip) y el schema la acepta', () => {
+        const settings = viewConfigToWorkload(saved);
+        expect(settings).toEqual({
+            personFieldId: 20,
+            startFieldId: 21,
+            endFieldId: 22,
+            metric: 'estimate',
+            estimateFieldId: 23,
+            estimateUnit: 'minutes',
+            zoom: 'day',
+            userIds: [3, 7],
+            showUnassigned: false,
+            hideDone: false,
+        });
+        expect(workloadToViewConfig(saved, settings)).toEqual(saved);
+        expect(parseViewConfig('workload', workloadToViewConfig(saved, settings))).toMatchObject({ workload_user_ids: [3, 7] });
+    });
+
+    it('cambiar un ajuste de la carga no toca filtros ni búsqueda; lo que vuelve al default no deja claves', () => {
+        const next = workloadToViewConfig(saved, { ...viewConfigToWorkload(saved), zoom: 'week', userIds: null, showUnassigned: true, metric: 'count', estimateFieldId: null, hideDone: true });
+        expect(next.filter_tree).toEqual(saved.filter_tree);
+        expect(next.search).toBe('web');
+        expect(next.workload_zoom).toBeUndefined();
+        expect(next.workload_user_ids).toBeUndefined();
+        expect(next.workload_show_unassigned).toBeUndefined();
+        expect(next.workload_metric).toBeUndefined();
+        expect(next.workload_hide_done).toBeUndefined();
+        // Una vista recién creada (persona y fecha) no gana claves al guardarse.
+        const fresh: SavedViewConfig = { workload_person_field_id: 20, workload_start_field_id: 21 };
+        expect(workloadToViewConfig(fresh, viewConfigToWorkload(fresh))).toEqual(fresh);
     });
 });

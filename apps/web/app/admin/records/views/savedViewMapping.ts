@@ -5,6 +5,9 @@ import {
     withCalendarSettings,
     withGanttSettings,
     withKanbanSettings,
+    readWorkloadSettings,
+    withWorkloadSettings,
+    type WorkloadSettings,
     type CalendarSettings,
     type GanttSettings,
     type KanbanSettings,
@@ -284,4 +287,19 @@ export function viewConfigToGantt(config: SavedViewConfig): GanttSettings {
 
 export function ganttToViewConfig(config: SavedViewConfig, settings: GanttSettings): SavedViewConfig {
     return withGanttSettings(config as Record<string, unknown>, settings) as SavedViewConfig;
+}
+
+/**
+ * B2 — Carga de trabajo: la persona, las fechas, qué se mide, la estimación y
+ * su unidad, el zoom, las personas visibles, la fila «Sin asignar» y ocultar
+ * terminados viven en la config con claves `workload_*`. Misma regla que el
+ * kanban y el Gantt: lectura tolerante y la escritura reemplaza SÓLO esas
+ * claves (filtros, búsqueda y demás quedan como estaban).
+ */
+export function viewConfigToWorkload(config: SavedViewConfig): WorkloadSettings {
+    return readWorkloadSettings(config);
+}
+
+export function workloadToViewConfig(config: SavedViewConfig, settings: WorkloadSettings): SavedViewConfig {
+    return withWorkloadSettings(config as Record<string, unknown>, settings) as SavedViewConfig;
 }

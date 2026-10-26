@@ -7,6 +7,7 @@ import {
     Check,
     Columns3,
     GanttChart,
+    Gauge,
     Copy,
     Download,
     FileUp,
@@ -93,7 +94,7 @@ interface ViewSettingsSheetProps {
      * cálculo y columnas no significan nada en kanban, calendario o
      * tarjetas, y ver ahí controles que no hacen nada confunde.
      */
-    viewType: 'table' | 'kanban' | 'calendar' | 'cards' | 'gantt';
+    viewType: 'table' | 'kanban' | 'calendar' | 'cards' | 'gantt' | 'workload';
     wrapText: boolean;
     spreadsheet: boolean;
     onSpreadsheetChange: (next: boolean) => void;
@@ -499,6 +500,16 @@ export function ViewSettingsSheet({
                                     icon={Columns3}
                                     label={__('Tablero')}
                                     value={__('Carriles, totales, tarjetas y reglas')}
+                                    onClick={onConfigureBoard}
+                                />
+                            )}
+
+                            {/* B2 — en la carga, persona, fechas, qué se mide y personas viven en su diálogo. */}
+                            {viewType === 'workload' && onConfigureBoard && (
+                                <RowButton
+                                    icon={Gauge}
+                                    label={__('Carga de trabajo')}
+                                    value={__('Persona, fechas, qué se mide y quién se ve')}
                                     onClick={onConfigureBoard}
                                 />
                             )}
