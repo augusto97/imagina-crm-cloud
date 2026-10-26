@@ -9123,6 +9123,59 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         specs de correo, MCP, OAuth y entrada 107/107; verificado en vivo
         (un millón de elementos → 413 en 48 ms, MCP real por HTTP con token).
 
+  - [x] **Aprobaciones (v0.1.309, ADR-S63, opción C5 del estudio con su
+        disparador y su acción, segunda entrega de la fase 3)**: flujos de
+        aprobación por lista (Ajustes de la lista → **Aprobaciones**) con
+        **pasos en serie** —cada uno lo aprueba el campo Persona del registro,
+        un rol o personas puntuales, en modo «cualquiera aprueba» o «todos
+        aprueban»—, los campos que se ponen al **aprobar** y al **rechazar**
+        (Estado = Aprobado / Rechazado), «se puede pedir otra vez tras un
+        rechazo» y «quien pide no aprueba lo suyo» (por defecto). Migración
+        0083: `approval_flows`, `approval_requests` (copia de la config al
+        pedir: cambiar el flujo no altera las pendientes; una pendiente por
+        flujo y registro) y `approval_decisions`, con RLS. **Pedir** desde la
+        ficha (modal, página y bloque «Aprobación» de la ficha diseñada; sin el
+        bloque, la sección va sola bajo la cabecera para que el aviso nunca
+        quede escondido) o desde una automatización; **decidir** en la ficha
+        («Pendiente de tu aprobación» con Aprobar / Rechazar / Devolver; los dos
+        últimos con motivo), en **Mi trabajo → Aprobaciones** (con contador) o
+        desde el **correo**, cuyos botones llevan a una pantalla de la app que
+        confirma con la sesión (si no hay, login y vuelve): nada se decide con
+        un enlace ni en un GET, así un correo reenviado no aprueba nada. El
+        servidor re-chequea en cada decisión que la persona sea aprobadora del
+        PASO ACTUAL —resuelto en vivo: si cambió el «Jefe», decide el de ahora—
+        y que pueda ver el registro; las decisiones son concurrentes-seguras
+        (`FOR UPDATE` + el paso que se vio → 409 `approval_step_changed`; en
+        «todos» se encolan). Avisos `approval` (campana y correo, encendido por
+        defecto), actividad en lenguaje claro («aprobó el paso 1 de 2»,
+        «rechazó: Falta la factura») y bitácora. Campo derivado
+        **«Aprobación»** (estado de la última solicitud por subconsulta
+        correlacionada con índice `(record_id, id DESC)`): filtra, ordena,
+        agrupa, exporta y entra en tableros; indicador en la fila y en la
+        tarjeta del kanban. Automatizaciones: disparador **«Cuando se aprueba o
+        se rechaza»** (por flujo y resultado), acción **«Pedir aprobación»** y
+        paso **«Esperar aprobación»** sobre la espera durable de ADR-S47 (tope
+        de días → «vencida»), «Resultado de la aprobación» en las condiciones,
+        `{{aprobacion.resultado|flujo|motivo|decidio}}` y «Probar» que simula
+        las tres. Papelera: borrar el registro cancela sus pendientes (disparador
+        de base) y restaurarlo no las revive. Asistente/MCP: `get_list_schema`
+        describe los flujos, `propose_configure_approval_flow`,
+        `list_approval_requests` y las automatizaciones nuevas; **decidir no se
+        expone** (aprobar dinero con un token no corresponde). Viaja en la
+        migración de empresa; las plantillas de lista no llevan flujos. Equipos
+        como aprobador: el tipo existe, validado, y se resuelve en un solo punto
+        (`resolveApprovers` + `setTeamMembersResolver`); se conecta al integrar
+        Equipos. **Bugs atrapados en el E2E**: un `DISTINCT ON … AS id … ORDER
+        BY id DESC` ordenaba por el alias y la «última» solicitud salía al
+        azar; y drizzle escribía `"id"` sin tabla dentro de la subconsulta del
+        campo derivado (correlacionaba con la solicitud, no con el registro).
+        14 tests de API, 8 del front y 8 de shared + E2E navegador 54/54 con 5
+        personas y correo real a un SMTP de prueba (dos pasos, «todos» que
+        cierra con el segundo, 403 a quien no es aprobador también por API,
+        doble clic → 409, rechazo con motivo, devolver y volver a pedir,
+        enlace del correo sin sesión → login → confirmar, filtro «Pendiente»,
+        automatización con espera → si/sino, celular y oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

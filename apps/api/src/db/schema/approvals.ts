@@ -43,7 +43,7 @@ export type ApprovalFlowRow = typeof approvalFlows.$inferSelect;
  * COPIA de la configuración del flujo al pedir: cambiar el flujo no altera las
  * pendientes. A lo sumo una pendiente por registro y flujo (índice único
  * parcial). Un registro que va a la papelera cancela sus pendientes (trigger
- * `records_approvals_trash`, migración 0086).
+ * `records_approvals_trash`, migración 0083).
  */
 export const approvalRequests = pgTable(
     'approval_requests',
