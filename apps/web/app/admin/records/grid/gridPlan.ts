@@ -114,6 +114,9 @@ export function cellWriteBlock(
             return __('Se calcula sola');
         case 'ai':
             return __('La completa la IA');
+        // C5 — el estado lo escribe el flujo de aprobación.
+        case 'approval':
+            return __('Lo pone el flujo de aprobación');
         // v0.1.300 — los pone la app (al crear o modificar el registro).
         case 'autonumber':
             return __('El ID lo asigna la app');

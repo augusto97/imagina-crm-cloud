@@ -34,7 +34,9 @@ export type FieldTypeSlug =
     // Campo «Botón» (A5): acciones al presionarlo, sin valor.
     | 'button'
     // Fórmulas (A1): se calcula sola con una fórmula en español.
-    | 'formula';
+    | 'formula'
+    // C5 — estado de la última solicitud de aprobación (derivado, sólo lectura).
+    | 'approval';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

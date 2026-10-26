@@ -77,6 +77,8 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
     if (field.type === 'created_at' || field.type === 'updated_at' || field.type === 'created_by' || field.type === 'updated_by') {
         return <FieldValueDisplay field={asDisplayField(field)} value={value} />;
     }
+    // C5 — estado de la aprobación: chip con el color del estado.
+    if (field.type === 'approval') return <FieldValueDisplay field={asDisplayField(field)} value={value} />;
 
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground/60">—</span>;

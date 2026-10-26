@@ -67,6 +67,13 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                     <Chip label={__('En pausa')} color="amber" />
                 </div>
             );
+        case 'approval':
+            return (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Chip label={__('Pendiente')} color="amber" />
+                    <Chip label={__('Aprobada')} color="green" />
+                </div>
+            );
         case 'multi_select':
             return (
                 <Row>

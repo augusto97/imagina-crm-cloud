@@ -1585,7 +1585,9 @@ const GroupHeaderButton = forwardRef<
         stuck: boolean;
         level: 0 | 1;
     }
->(function GroupHeaderButton({ field, bucket, isOpen, onToggle, top, stuck, level }, ref) {
+>(function GroupHeaderButton({ field: rawField, bucket, isOpen, onToggle, top, stuck, level }, ref) {
+    // C5 — el estado de la aprobación agrupa como una selección (chip con color).
+    const field = rawField.type === 'approval' ? asDisplayField(rawField) : rawField;
     const labelText = formatBucketLabel(field, bucket.value);
     const fieldOptions = field.type === 'select' || field.type === 'multi_select' ? extractFieldOptions(field) : [];
     const multiValues = field.type === 'multi_select' ? parseMultiBucket(bucket.value) : null;
@@ -1822,7 +1824,7 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
     // exactamente lo que muestra la celda.
     if (field.type === 'rollup') return formatBucketLabel(rollupDisplayField(field), value);
     // Fórmulas (A1): como el tipo de su resultado (sí/no, fecha…).
-    if (field.type === 'formula') return formatBucketLabel(asDisplayField(field), value);
+    if (field.type === 'formula' || field.type === 'approval') return formatBucketLabel(asDisplayField(field), value);
     // v0.1.291 — el tiempo registrado agrupa por minutos: se lee como duración.
     if (field.type === 'time_tracked') {
         const n = Number(value);

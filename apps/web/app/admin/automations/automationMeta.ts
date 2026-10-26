@@ -15,12 +15,14 @@ import {
     Webhook,
     BadgeDollarSign,
     ClipboardList,
+    ClipboardCheck,
     MousePointerClick,
+    Stamp,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
 
-import { describeWait, scheduleParts } from '@imagina-base/shared';
+import { APPROVAL_STATUS_LABELS, describeWait, describeWaitApproval, readApprovalTriggerResults, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -90,6 +92,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Al presionar el botón',
         description: 'Dispara cuando alguien presiona un campo «Botón» de un registro de esta lista.',
     },
+    // C5 — aprobaciones.
+    approval_resolved: {
+        icon: ClipboardCheck,
+        title: 'Cuando se aprueba o se rechaza',
+        description: 'Dispara cuando una solicitud de aprobación de esta lista se aprueba, se rechaza, se devuelve o se cancela.',
+    },
 };
 
 export const ACTION_META: Record<string, StepMeta> = {
@@ -134,6 +142,17 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: Hourglass,
         title: 'Esperar',
         description: 'Pausa el flujo unos minutos, horas o días, o hasta una fecha del registro; después sigue con los pasos de abajo.',
+    },
+    // C5 — aprobaciones: pedir una y esperar a que alguien decida.
+    request_approval: {
+        icon: Stamp,
+        title: 'Pedir aprobación',
+        description: 'Pide el visto bueno con un flujo de aprobación de la lista: les llega el aviso a quienes aprueban el primer paso.',
+    },
+    wait_approval: {
+        icon: ClipboardCheck,
+        title: 'Esperar aprobación',
+        description: 'Pausa el flujo hasta que alguien aprueba, rechaza o devuelve la solicitud (con un tope de días opcional); después usa el resultado en un «Si / Si no».',
     },
     for_each_linked: {
         icon: Repeat,
@@ -260,6 +279,14 @@ export function summarizeTrigger(
             return __('Cuando un cliente paga un link de cobro');
         case 'form_submitted':
             return __('Cuando alguien envía un formulario');
+        case 'approval_resolved': {
+            const results = readApprovalTriggerResults(config).map((r) => APPROVAL_STATUS_LABELS[r].toLowerCase());
+            return sprintf(
+                /* translators: %s: resultados («aprobada o rechazada») */
+                __('Cuando una solicitud de aprobación queda %s'),
+                results.length <= 1 ? (results[0] ?? '') : `${results.slice(0, -1).join(', ')} ${__('o')} ${results[results.length - 1]}`,
+            );
+        }
         case 'button_pressed': {
             const id = typeof config.button_field_id === 'number' ? config.button_field_id : 0;
             const button = id > 0 ? fields.find((f) => f.id === id) : undefined;
@@ -311,6 +338,12 @@ export function summarizeAction(
             const slug = typeof cfg.date_field === 'string' ? cfg.date_field : '';
             return describeWait(cfg, slug !== '' ? fieldLabel(fields, slug) : undefined);
         }
+        case 'request_approval': {
+            const note = typeof cfg.note === 'string' && cfg.note.trim() !== '' ? ` · «${cfg.note.trim().slice(0, 60)}»` : '';
+            return `${__('Pide una aprobación')}${note}`;
+        }
+        case 'wait_approval':
+            return describeWaitApproval(cfg);
         case 'for_each_linked': {
             const relId = Number(cfg.relation_field_id);
             const path = (relationPaths ?? []).find((p) => p.relation_field_id === relId);

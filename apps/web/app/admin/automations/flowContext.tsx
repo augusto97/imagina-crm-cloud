@@ -18,6 +18,8 @@ import type { MergeTagSection } from './MergeTagInput';
 
 export interface AutomationFlowValue {
     actions: ActionSpec[];
+    /** C5 — el disparador (las condiciones ofrecen «Resultado de la aprobación»). */
+    triggerType?: string;
     /** Cuerpos de respuestas reales por ruta del paso (`2.then.0`). */
     samples: Record<string, unknown>;
     setSample: (path: string, body: unknown) => void;

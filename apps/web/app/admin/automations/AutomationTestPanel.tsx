@@ -1,10 +1,22 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, CheckCircle2, CircleDashed, FlaskConical, Info, Loader2, MinusCircle, Play, Search, X, XCircle } from 'lucide-react';
-import type { AutomationTestRunInput, AutomationTestRunResult, AutomationTestStep, ConditionCheck } from '@imagina-base/shared';
+import {
+    APPROVAL_RESULT_LABELS,
+    APPROVAL_RESULTS,
+    type ApprovalResult,
+    type AutomationTestRunInput,
+    type AutomationTestRunResult,
+    type AutomationTestStep,
+    type ConditionCheck,
+} from '@imagina-base/shared';
+
+import { actionsUseApprovals } from '@/admin/approvals/approvalAutomation';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import {
     Sheet,
     SheetBody,
@@ -60,6 +72,9 @@ export function AutomationTestPanel(props: AutomationTestPanelProps): JSX.Elemen
     const [real, setReal] = useState<Set<string>>(new Set());
     const [result, setResult] = useState<AutomationTestRunResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // C5 — con qué resultado se simula una aprobación (disparador o «Esperar aprobación»).
+    const usesApprovals = props.triggerType === 'approval_resolved' || actionsUseApprovals(props.actions);
+    const [approvalResult, setApprovalResult] = useState<ApprovalResult | ''>('');
 
     const execute = async (realSteps: Set<string> = real): Promise<void> => {
         setError(null);
@@ -72,6 +87,7 @@ export function AutomationTestPanel(props: AutomationTestPanelProps): JSX.Elemen
                 ...(recordId ? { record_id: recordId } : {}),
                 ...(props.automationId ? { automation_id: props.automationId } : {}),
                 real_steps: [...realSteps],
+                ...(usesApprovals && approvalResult !== '' ? { approval_result: approvalResult } : {}),
             });
             setResult(out);
             if (Object.keys(out.responses ?? {}).length > 0) props.onResponses(out.responses);
@@ -107,6 +123,21 @@ export function AutomationTestPanel(props: AutomationTestPanelProps): JSX.Elemen
                             setRecordLabel(label);
                         }}
                     />
+                    {usesApprovals && (
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="imcrm-test-approval-result">
+                            <Label htmlFor="imcrm-test-approval-result">{__('Probar como si la aprobación quedara')}</Label>
+                            <Select
+                                id="imcrm-test-approval-result"
+                                value={approvalResult}
+                                onChange={(e) => setApprovalResult(e.target.value as ApprovalResult | '')}
+                            >
+                                <option value="">{__('Como la última solicitud del registro (o aprobada)')}</option>
+                                {APPROVAL_RESULTS.map((r) => (
+                                    <option key={r} value={r}>{APPROVAL_RESULT_LABELS[r]}</option>
+                                ))}
+                            </Select>
+                        </div>
+                    )}
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                         <Button onClick={() => void execute()} disabled={run.isPending} className="imcrm-gap-1.5" data-testid="imcrm-test-run">
                             {run.isPending ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <Play className="imcrm-h-4 imcrm-w-4" />}

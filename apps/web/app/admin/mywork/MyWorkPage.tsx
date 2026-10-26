@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { AlarmClock, Bell, Check, Eye, EyeOff, ListChecks, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { AlarmClock, Bell, Check, ClipboardCheck, Eye, EyeOff, ListChecks, Loader2, Plus, Trash2, X } from 'lucide-react';
 import type { MyWorkItem, ReminderDto } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -16,8 +16,14 @@ import { cn } from '@/lib/utils';
 
 import { DUE_GROUPS, groupWork } from './myWorkGroups';
 import { ReminderForm } from './ReminderForm';
+import { MyApprovalsTab } from '@/admin/approvals/MyApprovalsTab';
+import { useMyApprovals } from '@/hooks/useApprovals';
 
-type Tab = 'assigned' | 'reminders' | 'following';
+type Tab = 'assigned' | 'approvals' | 'reminders' | 'following';
+
+function readTab(raw: string | null): Tab {
+    return raw === 'reminders' || raw === 'following' || raw === 'approvals' ? raw : 'assigned';
+}
 
 /**
  * v0.1.276 (ADR-S40) — «Mi trabajo»: lo que la persona tiene asignado en
@@ -27,8 +33,10 @@ type Tab = 'assigned' | 'reminders' | 'following';
  */
 export function MyWorkPage(): JSX.Element {
     const [params, setParams] = useSearchParams();
-    const tab: Tab = params.get('tab') === 'reminders' ? 'reminders' : params.get('tab') === 'following' ? 'following' : 'assigned';
+    const tab: Tab = readTab(params.get('tab'));
     const work = useMyWork();
+    // C5 — lo que espera mi aprobación y lo que pedí.
+    const approvals = useMyApprovals();
     const tz = getTenantTimeZone() ?? browserTimeZone() ?? 'UTC';
     const groups = useMemo(() => groupWork(work.data?.assigned ?? [], tz), [work.data, tz]);
 
@@ -41,6 +49,7 @@ export function MyWorkPage(): JSX.Element {
 
     const counts = {
         assigned: work.data?.assigned.length ?? 0,
+        approvals: approvals.data?.pending_count ?? 0,
         reminders: work.data?.reminders.length ?? 0,
         following: work.data?.following.length ?? 0,
     };
@@ -54,7 +63,7 @@ export function MyWorkPage(): JSX.Element {
                         {__('Mi trabajo')}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Lo que tienes asignado en todas las listas, tus recordatorios y lo que sigues.')}
+                        {__('Lo que tienes asignado en todas las listas, lo que espera tu aprobación, tus recordatorios y lo que sigues.')}
                     </p>
                 </div>
                 <Link to="/settings?s=avisos" className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground">
@@ -67,6 +76,7 @@ export function MyWorkPage(): JSX.Element {
                 {(
                     [
                         ['assigned', __('Asignado a mí'), ListChecks],
+                        ['approvals', __('Aprobaciones'), ClipboardCheck],
                         ['reminders', __('Recordatorios'), AlarmClock],
                         ['following', __('Siguiendo'), Eye],
                     ] as const
@@ -85,12 +95,26 @@ export function MyWorkPage(): JSX.Element {
                     >
                         <Icon className="imcrm-h-4 imcrm-w-4" />
                         {label}
-                        {work.data && <span className="imcrm-rounded-full imcrm-bg-muted imcrm-px-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">{counts[key]}</span>}
+                        {work.data && (
+                            <span
+                                className={cn(
+                                    'imcrm-rounded-full imcrm-px-1.5 imcrm-text-[11px]',
+                                    key === 'approvals' && counts.approvals > 0
+                                        ? 'imcrm-bg-amber-500/15 imcrm-font-medium imcrm-text-amber-800 dark:imcrm-text-amber-300'
+                                        : 'imcrm-bg-muted imcrm-text-muted-foreground',
+                                )}
+                                data-testid={`my-work-count-${key}`}
+                            >
+                                {counts[key]}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
 
-            {work.isLoading ? (
+            {tab === 'approvals' ? (
+                <MyApprovalsTab query={approvals} />
+            ) : work.isLoading ? (
                 <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
                     <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
                     {__('Cargando…')}

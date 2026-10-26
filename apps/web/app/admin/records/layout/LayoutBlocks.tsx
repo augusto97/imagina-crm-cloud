@@ -28,6 +28,7 @@ import {
     User,
     type LucideIcon,
     Timer,
+    ClipboardCheck,
     GitBranch,
 } from 'lucide-react';
 import {
@@ -49,6 +50,7 @@ import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
+import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
 import { CommentsThreadBlock } from '@/portal/blocks/CommentsThreadBlock';
@@ -102,6 +104,7 @@ const TYPE_ICONS: Partial<Record<string, LucideIcon>> = {
     time_tracking: Timer,
     description: AlignLeft,
     dependencies: GitBranch,
+    approval: ClipboardCheck,
 };
 
 function blockIcon(block: LayoutBlock): LucideIcon | null {
@@ -240,6 +243,8 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
             return __('Tiempo registrado');
         case 'dependencies':
             return __('Dependencias');
+        case 'approval':
+            return __('Aprobación');
         default:
             return null;
     }
@@ -358,6 +363,10 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
                     hideHeading
                 />
             );
+        case 'approval':
+            // C5 — las aprobaciones son del equipo: el portal no las muestra.
+            if (ctx.mode === 'portal') return null;
+            return <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} readOnly={ctx.preview === true} hideHeading />;
         case 'subtasks':
             if (ctx.mode === 'portal') return null;
             return (

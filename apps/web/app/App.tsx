@@ -29,6 +29,8 @@ import { useRealtime } from '@/cloud/useRealtime';
 const RecordPage = lazyWithReload(() => import('@/admin/records/RecordPage').then(m => ({ default: m.RecordPage })));
 const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(m => ({ default: m.FolderPage })));
 const MyWorkPage = lazyWithReload(() => import('@/admin/mywork/MyWorkPage').then(m => ({ default: m.MyWorkPage })));
+// C5 — la pantalla a la que llevan los botones Aprobar / Rechazar del correo.
+const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/ApprovalConfirmPage').then(m => ({ default: m.ApprovalConfirmPage })));
 const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
@@ -95,6 +97,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="my-work" element={
                     <Suspense fallback={<RouteFallback />}><MyWorkPage /></Suspense>
+                } />
+                <Route path="approvals/:approvalId" element={
+                    <Suspense fallback={<RouteFallback />}><ApprovalConfirmPage /></Suspense>
                 } />
                 <Route path="favorites" element={
                     <Suspense fallback={<RouteFallback />}><FavoritesPage /></Suspense>

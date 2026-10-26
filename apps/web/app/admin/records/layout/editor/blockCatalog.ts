@@ -35,6 +35,7 @@ import {
     Wallet,
     Activity,
     Timer,
+    ClipboardCheck,
     GitBranch,
     type LucideIcon,
 } from 'lucide-react';
@@ -227,6 +228,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Lo que bloquea a este registro y lo que él bloquea, con su estado.'),
         icon: GitBranch,
         create: () => block('dependencies'),
+    },
+    {
+        key: 'approval',
+        type: 'approval',
+        category: 'record',
+        label: __('Aprobación'),
+        description: __('Pedir aprobación, «Pendiente de tu aprobación» con Aprobar / Rechazar / Devolver y el historial.'),
+        icon: ClipboardCheck,
+        create: () => block('approval'),
     },
     // Vinculados
     related('related_table', 'table', __('Tabla de vinculados'), __('Los registros de otra lista vinculados a éste.'), Table2),

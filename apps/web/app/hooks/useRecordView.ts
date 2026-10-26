@@ -15,6 +15,7 @@ import { api, cloudRecordsMeta, mapRecord, normalizeDates, primeFieldMap, type F
 import type { RecordsQuery } from '@/types/record';
 
 import { activityKeys, toEntity, type ActivityDtoWire } from './useActivity';
+import { approvalKeys } from './useApprovals';
 import { commentsKeys, fromApiComment } from './useComments';
 import { fieldsKeys } from './useFields';
 import { listsKeys } from './useLists';
@@ -89,6 +90,8 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.relation_paths) qc.setQueryData(['relation-paths', lid], b.relation_paths);
     // v0.1.291 — registro de tiempo: viaja en el mismo bundle (sin otra request).
     if (b.time) qc.setQueryData(timeKeys.forRecord(lid, recordId), b.time);
+    // C5 — aprobaciones: flujos disponibles y solicitudes del registro.
+    if (b.approvals) qc.setQueryData(approvalKeys.forRecord(lid, recordId), b.approvals);
     // A8 — dependencias («bloqueado por» / «bloquea»): la sección no sale a pedirlas.
     if (b.dependencies) qc.setQueryData(dependencyKeys.forRecord(lid, recordId), b.dependencies);
     if (b.comments) {

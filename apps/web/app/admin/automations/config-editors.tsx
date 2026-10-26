@@ -57,7 +57,14 @@ import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
 import { ActionTypeMenu } from './ActionTypeMenu';
 import { ifElseDepth, insideLoop, type SeqPath } from './actionsTree';
-import { LoopItemProvider, StepScope, useLoopItem, useRememberSample, useStepPath } from './flowContext';
+import { LoopItemProvider, StepScope, useAutomationFlow, useLoopItem, useRememberSample, useStepPath } from './flowContext';
+import {
+    ApprovalTriggerConfig,
+    RequestApprovalConfig,
+    WaitApprovalConfig,
+    actionsUseApprovals,
+    approvalResultConditionField,
+} from '@/admin/approvals/approvalAutomation';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -158,6 +165,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
     // button_pressed: sólo un botón; sin él, cualquier botón de la lista.
     if (typeof c.button_field_id === 'number' && c.button_field_id > 0) out.button_field_id = c.button_field_id;
+    // C5 — approval_resolved: un flujo (sin él, cualquiera) y los resultados.
+    if (typeof c.approval_flow_id === 'number' && c.approval_flow_id > 0) out.approval_flow_id = c.approval_flow_id;
+    if (Array.isArray(c.results) && c.results.length > 0) out.results = c.results;
     // v0.1.288 — programado «para cada registro que cumpla…».
     if (c.for_each_record === true) {
         out.for_each_record = true;
@@ -187,6 +197,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que puedes avisarle al equipo, contestarle a quien lo llenó o completar campos. Puedes usar {{formulario.nombre}}.');
         case 'button_pressed':
             return __('Se ejecuta cuando alguien presiona un campo «Botón» de un registro de esta lista (en la tabla, la ficha o el portal, si el botón lo permite). Sirve para tareas que se hacen a pedido: enviar una cotización, avisar al equipo, crear la factura. Puedes usar {{boton.nombre}} y {{boton.persona}}.');
+        case 'approval_resolved':
+            return __('Se ejecuta cuando una solicitud de aprobación de esta lista se resuelve: alguien la aprueba (en el último paso), la rechaza, la devuelve para corregir o la cancela. Puedes usar {{aprobacion.resultado}}, {{aprobacion.flujo}}, {{aprobacion.motivo}} y {{aprobacion.decidio}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
@@ -286,8 +298,15 @@ export function TriggerConfigEditor({
             {triggerType === 'form_submitted' && <FormSubmittedConfig config={config} onChange={onChange} />}
 
             {triggerType === 'button_pressed' && <ButtonPressedConfig config={config} onChange={onChange} fields={fields} />}
+
+            {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
         </div>
     );
+}
+
+/** C5 — el disparador de aprobaciones (vive en `approvals/approvalAutomation`). */
+function ApprovalTriggerConfigHost({ config, onChange }: { config: TriggerConfig; onChange: (next: TriggerConfig) => void }): JSX.Element {
+    return <ApprovalTriggerConfig listId={useAutomationListId()} config={config} onChange={onChange} />;
 }
 
 /** Campo «Botón» — qué botón dispara (o cualquiera de la lista). */
@@ -1045,7 +1064,7 @@ export function excludedActionsAt(seqPath: SeqPath): string[] {
     const out: string[] = [];
     if (ifElseDepth(seqPath) >= 4) out.push('if_else', 'for_each_linked');
     // Dentro de un bucle no se espera ni se repite otra vez.
-    if (insideLoop(seqPath)) out.push('wait', 'for_each_linked');
+    if (insideLoop(seqPath)) out.push('wait', 'wait_approval', 'for_each_linked');
     return [...new Set(out)];
 }
 
@@ -1203,6 +1222,10 @@ export function ActionConfigEditor({
                 />
             ) : spec.type === 'wait' ? (
                 <WaitConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'request_approval' ? (
+                <RequestApprovalHost spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'wait_approval' ? (
+                <WaitApprovalHost spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'for_each_linked' ? (
                 <ForEachLinkedConfig spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
             ) : (
@@ -1212,7 +1235,7 @@ export function ActionConfigEditor({
             {/* La condición a-nivel-acción no aplica a if_else (la lógica
                  de branch ya vive dentro de su propio config.condition) ni a
                  «Esperar», que tiene su «continuar sólo si…». */}
-            {spec.type !== 'if_else' && spec.type !== 'wait' && (
+            {spec.type !== 'if_else' && spec.type !== 'wait' && spec.type !== 'wait_approval' && (
                 <ActionConditionEditor spec={spec} onChange={onChange} fields={fields} />
             )}
         </div>
@@ -2565,13 +2588,38 @@ function WebhookTestReport({ result }: { result: WebhookTestResult }): JSX.Eleme
  */
 function useConditionFields(fields: FieldEntity[]): FieldEntity[] {
     const item = useLoopItem();
+    const flow = useAutomationFlow();
+    const listId = useAutomationListId();
+    // C5 — después de «Esperar aprobación» (o en el disparador de una
+    // aprobación) se puede preguntar por el resultado.
+    const approvals = flow !== null && (flow.triggerType === 'approval_resolved' || actionsUseApprovals(flow.actions));
     return useMemo(() => {
-        if (!item) return fields;
+        const base = approvals ? [...fields, approvalResultConditionField(listId ?? 0)] : fields;
+        if (!item) return base;
         const extra = item.fields
             .filter((f) => f.type !== 'relation')
             .map((f) => ({ ...f, slug: `item.${f.slug}`, label: `${item.listName} · ${f.label}` }));
-        return [...fields, ...extra];
-    }, [fields, item]);
+        return [...base, ...extra];
+    }, [fields, item, approvals, listId]);
+}
+
+/** C5 — «Pedir aprobación» (la nota admite variables). */
+function RequestApprovalHost({ spec, onChange, fields }: ActionConfigEditorProps): JSX.Element {
+    return (
+        <RequestApprovalConfig
+            listId={useAutomationListId()}
+            spec={spec}
+            onChange={onChange}
+            renderNote={(value, set) => (
+                <MergeTagInput value={value} onChange={set} fields={fields} rows={2} autoGrow placeholder={__('Por ejemplo: gasto de {{monto|moneda}} de {{solicitante.nombre}}')} />
+            )}
+        />
+    );
+}
+
+/** C5 — «Esperar aprobación». */
+function WaitApprovalHost({ spec, onChange }: ActionConfigEditorProps): JSX.Element {
+    return <WaitApprovalConfig listId={useAutomationListId()} spec={spec} onChange={onChange} insideLoop={useLoopItem() !== null} />;
 }
 
 const WAIT_UNIT_LABELS: Record<(typeof WAIT_UNITS)[number], string> = {

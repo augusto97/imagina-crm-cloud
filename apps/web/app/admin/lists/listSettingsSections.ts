@@ -1,4 +1,4 @@
-import { ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -22,7 +22,8 @@ export type ListSettingsSectionId =
     | 'permisos'
     | 'compartir'
     | 'documentos'
-    | 'formularios';
+    | 'formularios'
+    | 'aprobaciones';
 
 export interface ListSettingsSection {
     id: ListSettingsSectionId;
@@ -94,6 +95,14 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: ClipboardList,
         title: __('Formularios'),
         description: __('Una página que cualquiera puede llenar —o que insertas en tu sitio— y cada respuesta llega como un registro nuevo.'),
+    },
+    {
+        // C5 — flujos de aprobación (pasos en serie, qué se pone al resolver).
+        id: 'aprobaciones',
+        label: __('Aprobaciones'),
+        icon: ClipboardCheck,
+        title: __('Aprobaciones'),
+        description: __('Quién tiene que dar el visto bueno a un registro, en qué orden, y qué cambia cuando se aprueba o se rechaza.'),
     },
 ];
 

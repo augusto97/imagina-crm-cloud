@@ -14,6 +14,8 @@ export interface RecordEntity {
      * el listado y los bundles (sin pedidos por fila).
      */
     blocked_by_open?: number;
+    /** C5 — solicitudes de aprobación pendientes (indicador de la fila y la tarjeta). */
+    approval_pending?: number;
     /** A8 — sólo en la respuesta de una edición: los que se corrieron por la reprogramación en cadena. */
     rescheduled?: number[];
     created_by: number;
@@ -199,6 +201,8 @@ export const GROUPABLE_FIELD_TYPES = [
     'created_by',
     'updated_by',
     'autonumber',
+    // C5 — el estado de la aprobación agrupa como una selección.
+    'approval',
 ] as const;
 
 export type GroupableFieldType = (typeof GROUPABLE_FIELD_TYPES)[number];
