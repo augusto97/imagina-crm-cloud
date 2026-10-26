@@ -59,6 +59,8 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'ai', label: 'Campo con IA', description: 'Resume, clasifica, extrae o traduce a partir de otros campos (también PDF e imágenes).', supportsUnique: false },
     // v0.1.291.
     { slug: 'time_tracked', label: 'Tiempo registrado', description: 'Suma el tiempo cargado en el registro (cronómetro y entradas a mano).', supportsUnique: false },
+    // A9.
+    { slug: 'checklist_progress', label: 'Progreso del checklist', description: 'Porcentaje de ítems hechos en los checklists del registro.', supportsUnique: false },
     // v0.1.300 — ID automático y columnas de sistema.
     { slug: 'autonumber', label: 'ID automático', description: 'Un código que se asigna solo al crear cada registro: TCK-0001, PED-2026-0042.', supportsUnique: false },
     { slug: 'created_at', label: 'Fecha de creación', description: 'Cuándo se creó el registro. Se llena solo.', supportsUnique: false },
@@ -75,7 +77,7 @@ const ENTRIES: CatalogEntry[] = [
 const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>([
     'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
     'created_at', 'updated_at', 'created_by', 'updated_by', 'formula',
-    'button', 'approval',
+    'button', 'approval', 'checklist_progress',
 ]);
 
 /**
@@ -93,6 +95,8 @@ export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set([
     'formula',
     // C5 — el estado de la aprobación lo escribe el flujo, no la persona.
     'approval',
+    // A9 — progreso de los checklists.
+    'checklist_progress',
 ]);
 
 /** v0.1.300 — Columnas de sistema (metadata del registro). */
@@ -109,6 +113,8 @@ export function displayTypeOf(type: string): FieldTypeSlug {
     if (type === 'autonumber') return 'text';
     // C5 — el estado de la aprobación se ve y se filtra como una selección.
     if (type === 'approval') return 'select';
+    // A9 — el progreso del checklist se muestra como un porcentaje.
+    if (type === 'checklist_progress') return 'percent';
     return type as FieldTypeSlug;
 }
 
@@ -129,6 +135,8 @@ export function asDisplayField<T extends { type: string }>(field: T): T {
         const config = (field as { config?: Record<string, unknown> }).config ?? {};
         return { ...field, type: 'select', config: { ...config, options: APPROVAL_FIELD_OPTIONS } };
     }
+    // A9 — progreso del checklist: porcentaje entero, sin config propia.
+    if (field.type === 'checklist_progress') return { ...field, type: 'percent', config: {} };
     const t = displayTypeOf(field.type);
     return t === field.type ? field : { ...field, type: t };
 }

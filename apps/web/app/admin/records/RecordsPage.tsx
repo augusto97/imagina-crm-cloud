@@ -4,6 +4,8 @@ import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
+    BookmarkPlus,
+    ChevronDown,
     Download,
     FileUp,
     Filter,
@@ -22,6 +24,8 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -30,6 +34,7 @@ import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { useRecord, useRecords } from '@/hooks/useRecords';
 import { useSavedViews, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { canSearchClientSide, clientSideSearch } from '@/lib/clientSearch';
 import { isImageUrlField } from '@/lib/imageProxy';
 import { parseMultiBucket } from '@/lib/multiBucket';
@@ -358,6 +363,8 @@ export function RecordsPage(): JSX.Element {
     const [createDefaults, setCreateDefaults] = useState<Record<string, unknown> | undefined>(undefined);
     // Padre del alta en curso: si viene, el registro nace como subtarea suya.
     const [createParentId, setCreateParentId] = useState<number | null>(null);
+    // C6 — «Nuevo registro ▾ → Desde una plantilla».
+    const [createTemplateId, setCreateTemplateId] = useState<number | null>(null);
     const [importOpen, setImportOpen] = useState(false);
     // v0.1.216 — edición masiva (selección o todo lo que coincide con la vista).
     const [bulkEditOpen, setBulkEditOpen] = useState(false);
@@ -412,6 +419,8 @@ export function RecordsPage(): JSX.Element {
     const canCsvUpdate = useCan(CAP.IMPORT_RECORDS) && (canEditAny || canEditOwn) && (!storeMarker || storeMarker.write_back === true);
     const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
+    // C6 — plantillas de registro de la lista (el «▾» junto a «Nuevo registro»).
+    const recordTemplates = useRecordTemplates(canCreateRecords ? list.data?.id : undefined, 'record').data ?? [];
     const canDeleteAny = useCan(CAP.DELETE_RECORDS);
     const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
     // Reestructurar (mover/duplicar/borrar) no aplica a las listas de la tienda:
@@ -1166,20 +1175,70 @@ const applyView = (view: SavedViewEntity | null): void => {
                                 <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
                             </Button>
                             {canCreateRecords && (
-                                <Button
-                                    size="sm"
-                                    onClick={() => {
-                                        setCreateDefaults(undefined);
-                                        setCreateParentId(null);
-                                        setCreateOpen(true);
-                                    }}
-                                    disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-shrink-0 imcrm-gap-1.5"
-                                    aria-label={__('Nuevo registro')}
-                                >
-                                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    <span className="imcrm-hidden sm:imcrm-inline">{__('Nuevo registro')}</span>
-                                </Button>
+                                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => {
+                                            setCreateDefaults(undefined);
+                                            setCreateParentId(null);
+                                            setCreateTemplateId(null);
+                                            setCreateOpen(true);
+                                        }}
+                                        disabled={!fields.data || fields.data.length === 0}
+                                        className={cn('imcrm-shrink-0 imcrm-gap-1.5', recordTemplates.length > 0 && 'imcrm-rounded-r-none')}
+                                        aria-label={__('Nuevo registro')}
+                                    >
+                                        <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        <span className="imcrm-hidden sm:imcrm-inline">{__('Nuevo registro')}</span>
+                                    </Button>
+                                    {recordTemplates.length > 0 && (
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    size="sm"
+                                                    className="imcrm-shrink-0 imcrm-rounded-l-none imcrm-border-l imcrm-border-primary-foreground/25 imcrm-px-1.5"
+                                                    aria-label={__('Nuevo registro desde una plantilla')}
+                                                    title={__('Desde una plantilla')}
+                                                    data-testid="imcrm-new-from-template"
+                                                >
+                                                    <ChevronDown className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            {/* Al cerrar, el foco NO vuelve al «▾»: el alta se abre en
+                                                ese mismo click y el diálogo se cerraría por «foco afuera». */}
+                                            <DropdownMenuContent align="end" className="imcrm-w-64" onCloseAutoFocus={(e) => e.preventDefault()}>
+                                                <DropdownMenuLabel>{__('Desde una plantilla')}</DropdownMenuLabel>
+                                                {recordTemplates.map((t) => (
+                                                    <DropdownMenuItem
+                                                        key={t.id}
+                                                        onSelect={() => {
+                                                            setCreateDefaults(undefined);
+                                                            setCreateParentId(null);
+                                                            setCreateTemplateId(t.id);
+                                                            // El alta se abre cuando el menú ya soltó el foco:
+                                                            // abierto en el mismo tick, la trampa de foco del
+                                                            // menú le roba el cursor al título y queda en «Cerrar»
+                                                            // (un espacio al escribir el nombre cerraba el alta).
+                                                            window.setTimeout(() => setCreateOpen(true), 0);
+                                                        }}
+                                                        data-testid="imcrm-new-from-template-item"
+                                                    >
+                                                        <BookmarkPlus className="imcrm-mr-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                                                        <span className="imcrm-truncate">{t.name}</span>
+                                                    </DropdownMenuItem>
+                                                ))}
+                                                {canManageList && (
+                                                    <>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem asChild>
+                                                            <Link to={`/lists/${list.data.slug}/edit?s=plantillas`}>{__('Administrar plantillas…')}</Link>
+                                                        </DropdownMenuItem>
+                                                    </>
+                                                )}
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </div>
@@ -1721,6 +1780,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onOpenChange={setCreateOpen}
                         initialValues={createDefaults}
                         parentId={createParentId}
+                        templateId={createTemplateId}
                     />
 
                     <RecordDetailDrawer

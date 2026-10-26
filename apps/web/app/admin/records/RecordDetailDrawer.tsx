@@ -58,6 +58,8 @@ import { RecordSubtasks } from './RecordSubtasks';
 import { isCloseCancelled } from './dependencies/closeGuard';
 import { RecordDependencies } from './dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordChecklists } from './checklists/RecordChecklists';
+import { SaveRecordAsTemplateButton } from './templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, useStoreRules } from './storeRules';
@@ -444,6 +446,8 @@ export function RecordDetailDrawer({
                                 <>
                                     <RecordFollowControls listId={listId} recordId={record.id} compact />
                                     <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
+                                    {/* C6 — «Guardar como plantilla» (no en listas de una tienda). */}
+                                    {!storeRules && <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />}
                                 </>
                             )}
                             {listSlug !== undefined && (
@@ -595,6 +599,18 @@ export function RecordDetailDrawer({
                                             listSlug={listSlug}
                                             record={record}
                                             fields={fields}
+                                            onOpenRecord={openOther}
+                                            className="imcrm-mt-5"
+                                        />
+                                    )}
+
+                                    {/* A9 — checklists del registro. */}
+                                    {view.ready && (
+                                        <RecordChecklists
+                                            listId={listId}
+                                            recordId={record.id}
+                                            isSubtask={record.parent_id !== null}
+                                            storeManaged={!!storeRules}
                                             onOpenRecord={openOther}
                                             className="imcrm-mt-5"
                                         />

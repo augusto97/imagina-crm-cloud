@@ -64,6 +64,8 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     // «#ERROR» con el motivo; si no, se pinta como el tipo de su resultado.
     if (isFormulaError(value)) return <FormulaErrorBadge message={value.message} />;
     if (field.type === 'formula') return renderCellValue(asDisplayField(field), value);
+    // A9 — el progreso del checklist (0-100) se pinta como un porcentaje.
+    if (field.type === 'checklist_progress') return renderCellValue(asDisplayField(field), value);
     // v0.1.170 — lookup: cada valor vinculado se pinta con el TIPO del campo
     // destino (chips de select con su color, moneda, fecha…); rollup: un
     // número con la precisión/moneda del destino (o fecha en min/max).

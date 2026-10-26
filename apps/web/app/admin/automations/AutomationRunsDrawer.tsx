@@ -208,6 +208,7 @@ const ACTION_LABELS: Record<string, string> = {
     update_field: __('Actualizar campo'),
     create_record: __('Crear registro'),
     generate_pdf: __('Generar PDF'),
+    create_subtasks_from_template: __('Crear subtareas desde una plantilla'),
     bulk_edit: __('Editar en lote'),
     if_else: __('Condición'),
     wait: __('Esperar'),

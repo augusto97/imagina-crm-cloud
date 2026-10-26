@@ -1,20 +1,23 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { AlarmClock, Bell, Check, ClipboardCheck, Eye, EyeOff, ListChecks, Loader2, Plus, Trash2, X } from 'lucide-react';
-import type { MyWorkItem, ReminderDto } from '@imagina-base/shared';
+import { AlarmClock, Bell, Check, ClipboardCheck, Eye, EyeOff, ListChecks, ListTodo, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { MyWorkChecklistItem, MyWorkItem, ReminderDto } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { OptionChip } from '@/admin/records/renderCellValue';
 import { IconSquare } from '@/admin/lists/FolderBadge';
-import { useDeleteReminder, useMyWork, useSetFollow, useUpdateReminder } from '@/hooks/useNotifications';
+import { notificationKeys, useDeleteReminder, useMyWork, useSetFollow, useUpdateReminder } from '@/hooks/useNotifications';
+import { invalidateForList, markLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
+import { api, ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { browserTimeZone, formatDateStr, formatDateTime, formatDateTimeStr, getTenantTimeZone } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
-import { DUE_GROUPS, groupWork } from './myWorkGroups';
+import { DUE_GROUPS, groupChecklistWork, groupWork } from './myWorkGroups';
 import { ReminderForm } from './ReminderForm';
 import { MyApprovalsTab } from '@/admin/approvals/MyApprovalsTab';
 import { useMyApprovals } from '@/hooks/useApprovals';
@@ -39,6 +42,8 @@ export function MyWorkPage(): JSX.Element {
     const approvals = useMyApprovals();
     const tz = getTenantTimeZone() ?? browserTimeZone() ?? 'UTC';
     const groups = useMemo(() => groupWork(work.data?.assigned ?? [], tz), [work.data, tz]);
+    // A9 — los ítems de checklist asignados, en los mismos grupos.
+    const itemGroups = useMemo(() => groupChecklistWork(work.data?.checklist_items ?? [], tz), [work.data, tz]);
 
     const setTab = (t: Tab): void => {
         const next = new URLSearchParams(params);
@@ -48,7 +53,7 @@ export function MyWorkPage(): JSX.Element {
     };
 
     const counts = {
-        assigned: work.data?.assigned.length ?? 0,
+        assigned: (work.data?.assigned.length ?? 0) + (work.data?.checklist_items?.length ?? 0),
         approvals: approvals.data?.pending_count ?? 0,
         reminders: work.data?.reminders.length ?? 0,
         following: work.data?.following.length ?? 0,
@@ -136,7 +141,8 @@ export function MyWorkPage(): JSX.Element {
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                         {DUE_GROUPS.map((g) => {
                             const items = groups.get(g.key) ?? [];
-                            if (items.length === 0) return null;
+                            const checks = itemGroups.get(g.key) ?? [];
+                            if (items.length === 0 && checks.length === 0) return null;
                             return (
                                 <section key={g.key} data-due-group={g.key}>
                                     <h2
@@ -146,12 +152,15 @@ export function MyWorkPage(): JSX.Element {
                                         )}
                                     >
                                         {__(g.label)}
-                                        <span className="imcrm-font-normal">{items.length}</span>
+                                        <span className="imcrm-font-normal">{items.length + checks.length}</span>
                                     </h2>
                                     <Card>
                                         <ul className="imcrm-divide-y imcrm-divide-border">
                                             {items.map((i) => (
                                                 <WorkRow key={`${i.list_id}:${i.record_id}`} item={i} overdue={g.key === 'overdue'} />
+                                            ))}
+                                            {checks.map((i) => (
+                                                <ChecklistWorkRow key={`item:${i.item_id}`} item={i} overdue={g.key === 'overdue'} />
                                             ))}
                                         </ul>
                                     </Card>
@@ -231,6 +240,64 @@ function WorkRow({ item, overdue = false, following = false }: { item: MyWorkIte
                 >
                     <EyeOff className="imcrm-h-3.5 imcrm-w-3.5" />
                 </Button>
+            )}
+        </li>
+    );
+}
+
+/**
+ * A9 — Un ítem de checklist asignado a la persona: se marca HECHO desde aquí
+ * (y sale de la lista); el título lleva a la ficha del registro.
+ */
+function ChecklistWorkRow({ item, overdue = false }: { item: MyWorkChecklistItem; overdue?: boolean }): JSX.Element {
+    const qc = useQueryClient();
+    const toast = useToast();
+    const mark = useMutation({
+        mutationFn: async () => {
+            await api.patch(`/lists/${item.list_slug}/records/${item.record_id}/checklist-items/${item.item_id}`, { done: true });
+        },
+        onSuccess: () => {
+            markLocalRecordsChange(qc, item.list_id);
+            invalidateForList(qc, recordsKeys.all, item.list_id);
+            void qc.invalidateQueries({ queryKey: notificationKeys.work });
+            toast.success(sprintf(__('«%s» quedó hecho'), item.text));
+        },
+        onError: (err) => toast.error(__('No se pudo marcar el ítem'), err instanceof ApiError || err instanceof Error ? err.message : undefined),
+    });
+    const due = item.due ? (item.due_is_datetime ? formatDateTime(new Date(item.due)) : formatDateStr(item.due.slice(0, 10))) : null;
+    // Se marca en el acto (sin esperar la respuesta); si falla, vuelve.
+    const [ticked, setTicked] = useState(false);
+    return (
+        <li className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-px-3 imcrm-py-2.5" data-work-checklist-item={item.item_id}>
+            <input
+                type="checkbox"
+                checked={ticked}
+                disabled={ticked}
+                onChange={() => {
+                    setTicked(true);
+                    mark.mutate(undefined, { onError: () => setTicked(false) });
+                }}
+                className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
+                aria-label={sprintf(__('Marcar «%s» como hecho'), item.text)}
+                data-testid="my-work-checklist-check"
+            />
+            <div className="imcrm-min-w-0 imcrm-flex-1">
+                <p className={cn('imcrm-truncate imcrm-text-sm', ticked && 'imcrm-text-muted-foreground imcrm-line-through')}>{item.text}</p>
+                <p className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
+                    <ListTodo className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0" aria-hidden />
+                    <span className="imcrm-truncate">{item.checklist_name}</span>
+                    <span aria-hidden>·</span>
+                    <Link to={`/lists/${item.list_slug}/records/${item.record_id}`} className="imcrm-truncate hover:imcrm-underline">
+                        {item.record_title}
+                    </Link>
+                    <span aria-hidden>·</span>
+                    <span className="imcrm-truncate">{item.list_name}</span>
+                </p>
+            </div>
+            {due && (
+                <span className={cn('imcrm-shrink-0 imcrm-text-xs imcrm-tabular-nums', overdue ? 'imcrm-font-medium imcrm-text-destructive' : 'imcrm-text-muted-foreground')}>
+                    {due}
+                </span>
             )}
         </li>
     );

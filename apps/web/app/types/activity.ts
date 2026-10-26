@@ -11,6 +11,18 @@ export type ActivityAction =
     // A8 — dependencias: `changes.dependency = {kind, record_id, title}`.
     | 'dependency_added'
     | 'dependency_removed'
+    // A9 — checklists: `changes = {checklist: {id, name}, item?, count?, changes?}`.
+    | 'checklist_created'
+    | 'checklist_updated'
+    | 'checklist_deleted'
+    | 'checklist_items_added'
+    | 'checklist_item_checked'
+    | 'checklist_item_unchecked'
+    | 'checklist_item_updated'
+    | 'checklist_item_deleted'
+    | 'checklist_item_to_subtask'
+    // C6 — `changes = {template: {id, name}, subtasks, checklists}`.
+    | 'record_template_applied'
     | 'record.created'
     | 'record.updated'
     | 'record.deleted'

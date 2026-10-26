@@ -343,7 +343,7 @@ export interface MoveInput {
 }
 
 /** Tipos que no se escriben a mano (no se piden al mover). */
-const NOT_WRITABLE: readonly string[] = ['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'relation', 'file'];
+const NOT_WRITABLE: readonly string[] = ['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'checklist_progress', 'relation', 'file'];
 
 export function planMove(input: MoveInput): MovePlan {
     const { record, groupField, laneField, settings } = input;
@@ -408,7 +408,7 @@ export function formatKanbanValue(field: FieldEntity, n: number): string {
     if (field.type === 'duration' || field.type === 'time_tracked') {
         return formatDuration(Math.round(n), (field.config as { format?: DurationFormat }).format) || '0m';
     }
-    if (field.type === 'percent') return `${formatNumber(n, { maxFrac: 1 })} %`;
+    if (field.type === 'percent' || field.type === 'checklist_progress') return `${formatNumber(n, { maxFrac: 1 })} %`;
     if (field.type === 'currency') {
         const currency = (field.config as { currency?: string }).currency || 'COP';
         const decimals = fieldPrecision(field);

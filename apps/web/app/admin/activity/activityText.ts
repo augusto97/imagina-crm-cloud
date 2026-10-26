@@ -94,6 +94,74 @@ export function dependencyText(entry: ActivityEntity): string {
     return added ? sprintf(__('marcó que está bloqueado por %s'), title) : sprintf(__('quitó que estaba bloqueado por %s'), title);
 }
 
+function quoted(s: unknown, fallback: string): string {
+    return typeof s === 'string' && s !== '' ? `«${s}»` : fallback;
+}
+
+/**
+ * A9 — Una entrada de checklist en lenguaje claro: «marcó «Firmar» como hecho
+ * en «Arranque»», «agregó 3 ítems al checklist «Arranque»»… El backend guarda
+ * `{checklist: {id, name}, item?: {id, text}, count?, items?, changes?}`.
+ */
+export function checklistText(entry: ActivityEntity): string {
+    const c = (entry.changes ?? {}) as {
+        checklist?: { name?: string };
+        item?: { text?: string };
+        count?: number;
+        items?: string[];
+        from?: string;
+        template_id?: number;
+        changes?: Record<string, { from?: unknown; to?: unknown }>;
+    };
+    const list = quoted(c.checklist?.name, __('un checklist'));
+    const item = quoted(c.item?.text, __('un ítem'));
+    switch (entry.action) {
+        case 'checklist_created':
+            if (c.template_id) return sprintf(__('agregó el checklist %s desde una plantilla'), list);
+            return (c.count ?? 0) > 0
+                ? sprintf(__('agregó el checklist %1$s con %2$d ítems'), list, c.count ?? 0)
+                : sprintf(__('agregó el checklist %s'), list);
+        case 'checklist_updated':
+            return sprintf(__('cambió el nombre del checklist %1$s a %2$s'), quoted(c.from, __('sin nombre')), list);
+        case 'checklist_deleted':
+            return sprintf(__('eliminó el checklist %s'), list);
+        case 'checklist_items_added': {
+            const n = c.count ?? c.items?.length ?? 0;
+            if (n === 1 && c.items?.[0]) return sprintf(__('agregó %1$s al checklist %2$s'), quoted(c.items[0], __('un ítem')), list);
+            return sprintf(__('agregó %1$d ítems al checklist %2$s'), n, list);
+        }
+        case 'checklist_item_checked':
+            return sprintf(__('marcó %1$s como hecho en %2$s'), item, list);
+        case 'checklist_item_unchecked':
+            return sprintf(__('desmarcó %1$s en %2$s'), item, list);
+        case 'checklist_item_deleted':
+            return sprintf(__('eliminó %1$s del checklist %2$s'), item, list);
+        case 'checklist_item_to_subtask':
+            return sprintf(__('convirtió %s en subtarea'), item);
+        case 'checklist_item_updated': {
+            const ch = c.changes ?? {};
+            if (ch.text) return sprintf(__('cambió el ítem %1$s a %2$s'), quoted(ch.text.from, __('un ítem')), quoted(ch.text.to, __('un ítem')));
+            if (ch.checklist) return sprintf(__('movió %1$s al checklist %2$s'), item, quoted(ch.checklist.to, __('otro checklist')));
+            if (ch.assignee_id) return ch.assignee_id.to ? sprintf(__('asignó %s a alguien'), item) : sprintf(__('quitó el responsable de %s'), item);
+            if (ch.due) return ch.due.to ? sprintf(__('cambió la fecha de %s'), item) : sprintf(__('quitó la fecha de %s'), item);
+            return sprintf(__('editó %s'), item);
+        }
+        default:
+            return __('actualizó un checklist');
+    }
+}
+
+/** C6 — «creó este registro desde la plantilla «Nuevo cliente» (3 subtareas, 1 checklist)». */
+export function templateAppliedText(entry: ActivityEntity): string {
+    const c = (entry.changes ?? {}) as { template?: { name?: string }; subtasks?: number; checklists?: number };
+    const name = quoted(c.template?.name, __('una plantilla'));
+    const parts: string[] = [];
+    if ((c.subtasks ?? 0) > 0) parts.push(c.subtasks === 1 ? __('1 subtarea') : sprintf(__('%d subtareas'), c.subtasks ?? 0));
+    if ((c.checklists ?? 0) > 0) parts.push(c.checklists === 1 ? __('1 checklist') : sprintf(__('%d checklists'), c.checklists ?? 0));
+    const base = sprintf(__('aplicó la plantilla %s'), name);
+    return parts.length > 0 ? `${base} (${parts.join(', ')})` : base;
+}
+
 /** Lo que guardó un presionado de botón (`diff.button`). */
 export function buttonPressOf(entry: Pick<ActivityEntity, 'changes'>): { label: string; ok: boolean; error: string | null } {
     const raw = (entry.changes as Record<string, unknown> | null | undefined)?.button;
@@ -173,6 +241,20 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         // C5 — aprobaciones: `diff.approval` = {event, flow, step, steps, reason?…}.
         case 'approval':
             return approvalText(entry);
+        // A9 — checklists del registro.
+        case 'checklist_created':
+        case 'checklist_updated':
+        case 'checklist_deleted':
+        case 'checklist_items_added':
+        case 'checklist_item_checked':
+        case 'checklist_item_unchecked':
+        case 'checklist_item_updated':
+        case 'checklist_item_deleted':
+        case 'checklist_item_to_subtask':
+            return checklistText(entry);
+        // C6 — el registro nació de una plantilla.
+        case 'record_template_applied':
+            return templateAppliedText(entry);
         // Campo «Botón»: `diff.button` = {label, ok, error?}.
         case 'button_pressed': {
             const b = buttonPressOf(entry);

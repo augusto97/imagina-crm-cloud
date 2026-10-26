@@ -329,6 +329,14 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                   (t) => matches(t.label) || matches(t.tag) || matches(__('Formulario')),
               )
             : [];
+    // A9 — el checklist que quedó completo (trigger «Cuando se completa un checklist»).
+    const checklistTags =
+        context === 'automation'
+            ? [
+                  { tag: 'checklist.nombre', label: __('Checklist completado'), hint: __('su nombre') },
+                  { tag: 'checklist.items', label: __('Ítems del checklist'), hint: __('cuántos tenía') },
+              ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('Checklist')))
+            : [];
     // Campo «Botón» (trigger «Al presionar el botón»).
     const buttonTags =
         context === 'automation'
@@ -398,6 +406,7 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                 {pdfTags.length > 0 && <Section title={__('Último PDF generado')} items={pdfTags} onPick={onPick} />}
                 {formTags.length > 0 && <Section title={__('Formulario')} items={formTags} onPick={onPick} />}
                 {buttonTags.length > 0 && <Section title={__('Botón')} items={buttonTags} onPick={onPick} />}
+                {checklistTags.length > 0 && <Section title={__('Checklist')} items={checklistTags} onPick={onPick} />}
                 {context === 'automation' && visibleBefore.length > 0 && (
                     <Section
                         title={__('Valor anterior (antes del cambio)')}

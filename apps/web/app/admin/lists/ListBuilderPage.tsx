@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
 import { FormsPanel } from '../forms/FormsPanel';
 import { ApprovalFlowsPanel } from '../approvals/ApprovalFlowsPanel';
+import { RecordTemplatesPanel } from '../records/templates/RecordTemplatesPanel';
 import { AppearancePanel } from './AppearancePanel';
 import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
 import { DangerZonePanel, GeneralPanel } from './GeneralPanel';
@@ -237,6 +238,8 @@ export function ListBuilderPage(): JSX.Element {
                 {active === 'formularios' && (
                     <FormsPanel listId={data.id} listName={data.name} listSettings={data.settings} />
                 )}
+
+                {active === 'plantillas' && <RecordTemplatesPanel listId={data.id} />}
             </div>
         </div>
     );

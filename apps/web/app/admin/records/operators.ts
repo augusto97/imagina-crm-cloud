@@ -162,7 +162,9 @@ export function operatorsForType(
         case 'percent':
         case 'duration':
         case 'time_tracked':
+        case 'checklist_progress':
             // v0.1.291 — `time_tracked`: minutos registrados (subconsulta sobre `time_entries`).
+            // A9 — `checklist_progress`: 0-100 (sin ítems, vacío).
             return NUMERIC;
         case 'date':
         case 'datetime':

@@ -69,7 +69,7 @@ const GROUPABLE_TYPES = [
     'checkbox',
     'user',
     'number', 'currency', 'rating', 'percent', 'duration',
-    'lookup', 'rollup', 'time_tracked',
+    'lookup', 'rollup', 'time_tracked', 'checklist_progress',
     // C5 — el estado de la aprobación (pendientes / aprobadas / rechazadas).
     'approval',
     // v0.1.300 — columnas de sistema: por día/mes de creación, por quien creó…

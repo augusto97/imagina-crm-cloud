@@ -1824,7 +1824,10 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
     // exactamente lo que muestra la celda.
     if (field.type === 'rollup') return formatBucketLabel(rollupDisplayField(field), value);
     // Fórmulas (A1): como el tipo de su resultado (sí/no, fecha…).
-    if (field.type === 'formula' || field.type === 'approval') return formatBucketLabel(asDisplayField(field), value);
+    // C5 — la aprobación como selección; A9 — el progreso del checklist como porcentaje.
+    if (field.type === 'formula' || field.type === 'approval' || field.type === 'checklist_progress') {
+        return formatBucketLabel(asDisplayField(field), value);
+    }
     // v0.1.291 — el tiempo registrado agrupa por minutos: se lee como duración.
     if (field.type === 'time_tracked') {
         const n = Number(value);

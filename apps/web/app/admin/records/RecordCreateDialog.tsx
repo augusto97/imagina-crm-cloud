@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { BookmarkPlus } from 'lucide-react';
+import { jsonbKeyForField } from '@imagina-base/shared';
 
 import { getBootData } from '@/lib/boot';
 import { draftErrors, fieldDefaultsBySlug } from '@/lib/fieldRules';
@@ -14,15 +16,19 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { useCreateRecord } from '@/hooks/useRecords';
+import { useCreateFromTemplate, useRecordTemplates } from '@/hooks/useRecordTemplates';
+import { Select } from '@/components/ui/select';
+import { useToast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
 import { escapeIntent, leaveField } from '@/lib/escapeGuard';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordTitleInput } from './RecordTitleInput';
 import { titleFieldOf } from '@/lib/recordTitle';
+import { describeDate, describePerson, templateSummary } from './templates/templateModel';
 
 interface RecordCreateDialogProps {
     listId: number;
@@ -46,6 +52,11 @@ interface RecordCreateDialogProps {
      * nivel.
      */
     parentId?: number | null;
+    /**
+     * C6 — arrancar con esta plantilla de registro elegida («Nuevo registro ▾
+     * → Desde una plantilla»). Se puede cambiar o quitar en el propio alta.
+     */
+    templateId?: number | null;
 }
 
 /**
@@ -64,8 +75,15 @@ export function RecordCreateDialog({
     onOpenChange,
     initialValues,
     parentId,
+    templateId,
 }: RecordCreateDialogProps): JSX.Element {
     const create = useCreateRecord(listId);
+    const createFrom = useCreateFromTemplate(listId);
+    const toast = useToast();
+    const templates = useRecordTemplates(open ? listId : undefined, 'record');
+    const [tplId, setTplId] = useState<number | null>(null);
+    const template = useMemo(() => (templates.data ?? []).find((t) => t.id === tplId) ?? null, [templates.data, tplId]);
+    const pending = create.isPending || createFrom.isPending;
     const titleField = titleFieldOf(fields);
     const { reset: resetCreate } = create;
     const [values, setValues] = useState<Record<string, unknown>>({});
@@ -90,11 +108,57 @@ export function RecordCreateDialog({
             const seed = { ...fieldDefaultsBySlug(fields, getBootData().user.id), ...(initialValues ?? {}) };
             seededRef.current = seed;
             setValues(seed);
+            setTplId(templateId ?? null);
         }
         // `fields` fuera de las deps a propósito: re-sembrar al llegar un
         // campo nuevo pisaría lo que la persona ya escribió.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, resetCreate, initialValues]);
+    }, [open, resetCreate, initialValues, templateId]);
+
+    // C6 — al elegir una plantilla, sus valores FIJOS se ven puestos en el
+    // formulario (y se pueden cambiar); los dinámicos —fechas relativas,
+    // personas— los resuelve el servidor al crear y se listan aparte. Lo que la
+    // persona ya escribió no se pisa.
+    const tplFixedRef = useRef<Record<string, unknown>>({});
+    useEffect(() => {
+        if (!open) return;
+        const bySlugKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f.slug]));
+        const fixed: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(template?.content.values ?? {})) {
+            const slug = bySlugKey.get(k);
+            if (slug && v.mode === 'fixed' && v.value !== null && v.value !== undefined) fixed[slug] = v.value;
+        }
+        const prevFixed = tplFixedRef.current;
+        tplFixedRef.current = fixed;
+        setValues((cur) => {
+            const next: Record<string, unknown> = { ...cur };
+            // Lo que puso la plantilla anterior (y nadie tocó) vuelve a lo sembrado.
+            for (const [slug, v] of Object.entries(prevFixed)) {
+                if (JSON.stringify(next[slug]) === JSON.stringify(v)) {
+                    if (slug in seededRef.current) next[slug] = seededRef.current[slug];
+                    else delete next[slug];
+                }
+            }
+            for (const [slug, v] of Object.entries(fixed)) {
+                const untouched = next[slug] === undefined || next[slug] === null || next[slug] === '' || JSON.stringify(next[slug]) === JSON.stringify(seededRef.current[slug]);
+                if (untouched) next[slug] = v;
+            }
+            return next;
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [template?.id, open]);
+    /** Lo que la plantilla resuelve al crear (fechas relativas, personas), en lenguaje claro. */
+    const dynamicLines = useMemo(() => {
+        if (!template) return [];
+        const out: string[] = [];
+        for (const [k, v] of Object.entries(template.content.values)) {
+            const f = fields.find((x) => jsonbKeyForField(x.id) === k);
+            if (!f) continue;
+            if (v.mode === 'relative_date') out.push(`${f.label}: ${describeDate(v.date, fields)}`);
+            else if (v.mode === 'person') out.push(`${f.label}: ${describePerson(v.person, fields)}`);
+        }
+        return out;
+    }, [template, fields]);
     // Lo sembrado al abrir (fijo: un «ahora» recalculado en cada render haría
     // creer que la persona escribió algo).
     const seeded = open ? seededRef.current : {};
@@ -104,10 +168,11 @@ export function RecordCreateDialog({
     /** ¿La persona escribió algo (más allá del prefill del grupo)? */
     const typed = Object.entries(values).some(
         ([k, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
-            && JSON.stringify(v) !== JSON.stringify(seeded[k]),
+            && JSON.stringify(v) !== JSON.stringify(seeded[k])
+            && JSON.stringify(v) !== JSON.stringify(tplFixedRef.current[k]),
     );
     const requestClose = async (): Promise<void> => {
-        if (typed && !create.isPending) {
+        if (typed && !pending) {
             const ok = await confirm({
                 title: __('¿Descartar el registro nuevo?'),
                 description: __('Lo que escribiste todavía no se guardó.'),
@@ -133,7 +198,31 @@ export function RecordCreateDialog({
             return;
         }
         try {
-            await create.mutateAsync(parentId != null ? { values, parentId } : values);
+            if (template) {
+                // C6 — el registro, sus subtareas y sus checklists en UNA
+                // transacción; lo escrito en el alta pisa lo de la plantilla.
+                const tplFixed = tplFixedRef.current;
+                const typedValues: Record<string, unknown> = {};
+                for (const [slug, v] of Object.entries(values)) {
+                    // El prefill del grupo (o del vínculo) viaja siempre.
+                    if (initialValues && slug in initialValues) {
+                        typedValues[slug] = v;
+                        continue;
+                    }
+                    // Lo que puso la plantilla, o un valor por defecto que nadie
+                    // tocó, NO viaja: el servidor resuelve la plantilla (y sus
+                    // fechas relativas) y aplica los valores por defecto.
+                    if (slug in tplFixed && JSON.stringify(tplFixed[slug]) === JSON.stringify(v)) continue;
+                    if (slug in seeded && JSON.stringify(seeded[slug]) === JSON.stringify(v)) continue;
+                    typedValues[slug] = v;
+                }
+                const res = await createFrom.mutateAsync({ template_id: template.id, fields: typedValues, parent_id: parentId ?? null });
+                if (res.result.warnings?.length) {
+                    toast.warning(sprintf(__('Se creó desde «%s», con avisos'), template.name), res.result.warnings.slice(0, 3).join(' '));
+                }
+            } else {
+                await create.mutateAsync(parentId != null ? { values, parentId } : values);
+            }
             onOpenChange(false);
         } catch (err) {
             if (err instanceof ApiError) {
@@ -200,6 +289,41 @@ export function RecordCreateDialog({
                                     {__('Registro')}
                                 </span>
 
+                                {/* C6 — desde una plantilla: valores, subtareas y checklists de una vez. */}
+                                {(templates.data ?? []).length > 0 && (
+                                    <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2" data-testid="imcrm-create-template">
+                                        <label className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                            <BookmarkPlus className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                                            <span className="imcrm-font-medium">{__('Plantilla')}</span>
+                                            <Select
+                                                value={tplId ?? ''}
+                                                onChange={(e) => setTplId(e.target.value === '' ? null : Number(e.target.value))}
+                                                className="imcrm-h-8 imcrm-w-auto imcrm-min-w-[12rem]"
+                                                data-testid="imcrm-create-template-select"
+                                            >
+                                                <option value="">{__('Sin plantilla')}</option>
+                                                {(templates.data ?? []).map((t) => (
+                                                    <option key={t.id} value={t.id}>
+                                                        {t.name}
+                                                    </option>
+                                                ))}
+                                            </Select>
+                                        </label>
+                                        {template && (
+                                            <div className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-create-template-summary">
+                                                <p>{sprintf(__('Trae: %s.'), templateSummary(template))}</p>
+                                                {dynamicLines.length > 0 && (
+                                                    <ul className="imcrm-mt-0.5 imcrm-list-disc imcrm-pl-4">
+                                                        {dynamicLines.map((l) => (
+                                                            <li key={l}>{l}</li>
+                                                        ))}
+                                                    </ul>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {/* v0.1.136 — el título del alta ya no es un
                                     cartel fijo: se escribe aquí y va al campo
                                     primario, igual que en la ficha. */}
@@ -251,8 +375,8 @@ export function RecordCreateDialog({
                                 <Button type="button" variant="outline" onClick={() => void requestClose()}>
                                     {__('Cancelar')}
                                 </Button>
-                                <Button type="submit" disabled={create.isPending}>
-                                    {create.isPending ? __('Creando…') : __('Crear registro')}
+                                <Button type="submit" disabled={pending} data-testid="imcrm-create-submit">
+                                    {pending ? __('Creando…') : template ? __('Crear desde la plantilla') : __('Crear registro')}
                                 </Button>
                             </SheetFooter>
                         </form>

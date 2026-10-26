@@ -116,6 +116,9 @@ export function recordsPathKind(path: string): 'list' | 'item' | null {
     return null;
 }
 
+/** C6 — `POST /lists/:l/records/from-template` (alta desde una plantilla de registro). */
+const FROM_TEMPLATE_RE = /\/lists\/[^/]+\/records\/from-template$/;
+
 /** Segmento `:listIdOrSlug` de un path `/lists/<key>/...`. */
 export function listKeyFromPath(path: string): string | null {
     const m = path.match(/\/lists\/([^/]+)/);
@@ -327,6 +330,8 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         // C5 — solicitudes de aprobación pendientes (indicador de la fila).
         ...(typeof r.approval_pending === 'number' && r.approval_pending > 0 ? { approval_pending: r.approval_pending } : {}),
         ...(Array.isArray(r.rescheduled) ? { rescheduled: r.rescheduled } : {}),
+        // A9 — progreso de los checklists (sólo si el registro tiene ítems).
+        ...(isChecklistProgress(r.checklist) ? { checklist: { done: r.checklist.done, total: r.checklist.total } } : {}),
         created_by: r.created_by,
         // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,
         // herencia del plugin WP). El backend nuevo devuelve ISO con 'Z' → la
@@ -334,6 +339,10 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         created_at: stripZ(r.created_at),
         updated_at: stripZ(r.updated_at),
     };
+}
+
+function isChecklistProgress(v: unknown): v is { done: number; total: number } {
+    return typeof v === 'object' && v !== null && typeof (v as { done?: unknown }).done === 'number' && typeof (v as { total?: unknown }).total === 'number';
 }
 
 /**
@@ -405,6 +414,14 @@ async function normalizeCloudResponse<T>(
         // v0.1.187 — con `page` el backend devuelve el total real y la UI
         // pagina de verdad; sin `page` la tanda se sirve como una sola página.
         return { data: rows as T, meta: cloudRecordsMeta(env.meta, rows.length) };
+    }
+
+    // C6 — alta desde una plantilla: `{ data: registro, meta }` con el registro
+    // en claves f{id} (como el alta de siempre).
+    if (method === 'POST' && FROM_TEMPLATE_RE.test(path)) {
+        const map = await ensureFieldMap(listKeyFromPath(path) ?? '');
+        const env = (payload ?? {}) as { data?: unknown; meta?: Record<string, unknown> };
+        return { data: mapRecord(env.data, map) as T, meta: env.meta };
     }
 
     // Bundles de la vista agrupada y del kanban (los registros ya vienen por
@@ -505,6 +522,13 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
         if (recordsPathKind(path) !== null) {
             const map = await ensureFieldMap(listKeyFromPath(path) ?? '');
             payload = mapRecordBody(opts.body, map);
+        } else if (FROM_TEMPLATE_RE.test(path)) {
+            // C6 — alta desde una plantilla: `fields` por slug → `data` por f{id},
+            // conservando `template_id` y `parent_id`.
+            const map = await ensureFieldMap(listKeyFromPath(path) ?? '');
+            const { fields: _f, data: _d, ...rest } = opts.body as Record<string, unknown>;
+            const mapped = mapRecordBody(opts.body, map) as { data?: Record<string, unknown> };
+            payload = { ...rest, data: mapped.data ?? {} };
         }
         body = JSON.stringify(payload);
     }

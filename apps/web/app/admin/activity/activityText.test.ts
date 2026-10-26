@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FieldEntity } from '@/types/field';
 import type { ActivityEntity } from '@/types/activity';
 
-import { actionText, actorOf, buttonPressOf, changeSentence, changesOf, formatActivityValue, summarizeActivity } from './activityText';
+import { actionText, actorOf, buttonPressOf, changeSentence, changesOf, checklistText, formatActivityValue, summarizeActivity, templateAppliedText } from './activityText';
 
 const field = (over: Partial<FieldEntity> & { id: number; slug: string }): FieldEntity =>
     ({
@@ -144,5 +144,29 @@ describe('actividad del campo «Botón»', () => {
         expect(buttonPressOf(entry({ action: 'button_pressed', changes: {} })).label).toBe('un botón');
         // El diff del botón no se lee como cambios de campos.
         expect(changesOf(ok, FIELDS)).toEqual([]);
+    });
+});
+
+describe('A9 / C6 · actividad de checklists y plantillas', () => {
+    const e = (action: string, changes: Record<string, unknown>): ActivityEntity => entry({ action, changes });
+
+    it('cada acción de checklist se lee en lenguaje claro', () => {
+        expect(checklistText(e('checklist_created', { checklist: { id: 1, name: 'Arranque' }, count: 3 }))).toBe('agregó el checklist «Arranque» con 3 ítems');
+        expect(checklistText(e('checklist_item_checked', { checklist: { id: 1, name: 'Arranque' }, item: { id: 2, text: 'Firmar' } }))).toBe('marcó «Firmar» como hecho en «Arranque»');
+        expect(checklistText(e('checklist_items_added', { checklist: { id: 1, name: 'Arranque' }, count: 1, items: ['Llamar'] }))).toBe('agregó «Llamar» al checklist «Arranque»');
+        expect(checklistText(e('checklist_item_updated', { checklist: { id: 1, name: 'A' }, item: { id: 2, text: 'X' }, changes: { text: { from: 'X', to: 'Y' } } }))).toBe('cambió el ítem «X» a «Y»');
+        expect(checklistText(e('checklist_item_to_subtask', { checklist: { id: 1, name: 'A' }, item: { id: 2, text: 'Diseño' }, subtask_id: 9 }))).toBe('convirtió «Diseño» en subtarea');
+    });
+
+    it('actionText las enruta (y no cae en «actualizó este registro»)', () => {
+        const x = e('checklist_item_unchecked', { checklist: { id: 1, name: 'A' }, item: { id: 2, text: 'B' } });
+        expect(changesOf(x, FIELDS)).toEqual([]);
+        expect(actionText(x, 0)).toBe('desmarcó «B» en «A»');
+    });
+
+    it('el registro que nació de una plantilla dice cuál y qué trajo', () => {
+        expect(templateAppliedText(e('record_template_applied', { template: { id: 4, name: 'Nuevo cliente' }, subtasks: 3, checklists: 1 }))).toBe(
+            'aplicó la plantilla «Nuevo cliente» (3 subtareas, 1 checklist)',
+        );
     });
 });

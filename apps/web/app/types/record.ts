@@ -16,6 +16,8 @@ export interface RecordEntity {
     blocked_by_open?: number;
     /** C5 — solicitudes de aprobación pendientes (indicador de la fila y la tarjeta). */
     approval_pending?: number;
+    /** A9 — progreso de los checklists (el «☑ 3/8» de la fila). Sólo si el registro tiene ítems. */
+    checklist?: { done: number; total: number };
     /** A8 — sólo en la respuesta de una edición: los que se corrieron por la reprogramación en cadena. */
     rescheduled?: number[];
     created_by: number;
@@ -195,6 +197,8 @@ export const GROUPABLE_FIELD_TYPES = [
     'rollup',
     // v0.1.291 — el tiempo registrado (minutos) agrupa como número.
     'time_tracked',
+    // A9 — el progreso del checklist (0-100) agrupa como número.
+    'checklist_progress',
     // v0.1.300 — columnas de sistema (las fechas, por día) y el ID automático.
     'created_at',
     'updated_at',

@@ -112,6 +112,8 @@ export function cellWriteBlock(
         case 'rollup':
         case 'time_tracked':
             return __('Se calcula sola');
+        case 'checklist_progress':
+            return __('Sale de los checklists del registro');
         case 'ai':
             return __('La completa la IA');
         // C5 — el estado lo escribe el flujo de aprobación.

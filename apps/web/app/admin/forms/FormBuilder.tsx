@@ -53,6 +53,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
@@ -344,6 +345,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             fields={fields}
             captcha={captcha.data ?? null}
             dataConsent={dataConsent.data ?? null}
+            listId={listId}
         />
     );
     const preview = (
@@ -1004,7 +1006,9 @@ function SettingsInspector({
     fields,
     captcha,
     dataConsent,
+    listId,
 }: {
+    listId: number;
     draft: Draft;
     setName: (name: string) => void;
     config: FormConfig;
@@ -1016,6 +1020,8 @@ function SettingsInspector({
 }): JSX.Element {
     const s = config.settings;
     const set = (patch: Partial<FormConfig['settings']>): void => onChange(updateSettings(config, patch));
+    // C6 — el registro que crea el formulario puede salir de una plantilla.
+    const recordTemplates = useRecordTemplates(listId, 'record');
     const emails = emailQuestions(fields, config);
     const emailId = s.respondent_email_field_id !== null && emails.some((f) => f.id === s.respondent_email_field_id) ? s.respondent_email_field_id : null;
     /** Confirmar el correo: la pregunta queda obligatoria, visible y sin condición. */
@@ -1071,6 +1077,31 @@ function SettingsInspector({
                 </Field>
                 <Check label={__('Ofrecer «Enviar otra respuesta»')} checked={s.allow_another} onChange={(v) => set({ allow_another: v })} />
             </Section>
+
+            {((recordTemplates.data ?? []).length > 0 || s.record_template_id !== null) && (
+                <Section title={__('Registro que se crea')}>
+                    <Field
+                        label={__('Desde una plantilla')}
+                        hint={__('El registro nace con los valores, las subtareas y los checklists de la plantilla; lo que responde la persona pisa los valores.')}
+                    >
+                        <Select
+                            value={s.record_template_id === null ? '' : String(s.record_template_id)}
+                            onChange={(e) => set({ record_template_id: e.target.value === '' ? null : Number(e.target.value) })}
+                            data-testid="form-record-template"
+                        >
+                            <option value="">{__('Sin plantilla')}</option>
+                            {(recordTemplates.data ?? []).map((t) => (
+                                <option key={t.id} value={t.id}>
+                                    {t.name}
+                                </option>
+                            ))}
+                            {s.record_template_id !== null &&
+                                !(recordTemplates.data ?? []).some((t) => t.id === s.record_template_id) &&
+                                !recordTemplates.isLoading && <option value={s.record_template_id}>{__('Plantilla eliminada')}</option>}
+                        </Select>
+                    </Field>
+                </Section>
+            )}
 
             <Section title={__('Cuándo recibe respuestas')}>
                 <Field label={__('Hasta el día')} hint={__('Vacío = sin fecha de cierre.')}>

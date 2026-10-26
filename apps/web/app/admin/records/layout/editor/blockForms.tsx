@@ -41,7 +41,7 @@ export interface FormProps {
     set: (patch: Record<string, unknown>) => void;
 }
 
-const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked']);
+const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked', 'checklist_progress']);
 const isNumeric = (f: FieldEntity): boolean =>
     NUMERIC.has(f.type)
     // Fórmulas (A1): las que el servidor compila a SQL y dan un número.

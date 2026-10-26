@@ -23,6 +23,8 @@ function displayField(field: FieldEntity | undefined): FieldEntity | undefined {
     if (field.type === 'rollup') return rollupDisplayField(field);
     // Fórmulas (A1): como el tipo de su resultado (moneda, porcentaje…).
     if (field.type === 'formula') return asDisplayField(field);
+    // A9 — progreso del checklist: porcentaje.
+    if (field.type === 'checklist_progress') return asDisplayField(field);
     return field;
 }
 

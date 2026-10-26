@@ -1,4 +1,4 @@
-import { ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { BookmarkPlus, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -23,7 +23,8 @@ export type ListSettingsSectionId =
     | 'compartir'
     | 'documentos'
     | 'formularios'
-    | 'aprobaciones';
+    | 'aprobaciones'
+    | 'plantillas';
 
 export interface ListSettingsSection {
     id: ListSettingsSectionId;
@@ -103,6 +104,14 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: ClipboardCheck,
         title: __('Aprobaciones'),
         description: __('Quién tiene que dar el visto bueno a un registro, en qué orden, y qué cambia cuando se aprueba o se rechaza.'),
+    },
+    {
+        // C6 / A9 — plantillas de registro y de checklist.
+        id: 'plantillas',
+        label: __('Plantillas'),
+        icon: BookmarkPlus,
+        title: __('Plantillas de registro y de checklist'),
+        description: __('Un registro que nace con sus valores, sus subtareas y sus checklists de una vez, y checklists listos para agregar a cualquier registro.'),
     },
 ];
 

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ArrowRightLeft, ClipboardCheck, ExternalLink, Lock, MoreHorizontal, Rows3 } from 'lucide-react';
+import { ArrowRightLeft, ClipboardCheck, ExternalLink, ListTodo, Lock, MoreHorizontal, Rows3 } from 'lucide-react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { colorVar, type OptionColor } from '@/components/ui/color-picker';
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
-import { blockedTitle } from '../RecordNameCell';
+import { blockedTitle, checklistTitle } from '../RecordNameCell';
 import { formatKanbanValue } from './kanbanModel';
 
 export interface MoveTarget {
@@ -162,6 +162,20 @@ function KanbanCardImpl({
                             data-testid="imcrm-kanban-card-approval"
                         >
                             <ClipboardCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </span>
+                    )}
+                    {/* A9 — progreso de los checklists. */}
+                    {record.checklist && record.checklist.total > 0 && (
+                        <span
+                            title={checklistTitle(record.checklist.done, record.checklist.total)}
+                            className={cn(
+                                'imcrm-mt-0.5 imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-tabular-nums',
+                                record.checklist.done === record.checklist.total ? 'imcrm-text-emerald-600 dark:imcrm-text-emerald-400' : 'imcrm-text-muted-foreground',
+                            )}
+                            data-testid="imcrm-kanban-card-checklist"
+                        >
+                            <ListTodo className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            {record.checklist.done}/{record.checklist.total}
                         </span>
                     )}
                     {lockReason !== null && (
