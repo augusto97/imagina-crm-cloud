@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.315** (WhatsApp Business oficial; segunda entrega de la fase 5), en `main`.
+versión publicada: **v0.1.316** (mesa de ayuda por correo y SLA; con ella la fase 5 queda completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
@@ -391,7 +391,8 @@ versión publicada: **v0.1.315** (WhatsApp Business oficial; segunda entrega de 
   (Equipos, Roles e invitados, Agenda). F3 quedó en `docs/ideas.md`.
   **Avance**: (1) publicada en v0.1.314 (migración 0088). (3) WhatsApp terminó
   antes que (2) y se publicó primero, en **v0.1.315** (migración 0089); la mesa
-  de ayuda va con la 0090 y cierra la fase 5. Para no romper el orden de
+  de ayuda salió en **v0.1.316** (migración 0090) y con ella la **fase 5 queda
+  completa**. Para no romper el orden de
   Drizzle (no aplica una migración con `when` menor que la última aplicada),
   los números se reasignaron al integrar: WhatsApp 0089 (…230), mesa de ayuda
   0090 (…240), agentes de IA 0091 (…250).
@@ -726,6 +727,29 @@ versión publicada: **v0.1.315** (WhatsApp Business oficial; segunda entrega de 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.316** — **Mesa de ayuda por correo + SLA y
+  escalamiento** (ADR-S70, opciones D2 y E5; tercera entrega → **fase 5
+  completa**). Un buzón de soporte por lista leído por IMAP (Ajustes de la
+  lista → «Correo entrante»: presets Gmail/Outlook/Zoho con contraseña de
+  aplicación, «Probar conexión» que dice en qué paso falla). Cada correo nuevo
+  crea un ticket y las respuestas del cliente se suman por In-Reply-To o por el
+  número del asunto; el equipo contesta desde la ficha con respuestas guardadas
+  y firma, por el correo de la empresa. SLA en horas hábiles (festivos de
+  Colombia, zona de la empresa) con pausas, columnas guardadas que nadie edita a
+  mano, avisos «en riesgo» y «vencido» una vez por objetivo (aviso `sla` por
+  campana, correo y push) y escalamiento. Disparadores «Cuando llega un correo»
+  y «Cuando un SLA está en riesgo o se vence», acción «Responder por correo al
+  hilo» y plantilla «Mesa de ayuda / Tickets». Migración 0090; dependencias
+  nuevas `imapflow` y `mailparser` (audit de producción sin avisos nuevos).
+  Decisiones: lectura en sólo lectura (EXAMINE) y desde que se conecta (los
+  correos viejos no crean tickets); columnas del SLA guardadas, no derivadas; el
+  acuse automático no cuenta como primera respuesta; con el límite del plan o en
+  solo-lectura el correo espera en el buzón y se abre un Problema; el buzón no
+  viaja en plantillas ni duplicados y migra sin contraseña. API 1625 en verde y
+  E2E 57/57 + 9/9 contra un IMAP y un SMTP de prueba. **Anotado en
+  `docs/ideas.md`**: OAuth para IMAP, horario por equipo, Problemas que no miran
+  la papelera, la lista fija de tipos de aviso por correo y el PATCH de
+  `settings` que reemplaza el objeto entero.
 - **2026-10-26 · v0.1.315** — **WhatsApp Business oficial** (ADR-S69, opción
   D3; segunda entrega de la fase 5, publicada antes que la mesa de ayuda porque
   terminó primero). Cada empresa conecta SU cuenta de la Cloud API de Meta
