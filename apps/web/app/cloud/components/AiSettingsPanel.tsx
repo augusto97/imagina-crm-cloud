@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TenantAiSettings } from '@imagina-base/shared';
+import type { AiEffort, TenantAiSettings } from '@imagina-base/shared';
 import { KeyRound, Sparkles } from 'lucide-react';
 
 import { api, useSession } from '@/cloud/session';
+import { AiEffortSelect } from '@/cloud/components/AiEffortSelect';
 import { AiModelSelect } from '@/cloud/components/AiModelSelect';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { describeModelChoice } from '@/lib/aiModels';
+import { describeModelChoice, effortLabel, effortLevelsForChoice } from '@/lib/aiModels';
 import { CloudApiError } from '@/lib/cloud/client';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 
 /**
  * Card "Asistente IA" de Ajustes del WORKSPACE (ADR-S21). Tres decisiones
@@ -37,6 +38,7 @@ export function AiSettingsPanel(): JSX.Element | null {
 
     const [enabled, setEnabled] = useState(false);
     const [model, setModel] = useState<string>('');
+    const [effort, setEffort] = useState<AiEffort | ''>('');
     const [apiKey, setApiKey] = useState('');
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
@@ -45,6 +47,7 @@ export function AiSettingsPanel(): JSX.Element | null {
         if (!s) return;
         setEnabled(s.enabled);
         setModel(s.model ?? '');
+        setEffort(s.effort ?? '');
         setApiKey('');
     }, [q.data]);
 
@@ -61,6 +64,8 @@ export function AiSettingsPanel(): JSX.Element | null {
                 enabled,
                 model: model === '' ? null : model,
                 ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
+                // v0.1.306 — el esfuerzo sólo se elige con clave propia (el servidor lo exige).
+                ...(effortEditable ? { effort: effort === '' ? null : effort } : {}),
             }),
         onSuccess: () => {
             setNotice({ kind: 'ok', text: __('Configuración guardada.') });
@@ -87,6 +92,10 @@ export function AiSettingsPanel(): JSX.Element | null {
     const platformOff = s && !s.platform.enabled;
     const needsOwnKey = s && !s.platform.share_platform_key;
     const byokAllowed = s?.platform.allow_tenant_keys ?? true;
+    // Con la clave propia (guardada, o tipeándola ahora) la empresa elige su esfuerzo.
+    const effortEditable = !!s && (s.effort_editable || (byokAllowed && apiKey.trim() !== ''));
+    const platformEffort = s?.platform.default_effort ?? 'medium';
+    const effectiveModel = model === '' ? (s?.platform.default_model ?? '') : model;
 
     return (
         <Card data-testid="imcrm-ai-settings">
@@ -140,6 +149,23 @@ export function AiSettingsPanel(): JSX.Element | null {
                     }
                     hint={__('Con «el más reciente» el asistente pasa solo a cada modelo nuevo que publique Anthropic.')}
                     testId="imcrm-ai-model"
+                />
+
+                <AiEffortSelect
+                    id="ai-effort"
+                    value={effortEditable ? effort : ''}
+                    onChange={setEffort}
+                    levels={effectiveModel ? effortLevelsForChoice(effectiveModel, models.data) : null}
+                    inheritLabel={sprintf(/* translators: %s: effort level */ __('El de la plataforma (%s)'), effortLabel(platformEffort))}
+                    inheritedValue={platformEffort}
+                    disabled={!effortEditable}
+                    disabledNote={
+                        byokAllowed
+                            ? __('Con la clave de la plataforma se usa el nivel que fija la plataforma. Para elegir otro, carga la clave propia de la empresa.')
+                            : __('La plataforma fija el nivel de esfuerzo.')
+                    }
+                    hint={__('Cuánto piensa el asistente antes de responder. Más esfuerzo da respuestas más cuidadas en pedidos complejos, pero más lentas y con más consumo de tu clave.')}
+                    testId="imcrm-ai-effort"
                 />
 
                 <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-p-3">

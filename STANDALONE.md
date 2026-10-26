@@ -888,7 +888,8 @@ conversación en Redis por usuario y empresa (24 h) con historial para el
 modelo y transcript para la UI. SSE por `reply.hijack()` de Fastify. El
 modelo se elige por plataforma con override por empresa; desde v0.1.305 la
 lista sale del catálogo del proveedor y la elección por defecto es «el más
-reciente» de la familia más capaz (ADR-S60).
+reciente» de la familia más capaz (ADR-S60). Desde v0.1.306 el nivel de
+esfuerzo también se elige (ADR-S61).
 
 **Consecuencias.** El asistente no puede hacer NADA que la persona no pueda
 hacer desde la interfaz, y todo lo que hace queda como una acción de esa
@@ -3804,6 +3805,48 @@ release (justo lo que el usuario pidió evitar); alias del proveedor tipo
 vinculación de pensamiento (depende de un beta y de qué modelos lo aceptan;
 quitar el pensamiento de turnos terminados funciona con todos).
 
+### ADR-S61 — Nivel de esfuerzo del asistente: lo fija quien paga la clave (v0.1.306)
+
+**Contexto.** El asistente pedía siempre esfuerzo `medium` (ADR-S60). La API
+ofrece cinco niveles (`low`, `medium`, `high`, `xhigh`, `max`): más esfuerzo da
+respuestas más cuidadas en pedidos complejos, pero más lentas y con más tokens.
+No todos los modelos aceptan todos los niveles. Y la cuota mensual del plan
+cuenta PEDIDOS, no tokens: si una empresa que usa la clave de la plataforma
+eligiera `max`, el costo extra lo pagaría el operador sin que la cuota lo note.
+
+**Decisión.**
+1. **La plataforma fija el nivel** (`platform:ai.effort`, default `medium`, el
+   comportamiento anterior). Vale para toda empresa que habla con la clave de
+   la plataforma.
+2. **Una empresa elige el suyo sólo mientras usa su propia clave**
+   (`tenants.settings.ai.effort`, `null` = el de la plataforma). Guardarlo sin
+   clave propia usable responde 400 `ai_effort_requires_own_key`; se valida
+   contra el estado resultante, así cargar la clave y elegir el nivel en el
+   mismo guardado vale. Si después quita la clave (o la plataforma deja de
+   permitir claves propias), lo guardado se conserva pero se ignora: manda el
+   de la plataforma.
+3. **Se ofrecen sólo los niveles del modelo**: el catálogo trae
+   `capabilities.effort.<nivel>` y se guarda `effort_levels`. Sin ese detalle se
+   asume el juego habitual (sin «muy alto»). Un nivel que el modelo no tiene se
+   ajusta al más cercano y, ante un empate, al menor (`clampAiEffort`), y la
+   interfaz lo avisa. Un modelo sin esfuerzo no lo recibe y el selector lo dice.
+4. **El tope de salida crece con el esfuerzo** (16k / 24k / 32k): el
+   pensamiento cuenta dentro del tope.
+5. Los campos con IA siguen en `low` (una respuesta corta por registro) y el
+   botón «Probar» también; ambos se ajustan al nivel más cercano si el modelo
+   no tiene `low`.
+
+**Consecuencias.** El operador controla su gasto; la empresa que paga su clave
+decide su calidad. Cambiar el nivel invalida la caché del prompt de la
+conversación en curso (es un parámetro de primer nivel), igual que cambiar el
+modelo. El estado del asistente informa el nivel efectivo (`effort`), y el
+panel lo muestra junto al modelo.
+
+**Alternativas descartadas.** Dejar que toda empresa elija (el operador
+pagaría el esfuerzo alto con la cuota contando igual); contar tokens en la
+cuota (cambia el modelo comercial de ADR-S21 y no era el pedido); un nivel por
+persona (la decisión de costo es de quien paga la clave, no de cada usuario).
+
 ---
 
-**Versión del documento:** 1.102.0 (modelos del asistente detectados solos)
+**Versión del documento:** 1.103.0 (nivel de esfuerzo del asistente)

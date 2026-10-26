@@ -12,6 +12,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { describeProviderError } from './ai-model-catalog.service';
 import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
 import { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from './assistant.service';
+import { effortParam } from './model-params';
 
 const testSchema = z.object({
     /** Probar ESTA clave (antes de guardarla). Vacío = la guardada / del env. */
@@ -84,7 +85,7 @@ export class PlatformAiController {
                 model: model.id,
                 // Margen para el pensamiento (en algunos modelos no se puede apagar).
                 max_tokens: 256,
-                ...(model.caps.effort ? { output_config: { effort: 'low' as const } } : {}),
+                ...effortParam('low', model.caps),
                 messages: [{ role: 'user', content: 'Responde sólo "ok".' }],
             });
             const text = res.content.find((b) => b.type === 'text');

@@ -1,4 +1,4 @@
-import type { AiModelCaps } from '@imagina-base/shared';
+import { clampAiEffort, type AiEffort, type AiModelCaps } from '@imagina-base/shared';
 
 /**
  * Cómo se le pide a cada modelo que piense (ADR-S60). Se decide por lo que el
@@ -9,14 +9,33 @@ import type { AiModelCaps } from '@imagina-base/shared';
  */
 
 /**
- * Asistente: pensamiento adaptativo con esfuerzo `medium` — resuelve pedidos
- * de estructura, no problemas abiertos; la latencia importa más que exprimirlo.
+ * Asistente: pensamiento adaptativo con el esfuerzo que eligió la plataforma
+ * (o la empresa con su clave; ADR-S61). Por defecto `medium`: resuelve
+ * pedidos de estructura, no problemas abiertos, y la latencia importa. El
+ * nivel se ajusta a lo que el modelo acepta (`clampAiEffort`).
  */
-export function assistantModelParams(caps: AiModelCaps): Record<string, unknown> {
-    const effort = caps.effort ? { output_config: { effort: 'medium' } } : {};
-    if (caps.adaptive_thinking) return { thinking: { type: 'adaptive' }, ...effort };
+export function assistantModelParams(caps: AiModelCaps, effort: AiEffort | null): Record<string, unknown> {
+    const level = effort ? effortParam(effort, caps) : {};
+    if (caps.adaptive_thinking) return { thinking: { type: 'adaptive' }, ...level };
     if (caps.budget_thinking) return { thinking: { type: 'enabled', budget_tokens: 2048 } };
-    return effort;
+    return level;
+}
+
+/** `output_config.effort` con el nivel más cercano que acepte el modelo, o nada si no usa esfuerzo. */
+export function effortParam(wanted: AiEffort, caps: AiModelCaps): Record<string, unknown> {
+    const effort = clampAiEffort(wanted, caps);
+    return effort ? { output_config: { effort } } : {};
+}
+
+/**
+ * Tope de salida del asistente. El pensamiento cuenta dentro del tope, y con
+ * más esfuerzo piensa más: con el mismo tope que en `medium` una propuesta
+ * grande (la ficha, un correo) quedaría cortada.
+ */
+export function assistantMaxTokens(effort: AiEffort | null): number {
+    if (effort === 'max' || effort === 'xhigh') return 32_000;
+    if (effort === 'high') return 24_000;
+    return 16_000;
 }
 
 /** Margen para el pensamiento en los modelos donde no se puede apagar (cuenta dentro de `max_tokens`). */
@@ -32,7 +51,7 @@ export function fieldModelParams(caps: AiModelCaps, answerTokens: number): { max
     if (caps.adaptive_thinking) {
         return {
             max_tokens: answerTokens + FIELD_THINKING_HEADROOM,
-            extra: caps.effort ? { output_config: { effort: 'low' } } : {},
+            extra: effortParam('low', caps),
         };
     }
     return { max_tokens: answerTokens, extra: {} };

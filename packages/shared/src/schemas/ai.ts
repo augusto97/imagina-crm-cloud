@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { fieldTypeSchema } from './field';
 import { viewTypeSchema } from './view';
-import { aiModelChoiceSchema } from './ai-models';
+import { aiEffortSchema, aiModelChoiceSchema } from './ai-models';
 
 /**
  * Asistente IA (ADR-S21, v0.1.181).
@@ -38,6 +38,12 @@ export const platformAiSettingsSchema = z.object({
     /** `auto:<familia>` (el más reciente, se actualiza solo) o un id fijo. */
     model: aiModelChoiceSchema,
     /**
+     * v0.1.306 (ADR-S61) — Nivel de esfuerzo del asistente. Vale para todas
+     * las empresas que usan la clave de la plataforma; una empresa con clave
+     * propia puede elegir el suyo.
+     */
+    effort: aiEffortSchema,
+    /**
      * Las empresas pueden usar la clave de la PLATAFORMA (con la cuota de su
      * plan). Apagado = sólo empresas con clave propia.
      */
@@ -55,6 +61,7 @@ export const updatePlatformAiSettingsSchema = z
         /** Borrar la clave guardada (vuelve al env, si hay). */
         clear_key: z.boolean(),
         model: aiModelChoiceSchema,
+        effort: aiEffortSchema,
         share_platform_key: z.boolean(),
         allow_tenant_keys: z.boolean(),
     })
@@ -72,12 +79,21 @@ export const tenantAiSettingsSchema = z.object({
     key_unreadable: z.boolean(),
     /** `null` = el modelo por defecto de la plataforma. */
     model: aiModelChoiceSchema.nullable(),
+    /**
+     * v0.1.306 — Nivel de esfuerzo propio. `null` = el de la plataforma. Sólo
+     * se usa mientras la empresa habla con SU clave: con la de la plataforma
+     * el costo es del operador y manda el de la plataforma.
+     */
+    effort: aiEffortSchema.nullable(),
+    /** La empresa usa una clave propia válida → puede elegir el esfuerzo. */
+    effort_editable: z.boolean(),
     /** Lo que la plataforma permite a esta empresa. */
     platform: z.object({
         enabled: z.boolean(),
         share_platform_key: z.boolean(),
         allow_tenant_keys: z.boolean(),
         default_model: aiModelChoiceSchema,
+        default_effort: aiEffortSchema,
     }),
 });
 export type TenantAiSettings = z.infer<typeof tenantAiSettingsSchema>;
@@ -88,6 +104,8 @@ export const updateTenantAiSettingsSchema = z
         api_key: z.union([aiApiKeySchema, z.literal('')]),
         clear_key: z.boolean(),
         model: aiModelChoiceSchema.nullable(),
+        /** Sólo con clave propia (si no, 400 `ai_effort_requires_own_key`). `null` = el de la plataforma. */
+        effort: aiEffortSchema.nullable(),
     })
     .partial()
     .refine((p) => Object.keys(p).length > 0, { message: 'El patch no puede estar vacío' });
@@ -112,6 +130,8 @@ export const aiStatusSchema = z.object({
     model_name: z.string().nullable().default(null),
     /** Se eligió un modelo que esta clave ya no ve y se usa otro en su lugar. */
     model_fallback_from: z.string().nullable().default(null),
+    /** v0.1.306 — Nivel de esfuerzo con el que se hablaría (`null` = el modelo no lo usa). */
+    effort: aiEffortSchema.nullable().default(null),
     /** Cuota mensual (sólo con clave de plataforma). `limit: null` = ilimitado. */
     usage: z.object({ used: z.number().int().nonnegative(), limit: z.number().int().nullable() }),
     /** El admin del workspace puede configurarlo (para el link "Configurar"). */

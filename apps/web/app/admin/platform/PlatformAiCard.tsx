@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DEFAULT_AI_MODEL_CHOICE } from '@imagina-base/shared';
+import { DEFAULT_AI_EFFORT, DEFAULT_AI_MODEL_CHOICE, type AiEffort } from '@imagina-base/shared';
 import { KeyRound, Sparkles } from 'lucide-react';
 
 import { api } from '@/cloud/session';
+import { AiEffortSelect } from '@/cloud/components/AiEffortSelect';
 import { AiModelSelect } from '@/cloud/components/AiModelSelect';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { effortLevelsForChoice } from '@/lib/aiModels';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
 
@@ -34,6 +36,7 @@ export function PlatformAiCard(): JSX.Element | null {
     const [enabled, setEnabled] = useState(false);
     const [apiKey, setApiKey] = useState('');
     const [model, setModel] = useState<string>(DEFAULT_AI_MODEL_CHOICE);
+    const [effort, setEffort] = useState<AiEffort>(DEFAULT_AI_EFFORT);
     const [share, setShare] = useState(true);
     const [allowOwn, setAllowOwn] = useState(true);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -43,6 +46,7 @@ export function PlatformAiCard(): JSX.Element | null {
         if (!s) return;
         setEnabled(s.enabled);
         setModel(s.model);
+        setEffort(s.effort);
         setShare(s.share_platform_key);
         setAllowOwn(s.allow_tenant_keys);
         setApiKey('');
@@ -53,6 +57,7 @@ export function PlatformAiCard(): JSX.Element | null {
             api.platformAiSet({
                 enabled,
                 model,
+                effort,
                 share_platform_key: share,
                 allow_tenant_keys: allowOwn,
                 ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
@@ -168,6 +173,15 @@ export function PlatformAiCard(): JSX.Element | null {
                     onRefresh={() => refreshModels.mutate()}
                     hint={__('Cada empresa puede elegir otro en sus Ajustes. Con «el más reciente» el asistente pasa solo a cada modelo nuevo que publique Anthropic.')}
                     testId="imcrm-pai-model"
+                />
+
+                <AiEffortSelect
+                    id="pai-effort"
+                    value={effort}
+                    onChange={(v) => v !== '' && setEffort(v)}
+                    levels={effortLevelsForChoice(model, models.data)}
+                    hint={__('Cuánto piensa el asistente antes de responder. Más esfuerzo da respuestas más cuidadas en pedidos complejos, pero más lentas y con más consumo de tu clave. Vale para las empresas que usan tu clave; las que usan la suya eligen el propio.')}
+                    testId="imcrm-pai-effort"
                 />
 
                 <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-2">

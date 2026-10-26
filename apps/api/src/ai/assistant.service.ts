@@ -15,19 +15,12 @@ import { randomBytes } from 'node:crypto';
 import { AiQuotaExceededError, AiQuotaService } from './ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
 import { ConversationsStore, prepareHistoryForNewTurn, type ApiMessage, type StoredConversation } from './conversations.store';
-import { assistantModelParams } from './model-params';
+import { assistantMaxTokens, assistantModelParams } from './model-params';
 import { AiToolRegistry, type AiToolContext } from './tools/registry';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /** Vueltas máximas del bucle de herramientas por mensaje (cada una = 1 llamada al modelo). */
 export const MAX_TOOL_ITERATIONS = 8;
-/**
- * Tope de salida por llamada. Incluye el pensamiento (cuenta dentro del tope
- * aunque no se devuelva su texto): con un tope chico, una propuesta grande
- * (el diseño de una ficha o de un correo) quedaba cortada a la mitad.
- */
-const MAX_OUTPUT_TOKENS = 16_000;
-
 /**
  * Cliente del proveedor, inyectable para testear el bucle con un fake (los
  * tests NO hablan con la API real). En producción es el SDK oficial.
@@ -73,6 +66,7 @@ export class AssistantService {
                     model: access.model,
                     model_name: access.modelName,
                     model_fallback_from: access.fallbackFrom,
+                    effort: access.effort,
                     usage,
                     can_configure: canConfigure,
                 };
@@ -84,6 +78,7 @@ export class AssistantService {
                 model: access.model,
                 model_name: access.modelName,
                 model_fallback_from: access.fallbackFrom,
+                effort: access.effort,
                 usage: access.source === 'platform' ? usage : { used: usage.used, limit: null },
                 can_configure: canConfigure,
             };
@@ -96,6 +91,7 @@ export class AssistantService {
                     model: null,
                     model_name: null,
                     model_fallback_from: null,
+                    effort: null,
                     usage,
                     can_configure: canConfigure,
                 };
@@ -146,11 +142,12 @@ export class AssistantService {
                 const stream = client.messages.stream(
                     {
                         model: access.model,
-                        max_tokens: MAX_OUTPUT_TOKENS,
+                        // El tope incluye el pensamiento: crece con el esfuerzo (ADR-S61).
+                        max_tokens: assistantMaxTokens(access.effort),
                         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
                         tools: tools.map((t, i) => (i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t)) as never,
                         messages: conv.messages as MessageParam[],
-                        ...assistantModelParams(access.caps),
+                        ...assistantModelParams(access.caps, access.effort),
                     },
                     { signal },
                 );

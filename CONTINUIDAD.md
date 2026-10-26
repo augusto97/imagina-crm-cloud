@@ -364,18 +364,29 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.305** (el asistente detecta solo los modelos nuevos de Anthropic), en `main`.
+versión publicada: **v0.1.306** (nivel de esfuerzo del asistente IA), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-10-26 — **Fase 3 del estudio, esperando tres decisiones del usuario.**
-  Preguntó «¿qué hay para la fase 3?» y se le presentó la oleada 3 (equipos,
-  roles personalizados, invitados y aprobaciones). Quedaron pendientes: (1)
-  ¿los invitados cuentan para el límite de usuarios del plan o tienen su
-  propio tope?; (2) ¿el rol admin queda fijo y los roles propios se arman
-  partiendo de uno existente?; (3) ¿quién puede aprobar: una persona, un rol,
-  un equipo o el campo Persona del registro? Antes de responder pidió que el
-  asistente detecte solo los modelos nuevos (v0.1.305). También falta que pruebe
-  lo de las fases 1 y 2.
+- 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
+  completa de una»).** El usuario no respondió las tres preguntas pendientes,
+  así que se tomaron decisiones por defecto (se le informan; se pueden cambiar):
+  (1) los **invitados NO ocupan usuario del plan** y tienen su propio tope por
+  plan, `max_guests` (trial 5, starter 20, pro 100, enterprise ilimitado,
+  editable en Plataforma → Planes); (2) **admin queda fijo**, manager/agent/
+  viewer siguen como roles base no editables y un **rol propio se crea
+  partiendo de uno base** y hereda de él el ACL por lista y el alcance; (3)
+  **aprobadores**: una o varias personas, un rol, un equipo o el campo Persona
+  del registro, con «cualquiera» o «todos» por paso y pasos en serie;
+  aprobar desde el correo LLEVA A LA APP (nunca con un token suelto).
+  Cuatro agentes en paralelo, cada uno en su worktree y su slot:
+  **Equipos + roles personalizados + invitados** (C1+C2+C3, slot 1, en dos
+  grupos de commits publicables por separado), **Plantillas de registro +
+  checklist** (C6+A9, slot 3), **Carga de trabajo** (B2, slot 4) y
+  **Aprobaciones** (C5 + disparador/acción/espera, slot 5). Briefs en la carpeta
+  temporal de la sesión (`brief-f3-*-full.md`). Al integrar: conectar los
+  aprobadores por equipo (si Aprobaciones termina antes que Equipos) y el
+  filtro por equipo de la Carga de trabajo. También falta que el usuario
+  pruebe lo de las fases 1 y 2.
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
   ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
   en paralelo en copias aisladas (worktrees), cada una con su instancia de
@@ -641,6 +652,19 @@ versión publicada: **v0.1.305** (el asistente detecta solo los modelos nuevos d
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.306** — **Nivel de esfuerzo del asistente** (ADR-S61).
+  Pedido del usuario tras preguntar si la API tiene nivel de esfuerzo:
+  "implementalo; en el caso de la empresa sólo lo puede cambiar si usa su propia
+  API". La plataforma fija el nivel (default Medio, el de antes) para todas las
+  empresas que usan su clave; una empresa elige el suyo sólo con clave propia
+  (sin ella, deshabilitado en la interfaz y 400 por API; si quita la clave,
+  vuelve el de la plataforma). Sólo se ofrecen los niveles que el modelo
+  declara; uno que no tiene se ajusta al más cercano con aviso. El tope de
+  salida crece con el esfuerzo. Los campos con IA siguen en Bajo. E2E 20/20
+  contra un Anthropic simulado. **Ojo en dev**: el entorno trae
+  `ANTHROPIC_BASE_URL` apuntando al proveedor real; para el simulado hay que
+  forzarla al arrancar la API. En la misma sesión se lanzó la fase 3 del estudio
+  con cuatro agentes (ver §10).
 - **2026-10-26 · v0.1.305** — **El asistente detecta solo los modelos
   nuevos** (ADR-S60). Pedido del usuario: "en la sección de asistente de IA no
   están los modelos actualizados; debería detectarlos y no tener que pedirte que

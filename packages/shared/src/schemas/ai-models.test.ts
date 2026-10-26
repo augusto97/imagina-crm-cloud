@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    aiEffortLevels,
     aiModelChoiceSchema,
+    clampAiEffort,
     buildAiModelCatalog,
     compareAiModels,
     inferAiModelCaps,
@@ -99,5 +101,22 @@ describe('modelos del asistente (catálogo dinámico)', () => {
         expect(inferAiModelCaps('claude-haiku-4-2')).toMatchObject({ adaptive_thinking: false, budget_thinking: true, effort: false });
         expect(inferAiModelCaps('claude-sonnet-4-9')).toMatchObject({ adaptive_thinking: true, budget_thinking: false, effort: true });
         expect(inferAiModelCaps('claude-haiku-9-5')).toMatchObject({ adaptive_thinking: true, effort: true });
+    });
+    it('v0.1.306 — niveles de esfuerzo: los declarados, el juego habitual si no dice, ninguno sin esfuerzo', () => {
+        expect(aiEffortLevels(caps({ effort: true, effort_levels: ['low', 'medium', 'high', 'xhigh', 'max'] }))).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+        expect(aiEffortLevels(caps({ effort: true, effort_levels: null }))).toEqual(['low', 'medium', 'high', 'max']);
+        // Catálogo cacheado por la versión anterior: sin la clave.
+        expect(aiEffortLevels({ ...caps({ effort: true }), effort_levels: undefined })).toEqual(['low', 'medium', 'high', 'max']);
+        expect(aiEffortLevels(caps({ effort: false, effort_levels: ['low'] }))).toEqual([]);
+        expect(aiEffortLevels(null)).toEqual([]);
+    });
+
+    it('v0.1.306 — un nivel que el modelo no tiene va al más cercano (el menor ante un empate)', () => {
+        const some = caps({ effort: true, effort_levels: ['low', 'medium', 'high', 'max'] });
+        expect(clampAiEffort('xhigh', some)).toBe('high');
+        expect(clampAiEffort('medium', some)).toBe('medium');
+        expect(clampAiEffort('max', caps({ effort: true, effort_levels: ['low', 'medium'] }))).toBe('medium');
+        expect(clampAiEffort('low', caps({ effort: true, effort_levels: ['high', 'max'] }))).toBe('high');
+        expect(clampAiEffort('high', caps({ effort: false }))).toBeNull();
     });
 });

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import {
+    AI_EFFORT_LEVELS,
     buildAiModelCatalog,
     resolveAiModelChoice,
     type AiModelCaps,
@@ -182,10 +183,14 @@ export function capsFrom(raw: unknown): AiModelCaps | null {
     const yes = (v: unknown): boolean => !!v && typeof v === 'object' && (v as { supported?: unknown }).supported === true;
     const thinking = c.thinking as { supported?: unknown; types?: Record<string, unknown> } | undefined;
     const thinkingOn = thinking?.supported === true;
+    const effort = c.effort as Record<string, unknown> | undefined;
+    // v0.1.306 — qué niveles acepta (`xhigh` puede venir en null: no existe en ese modelo).
+    const levels = effort ? AI_EFFORT_LEVELS.filter((l) => yes(effort[l])) : [];
     return {
         adaptive_thinking: thinkingOn && yes(thinking?.types?.adaptive),
         budget_thinking: thinkingOn && yes(thinking?.types?.enabled),
         effort: yes(c.effort),
+        effort_levels: levels.length > 0 ? levels : null,
         image_input: yes(c.image_input),
         pdf_input: yes(c.pdf_input),
     };
