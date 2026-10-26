@@ -335,7 +335,7 @@ export const SCOPE_JUSTIFICATIONS: Record<string, string> = {
     'https://www.googleapis.com/auth/gmail.send':
         'gmail.send: la app manda correos DESDE la cuenta de Gmail que conecta la empresa cuando una de sus automatizaciones lo indica (por ejemplo, avisarle a un cliente que su factura venció). Sólo envía: no lee, no busca ni guarda correos de la casilla. El usuario define el destinatario, el asunto y el texto en el editor de automatizaciones.',
     'https://www.googleapis.com/auth/calendar.events':
-        'calendar.events: la app crea un evento en el calendario de la cuenta conectada cuando una automatización lo indica (por ejemplo, agendar una cita al registrar una reserva). No lee ni modifica otros eventos del calendario.',
+        'calendar.events: la app crea un evento en el calendario de la cuenta conectada cuando una automatización lo indica (por ejemplo, agendar una cita al registrar una reserva). Además, si la empresa asocia ese calendario a una persona en su agenda de citas en línea, la app consulta los eventos de ese calendario y usa SÓLO su hora de inicio y de fin —no el título, la descripción ni los invitados— para no ofrecerles a los clientes los horarios en que esa persona ya está ocupada; y mueve o borra el evento que ella misma creó cuando el cliente reprograma o cancela su cita. No modifica ningún otro evento del calendario.',
     'https://www.googleapis.com/auth/spreadsheets':
         'spreadsheets: la app agrega una fila a la hoja de cálculo que el usuario elige (pegando su enlace) cuando una automatización lo indica, para exportar registros a Google Sheets. No lista ni abre otras hojas del usuario.',
     'https://www.googleapis.com/auth/drive.file':
@@ -358,13 +358,14 @@ export function videoScriptText(appName: string, appUrl: string): string {
         '4. Vuelve a la app: la conexión aparece como conectada.',
         '5. Abre una automatización con la acción «Enviar correo con Gmail», toca «Probar ahora» y muestra el correo recibido.',
         '6. Igual con «Crear evento en Google Calendar» (muestra el evento en el calendario) y «Agregar fila en Google Sheets» (muestra la fila nueva en la hoja).',
-        '7. Google Drive: conéctalo, elígelo en Ajustes → Almacenamiento, sube un archivo a un registro y muestra que aparece en la carpeta «Imagina Base» del Drive.',
-        '8. Explica en voz alta o con subtítulos para qué se usa cada permiso.',
+        '7. Agenda de citas: en Ajustes de una lista → Agenda, asocia el calendario a quien atiende, crea en Google Calendar un evento a una hora de su horario y muestra que ese horario ya no aparece en la página pública de la agenda; agenda una cita y muestra el evento que se crea en el calendario.',
+        '8. Google Drive: conéctalo, elígelo en Ajustes → Almacenamiento, sube un archivo a un registro y muestra que aparece en la carpeta «Imagina Base» del Drive.',
+        '9. Explica en voz alta o con subtítulos para qué se usa cada permiso.',
     ].join('\n');
 }
 
 export function appDescriptionText(appName: string): string {
-    return `${appName} es una plataforma para que las empresas armen sus propias bases de datos (clientes, ventas, proyectos, facturación) con vistas, tableros y automatizaciones. Las integraciones con Google permiten que esas automatizaciones manden un correo desde Gmail, creen un evento en Google Calendar o agreguen una fila a Google Sheets cuando ocurre algo en sus datos, y cada empresa puede guardar sus archivos en su propio Google Drive.`;
+    return `${appName} es una plataforma para que las empresas armen sus propias bases de datos (clientes, ventas, proyectos, facturación) con vistas, tableros y automatizaciones. Las integraciones con Google permiten que esas automatizaciones manden un correo desde Gmail, creen un evento en Google Calendar o agreguen una fila a Google Sheets cuando ocurre algo en sus datos; que su agenda de citas en línea no ofrezca los horarios en que quien atiende ya está ocupado en Google Calendar (se consulta sólo el inicio y el fin de sus eventos); y que cada empresa guarde sus archivos en su propio Google Drive.`;
 }
 
 /**

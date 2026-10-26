@@ -31,6 +31,12 @@ export interface RecordChange {
     /** El cambio lo hizo el CLIENTE desde su portal (`actorId` es su usuario). */
     viaPortal?: boolean;
     /**
+     * D5 — lo hizo la AGENDA (una reserva o el cliente desde el enlace de su
+     * cita). La agenda avisa a quien atiende con su propio texto («Nueva
+     * cita…»), así que los avisos genéricos («te asignó», «cambió») no salen.
+     */
+    origin?: 'booking';
+    /**
      * La lista y sus campos, cuando quien emite ya los tenía cargados (la
      * edición de una persona). Los oyentes los usan en vez de volver a leerlos:
      * antes cada edición repetía esas lecturas una vez por oyente.

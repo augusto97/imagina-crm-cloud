@@ -29,6 +29,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'approval_resolved', label: 'Cuando se aprueba o se rechaza', event: 'imagina_crm/approval_resolved', config_schema: {} },
     // A9 — un checklist del registro quedó completo (uno por nombre o todos).
     { slug: 'checklist_completed', label: 'Cuando se completa un checklist', event: 'imagina_crm/checklist_completed', config_schema: {} },
+    // D5 — una cita de una página de agenda se agendó, se reprogramó o se canceló.
+    { slug: 'booking_event', label: 'Cuando se agenda, reprograma o cancela una cita', event: 'imagina_crm/booking_event', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [

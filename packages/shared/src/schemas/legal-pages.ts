@@ -85,7 +85,7 @@ Sólo para prestar el servicio: mostrar y guardar los datos de cada empresa, eje
 ## Integraciones con Google
 Si una empresa conecta su cuenta de Google, {{app_name}} recibe sólo los permisos que esa persona acepta y los usa únicamente para lo que la empresa configura en sus automatizaciones:
 - **Gmail (gmail.send)**: enviar correos desde esa cuenta. No leemos, buscamos ni guardamos los correos de la casilla.
-- **Google Calendar (calendar.events)**: crear eventos en su calendario.
+- **Google Calendar (calendar.events)**: crear eventos en su calendario y, si la empresa lo activa en su agenda de citas, consultar sólo la hora de inicio y de fin de los eventos de la persona que atiende, para no ofrecer los horarios en que ya está ocupada. No leemos títulos, descripciones ni invitados.
 - **Google Sheets (spreadsheets)**: agregar filas a las hojas de cálculo que la empresa indica.
 - **Google Drive (drive.file)**: guardar los archivos de la empresa en una carpeta de su Drive y volver a leerlos. Sólo vemos los archivos que la propia app creó ahí.
 
@@ -96,7 +96,7 @@ El uso que hace {{app_name}} de la información recibida de las API de Google, y
 {{app_name}}'s use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 
 ## Integraciones con Microsoft y Slack
-Con Outlook usamos sólo los permisos para enviar correos (Mail.Send) y crear eventos (Calendars.ReadWrite) en nombre de la persona que conectó la cuenta; con Slack, sólo publicar mensajes en los canales que la empresa elige. Aplican las mismas reglas que con Google: tokens cifrados, uso limitado a lo que la empresa configura y borrado al desconectar.
+Con Outlook usamos sólo los permisos para enviar correos (Mail.Send) y crear eventos (Calendars.ReadWrite) en nombre de la persona que conectó la cuenta —y, en la agenda de citas, consultar sólo el inicio y el fin de sus eventos ocupados—; con Slack, sólo publicar mensajes en los canales que la empresa elige. Aplican las mismas reglas que con Google: tokens cifrados, uso limitado a lo que la empresa configura y borrado al desconectar.
 
 ## Con quién compartimos datos
 Con proveedores que necesitamos para operar (servidores, envío de correo, procesamiento de pagos), bajo contrato y sólo para ese fin. Y con los servicios que cada empresa conecta por su cuenta, cuando sus automatizaciones lo indican.

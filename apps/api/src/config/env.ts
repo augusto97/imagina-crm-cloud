@@ -52,6 +52,9 @@ const envSchema = z.object({
     GOOGLE_DRIVE_API_URL: z.string().default('https://www.googleapis.com'),
     /** v0.1.282 — OAuth de Google (código de dispositivo de las copias del servidor). */
     GOOGLE_OAUTH_URL: z.string().default('https://oauth2.googleapis.com'),
+    /** D5 — APIs de calendario de la agenda (horarios ocupados y eventos); los tests apuntan a un falso. */
+    GOOGLE_CALENDAR_API_URL: z.string().default('https://www.googleapis.com'),
+    MS_GRAPH_API_URL: z.string().default('https://graph.microsoft.com'),
     /**
      * v0.1.283 (ADR-S43) — Hash SHA-256 del código del modo recuperación que
      * imprime `install.sh`. Vacío = no hay modo recuperación. Aunque quede

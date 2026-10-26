@@ -47,3 +47,4 @@ export * from './approvals';
 export * from './checklists';
 export * from './teams';
 export * from './custom-roles';
+export * from './booking';
