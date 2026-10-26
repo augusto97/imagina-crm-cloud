@@ -67,6 +67,14 @@ import {
     GANTT_ZOOMS,
     readDependencySettings,
     readGanttSettings,
+    readWorkloadSettings,
+    WORKLOAD_DATE_TYPES,
+    WORKLOAD_ESTIMATE_TYPES,
+    WORKLOAD_ESTIMATE_UNITS,
+    WORKLOAD_MAX_PEOPLE,
+    WORKLOAD_METRICS,
+    WORKLOAD_PERSON_TYPES,
+    WORKLOAD_ZOOMS,
     type AiProposal,
     type AiProposalKind,
     type AiProposalPreview,
@@ -318,7 +326,7 @@ const VIEW_COLOR_BY = ['auto', 'source', 'field', 'rules', 'none'] as const;
 
 const viewSpec = z.object({
     name: z.string().min(1).max(190),
-    type: viewTypeSchema.describe('table | kanban | calendar | cards | gantt'),
+    type: viewTypeSchema.describe('table | kanban | calendar | cards | gantt | workload'),
     group_by: fieldSlugSchema
         .optional()
         .describe('kanban: campo select por el que se arman las columnas (obligatorio). table: agrupar filas por este campo. gantt: encabezados de grupo plegables por un select, una persona (user) o una casilla.'),
@@ -412,15 +420,39 @@ const viewSpec = z.object({
         .describe('kanban: reglas al mover. P. ej. a «perdido» pedir motivo_perdida; a «ganado», fecha_cierre y monto.'),
     hide_empty_columns: z.boolean().optional().describe('kanban: ocultar las columnas y carriles sin tarjetas'),
     // B1 — Gantt / línea de tiempo.
-    start_field: fieldSlugSchema.optional().describe('gantt: campo date/datetime de INICIO de cada barra (obligatorio)'),
+    start_field: fieldSlugSchema
+        .optional()
+        .describe('gantt: campo date/datetime de INICIO de cada barra (obligatorio). workload: la fecha de INICIO del trabajo (o la única fecha, p. ej. el vencimiento).'),
     end_field: fieldSlugSchema
         .optional()
-        .describe('gantt: campo date/datetime de FIN. Sin fin (o un registro con una sola fecha) se dibuja como HITO (rombo).'),
+        .describe('gantt: campo date/datetime de FIN. Sin fin (o un registro con una sola fecha) se dibuja como HITO (rombo). workload: la fecha de FIN; el esfuerzo se reparte entre los días hábiles del tramo.'),
     columns: z.array(fieldSlugSchema).max(GANTT_MAX_COLUMNS).optional().describe('gantt: columnas del panel izquierdo además del título (responsable, estado…)'),
-    zoom: z.enum(GANTT_ZOOMS).optional().describe('gantt: zoom con el que abre — day | week (default) | month | quarter'),
+    zoom: z
+        .enum(GANTT_ZOOMS)
+        .optional()
+        .describe('gantt: zoom con el que abre — day | week (default) | month | quarter. workload: columnas por day | week (default) | month.'),
     show_subtasks: z.boolean().optional().describe('gantt: subtareas anidadas bajo su padre (default true)'),
     show_dependencies: z.boolean().optional().describe('gantt: flechas de dependencia entre barras (default true)'),
     show_baseline: z.boolean().optional().describe('gantt: barra fantasma de la línea base, si hay una guardada (default true)'),
+    // B2 — Carga de trabajo.
+    person_field: fieldSlugSchema
+        .optional()
+        .describe('workload: campo Persona (user) de la asignación; cada persona es una fila (obligatorio). Las fechas son start_field (y end_field).'),
+    measure: z
+        .enum(WORKLOAD_METRICS)
+        .optional()
+        .describe('workload: qué se mide — count (cantidad de registros, default), estimate (esfuerzo estimado de estimate_field, repartido en días hábiles) o time (tiempo registrado real)'),
+    estimate_field: fieldSlugSchema
+        .optional()
+        .describe('workload: con measure=estimate, campo number (horas o minutos según estimate_unit) o duration (minutos) con el esfuerzo de cada registro'),
+    estimate_unit: z.enum(WORKLOAD_ESTIMATE_UNITS).optional().describe('workload: unidad de un estimate_field numérico — hours (default) o minutes'),
+    people: z
+        .array(z.number().int().positive())
+        .max(WORKLOAD_MAX_PEOPLE)
+        .optional()
+        .describe('workload: ids de las personas que se muestran como filas (pídelos con list_members). Sin valor: todas las que pueden ver la lista.'),
+    show_unassigned: z.boolean().optional().describe('workload: fila «Sin asignar» con los registros sin persona (default true)'),
+    hide_done: z.boolean().optional().describe('workload: ocultar los registros terminados (default true; con measure=time, false)'),
     is_default: z.boolean().optional(),
 });
 type ViewSpec = z.infer<typeof viewSpec>;
@@ -735,8 +767,9 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_create_view',
             label: 'Armando la vista',
             description:
-                'Propone una vista guardada (tabla, kanban, calendario, tarjetas o gantt) sobre una lista existente, con filtros, orden y agrupación. ' +
-                'Un gantt (línea de tiempo) necesita start_field y, para barras con duración, end_field (fechas); agrupa por group_by, colorea por color_field o color_rules y muestra las columnas de `columns`.',
+                'Propone una vista guardada (tabla, kanban, calendario, tarjetas, gantt o carga de trabajo) sobre una lista existente, con filtros, orden y agrupación. ' +
+                'Un gantt (línea de tiempo) necesita start_field y, para barras con duración, end_field (fechas); agrupa por group_by, colorea por color_field o color_rules y muestra las columnas de `columns`. ' +
+                'Una carga de trabajo (workload) necesita person_field (la persona asignada) y start_field (o end_field); mide count, estimate (con estimate_field) o time, por day/week/month, frente a la capacidad de cada persona.',
             capability: 'manage_views',
             input: z.object({ list: z.string().max(63), view: viewSpec }),
             run: (ctx, input) => this.proposeCreateView(ctx, input as { list: string; view: ViewSpec }),
@@ -1200,6 +1233,7 @@ export class StructureTools implements AiProposalApplier {
     // ── Propuestas ───────────────────────────────────────────────────────
 
     private async proposeCreateList(ctx: AiToolContext, input: { lists: ListSpec[] }): Promise<AiToolResult> {
+        await this.assertWorkloadPeople(ctx, input.lists.flatMap((l) => l.views ?? []));
         const existing = await this.lists.list(ctx.tenantId);
         const existingBySlug = new Map(existing.map((l) => [l.slug, l]));
         const keys = new Set<string>();
@@ -1533,6 +1567,7 @@ export class StructureTools implements AiProposalApplier {
 
     private async proposeCreateView(ctx: AiToolContext, input: { list: string; view: ViewSpec }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
+        await this.assertWorkloadPeople(ctx, [input.view]);
         const fields = await this.fields.listByListId(ctx.tenantId, list.id);
         const bySlug = new Map(fields.map((f) => [f.slug, f]));
         const config = this.buildViewConfig(input.view, (slug) => {
@@ -1560,6 +1595,7 @@ export class StructureTools implements AiProposalApplier {
         if (input.view.color_rules?.length) details.push(`${input.view.color_rules.length} regla${input.view.color_rules.length === 1 ? '' : 's'} de color`);
         if (input.view.date_field) details.push(`sobre «${bySlug.get(input.view.date_field)?.label}»`);
         if (input.view.type === 'calendar') details.push(...calendarSummary(input.view, (s) => bySlug.get(s)?.label));
+        if (input.view.type === 'workload') details.push(...workloadSummary(input.view, (s) => bySlug.get(s)?.label));
         if (input.view.filters?.length) details.push(`${input.view.filters.length} filtro${input.view.filters.length === 1 ? '' : 's'}`);
         if (input.view.sort?.length) details.push('con orden');
         return this.saveProposal(ctx, {
@@ -2365,6 +2401,30 @@ export class StructureTools implements AiProposalApplier {
                 const current = fields.find((f) => f.id === (view.config as { date_field_id?: unknown }).date_field_id);
                 if (current) spec.date_field = current.slug;
             }
+            // B2 — en una carga, cambiar sólo el zoom o la métrica no obliga a
+            // repetir la persona ni las fechas: se conservan las actuales.
+            if (view.type === 'workload') {
+                // Sólo las personas que se PIDEN se validan: una que ya estaba y
+                // se fue del equipo no frena un cambio de zoom.
+                await this.assertWorkloadPeople(ctx, [spec]);
+                const current = readWorkloadSettings(view.config);
+                const slugOf = (id: number | null): string | undefined => (id === null ? undefined : fields.find((f) => f.id === id)?.slug);
+                spec.person_field ??= slugOf(current.personFieldId);
+                if (spec.start_field === undefined && spec.end_field === undefined) {
+                    spec.start_field = slugOf(current.startFieldId);
+                    spec.end_field = slugOf(current.endFieldId);
+                }
+                spec.measure ??= current.metric;
+                if (spec.measure === 'estimate' && spec.estimate_field === undefined) {
+                    spec.estimate_field = slugOf(current.estimateFieldId);
+                    if (spec.estimate_unit === undefined && current.estimateUnit !== 'hours') spec.estimate_unit = current.estimateUnit;
+                }
+                spec.zoom ??= current.zoom;
+                if (spec.people === undefined && current.userIds !== null) spec.people = current.userIds;
+                if (spec.show_unassigned === undefined && !current.showUnassigned) spec.show_unassigned = false;
+                const savedHideDone = (view.config as { workload_hide_done?: unknown }).workload_hide_done;
+                if (spec.hide_done === undefined && typeof savedHideDone === 'boolean') spec.hide_done = savedHideDone;
+            }
             const config = this.buildViewConfig(spec, (slug) => {
                 const f = bySlug.get(slug);
                 if (!f) throw new AiToolError(`La vista referencia el campo «${slug}» que no existe en «${list.name}». Campos: ${fields.map((x) => x.slug).join(', ')}.`);
@@ -2388,6 +2448,7 @@ export class StructureTools implements AiProposalApplier {
             if (spec.wip_limits?.length) bits.push(`${spec.wip_limits.length} límite${spec.wip_limits.length === 1 ? '' : 's'} por columna`);
             if (spec.move_rules?.length) bits.push(`${spec.move_rules.length} regla${spec.move_rules.length === 1 ? '' : 's'} al mover`);
             if (view.type === 'calendar') bits.push(...calendarSummary(spec, (s) => bySlug.get(s)?.label));
+            if (view.type === 'workload') bits.push(...workloadSummary(spec, (s) => bySlug.get(s)?.label));
             changes.push({ label: 'Configuración', from: null, to: bits.join(', ') || 'sin filtros ni agrupación' });
         }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la vista actual.');
@@ -3346,12 +3407,20 @@ export class StructureTools implements AiProposalApplier {
         }
         if (v.type === 'cards' && v.card_fields) config.card_field_ids = v.card_fields.map((s) => resolve(s).id);
         if (v.type === 'gantt') Object.assign(config, this.buildGanttConfig(v, resolve));
+        if (v.type === 'workload') Object.assign(config, this.buildWorkloadConfig(v, resolve));
+        const workloadOnly = (['person_field', 'measure', 'estimate_field', 'estimate_unit', 'people', 'show_unassigned', 'hide_done'] as const).filter(
+            (k) => v[k] !== undefined,
+        );
+        if (v.type !== 'workload' && workloadOnly.length > 0) {
+            throw new AiToolError(`Vista «${v.name}»: ${workloadOnly.join(', ')} sólo aplica${workloadOnly.length === 1 ? '' : 'n'} a vistas de carga de trabajo (workload).`);
+        }
         const colorOnly = (['color_by', 'color_field'] as const).filter((k) => v[k] !== undefined);
         if (v.type !== 'calendar' && v.type !== 'gantt' && colorOnly.length > 0) {
             throw new AiToolError(`Vista «${v.name}»: ${colorOnly.join(', ')} sólo aplica${colorOnly.length === 1 ? '' : 'n'} a vistas de calendario o gantt.`);
         }
+        // B2 — la carga comparte con el gantt las fechas y el zoom.
         const ganttOnly = (['start_field', 'end_field', 'columns', 'zoom', 'show_subtasks', 'show_dependencies', 'show_baseline'] as const).filter(
-            (k) => v[k] !== undefined,
+            (k) => v[k] !== undefined && !(v.type === 'workload' && (k === 'start_field' || k === 'end_field' || k === 'zoom')),
         );
         if (v.type !== 'gantt' && ganttOnly.length > 0) {
             throw new AiToolError(`Vista «${v.name}»: ${ganttOnly.join(', ')} sólo aplica${ganttOnly.length === 1 ? '' : 'n'} a vistas gantt.`);
@@ -3577,6 +3646,68 @@ export class StructureTools implements AiProposalApplier {
         if (v.show_dependencies === false) out.gantt_show_dependencies = false;
         if (v.show_baseline === false) out.gantt_show_baseline = false;
         return out;
+    }
+
+    /**
+     * B2 — Lo propio de la carga de trabajo: persona, fechas, qué se mide, la
+     * estimación y su unidad, el zoom, las personas visibles y los terminados,
+     * con las claves `workload_*` de la vista (los campos por id: se re-mapean
+     * solos en plantillas y al migrar una empresa).
+     */
+    private buildWorkloadConfig(v: ViewSpec, resolve: (slug: string) => { id: unknown; type: FieldType; options?: unknown }): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        if (!v.person_field) throw new AiToolError(`La vista de carga «${v.name}» necesita person_field (un campo Persona).`);
+        const person = resolve(v.person_field);
+        if (!WORKLOAD_PERSON_TYPES.includes(person.type)) {
+            throw new AiToolError(`Vista «${v.name}»: person_field «${v.person_field}» es ${person.type}, se esperaba un campo Persona (user).`);
+        }
+        out.workload_person_field_id = person.id;
+        const measure = v.measure ?? 'count';
+        const date = (slug: string, key: 'start_field' | 'end_field'): unknown => {
+            const f = resolve(slug);
+            if (!WORKLOAD_DATE_TYPES.includes(f.type)) throw new AiToolError(`Vista «${v.name}»: ${key} «${slug}» es ${f.type}, se esperaba date/datetime.`);
+            return f.id;
+        };
+        if (v.start_field) out.workload_start_field_id = date(v.start_field, 'start_field');
+        if (v.end_field && v.end_field !== v.start_field) out.workload_end_field_id = date(v.end_field, 'end_field');
+        if (measure !== 'time' && !v.start_field && !v.end_field) {
+            throw new AiToolError(
+                `Vista «${v.name}»: para medir ${measure === 'count' ? 'la cantidad' : 'el esfuerzo'} hace falta start_field (o end_field): la fecha que ubica cada registro.`,
+            );
+        }
+        if (measure !== 'count') out.workload_metric = measure;
+        if (measure === 'estimate') {
+            if (!v.estimate_field) throw new AiToolError(`Vista «${v.name}»: measure=estimate necesita estimate_field (un número o una duración).`);
+            const e = resolve(v.estimate_field);
+            if (!WORKLOAD_ESTIMATE_TYPES.includes(e.type)) {
+                throw new AiToolError(`Vista «${v.name}»: estimate_field «${v.estimate_field}» es ${e.type}, se esperaba number o duration.`);
+            }
+            out.workload_estimate_field_id = e.id;
+            if (v.estimate_unit === 'minutes' && e.type !== 'duration') out.workload_estimate_unit = 'minutes';
+        } else if (v.estimate_field !== undefined || v.estimate_unit !== undefined) {
+            throw new AiToolError(`Vista «${v.name}»: estimate_field y estimate_unit sólo aplican con measure=estimate.`);
+        }
+        if (v.zoom !== undefined) {
+            if (!(WORKLOAD_ZOOMS as readonly string[]).includes(v.zoom)) throw new AiToolError(`Vista «${v.name}»: en una carga el zoom es day, week o month.`);
+            if (v.zoom !== 'week') out.workload_zoom = v.zoom;
+        }
+        if (v.people !== undefined) out.workload_user_ids = [...new Set(v.people)];
+        if (v.show_unassigned === false) out.workload_show_unassigned = false;
+        if (v.hide_done !== undefined && v.hide_done !== (measure !== 'time')) out.workload_hide_done = v.hide_done;
+        return out;
+    }
+
+    /** B2 — Las personas visibles de una carga tienen que ser del equipo (el modelo recibe el motivo). */
+    private async assertWorkloadPeople(ctx: AiToolContext, views: ViewSpec[]): Promise<void> {
+        const wanted = views.flatMap((v) => (v.type === 'workload' ? (v.people ?? []) : []));
+        if (wanted.length === 0) return;
+        const members = new Set((await this.lists.workspaceMembers(ctx.tenantId)).map((m) => m.id));
+        const unknown = [...new Set(wanted)].filter((id) => !members.has(id));
+        if (unknown.length > 0) {
+            throw new AiToolError(
+                `${unknown.map((id) => `#${id}`).join(', ')} no ${unknown.length === 1 ? 'es miembro' : 'son miembros'} de esta empresa. Pide la lista con list_members.`,
+            );
+        }
     }
 
     private buildFilterTree(rules: FilterRuleSpec[], resolveId: (slug: string) => unknown): FilterGroup {
@@ -4133,6 +4264,26 @@ function describeViewForModel(
         if (!g.showDependencies) out.show_dependencies = false;
         if (!g.showBaseline) out.show_baseline = false;
     }
+    if (v.type === 'workload') {
+        // B2 — lo de la carga de trabajo, en el mismo vocabulario que propose_update_view.
+        const w = readWorkloadSettings(cfg);
+        const person = slugOf(w.personFieldId);
+        if (person) out.person_field = person;
+        const start = slugOf(w.startFieldId);
+        if (start) out.start_field = start;
+        const end = slugOf(w.endFieldId);
+        if (end) out.end_field = end;
+        out.measure = w.metric;
+        const est = slugOf(w.estimateFieldId);
+        if (est) {
+            out.estimate_field = est;
+            if (fieldById.get(w.estimateFieldId!)?.type !== 'duration') out.estimate_unit = w.estimateUnit;
+        }
+        out.zoom = w.zoom;
+        if (w.userIds !== null) out.people = w.userIds;
+        if (!w.showUnassigned) out.show_unassigned = false;
+        out.hide_done = w.hideDone;
+    }
     if (v.type === 'table' || v.type === 'calendar' || v.type === 'gantt') {
         const sub = slugOf(cfg.sub_group_by_field_id);
         if (sub) out.sub_group_by = sub;
@@ -4171,8 +4322,22 @@ function calendarSummary(v: ViewSpec, labelOf: (slug: string) => string | undefi
     return bits;
 }
 
+/** B2 — Lo de la carga de trabajo en lenguaje claro, para la tarjeta de la propuesta. */
+function workloadSummary(v: ViewSpec, labelOf: (slug: string) => string | undefined): string[] {
+    const bits: string[] = [];
+    if (v.person_field) bits.push(`por «${labelOf(v.person_field) ?? v.person_field}»`);
+    const measures: Record<string, string> = { count: 'cuenta registros', estimate: 'suma el esfuerzo estimado', time: 'suma el tiempo registrado' };
+    bits.push(measures[v.measure ?? 'count'] ?? '');
+    if (v.estimate_field) bits.push(`de «${labelOf(v.estimate_field) ?? v.estimate_field}»`);
+    if (v.start_field) bits.push(`${v.end_field ? 'de' : 'en'} «${labelOf(v.start_field) ?? v.start_field}»${v.end_field ? ` a «${labelOf(v.end_field) ?? v.end_field}»` : ''}`);
+    const zooms: Record<string, string> = { day: 'por día', week: 'por semana', month: 'por mes' };
+    if (v.zoom) bits.push(zooms[v.zoom] ?? v.zoom);
+    if (v.people?.length) bits.push(`${v.people.length} persona${v.people.length === 1 ? '' : 's'}`);
+    return bits.filter((b) => b !== '');
+}
+
 function viewTypeLabel(type: string): string {
-    return { table: 'de tabla', kanban: 'kanban', calendar: 'de calendario', cards: 'de tarjetas', gantt: 'Gantt' }[type] ?? type;
+    return { table: 'de tabla', kanban: 'kanban', calendar: 'de calendario', cards: 'de tarjetas', gantt: 'Gantt', workload: 'de carga de trabajo' }[type] ?? type;
 }
 
 function timeBucketLabel(b: string): string {
