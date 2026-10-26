@@ -9258,6 +9258,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         equipos, así que el acceso por equipo no contaba ahí. 1512 tests de API
         en verde + E2E navegador 26/26 y 15/15 (escritorio, celular y oscuro).
 
+  - [x] **Roles propios e invitados externos (v0.1.312, ADR-S66, opciones C2 y
+        C3 del estudio; con esto la fase 3 queda completa)**: (a) **Roles
+        propios** (`custom_roles`, `memberships.custom_role_id`, migración
+        0086): Ajustes → Roles con los cuatro roles fijos («Fijo») y los propios
+        «Basado en Gerente / Agente / Lector», interruptores por módulo, cuántas
+        personas lo tienen y borrado que las devuelve a su base. El rol BASE
+        sigue mandando para el alcance y el acceso por defecto; el propio decide
+        las CAPACIDADES, que el TenantGuard resuelve una vez por pedido y todo
+        chequeo consulta con `can()` (`authz/can.ts`, el único lugar que mira la
+        matriz; un test exige que `roleHasCapability` no aparezca en otro lado
+        y que todo actor armado desde un pedido pase por `aclOf(req)`).
+        Capacidades nuevas —ver tableros, usar el asistente, formularios,
+        documentos, administrar equipos— que los roles base conservan
+        exactamente (tabla antes/después en el PR). El rol propio tiene su fila
+        en Permisos de cada lista (hereda la de su base hasta que se configura);
+        asistente y MCP filtran por capacidades. (b) **Invitados** (rol `guest`;
+        no ocupan usuario: tope `max_guests` por plan 5/20/100/∞, editable en la
+        consola): se comparte una LISTA o un REGISTRO suelto (`record_shares`)
+        con nivel ver / comentar / editar, y la cuenta nueva llega por invitación
+        de 7 días. El invitado entra a su shell «Compartido conmigo», ve sólo lo
+        compartido, los campos de un Lector y nunca relaciones, botones ni el
+        resumen de la operación interna (tiempo, aprobaciones, checklists);
+        sólo vista de tabla. **Fail-closed**: todo endpoint sin `@AllowGuest()`
+        le da 403, con un test que exige la lista exacta de rutas abiertas.
+        Ajustes → Miembros → Invitados: cambiar niveles, reenviar, pasar a
+        miembro o quitar. (c) Con lo que entró antes: un invitado nunca aprueba
+        ni aparece para elegir; un aprobador «por rol» cuenta al rol propio por
+        su base, con la fila de su rol en la lista; carga de trabajo, avisos,
+        resumen diario y tableros publicados usan el rol propio. **Agujeros de
+        permisos encontrados al integrar y corregidos**: avisos, resumen diario
+        y envíos de tableros ignoraban el acceso del rol propio (quien sólo
+        tenía acceso por él no recibía menciones ni pedidos de aprobación); un
+        invitado podía recibir un tablero por correo y figurar como aprobador;
+        aprobaciones y carga de trabajo usaban la matriz sin el rol propio; los
+        indicadores de fila le mostraban al invitado la operación interna. De
+        paso, `scripts/dev/slot.sh` acepta `IMAGINA_SLOT_DB` (otra base para un
+        slot). 1534 tests de API en verde + E2E navegador 74/74 y 31/31
+        (escritorio, celular y oscuro).
+
+        **Con esto la fase 3 del estudio queda completa: carga de trabajo,
+        aprobaciones, checklists y plantillas de registro, equipos, roles
+        propios e invitados.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
