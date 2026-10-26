@@ -111,3 +111,5 @@ export * from './xlsx';
 export * from './schemas/team';
 export * from './schemas/custom-role';
 export * from './schemas/guest';
+export * from './schemas/booking';
+export * from './schemas/booking-slots';

@@ -31,6 +31,8 @@ export const AUTOMATION_TRIGGERS = [
     'approval_resolved',
     // A9 — un checklist del registro quedó completo.
     'checklist_completed',
+    // D5 — una cita de la agenda se agendó, se reprogramó o se canceló.
+    'booking_event',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
