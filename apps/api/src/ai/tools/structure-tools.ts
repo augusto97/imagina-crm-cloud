@@ -124,6 +124,7 @@ import { ApprovalsService } from '../../approvals/approvals.service';
 import { isNumericComputed } from '../../records/computed-sql';
 import { DependenciesRepository } from '../../records/dependencies.repository';
 import { FormsService } from '../../forms/forms.service';
+import { BookingService } from '../../booking/booking.service';
 import { RecordTemplatesService } from '../../record-templates/record-templates.service';
 import { templateForModel } from './record-template-spec';
 import { DataConsentService } from '../../data-consent/data-consent.service';
@@ -543,7 +544,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -557,7 +558,8 @@ const automationSpec = z.object({
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}. ' +
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
-                'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}.',
+                'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
+                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled] (sin él, los tres), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -666,7 +668,7 @@ type Payload =
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
 type StructureKind = Exclude<
     AiProposalKind,
-    'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'configure_approval_flow' | 'create_record_template'
+    'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'configure_approval_flow' | 'create_record_template' | 'configure_booking_page'
 >;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
@@ -732,6 +734,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly recordTemplates?: RecordTemplatesService,
         // C1 — equipos (list_teams, permisos por equipo, list_members).
         @Optional() private readonly teams?: TeamsService,
+        // D5 — páginas de agenda (las lee get_list_schema; el disparador booking_event).
+        @Optional() private readonly booking?: BookingService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -952,7 +956,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1143,6 +1147,7 @@ export class StructureTools implements AiProposalApplier {
             ? await this.documents.list(ctx.tenantId, String(list.id)).catch(() => [])
             : [];
         const listForms = this.forms ? await this.forms.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
+        const bookingPageList = this.booking ? await this.booking.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
         // C5 — flujos de aprobación de la lista.
         const approvalFlowList = this.approvals ? await this.approvals.listFlows(ctx.tenantId, String(list.id)).catch(() => []) : [];
         const recordTpls = this.recordTemplates ? await this.recordTemplates.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
@@ -1266,6 +1271,29 @@ export class StructureTools implements AiProposalApplier {
                         asks_data_consent: st.data_consent && consent !== null,
                     };
                 }),
+                // D5 — páginas de agenda: lo que se reserva y quién atiende (las
+                // personas por id; los horarios se arman en el editor).
+                booking_pages: bookingPageList.map((b) => ({
+                    id: b.id,
+                    name: b.name,
+                    published: b.enabled,
+                    public_url: b.public_url ?? b.public_path,
+                    bookings: b.bookings_count,
+                    upcoming: b.upcoming_count,
+                    services: b.config.services.filter((x) => x.active).map((x) => ({ id: x.id, name: x.name, duration_min: x.duration_min })),
+                    staff: b.config.staff
+                        .filter((x) => x.active)
+                        .map((x) => (x.kind === 'resource' ? { resource: x.name } : { user_id: x.staff_user_id, name: x.name || null })),
+                    choose_staff: b.config.settings.choose_staff,
+                    rules: b.config.rules,
+                    writes: Object.fromEntries(
+                        (['start_field_id', 'end_field_id', 'duration_field_id', 'person_field_id', 'resource_field_id', 'service_field_id', 'name_field_id', 'email_field_id', 'phone_field_id', 'status_field_id'] as const)
+                            .filter((k) => b.config.mapping[k] !== null)
+                            .map((k) => [k.replace(/_field_id$/, ''), fieldById.get(b.config.mapping[k]!)?.slug ?? null]),
+                    ),
+                    reminders_min_before: b.config.notifications.reminders.map((r) => r.minutes_before),
+                    problems: b.problems,
+                })),
                 // C5 — flujos de aprobación: pasos en serie con quién aprueba
                 // (por id de persona, rol o slug del campo Persona).
                 approval_flows: approvalFlowList.map((f) => ({
@@ -1452,6 +1480,7 @@ export class StructureTools implements AiProposalApplier {
                 automations,
                 records: recordsBp,
                 record_templates: [],
+                booking_pages: [],
             });
         }
 
@@ -4650,6 +4679,12 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
         case 'approval_resolved': {
             const name = APPROVAL_FLOW_NAMES.get(cfg);
             return name ? `Cuando se resuelve una aprobación de «${name}»` : 'Cuando se aprueba o se rechaza';
+        }
+        case 'booking_event': {
+            const events = Array.isArray(cfg.events) ? (cfg.events as string[]) : [];
+            const words: Record<string, string> = { booked: 'se agenda', rescheduled: 'se reprograma', cancelled: 'se cancela' };
+            const which = events.filter((e) => words[e]).map((e) => words[e]!);
+            return which.length > 0 && which.length < 3 ? `Cuando ${which.join(' o ')} una cita` : 'Cuando se agenda, reprograma o cancela una cita';
         }
         case 'checklist_completed':
             return cfg.checklist_mode === 'all'

@@ -1108,6 +1108,7 @@ const citas: SystemTemplate = {
                 select('Estado', 'estado', [
                     opt('programada', 'Programada', 'sky'),
                     opt('confirmada', 'Confirmada', 'emerald'),
+                    opt('reprogramada', 'Reprogramada', 'amber'),
                     opt('atendida', 'Atendida', 'violet'),
                     opt('cancelada', 'Cancelada', 'rose'),
                     opt('no_asistio', 'No asistió', 'slate'),
@@ -1128,15 +1129,50 @@ const citas: SystemTemplate = {
                     table('Tabla', true),
                     kanban('Por estado', 'estado'),
                 ],
+                // D5 — la agenda en línea: el cliente elige servicio, día y hora;
+                // la cita llega como un registro Confirmado con su correo, .ics y
+                // recordatorios (24 h y 1 h antes). Nace sin publicar y atiende
+                // quien aplica la plantilla.
+                booking_pages: [
+                    {
+                        name: 'Agenda en línea',
+                        config: {
+                            settings: { title: 'Agenda tu cita', description: 'Elige el servicio, el día y la hora que te quedan bien.' },
+                            services: [
+                                { id: 'svcconsulta', name: 'Consulta', duration_min: 30, option_value: 'consulta' },
+                                { id: 'svccontrol', name: 'Control', duration_min: 20, option_value: 'control' },
+                                { id: 'svctratamiento', name: 'Tratamiento', duration_min: 60, option_value: 'tratamiento' },
+                            ],
+                            rules: { buffer_after_min: 10, min_notice_min: 120, max_days_ahead: 60, slot_interval_min: 30 },
+                            mapping: {
+                                start_field_id: ref('fecha'),
+                                duration_field_id: ref('duracion'),
+                                person_field_id: ref('profesional'),
+                                service_field_id: ref('servicio'),
+                                name_field_id: ref('cliente'),
+                                email_field_id: ref('email'),
+                                phone_field_id: ref('telefono'),
+                                status_field_id: ref('estado'),
+                                status_confirmed: 'confirmada',
+                                status_rescheduled: 'reprogramada',
+                                status_cancelled: 'cancelada',
+                            },
+                            questions: [{ id: 'qnotas', type: 'field', field_id: ref('notas'), label: '¿Algo que debamos saber antes de la cita?' }],
+                        },
+                    },
+                ],
                 automations: [
                     {
                         name: 'Recordatorio el día anterior',
-                        description: 'Un día antes de la cita, si está confirmada, le manda un recordatorio al cliente.',
+                        // Las citas que llegan por la agenda en línea ya reciben sus
+                        // recordatorios (con los enlaces para cambiar o cancelar):
+                        // esta cubre las que el equipo carga a mano.
+                        description: 'Un día antes de una cita cargada a mano (Programada), le manda un recordatorio al cliente. Las de la agenda en línea reciben los suyos.',
                         trigger_type: 'due_date_reached',
                         trigger_config: {
                             due_field: 'fecha',
                             offset_minutes: -24 * 60,
-                            field_filters: [{ slug: 'estado', op: 'eq', value: 'confirmada' }],
+                            field_filters: [{ slug: 'estado', op: 'eq', value: 'programada' }],
                         },
                         actions: [
                             {

@@ -32,6 +32,11 @@ export type AuditAction =
     | 'form.unpublish'
     | 'form.regenerate_link'
     | 'form.delete'
+    // D5 — páginas de agenda públicas (crean citas en la lista sin cuenta).
+    | 'booking.publish'
+    | 'booking.unpublish'
+    | 'booking.regenerate_link'
+    | 'booking.delete'
     // v0.1.289 — verificación anti-robots de un formulario y de la empresa,
     // y la contraseña del portal de clientes.
     | 'form.captcha_on'

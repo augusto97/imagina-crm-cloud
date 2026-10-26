@@ -3,6 +3,12 @@ import { ModuleRef } from '@nestjs/core';
 import {
     bulkOperationSchema,
     checklistTriggerMatches,
+    bookingMergeValue,
+    bookingTriggerMatches,
+    sampleBookingEvent,
+    BOOKING_EVENTS,
+    BOOKING_EVENT_LABELS,
+    type BookingEventInfo,
     type ChecklistCompletedInfo,
     type FromTemplateResult,
     fieldDefaultOf,
@@ -70,6 +76,7 @@ import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
+import { BOOKING_SIMULATOR, type BookingSimulator } from '../booking/booking-simulator';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
@@ -127,6 +134,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     approval_resolved: ['approval_resolved'],
     // A9 — un checklist del registro quedó completo.
     checklist_completed: ['checklist_completed'],
+    // D5 — una cita de la agenda se agendó, se reprogramó o se canceló.
+    booking_event: ['booking_event'],
 };
 
 interface PersonInfo {
@@ -163,6 +172,8 @@ interface RunContext {
     button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
     /** A9 — el checklist que quedó completo (`{{checklist.nombre}}`). */
     checklist?: ChecklistCompletedInfo;
+    /** D5 — la cita de la agenda (`{{cita.servicio}}`, `{{cita.inicio}}`…). */
+    booking?: BookingEventInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
@@ -301,6 +312,7 @@ export interface ResumeState {
         form?: { id: number; name: string };
         button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
         checklist?: ChecklistCompletedInfo;
+        booking?: BookingEventInfo;
         pdf?: Record<string, unknown>;
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
@@ -439,6 +451,19 @@ export class AutomationEngine {
         return this.recordTemplatesSvc;
     }
 
+    /** D5 — la agenda («Probar» arma la cita de ejemplo); se resuelve al usarla. */
+    private bookingSim: BookingSimulator | null | undefined;
+    private booking(): BookingSimulator | null {
+        if (this.bookingSim === undefined) {
+            try {
+                this.bookingSim = this.moduleRef?.get<BookingSimulator>(BOOKING_SIMULATOR, { strict: false }) ?? null;
+            } catch {
+                this.bookingSim = null;
+            }
+        }
+        return this.bookingSim;
+    }
+
     /** Marca de lista de tienda (v0.1.213), o null. Una lectura por lista y por corrida. */
     private async storeMarkerOf(ctx: RunContext, listId: number): Promise<StoreListMarker | null> {
         ctx.storeMarkers ??= new Map();
@@ -498,6 +523,7 @@ export class AutomationEngine {
                 ...(event.button ? { button: event.button } : {}),
                 ...(event.approval ? { approval: event.approval } : {}),
                 ...(event.checklist ? { checklist: event.checklist } : {}),
+                ...(event.booking ? { booking: event.booking } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -802,6 +828,7 @@ export class AutomationEngine {
             ...(state.ctx.form ? { form: state.ctx.form } : {}),
             ...(state.ctx.button ? { button: state.ctx.button } : {}),
             ...(state.ctx.checklist ? { checklist: state.ctx.checklist } : {}),
+            ...(state.ctx.booking ? { booking: state.ctx.booking } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
@@ -1100,6 +1127,21 @@ export class AutomationEngine {
             case 'checklist_completed':
                 notes.push('Se asume que se completó un checklist de este registro; {{checklist.nombre}} queda vacío en la prueba.');
                 break;
+            case 'booking_event': {
+                // D5 — la cita de este registro (si llegó por una página de agenda)
+                // con el primer evento que escucha el disparador.
+                const events = Array.isArray(cfg.events) ? cfg.events.filter((e): e is BookingEventInfo['event'] => (BOOKING_EVENTS as readonly string[]).includes(String(e))) : [];
+                const assumed = events[0] ?? 'booked';
+                const info = ctx.recordId !== null ? await this.booking()?.simulatedEvent(ctx.tenantId, ctx.recordId, assumed) : null;
+                ctx.booking = info ?? sampleBookingEvent(assumed);
+                notes.push(`Se asume que la cita ${BOOKING_EVENT_LABELS[assumed].toLowerCase()}${info ? ` («${info.page_name}»)` : ''}.`);
+                if (!info) {
+                    notes.push('Este registro no llegó por una página de agenda: las variables {{cita.x}} usan datos de ejemplo.');
+                } else if (!bookingTriggerMatches(cfg, info)) {
+                    reasons.push('esta cita es de otra página de agenda');
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -1192,6 +1234,10 @@ export class AutomationEngine {
         // A9 — «Cuando se completa un checklist»: cualquiera, uno por nombre o todos.
         if (auto.triggerType === 'checklist_completed') {
             if (!ctx.checklist || !checklistTriggerMatches(cfg, ctx.checklist)) return false;
+        }
+        // D5 — «Cuando se agenda, reprograma o cancela una cita»: la página (vacía = cualquiera) y los eventos.
+        if (auto.triggerType === 'booking_event') {
+            if (!ctx.booking || !bookingTriggerMatches(cfg, ctx.booking)) return false;
         }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
@@ -1294,6 +1340,10 @@ export class AutomationEngine {
             // A9 — el checklist que quedó completo.
             if (token === 'checklist.nombre') return ctx.checklist?.name ?? '';
             if (token === 'checklist.items') return ctx.checklist?.total ?? '';
+            // D5 — la cita de la agenda: {{cita.servicio}}, {{cita.inicio}}, {{cita.enlace_cancelar}}…
+            if (token.startsWith('cita.')) {
+                return bookingMergeValue(ctx.booking, token.slice('cita.'.length), ctx.format?.time_format ?? 'h24');
+            }
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -1525,6 +1575,7 @@ export class AutomationEngine {
                 ...(ctx.form ? { form: ctx.form } : {}),
                 ...(ctx.button ? { button: ctx.button } : {}),
                 ...(ctx.checklist ? { checklist: ctx.checklist } : {}),
+                ...(ctx.booking ? { booking: ctx.booking } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),

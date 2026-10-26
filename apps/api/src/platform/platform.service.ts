@@ -97,6 +97,8 @@ import {
     documentNumbers,
     documentTemplates,
     forms,
+    bookingAppointments,
+    bookingPages,
     formPendingSubmissions,
     dataConsents,
     dataConsentVersions,
@@ -431,6 +433,9 @@ export class PlatformService {
             // confirmar (antes que el formulario: la FK las ata a él).
             await tx.delete(formPendingSubmissions).where(eq(formPendingSubmissions.tenantId, id));
             await tx.delete(forms).where(eq(forms.tenantId, id));
+            // D5 — agenda de citas: las citas (atadas a registros) y sus páginas.
+            await tx.delete(bookingAppointments).where(eq(bookingAppointments.tenantId, id));
+            await tx.delete(bookingPages).where(eq(bookingPages.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));
             await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));

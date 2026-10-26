@@ -1088,6 +1088,8 @@ export class RecordsService {
             expect?: Record<string, unknown>;
             /** v0.1.287 — lista y campos ya resueltos (edición en lote: no se re-resuelven por fila). */
             prepared?: { list: List; fields: Field[] };
+            /** D5 — el cambio lo hizo la agenda (ver `RecordChange.origin`). */
+            origin?: 'booking';
         } = {},
     ): Promise<RecordDto> {
         const list = opts.prepared?.list ?? (await this.lists.get(tenantId, listIdOrSlug));
@@ -1171,7 +1173,17 @@ export class RecordsService {
                 ...(opts.automationChain ? { chain: opts.automationChain } : {}),
             });
             // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
-            this.changes?.emit({ tenantId, listId, recordId: changed.id, before: changed.before, after: changed.after, actorId: actor.userId, list, fields });
+            this.changes?.emit({
+                tenantId,
+                listId,
+                recordId: changed.id,
+                before: changed.before,
+                after: changed.after,
+                actorId: actor.userId,
+                list,
+                fields,
+                ...(opts.origin && changed.id === row.id ? { origin: opts.origin } : {}),
+            });
             // Recurrencias con trigger status_change: fire-and-forget (no bloquea
             // la respuesta del update; un fallo se loguea y no rompe la mutación).
             void this.recurrences

@@ -1,4 +1,4 @@
-import { BookmarkPlus, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { BookmarkPlus, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -23,6 +23,7 @@ export type ListSettingsSectionId =
     | 'compartir'
     | 'documentos'
     | 'formularios'
+    | 'agenda'
     | 'aprobaciones'
     | 'plantillas';
 
@@ -96,6 +97,14 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: ClipboardList,
         title: __('Formularios'),
         description: __('Una página que cualquiera puede llenar —o que insertas en tu sitio— y cada respuesta llega como un registro nuevo.'),
+    },
+    {
+        // D5 — agenda de citas pública (estilo Calendly).
+        id: 'agenda',
+        label: __('Agenda'),
+        icon: CalendarClock,
+        title: __('Agenda de citas'),
+        description: __('Una página donde tus clientes eligen el servicio, quién los atiende, el día y la hora libres; cada cita llega como un registro.'),
     },
     {
         // C5 — flujos de aprobación (pasos en serie, qué se pone al resolver).

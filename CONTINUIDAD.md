@@ -364,15 +364,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.312** (roles propios e invitados; fase 3 completa), en `main`.
+versión publicada: **v0.1.313** (agenda de citas pública; fase 4 completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
   («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
   facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
   citas pública estilo Calendly (D5)**: "lo otro puedes ponerlo en un documento
-  de ideas para retomar después si surge la necesidad". Se lanzó un agente
-  (slot 2, migración 0086). El resto quedó en **`docs/ideas.md`**, el banco de
+  de ideas para retomar después si surge la necesidad". **Publicada en
+  v0.1.313** (migración 0087); con eso la fase 4 queda completa. El resto quedó en **`docs/ideas.md`**, el banco de
   ideas: todo lo no descartado (pospuestos de la fase 4, oleadas 5-6, el resto
   del estudio por área, lo que quedó afuera de cada versión, pendientes
   técnicos, lo no recomendado y lo descartado). **Cuando el usuario pida ideas,
@@ -720,6 +720,25 @@ versión publicada: **v0.1.312** (roles propios e invitados; fase 3 completa), e
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.313** — **Agenda de citas pública estilo Calendly**
+  (ADR-S67, opción D5; la fase 4 era sólo esto → **fase 4 completa**). Páginas
+  de agenda por lista (Ajustes de la lista → Agenda) con constructor a pantalla
+  completa y la página pública real como vista previa; cada cita es un registro
+  «Confirmada»; horarios calculados en el servidor con un motor puro de shared
+  (zona de la empresa, festivos, márgenes, aviso mínimo, tope diario, lo ocupado
+  en la lista y en Google Calendar/Outlook) y candado por persona (dos reservas
+  a la vez → una gana); correo con `.ics`, enlaces firmados para cambiar o
+  cancelar, recordatorios de una sola vez y disparador «Cuando se agenda,
+  reprograma o cancela una cita» con `{{cita.*}}`. Migración 0087. Decisiones:
+  las opciones de servicio/recurso/estado se crean al publicar; un recordatorio
+  cuyo momento ya pasó al reservar se da por cumplido; atienden sólo miembros
+  que pueden editar la lista (nunca clientes ni invitados). Bugs atrapados en
+  el E2E: sitios permitidos en varias líneas, vista previa en un paso viejo,
+  calendario gigante en escritorio, la persona al reprogramar, agendas en la
+  papelera que seguían ocupando y un invitado como «quién atiende». E2E
+  123/123. Pendiente (en `docs/ideas.md`): atender por equipo, cobrar al
+  agendar, citas grupales, sincronización inversa del calendario y ver las
+  citas desde el portal.
 - **2026-10-26 · v0.1.312** — **Roles propios + invitados externos** (ADR-S66,
   opciones C2 + C3; última entrega de la fase 3). Roles «Basado en…» con
   capacidades por módulo (todo chequeo pasa por `can()`) y rol `guest` para

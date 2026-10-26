@@ -4068,4 +4068,39 @@ El portal del cliente sigue aparte (rol `client`).
 
 ---
 
-**Versión del documento:** 1.109.0 (roles propios e invitados)
+### ADR-S67 — Agenda de citas pública (v0.1.313)
+
+**Contexto.** Agendar citas (consultorios, asesorías, demos) era un caso común
+que se resolvía con un formulario y coordinación a mano: el cliente no veía los
+horarios libres y nada impedía que dos personas pidieran la misma hora.
+
+**Decisión.**
+1. **Páginas de agenda por lista**, servidas por el API sin sesión
+   (`/api/v1/public/b/:token`), igual que formularios y listas públicas: CSP
+   con nonce, `frame-ancestors` por sitio permitido, el token es la credencial
+   y todo lo que no corresponde da el mismo 404 opaco.
+2. **La cita es un registro** de la lista (creado por `RecordsService`, con
+   actividad y automatizaciones). Lo que no es dato del cliente —el estado de
+   la cita, la persona o recurso, los recordatorios enviados, el evento externo—
+   vive en `booking_appointments`, fuera de `data` (migración 0087, RLS).
+3. **Un solo motor de horarios**, puro y en `packages/shared`: lo usan la vista
+   previa del constructor, la página y el re-chequeo al confirmar, así lo que se
+   ve es lo que se acepta. Ocupado = citas + registros de la persona o recurso
+   en cualquier agenda viva de la empresa + su Google Calendar u Outlook (sólo
+   inicio y fin). La exclusión mutua es un candado advisory por persona o
+   recurso en la transacción del alta: de dos reservas a la vez, una gana.
+4. **Gestión por enlace firmado** (HMAC): GET muestra, POST actúa, con el aviso
+   mínimo de la página. Correos por el correo de la empresa con la cuota de
+   ADR-S18.
+5. **Quién atiende** = miembros del equipo que pueden editar la lista (con sus
+   equipos y su rol propio); nunca un cliente ni un invitado.
+
+**Consecuencias.** La cita aparece sola en el calendario, «Mi trabajo», los
+tableros y las automatizaciones (disparador «Cuando se agenda, reprograma o
+cancela una cita»). Atender por equipo, reservas grupales (capacidad > 1) o un
+calendario propio por recurso exigen ampliar el modelo; mover el evento en
+Google no mueve la cita (no hay sincronización inversa).
+
+---
+
+**Versión del documento:** 1.110.0 (agenda de citas)

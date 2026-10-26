@@ -23,6 +23,8 @@ import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import {
+    BOOKING_EVENT_LABELS,
+    BOOKING_EVENTS,
     cronError,
     describeWait,
     FOR_EACH_MAX_ITEMS,
@@ -34,6 +36,7 @@ import {
     timeZoneLabel,
     WAIT_UNITS,
     waitConfigProblem,
+    type BookingEvent,
     type Connection,
     type ConnectorParam,
 } from '@imagina-base/shared';
@@ -56,6 +59,7 @@ import { ActionTypeSelect } from './ActionTypeSelect';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
+import { useBookingPages } from '../booking/useBookingPages';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { ActionTypeMenu } from './ActionTypeMenu';
 import { ifElseDepth, insideLoop, type SeqPath } from './actionsTree';
@@ -165,6 +169,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
     // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
+    // D5 — booking_event: una página de agenda (sin ella, cualquiera) y qué eventos.
+    if (typeof c.booking_page_id === 'number' && c.booking_page_id > 0) out.booking_page_id = c.booking_page_id;
+    if (Array.isArray(c.events) && c.events.length > 0) out.events = c.events;
     // A9 — checklist_completed: cualquiera (default), uno por nombre o todos.
     if (c.checklist_mode === 'named' || c.checklist_mode === 'all') out.checklist_mode = c.checklist_mode;
     if (typeof c.checklist_name === 'string' && c.checklist_name.trim() !== '') out.checklist_name = c.checklist_name.trim();
@@ -206,6 +213,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando una solicitud de aprobación de esta lista se resuelve: alguien la aprueba (en el último paso), la rechaza, la devuelve para corregir o la cancela. Puedes usar {{aprobacion.resultado}}, {{aprobacion.flujo}}, {{aprobacion.motivo}} y {{aprobacion.decidio}}.');
         case 'checklist_completed':
             return __('Se ejecuta cuando alguien marca el último ítem pendiente de un checklist de un registro de esta lista. Puede ser cualquier checklist, uno con un nombre en particular («Documentación») o recién cuando el registro tiene TODOS sus checklists completos. Puedes usar {{checklist.nombre}}.');
+        case 'booking_event':
+            return __('Se ejecuta cuando un cliente agenda una cita en una página de agenda de esta lista, cuando la cambia o la cancela desde el enlace de su correo, o cuando el equipo la mueve o la cancela en la app. El registro es la cita. Puedes usar {{cita.servicio}}, {{cita.inicio}}, {{cita.persona}}, {{cita.enlace_reprogramar}} y {{cita.enlace_cancelar}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
@@ -303,6 +312,7 @@ export function TriggerConfigEditor({
             )}
 
             {triggerType === 'form_submitted' && <FormSubmittedConfig config={config} onChange={onChange} />}
+            {triggerType === 'booking_event' && <BookingEventConfig config={config} onChange={onChange} />}
 
             {triggerType === 'button_pressed' && <ButtonPressedConfig config={config} onChange={onChange} fields={fields} />}
 
@@ -409,6 +419,63 @@ function ButtonPressedConfig({
                     {__('El botón tiene que tener la acción «Correr una automatización» para que esta corra al presionarlo.')}
                 </p>
             )}
+        </div>
+    );
+}
+
+/** D5 — qué página de agenda y qué eventos disparan (sin elegir: cualquiera y los tres). */
+function BookingEventConfig({ config, onChange }: { config: TriggerConfig; onChange: (next: TriggerConfig) => void }): JSX.Element {
+    const listId = useAutomationListId();
+    const pages = useBookingPages(listId);
+    const current = typeof config.booking_page_id === 'number' ? config.booking_page_id : 0;
+    const list = pages.data ?? [];
+    const events = Array.isArray(config.events) ? (config.events as BookingEvent[]) : [];
+    const all = events.length === 0;
+    const toggle = (ev: BookingEvent, on: boolean): void => {
+        const base = all ? [...BOOKING_EVENTS] : events;
+        const nextEvents = on ? [...new Set([...base, ev])] : base.filter((x) => x !== ev);
+        const next = { ...config };
+        if (nextEvents.length === 0 || nextEvents.length === BOOKING_EVENTS.length) delete next.events;
+        else next.events = BOOKING_EVENTS.filter((x) => nextEvents.includes(x));
+        onChange(next);
+    };
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="trigger-booking-config">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label htmlFor="trigger-booking-page">{__('Página de agenda')}</Label>
+                <Select
+                    id="trigger-booking-page"
+                    value={String(current)}
+                    onChange={(e) => {
+                        const id = Number(e.target.value);
+                        const next = { ...config };
+                        if (id > 0) next.booking_page_id = id;
+                        else delete next.booking_page_id;
+                        onChange(next);
+                    }}
+                >
+                    <option value="0">{__('Cualquier agenda de esta lista')}</option>
+                    {list.map((p) => (
+                        <option key={p.id} value={p.id}>
+                            {p.name}
+                            {p.enabled ? '' : ` (${__('sin publicar')})`}
+                        </option>
+                    ))}
+                    {current > 0 && !list.some((p) => p.id === current) && !pages.isLoading && <option value={current}>{__('Agenda eliminada')}</option>}
+                </Select>
+                {!pages.isLoading && list.length === 0 && (
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Esta lista todavía no tiene una agenda: créala en Ajustes de la lista → Agenda.')}</p>
+                )}
+            </div>
+            <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <legend className="imcrm-mb-1 imcrm-text-sm imcrm-font-medium">{__('Qué la dispara')}</legend>
+                {BOOKING_EVENTS.map((ev) => (
+                    <label key={ev} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                        <input type="checkbox" checked={all || events.includes(ev)} onChange={(e) => toggle(ev, e.target.checked)} data-booking-event={ev} />
+                        {__(BOOKING_EVENT_LABELS[ev])}
+                    </label>
+                ))}
+            </fieldset>
         </div>
     );
 }

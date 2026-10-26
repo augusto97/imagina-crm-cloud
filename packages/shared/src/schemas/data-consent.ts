@@ -280,7 +280,7 @@ export interface DataConsentState {
     stats: { accepted: number; withdrawn: number; forms_asking: number };
 }
 
-export const DATA_CONSENT_SOURCES = ['form', 'portal'] as const;
+export const DATA_CONSENT_SOURCES = ['form', 'portal', 'booking'] as const;
 export type DataConsentSource = (typeof DATA_CONSENT_SOURCES)[number];
 
 export const DATA_CONSENT_WITHDRAW_VIAS = ['link', 'portal', 'admin'] as const;
@@ -322,7 +322,7 @@ export interface DataConsentRecordsPage {
 
 export const listDataConsentsQuerySchema = z.object({
     status: z.enum(['all', 'active', 'withdrawn']).default('all'),
-    source: z.enum(['all', 'form', 'portal']).default('all'),
+    source: z.enum(['all', 'form', 'portal', 'booking']).default('all'),
     /** Aceptadas desde / hasta este día (zona de la empresa), inclusive. */
     from: isoDateSchema.optional(),
     to: isoDateSchema.optional(),

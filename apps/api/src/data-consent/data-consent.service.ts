@@ -418,6 +418,40 @@ export class DataConsentService {
         return { id: row!.id, withdrawRef: ref };
     }
 
+    /**
+     * D5 — La autorización dada al reservar en una página de agenda. Mismo
+     * contrato que la de un formulario (se guarda ANTES que el registro y se
+     * descarta si la cita no se crea); el origen es «Agenda «X»».
+     */
+    async recordBooking(
+        tenantId: number,
+        input: Omit<FormConsentInput, 'formId' | 'formName'> & { pageName: string },
+    ): Promise<{ id: number; withdrawRef: string | null }> {
+        const ref = input.withdrawRef !== undefined ? input.withdrawRef : input.email ? newWithdrawRef() : null;
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .insert(dataConsents)
+                .values({
+                    tenantId,
+                    version: input.version,
+                    textHash: input.textHash,
+                    source: 'booking',
+                    sourceLabel: `Agenda «${input.pageName}»`.slice(0, 300),
+                    formId: null,
+                    listId: input.listId,
+                    recordId: input.recordId,
+                    subjectEmail: input.email?.slice(0, 320) ?? null,
+                    subjectName: input.name?.slice(0, 300) ?? null,
+                    acceptedAt: input.acceptedAt,
+                    ip: input.ip?.slice(0, 64) ?? null,
+                    userAgent: input.userAgent?.slice(0, 400) ?? null,
+                    withdrawRef: ref,
+                })
+                .returning({ id: dataConsents.id }),
+        );
+        return { id: row!.id, withdrawRef: ref };
+    }
+
     /** Ata la autorización al registro que creó la respuesta. */
     async linkRecord(tenantId: number, consentId: number, recordId: number): Promise<void> {
         await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -843,7 +877,7 @@ export class DataConsentService {
                 at(c.acceptedAt),
                 c.subjectName ?? '',
                 c.subjectEmail ?? '',
-                c.source === 'portal' ? 'Portal' : 'Formulario',
+                c.source === 'portal' ? 'Portal' : c.source === 'booking' ? 'Agenda' : 'Formulario',
                 c.sourceLabel,
                 listName ?? '',
                 c.recordId !== null ? String(c.recordId) : '',

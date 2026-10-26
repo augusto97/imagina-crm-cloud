@@ -143,6 +143,12 @@ export class NotificationsService implements OnModuleInit {
     // ─────────────────────────── Eventos ───────────────────────────
 
     async onNotify(e: NotifyEvent): Promise<void> {
+        if (e.type === 'booking') {
+            // D5 — quien atiende sigue su cita (le llegan los cambios del equipo).
+            if (e.kind === 'assigned') await this.follow(e.tenantId, e.listId, e.recordId, e.userIds);
+            await this.deliver(e.tenantId, e.kind, e.userIds, { listId: e.listId, recordId: e.recordId, actorId: null, title: e.title, body: e.body });
+            return;
+        }
         if (e.type === 'portal_record_created') {
             // Lo que el cliente abre desde su portal le llega a quien sigue SU
             // registro (no hay seguidores en uno recién creado).
@@ -263,6 +269,8 @@ export class NotificationsService implements OnModuleInit {
     }
 
     async onRecordChange(c: RecordChange): Promise<void> {
+        // D5 — la agenda avisa con su propio texto (evento `booking` del NotifyHub).
+        if (c.origin === 'booking') return;
         const actorId = c.actorId ?? 0;
         // Con la lista y los campos que trae el aviso no hace falta releer nada.
         const ctx = c.list && c.fields ? ctxFrom(c.list, [...c.fields], c.recordId, c.after) : await this.recordCtx(c.tenantId, c.listId, c.recordId);

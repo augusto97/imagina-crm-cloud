@@ -610,6 +610,13 @@
       "when": 1784200000200,
       "tag": "0086_custom_roles_guests",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1784200000210,
+      "tag": "0087_booking_pages",
+      "breakpoints": true
     }
   ]
 }

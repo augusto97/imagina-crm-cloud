@@ -39,6 +39,8 @@ import {
     users,
     dataConsents,
     dataConsentVersions,
+    bookingAppointments,
+    bookingPages,
 } from '../src/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
@@ -396,7 +398,22 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await pg.db.update(memberships).set({ customRoleId: role!.id }).where(and(eq(memberships.tenantId, id), eq(memberships.userId, owner!.id)));
         await pg.db.insert(recordShares).values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, level: 'view' });
 
+        // D5 — una página de agenda con una cita.
+        const [bpage] = await pg.db.insert(bookingPages).values({ tenantId: id, listId: list!.id, name: 'Agenda', token: `agenda-a-borrar-${id}-xyz`, config: {} }).returning();
+        await pg.db.insert(bookingAppointments).values({
+            tenantId: id,
+            pageId: bpage!.id,
+            listId: list!.id,
+            recordId: record!.id,
+            staffId: 'stfx',
+            serviceId: 'svcx',
+            startAt: new Date('2026-11-03T13:00:00Z'),
+            endAt: new Date('2026-11-03T13:30:00Z'),
+        });
+
         await platform.deleteTenant(id);
+        expect(await pg.db.select().from(bookingAppointments).where(eq(bookingAppointments.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(bookingPages).where(eq(bookingPages.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklistItems).where(eq(recordChecklistItems.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklists).where(eq(recordChecklists.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, id))).toHaveLength(0);

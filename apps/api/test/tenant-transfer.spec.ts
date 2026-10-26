@@ -45,6 +45,8 @@ import {
     tenants,
     timeEntries,
     users,
+    bookingPages,
+    bookingAppointments,
 } from '../src/db/schema';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { TenantTransferService } from '../src/platform/tenant-transfer.service';
@@ -80,6 +82,7 @@ describe('Migración de empresa (v0.1.197)', () => {
     let relFieldId: number;
     let estadoFieldId: number;
     let clienteRecId: number;
+    let agendaId: number;
     let subtareaRecId: number;
     let facturaRecId: number;
     let attachmentId: number;
@@ -426,6 +429,42 @@ describe('Migración de empresa (v0.1.197)', () => {
                 { type: 'create_subtasks_from_template', config: { template_id: tplClientesId, include_checklists: true } },
             ] as never,
         });
+        // D5 — una página de agenda (atiende Carlos) con una cita y una
+        // automatización que la nombra por id.
+        const [agenda] = await pg.db
+            .insert(bookingPages)
+            .values({
+                tenantId: tenantA,
+                listId: clientesId,
+                name: 'Agenda',
+                token: 'agenda-token-del-origen-123',
+                enabled: true,
+                config: { mapping: { person_field_id: dueñoFieldId }, staff: [{ id: 'stfcarlos', kind: 'user', staff_user_id: carlosId, connection_id: connectionId }] },
+                createdBy: anaId,
+            })
+            .returning();
+        agendaId = agenda!.id;
+        await pg.db.insert(bookingAppointments).values({
+            tenantId: tenantA,
+            pageId: agenda!.id,
+            listId: clientesId,
+            recordId: clienteRecId,
+            staffId: 'stfcarlos',
+            staffUserId: carlosId,
+            serviceId: 'svcconsulta',
+            startAt: new Date('2026-11-03T13:00:00Z'),
+            endAt: new Date('2026-11-03T13:30:00Z'),
+            clientEmail: 'cliente@uno.co',
+            remindersSent: ['rem24h'],
+        });
+        await pg.db.insert(automations).values({
+            tenantId: tenantA,
+            listId: clientesId,
+            name: 'Citas',
+            triggerType: 'booking_event',
+            triggerConfig: { booking_page_id: agenda!.id, events: ['booked'] } as never,
+            actions: [] as never,
+        });
         hookToken = 'token-viejo-del-origen';
         const [hookAuto] = await pg.db
             .insert(automations)
@@ -750,7 +789,22 @@ describe('Migración de empresa (v0.1.197)', () => {
 
         // ── Automatizaciones ───────────────────────────────────────────
         const newAutos = await pg.db.select().from(automations).where(eq(automations.tenantId, tenantB));
-        expect(newAutos).toHaveLength(2);
+        expect(newAutos).toHaveLength(3);
+        // D5 — la agenda: dirección nueva, persona y campo re-apuntados, y la
+        // cita colgando del registro NUEVO; el disparador apunta a la página nueva.
+        const [newAgenda] = await pg.db.select().from(bookingPages).where(eq(bookingPages.tenantId, tenantB));
+        expect(newAgenda!.token).not.toBe('agenda-token-del-origen-123');
+        expect(newAgenda!.id).not.toBe(agendaId);
+        const agendaCfg = newAgenda!.config as { mapping: { person_field_id: number }; staff: Array<{ staff_user_id: number | null; connection_id: number | null }> };
+        expect(agendaCfg.mapping.person_field_id).toBe(bySlug.get('dueno')!.id);
+        expect(agendaCfg.staff[0]!.staff_user_id).not.toBe(carlosId);
+        expect(agendaCfg.staff[0]!.staff_user_id).toBeGreaterThan(0);
+        expect(agendaCfg.staff[0]!.connection_id).not.toBe(connectionId);
+        const [newCita] = await pg.db.select().from(bookingAppointments).where(eq(bookingAppointments.tenantId, tenantB));
+        expect(newCita).toMatchObject({ pageId: newAgenda!.id, recordId: newCliente.id, staffUserId: agendaCfg.staff[0]!.staff_user_id, remindersSent: ['rem24h'] });
+        const citas = newAutos.find((a) => a.name === 'Citas')!;
+        expect((citas.triggerConfig as { booking_page_id?: number }).booking_page_id).toBe(newAgenda!.id);
+        expect(res.warnings.some((w) => w.includes('página(s) de agenda'))).toBe(true);
         const facturar = newAutos.find((a) => a.name === 'Facturar')!;
         const acciones = facturar.actions as unknown as Array<{ type: string; config: Record<string, unknown> }>;
         expect(acciones[0]!.config.target_list_id).toBe(newFacturas.id);

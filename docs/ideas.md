@@ -213,6 +213,13 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   la interfaz (la API está lista); recalcular por desfase al reprogramar; ruta
   crítica.
 - **Campo Botón (v0.1.303)**: botones en el kanban y en las tarjetas.
+- **Agenda de citas (v0.1.313)**: «quién atiende» por equipo; cobrar al
+  agendar (hoy el precio es informativo; se uniría a los cobros de ADR-S31);
+  citas grupales o con capacidad mayor que 1; margen por servicio (hoy es de la
+  página); calendario propio de un recurso; sincronización inversa (mover el
+  evento en Google/Outlook mueve la cita); ver y gestionar las citas desde el
+  portal del cliente; recordatorios nativos por WhatsApp o SMS (hoy se arman
+  con el disparador).
 - **Fórmulas (v0.1.304)**: operadores propios en las condiciones de las
   automatizaciones; funciones que agreguen registros vinculados.
 - **Tableros (v0.1.292)**: que el asistente/MCP publique o programe envíos;

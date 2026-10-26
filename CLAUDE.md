@@ -9301,6 +9301,81 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         aprobaciones, checklists y plantillas de registro, equipos, roles
         propios e invitados.**
 
+- [x] **Fase 4 del estudio — Agenda de citas** (el usuario eligió sólo D5; el
+      resto de la fase quedó en `docs/ideas.md`):
+  - [x] **Agenda de citas pública, estilo Calendly (v0.1.313, ADR-S67,
+        opción D5 del estudio)**: cada lista puede tener páginas de agenda
+        (Ajustes de la lista → **Agenda**) donde el cliente elige el servicio,
+        con quién (o «El primero disponible», que reparte por turno), el día y
+        la hora libres, y deja sus datos; **cada cita es un registro**
+        «Confirmada» de la lista, con la actividad, el calendario, «Mi
+        trabajo», los tableros y las automatizaciones de siempre. Migración
+        0087: `booking_pages` (token, config, contadores) y
+        `booking_appointments` (registro único, persona o recurso, servicio,
+        inicio y fin, estado, recordatorios enviados y evento externo; el
+        vínculo vive fuera de `data`, regla de oro nº 1), con RLS.
+        (a) **Constructor a pantalla completa** con la **página pública REAL**
+        como vista previa —los horarios se calculan con lo que se está
+        editando, sin guardar y sin reservar nada— en siete secciones
+        (Servicios · Quién atiende · Disponibilidad · Reglas · Campos de la
+        lista · Correos y recordatorios · Publicar), con deshacer/rehacer,
+        modo oscuro y pestañas en el celular. (b) **Página pública servida por
+        el API** (`/api/v1/public/b/:token`, como formularios y listas
+        públicas): CSP con nonce, `frame-ancestors` por sitio permitido,
+        siempre clara, la marca de la empresa, el calendario y los horarios
+        lado a lado en pantallas anchas y en la zona del visitante (con
+        selector). Token desconocido, empresa archivada o lista en la papelera
+        → el mismo 404 opaco; en solo-lectura dice que no recibe reservas.
+        (c) **Los horarios los calcula el servidor** con un motor PURO de
+        shared —el mismo de la vista previa, la página y el re-chequeo al
+        confirmar—: semana por persona o recurso, días especiales, festivos de
+        Colombia, zona de la empresa, márgenes, aviso mínimo, días hacia
+        adelante, tope diario, y lo ocupado: las citas, los registros de la
+        lista con esa persona o recurso (también en otras agendas vivas de la
+        empresa) y su Google Calendar u Outlook (sólo inicio y fin, con el
+        permiso que ya tenía la conexión). Un inicio fuera de la grilla se
+        rechaza, y un **candado `pg_advisory_xact_lock` por persona o
+        recurso** con el registro en la misma transacción hace que de dos
+        reservas a la vez una gane y la otra reciba 409. (d) Al reservar:
+        correo con la marca, el `.ics` y **enlaces firmados (HMAC)** para
+        cambiar el horario o cancelar —abrirlos no cambia nada; sólo el POST
+        actúa y respeta el aviso mínimo; al reprogramar se conserva la misma
+        persona—; aviso en la campana y evento en el calendario de quien
+        atiende; **recordatorios de una sola vez** (uno cuyo momento ya pasó al
+        reservar se da por cumplido). Si el equipo mueve o cancela la cita
+        desde la lista, se le avisa al cliente. Correos por el correo de la
+        empresa con la cuota de ADR-S18 y un tope de 6 por dirección y hora.
+        (e) **Anti-robots**: sello, campo trampa, límites y captcha; respeta el
+        límite de registros del plan. (f) Las opciones de servicio, recurso y
+        estado se crean **al publicar**, así renombrar un servicio mientras se
+        arma no deja opciones huérfanas. (g) **Quién atiende**: sólo miembros
+        del equipo que pueden editar la lista, evaluados con sus equipos y su
+        rol propio —nunca un cliente ni un invitado—; administrar la agenda
+        exige `manage_lists` por `can()`, y ninguna ruta lleva
+        `@AllowGuest()`. (h) Disparador **«Cuando se agenda, reprograma o
+        cancela una cita»** con las variables `{{cita.*}}` y «Probar»; el
+        asistente y el MCP la configuran (`propose_configure_booking_page`); la
+        plantilla «Agenda de citas» la trae y viaja al duplicar la lista y al
+        migrar una empresa, y se borra con ella. Env opcionales
+        `GOOGLE_CALENDAR_API_URL`/`MS_GRAPH_API_URL` (sólo para tests). **Bugs
+        atrapados en el E2E**: el campo de sitios permitidos se comía el Enter,
+        la vista previa quedaba en un paso viejo al sumar un servicio, el
+        calendario ocupaba toda la altura en escritorio, «Octubre De 2026»,
+        reprogramar perdía la persona, las agendas de listas en la papelera
+        seguían ocupando gente y, al integrar con roles, un invitado podía
+        quedar como «quién atiende». 14 tests de shared, 24 de API y 6 del
+        front (API 1560, front 553, shared 469 en verde) + E2E navegador
+        123/123 con un SMTP real de prueba (horarios contra un cálculo
+        independiente con festivo, margen y aviso mínimo; visitante en Madrid;
+        dos reservas a la vez → 200 y 409; reprogramar y cancelar por el
+        enlace; recordatorio una sola vez; iframe permitido y bloqueado;
+        celular y modo oscuro). Queda fuera: atender por equipo, cobrar al
+        agendar, citas grupales, margen por servicio, calendario de un
+        recurso, sincronización inversa (mover el evento en Google no mueve la
+        cita) y ver las citas desde el portal.
+
+        **Con esto la fase 4 queda completa.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

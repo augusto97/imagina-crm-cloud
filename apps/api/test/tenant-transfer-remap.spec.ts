@@ -222,6 +222,34 @@ describe('remapJson', () => {
         expect(cfg.calendar_sources).toEqual([{ id: 's2', start_field_id: 111, end_field_id: null, color: 'red' }]);
     });
 
+    it('D5 — agenda: mapeo de campos, personas, calendarios, preguntas y el disparador por página', () => {
+        const m = maps();
+        m.bookingPage.set(80, 180);
+        const cfg = remapJson(
+            {
+                mapping: { start_field_id: 10, person_field_id: 11, status_field_id: 999, status_confirmed: 'confirmada' },
+                staff: [
+                    { id: 'stfana', kind: 'user', staff_user_id: 30, connection_id: 50, services: ['svcconsulta'] },
+                    { id: 'stfvieja', kind: 'user', staff_user_id: 99, connection_id: null },
+                    { id: 'stfsala', kind: 'resource', staff_user_id: null, option_value: 'sala_1' },
+                ],
+                questions: [{ id: 'qqqq1', type: 'field', field_id: 12, show_if: { field_id: 10, op: 'is_not_empty' } }],
+            },
+            m,
+        );
+        expect(cfg).toEqual({
+            mapping: { start_field_id: 110, person_field_id: 111, status_field_id: null, status_confirmed: 'confirmada' },
+            staff: [
+                { id: 'stfana', kind: 'user', staff_user_id: 130, connection_id: 150, services: ['svcconsulta'] },
+                // La persona que no viajó queda sin elegir (no apunta a la de OTRA empresa).
+                { id: 'stfvieja', kind: 'user', staff_user_id: null, connection_id: null },
+                { id: 'stfsala', kind: 'resource', staff_user_id: null, option_value: 'sala_1' },
+            ],
+            questions: [{ id: 'qqqq1', type: 'field', field_id: 112, show_if: { field_id: 110, op: 'is_not_empty' } }],
+        });
+        expect(remapJson({ booking_page_id: 80, events: ['booked'] }, m)).toEqual({ booking_page_id: 180, events: ['booked'] });
+    });
+
     it('deja intactos los slugs y los valores que no son referencias', () => {
         const out = remapJson({ field: 'estado', op: 'eq', value: 10 }, maps());
         expect(out).toEqual({ field: 'estado', op: 'eq', value: 10 });

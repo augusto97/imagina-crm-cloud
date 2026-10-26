@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { CAP, useCan } from '@/lib/permissions';
 
 import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
+import { BookingPanel } from '../booking/BookingPanel';
 import { FormsPanel } from '../forms/FormsPanel';
 import { ApprovalFlowsPanel } from '../approvals/ApprovalFlowsPanel';
 import { RecordTemplatesPanel } from '../records/templates/RecordTemplatesPanel';
@@ -243,6 +244,10 @@ export function ListBuilderPage(): JSX.Element {
 
                 {active === 'formularios' && (
                     <FormsPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                )}
+
+                {active === 'agenda' && (
+                    <BookingPanel listId={data.id} listName={data.name} listSettings={data.settings} />
                 )}
 
                 {active === 'plantillas' && <RecordTemplatesPanel listId={data.id} />}

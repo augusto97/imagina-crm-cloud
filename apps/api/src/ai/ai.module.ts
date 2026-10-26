@@ -30,6 +30,7 @@ import { ProposalsStore } from './proposals.store';
 import { PersonalTokensController } from './tokens.controller';
 import { PersonalTokensService } from './tokens.service';
 import { ApprovalTools } from './tools/approval-tools';
+import { BookingTools } from './tools/booking-tools';
 import { DataTools } from './tools/data-tools';
 import { AiToolRegistry } from './tools/registry';
 import { StructureTools } from './tools/structure-tools';
@@ -56,15 +57,18 @@ import { StructureTools } from './tools/structure-tools';
         StructureTools,
         DataTools,
         ApprovalTools,
+        BookingTools,
         {
             provide: AiToolRegistry,
-            inject: [StructureTools, DataTools, ApprovalTools],
-            useFactory: (structure: StructureTools, data: DataTools, approvals: ApprovalTools): AiToolRegistry => {
+            inject: [StructureTools, DataTools, ApprovalTools, BookingTools],
+            useFactory: (structure: StructureTools, data: DataTools, approvals: ApprovalTools, booking: BookingTools): AiToolRegistry => {
                 const registry = new AiToolRegistry();
                 structure.registerInto(registry);
                 data.registerInto(registry);
                 // C5 — aprobaciones (leer pendientes y configurar flujos).
                 approvals.registerInto(registry);
+                // D5 — agenda de citas pública.
+                booking.registerInto(registry);
                 return registry;
             },
         },

@@ -202,6 +202,8 @@ export const AI_PROPOSAL_KINDS = [
     'configure_approval_flow',
     // C6 — plantillas de registro (y de checklist, A9).
     'create_record_template',
+    // D5 — crear o cambiar una página de agenda de citas de una lista.
+    'configure_booking_page',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

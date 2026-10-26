@@ -68,6 +68,22 @@ export type NotifyEvent =
           assignments: Array<{ userId: number; text: string; checklist: string }>;
       }
     | {
+          /**
+           * D5 — pasó algo con una cita de la agenda (se agendó, se reprogramó o
+           * se canceló desde la página o el enlace del cliente): a quien atiende
+           * le llega con el texto de la agenda («Nueva cita: …»). `kind`
+           * decide la preferencia de correo (agendar = `assigned`).
+           */
+          type: 'booking';
+          tenantId: number;
+          listId: number;
+          recordId: number;
+          userIds: number[];
+          kind: 'assigned' | 'update';
+          title: string;
+          body: string;
+      }
+    | {
           type: 'description_mention';
           tenantId: number;
           listId: number;
