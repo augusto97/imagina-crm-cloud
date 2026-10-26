@@ -239,6 +239,10 @@ describe('Registro de tiempo (Postgres real + RLS)', () => {
         expect(sorted.data.map((r) => [r.id, r.data[key]])).toEqual([[a, 90], [b, 20], [c, 0]]);
         expect((await aggregate.run(tenantA, 'proyectos', { metric: 'sum', field_id: tracked })).value).toBe(110);
         expect((await aggregate.run(tenantA, 'proyectos', { metric: 'max', field_id: tracked })).value).toBe(90);
+        // Agrupar por el tiempo (vista agrupada, tableros): cada registro con SU
+        // total — la subconsulta correlaciona con el registro y no con la entrada.
+        const byTime = await aggregate.run(tenantA, 'proyectos', { metric: 'count', group_by_field_id: tracked });
+        expect(Object.fromEntries((byTime.groups ?? []).map((g) => [g.group, g.value]))).toEqual({ '0': 1, '20': 1, '90': 1 });
         // Escribirle a mano no cambia nada (lo calcula el servidor).
         await records.update(tenantA, ana, 'proyectos', b, { data: { [key]: 999 } }).catch(() => undefined);
         expect((await records.get(tenantA, ana, 'proyectos', b)).data[key]).toBe(20);

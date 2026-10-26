@@ -21,6 +21,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { DependenciesService } from '../records/dependencies.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -64,6 +65,8 @@ export class RecordViewService {
         @Optional() private readonly dataConsent?: DataConsentService,
         // A8 — la sección «Dependencias» (bloqueado por / bloquea).
         @Optional() private readonly dependencies?: DependenciesService,
+        // C5 — la sección «Aprobación» (flujos que se pueden pedir e historial).
+        @Optional() private readonly approvals?: ApprovalsService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<RecordViewBundle> {
@@ -133,6 +136,8 @@ export class RecordViewService {
             () => (this.dataConsent ? soft('autorizaciones', () => this.dataConsent!.forRecord(tenantId, recordId)) : Promise.resolve(null)),
             // A8 — dependencias con el título y el estado del otro registro.
             () => (this.dependencies ? soft('dependencias', () => this.dependencies!.forRecord(tenantId, actor, listKey, recordId)) : Promise.resolve(null)),
+            // C5 — aprobaciones del registro (flujos y solicitudes con su historial).
+            () => (this.approvals ? soft('aprobaciones', () => this.approvals!.recordApprovals(tenantId, actor, listKey, recordId)) : Promise.resolve(null)),
         ];
         const [
             fields,
@@ -150,6 +155,7 @@ export class RecordViewService {
             time,
             dataConsents,
             dependencies,
+            approvals,
         ] = (await mapLimit(tasks, PARALLEL, (t) => t())) as [
             RecordViewBundle['fields'],
             RecordViewBundle['description'],
@@ -166,6 +172,7 @@ export class RecordViewService {
             RecordViewBundle['time'],
             RecordViewBundle['data_consents'],
             RecordViewBundle['dependencies'],
+            RecordViewBundle['approvals'],
         ];
 
         // Lo que depende de las relaciones: las listas del otro lado (cabecera
@@ -223,6 +230,7 @@ export class RecordViewService {
             time,
             data_consents: dataConsents,
             dependencies,
+            approvals,
         };
     }
 

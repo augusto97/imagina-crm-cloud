@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from '../activity/activity.module';
+import { ApprovalsModule } from '../approvals/approvals.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommentsModule } from '../comments/comments.module';
 import { DashboardsModule } from '../dashboards/dashboards.module';
@@ -27,6 +28,8 @@ import { RecordViewService } from './record-view.service';
         NotificationsModule,
         DashboardsModule,
         TimeTrackingModule,
+        // C5 — la sección «Aprobación» de la ficha.
+        ApprovalsModule,
     ],
     controllers: [RecordViewController],
     providers: [RecordViewService],

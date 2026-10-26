@@ -51,6 +51,8 @@ export const READ_ONLY_TYPES: readonly string[] = [
     'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by',
     // Campo «Botón»: no tiene valor.
     'button',
+    // C5 — «Aprobación»: su valor sale de las solicitudes.
+    'approval',
 ];
 
 const NUMERIC_TYPES = ['number', 'currency', 'percent', 'rating'];

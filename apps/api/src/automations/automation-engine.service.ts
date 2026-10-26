@@ -12,7 +12,10 @@ import {
     formatEmailFieldValue,
     jsonbKeyForField,
     parseFlowPath,
+    readApprovalFlowId,
+    readApprovalTriggerResults,
     readStoreListMarker,
+    readWaitApprovalConfig,
     readWaitConfig,
     resolveTitleFieldId,
     storeCellAccess,
@@ -20,6 +23,8 @@ import {
     tenantFormatSchema,
     waitResumeAt,
     zonedToday,
+    APPROVAL_RESULT_BY_STATUS,
+    APPROVAL_RESULT_LABELS,
     FALLBACK_TIME_ZONE,
     FOR_EACH_MAX_ITEMS,
     RESPONSE_BODY_MAX_BYTES,
@@ -28,6 +33,8 @@ import {
     SCHEDULED_EACH_MAX,
     type ActionLogEntry,
     type ActionSpec,
+    type ApprovalResult,
+    type ApprovalStatus,
     type AutomationRunStatus,
     type ConditionCheck,
     type ConditionData,
@@ -40,6 +47,8 @@ import {
 } from '@imagina-base/shared';
 import { and, asc, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { safeWebhookFetch, type SafeFetchResult } from '../common/safe-fetch';
+import type { ApprovalEventInfo } from '../approvals/approval-hub';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
@@ -109,6 +118,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     form_submitted: ['form_submitted'],
     // Campo «Botón» — alguien presionó un botón del registro.
     button_pressed: ['button_pressed'],
+    // C5 — una solicitud de aprobación del registro se resolvió.
+    approval_resolved: ['approval_resolved'],
 };
 
 interface PersonInfo {
@@ -162,6 +173,12 @@ interface RunContext {
     docUploads?: StoredFileRef[];
     /** La cadena de automatizaciones de la que viene este evento (tope y anti-loop). */
     chain?: AutomationChain;
+    /**
+     * C5 — la aprobación en contexto (`{{aprobacion.resultado}}`…): la que se
+     * resolvió (disparador), la que pidió una acción anterior o la que terminó
+     * de esperar «Esperar aprobación». Viaja en el contexto de una espera.
+     */
+    approval?: ApprovalEventInfo;
     /** Personas de los campos «Persona» (`{{responsable.email}}`), por id. */
     people?: Map<number, PersonInfo | null>;
     /** Marca de tienda por lista, leída una vez por corrida. */
@@ -210,6 +227,8 @@ interface SimulationState {
     responses: Record<string, unknown>;
     /** Variables de respuestas que quedaron vacías por no ejecutarse de verdad. */
     unknownTokens: Set<string>;
+    /** C5 — con qué resultado se simula una aprobación (si la persona lo eligió). */
+    approvalResult?: ApprovalResult;
 }
 
 /** v0.1.288 — una pausa en un «Esperar»: cuándo y desde dónde se sigue. */
@@ -222,7 +241,24 @@ interface Pause {
     wait: Record<string, unknown>;
     /** El campo de fecha de un «hasta una fecha» (para recalcular si cambia). */
     waitField: { key: string; label: string } | null;
+    /** C5 — «Esperar aprobación»: la solicitud que se espera y el tope (si tiene). */
+    approvalWait?: ApprovalWaitState;
 }
+
+/** C5 — lo que guarda una corrida en «Esperar aprobación». */
+export interface ApprovalWaitState {
+    request_id: number;
+    /** Instante ISO en que se deja de esperar y sigue como «vencida» (null = sin tope). */
+    deadline: string | null;
+}
+
+/**
+ * C5 — Cada cuánto se revisa una corrida en «Esperar aprobación» aunque nadie
+ * avise: la red de seguridad para un aviso perdido (el proceso se cayó entre
+ * la decisión y el aviso) y para un registro que se fue a la papelera. Lo
+ * normal es que la decisión la despierte en el acto.
+ */
+export const APPROVAL_WAIT_CHECK_MS = 6 * 60 * 60 * 1000;
 
 /** v0.1.288 — lo que devuelve recorrer pasos: el log y, si hubo, una pausa o un corte. */
 interface Flow {
@@ -243,6 +279,8 @@ export interface ResumeState {
     resume_path: FlowPath;
     wait: Record<string, unknown>;
     wait_field: { key: string; label: string } | null;
+    /** C5 — «Esperar aprobación» (ver `ApprovalWaitState`). */
+    approval_wait?: ApprovalWaitState | null;
     had_fail: boolean;
     ctx: {
         data: Record<string, unknown>;
@@ -255,6 +293,7 @@ export interface ResumeState {
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
         chain?: AutomationChain;
+        approval?: ApprovalEventInfo;
     };
 }
 
@@ -301,6 +340,8 @@ const ACTION_NAMES: Record<string, string> = {
     if_else: 'Condición',
     wait: 'Esperar',
     for_each_linked: 'Repetir por cada vinculado',
+    request_approval: 'Pedir aprobación',
+    wait_approval: 'Esperar aprobación',
     engine: 'Motor de automatizaciones',
 };
 
@@ -355,6 +396,22 @@ export class AutomationEngine {
             }
         }
         return this.recordsSvc;
+    }
+
+    /**
+     * C5 — Las aprobaciones (pedir y esperar). Vive en su propio módulo, que
+     * depende de registros y avisos: se resuelve al usarlo, sin ciclo de DI.
+     */
+    private approvalsSvc: ApprovalsService | null | undefined;
+    private approvals(): ApprovalsService | null {
+        if (this.approvalsSvc === undefined) {
+            try {
+                this.approvalsSvc = this.moduleRef?.get(ApprovalsService, { strict: false }) ?? null;
+            } catch {
+                this.approvalsSvc = null;
+            }
+        }
+        return this.approvalsSvc;
     }
 
     /** Marca de lista de tienda (v0.1.213), o null. Una lectura por lista y por corrida. */
@@ -414,6 +471,7 @@ export class AutomationEngine {
                 ...(event.payment ? { pago: event.payment } : {}),
                 ...(event.form ? { form: event.form } : {}),
                 ...(event.button ? { button: event.button } : {}),
+                ...(event.approval ? { approval: event.approval } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -700,7 +758,8 @@ export class AutomationEngine {
         if (!auto || !maps) return cancel('La automatización ya no existe.');
         if (!auto.isActive) return cancel('La automatización está pausada: la espera no siguió.');
         if (readOnly) return cancel('La empresa estaba en solo-lectura (pago pendiente) cuando tocaba seguir: la espera no siguió.');
-        if (!state || flowNodeAt(auto.actions, state.wait_path)?.type !== 'wait') {
+        const waitNode = state ? flowNodeAt(auto.actions, state.wait_path)?.type : undefined;
+        if (!state || (waitNode !== 'wait' && waitNode !== 'wait_approval')) {
             return cancel('La automatización cambió mientras esperaba: el paso «Esperar» ya no está en el mismo lugar.');
         }
         if (run.recordId !== null && !record) return cancel('El registro se eliminó mientras esperaba.');
@@ -720,11 +779,39 @@ export class AutomationEngine {
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
             ...(state.ctx.chain ? { chain: state.ctx.chain } : {}),
+            ...(state.ctx.approval ? { approval: state.ctx.approval } : {}),
             automation: { id: auto.id, name: auto.name },
         };
         const prior = run.actionsLog ?? [];
         const now = new Date();
         const waitKey = flowPathKey(state.wait_path);
+
+        // C5 — «Esperar aprobación»: ¿se resolvió, venció el tope o sigue esperando?
+        if (waitNode === 'wait_approval') {
+            const checked = await this.checkApprovalWait(ctx, state, now);
+            if (checked.kind === 'cancel') return cancel(checked.reason);
+            if (checked.kind === 'repause') {
+                await this.tenantDb.withTenant(tenantId, (tx) =>
+                    this.automations.pauseRun(tx, tenantId, runId, {
+                        actionsLog: prior,
+                        resumeAt: checked.at,
+                        resumeState: run.resumeState as Record<string, unknown>,
+                        error: run.error ?? null,
+                    }),
+                );
+                return;
+            }
+            const resumedApproval = ok('wait_approval', checked.message, { path: waitKey, resultado: ctx.approval?.resultado ?? '' });
+            let flowA: Flow;
+            try {
+                flowA = await this.resumeFrom(ctx, auto.actions, state.resume_path, [], 0);
+            } catch (err) {
+                flowA = { log: [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }] };
+            }
+            const logA = [...prior, resumedApproval, ...flowA.log];
+            await this.finalize(ctx, auto, runId, logA, flowA.pause ?? null, state.had_fail || flowA.log.some((l) => l.status === 'failed'));
+            return;
+        }
 
         // «Hasta una fecha»: con el registro releído, ¿la fecha se movió?
         if (state.wait_field) {
@@ -792,6 +879,8 @@ export class AutomationEngine {
         realSteps: string[];
         /** Para un webhook entrante: los datos de la última captura. */
         payload?: Record<string, unknown> | null;
+        /** C5 — con qué resultado se simula una aprobación. */
+        approvalResult?: ApprovalResult;
     }): Promise<SimulationResult> {
         const { tenantId, auto } = input;
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -818,7 +907,12 @@ export class AutomationEngine {
                 if (key !== undefined) data[key] = v;
             }
         }
-        const sim: SimulationState = { realSteps: new Set(input.realSteps), responses: {}, unknownTokens: new Set() };
+        const sim: SimulationState = {
+            realSteps: new Set(input.realSteps),
+            responses: {},
+            unknownTokens: new Set(),
+            ...(input.approvalResult ? { approvalResult: input.approvalResult } : {}),
+        };
         const ctx: RunContext = {
             tenantId,
             listId: auto.listId,
@@ -950,6 +1044,32 @@ export class AutomationEngine {
             case 'button_pressed':
                 notes.push('Se asume que tú presionaste el botón en este registro.');
                 break;
+            case 'approval_resolved': {
+                // C5 — la última solicitud del registro (del flujo filtrado), o un resultado supuesto.
+                const svc = this.approvals();
+                const flowId = readApprovalFlowId(cfg);
+                const latest = svc && ctx.recordId !== null ? await svc.latestFor(ctx.tenantId, ctx.recordId, flowId) : null;
+                const assumed: ApprovalResult =
+                    ctx.sim?.approvalResult ?? (latest && latest.status !== 'pending' ? APPROVAL_RESULT_BY_STATUS[latest.status as Exclude<ApprovalStatus, 'pending'>] : 'aprobada');
+                const status = statusOfResult(assumed);
+                const info = latest && svc ? await svc.eventInfo(ctx.tenantId, latest) : null;
+                ctx.approval = {
+                    request_id: info?.request_id ?? 0,
+                    flow_id: info?.flow_id ?? flowId,
+                    flow_name: info?.flow_name ?? (flowId && svc ? ((await svc.flowName(ctx.tenantId, flowId)) ?? '') : ''),
+                    status,
+                    resultado: assumed,
+                    motivo: info?.motivo || (assumed === 'rechazada' || assumed === 'devuelta' ? '(el motivo que escriba quien decide)' : ''),
+                    decidio: info?.decidio || '(quien decida)',
+                    solicito: info?.solicito ?? '',
+                    nota: info?.nota ?? '',
+                };
+                notes.push(`Se asume que la aprobación${ctx.approval.flow_name ? ` «${ctx.approval.flow_name}»` : ''} se resolvió como «${APPROVAL_RESULT_LABELS[assumed]}».`);
+                if (!(readApprovalTriggerResults(cfg) as readonly string[]).includes(status)) {
+                    reasons.push(`el disparador no escucha el resultado «${APPROVAL_RESULT_LABELS[assumed]}»`);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -1030,6 +1150,14 @@ export class AutomationEngine {
             if (!ctx.button) return false;
             const wanted = Number(cfg.button_field_id);
             if (Number.isInteger(wanted) && wanted > 0 && ctx.button.field_id !== wanted) return false;
+        }
+        // C5 — «Cuando se aprueba o se rechaza»: el flujo (vacío = cualquiera) y
+        // los resultados elegidos (vacío = aprobada y rechazada).
+        if (auto.triggerType === 'approval_resolved') {
+            if (!ctx.approval) return false;
+            const flowId = readApprovalFlowId(cfg);
+            if (flowId !== null && ctx.approval.flow_id !== flowId) return false;
+            if (!(readApprovalTriggerResults(cfg) as readonly string[]).includes(ctx.approval.status)) return false;
         }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
@@ -1113,6 +1241,8 @@ export class AutomationEngine {
             }
             // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
             if (token === 'formulario.nombre') return ctx.form?.name ?? '';
+            // C5 — {{aprobacion.resultado}}, {{aprobacion.flujo}}, {{aprobacion.motivo}}…
+            if (token.startsWith('aprobacion.')) return approvalValue(ctx.approval, token.slice('aprobacion.'.length));
             // Campo «Botón» — el botón que se presionó y quién lo presionó.
             if (token === 'boton.nombre') return ctx.button?.label ?? '';
             if (token === 'boton.persona') return ctx.button?.user_name ?? '';
@@ -1313,6 +1443,7 @@ export class AutomationEngine {
             resume_path: pause.resumePath,
             wait: pause.wait,
             wait_field: pause.waitField,
+            ...(pause.approvalWait ? { approval_wait: pause.approvalWait } : {}),
             had_fail: hadFail,
             ctx: {
                 // Con registro, al reanudar se RELEE: la foto sólo hace falta sin él.
@@ -1326,6 +1457,7 @@ export class AutomationEngine {
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),
                 ...(ctx.chain ? { chain: ctx.chain } : {}),
+                ...(ctx.approval ? { approval: ctx.approval } : {}),
             },
         };
     }
@@ -1417,6 +1549,24 @@ export class AutomationEngine {
         if (spec.type === 'wait') {
             const flow = this.executeWait(ctx, spec.config ?? {}, path);
             return { ...flow, log: tag(flow.log) };
+        }
+        // C5 — esperar a que se resuelva una aprobación (pausa durable).
+        if (spec.type === 'wait_approval') {
+            try {
+                const flow = await this.executeWaitApproval(ctx, spec.config ?? {}, path);
+                return { ...flow, log: tag(flow.log) };
+            } catch (err) {
+                return { log: tag([fail('wait_approval', explainError(err))]), stop: true };
+            }
+        }
+        // C5 — pedir una aprobación: escribe por el servicio de aprobaciones
+        // (su propia transacción, actividad, avisos y tiempo real).
+        if (spec.type === 'request_approval') {
+            try {
+                return { log: tag([await this.requestApproval(ctx, spec.config ?? {})]) };
+            } catch (err) {
+                return { log: tag([{ action: spec.type, status: 'failed', message: explainError(err), details: {} }]) };
+            }
         }
 
         // Escribir registros: por RecordsService (abre y confirma su propia
@@ -1552,6 +1702,165 @@ export class AutomationEngine {
                 waitField,
             },
         };
+    }
+
+    /**
+     * C5 — «Pedir aprobación»: crea la solicitud (o reutiliza la pendiente del
+     * mismo flujo) por el servicio de aprobaciones — que avisa a los
+     * aprobadores, deja la actividad y refresca la ficha — y deja
+     * `{{aprobacion.x}}` para los pasos siguientes (y para «Esperar aprobación»).
+     */
+    private async requestApproval(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        if (ctx.recordId === null) return skip('request_approval', 'Pedir una aprobación necesita un registro (este disparo no tiene uno).');
+        const flowId = readApprovalFlowId(cfg);
+        if (flowId === null) return fail('request_approval', 'Elige el flujo de aprobación que se pide.');
+        const svc = this.approvals();
+        if (!svc) return fail('request_approval', 'Las aprobaciones no están disponibles en este servidor.');
+        const { merge } = this.mergers(ctx);
+        const note = typeof cfg.note === 'string' ? merge(cfg.note).trim().slice(0, 2000) : '';
+        if (ctx.sim) {
+            const name = (await svc.flowName(ctx.tenantId, flowId)) ?? `#${flowId}`;
+            ctx.approval = {
+                request_id: 0,
+                flow_id: flowId,
+                flow_name: name,
+                status: 'pending',
+                resultado: '',
+                motivo: '',
+                decidio: '',
+                solicito: ctx.automation ? `Automatización «${ctx.automation.name}»` : '',
+                nota: note,
+            };
+            return ok('request_approval', `Pediría la aprobación «${name}»${note ? ` con la nota «${note.slice(0, 120)}»` : ''}. En la prueba no se pide de verdad (nadie recibe el aviso).`, {
+                _sim: 'would_run',
+                flow: name,
+            });
+        }
+        const res = await svc.requestBySystem(ctx.tenantId, ctx.listId, ctx.recordId, flowId, note, ctx.automation ?? null);
+        ctx.approval = res.info;
+        return ok(
+            'request_approval',
+            res.created
+                ? `Pidió la aprobación «${res.info.flow_name}» (${res.stepsCount} ${res.stepsCount === 1 ? 'paso' : 'pasos'}; primero: ${res.firstStep}).`
+                : `Ya había una solicitud pendiente de «${res.info.flow_name}» para este registro: se usa esa.`,
+            { request_id: res.info.request_id, created: res.created },
+        );
+    }
+
+    /**
+     * C5 — «Esperar aprobación». La solicitud que se espera es la que pidió una
+     * acción anterior de esta corrida (o la del disparador), y si no hay, la
+     * pendiente del registro (del flujo elegido o de cualquiera). La corrida
+     * queda en pausa DURABLE (la misma de «Esperar»): sigue en el acto cuando
+     * alguien decide (el servicio de aprobaciones la despierta), o al vencer el
+     * tope de días con resultado «vencida». Si ya estaba resuelta, sigue sin
+     * esperar.
+     */
+    private async executeWaitApproval(ctx: RunContext, config: Record<string, unknown>, path: FlowPath): Promise<Flow> {
+        if (ctx.item) {
+            return { log: [skip('wait_approval', 'No se puede esperar una aprobación dentro de «Repetir por cada registro vinculado»: se saltó la espera.')] };
+        }
+        if (ctx.recordId === null) {
+            return { log: [skip('wait_approval', 'Esperar una aprobación necesita un registro (este disparo no tiene uno).')], stop: true };
+        }
+        const svc = this.approvals();
+        if (!svc) return { log: [fail('wait_approval', 'Las aprobaciones no están disponibles en este servidor.')], stop: true };
+        const w = readWaitApprovalConfig(config);
+        // La de esta corrida (acción anterior o disparador), si es del flujo pedido.
+        let req =
+            ctx.approval && ctx.approval.request_id > 0 && (w.flowId === null || ctx.approval.flow_id === w.flowId)
+                ? await svc.findForEngine(ctx.tenantId, ctx.approval.request_id)
+                : null;
+        if (!req) req = await svc.findForWait(ctx.tenantId, ctx.recordId, w.flowId);
+
+        if (ctx.sim) {
+            const flowName = req?.flowName ?? ctx.approval?.flow_name ?? (w.flowId ? await svc.flowName(ctx.tenantId, w.flowId) : null) ?? 'la aprobación';
+            const latest = req ?? (await svc.latestFor(ctx.tenantId, ctx.recordId, w.flowId));
+            const assumed: ApprovalResult =
+                ctx.sim.approvalResult ?? (latest && latest.status !== 'pending' ? APPROVAL_RESULT_BY_STATUS[latest.status as Exclude<ApprovalStatus, 'pending'>] : 'aprobada');
+            ctx.approval = {
+                ...(ctx.approval ?? { request_id: latest?.id ?? 0, flow_id: w.flowId, solicito: '', nota: '' }),
+                flow_name: flowName,
+                status: assumed === 'vencida' ? 'pending' : statusOfResult(assumed),
+                resultado: assumed,
+                motivo: assumed === 'rechazada' || assumed === 'devuelta' ? '(el motivo que escriba quien decide)' : '',
+                decidio: assumed === 'vencida' ? '' : '(quien decida)',
+            };
+            const tope = w.timeoutDays ? ` (como mucho ${w.timeoutDays} ${w.timeoutDays === 1 ? 'día' : 'días'})` : '';
+            return {
+                log: [
+                    ok(
+                        'wait_approval',
+                        `Esperaría a que se resuelva «${flowName}»${tope}. En la prueba se sigue como «${APPROVAL_RESULT_LABELS[assumed]}»: elige otro resultado arriba para probar las otras ramas.`,
+                        { _sim: 'would_run', resultado: assumed },
+                    ),
+                ],
+            };
+        }
+
+        if (!req) {
+            return {
+                log: [skip('wait_approval', 'No hay ninguna solicitud de aprobación pendiente para este registro: la automatización no siguió. Pon «Pedir aprobación» antes de la espera.')],
+                stop: true,
+            };
+        }
+        if (req.status !== 'pending') {
+            ctx.approval = await svc.eventInfo(ctx.tenantId, req);
+            return { log: [ok('wait_approval', `La aprobación «${req.flowName}» ya estaba resuelta (${ctx.approval.resultado}): siguió sin esperar.`, { resultado: ctx.approval.resultado })] };
+        }
+        ctx.approval = await svc.eventInfo(ctx.tenantId, req);
+        const now = Date.now();
+        const deadline = w.timeoutDays ? new Date(now + w.timeoutDays * 86_400_000) : null;
+        const check = new Date(now + APPROVAL_WAIT_CHECK_MS);
+        const at = deadline && deadline.getTime() < check.getTime() ? deadline : check;
+        const last = path[path.length - 1] as number;
+        return {
+            log: [
+                ok(
+                    'wait_approval',
+                    deadline
+                        ? `Esperando la aprobación «${req.flowName}» (como mucho hasta ${this.formatInstant(ctx, deadline)}; si no, sigue como «vencida»).`
+                        : `Esperando la aprobación «${req.flowName}».`,
+                    { request_id: req.id, ...(deadline ? { deadline: deadline.toISOString() } : {}) },
+                ),
+            ],
+            pause: {
+                at,
+                waitPath: path,
+                resumePath: [...path.slice(0, -1), last + 1],
+                wait: config,
+                waitField: null,
+                approvalWait: { request_id: req.id, deadline: deadline ? deadline.toISOString() : null },
+            },
+        };
+    }
+
+    /**
+     * C5 — Al reanudar «Esperar aprobación» (la decisión la despertó, venció el
+     * tope o tocó el chequeo periódico): seguir con el resultado, volver a
+     * esperar o cancelar.
+     */
+    private async checkApprovalWait(
+        ctx: RunContext,
+        state: ResumeState,
+        now: Date,
+    ): Promise<{ kind: 'continue'; message: string } | { kind: 'repause'; at: Date } | { kind: 'cancel'; reason: string }> {
+        const svc = this.approvals();
+        const aw = state.approval_wait;
+        if (!svc || !aw) return { kind: 'cancel', reason: 'No se pudo leer qué aprobación se esperaba.' };
+        const req = await svc.findForEngine(ctx.tenantId, aw.request_id);
+        if (!req) return { kind: 'cancel', reason: 'La solicitud de aprobación que se esperaba ya no existe.' };
+        if (req.status !== 'pending') {
+            ctx.approval = await svc.eventInfo(ctx.tenantId, req);
+            return { kind: 'continue', message: `La aprobación «${req.flowName}» quedó ${ctx.approval.resultado}: siguió con los pasos siguientes.` };
+        }
+        const deadline = aw.deadline ? new Date(aw.deadline) : null;
+        if (deadline && deadline.getTime() <= now.getTime() + 30_000) {
+            ctx.approval = { ...(await svc.eventInfo(ctx.tenantId, req)), resultado: 'vencida' };
+            return { kind: 'continue', message: `La aprobación «${req.flowName}» no se resolvió a tiempo: siguió como «vencida».` };
+        }
+        const check = new Date(now.getTime() + APPROVAL_WAIT_CHECK_MS);
+        return { kind: 'repause', at: deadline && deadline.getTime() < check.getTime() ? deadline : check };
     }
 
     /**
@@ -1704,7 +2013,11 @@ export class AutomationEngine {
     /** Las reglas de una condición con la etiqueta de cada campo (para «Probar»). */
     private labelChecks(ctx: RunContext, checks: Array<{ field: string; op: string; expected: unknown; actual: unknown; ok: boolean }>): ConditionCheck[] {
         const all = withItemFields(ctx);
-        return checks.map((c) => ({ ...c, label: all.get(c.field.replace(/^before\./, ''))?.label ?? c.field }));
+        return checks.map((c) => ({
+            ...c,
+            // C5 — el pseudo-campo de las aprobaciones se nombra como en el editor.
+            label: c.field === 'aprobacion.resultado' ? 'Resultado de la aprobación' : (all.get(c.field.replace(/^before\./, ''))?.label ?? c.field),
+        }));
     }
 
     /** Un instante en el formato y la zona de la empresa («21/10/2026 14:30»). */
@@ -2951,6 +3264,56 @@ function capLog(log: ActionLogEntry[]): ActionLogEntry[] {
     ];
 }
 
+/** C5 — `{{aprobacion.x}}` de la aprobación en contexto (vacío si no hay). */
+function approvalValue(info: ApprovalEventInfo | undefined, key: string): unknown {
+    if (!info) return '';
+    switch (key) {
+        case 'resultado':
+            return info.resultado;
+        case 'flujo':
+            return info.flow_name;
+        case 'motivo':
+            return info.motivo;
+        case 'decidio':
+            return info.decidio;
+        case 'solicito':
+            return info.solicito;
+        case 'nota':
+            return info.nota;
+        case 'estado':
+            return info.status;
+        case 'id':
+            return info.request_id > 0 ? info.request_id : '';
+        default:
+            return '';
+    }
+}
+
+/** C5 — el estado de la solicitud que corresponde a un resultado simulado. */
+function statusOfResult(r: ApprovalResult): string {
+    switch (r) {
+        case 'aprobada':
+            return 'approved';
+        case 'rechazada':
+            return 'rejected';
+        case 'devuelta':
+            return 'returned';
+        case 'cancelada':
+            return 'cancelled';
+        default:
+            return 'pending';
+    }
+}
+
+/** C5 — lee el estado de «Esperar aprobación» de un `resume_state`. */
+function readApprovalWait(raw: unknown): ApprovalWaitState | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as { request_id?: unknown; deadline?: unknown };
+    const id = Number(r.request_id);
+    if (!Number.isInteger(id) || id <= 0) return null;
+    return { request_id: id, deadline: typeof r.deadline === 'string' ? r.deadline : null };
+}
+
 /** v0.1.288 — lee el `resume_state` de una corrida en espera (null si no se entiende). */
 function readResumeState(raw: unknown): ResumeState | null {
     if (!raw || typeof raw !== 'object') return null;
@@ -2966,6 +3329,7 @@ function readResumeState(raw: unknown): ResumeState | null {
         resume_path: resumePath,
         wait: r.wait && typeof r.wait === 'object' ? (r.wait as Record<string, unknown>) : {},
         wait_field: wf && typeof wf.key === 'string' ? { key: wf.key, label: typeof wf.label === 'string' ? wf.label : wf.key } : null,
+        approval_wait: readApprovalWait(r.approval_wait),
         had_fail: r.had_fail === true,
         ctx: { ...ctx, data: ctx.data && typeof ctx.data === 'object' ? ctx.data : {} },
     };

@@ -76,6 +76,9 @@ import {
     recordDependencies,
     ganttBaselines,
     ganttBaselineItems,
+    approvalFlows,
+    approvalRequests,
+    approvalDecisions,
     templates,
     connectionSyncs,
     sqlSyncs,
@@ -385,6 +388,10 @@ export class PlatformService {
             await tx.delete(comments).where(eq(comments.tenantId, id));
             await tx.delete(activity).where(eq(activity.tenantId, id));
             await tx.delete(relations).where(eq(relations.tenantId, id));
+            // C5 — aprobaciones (antes que registros y listas).
+            await tx.delete(approvalDecisions).where(eq(approvalDecisions.tenantId, id));
+            await tx.delete(approvalRequests).where(eq(approvalRequests.tenantId, id));
+            await tx.delete(approvalFlows).where(eq(approvalFlows.tenantId, id));
             // A8/B1 — dependencias y líneas base del Gantt (antes que registros y vistas).
             await tx.delete(recordDependencies).where(eq(recordDependencies.tenantId, id));
             await tx.delete(ganttBaselineItems).where(eq(ganttBaselineItems.tenantId, id));

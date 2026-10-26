@@ -25,7 +25,11 @@ import { idSchema } from './common';
  * `consent`: un titular retiró su autorización de tratamiento de datos (Ley
  * 1581) desde el enlace del correo o desde el portal. Sólo a los admins.
  */
-export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply', 'consent'] as const;
+/**
+ * C5 — `approval`: te toca aprobar (o rechazar/devolver) un paso, o se
+ * resolvió una solicitud de aprobación que pediste.
+ */
+export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply', 'consent', 'approval'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
@@ -37,6 +41,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     failure: 'Algo dejó de funcionar (automatizaciones, correo, conectores)',
     reply: 'Responden a tus comentarios',
     consent: 'Alguien retira su autorización de datos personales (sólo admins)',
+    approval: 'Aprobaciones: te toca decidir o se resuelve lo que pediste',
 };
 
 export interface NotificationDto {
@@ -96,6 +101,8 @@ export const notificationPrefsSchema = z.object({
             reply: z.boolean().default(true),
             /** Un retiro de autorización de datos obliga a la empresa a actuar: encendido. */
             consent: z.boolean().default(true),
+            /** C5 — una aprobación que espera tu decisión: encendido (trae los botones). */
+            approval: z.boolean().default(true),
         })
         .default({}),
     /**
@@ -123,6 +130,7 @@ export const updateNotificationPrefsSchema = z
                 failure: z.boolean(),
                 reply: z.boolean(),
                 consent: z.boolean(),
+                approval: z.boolean(),
             })
             .partial(),
         digest: z.enum(['off', 'daily']),

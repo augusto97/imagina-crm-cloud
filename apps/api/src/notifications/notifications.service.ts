@@ -255,6 +255,12 @@ export class NotificationsService implements OnModuleInit {
             title: string;
             body: string;
             coalesce?: boolean;
+            /**
+             * C5 — el correo con botones propios (Aprobar / Rechazar / Abrir):
+             * rutas de la app (`/approvals/12?d=approve`) que se arman sobre el
+             * dominio de la empresa. Llevan a la app, nunca deciden solas.
+             */
+            mail?: { actions: Array<{ label: string; path: string; tone?: 'primary' | 'danger' | 'neutral' }> };
         },
     ): Promise<number> {
         const ids = [...new Set(rawRecipients)].filter((u) => Number.isInteger(u) && u > 0 && u !== n.actorId).slice(0, MAX_RECIPIENTS);
@@ -333,6 +339,7 @@ export class NotificationsService implements OnModuleInit {
                               : `${links.base}/#/my-work`,
                     settingsLink: links.settings,
                     ...(kind === 'failure' ? { cta: 'Ver el problema' } : {}),
+                    ...(n.mail ? { actions: n.mail.actions.map((a) => ({ label: a.label, link: `${links.base}/#${a.path}`, tone: a.tone })) } : {}),
                 });
                 // v0.1.285 — el aviso de una FALLA sale por el correo de la
                 // plataforma: si lo que falla es el correo de la empresa, por

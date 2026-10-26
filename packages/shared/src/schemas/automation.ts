@@ -3,6 +3,7 @@ import { FALLBACK_TIME_ZONE, isValidTimeZone } from './timezone';
 import { idSchema, isoDateTimeSchema } from './common';
 import { filterOperatorSchema } from './filter';
 import { RESPONSE_NAME_RE, waitConfigProblem } from './automation-flow';
+import { APPROVAL_RESULTS, waitApprovalProblem } from './approvals';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -26,6 +27,8 @@ export const AUTOMATION_TRIGGERS = [
     'field_changed',
     'due_date_reached',
     'scheduled',
+    // C5 — una solicitud de aprobación del registro se resolvió.
+    'approval_resolved',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
@@ -67,6 +70,9 @@ export const AUTOMATION_ACTIONS = [
     // v0.1.288 — esperar (tiempo o fecha de un campo) y repetir por cada vinculado.
     'wait',
     'for_each_linked',
+    // C5 — pedir una aprobación y esperar a que se resuelva.
+    'request_approval',
+    'wait_approval',
 ] as const;
 
 export interface ActionSpec {
@@ -530,6 +536,23 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                 if (problem) out.push({ path: `${at}.config`, message: problem });
                 break;
             }
+            case 'request_approval': {
+                const flow = Number(cfg.approval_flow_id);
+                if (!Number.isInteger(flow) || flow <= 0) {
+                    out.push({ path: `${at}.config.approval_flow_id`, message: 'Elige el flujo de aprobación que se pide.' });
+                }
+                break;
+            }
+            case 'wait_approval': {
+                // Como «Esperar»: dentro de un bucle no tiene un "después" claro.
+                if (scope.inLoop) {
+                    out.push({ path: `${at}.type`, message: 'No se puede esperar una aprobación dentro de «Repetir por cada registro vinculado»: pon la espera antes o después de la repetición.' });
+                    break;
+                }
+                const problem = waitApprovalProblem(cfg);
+                if (problem) out.push({ path: `${at}.config.timeout_days`, message: problem });
+                break;
+            }
             case 'for_each_linked': {
                 if (scope.inLoop) {
                     out.push({ path: `${at}.type`, message: 'No se puede repetir dentro de otra repetición.' });
@@ -603,6 +626,12 @@ export const automationTestRunInputSchema = z.object({
     automation_id: z.number().int().positive().optional(),
     /** Rutas (`2.then.0`) de webhooks/conectores que se ejecutan DE VERDAD. */
     real_steps: z.array(z.string().max(120)).max(10).default([]),
+    /**
+     * C5 — con qué resultado se simula una aprobación (el disparador «Cuando
+     * se aprueba o se rechaza» y el paso «Esperar aprobación»). Default: el
+     * de la última solicitud del registro de prueba o, si no hay, `aprobada`.
+     */
+    approval_result: z.enum(APPROVAL_RESULTS).optional(),
 });
 export type AutomationTestRunInput = z.infer<typeof automationTestRunInputSchema>;
 

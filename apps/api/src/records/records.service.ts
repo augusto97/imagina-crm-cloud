@@ -8,6 +8,7 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
+    APPROVAL_STATUSES,
     applyFieldDefaults,
     checkRequiredIf,
     collectMentionedUserIds,
@@ -74,6 +75,7 @@ import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordChangeHub } from './record-change-hub';
 import { NotifyHub } from '../notifications/notify-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
+import { pendingApprovalCounts } from '../approvals/approval-sql';
 import { withComputedExprs } from './computed-sql';
 import { applyRowFormulas, buildFormulaRuntime, type FormulaRuntime } from './formula-runtime';
 import type { ThroughPlan } from './through-fields';
@@ -299,7 +301,7 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
-        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, rt } = await run(async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, approvalPending, rt } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
@@ -328,6 +330,7 @@ export class RecordsService {
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
                 blockedOpen: r ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
+                approvalPending: r ? (await pendingApprovalCounts(tx, [r.id])).get(r.id) ?? 0 : 0,
                 rt: r ? await this.formulaRuntime(tx, tenantId, list.id, fields, plans) : undefined,
             };
         });
@@ -337,6 +340,7 @@ export class RecordsService {
             {
                 ...toRecord(withComputed(fields, row, rt), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
                 blocked_by_open: blockedOpen,
+                approval_pending: approvalPending,
             },
             hiddenKeys,
         );
@@ -913,12 +917,15 @@ export class RecordsService {
         const subtaskCounts = await this.repo.subtaskCounts(tx, tenantId, ids);
         // A8 — bloqueantes abiertos de la tanda (icono «bloqueado»), una consulta.
         const blocked = await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids);
+        // C5 — aprobaciones pendientes de la tanda (indicador de la fila), una consulta.
+        const pendingApprovals = await pendingApprovalCounts(tx, ids);
         const hiddenKeys = new Set([...ctx.hiddenIds].map((id) => jsonbKeyForField(id)));
         return result.map((r) =>
             stripHidden(
                 {
                     ...toRecord(withComputed(ctx.fields, r, ctx.formula), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
                     blocked_by_open: blocked.get(r.id) ?? 0,
+                    approval_pending: pendingApprovals.get(r.id) ?? 0,
                 },
                 hiddenKeys,
             ),
@@ -1033,8 +1040,9 @@ export class RecordsService {
                 ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
                 : 0;
             const blockedOpen = updated ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
+            const approvalPending = updated ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
             const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
-            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, rt };
+            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, rt };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -1071,6 +1079,7 @@ export class RecordsService {
                 result.subtasks,
             ),
             blocked_by_open: result.blockedOpen,
+            approval_pending: result.approvalPending,
             ...(result.rescheduled.length > 0 ? { rescheduled: result.rescheduled.map((r) => r.id) } : {}),
         };
     }
@@ -2304,6 +2313,12 @@ export function parseFieldSort(
                 out.push(sql`array_position(ARRAY[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::text[], ${text}) ${dir} NULLS LAST`);
             }
             out.push(sql`${text} COLLATE "und-x-icu" ${dir} NULLS LAST`);
+            continue;
+        }
+        // C5 — «Aprobación»: en el orden del catálogo de estados (pendiente →
+        // aprobada → rechazada → devuelta → cancelada); «sin pedir» al final.
+        if (field.type === 'approval' && field.expr) {
+            out.push(sql`array_position(ARRAY[${sql.join(APPROVAL_STATUSES.map((v) => sql`${v}`), sql`, `)}]::text[], ${field.expr}) ${dir} NULLS LAST`);
             continue;
         }
         // v0.1.286 — una persona se ordena por su NOMBRE (antes, como texto

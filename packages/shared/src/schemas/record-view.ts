@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { activitySchema } from './activity';
+import { recordApprovalsSchema } from './approvals';
 import { recordPaymentsSchema } from './collections';
 import { commentSchema } from './comment';
 import { idSchema } from './common';
@@ -97,5 +98,10 @@ export const recordViewBundleSchema = z.object({
      * título y el estado del otro registro: la sección no sale a pedirlas.
      */
     dependencies: recordDependenciesSchema.nullable().default(null),
+    /**
+     * C5 — aprobaciones del registro: los flujos que se pueden pedir y las
+     * solicitudes con su historial (la sección no sale a pedirlas).
+     */
+    approvals: recordApprovalsSchema.nullable().default(null),
 });
 export type RecordViewBundle = z.infer<typeof recordViewBundleSchema>;

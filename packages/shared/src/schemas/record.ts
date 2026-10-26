@@ -40,6 +40,12 @@ export const recordSchema = z.object({
      */
     blocked_by_open: z.number().int().nonnegative().optional(),
     /**
+     * C5 — Cuántas solicitudes de aprobación PENDIENTES tiene el registro (de
+     * cualquier flujo). Viaja en el listado (una consulta por página) para el
+     * indicador de la fila; 0 = ninguna.
+     */
+    approval_pending: z.number().int().nonnegative().optional(),
+    /**
      * A8 — Sólo en la respuesta de una edición: los registros que se
      * corrieron por la reprogramación en cadena (ids).
      */

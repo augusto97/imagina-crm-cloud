@@ -27,7 +27,7 @@ const ERROR_LIST = 50;
 
 /** Tipos que se copian al duplicar (ni calculados, ni vínculos, ni archivos). */
 // v0.1.300 — ni el ID automático (la copia recibe el suyo) ni las columnas de sistema.
-const NOT_COPIED = new Set(['computed', 'lookup', 'rollup', 'relation', 'file', 'time_tracked', 'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by', 'formula']);
+const NOT_COPIED = new Set(['computed', 'lookup', 'rollup', 'relation', 'file', 'time_tracked', 'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by', 'formula', 'approval']);
 
 type Row = Awaited<ReturnType<RecordsService['bulkRows']>>['rows'][number];
 

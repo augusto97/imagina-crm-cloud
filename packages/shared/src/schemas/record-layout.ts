@@ -87,6 +87,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'time_tracking',
     // A8 — dependencias: «bloqueado por» y «bloquea», con alta y baja.
     'dependencies',
+    // C5 — aprobaciones: pedir, decidir y el historial de las solicitudes.
+    'approval',
 ] as const;
 export const layoutBlockTypeSchema = z.enum(LAYOUT_BLOCK_TYPES);
 export type LayoutBlockType = z.infer<typeof layoutBlockTypeSchema>;
@@ -456,6 +458,11 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
     button: [
         { key: 'button', label: 'Botón' },
         { key: 'full', label: 'Botón a lo ancho' },
+    ],
+    // C5 — el estado de la aprobación se muestra como una etiqueta.
+    approval: [
+        { key: 'chip', label: 'Etiqueta' },
+        { key: 'big', label: 'Etiqueta grande' },
     ],
 };
 

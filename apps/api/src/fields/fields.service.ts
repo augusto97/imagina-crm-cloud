@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    APPROVAL_FIELD_OPTIONS,
     analyzeUserPattern,
     autonumberSettings,
     defaultKindsFor,
@@ -28,6 +29,7 @@ import {
     type Role,
     LOOKUP_TARGET_TYPES,
     parseFieldConfig,
+    readApprovalFlowId,
     resolveTitleFieldId,
     ROLLUP_MINMAX_TYPES,
     ROLLUP_NUMERIC_TYPES,
@@ -43,7 +45,7 @@ import {
     type UpdateFieldInput,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
-import { lists, memberships, records, users } from '../db/schema';
+import { approvalFlows, lists, memberships, records, users } from '../db/schema';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import type { Tx } from '../db/client';
 import { pgErrorCode } from '../common/http-exception.filter';
@@ -530,6 +532,7 @@ export class FieldsService {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
             if (input.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, null, config);
+            if (input.type === 'approval') config = await normalizeApprovalFieldConfig(tx, tenantId, listId, config);
             config = await this.normalizeRules(tx, tenantId, listId, null, input.type, config);
             if (input.type === 'formula') config = await this.normalizeFormula(tx, tenantId, listId, null, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
@@ -637,6 +640,7 @@ export class FieldsService {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
                 await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
                 if (current.type === 'button') await assertButtonConfigRefs(tx, tenantId, listId, current.id, changes.config);
+                if (current.type === 'approval') changes.config = await normalizeApprovalFieldConfig(tx, tenantId, listId, changes.config);
                 changes.config = await this.normalizeRules(tx, tenantId, listId, current.id, current.type as FieldType, changes.config);
                 if (current.type === 'formula') changes.config = await this.normalizeFormula(tx, tenantId, listId, current.id, changes.config);
             }
@@ -963,7 +967,40 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'percent',
     'duration',
     'button',
+    // C5 — el estado de una aprobación (catálogo fijo).
+    'approval',
 ]);
+
+/**
+ * C5 — Config de un campo «Aprobación»: el flujo tiene que ser de ESTA lista
+ * (o ninguno = la última solicitud de cualquier flujo) y las opciones son
+ * SIEMPRE el catálogo de estados (etiqueta y color), así la tabla, los filtros
+ * y el agrupado lo pintan como una selección sin depender de lo que mande el
+ * navegador.
+ */
+async function normalizeApprovalFieldConfig(
+    tx: Tx,
+    tenantId: number,
+    listId: number,
+    config: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+    const flowId = readApprovalFlowId(config);
+    if (flowId !== null) {
+        const [row] = await tx
+            .select({ id: approvalFlows.id })
+            .from(approvalFlows)
+            .where(and(eq(approvalFlows.tenantId, tenantId), eq(approvalFlows.listId, listId), eq(approvalFlows.id, flowId)))
+            .limit(1);
+        if (!row) {
+            throw new BadRequestException({
+                code: 'invalid_approval_flow_ref',
+                message: 'El flujo de aprobación elegido no existe en esta lista.',
+                data: { status: 400, errors: { approval_flow_id: 'No es de esta lista' } },
+            });
+        }
+    }
+    return { approval_flow_id: flowId, options: APPROVAL_FIELD_OPTIONS.map((o) => ({ ...o })) };
+}
 
 /** Escapa los metacaracteres de LIKE/ILIKE (`%`, `_`, `\`). */
 function escapeLike(s: string): string {
@@ -1036,6 +1073,8 @@ const NON_CONVERTIBLE: readonly FieldType[] = [
     'created_at', 'updated_at', 'created_by', 'updated_by',
     // Campo «Botón»: no guarda valor (sólo su config).
     'button',
+    // C5 — «Aprobación»: su valor sale de las solicitudes, no de `data`.
+    'approval',
 ];
 
 /** Fórmulas (A1): a qué tipos se convierte una fórmula (guardando el valor calculado). */
@@ -1067,7 +1106,7 @@ function assertConvertible(from: FieldType, to: FieldType): void {
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
         throw new BadRequestException({
             code: 'type_not_convertible',
-            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup, con IA, botón y las columnas de sistema no admiten conversión.`,
+            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup, con IA, botón, aprobación y las columnas de sistema no admiten conversión.`,
             data: { status: 400 },
         });
     }

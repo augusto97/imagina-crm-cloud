@@ -70,6 +70,11 @@ export const FIELD_TYPES = [
     // valor no se persiste: se calcula en cada lectura y, cuando la fórmula
     // compila a SQL, también filtra, ordena, agrupa y se suma.
     'formula',
+    // C5 — «Aprobación»: el estado de la última solicitud de aprobación del
+    // registro (de un flujo o de cualquiera). No se persiste ni se escribe: se
+    // resuelve en cada lectura con una subconsulta sobre `approval_requests`,
+    // así filtra («pendientes»), ordena y agrupa como una selección.
+    'approval',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -260,6 +265,17 @@ export const fieldConfigSchemas = {
         precision: z.number().int().min(0).max(10).optional(),
         labels: z.record(z.string().max(190)).optional(),
     }),
+    /**
+     * C5 — «Aprobación»: `approval_flow_id` = el flujo cuyo estado muestra
+     * (null = la última solicitud de cualquier flujo). `options` son los
+     * estados FIJOS (pendiente, aprobada…): el servidor los escribe siempre
+     * (APPROVAL_FIELD_OPTIONS) para que la tabla, los filtros y los
+     * formateadores lo traten como una selección de sólo lectura.
+     */
+    approval: z.object({
+        approval_flow_id: idSchema.nullable().optional(),
+        options: z.array(selectOptionSchema).optional(),
+    }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
@@ -298,6 +314,8 @@ export const NON_DATA_FIELD_TYPES: readonly FieldType[] = [
     'button',
     // Fórmulas: se calculan en cada lectura, como `computed`.
     'formula',
+    // C5 — el estado de aprobación sale de `approval_requests`.
+    'approval',
 ];
 
 export function isDataField(type: FieldType): boolean {
@@ -330,6 +348,8 @@ export function systemFieldBaseType(type: SystemFieldType): 'datetime' | 'user' 
 export function valueBaseType(type: FieldType): FieldType {
     if (isSystemField(type)) return systemFieldBaseType(type);
     if (type === 'autonumber') return 'text';
+    // C5 — el estado de aprobación se muestra como una selección (sus opciones son fijas).
+    if (type === 'approval') return 'select';
     return type;
 }
 

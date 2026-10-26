@@ -976,6 +976,12 @@ export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableFie
         throw badRequest(`No se puede agrupar por «${field.label}».`);
     }
     if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') return throughGroupExpr(field, fieldsById);
+    // C5 — «Aprobación»: por el estado de la última solicitud (NULL = sin pedir).
+    if (field.type === 'approval') {
+        const ff = fieldsById.get(field.id);
+        if (ff?.groupExpr) return ff.groupExpr;
+        throw badRequest(`No se puede agrupar por «${field.label}».`);
+    }
     // Fórmulas (A1): por su valor (una fecha por día, en el reloj de la empresa).
     if (field.type === 'formula') {
         const ff = fieldsById.get(field.id);

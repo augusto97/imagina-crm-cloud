@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { asc, eq, gt, inArray, isNotNull, isNull, and, sql, type SQL } from 'drizzle-orm';
 import {
+    APPROVAL_FIELD_OPTIONS,
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
     FALLBACK_TIME_ZONE,
@@ -373,8 +374,9 @@ export class ExportService {
     private async readableFormatter(tenantId: number, columns: Field[]): Promise<ReadableFormatter> {
         const optionLabels = new Map<number, Map<string, string>>();
         for (const c of columns) {
-            if (c.type !== 'select' && c.type !== 'multi_select') continue;
-            const opts = (c.config as { options?: unknown }).options;
+            if (c.type !== 'select' && c.type !== 'multi_select' && c.type !== 'approval') continue;
+            // C5 — «Aprobación»: el estado con la etiqueta del catálogo.
+            const opts = c.type === 'approval' ? APPROVAL_FIELD_OPTIONS : (c.config as { options?: unknown }).options;
             const m = new Map<string, string>();
             if (Array.isArray(opts)) {
                 for (const o of opts as Array<{ value?: unknown; label?: unknown }>) {
@@ -432,6 +434,7 @@ export class ExportService {
                 if (value === null || value === undefined || value === '') return null;
                 switch (field.type) {
                     case 'select':
+                    case 'approval':
                         return typeof value === 'string' ? (optionLabels.get(field.id)?.get(value) ?? value) : null;
                     case 'multi_select':
                         return Array.isArray(value)
@@ -601,6 +604,8 @@ function isExportableDerived(type: string): boolean {
         || type === 'formula'
         // v0.1.300 — columnas de sistema (creado/modificado por y cuándo).
         || isSystemField(type)
+        // C5 — el estado de la aprobación.
+        || type === 'approval'
     );
 }
 

@@ -43,3 +43,4 @@ export * from './incidents';
 export * from './comment-reactions';
 export * from './time-entries';
 export * from './record-dependencies';
+export * from './approvals';

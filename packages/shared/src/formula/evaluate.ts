@@ -177,6 +177,8 @@ export function rawToFormulaValue(type: string, config: Record<string, unknown>,
         case 'checkbox':
             return truthyRaw(raw);
         case 'select':
+        // C5 — el estado de aprobación: su etiqueta («Aprobada»), como una selección.
+        case 'approval':
             return raw === '' ? null : optionLabel(config, raw);
         case 'multi_select':
             return Array.isArray(raw) ? raw.map((v) => optionLabel(config, v)) : [optionLabel(config, raw)];

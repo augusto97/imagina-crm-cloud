@@ -203,6 +203,7 @@ function validateTypedValue(field: FieldValueSpec, raw: unknown): ValueValidatio
         case 'updated_by':
         case 'button':
         case 'formula':
+        case 'approval':
             return fail(`El tipo '${type}' no se escribe en los datos del registro.`);
         default: {
             const _exhaustive: never = type;

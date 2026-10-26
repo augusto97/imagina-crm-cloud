@@ -1,5 +1,6 @@
 import {
     FORMULA_RESULT_TYPES,
+    APPROVAL_FIELD_OPTIONS,
     formulaResultTypeOf,
     isSystemField,
     jsonbKeyForField,
@@ -182,6 +183,12 @@ function compileRef(run: Run, name: string): Compiled {
             return { sql: sql`(${ff.expr})::numeric`, kind: 'number', blank: true };
         case 'lookup':
             return notSql(`usa «${f.label}», un lookup que puede traer varios valores`);
+        case 'approval': {
+            // C5 — el estado de la aprobación, con su etiqueta (igual que el evaluador).
+            if (!ff.expr) return notSql(`«${f.label}» no tiene expresión`);
+            const cases = APPROVAL_FIELD_OPTIONS.map((o) => sql`WHEN ${o.value} THEN ${o.label}::text`);
+            return { sql: sql`(CASE (${ff.expr}) ${sql.join(cases, sql` `)} END)`, kind: 'text', blank: true };
+        }
         case 'multi_select':
             return notSql(`usa «${f.label}», una selección múltiple`);
         case 'user':

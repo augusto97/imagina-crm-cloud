@@ -134,6 +134,11 @@ function compileCondition(
     if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
     }
+    // C5 — «Aprobación»: el estado de la última solicitud (subconsulta sobre la
+    // fila de `records`, por eso sólo en la consulta principal).
+    if (field.type === 'approval') {
+        return field.expr && dataRef === records.data ? compileApprovalCondition(field.expr, cond) : undefined;
+    }
     // Fórmulas (A1): por su expresión SQL y según el tipo de su resultado. Sin
     // expresión (no compila a SQL) no es filtrable y la condición se descarta.
     // Sólo en la consulta principal: la expresión apunta a la fila de `records`.
@@ -315,6 +320,34 @@ function compileOverride(
             return cond.op === 'not_contains'
                 ? sql`(${expr} IS NULL OR ${expr} NOT ILIKE ${pattern})`
                 : sql`${expr} ILIKE ${pattern}`;
+        }
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * C5 — Condición sobre el campo «Aprobación» (estado de la última solicitud).
+ * Se compara como una selección: «es» / «no es» / «alguno de» / «ninguno de» y
+ * vacío = «sin pedir». Los valores son los estados del catálogo; cualquier
+ * otro texto simplemente no coincide (va bindeado, nunca interpolado).
+ */
+function compileApprovalCondition(expr: SQL, cond: FilterCondition): SQL | undefined {
+    switch (cond.op) {
+        case 'is_null':
+            return sql`${expr} IS NULL`;
+        case 'is_not_null':
+            return sql`${expr} IS NOT NULL`;
+        case 'eq':
+            return sql`${expr} = ${str(cond.value)}`;
+        case 'neq':
+            return sql`${expr} IS DISTINCT FROM ${str(cond.value)}`;
+        case 'in':
+        case 'nin': {
+            const values = toArray(cond.value).map(str).filter((v) => v !== '');
+            if (values.length === 0) return cond.op === 'in' ? sql`false` : undefined;
+            const membership = sql`${expr} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`;
+            return cond.op === 'in' ? membership : sql`(${expr} IS NULL OR NOT (${membership}))`;
         }
         default:
             return undefined;

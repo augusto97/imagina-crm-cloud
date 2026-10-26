@@ -61,6 +61,10 @@ export function notificationTitle(
             // Los retiros de autorización arman su propio título (DataConsentService).
             out = `Retiraron una autorización de datos en ${rec}`;
             break;
+        case 'approval':
+            // C5 — las aprobaciones arman su propio título (approval-text.ts).
+            out = `Aprobación de ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }
@@ -167,6 +171,33 @@ function button(link: string, label: string): string {
     return `<p style="margin:20px 0 4px"><a href="${escapeHtml(link)}" style="background:#0e7490;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block;font-weight:600">${escapeHtml(label)}</a></p>`;
 }
 
+/**
+ * C5 — Varios botones en una fila (Aprobar / Rechazar / Abrir). Cada uno es un
+ * ENLACE A LA APP: ahí la persona confirma con su sesión (un correo reenviado
+ * no puede decidir nada por sí solo, y nada se decide en un GET).
+ */
+export interface MailAction {
+    label: string;
+    link: string;
+    tone?: 'primary' | 'danger' | 'neutral';
+}
+
+const ACTION_COLORS: Record<NonNullable<MailAction['tone']>, { bg: string; fg: string; border: string }> = {
+    primary: { bg: '#15803d', fg: '#ffffff', border: '#15803d' },
+    danger: { bg: '#ffffff', fg: '#b91c1c', border: '#fca5a5' },
+    neutral: { bg: '#ffffff', fg: '#374151', border: '#d1d5db' },
+};
+
+function actionButtons(actions: readonly MailAction[]): string {
+    const cells = actions
+        .map((a) => {
+            const c = ACTION_COLORS[a.tone ?? 'neutral'];
+            return `<a href="${escapeHtml(a.link)}" style="background:${c.bg};color:${c.fg};border:1px solid ${c.border};text-decoration:none;padding:9px 16px;border-radius:6px;display:inline-block;font-weight:600;margin:0 8px 8px 0">${escapeHtml(a.label)}</a>`;
+        })
+        .join('');
+    return `<p style="margin:20px 0 4px">${cells}</p>`;
+}
+
 /** Un aviso, en el momento. */
 export function notificationEmail(o: {
     company: string;
@@ -176,16 +207,20 @@ export function notificationEmail(o: {
     settingsLink: string;
     /** Texto del botón (por defecto «Abrir»). */
     cta?: string;
+    /** C5 — botones en lugar del único «Abrir» (cada uno lleva a la app). */
+    actions?: readonly MailAction[];
 }): MailContent {
     const body = o.body.trim();
     const cta = o.cta ?? 'Abrir';
+    const actions = o.actions && o.actions.length > 0 ? o.actions : null;
     const inner = `<p style="margin:0 0 10px;font-size:17px;font-weight:600">${escapeHtml(o.title)}</p>
 ${body ? `<p style="margin:0;padding:10px 12px;background:#f9fafb;border-left:3px solid #d1d5db;border-radius:4px;color:#374151;white-space:pre-wrap">${escapeHtml(body)}</p>` : ''}
-${button(o.link, cta)}`;
+${actions ? actionButtons(actions) : button(o.link, cta)}`;
     const footer = `Recibes este correo por tus preferencias de avisos. <a href="${escapeHtml(o.settingsLink)}" style="color:#6b7280">Cambiarlas</a>`;
+    const links = actions ? actions.map((a) => `${a.label}: ${a.link}`).join('\n') : `${cta}: ${o.link}`;
     return {
         subject: o.title,
-        text: `${o.title}\n\n${body ? `${body}\n\n` : ''}${cta}: ${o.link}\n\nCambia tus preferencias de avisos: ${o.settingsLink}`,
+        text: `${o.title}\n\n${body ? `${body}\n\n` : ''}${links}\n\nCambia tus preferencias de avisos: ${o.settingsLink}`,
         html: shell(o.company, inner, footer),
     };
 }
