@@ -9443,6 +9443,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verdad, celular, oscuro, iPhone, permiso denegado). Queda fuera: modo
         offline (H2), push al portal, el logo de la empresa como ícono y llenar
         con la cámara otros campos.
+  - [x] **WhatsApp Business oficial (v0.1.315, ADR-S69, opción D3 del
+        estudio)**: cada empresa conecta SU cuenta de WhatsApp Business por la
+        API oficial de Meta (Cloud API), sin convertir la app en un chat.
+        (a) **Conectar** desde Integraciones («WhatsApp Business (oficial)»,
+        separada de WAS, que pasa a «no oficial»): token, ID del número, ID de
+        la cuenta y clave secreta de la app, todo cifrado; se verifica contra
+        Meta antes de guardar y el motivo se explica (token vencido, permiso
+        faltante, ID ajeno, clave equivocada). La página de la conexión trae la
+        URL de avisos y el token de verificación para copiar, la guía paso a
+        paso, «Suscribir la app», la lista que recibe los mensajes y «Preparar
+        columnas» (último mensaje, fecha, dirección, nombre de perfil y estado
+        del último envío). (b) **Avisos** firmados (`X-Hub-Signature-256` sobre
+        el cuerpo crudo; firma mala → 401, token desconocido → 404), respondidos
+        al instante y procesados en una cola con dedup (`whatsapp_hooks` sin
+        RLS). Un mensaje entrante encuentra o crea el contacto por teléfono
+        (E.164, con las variantes de México y Argentina), escribe SÓLO el
+        último mensaje y corre «Cuando llega un mensaje de WhatsApp»
+        (`{{whatsapp.texto}}`, `{{whatsapp.de}}`…); los estados (enviado →
+        entregado → leído, o fallido con su motivo) actualizan el último envío
+        sin retroceder. (c) **Plantillas** aprobadas sincronizadas (botón y
+        cada 6 h). Se envían desde la ficha («Enviar WhatsApp» en el modal, la
+        página y la ficha diseñada, con vista previa del texto real) o con la
+        acción «Enviar plantilla de WhatsApp» (variables, encabezado con imagen
+        o documento por URL, botones, vista previa y «Probar ahora»); «Enviar
+        mensaje de texto» sólo sale dentro de la ventana de 24 h. (d)
+        **Reglas**: no se guarda la conversación ni se descargan medios, y la
+        actividad anota el hecho sin el texto; un token inválido abre un
+        Problema que se cierra solo; un «Campo con IA» sobre el último mensaje
+        resume o clasifica solo (las escrituras no pasan por el hub de cambios,
+        así los seguidores no reciben el texto); plantilla de lista «Contactos
+        por WhatsApp»; el asistente/MCP ve conexiones y plantillas sin
+        secretos; la migración de empresa la lleva sin secretos y con URL de
+        avisos nueva. El envío manual y «Probar ahora» respetan el rol propio y
+        los equipos (la muestra es el último registro que la persona
+        alcanza; lo atrapó la integración). Migración 0089. 13 tests de API, 7 de
+        shared y del front (API 1603 en verde), y E2E navegador 48/48 contra una
+        Graph API simulada. **Límite de la verificación**: el sandbox no llega a
+        graph.facebook.com; la prueba con una cuenta real de Meta queda para el
+        servidor.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

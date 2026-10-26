@@ -106,7 +106,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | D1 · El correo de cada registro (Gmail/Outlook de cada persona en la ficha) | alto (CRM) · L | Opt-in por persona; sólo hilos con contactos de la lista. |
 | D2 · Mesa de ayuda por correo (cada correo crea un ticket) | alto (soporte) · L | **En la fase 5** (aprobada 2026-10-26). |
-| D3 · WhatsApp oficial (Meta Cloud API) con plantillas aprobadas y disparador «llega un mensaje» | alto en LatAm · L | **En la fase 5.** Sin guardar la conversación completa (pedido del usuario). Hoy: envío por WAS/Zender. |
 | D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
 | D7 · Chat para el sitio web que crea el lead | medio · M-L | Guardando sólo lo necesario, como D3. |
 | D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | |
@@ -153,9 +152,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### H. Celular
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| H1 · App instalable (PWA) + notificaciones push | alto · M | **En la fase 5.** |
 | H2 · Sin conexión (capturar sin señal y sincronizar al volver) | medio-alto · L | |
-| H3 · Escáner de código de barras / QR | medio-alto · M | **En la fase 5** (con H1). |
 | H4 · Foto y ubicación al cargar | medio · S-M | |
 | H5 · Apps nativas iOS/Android | medio · XL | Sólo después de la PWA y si los clientes lo piden. |
 
@@ -218,6 +215,12 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada
   (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
   administre push; llenar con la cámara otros campos además del «Código».
+- **WhatsApp oficial (v0.1.315)**: bandeja o historial de la conversación
+  (hoy, a propósito, sólo el último mensaje); guardar el último adjunto en un
+  campo Archivo (los medios no se descargan); crear y editar plantillas desde
+  la app (hoy en Meta, con enlace); una acción propia del campo Botón (hoy:
+  «Al presionar el botón» + «Enviar plantilla»); probar con una cuenta real de
+  Meta en el servidor.
 - **Agenda de citas (v0.1.313)**: «quién atiende» por equipo; cobrar al
   agendar (hoy el precio es informativo; se uniría a los cobros de ADR-S31);
   citas grupales o con capacidad mayor que 1; margen por servicio (hoy es de la

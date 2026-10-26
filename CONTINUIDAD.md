@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.314** (app instalable, push y escáner; primera entrega de la fase 5), en `main`.
+versión publicada: **v0.1.315** (WhatsApp Business oficial; segunda entrega de la fase 5), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
@@ -389,6 +389,12 @@ versión publicada: **v0.1.314** (app instalable, push y escáner; primera entre
   su propia cuenta de WhatsApp Business). Orden: (1) primero, (2) después y (3)
   al final. Se arranca cuando estén publicadas las tres entregas en curso
   (Equipos, Roles e invitados, Agenda). F3 quedó en `docs/ideas.md`.
+  **Avance**: (1) publicada en v0.1.314 (migración 0088). (3) WhatsApp terminó
+  antes que (2) y se publicó primero, en **v0.1.315** (migración 0089); la mesa
+  de ayuda va con la 0090 y cierra la fase 5. Para no romper el orden de
+  Drizzle (no aplica una migración con `when` menor que la última aplicada),
+  los números se reasignaron al integrar: WhatsApp 0089 (…230), mesa de ayuda
+  0090 (…240), agentes de IA 0091 (…250).
 - 2026-10-26 — **Fase 6: sólo «Agentes de IA» (E6)** ("por el momento solo me
   interesaría la de Agentes de IA, los otros por el momento ponlos en ideas").
   Un agente con nombre y tarea que corre cuando pasa algo, con herramientas
@@ -720,6 +726,24 @@ versión publicada: **v0.1.314** (app instalable, push y escáner; primera entre
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.315** — **WhatsApp Business oficial** (ADR-S69, opción
+  D3; segunda entrega de la fase 5, publicada antes que la mesa de ayuda porque
+  terminó primero). Cada empresa conecta SU cuenta de la Cloud API de Meta
+  (token, número, cuenta y clave de la app, cifrados y verificados antes de
+  guardar). Avisos firmados con cola y dedup; el contacto se encuentra o crea
+  por teléfono con el último mensaje y su estado, y corre «Cuando llega un
+  mensaje de WhatsApp». Plantillas sincronizadas (cada 6 h y a pedido) que se
+  envían desde la ficha o con la acción «Enviar plantilla de WhatsApp»; el
+  texto libre sólo dentro de la ventana de 24 h. **No es un chat**: no guarda
+  la conversación ni medios y la actividad no lleva el texto (pedido del
+  usuario). Migración 0089 (`whatsapp_hooks` sin RLS, `whatsapp_templates` y
+  `whatsapp_contacts` con RLS). Bug atrapado al integrar con roles: «Probar
+  ahora» sin registro elegido tomaba el último de la lista sin mirar el acceso
+  (las variables de un registro ajeno podían verse); ahora es el último que la
+  persona alcanza. API 1603 en verde y E2E 48/48 contra una Graph API
+  simulada. **Pendiente**: probar con una cuenta real de Meta en el servidor
+  (el sandbox no llega a graph.facebook.com) y suscribir el webhook desde la
+  guía de la conexión.
 - **2026-10-26 · v0.1.314** — **App instalable + notificaciones push +
   escáner** (ADR-S68, opciones H1 y H3; primera entrega de la fase 5).
   Manifiesto por Host (en el dominio de una empresa, su nombre y su color),

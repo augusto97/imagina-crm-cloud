@@ -4143,4 +4143,56 @@ offline (H2), el push al portal del cliente y el logo de la empresa como ícono.
 
 ---
 
-**Versión del documento:** 1.111.0 (app instalable, push y escáner)
+### ADR-S69 — WhatsApp Business oficial (Meta Cloud API), sin bandeja de chat (v0.1.315)
+
+**Contexto.** Las empresas necesitan escribirles a sus clientes por WhatsApp
+con una cuenta oficial: plantillas aprobadas y sin riesgo de bloqueo. La
+integración con WAS/Zender (ADR-S22 fase 4) envía, pero no es oficial.
+
+**Decisión.**
+1. **Conector por clave `whatsapp_cloud`** (ADR-S22) con las credenciales de
+   CADA empresa (token, ID del número, ID de la cuenta y clave secreta de la
+   app), cifradas y verificadas contra la Graph API antes de guardar. La
+   versión de la Graph API es una constante (`v26.0`) con override por env
+   (`META_GRAPH_VERSION`; `META_GRAPH_URL` sólo para tests). Toda llamada lleva
+   `appsecret_proof`.
+2. **Avisos públicos por token opaco** en `whatsapp_hooks` (sin RLS, como
+   `collection_hooks`: el aviso llega antes de saber de qué empresa es). Se
+   verifica la firma HMAC-SHA256 sobre el cuerpo CRUDO con la clave de la app,
+   en tiempo constante (firma mala → 401, token desconocido → 404 opaco). Se
+   responde 200 al instante y se procesa en una cola BullMQ con dedup por id de
+   mensaje y por (id, estado); un estado viejo no pisa uno más nuevo. La ruta
+   tiene 10× el rate limit general.
+3. **La app NO es un chat.** En el registro quedan sólo el último mensaje, su
+   fecha, la dirección, el nombre de perfil y el estado del último envío
+   (columnas mapeadas en `lists.settings.whatsapp`). `whatsapp_contacts` (RLS)
+   guarda sólo la ventana de 24 h y el id del último envío. La actividad anota
+   el hecho sin el texto, porque la ve todo el que ve el registro. Los medios no
+   se descargan: consumirían el plan, son datos personales y las URLs de Meta
+   vencen.
+4. **Plantillas en caché por conexión** (`whatsapp_templates`, RLS),
+   refrescadas cada 6 horas y a pedido; se crean y editan en Meta. El texto
+   libre sólo sale dentro de la ventana de 24 h; con la ventana cerrada, la
+   acción falla con el motivo.
+5. **Escrituras sin cadenas**: realtime y campos con IA directo, no por
+   `RecordChangeHub`, para no mandar a los seguidores avisos con el texto del
+   mensaje. El disparador «Cuando llega un mensaje de WhatsApp» expone
+   `{{whatsapp.*}}`; las acciones son `connector_action` sobre la conexión.
+6. **Errores sistemáticos → Problema** (ADR-S44), que se cierra solo cuando la
+   conexión vuelve a funcionar.
+7. **Permisos**: configurar = admin (reglas de conexiones); enviar = poder
+   editar el registro, con el ACL completo de la lista (rol propio, equipos)
+   vía `can()` y `aclOf(req)`. La muestra de «Probar ahora» nunca es un
+   registro que la persona no alcanza. El teléfono oculto por rol no se expone
+   ni se usa como destinatario. Sin acceso para invitados.
+8. **Migración de empresa**: la conexión viaja sin secretos y con tokens de
+   avisos nuevos, y se avisa (el token de Meta gasta dinero de la empresa).
+
+**Consecuencias.** Un canal oficial sin el costo ni el riesgo de guardar
+conversaciones. Una bandeja de chat, la descarga de medios y la creación de
+plantillas desde la app quedan como evolución futura. La conexión real con
+Meta se prueba en el servidor (el sandbox no llega a graph.facebook.com).
+
+---
+
+**Versión del documento:** 1.112.0 (WhatsApp Business oficial)
