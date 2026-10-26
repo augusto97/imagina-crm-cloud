@@ -9376,7 +9376,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto la fase 4 queda completa.**
 
-- [ ] **Fase 5 del estudio — la app en el teléfono, mesa de ayuda y WhatsApp**
+- [x] **Fase 5 del estudio — la app en el teléfono, mesa de ayuda y WhatsApp**
       (aprobada sin «De documento a registro», que quedó en `docs/ideas.md`;
       orden: app instalable → mesa de ayuda → WhatsApp oficial):
   - [x] **App instalable + notificaciones push + escáner de códigos (v0.1.314,
@@ -9482,6 +9482,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Graph API simulada. **Límite de la verificación**: el sandbox no llega a
         graph.facebook.com; la prueba con una cuenta real de Meta queda para el
         servidor.
+  - [x] **Mesa de ayuda por correo + SLA y escalamiento (v0.1.316, ADR-S70,
+        opciones D2 y E5 del estudio)**: cada lista puede conectar un **buzón
+        de soporte por IMAP** (Ajustes de la lista → «Correo entrante»: Gmail /
+        Outlook / Zoho / otro servidor, con los pasos de la contraseña de
+        aplicación y «Probar conexión», que dice en qué paso se cortó:
+        servidor, TLS, usuario o carpeta). Cada correo nuevo crea un **ticket**
+        (asunto, remitente, contacto vinculado por email, texto, descripción
+        con formato SANEADA, fecha, estado inicial y adjuntos al campo Archivo)
+        y las **respuestas del cliente** se suman a su ticket por In-Reply-To /
+        References o por el número del asunto (`[TCK-0001]` con un ID
+        automático, `[#123]` sin él), como comentario visible para el cliente;
+        un ticket cerrado se reabre. (a) **Lectura segura**: cada minuto en una
+        cola BullMQ, **EXAMINE en sólo lectura** (no se borra ni se mueve nada;
+        marcar como leídos es opcional), sólo lo que llega desde que se
+        conecta, cursor UID + UIDVALIDITY, candado por buzón, guard anti-SSRF
+        de SEC-27 y contraseña cifrada que nunca vuelve; se ignoran
+        autorespondedores, rebotes y bucles, con tope por remitente, tamaño
+        máximo y remitentes bloqueados. Con el límite de registros del plan o
+        en solo-lectura el correo **espera en el buzón** (el cursor no avanza)
+        y se abre un Problema. (b) **«Responder por correo»** desde la ficha
+        (modal, página y ficha diseñada): sale por el correo de la empresa con
+        las cabeceras del hilo y el número del ticket, con respuestas guardadas
+        (`{{cliente.nombre}}`, `{{ticket.numero}}`…), firma y «después, poner
+        el estado en…»; marca la primera respuesta. Las notas internas nunca
+        salen. (c) **SLA**: objetivos de primera respuesta y resolución por
+        prioridad en **horas hábiles** (días, horario y festivos de Colombia en
+        la zona de la empresa; una función pura en shared); el reloj se detiene
+        en los estados de espera y se cierra en los finales. Las columnas
+        (vence la primera respuesta, vence la resolución, estado del SLA) son
+        GUARDADAS: filtran, ordenan y agrupan («Por SLA»), y nadie las edita a
+        mano (candado en tabla, ficha y kanban; `403 helpdesk_field_locked`
+        también en import, edición masiva y automatizaciones). Avisos «en
+        riesgo» y «vencido» **una vez por objetivo** a personas, roles, equipos
+        o el responsable, por campana, correo y push (aviso `sla`), y
+        escalamiento al vencer. (d) **Automatizaciones**: «Cuando llega un
+        correo» (cualquiera / sólo tickets nuevos / sólo respuestas;
+        `{{correo.*}}`) y «Cuando un SLA está en riesgo o se vence»
+        (`{{sla.*}}`), y la acción «Responder por correo al hilo del registro»
+        (automática: no cuenta como primera respuesta); «Probar» la simula sin
+        enviar. (e) Plantilla **«Mesa de ayuda / Tickets»** lista para conectar
+        el buzón; el asistente/MCP describe buzón (sin secretos) y SLA; migrar
+        una empresa lleva el buzón SIN contraseña, y borrarla lo limpia.
+        Migración 0090 (`helpdesk_mailboxes`, `helpdesk_messages`,
+        `helpdesk_tickets`, RLS); dependencias nuevas `imapflow` y
+        `mailparser` (audit de producción sin avisos nuevos). Bugs atrapados en
+        el E2E: el composer se cortaba en el panel de 380 px, la respuesta
+        automática salía como «Usuario #0», el kanban «Por SLA» se podía
+        arrastrar y la preferencia de correo `sla` no se guardaba. 21 tests de
+        API (13 de integración con un servidor IMAP de prueba), 19 de shared y 5
+        del front (API 1625 en verde) + E2E navegador 57/57 y 9/9 contra un IMAP
+        y un SMTP de prueba (escritorio, celular y oscuro). Queda fuera: OAuth
+        para IMAP y horario hábil por equipo.
+
+        **Con esto la fase 5 queda completa.**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

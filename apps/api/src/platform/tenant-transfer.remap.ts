@@ -108,6 +108,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     // personas del equipo que atienden en una página de agenda.
     booking_page_id: 'bookingPage',
     staff_user_id: 'user',
+    // D2/E5 — la persona que el SLA pone al escalar (campo Persona).
+    escalate_set_user_id: 'user',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
@@ -115,6 +117,11 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
     pdf_templates: 'document',
     // C5 — las personas que aprueban un paso de un flujo de aprobación.
     approver_user_ids: 'user',
+    // D2/E5 — a quién avisa y a quién escala el SLA de la mesa de ayuda.
+    notify_user_ids: 'user',
+    escalate_user_ids: 'user',
+    notify_team_ids: 'team',
+    escalate_team_ids: 'team',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);

@@ -175,6 +175,13 @@ export class BlueprintService {
                 // C3 — lo compartido con un INVITADO no viaja a la copia: se le
                 // compartió ESA lista, no las que se armen a partir de ella.
                 await this.dropGuestAccess(tenantId, settings);
+                // D2 — el buzón de soporte es de ESA lista (una cuenta de correo
+                // con su contraseña): la copia lleva la mesa de ayuda (mapeo,
+                // estados, respuestas, SLA) pero se le conecta su propio buzón.
+                if (settings.helpdesk && typeof settings.helpdesk === 'object') {
+                    const { mailbox: _mailbox, ...rest } = settings.helpdesk as Record<string, unknown>;
+                    settings.helpdesk = rest;
+                }
             }
 
             const bp: BlueprintList = {

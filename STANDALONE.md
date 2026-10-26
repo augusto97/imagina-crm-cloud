@@ -4195,4 +4195,56 @@ Meta se prueba en el servidor (el sandbox no llega a graph.facebook.com).
 
 ---
 
-**Versión del documento:** 1.112.0 (WhatsApp Business oficial)
+### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)
+
+**Contexto.** Los clientes atienden soporte por correo. Querían que cada correo
+se volviera un registro, contestar desde la app sin perder el hilo, y medir y
+escalar los tiempos de respuesta.
+
+**Decisión.**
+1. **Entrada por IMAP con contraseña de aplicación**, un buzón por lista
+   (`helpdesk_mailboxes`, RLS). Se abre con EXAMINE (sólo lectura) y se lee por
+   UID desde un cursor (`uid` + `uidvalidity`); si el buzón se recrea, se
+   re-ancla sin re-importar. Una lectura a la vez por buzón (candado en Redis),
+   cada minuto desde una cola BullMQ. Nunca se borra ni se mueve nada; marcar
+   como leídos es opcional. Se lee desde el momento de conectar: los correos
+   viejos no crean tickets. El destino pasa por el guard anti-SSRF de SEC-27 y
+   la contraseña va cifrada con `SECRETS_KEY` (una ilegible se informa como en
+   el SMTP, v0.1.150).
+2. **Correlación**: In-Reply-To / References contra los `Message-ID` guardados
+   (entrantes y salientes, `helpdesk_messages`); sin coincidencia, el número
+   del ticket en el asunto (ID automático de la lista o `#id`), siempre acotado
+   a la lista del buzón. Un remitente ajeno con el número de otro ticket abre
+   uno nuevo. Autorespondedores, rebotes y bucles se descartan.
+3. **El correo no se pierde**: si no se puede crear el ticket (límite del plan,
+   solo-lectura), el cursor no avanza y se abre un Problema (ADR-S44); al
+   resolverse, entra.
+4. **Contenido no confiable**: el HTML pasa a la descripción del registro por la
+   whitelist de `sanitizeRichDoc`; los adjuntos van al módulo de archivos y
+   cuentan para el almacenamiento del plan.
+5. **Salida por el correo de la empresa** (cuenta de Google/Microsoft, SMTP
+   propio o plataforma; ADR-S29/S18/SEC-33) con `In-Reply-To`/`References` y el
+   número en el asunto. Lo automático lleva `Auto-Submitted: auto-generated` y
+   no cuenta como primera respuesta. Las notas internas nunca salen.
+6. **SLA**: `computeSlaClock` (shared, puro) calcula los vencimientos en horas
+   hábiles con pausas (días, horario y festivos de Colombia en la zona de la
+   empresa). El estado vive en `helpdesk_tickets` (con `next_check_at` indexado
+   para el tick) y se ESCRIBE en columnas comunes de la lista: guardadas y no
+   derivadas, para que filtren, ordenen, agrupen y disparen automatizaciones
+   como cualquier campo. Nadie las edita a mano (servidor `403
+   helpdesk_field_locked`, import, edición masiva, automatizaciones e
+   interfaz). Cada alerta («en riesgo», «vencido») se registra con un UPDATE
+   condicional: una sola vez por objetivo aunque haya varios nodos. Invitados y
+   clientes nunca reciben alertas ni escalamiento.
+7. **Ajustes en `lists.settings.helpdesk`**, validados por su propio endpoint.
+   La marca del buzón (`helpdesk.mailbox`) sólo la escribe el servidor: un
+   PATCH de la lista no la pisa, y no viaja en plantillas ni duplicados. La
+   migración de empresa lleva el buzón sin contraseña (EXCLUDED).
+
+**Consecuencias.** Dos dependencias nuevas (`imapflow`, `mailparser`). El
+ticket es un registro común (vistas, filtros, Mi trabajo, tableros, portal).
+Quedan fuera OAuth para IMAP y los horarios hábiles por equipo.
+
+---
+
+**Versión del documento:** 1.113.0 (mesa de ayuda por correo y SLA)

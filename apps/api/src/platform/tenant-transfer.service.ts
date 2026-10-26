@@ -56,6 +56,9 @@ import {
     sqlSyncs,
     whatsappContacts,
     whatsappTemplates,
+    helpdeskMailboxes,
+    helpdeskMessages,
+    helpdeskTickets,
     dashboards,
     dashboardSubscriptions,
     publicDashboards,
@@ -140,6 +143,7 @@ const EXCLUDED = [
     'El dominio propio: es único global y apunta al servidor anterior.',
     'Sesiones abiertas: cada persona vuelve a iniciar sesión en la instancia nueva.',
     'Los dispositivos con notificaciones push: el navegador se suscribió con las llaves del servidor de origen; cada persona las vuelve a activar en Ajustes → Cuenta → Avisos.',
+    'La contraseña del buzón de soporte de cada lista: viaja la conexión sin ella; se vuelve a escribir en Ajustes de la lista → Correo entrante.',
 ];
 
 /** Fila cruda leída de una NDJSON (o de un `select()` sin tipar). */
@@ -360,6 +364,14 @@ export class TenantTransferService {
             // (`whatsapp_hooks`) NO viaja: es de ESTE servidor.
             await dump('whatsapp_templates', await this.byTenant(whatsappTemplates, tenantId));
             await dump('whatsapp_contacts', await this.byTenant(whatsappContacts, tenantId));
+            // D2/E5 — mesa de ayuda: el buzón SIN la contraseña (es una
+            // credencial de la cuenta de correo: se vuelve a cargar en el
+            // destino) y el estado del SLA de cada ticket.
+            await dump(
+                'helpdesk_mailboxes',
+                (await this.byTenant(helpdeskMailboxes, tenantId, liveList(helpdeskMailboxes.listId))).map(({ passwordEnc: _password, ...rest }) => rest),
+            );
+            await dump('helpdesk_tickets', await this.byTenant(helpdeskTickets, tenantId, liveRecord(helpdeskTickets.recordId)));
             // A8 — dependencias entre registros (las dos puntas vivas).
             await dump(
                 'record_dependencies',
@@ -405,6 +417,8 @@ export class TenantTransferService {
             // una empresa con cientos de miles de filas no entran en memoria).
             counts.records = await this.dumpPaged(work, 'records', records, tenantId, sql`${records.deletedAt} IS NULL`);
             counts.comments = await this.dumpPaged(work, 'comments', comments, tenantId, liveRecord(comments.recordId));
+            // D2 — el registro de correos de la mesa de ayuda (puede ser grande).
+            counts.helpdesk_messages = await this.dumpPaged(work, 'helpdesk_messages', helpdeskMessages, tenantId, liveList(helpdeskMessages.listId));
             // v0.1.291 — reacciones de los comentarios y registro de tiempo.
             counts.comment_reactions = await this.dumpPaged(
                 work,
@@ -1855,6 +1869,114 @@ export class TenantTransferService {
                 })
                 .where(eq(lists.id, newId));
         }
+        // D2/E5 — mesa de ayuda. El buzón llega APAGADO y sin contraseña; el
+        // cursor (UIDVALIDITY + último UID) viaja, así al volver a encenderlo
+        // no se re-crean tickets de correos que ya se leyeron.
+        const mailboxMap = new Map<number, number>();
+        const markerByList = new Map<number, { id: number; support_address: string }>();
+        for (const m of await this.readAll(rows('helpdesk_mailboxes'))) {
+            const listId = mapId(maps.list, m.listId);
+            if (listId === null) continue;
+            const state = { ...((m.state as Row | null) ?? {}), running: false, last_error: null, pending_reason: null };
+            const [ins] = await tx
+                .insert(helpdeskMailboxes)
+                .values({
+                    tenantId,
+                    listId,
+                    preset: String(m.preset ?? 'generic'),
+                    host: String(m.host ?? ''),
+                    port: Number(m.port ?? 993),
+                    security: String(m.security ?? 'tls'),
+                    username: String(m.username ?? ''),
+                    passwordEnc: null,
+                    folder: String(m.folder ?? 'INBOX'),
+                    supportAddress: String(m.supportAddress ?? ''),
+                    markSeen: Boolean(m.markSeen),
+                    allowInvalidCert: Boolean(m.allowInvalidCert),
+                    enabled: false,
+                    state,
+                    nextCheckAt: null,
+                    createdBy: mapId(maps.user, m.createdBy),
+                })
+                .returning({ id: helpdeskMailboxes.id });
+            mailboxMap.set(Number(m.id), ins!.id);
+            markerByList.set(listId, { id: ins!.id, support_address: String(m.supportAddress ?? '') });
+        }
+        counts.helpdesk_mailboxes = mailboxMap.size;
+        counts.helpdesk_tickets = await this.insertPlain(tx, rows('helpdesk_tickets'), helpdeskTickets, (t) => {
+            const recordId = mapId(maps.record, t.recordId);
+            const listId = mapId(maps.list, t.listId);
+            if (recordId === null || listId === null) return null;
+            return {
+                tenantId,
+                listId,
+                recordId,
+                mailboxId: mapId(mailboxMap, t.mailboxId),
+                customerEmail: (t.customerEmail as string | null) ?? null,
+                customerName: (t.customerName as string | null) ?? null,
+                subject: (t.subject as string | null) ?? null,
+                startedAt: this.date(t.startedAt) ?? new Date(),
+                priority: (t.priority as string | null) ?? null,
+                firstResponseMinutes: (t.firstResponseMinutes as number | null) ?? null,
+                resolutionMinutes: (t.resolutionMinutes as number | null) ?? null,
+                firstResponseAt: this.date(t.firstResponseAt),
+                resolvedAt: this.date(t.resolvedAt),
+                pauses: Array.isArray(t.pauses) ? t.pauses : [],
+                slaStatus: (t.slaStatus as string | null) ?? null,
+                firstResponseDue: this.date(t.firstResponseDue),
+                resolutionDue: this.date(t.resolutionDue),
+                alerts: (t.alerts as Row | null) ?? {},
+                nextCheckAt: this.date(t.nextCheckAt),
+                lastInboundAt: this.date(t.lastInboundAt),
+                lastOutboundAt: this.date(t.lastOutboundAt),
+            };
+        });
+        counts.helpdesk_messages = await this.insertPlain(tx, rows('helpdesk_messages'), helpdeskMessages, (m) => {
+            const listId = mapId(maps.list, m.listId);
+            if (listId === null) return null;
+            return {
+                tenantId,
+                listId,
+                mailboxId: mapId(mailboxMap, m.mailboxId),
+                recordId: mapId(maps.record, m.recordId),
+                commentId: mapId(commentMap, m.commentId),
+                direction: String(m.direction ?? 'in'),
+                status: String(m.status ?? 'ignored'),
+                reason: (m.reason as string | null) ?? null,
+                messageId: (m.messageId as string | null) ?? null,
+                inReplyTo: (m.inReplyTo as string | null) ?? null,
+                refs: Array.isArray(m.refs) ? m.refs : [],
+                fromEmail: (m.fromEmail as string | null) ?? null,
+                fromName: (m.fromName as string | null) ?? null,
+                toAddr: (m.toAddr as string | null) ?? null,
+                ccAddr: (m.ccAddr as string | null) ?? null,
+                subject: (m.subject as string | null) ?? null,
+                uid: (m.uid as number | null) ?? null,
+                uidvalidity: (m.uidvalidity as number | null) ?? null,
+                sentBy: mapId(maps.user, m.sentBy),
+                createdAt: this.date(m.createdAt) ?? new Date(),
+            };
+        });
+        // La marca de la lista apunta al buzón NUEVO (o se quita si no viajó).
+        for (const l of listRows) {
+            const newId = maps.list.get(Number(l.id));
+            if (newId === undefined) continue;
+            const marker = markerByList.get(newId);
+            await tx
+                .update(lists)
+                .set({
+                    settings: marker
+                        ? sql`jsonb_set(${lists.settings}, '{helpdesk}', COALESCE(${lists.settings}->'helpdesk', '{}'::jsonb) || jsonb_build_object('mailbox', ${JSON.stringify(marker)}::jsonb))`
+                        : sql`${lists.settings} #- '{helpdesk,mailbox}'`,
+                })
+                .where(eq(lists.id, newId));
+        }
+        if (mailboxMap.size > 0) {
+            warnings.push(
+                'La contraseña del buzón de soporte no viajó: vuelve a cargarla en Ajustes de la lista → Correo entrante (el buzón queda apagado hasta entonces).',
+            );
+        }
+
         if (sqlCount > 0 && !sameKey) {
             warnings.push('La contraseña de la base de datos SQL no viajó (otra clave de cifrado): vuelve a cargarla en Integraciones → SQL Server.');
         }

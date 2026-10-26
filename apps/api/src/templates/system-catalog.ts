@@ -333,8 +333,9 @@ const proyectos: SystemTemplate = {
 
 const soporte: SystemTemplate = {
     key: 'soporte-tickets',
-    name: 'Soporte / Tickets',
-    description: 'Solicitudes con canal, prioridad, asignado y SLA. Para atender clientes sin perder ninguna.',
+    name: 'Mesa de ayuda / Tickets',
+    description:
+        'Solicitudes con canal, prioridad, asignado y SLA en horas hábiles. Conecta el buzón de soporte y cada correo entra como ticket; respondes desde la ficha.',
     icon: 'lifebuoy',
     color: '#ef4444',
     category: 'operaciones',
@@ -346,6 +347,8 @@ const soporte: SystemTemplate = {
             '#ef4444',
             [
                 f('Asunto', 'asunto', 'text', { is_required: true }),
+                // D2 — el número del ticket: viaja en el asunto de las respuestas («[TCK-0001]»).
+                f('Ticket', 'ticket', 'autonumber', { config: { prefix: 'TCK', separator: '-', digits: 4 } }),
                 f('Solicitante', 'solicitante', 'text'),
                 f('Email', 'email', 'email'),
                 select('Canal', 'canal', [
@@ -367,13 +370,71 @@ const soporte: SystemTemplate = {
                     opt('baja', 'Baja', 'slate'),
                 ]),
                 f('Asignado a', 'asignado', 'user'),
+                f('Recibido', 'recibido', 'datetime'),
+                // D2/E5 — columnas que mantiene el SLA (se filtran, ordenan y agrupan; no se editan a mano).
+                f('Vence primera respuesta', 'vence_respuesta', 'datetime', { config: { highlight_overdue: true } }),
                 f('Vence (SLA)', 'vence', 'datetime', { config: { highlight_overdue: true } }),
+                select('Estado del SLA', 'estado_sla', [
+                    opt('a_tiempo', 'A tiempo', 'green'),
+                    opt('en_riesgo', 'En riesgo', 'amber'),
+                    opt('vencido', 'Vencido', 'red'),
+                    opt('cumplido', 'Cumplido', 'blue'),
+                    opt('pausado', 'Pausado', 'gray'),
+                ]),
                 f('Satisfacción', 'satisfaccion', 'rating', { config: { max: 5 } }),
                 f('Descripción', 'descripcion', 'long_text'),
+                f('Adjuntos', 'adjuntos', 'file'),
             ],
             {
-                settings: { title_field_id: ref('asunto') },
-                views: [table(), kanban('Por estado', 'estado')],
+                settings: {
+                    title_field_id: ref('asunto'),
+                    // D2/E5 — la mesa de ayuda lista para usar: falta sólo conectar el buzón
+                    // (Ajustes de la lista → Correo entrante).
+                    helpdesk: {
+                        title_field_id: ref('asunto'),
+                        from_name_field_id: ref('solicitante'),
+                        from_email_field_id: ref('email'),
+                        received_at_field_id: ref('recibido'),
+                        body_text_field_id: ref('descripcion'),
+                        attachments_field_id: ref('adjuntos'),
+                        status_field_id: ref('estado'),
+                        initial_status: 'abierto',
+                        paused_statuses: ['esperando'],
+                        closed_statuses: ['resuelto'],
+                        reopen_status: 'en_proceso',
+                        reply_templates: [
+                            {
+                                id: 'recibido',
+                                name: 'Recibimos tu solicitud',
+                                body: 'Hola {{cliente.nombre}},\n\nRecibimos tu solicitud «{{ticket.asunto}}» con el número {{ticket.numero}}. Te escribimos apenas tengamos novedades.\n\nSaludos,\n{{agente.nombre}}',
+                            },
+                            {
+                                id: 'resuelto',
+                                name: 'Lo resolvimos',
+                                body: 'Hola {{cliente.nombre}},\n\nYa resolvimos tu solicitud ({{ticket.numero}}). Si algo no quedó bien, responde a este correo y la volvemos a abrir.\n\nSaludos,\n{{agente.nombre}}',
+                            },
+                        ],
+                        sla: {
+                            enabled: true,
+                            priority_field_id: ref('prioridad'),
+                            targets: [
+                                { priority: 'urgente', first_response_hours: 1, resolution_hours: 4 },
+                                { priority: 'alta', first_response_hours: 4, resolution_hours: 8 },
+                                { priority: 'normal', first_response_hours: 8, resolution_hours: 24 },
+                                { priority: 'baja', first_response_hours: 24, resolution_hours: 72 },
+                                { priority: null, first_response_hours: 8, resolution_hours: 24 },
+                            ],
+                            calendar: { days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', holidays: 'co' },
+                            at_risk_percent: 75,
+                            notify_assignee_field_id: ref('asignado'),
+                            escalate_roles: ['admin'],
+                            first_due_field_id: ref('vence_respuesta'),
+                            resolution_due_field_id: ref('vence'),
+                            sla_status_field_id: ref('estado_sla'),
+                        },
+                    },
+                },
+                views: [table(), kanban('Por estado', 'estado'), kanban('Por SLA', 'estado_sla')],
                 records: [
                     { data: { asunto: 'No puedo iniciar sesión', solicitante: 'Carlos Díaz', canal: 'email', estado: 'abierto', prioridad: 'alta' } },
                     { data: { asunto: 'Factura duplicada', solicitante: 'Ana Gómez', canal: 'whatsapp', estado: 'en_proceso', prioridad: 'normal' } },
@@ -1281,7 +1342,7 @@ soporte.blueprint.dashboards.push(
     dashboard('Salud del soporte', 'Tickets abiertos, canales, prioridades y satisfacción.', [
         kpi('tickets', 'Tickets', { icon: 'lifebuoy' }, 0),
         kpi('tickets', 'Abiertos', { metric: 'count', filter_tree: { type: 'condition', field_id: ref('estado'), op: 'eq', value: 'abierto' }, icon: 'flag' }, 3),
-        kpi('tickets', 'Satisfacción', { metric: 'avg', metric_field_id: ref('satisfaccion'), icon: 'star' }, 6),
+        kpi('tickets', 'SLA vencido', { metric: 'count', filter_tree: { type: 'condition', field_id: ref('estado_sla'), op: 'eq', value: 'vencido' }, icon: 'clock' }, 6),
         widget('gauge', 'tickets', 'Satisfacción vs. meta', { metric: 'avg', metric_field_id: ref('satisfaccion'), goal: 4.5 }, 9, 0, 3, 4),
         widget('chart_pie', 'tickets', 'Por estado', { metric: 'count', group_by_field_id: ref('estado') }, 0, 2, 3, 4),
         widget('chart_bar', 'tickets', 'Por canal', { metric: 'count', group_by_field_id: ref('canal') }, 3, 2, 3, 4),

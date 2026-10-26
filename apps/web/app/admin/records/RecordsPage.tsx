@@ -113,6 +113,7 @@ import {
     viewConfigToState,
 } from './views/savedViewMapping';
 import { lazyWithReload } from '@/lib/lazyWithReload';
+import { HelpdeskManagedContext, useHelpdeskManagedIds } from '@/admin/helpdesk/managedFields';
 
 // v0.1.256 — los diálogos que se abren a pedido viajan en su propio chunk
 // (antes ~250 KB sin minificar iban en la carga inicial de la tabla). Cada
@@ -416,6 +417,8 @@ export function RecordsPage(): JSX.Element {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [JSON.stringify(storeMarker), fields.data],
     );
+    // E5 — las columnas que mantiene el SLA de la mesa de ayuda (candado en la celda).
+    const helpdeskManaged = useHelpdeskManagedIds(list.data?.settings);
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !storeMarker;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canBulkEdit = useCan(CAP.BULK_ACTIONS);
@@ -938,6 +941,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         // explícito del usuario en v0.1.70; el capado tipo ClickUp de
         // v0.1.68 generaba una barra interna que no quería).
         <StoreRulesContext.Provider value={storeRules}>
+        <HelpdeskManagedContext.Provider value={helpdeskManaged}>
         <PageStickyTopContext.Provider value={pageStickyTop}>
         <GridHistoryProvider listId={list.data.id}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
@@ -1864,6 +1868,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         </div>
         </GridHistoryProvider>
         </PageStickyTopContext.Provider>
+        </HelpdeskManagedContext.Provider>
         </StoreRulesContext.Provider>
     );
 }

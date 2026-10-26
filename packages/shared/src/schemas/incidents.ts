@@ -27,6 +27,8 @@ export const INCIDENT_SOURCES = [
     'dashboard',
     // D5 — una página de agenda (calendario externo, correo de la cita, reserva perdida).
     'booking',
+    // D2 — el buzón de la mesa de ayuda (no se puede leer o hay correos pendientes).
+    'helpdesk',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -42,6 +44,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     collections: 'Cobros',
     dashboard: 'Tablero',
     booking: 'Agenda',
+    helpdesk: 'Mesa de ayuda',
 };
 
 export interface IncidentDto {
@@ -109,6 +112,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return list ? `${list}/records` : '/lists';
         case 'dashboard':
             return i.source_id ? `/dashboards/${i.source_id}?share=email` : '/dashboards';
+        case 'helpdesk':
+            return list ? `${list}/edit?s=correo` : '/lists';
         default:
             return '/settings?s=problemas';
     }

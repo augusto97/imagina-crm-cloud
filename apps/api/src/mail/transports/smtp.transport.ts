@@ -55,6 +55,11 @@ export class SmtpMailTransport implements MailTransport {
             subject: message.subject,
             html: message.html,
             text: message.text ?? stripHtml(message.html),
+            // D2 — hilo de la mesa de ayuda (nodemailer pone los `<>`).
+            ...(message.messageId ? { messageId: `<${message.messageId}>` } : {}),
+            ...(message.inReplyTo ? { inReplyTo: `<${message.inReplyTo}>` } : {}),
+            ...(message.references?.length ? { references: message.references.map((r) => `<${r}>`) } : {}),
+            ...(message.headers ? { headers: message.headers } : {}),
             ...(message.attachments?.length
                 ? {
                       attachments: message.attachments.map((a) => ({

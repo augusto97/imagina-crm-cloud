@@ -8,6 +8,8 @@ import { CommentContent } from '@/admin/comments/CommentContent';
 import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments/CommentThread';
 import { repliesByRoot } from '@/admin/comments/commentThreads';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
+import { EmailCommentMeta, emailOf } from '@/admin/helpdesk/EmailCommentMeta';
+import { TicketMailPanel } from '@/admin/helpdesk/TicketMailPanel';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -100,6 +102,8 @@ export function ActivityFeed({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-activity-feed">
+            {/* D2 — ticket por correo: el SLA y «Responder por correo» (si la lista lee un buzón). */}
+            <TicketMailPanel listId={listId} recordId={recordId} compact />
             {canPost ? (
                 <Composer listId={listId} recordId={recordId} portalEnabled={portalEnabled} />
             ) : (
@@ -567,7 +571,7 @@ function CommentRow({
                     <p className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-1.5 imcrm-text-[13px]">
                         <span className="imcrm-font-medium imcrm-text-foreground">{name}</span>
                         <ClientVisibleBadge comment={comment} />
-                        {meta.kind && meta.kind !== 'note' && (
+                        {meta.kind && meta.kind !== 'note' && !emailOf(comment) && (
                             <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground">
                                 <KindIcon className="imcrm-h-3 imcrm-w-3" />
                                 {describeMode(meta)}
@@ -587,13 +591,15 @@ function CommentRow({
                 ) : comment.deleted ? (
                     <DeletedCommentPlaceholder />
                 ) : (
-                    <div className="imcrm-rounded-lg imcrm-rounded-tl-sm imcrm-bg-muted/60 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-text-foreground">
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-lg imcrm-rounded-tl-sm imcrm-bg-muted/60 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-text-foreground">
+                        <EmailCommentMeta comment={comment} />
                         <CommentContent content={comment.content} />
                     </div>
                 )}
                 {canEdit && !editing && !comment.deleted && (
                     <div className="imcrm-flex imcrm-gap-3 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 imcrm-transition-opacity focus-within:imcrm-opacity-100 group-hover:imcrm-opacity-100">
-                        <button type="button" onClick={() => setEditing(true)} className="hover:imcrm-text-foreground">{__('Editar')}</button>
+                        {/* D2 — un correo no se edita: es lo que se mandó o recibió. */}
+                        {!emailOf(comment) && <button type="button" onClick={() => setEditing(true)} className="hover:imcrm-text-foreground">{__('Editar')}</button>}
                         <button type="button" onClick={() => void del()} className="hover:imcrm-text-destructive">{__('Eliminar')}</button>
                     </div>
                 )}

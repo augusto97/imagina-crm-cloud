@@ -31,6 +31,7 @@ import { editLabel, useGridHistory } from './grid/history';
 import { isCheckedValue, renderCellValue } from './renderCellValue';
 import { useRelationTitlesFor } from './relationTitlesContext';
 import { useWrapText } from './wrapText';
+import { useHelpdeskLock } from '@/admin/helpdesk/managedFields';
 
 interface EditableCellProps {
     field: FieldEntity;
@@ -143,9 +144,12 @@ function EditableCellInner({
     listId,
     value,
     canEdit: canEditByCaps = true,
-    lockedReason = null,
+    lockedReason: lockedReasonProp = null,
     record,
 }: EditableCellProps): JSX.Element {
+    // E5 — las columnas del SLA de la mesa de ayuda no se editan a mano.
+    const helpdeskLock = useHelpdeskLock(field.id);
+    const lockedReason = lockedReasonProp ?? helpdeskLock;
     const canEditByUser = canEditByCaps && lockedReason === null;
     // v0.1.259 — UNA mutación por tabla (contexto), no una por celda: con
     // decenas de filas visibles eran cientos de observers montados por nada.

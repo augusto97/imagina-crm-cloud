@@ -26,6 +26,16 @@ export interface MailMessage {
      * (la cola de correo lo serializa).
      */
     attachments?: MailAttachment[];
+    /**
+     * D2 — Hilo de correo (mesa de ayuda): el Message-ID propio (sin `<>`) y
+     * los del mensaje al que se responde, para que el cliente vea la
+     * respuesta en la misma conversación. Más cabeceras extra (la marca
+     * anti-bucle `X-Imagina-Helpdesk`, `Auto-Submitted`).
+     */
+    messageId?: string;
+    inReplyTo?: string;
+    references?: string[];
+    headers?: Record<string, string>;
 }
 
 export interface MailAttachment {

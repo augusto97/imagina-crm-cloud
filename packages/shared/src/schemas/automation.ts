@@ -33,6 +33,10 @@ export const AUTOMATION_TRIGGERS = [
     'checklist_completed',
     // D5 — una cita de la agenda se agendó, se reprogramó o se canceló.
     'booking_event',
+    // D2 — llegó un correo al buzón de la lista (ticket nuevo o respuesta).
+    'email_received',
+    // E5 — un SLA del ticket entró en riesgo o se venció.
+    'sla_alert',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
@@ -79,6 +83,8 @@ export const AUTOMATION_ACTIONS = [
     'wait_approval',
     // C6 — subtareas (y checklists) de una plantilla de registro sobre el registro.
     'create_subtasks_from_template',
+    // D2 — responder por correo al hilo del ticket (sale por el correo de la empresa).
+    'reply_email',
 ] as const;
 
 export interface ActionSpec {
@@ -519,6 +525,11 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
             case 'generate_pdf':
                 if (isBlankConfig(cfg.document_template_id)) {
                     out.push({ path: `${at}.config.document_template_id`, message: 'Elige la plantilla del documento PDF.' });
+                }
+                break;
+            case 'reply_email':
+                if (isBlankConfig(cfg.body)) {
+                    out.push({ path: `${at}.config.body`, message: 'Escribe el texto de la respuesta.' });
                 }
                 break;
             case 'create_subtasks_from_template':

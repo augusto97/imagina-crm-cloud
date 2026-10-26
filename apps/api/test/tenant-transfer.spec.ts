@@ -22,6 +22,9 @@ import {
     documentNumbers,
     documentTemplates,
     dashboardSubscriptions,
+    helpdeskMailboxes,
+    helpdeskMessages,
+    helpdeskTickets,
     emailUsage,
     fields,
     listGroups,
@@ -100,6 +103,7 @@ describe('Migración de empresa (v0.1.197)', () => {
     let teamAId: number;
     let roleAId: number;
     let equipoFieldId: number;
+    let mailboxAId: number;
 
     // Destino
     let tenantB: number;
@@ -361,6 +365,43 @@ describe('Migración de empresa (v0.1.197)', () => {
         // v0.1.291 — reacción y registro de tiempo (un cronómetro en curso
         // llega al destino DETENIDO, con lo que llevaba).
         await pg.db.insert(commentReactions).values({ tenantId: tenantA, commentId: comentario!.id, userId: carlosId, emoji: '🎉' });
+        // D2/E5 — mesa de ayuda: el buzón (con contraseña cifrada), un correo
+        // que quedó como comentario y el SLA del ticket.
+        const [mb] = await pg.db
+            .insert(helpdeskMailboxes)
+            .values({
+                tenantId: tenantA,
+                listId: clientesId,
+                host: 'imap.acme.test',
+                port: 993,
+                username: 'soporte@acme.test',
+                passwordEnc: 'v1:cifrado-del-origen',
+                supportAddress: 'soporte@acme.test',
+                state: { uidvalidity: 7, last_uid: 41 },
+                createdBy: anaId,
+            })
+            .returning();
+        mailboxAId = mb!.id;
+        await pg.db.insert(helpdeskMessages).values({
+            tenantId: tenantA,
+            listId: clientesId,
+            mailboxId: mailboxAId,
+            recordId: clienteRecId,
+            commentId: comentario!.id,
+            direction: 'in',
+            status: 'reply',
+            messageId: 'm1@cliente.test',
+            sentBy: anaId,
+        });
+        await pg.db.insert(helpdeskTickets).values({
+            tenantId: tenantA,
+            listId: clientesId,
+            recordId: clienteRecId,
+            mailboxId: mailboxAId,
+            customerEmail: 'cliente@uno.test',
+            firstResponseDue: new Date('2026-11-03T14:00:00Z'),
+            alerts: { 'first_response:at_risk': '2026-11-03T13:35:00Z' },
+        });
         await pg.db.insert(timeEntries).values([
             { tenantId: tenantA, listId: clientesId, recordId: clienteRecId, userId: anaId, source: 'manual', workDate: '2026-10-20', seconds: 5400, note: 'diseño' },
             {
@@ -639,6 +680,11 @@ describe('Migración de empresa (v0.1.197)', () => {
                         assignment_team_field_id: equipoFieldId,
                     },
                     portal: { enabled: true, related_lists: [facturasId] },
+                    helpdesk: {
+                        mailbox: { id: mailboxAId, support_address: 'soporte@acme.test' },
+                        title_field_id: nombreFieldId,
+                        sla: { enabled: true, notify_user_ids: [carlosId], escalate_user_ids: [anaId], escalate_set_user_id: carlosId, notify_team_ids: [teamAId] },
+                    },
                     public: {
                         enabled: true,
                         token: publicToken,
@@ -832,6 +878,28 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newActivity[0]!.diff).toEqual({
             [`f${newNombre.id}`]: { from: 'viejo', to: 'Cliente Uno' },
         });
+
+        // ── Mesa de ayuda ──────────────────────────────────────────────
+        // El buzón llega APAGADO y SIN contraseña (credencial de la cuenta de
+        // correo); el cursor viaja; la marca de la lista apunta al buzón NUEVO.
+        const newMailboxes = await pg.db.select().from(helpdeskMailboxes).where(eq(helpdeskMailboxes.tenantId, tenantB));
+        expect(newMailboxes).toHaveLength(1);
+        expect(newMailboxes[0]).toMatchObject({ listId: newClientes.id, passwordEnc: null, enabled: false, supportAddress: 'soporte@acme.test' });
+        expect(newMailboxes[0]!.state).toMatchObject({ uidvalidity: 7, last_uid: 41 });
+        expect(newMailboxes[0]!.id).not.toBe(mailboxAId);
+        const hd = (newClientes.settings as { helpdesk: { mailbox: { id: number }; title_field_id: number; sla: Record<string, unknown> } }).helpdesk;
+        expect(hd.mailbox.id).toBe(newMailboxes[0]!.id);
+        expect(hd.title_field_id).toBe(newNombre.id);
+        expect(hd.sla.notify_user_ids).toEqual([carlosNuevo!.id]);
+        expect(hd.sla.escalate_user_ids).toEqual([anaId]);
+        expect(hd.sla.escalate_set_user_id).toBe(carlosNuevo!.id);
+        expect(hd.sla.notify_team_ids).not.toEqual([teamAId]);
+        const newHdMessages = await pg.db.select().from(helpdeskMessages).where(eq(helpdeskMessages.tenantId, tenantB));
+        expect(newHdMessages).toEqual([expect.objectContaining({ recordId: newCliente.id, commentId: raiz.id, mailboxId: newMailboxes[0]!.id, messageId: 'm1@cliente.test', sentBy: anaId })]);
+        const newTickets = await pg.db.select().from(helpdeskTickets).where(eq(helpdeskTickets.tenantId, tenantB));
+        expect(newTickets).toEqual([expect.objectContaining({ recordId: newCliente.id, listId: newClientes.id, customerEmail: 'cliente@uno.test' })]);
+        expect(newTickets[0]!.alerts).toEqual({ 'first_response:at_risk': '2026-11-03T13:35:00Z' });
+        expect(res.warnings.some((w) => w.includes('buzón de soporte'))).toBe(true);
 
         // ── Automatizaciones ───────────────────────────────────────────
         const newAutos = await pg.db.select().from(automations).where(eq(automations.tenantId, tenantB));

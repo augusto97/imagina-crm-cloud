@@ -5,10 +5,10 @@ import { pushLine, pushSubscribeSchema, pushTag } from './push';
 import { codeSearchQuerySchema, normalizeScanCode, pickScanField, readScanFieldId, scanCodeAsNumber } from './scan';
 
 describe('H1 — preferencias de push', () => {
-    it('por defecto: lo directo y con apuro (mención, asignación, aprobación, recordatorio)', () => {
+    it('por defecto: lo directo y con apuro (mención, asignación, aprobación, recordatorio, SLA)', () => {
         const prefs = readNotificationPrefs({});
         const on = NOTIFICATION_KINDS.filter((k) => prefs.push[k]);
-        expect(on.sort()).toEqual(['approval', 'assigned', 'mention', 'reminder']);
+        expect(on.sort()).toEqual(['approval', 'assigned', 'mention', 'reminder', 'sla']);
         // Preferencias guardadas ANTES de existir el push: se completan con los defaults.
         expect(readNotificationPrefs({ email: { mention: false } }).push.mention).toBe(true);
         // Lo guardado manda.

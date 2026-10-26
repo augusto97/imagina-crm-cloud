@@ -166,6 +166,7 @@ import { canonicalPublicSettings } from '../../public-lists/public-lists.service
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
 import { aclExtras } from '../../lists/list-acl';
+import { describeHelpdeskForModel } from './helpdesk-schema';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
 
@@ -548,7 +549,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -564,7 +565,9 @@ const automationSpec = z.object({
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
                 'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
                 'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled] (sin él, los tres), field_filters?}. ' +
-                'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}.',
+                'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}. ' +
+                'email_received (MESA DE AYUDA: llegó un correo al buzón de soporte de la lista — ver `helpdesk` en get_list_schema; las acciones usan {{correo.de}}, {{correo.nombre}}, {{correo.asunto}}, {{correo.texto}}, {{correo.tipo}} (nuevo|respuesta)): {email_kind?: any (default) | new (sólo tickets nuevos) | reply (sólo respuestas del cliente), field_filters?}. ' +
+                'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -584,6 +587,7 @@ const automationSpec = z.object({
                 'wait {mode: "duration", amount, unit: minutes|hours|days} o {mode: "until_field", date_field: slug de un campo date/datetime, offset_amount?, offset_unit?: minutes|hours|days, offset_direction?: before|after, at_time?: "09:00"} + resume_condition?: [{field, op, value}] — PAUSA la corrida y sigue sola con los pasos siguientes (máx. 366 días; se reanuda con el registro releído y sólo si cumple resume_condition); puede ir dentro de if_else, NO dentro de for_each_linked | ' +
                 'request_approval {approval_flow: id o nombre de un flujo de approval_flows, note?} — PIDE una aprobación del registro con ese flujo (los aprobadores reciben el aviso; si ya hay una pendiente de ese flujo, no pide otra). Los flujos se crean con propose_configure_approval_flow | ' +
                 'wait_approval {approval_flow?: id o nombre (sin él, la que pidió esta automatización o cualquier pendiente del registro), timeout_days?: n} — PAUSA la corrida hasta que la solicitud se resuelva y deja {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada, o vencida si pasaron timeout_days) para un if_else {condition: [{field: "aprobacion.resultado", op: "eq", value: "aprobada"}]}; NO dentro de for_each_linked | ' +
+                'reply_email {body, subject?, cc?} — MESA DE AYUDA: responde por correo al HILO del ticket (al cliente, con las cabeceras del hilo y el número del ticket en el asunto) desde la dirección de soporte; el body es texto con variables ({{slug}}, {{correo.asunto}}, {{ticket.numero}}, {{cliente.nombre}}); sólo en listas con buzón de soporte conectado | ' +
                 'for_each_linked {relation: slug de la lista vinculada (linked_lists de get_list_schema; o relation_field_id), via?: nombre de la relación si hay varias, filters?: [{field, op, value}] por slug de ESA lista, actions: [...]} — repite las acciones por cada registro vinculado (tope 200); adentro {{item.slug}} y {{item.record.id}} leen el vinculado, y update_field {target: "item", values: {slug de esa lista: valor}} lo cambia (sin target cambia el registro que disparó). ' +
                 'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
@@ -966,7 +970,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1343,6 +1347,8 @@ export class StructureTools implements AiProposalApplier {
                 record_templates: recordTpls.map((t) => templateForModel(t, fields)),
                 // D3 — WhatsApp oficial: números y plantillas APROBADAS (sin credenciales).
                 whatsapp: await whatsappSchema(this.tenantDb, ctx.tenantId, connections, settings, fields).catch(() => null),
+                // D2/E5 — mesa de ayuda: buzón de soporte (sin secretos) y política de SLA.
+                helpdesk: describeHelpdeskForModel(settings, fieldById),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -4135,7 +4141,18 @@ export class StructureTools implements AiProposalApplier {
         const check = (s: unknown): void => {
             // `item.slug` (el vinculado de un bucle) se valida contra SU lista en translateFlowActions.
             // C5 — `aprobacion.resultado` (el resultado de «Esperar aprobación» / del disparador) no es un campo.
-            if (typeof s === 'string' && s && !s.startsWith('item.') && !s.startsWith('aprobacion.') && !slugs.has(s) && !/^f\d+$/.test(s)) bad.add(s);
+            // D2/E5 — `correo.*` y `sla.*` (el correo o la alerta del disparador) tampoco.
+            if (
+                typeof s === 'string' &&
+                s &&
+                !s.startsWith('item.') &&
+                !s.startsWith('aprobacion.') &&
+                !s.startsWith('correo.') &&
+                !s.startsWith('sla.') &&
+                !slugs.has(s) &&
+                !/^f\d+$/.test(s)
+            )
+                bad.add(s);
         };
         const checkCondition = (c: unknown): void => {
             if (Array.isArray(c)) for (const r of c) check((r as { field?: string; slug?: string }).field ?? (r as { slug?: string }).slug);
@@ -4742,6 +4759,14 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
                 : cfg.checklist_mode === 'named' && typeof cfg.checklist_name === 'string'
                   ? `Cuando se completa el checklist «${cfg.checklist_name}»`
                   : 'Cuando se completa un checklist';
+        case 'email_received':
+            return cfg.email_kind === 'new'
+                ? 'Cuando llega un correo nuevo (ticket nuevo)'
+                : cfg.email_kind === 'reply'
+                  ? 'Cuando el cliente responde por correo'
+                  : 'Cuando llega un correo';
+        case 'sla_alert':
+            return 'Cuando un SLA está en riesgo o se vence';
         default:
             return type;
     }
@@ -4786,6 +4811,8 @@ function describeActions(
                 const n = Array.isArray(cfg.actions) ? cfg.actions.length : 0;
                 return `Repetir por cada registro vinculado (${n} ${n === 1 ? 'acción' : 'acciones'})`;
             }
+            case 'reply_email':
+                return 'Responder por correo al hilo del ticket';
             default:
                 return a.type;
         }

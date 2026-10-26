@@ -374,6 +374,13 @@ function toComment(
     reactions?: CommentReactionSummary[],
 ): CommentDto {
     const deleted = row.deletedAt !== null;
+    // D2 — un correo del cliente que entró por la mesa de ayuda: lo escribió
+    // él (no un miembro del equipo); el nombre sale del remitente.
+    const mail = (row.metadata as { email?: { direction?: unknown; from?: unknown; from_name?: unknown } } | null)?.email;
+    if (clientName === undefined && mail && mail.direction === 'in') {
+        const name = typeof mail.from_name === 'string' && mail.from_name.trim() !== '' ? mail.from_name : typeof mail.from === 'string' ? mail.from : '';
+        clientName = name || 'Cliente';
+    }
     return {
         id: row.id,
         list_id: row.listId,

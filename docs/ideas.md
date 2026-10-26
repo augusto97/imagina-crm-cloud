@@ -105,7 +105,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | D1 · El correo de cada registro (Gmail/Outlook de cada persona en la ficha) | alto (CRM) · L | Opt-in por persona; sólo hilos con contactos de la lista. |
-| D2 · Mesa de ayuda por correo (cada correo crea un ticket) | alto (soporte) · L | **En la fase 5** (aprobada 2026-10-26). |
 | D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
 | D7 · Chat para el sitio web que crea el lead | medio · M-L | Guardando sólo lo necesario, como D3. |
 | D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | |
@@ -118,7 +117,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | E2 · Acciones que faltan | alto · M-L | «Buscar registros», «crear o actualizar por una clave», «asignar por turno», «notificar en la app», «copiar a otra lista», «preguntarle a la IA». Ya existen: pedir aprobación y subtareas desde plantilla. |
 | E3 · Varias ramas («según el valor de…»), subflujos, manejo de errores por paso, reintento de webhooks | medio · M | |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
-| E5 · SLA y escalamiento | medio-alto · M | **En la fase 5** (con D2). |
 | E6 · Agentes de IA | alto · L-XL | **En la fase 6** (aprobada 2026-10-26). Base: el registro de herramientas y «propone → aplica». |
 | E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |
 
@@ -215,6 +213,11 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada
   (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
   administre push; llenar con la cámara otros campos además del «Código».
+- **Mesa de ayuda (v0.1.316)**: entrar al buzón por OAuth (Gmail/Microsoft)
+  en vez de contraseña de aplicación; horario hábil por equipo (hoy uno por
+  lista); que un Problema abierto mire la papelera (hoy el de un buzón cuya
+  lista está en la papelera queda abierto hasta restaurarla o «Ya lo
+  arreglé»).
 - **WhatsApp oficial (v0.1.315)**: bandeja o historial de la conversación
   (hoy, a propósito, sólo el último mensaje); guardar el último adjunto en un
   campo Archivo (los medios no se descargan); crear y editar plantillas desde
@@ -254,6 +257,12 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
 - Dominios propios por Caddy (`on_demand_tls`) cuando haya muchos clientes.
 - Firma de los releases (opcional; `docs/runbook-updates.md`).
 - Un contexto por request en el servidor (baja prioridad desde v0.1.257).
+- `updateNotificationPrefsSchema.email` es una lista fija: cada tipo de aviso
+  nuevo hay que sumarlo a mano o se descarta en silencio (el de push ya se arma
+  desde `NOTIFICATION_KINDS`). Visto en v0.1.316.
+- `PATCH /lists/:id` con `settings` reemplaza el objeto entero: un PATCH
+  parcial por API o MCP borra ajustes (la marca del buzón de la mesa de ayuda
+  se conserva). Visto en v0.1.316.
 
 ---
 

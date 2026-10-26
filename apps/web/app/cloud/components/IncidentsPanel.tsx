@@ -7,6 +7,7 @@ import {
     ClipboardList,
     CreditCard,
     Database,
+    Inbox,
     Mail,
     Plug,
     Repeat,
@@ -40,6 +41,8 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     collections: CreditCard,
     dashboard: ChartColumn,
     booking: CalendarClock,
+    // D2 — el buzón de soporte de una lista.
+    helpdesk: Inbox,
 };
 
 /**

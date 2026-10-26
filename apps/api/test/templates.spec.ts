@@ -582,6 +582,37 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         expect(copied.settings.other).toBe('ok');
     });
 
+    it('D2 — el buzón de soporte NO viaja en una copia; la mesa de ayuda (ajustes y SLA) sí, re-apuntada', async () => {
+        const { lists: applied } = await templates.apply(tenantA, actor, 'sys:soporte-tickets', { include_records: false, name: 'Mesa' });
+        const mesa = await listsService.get(tenantA, String(applied[0]!.id));
+        const mfields = new Map((await fieldsService.listByListId(tenantA, mesa.id)).map((x) => [x.slug, x.id]));
+        const hd = mesa.settings.helpdesk as { title_field_id: number; status_field_id: number; sla: { enabled: boolean; resolution_due_field_id: number; priority_field_id: number } };
+        expect(hd.title_field_id).toBe(mfields.get('asunto'));
+        expect(hd.status_field_id).toBe(mfields.get('estado'));
+        expect(hd.sla.enabled).toBe(true);
+        expect(hd.sla.resolution_due_field_id).toBe(mfields.get('vence'));
+        expect(hd.sla.priority_field_id).toBe(mfields.get('prioridad'));
+        // El número del ticket («TCK-0001») sale del ID automático: es el que viaja en el asunto.
+        const { lists: withRecs } = await templates.apply(tenantA, actor, 'sys:soporte-tickets', { include_records: true, name: 'Mesa con ejemplos' });
+        const ticketField = (await fieldsService.listByListId(tenantA, withRecs[0]!.id)).find((x) => x.slug === 'ticket')!;
+        expect(ticketField.type).toBe('autonumber');
+        const sample = await pg.db.select({ data: records.data }).from(records).where(eq(records.listId, withRecs[0]!.id));
+        expect(sample.map((r) => (r.data as Record<string, unknown>)[`f${ticketField.id}`]).sort()).toEqual(['TCK-0001', 'TCK-0002']);
+        // La marca del buzón la pone la mesa de ayuda al conectarlo; una copia no la hereda.
+        await listsService.update(
+            tenantA,
+            String(mesa.id),
+            { settings: { ...mesa.settings, helpdesk: { ...hd, mailbox: { id: 77, support_address: 'soporte@acme.test' } } } },
+            { helpdeskMailbox: true },
+        );
+        const { lists: created } = await templates.duplicate(tenantA, actor, String(mesa.id), { include: { views: true, automations: true, settings: true, records: false } });
+        const copied = await listsService.get(tenantA, String(created[0]!.id));
+        const chd = copied.settings.helpdesk as { mailbox?: unknown; title_field_id: number };
+        expect(chd.mailbox).toBeUndefined();
+        const cfields = new Map((await fieldsService.listByListId(tenantA, copied.id)).map((x) => [x.slug, x.id]));
+        expect(chd.title_field_id).toBe(cfields.get('asunto'));
+    });
+
     it('guardar como plantilla → aparece en la galería junto a las del sistema → aplicar crea la lista → borrar', async () => {
         const src = await listsService.create(tenantA, { name: 'Leads', icon: 'target', color: 'violet' });
         await fieldsService.create(tenantA, String(src.id), { label: 'Nombre', type: 'text' });

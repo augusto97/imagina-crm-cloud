@@ -5,6 +5,7 @@ import {
     type DefaultContext,
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
+    helpdeskManagedFieldIds,
     IMPORT_ID_COLUMN,
     IMPORT_PARENT_COLUMN,
     isUserWritableType,
@@ -93,7 +94,9 @@ export class ImportService {
         assertNotStoreManaged(list, 'import');
         assertCanCreate(list.settings, actor);
         const hidden = hiddenFieldsFor(list.settings, actor);
-        const fields = (await this.fields.list(tenantId, String(list.id))).filter((f) => !hidden.has(f.slug));
+        // E5 — las columnas que mantiene el SLA de la mesa de ayuda no se importan.
+        const managed = new Set(helpdeskManagedFieldIds(list.settings));
+        const fields = (await this.fields.list(tenantId, String(list.id))).filter((f) => !hidden.has(f.slug) && !managed.has(f.id));
         const byId = new Map(fields.map((f) => [f.id, f]));
 
         // El mapeo debe apuntar a campos de datos de la lista.
@@ -308,11 +311,17 @@ export class ImportService {
             }
         }
 
-        const listFields = (await this.importableFields(tenantId, list.id)).filter((f) => !hidden.has(f.slug));
+        const managedIds = new Set(helpdeskManagedFieldIds(list.settings));
+        const allImportable = await this.importableFields(tenantId, list.id);
+        const managedSlugs = new Set(allImportable.filter((f) => managedIds.has(f.id)).map((f) => f.slug));
+        const listFields = allImportable.filter((f) => !hidden.has(f.slug) && !managedIds.has(f.id));
         for (const [colIdx, slug] of [...mapping]) {
             if (hidden.has(slug)) {
                 mapping.delete(colIdx);
                 errors.push({ row: 0, message: `La columna «${headers[colIdx] ?? slug}» apunta a un campo que tu rol no puede ver: se ignoró.` });
+            } else if (managedSlugs.has(slug)) {
+                mapping.delete(colIdx);
+                errors.push({ row: 0, message: `La columna «${headers[colIdx] ?? slug}» apunta a un campo que calcula el SLA de la mesa de ayuda: se ignoró.` });
             }
         }
 

@@ -6,7 +6,10 @@ import {
     FilePlus2,
     GitBranch,
     Hourglass,
+    Inbox,
     Mail,
+    Reply,
+    Timer,
     PenLine,
     Plug,
     Repeat,
@@ -32,6 +35,8 @@ import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
+
+import { summarizeHelpdeskTrigger } from '../helpdesk/helpdeskUi';
 
 /**
  * Metadata visual + resúmenes en lenguaje humano del módulo de
@@ -114,6 +119,17 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Se agenda, reprograma o cancela una cita',
         description: 'Dispara cuando un cliente agenda en una página de agenda de esta lista, o cuando la cita se mueve o se cancela.',
     },
+    // D2/E5 — mesa de ayuda por correo y SLA.
+    email_received: {
+        icon: Inbox,
+        title: 'Llega un correo',
+        description: 'Dispara cuando llega un correo al buzón de soporte de esta lista: un ticket nuevo o la respuesta del cliente.',
+    },
+    sla_alert: {
+        icon: Timer,
+        title: 'Un SLA está en riesgo o se vence',
+        description: 'Dispara cuando el plazo de primera respuesta o de resolución de un ticket queda en riesgo o se vence.',
+    },
     // A9 — checklists del registro.
     checklist_completed: {
         icon: ListTodo,
@@ -137,6 +153,12 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: Wand2,
         title: 'Editar en lote',
         description: 'Cambia muchos registros de la lista de una vez (sumar, porcentajes, poner valores…), por ejemplo cada semana.',
+    },
+    // D2 — contestar en el hilo del ticket, desde el buzón de soporte.
+    reply_email: {
+        icon: Reply,
+        title: 'Responder por correo',
+        description: 'Contesta al cliente en el hilo del ticket, desde el buzón de soporte de la lista.',
     },
     send_email: {
         icon: Mail,
@@ -341,6 +363,9 @@ export function summarizeTrigger(
                 button.label,
             );
         }
+        case 'email_received':
+        case 'sla_alert':
+            return summarizeHelpdeskTrigger(triggerType, config) ?? triggerType;
         default:
             return triggerType;
     }
@@ -444,6 +469,12 @@ export function summarizeAction(
                 : sprintf(__('Envía un correo a %s'), to);
             const pdfs = Array.isArray(cfg.pdf_templates) ? cfg.pdf_templates.length : 0;
             return pdfs > 0 ? `${base} · ${pdfs === 1 ? __('con un PDF adjunto') : sprintf(__('con %d PDF adjuntos'), pdfs)}` : base;
+        }
+        case 'reply_email': {
+            const body = typeof cfg.body === 'string' ? cfg.body.trim().replace(/\s+/g, ' ') : '';
+            return body === ''
+                ? __('Responde por correo al hilo del ticket (escribe la respuesta)')
+                : sprintf(__('Responde por correo al hilo del ticket · «%s»'), body.length > 60 ? `${body.slice(0, 60)}…` : body);
         }
         case 'generate_pdf': {
             const save = typeof cfg.save_field === 'string' ? cfg.save_field : '';

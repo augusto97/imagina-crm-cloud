@@ -98,7 +98,7 @@ describe('v0.1.276 — avisos (puro)', () => {
 
     it('preferencias: valores por defecto y basura tolerada', () => {
         const p = readNotificationPrefs(undefined);
-        expect(p.email).toEqual({ mention: true, assigned: true, comment: false, update: false, reminder: true, failure: true, reply: true, consent: true, approval: true, team_assigned: false });
+        expect(p.email).toEqual({ mention: true, assigned: true, comment: false, update: false, reminder: true, failure: true, reply: true, consent: true, approval: true, team_assigned: false, sla: true });
         expect(p.digest).toBe('off');
         expect(readNotificationPrefs({ digest: 'semanal' }).digest).toBe('off');
     });

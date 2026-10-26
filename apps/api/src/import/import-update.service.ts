@@ -4,6 +4,7 @@ import {
     IMPORT_MATCH_TYPES,
     IMPORT_UPDATE_CHUNK,
     IMPORT_UPDATE_MAX_ROWS,
+    helpdeskManagedFieldIds,
     readStoreListMarker,
     resolveTitleFieldId,
     sameBulkValue,
@@ -211,7 +212,9 @@ export class ImportUpdateService {
         }
         const truncated = parsed.rows.length > IMPORT_UPDATE_MAX_ROWS;
         const rows = parsed.rows.slice(0, IMPORT_UPDATE_MAX_ROWS);
-        const fields = await this.importer.importableFields(tenantId, list.id);
+        // E5 — las columnas que mantiene el SLA de la mesa de ayuda no se escriben desde un archivo.
+        const managed = new Set(helpdeskManagedFieldIds(list.settings));
+        const fields = (await this.importer.importableFields(tenantId, list.id)).filter((f) => !managed.has(f.id));
         const bySlug = new Map(fields.map((f) => [f.slug, f]));
 
         const matchCol = input.match.column_index;

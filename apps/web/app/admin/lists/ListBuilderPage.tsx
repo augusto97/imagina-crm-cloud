@@ -1,4 +1,5 @@
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { readStoreListMarker } from '@imagina-base/shared';
 import { ArrowLeft, Loader2, Table2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,9 @@ import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
 import { BookingPanel } from '../booking/BookingPanel';
 import { FormsPanel } from '../forms/FormsPanel';
 import { ApprovalFlowsPanel } from '../approvals/ApprovalFlowsPanel';
+import { HelpdeskMailboxPanel } from '../helpdesk/HelpdeskMailboxPanel';
+import { HelpdeskSettingsPanel } from '../helpdesk/HelpdeskSettingsPanel';
+import { SlaPolicyPanel } from '../helpdesk/SlaPolicyPanel';
 import { RecordTemplatesPanel } from '../records/templates/RecordTemplatesPanel';
 import { AppearancePanel } from './AppearancePanel';
 import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
@@ -52,7 +56,10 @@ export function ListBuilderPage(): JSX.Element {
     // C2 — Formularios y Documentos tienen su propia capacidad (rol propio).
     const canForms = useCan(CAP.MANAGE_FORMS);
     const canDocs = useCan(CAP.MANAGE_DOCUMENTS);
-    const allowed = (id: string): boolean => (id !== 'formularios' || canForms) && (id !== 'documentos' || canDocs);
+    // D2 — una lista que mantiene una tienda no tiene mesa de ayuda (sus registros los crea la tienda).
+    const storeManaged = readStoreListMarker(list.data?.settings) !== null;
+    const allowed = (id: string): boolean =>
+        (id !== 'formularios' || canForms) && (id !== 'documentos' || canDocs) && ((id !== 'correo' && id !== 'sla') || !storeManaged);
     const requested = resolveListSettingsSection(params.get('s'));
     const active = allowed(requested) ? requested : 'campos';
     const activeSection = listSettingsSection(active);
@@ -251,6 +258,14 @@ export function ListBuilderPage(): JSX.Element {
                 )}
 
                 {active === 'plantillas' && <RecordTemplatesPanel listId={data.id} />}
+
+                {active === 'correo' && (
+                    <>
+                        <HelpdeskMailboxPanel listId={data.id} />
+                        <HelpdeskSettingsPanel listId={data.id} />
+                    </>
+                )}
+                {active === 'sla' && <SlaPolicyPanel listId={data.id} onGoToMail={() => select('correo')} />}
             </div>
         </div>
     );

@@ -50,3 +50,4 @@ export * from './custom-roles';
 export * from './booking';
 export * from './push-subscriptions';
 export * from './whatsapp';
+export * from './helpdesk';
