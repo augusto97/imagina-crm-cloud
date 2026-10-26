@@ -25,6 +25,9 @@ import {
     createDashboardSchema,
     createViewSchema,
     describeWait,
+    describeWaitApproval,
+    stepLabel,
+    APPROVAL_TRIGGER_RESULTS,
     splitFormPages,
     crmTemplateIdSchema,
     fieldSlugSchema,
@@ -117,6 +120,7 @@ import { ListsService } from '../../lists/lists.service';
 import { TenantDb } from '../../tenancy/tenant-db.service';
 import { BlueprintService } from '../../templates/blueprint.service';
 import { ViewsService } from '../../views/views.service';
+import { ApprovalsService } from '../../approvals/approvals.service';
 import { isNumericComputed } from '../../records/computed-sql';
 import { DependenciesRepository } from '../../records/dependencies.repository';
 import { FormsService } from '../../forms/forms.service';
@@ -530,7 +534,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -542,7 +546,8 @@ const automationSpec = z.object({
                 'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}. ' +
-                'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}.',
+                'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
+                'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -559,6 +564,8 @@ const automationSpec = z.object({
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
                 'wait {mode: "duration", amount, unit: minutes|hours|days} o {mode: "until_field", date_field: slug de un campo date/datetime, offset_amount?, offset_unit?: minutes|hours|days, offset_direction?: before|after, at_time?: "09:00"} + resume_condition?: [{field, op, value}] — PAUSA la corrida y sigue sola con los pasos siguientes (máx. 366 días; se reanuda con el registro releído y sólo si cumple resume_condition); puede ir dentro de if_else, NO dentro de for_each_linked | ' +
+                'request_approval {approval_flow: id o nombre de un flujo de approval_flows, note?} — PIDE una aprobación del registro con ese flujo (los aprobadores reciben el aviso; si ya hay una pendiente de ese flujo, no pide otra). Los flujos se crean con propose_configure_approval_flow | ' +
+                'wait_approval {approval_flow?: id o nombre (sin él, la que pidió esta automatización o cualquier pendiente del registro), timeout_days?: n} — PAUSA la corrida hasta que la solicitud se resuelva y deja {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada, o vencida si pasaron timeout_days) para un if_else {condition: [{field: "aprobacion.resultado", op: "eq", value: "aprobada"}]}; NO dentro de for_each_linked | ' +
                 'for_each_linked {relation: slug de la lista vinculada (linked_lists de get_list_schema; o relation_field_id), via?: nombre de la relación si hay varias, filters?: [{field, op, value}] por slug de ESA lista, actions: [...]} — repite las acciones por cada registro vinculado (tope 200); adentro {{item.slug}} y {{item.record.id}} leen el vinculado, y update_field {target: "item", values: {slug de esa lista: valor}} lo cambia (sin target cambia el registro que disparó). ' +
                 'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
@@ -639,7 +646,10 @@ type Payload =
     | { kind: 'delete_document_template'; listId: number; listSlug: string; templateId: number; name: string };
 
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
-type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies'>;
+type StructureKind = Exclude<
+    AiProposalKind,
+    'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'configure_approval_flow'
+>;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
     create_list: 'manage_lists',
@@ -698,6 +708,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly forms?: FormsService,
         // Autorización de tratamiento de datos (Ley 1581): si los formularios la piden.
         @Optional() private readonly dataConsent?: DataConsentService,
+        // C5 — flujos de aprobación (el disparador y las acciones los nombran).
+        @Optional() private readonly approvals?: ApprovalsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -918,7 +930,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1084,6 +1096,8 @@ export class StructureTools implements AiProposalApplier {
             ? await this.documents.list(ctx.tenantId, String(list.id)).catch(() => [])
             : [];
         const listForms = this.forms ? await this.forms.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
+        // C5 — flujos de aprobación de la lista.
+        const approvalFlowList = this.approvals ? await this.approvals.listFlows(ctx.tenantId, String(list.id)).catch(() => []) : [];
         // ¿La empresa pide la autorización de datos? (versión vigente o null).
         const consent = this.dataConsent && listForms.length > 0 ? await this.dataConsent.active(ctx.tenantId).catch(() => null) : null;
         const allLists = await this.lists.list(ctx.tenantId);
@@ -1204,6 +1218,30 @@ export class StructureTools implements AiProposalApplier {
                         asks_data_consent: st.data_consent && consent !== null,
                     };
                 }),
+                // C5 — flujos de aprobación: pasos en serie con quién aprueba
+                // (por id de persona, rol o slug del campo Persona).
+                approval_flows: approvalFlowList.map((f) => ({
+                    id: f.id,
+                    name: f.name,
+                    description: f.description,
+                    is_active: f.is_active,
+                    pending: f.pending_count,
+                    steps: f.config.steps.map((st, i) => ({
+                        name: stepLabel(st, i),
+                        mode: st.mode,
+                        approver:
+                            st.approver.type === 'users'
+                                ? { type: 'users', user_ids: st.approver.approver_user_ids }
+                                : st.approver.type === 'role'
+                                  ? { type: 'role', role: st.approver.role }
+                                  : st.approver.type === 'field'
+                                    ? { type: 'field', field: fieldById.get(st.approver.approver_field_id)?.slug ?? null }
+                                    : { type: 'team', team_id: st.approver.team_id },
+                    })),
+                    on_approve: Object.fromEntries(f.config.on_approve.map((x) => [fieldById.get(x.field_id)?.slug ?? `f${x.field_id}`, x.value])),
+                    on_reject: Object.fromEntries(f.config.on_reject.map((x) => [fieldById.get(x.field_id)?.slug ?? `f${x.field_id}`, x.value])),
+                    allow_resubmit: f.config.allow_resubmit,
+                })),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -1321,6 +1359,10 @@ export class StructureTools implements AiProposalApplier {
                 if (!parsed.success) throw new AiToolError(`Automatización «${a.name}»: ${zodIssues(parsed.error)}`);
                 if (JSON.stringify(parsed.data.actions).includes('"bulk_edit"')) {
                     throw new AiToolError(`Automatización «${a.name}»: «Editar en lote» necesita los campos ya creados. Crea primero la lista y después propón la automatización con propose_create_automation.`);
+                }
+                // C5 — los flujos de aprobación son de una lista que todavía no existe.
+                if (/"(request_approval|wait_approval)"/.test(JSON.stringify(parsed.data.actions)) || parsed.data.trigger_type === 'approval_resolved') {
+                    throw new AiToolError(`Automatización «${a.name}»: las aprobaciones necesitan un flujo de la lista ya creada. Crea primero la lista, después el flujo (propose_configure_approval_flow) y por último la automatización.`);
                 }
                 // Campo «Botón»: el disparador «Al presionar el botón» por slug.
                 translateButtonTrigger(parsed.data.trigger_type, (parsed.data.trigger_config ??= {}) as Record<string, unknown>, (s) =>
@@ -1833,6 +1875,8 @@ export class StructureTools implements AiProposalApplier {
         parsed.data.trigger_config ??= {};
         translateScheduledEach(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
         translateButtonTrigger(parsed.data.trigger_type, parsed.data.trigger_config, buttonFieldResolver(fields));
+        // C5 — flujos de aprobación por id o nombre → `approval_flow_id`.
+        await this.translateApprovalRefs(ctx, list, parsed.data.trigger_type, parsed.data.trigger_config, parsed.data.actions as unknown[]);
         assertFlowIssues({ trigger_type: parsed.data.trigger_type, trigger_config: parsed.data.trigger_config, actions: parsed.data.actions });
         // v0.1.281 — correos diseñados: vocabulario del modelo → diseño del editor.
         translateEmailDesignActions(parsed.data.actions as unknown[], { fields: designFields(fields), brandColor: await this.brandColor(ctx) });
@@ -2295,6 +2339,9 @@ export class StructureTools implements AiProposalApplier {
             merged.data.trigger_config ??= {};
             translateScheduledEach(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
             translateButtonTrigger(merged.data.trigger_type, merged.data.trigger_config, buttonFieldResolver(fields));
+            if (input.actions !== undefined || input.trigger_config !== undefined || input.trigger_type !== undefined) {
+                await this.translateApprovalRefs(ctx, list, merged.data.trigger_type, merged.data.trigger_config, merged.data.actions as unknown[]);
+            }
             if (input.actions !== undefined || input.trigger_config !== undefined) {
                 assertFlowIssues({ trigger_type: merged.data.trigger_type, trigger_config: merged.data.trigger_config, actions: merged.data.actions });
             }
@@ -3715,6 +3762,74 @@ export class StructureTools implements AiProposalApplier {
     }
 
     /**
+     * C5 — Los flujos de aprobación llegan del modelo por id o NOMBRE
+     * (`approval_flow`); se guardan como `approval_flow_id` (validado contra
+     * los flujos de ESTA lista). El disparador acepta además los resultados
+     * en inglés o en español («aprobada» → approved).
+     */
+    private async translateApprovalRefs(
+        ctx: AiToolContext,
+        list: List,
+        triggerType: string,
+        triggerConfig: Record<string, unknown>,
+        actions: unknown[],
+    ): Promise<void> {
+        const uses = triggerType === 'approval_resolved' || /"(request_approval|wait_approval)"/.test(JSON.stringify(actions));
+        if (!uses) return;
+        const flows = this.approvals ? await this.approvals.listFlows(ctx.tenantId, String(list.id)).catch(() => []) : [];
+        const known = (): string => flows.map((f) => `${f.id} «${f.name}»`).join(', ') || 'ninguno (créalo con propose_configure_approval_flow)';
+        const resolve = (raw: unknown, where: string): { id: number; name: string } => {
+            const text = String(raw).trim();
+            const hit = /^\d+$/.test(text) ? flows.find((f) => f.id === Number(text)) : flows.find((f) => f.name.toLowerCase() === text.toLowerCase());
+            if (!hit) throw new AiToolError(`${where}: el flujo de aprobación «${text}» no existe en «${list.name}». Flujos: ${known()}.`);
+            return { id: hit.id, name: hit.name };
+        };
+        const take = (cfg: Record<string, unknown>, where: string, required: boolean): void => {
+            const raw = cfg.approval_flow ?? cfg.approval_flow_id;
+            delete cfg.approval_flow;
+            if (raw === undefined || raw === null || raw === '') {
+                if (required) throw new AiToolError(`${where}: falta approval_flow (id o nombre). Flujos: ${known()}.`);
+                delete cfg.approval_flow_id;
+                return;
+            }
+            const f = resolve(raw, where);
+            cfg.approval_flow_id = f.id;
+            APPROVAL_FLOW_NAMES.set(cfg, f.name);
+        };
+        if (triggerType === 'approval_resolved') {
+            take(triggerConfig, 'approval_resolved', false);
+            if (triggerConfig.results !== undefined) {
+                const words: Record<string, string> = { aprobada: 'approved', rechazada: 'rejected', devuelta: 'returned', cancelada: 'cancelled' };
+                const raw = Array.isArray(triggerConfig.results) ? triggerConfig.results : [triggerConfig.results];
+                const out = raw.map((r) => {
+                    const v = String(r).trim().toLowerCase();
+                    const mapped = words[v] ?? v;
+                    if (!(APPROVAL_TRIGGER_RESULTS as readonly string[]).includes(mapped)) {
+                        throw new AiToolError(`approval_resolved: resultado «${String(r)}» desconocido. Válidos: ${APPROVAL_TRIGGER_RESULTS.join(', ')}.`);
+                    }
+                    return mapped;
+                });
+                triggerConfig.results = [...new Set(out)];
+            }
+        }
+        const walk = (list_: unknown[], path: string): void => {
+            list_.forEach((raw, i) => {
+                const a = raw as { type?: unknown; config?: Record<string, unknown> };
+                if (!a || typeof a !== 'object') return;
+                const cfg = (a.config ??= {});
+                const where = `Acción ${path}${i + 1}`;
+                if (a.type === 'request_approval') take(cfg, where, true);
+                else if (a.type === 'wait_approval') take(cfg, where, false);
+                else if (a.type === 'if_else') {
+                    walk((cfg.then_actions as unknown[] | undefined) ?? [], `${path}${i + 1}.sí.`);
+                    walk((cfg.else_actions as unknown[] | undefined) ?? [], `${path}${i + 1}.no.`);
+                } else if (a.type === 'for_each_linked') walk((cfg.actions as unknown[] | undefined) ?? [], `${path}${i + 1}.cada.`);
+            });
+        };
+        walk(actions, '');
+    }
+
+    /**
      * Comprueba el TIPO de cada acción (incluidas las ramas de un `if_else`)
      * y que una `connector_action` apunte a una conexión y una acción que
      * existen de verdad, con sus datos obligatorios. Sin esto el modelo podía
@@ -3809,7 +3924,8 @@ export class StructureTools implements AiProposalApplier {
         const bad = new Set<string>();
         const check = (s: unknown): void => {
             // `item.slug` (el vinculado de un bucle) se valida contra SU lista en translateFlowActions.
-            if (typeof s === 'string' && s && !s.startsWith('item.') && !slugs.has(s) && !/^f\d+$/.test(s)) bad.add(s);
+            // C5 — `aprobacion.resultado` (el resultado de «Esperar aprobación» / del disparador) no es un campo.
+            if (typeof s === 'string' && s && !s.startsWith('item.') && !s.startsWith('aprobacion.') && !slugs.has(s) && !/^f\d+$/.test(s)) bad.add(s);
         };
         const checkCondition = (c: unknown): void => {
             if (Array.isArray(c)) for (const r of c) check((r as { field?: string; slug?: string }).field ?? (r as { slug?: string }).slug);
@@ -4359,6 +4475,12 @@ function metricLabel(metric: string, field?: string): string {
     return field ? `${m[metric] ?? metric} de ${field}` : m[metric] ?? metric;
 }
 
+/**
+ * C5 — Nombre del flujo de aprobación de una config ya traducida (sólo para
+ * la tarjeta de la propuesta: no se guarda en la automatización).
+ */
+const APPROVAL_FLOW_NAMES = new WeakMap<object, string>();
+
 function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[]): string {
     const label = (slug: unknown): string => fields.find((f) => f.slug === slug)?.label ?? String(slug ?? '');
     switch (type) {
@@ -4386,6 +4508,10 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             const id = Number(cfg.button_field_id);
             const f = fields.find((x) => x.id === id);
             return f ? `Al presionar «${f.label}»` : 'Al presionar un botón';
+        }
+        case 'approval_resolved': {
+            const name = APPROVAL_FLOW_NAMES.get(cfg);
+            return name ? `Cuando se resuelve una aprobación de «${name}»` : 'Cuando se aprueba o se rechaza';
         }
         default:
             return type;
@@ -4419,6 +4545,12 @@ function describeActions(
                 return 'Condicional sí / no';
             case 'wait':
                 return describeWait(cfg);
+            case 'request_approval': {
+                const name = APPROVAL_FLOW_NAMES.get(cfg);
+                return `Pedir aprobación${name ? ` («${name}»)` : ''}`;
+            }
+            case 'wait_approval':
+                return describeWaitApproval(cfg, APPROVAL_FLOW_NAMES.get(cfg) ?? null);
             case 'for_each_linked': {
                 const n = Array.isArray(cfg.actions) ? cfg.actions.length : 0;
                 return `Repetir por cada registro vinculado (${n} ${n === 1 ? 'acción' : 'acciones'})`;
