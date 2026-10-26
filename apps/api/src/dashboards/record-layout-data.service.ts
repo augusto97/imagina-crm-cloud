@@ -124,7 +124,7 @@ export class RecordLayoutDataService {
         recordId: number,
         req: LayoutDataRequest,
     ): Promise<Record<string, unknown>> {
-        const actor = { userId: viewer.userId, role: viewer.role as Role };
+        const actor = { userId: viewer.userId, role: viewer.role as Role, teamIds: viewer.teamIds };
         // El registro base tiene que ser visible (404 si no — no filtramos info).
         await this.records.get(tenantId, actor, listIdOrSlug, recordId);
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -336,7 +336,7 @@ export class RecordLayoutDataService {
         portal: PortalMode | null,
     ): Promise<unknown> {
         const list = await this.lists.get(tenantId, String(src.listId));
-        const hidden = hiddenFieldsFor(list.settings, viewer.role as Role, viewer.userId);
+        const hidden = hiddenFieldsFor(list.settings, { ...viewer, role: viewer.role as Role });
         let visible = (await fieldsOf(src.listId)).filter((f) => !hidden.has(f.slug));
         if (portal) {
             // Al cliente sólo le llegan las columnas del bloque (+ el título y
@@ -362,7 +362,7 @@ export class RecordLayoutDataService {
         const sortOk = cfg.sort_field_id !== undefined && visible.some((f) => f.id === cfg.sort_field_id);
         const page = await this.records.list(
             tenantId,
-            { userId: viewer.userId, role: viewer.role as Role },
+            { userId: viewer.userId, role: viewer.role as Role, teamIds: viewer.teamIds },
             String(src.listId),
             {
                 limit,

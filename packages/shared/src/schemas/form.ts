@@ -34,6 +34,8 @@ export const FORM_FIELD_TYPES = [
     'percent',
     'duration',
     'file',
+    // C1 — «¿A qué área va tu consulta?»: se elige entre los equipos.
+    'team',
 ] as const satisfies readonly FieldType[];
 export type FormFieldType = (typeof FORM_FIELD_TYPES)[number];
 
@@ -550,12 +552,15 @@ function cfgNum(cfg: Record<string, unknown>, key: string): number | undefined {
     return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function publicField(item: FormFieldItem, field: FormFieldLike): PublicFormFieldItem {
+function publicField(item: FormFieldItem, field: FormFieldLike, teamOptions: readonly PublicFormOption[]): PublicFormFieldItem {
     const cfg = field.config;
     const type = field.type as FormFieldType;
-    const options = type === 'select' || type === 'multi_select' ? optionsOf(field) : undefined;
+    // C1 — un campo «Equipo» se elige entre los equipos de la empresa (sólo
+    // viajan su id y su nombre, y sólo si el formulario lo pregunta).
+    const options =
+        type === 'select' || type === 'multi_select' ? optionsOf(field) : type === 'team' ? [...teamOptions] : undefined;
     const display: PublicFormFieldItem['display'] =
-        type === 'multi_select'
+        type === 'multi_select' || (type === 'team' && cfg.multiple === true)
             ? 'checkboxes'
             : item.display === 'radio' || item.display === 'dropdown'
               ? item.display
@@ -602,7 +607,12 @@ function publicField(item: FormFieldItem, field: FormFieldLike): PublicFormField
  * La usan la página pública Y la vista previa del constructor — lo que se ve
  * al diseñar es, por construcción, lo que ve quien lo completa.
  */
-export function buildPublicFormItems(config: FormConfig, fields: ReadonlyArray<FormFieldLike>): PublicFormItem[] {
+export function buildPublicFormItems(
+    config: FormConfig,
+    fields: ReadonlyArray<FormFieldLike>,
+    /** C1 — los equipos de la empresa (id → nombre) para las preguntas «Equipo». */
+    teamOptions: readonly PublicFormOption[] = [],
+): PublicFormItem[] {
     const byId = new Map(fields.map((f) => [f.id, f]));
     const out: PublicFormItem[] = [];
     for (const item of config.items) {
@@ -616,7 +626,7 @@ export function buildPublicFormItems(config: FormConfig, fields: ReadonlyArray<F
         }
         const field = byId.get(item.field_id);
         if (!field || !isFormFieldType(field.type)) continue;
-        out.push(publicField(item, field));
+        out.push(publicField(item, field, teamOptions));
     }
     return out;
 }

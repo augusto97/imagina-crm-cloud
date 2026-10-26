@@ -14,6 +14,7 @@ import {
     ImageBlock,
     MentionRecord,
     MentionUser,
+    MentionTeam,
     TocBlock,
 } from './nodes';
 
@@ -51,6 +52,7 @@ export function descriptionExtensions(placeholder: string): AnyExtension[] {
         // Bloques "vivos" (v0.1.134): mención de persona/registro, imagen y
         // adjunto del módulo de archivos.
         MentionUser,
+        MentionTeam,
         MentionRecord,
         ImageBlock,
         FileBlock,

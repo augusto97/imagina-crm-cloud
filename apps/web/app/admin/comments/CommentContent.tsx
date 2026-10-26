@@ -1,3 +1,8 @@
+import { teamHandle } from '@imagina-base/shared';
+
+import { TeamGlyph } from '@/components/fields/TeamChip';
+import { useTeams } from '@/hooks/useTeams';
+
 /**
  * Renderer del contenido de un comentario con menciones `@usuario`
  * resaltadas como chips. El backend extrae las menciones como `@email`
@@ -8,6 +13,9 @@
 export const MENTION_RE = /(^|\s)@([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[A-Za-z0-9._-]{1,60})/g;
 
 export function CommentContent({ content: rawContent }: { content: string }): JSX.Element {
+    // C1 — `@ventas` de un equipo se dibuja con el color del equipo.
+    const teams = useTeams();
+    const teamByHandle = new Map((teams.data ?? []).map((t) => [teamHandle(t.name), t]));
     // Blindaje: comentarios legados/sistémicos pueden venir sin body —
     // sin esto, `.length` sobre undefined tiraba TODA la página del
     // registro (error boundary en cascada, 5+ crashes por render).
@@ -28,13 +36,25 @@ export function CommentContent({ content: rawContent }: { content: string }): JS
         if (start > lastIndex) {
             parts.push(content.slice(lastIndex, start));
         }
+        const team = login && !login.includes('@') ? teamByHandle.get(login.toLowerCase()) : undefined;
         parts.push(
-            <span
-                key={`m-${key++}`}
-                className="imcrm-rounded imcrm-bg-primary/10 imcrm-px-1 imcrm-py-px imcrm-text-primary imcrm-font-medium"
-            >
-                @{login}
-            </span>,
+            team ? (
+                <span
+                    key={`m-${key++}`}
+                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-px imcrm-align-baseline imcrm-font-medium imcrm-text-foreground"
+                    title={team.name}
+                    data-testid="imcrm-team-mention"
+                >
+                    <TeamGlyph team={team} size="xs" />@{login}
+                </span>
+            ) : (
+                <span
+                    key={`m-${key++}`}
+                    className="imcrm-rounded imcrm-bg-primary/10 imcrm-px-1 imcrm-py-px imcrm-text-primary imcrm-font-medium"
+                >
+                    @{login}
+                </span>
+            ),
         );
         lastIndex = match.index + fullMatch.length;
     }

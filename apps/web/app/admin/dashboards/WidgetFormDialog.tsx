@@ -68,6 +68,8 @@ const GROUPABLE_TYPES = [
     'date', 'datetime',
     'checkbox',
     'user',
+    // C1 — por equipo.
+    'team',
     'number', 'currency', 'rating', 'percent', 'duration',
     'lookup', 'rollup', 'time_tracked', 'checklist_progress',
     // C5 — el estado de la aprobación (pendientes / aprobadas / rechazadas).

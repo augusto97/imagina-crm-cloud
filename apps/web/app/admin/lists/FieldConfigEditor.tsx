@@ -151,8 +151,43 @@ function TypeConfigEditor({
     if (type === 'url') {
         return <UrlDisplayEditor config={config} onChange={onChange} />;
     }
+    // C1 — equipo: uno o varios.
+    if (type === 'team') {
+        return <TeamFieldEditor config={config} onChange={onChange} />;
+    }
     // email/user/file: no requieren config extra.
     return null;
+}
+
+/**
+ * C1 — Campo «Equipo»: si admite varios equipos a la vez (un registro que
+ * atienden Ventas y Soporte) o uno solo. Pasar de varios a uno no borra lo
+ * guardado: los registros con varios se ven igual y al editarlos se elige uno.
+ */
+function TeamFieldEditor({ config, onChange }: SubProps): JSX.Element {
+    const multiple = config.multiple === true;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+            <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                <input
+                    type="checkbox"
+                    className="imcrm-mt-0.5"
+                    checked={multiple}
+                    onChange={(e) => onChange({ ...config, multiple: e.target.checked })}
+                    data-testid="team-field-multiple"
+                />
+                <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                    <span className="imcrm-font-medium">{__('Permitir varios equipos')}</span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Un registro puede quedar a cargo de más de un equipo a la vez (por ejemplo, Ventas y Soporte).')}
+                    </span>
+                </span>
+            </label>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Los equipos se crean y se editan en Ajustes → Equipos. En Permisos de la lista puedes usar este campo para que cada equipo vea «los asignados» a él.')}
+            </p>
+        </div>
+    );
 }
 
 interface SubProps {

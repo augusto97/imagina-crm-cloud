@@ -64,7 +64,7 @@ export class FieldsController {
     ): Promise<{ data: Array<{ value: string; count: number }> }> {
         return this.fields
             .distinctValues(tenantId(req), list, field, search ?? '', Number(limit ?? 50), {
-                role: req.tenant!.role,
+                role: req.tenant!.role, teamIds: req.tenant!.teamIds,
                 userId: req.authUserId!,
             })
             .then((data) => ({ data }));

@@ -18,6 +18,7 @@ import {
     Trash2,
     TriangleAlert,
     Users,
+    UsersRound,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export type SettingsSectionId =
     | 'plan'
     | 'suscripcion'
     | 'miembros'
+    | 'equipos'
     | 'marca'
     | 'formato'
     | 'correo'
@@ -56,10 +58,13 @@ export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[]
 export function settingsSectionGroups({
     isAdmin,
     canManageAutomations = false,
+    canManageTeams = false,
 }: {
     isAdmin: boolean;
     /** v0.1.196 — Conectores: quien arma automatizaciones ve el inventario. */
     canManageAutomations?: boolean;
+    /** C1 — Equipos: el admin o quien tiene «Gestionar equipos». */
+    canManageTeams?: boolean;
 }): SettingsSectionGroup[] {
     const groups: SettingsSectionGroup[] = [
         {
@@ -87,6 +92,10 @@ export function settingsSectionGroups({
                           // v0.1.114 — quién cambió qué en el workspace.
                           { id: 'auditoria', label: 'Registro de actividad', icon: History },
                       ] satisfies SettingsSectionItem[])
+                    : []),
+                // C1 — equipos (Ventas, Soporte…): el admin o quien los gestiona.
+                ...(isAdmin || canManageTeams
+                    ? ([{ id: 'equipos', label: 'Equipos', icon: UsersRound }] satisfies SettingsSectionItem[])
                     : []),
                 // v0.1.196 (ADR-S22) — apps conectadas; v0.1.203 pasa a ser la
                 // galería «Integraciones» (el id `conectores` se conserva: es

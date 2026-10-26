@@ -30,9 +30,9 @@ export const KANBAN_MAX_PER_CELL = 500;
  * simple al soltar la tarjeta. El texto se conserva por compatibilidad con
  * tableros viejos (columnas dinámicas por valor).
  */
-export const KANBAN_COLUMN_TYPES: readonly FieldType[] = ['select', 'user', 'checkbox', 'text'];
-/** Tipos de los CARRILES (vendedor, prioridad, sí/no). */
-export const KANBAN_LANE_TYPES: readonly FieldType[] = ['select', 'user', 'checkbox'];
+export const KANBAN_COLUMN_TYPES: readonly FieldType[] = ['select', 'user', 'checkbox', 'text', 'team'];
+/** Tipos de los CARRILES (vendedor, prioridad, sí/no, equipo). */
+export const KANBAN_LANE_TYPES: readonly FieldType[] = ['select', 'user', 'checkbox', 'team'];
 /** Tipos que se pueden sumar/promediar por columna. */
 export const KANBAN_VALUE_TYPES: readonly FieldType[] = ['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed'];
 
@@ -236,6 +236,17 @@ export function kanbanBucketValue(type: FieldType, key: string | null): { ok: tr
         const n = Number(key);
         return Number.isFinite(n) ? { ok: true, value: n } : { ok: false };
     }
+    // C1 — la clave de un grupo de equipos es el conjunto (`[3, 7]`).
+    if (type === 'team') {
+        if (key === null) return { ok: true, value: null };
+        try {
+            const parsed: unknown = JSON.parse(key);
+            const ids = (Array.isArray(parsed) ? parsed : [parsed]).map(Number);
+            return ids.every((n) => Number.isInteger(n) && n > 0) ? { ok: true, value: ids } : { ok: false };
+        } catch {
+            return { ok: false };
+        }
+    }
     if (type === 'multi_select') {
         if (key === null) return { ok: true, value: [] };
         try {
@@ -275,7 +286,33 @@ export function kanbanBucketKeyOf(type: FieldType, value: unknown): string | nul
         const items = value.map(String).sort();
         return `[${items.map((v) => JSON.stringify(v)).join(', ')}]`;
     }
+    if (type === 'team') {
+        const ids = (Array.isArray(value) ? value : [value]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        if (ids.length === 0) return null;
+        return teamGroupKey(ids);
+    }
     return undefined;
+}
+
+/**
+ * C1 — La clave de grupo de un valor «Equipo»: el conjunto ORDENADO de ids
+ * con la salida de texto de un array jsonb de Postgres (`[3, 7]`), la misma
+ * que arma el motor de agregados.
+ */
+export function teamGroupKey(ids: readonly number[]): string {
+    const sorted = [...new Set(ids)].sort((a, b) => a - b);
+    return `[${sorted.join(', ')}]`;
+}
+
+/** Ids de equipo de una clave de grupo (`[3, 7]`); otra cosa → []. */
+export function parseTeamGroupKey(key: string | null | undefined): number[] {
+    if (!key) return [];
+    try {
+        const parsed: unknown = JSON.parse(key);
+        return (Array.isArray(parsed) ? parsed : [parsed]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    } catch {
+        return [];
+    }
 }
 
 /** ¿Vacío para una regla «pedir al mover»? (una casilla sin marcar cuenta como vacía). */

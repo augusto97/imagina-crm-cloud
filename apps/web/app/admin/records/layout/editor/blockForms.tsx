@@ -362,7 +362,7 @@ const BUCKETS = [
     { value: 'year', label: __('Año') },
 ];
 
-const GROUPABLE = new Set(['select', 'multi_select', 'user', 'checkbox', 'text', 'email', 'phone', 'url', 'date', 'datetime', 'number', 'rating', 'lookup', 'rollup']);
+const GROUPABLE = new Set(['select', 'multi_select', 'user', 'team', 'checkbox', 'text', 'email', 'phone', 'url', 'date', 'datetime', 'number', 'rating', 'lookup', 'rollup']);
 const isDate = (f: FieldEntity): boolean => f.type === 'date' || f.type === 'datetime';
 
 export function ChartForm({ block, set }: FormProps): JSX.Element {

@@ -31,6 +31,7 @@ import {
     type FormConfig,
     type FormDto,
     type PublicFormMeta,
+    type PublicFormOption,
     type SubmitFormInput,
     type SubmitFormResult,
     type UpdateFormInput,
@@ -62,6 +63,7 @@ import { senderName, type PortalEmailBrand } from '../portal/portal-email';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TeamsService } from '../teams/teams.service';
 import { CaptchaService } from './captcha.service';
 import { formConfirmEmail, formCopyEmail, type FormAnswerLine } from './form-email';
 
@@ -208,7 +210,18 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly dataConsent?: DataConsentService,
         // C6 — el registro de una respuesta puede salir de una plantilla.
         @Optional() private readonly recordTemplates?: RecordTemplatesService,
+        // C1 — opciones de las preguntas «Equipo».
+        @Optional() private readonly teams?: TeamsService,
     ) {}
+
+    /** C1 — Los equipos (id y nombre) sólo si el formulario pregunta un campo «Equipo». */
+    private async teamOptions(tenantId: number, fields: ReadonlyArray<{ type: string }>): Promise<PublicFormOption[]> {
+        if (!this.teams || !fields.some((f) => f.type === 'team')) return [];
+        const infos = await this.tenantDb.withTenant(tenantId, (tx) => this.teams!.infos(tx, tenantId));
+        return [...infos.values()]
+            .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+            .map((t) => ({ value: String(t.id), label: t.name }));
+    }
 
     onModuleInit(): void {
         // Archivos subidos a un formulario que nunca se envió: no tienen que
@@ -486,7 +499,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     : null,
             company: b.app_name || f.tenantName,
             number_format: format.success ? format.data.number_format : 'comma_dot',
-            items: buildPublicFormItems(config, fields),
+            items: buildPublicFormItems(config, fields, await this.teamOptions(row.tenantId, fields)),
             closed: this.closedReason(f),
             stamp: `${ts}.${this.files.signParts('formstamp', row.id, ts)}`,
             max_upload_bytes: this.env.MAX_UPLOAD_BYTES,

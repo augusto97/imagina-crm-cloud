@@ -39,6 +39,7 @@ import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
+import { TeamsService } from '../src/teams/teams.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
@@ -531,5 +532,48 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         };
         expect(await run(a, 'Por A')).toBe('vino de Contacto');
         expect(await run(b, 'Por B')).toBeUndefined();
+    });
+    it('C1 — pregunta «Equipo»: se elige entre los equipos de la empresa (id y nombre, nada más)', async () => {
+        const teamsSvc = new TeamsService(tenantDb, new RealtimeService(), new AuditService(tenantDb));
+        const svcT = new FormsService(pg.db, tenantDb, lists, fieldsSvc, (svc as unknown as { records: RecordsService }).records, files, redis as never, dispatcher, loadEnv({ FILES_SIGNING_SECRET: 'form-secret' }), undefined, undefined, undefined, undefined, undefined, undefined, undefined, teamsSvc);
+        const ventas = await teamsSvc.create(tenantId, 0, { name: 'Ventas' });
+        const soporte = await teamsSvc.create(tenantId, 0, { name: 'Soporte' });
+        const area = await fieldsSvc.create(tenantId, 'contactos', { label: 'Área', type: 'team', slug: 'area' });
+        const dto = await svcT.create(tenantId, 0, 'contactos', {
+            name: 'Consultas',
+            config: formConfigSchema.parse({
+                items: [
+                    { id: newFormItemId(), type: 'field', field_id: f.nombre!.id, required: true },
+                    { id: newFormItemId(), type: 'field', field_id: area.id, required: true },
+                ],
+                settings: { title: 'Consultas' },
+            }),
+        });
+        await svcT.update(tenantId, 'contactos', dto.id, { enabled: true });
+        const token = await tokenOf(dto.id);
+        const meta = await svcT.meta(token);
+        const q = meta.items.find((i) => i.type === 'field' && i.slug === 'area');
+        expect(q).toMatchObject({
+            field_type: 'team',
+            display: 'radio',
+            options: [
+                { value: String(soporte.id), label: 'Soporte' },
+                { value: String(ventas.id), label: 'Ventas' },
+            ],
+        });
+        // Sólo id y nombre: ni personas ni descripción.
+        expect(JSON.stringify(meta)).not.toContain('members');
+        // Sin pregunta «Equipo», los equipos no viajan.
+        const otro = await contactForm();
+        expect(JSON.stringify(await svcT.meta(otro.token))).not.toContain('Ventas');
+
+        const res = await svcT.submit(token, IP, { values: { [f.nombre!.id]: 'Ana', [area.id]: String(ventas.id) }, uploads: {}, stamp: oldStamp(dto.id) });
+        expect(res.ok).toBe(true);
+        const recs2 = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, listId)));
+        expect(recs2.find((r) => r.data[`f${f.nombre!.id}`] === 'Ana')!.data[`f${area.id}`]).toEqual([ventas.id]);
+        // Un id que no es un equipo de la empresa no entra.
+        await expect(
+            svcT.submit(token, '203.0.113.8', { values: { [f.nombre!.id]: 'Beto', [area.id]: '999999' }, uploads: {}, stamp: oldStamp(dto.id) }),
+        ).rejects.toMatchObject({ status: 400 });
     });
 });

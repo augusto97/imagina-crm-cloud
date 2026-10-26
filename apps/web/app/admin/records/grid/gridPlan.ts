@@ -246,6 +246,12 @@ export function resolvePastedValue(
             };
         }
     }
+    if (field.type === 'team' && Array.isArray(coerced)) {
+        const missing = (coerced as unknown[]).filter((v) => typeof v === 'string');
+        if (missing.length > 0) {
+            return { ok: false, reason: sprintf(__('No se encontró el equipo «%s»'), missing.map(String).join(', ')) };
+        }
+    }
     if (field.type === 'user' && typeof coerced === 'string' && coerced.trim() !== '') {
         return { ok: false, reason: sprintf(__('No se encontró a «%s» entre las personas de la empresa'), shown) };
     }

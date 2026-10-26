@@ -415,11 +415,21 @@ describe('B2 — carga de trabajo en la vista', () => {
             estimateUnit: 'minutes',
             zoom: 'day',
             userIds: [3, 7],
+            teamId: null,
             showUnassigned: false,
             hideDone: false,
         });
         expect(workloadToViewConfig(saved, settings)).toEqual(saved);
         expect(parseViewConfig('workload', workloadToViewConfig(saved, settings))).toMatchObject({ workload_user_ids: [3, 7] });
+    });
+
+    it('C1 — el filtro por equipo va y vuelve; sin equipo no deja la clave', () => {
+        const withTeam = { ...saved, workload_team_id: 9 };
+        const settings = viewConfigToWorkload(withTeam);
+        expect(settings.teamId).toBe(9);
+        expect(workloadToViewConfig(saved, settings)).toEqual(withTeam);
+        expect(parseViewConfig('workload', withTeam)).toMatchObject({ workload_team_id: 9 });
+        expect('workload_team_id' in workloadToViewConfig(withTeam, { ...settings, teamId: null })).toBe(false);
     });
 
     it('cambiar un ajuste de la carga no toca filtros ni búsqueda; lo que vuelve al default no deja claves', () => {

@@ -29,6 +29,8 @@ import {
     records,
     recordTemplates,
     recurrences,
+    teamMembers,
+    teams,
     templates,
     tenants,
     timeEntries,
@@ -384,11 +386,16 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         const [cl] = await pg.db.insert(recordChecklists).values({ tenantId: id, listId: list!.id, recordId: record!.id, name: 'Alta' }).returning();
         await pg.db.insert(recordChecklistItems).values({ tenantId: id, listId: list!.id, recordId: record!.id, checklistId: cl!.id, text: 'Firmar', assigneeId: owner!.id });
         await pg.db.insert(recordTemplates).values({ tenantId: id, listId: list!.id, name: 'Plantilla de registro', content: {} });
+        // C1 — un equipo con su persona.
+        const [team] = await pg.db.insert(teams).values({ tenantId: id, name: 'Ventas' }).returning();
+        await pg.db.insert(teamMembers).values({ tenantId: id, teamId: team!.id, userId: owner!.id });
 
         await platform.deleteTenant(id);
         expect(await pg.db.select().from(recordChecklistItems).where(eq(recordChecklistItems.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklists).where(eq(recordChecklists.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(teams).where(eq(teams.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(teamMembers).where(eq(teamMembers.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(dataConsents).where(eq(dataConsents.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(dataConsentVersions).where(eq(dataConsentVersions.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(commentReactions).where(eq(commentReactions.tenantId, id))).toHaveLength(0);

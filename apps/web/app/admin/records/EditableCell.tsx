@@ -1,13 +1,14 @@
 import { createContext, forwardRef, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { RefreshCw } from 'lucide-react';
-import { formatDuration, parseDuration, parseNumberText, validateFieldValue, type DurationFormat } from '@imagina-base/shared';
+import { formatDuration, parseDuration, parseNumberText, teamIdsOf, validateFieldValue, type DurationFormat } from '@imagina-base/shared';
 
 import { PhoneControl } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 
 import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
+import { TeamPicker } from '@/components/fields/TeamPicker';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
@@ -80,11 +81,11 @@ interface EditableCellProps {
 // `computed` y compañía se muestran de sólo lectura: los deriva el servidor.
 // v0.1.300 — el ID automático y las columnas de sistema los pone el servidor.
 const SERVER_FILLED = ['autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by'];
-const NON_INLINE_TYPES = ['user', 'file', 'relation', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'checklist_progress', 'formula', 'approval', ...SERVER_FILLED];
+const NON_INLINE_TYPES = ['user', 'team', 'file', 'relation', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'checklist_progress', 'formula', 'approval', ...SERVER_FILLED];
 /** Tipos que no se editan desde la celda en ningún modo. */
 const READ_ONLY_TYPES = ['file', 'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'checklist_progress', 'formula', 'approval', ...SERVER_FILLED];
 /** Tipos que se editan con un selector (popover). */
-const PICKER_TYPES = ['select', 'multi_select', 'date', 'datetime', 'user', 'relation'];
+const PICKER_TYPES = ['select', 'multi_select', 'date', 'datetime', 'user', 'team', 'relation'];
 const NUMERIC_TEXT_TYPES = ['number', 'currency', 'percent'];
 
 function isEmptyCellValue(v: unknown): boolean {
@@ -420,6 +421,21 @@ function EditableCellInner({
             );
         }
 
+        // C1 — equipo(s): el mismo patrón que persona (selector montado recién
+        // en el primer click). Con varios equipos queda abierto para marcar.
+        if (field.type === 'team' && canEditByUser) {
+            return (
+                <TeamCellEditor
+                    field={field}
+                    value={value}
+                    pending={pending}
+                    wrap={wrapText}
+                    grid={gridPicker}
+                    onCommit={(ids) => void commit(ids)}
+                />
+            );
+        }
+
         // v0.1.158 — la calificación se pone HACIENDO CLICK en la estrella:
         // el mismo criterio que select/multi_select (no hay un "modo edición"
         // aparte para algo que se resuelve en un gesto).
@@ -622,6 +638,71 @@ function UserCellEditor({
                 initialQuery={grid?.seed ?? ''}
                 onOpenChange={(o) => {
                     if (!o) grid?.onClosed();
+                }}
+            />
+        </div>
+    );
+}
+
+function TeamCellEditor({
+    field,
+    value,
+    pending,
+    wrap,
+    grid,
+    onCommit,
+}: {
+    field: FieldEntity;
+    value: unknown;
+    pending: boolean;
+    wrap?: boolean;
+    grid?: GridPickerControl;
+    onCommit: (ids: number[]) => void;
+}): JSX.Element {
+    const [armed, setArmed] = useState(false);
+    const ids = teamIdsOf(value);
+    const open = grid ? grid.openToken !== null : armed;
+    if (!open) {
+        if (grid) {
+            return (
+                <div className={cn('imcrm-block imcrm-min-h-[1.5rem] imcrm-w-full imcrm-text-left', wrap ? '' : 'imcrm-truncate')} data-testid={`imcrm-team-cell-${field.slug}`}>
+                    {renderCellValue(field, value)}
+                </div>
+            );
+        }
+        return (
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setArmed(true);
+                }}
+                disabled={pending}
+                className="imcrm-block imcrm-min-h-[1.5rem] imcrm-w-full imcrm-truncate imcrm-rounded imcrm--mx-1 imcrm-px-1 imcrm-text-left hover:imcrm-bg-accent/40"
+                title={__('Click para elegir el equipo')}
+                data-testid={`imcrm-team-cell-${field.slug}`}
+            >
+                {renderCellValue(field, value)}
+            </button>
+        );
+    }
+    return (
+        <div onClick={(e) => e.stopPropagation()} className="imcrm-min-w-0">
+            <TeamPicker
+                key={`${grid?.openToken ?? 'armed'}:${grid?.seed ?? ''}`}
+                value={ids}
+                multiple={(field.config as { multiple?: unknown }).multiple === true}
+                onChange={(next) => onCommit(next)}
+                variant="cell"
+                wrap={wrap}
+                defaultOpen
+                disabled={pending}
+                initialQuery={grid?.seed ?? ''}
+                onOpenChange={(o) => {
+                    if (!o) {
+                        setArmed(false);
+                        grid?.onClosed();
+                    }
                 }}
             />
         </div>

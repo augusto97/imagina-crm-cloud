@@ -24,7 +24,7 @@ export class RecordViewController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: RecordViewBundle }> {
-        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role };
+        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
         return { data: await this.service.bundle(req.tenant!.tenantId, actor, list, id) };
     }
 }

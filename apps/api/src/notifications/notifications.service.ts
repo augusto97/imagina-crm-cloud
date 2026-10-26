@@ -9,6 +9,7 @@ import {
     pickStatusField,
     readNotificationPrefs,
     resolveTitleFieldId,
+    teamIdsOf,
     updateNotificationPrefsSchema,
     zonedNowNaive,
     zonedToday,
@@ -53,7 +54,7 @@ import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
-import { effectivePermissions, resolvePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
+import { assignmentKeys, type AclSubject, effectivePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import { compileFilterTree, type FilterableField } from '../records/query-builder';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
@@ -65,10 +66,14 @@ import {
     checklistAssignedTitle,
     digestEmail,
     newlyAssigned,
+    newlyAssignedTeams,
     notificationEmail,
     notificationTitle,
+    teamAssignedTitle,
+    teamMentionTitle,
     type DigestItem,
 } from './notification-text';
+import { TeamsService } from '../teams/teams.service';
 import { NotifyHub, type NotifyEvent } from './notify-hub';
 
 /** Avisos por correo en el momento: tope por persona y hora (una edición masiva no inunda la casilla). */
@@ -93,6 +98,8 @@ interface Recipient {
     role: Role;
     email: string;
     prefs: NotificationPrefs;
+    /** C1 — sus equipos: el ACL del registro también se mira por equipo. */
+    teamIds: number[];
 }
 
 /**
@@ -121,6 +128,7 @@ export class NotificationsService implements OnModuleInit {
         @Optional() private readonly changes?: RecordChangeHub,
         @Optional() private readonly timeZones?: TenantTimeZones,
         @Optional() private readonly domains?: DomainsService,
+        @Optional() private readonly teams?: TeamsService,
     ) {}
 
     onModuleInit(): void {
@@ -161,6 +169,20 @@ export class NotificationsService implements OnModuleInit {
                 title: notificationTitle('mention', { actorName, recordTitle: ctx.title, source: 'comment' }),
                 body: snippet,
             });
+            // C1 — @equipo: sus personas (que pueden ver el registro; nunca
+            // quien escribió ni quien ya recibió la mención directa).
+            const teamReached: number[] = [];
+            for (const t of e.mentionedTeams ?? []) {
+                const to = t.userIds.filter((u) => !e.mentioned.includes(u) && !teamReached.includes(u));
+                teamReached.push(...to);
+                await this.deliver(e.tenantId, 'mention', to, {
+                    listId: e.listId,
+                    recordId: e.recordId,
+                    actorId: e.actorId,
+                    title: teamMentionTitle(actorName, ctx.title, t.name, 'comment'),
+                    body: snippet,
+                });
+            }
             // v0.1.291 — una RESPUESTA: quienes escribieron en ese hilo (el
             // raíz y las otras respuestas) reciben «respondió», que es más
             // directo que el aviso genérico a los seguidores.
@@ -179,7 +201,7 @@ export class NotificationsService implements OnModuleInit {
             await this.deliver(
                 e.tenantId,
                 'comment',
-                followers.filter((u) => !e.mentioned.includes(u) && !replied.includes(u)),
+                followers.filter((u) => !e.mentioned.includes(u) && !replied.includes(u) && !teamReached.includes(u)),
                 {
                     listId: e.listId,
                     recordId: e.recordId,
@@ -212,6 +234,28 @@ export class NotificationsService implements OnModuleInit {
             title: notificationTitle('mention', { actorName, recordTitle: ctx.title, source: 'description' }),
             body: e.snippet,
         });
+        // C1 — equipos mencionados en la descripción (los que se sumaron).
+        if (e.teamIds && e.teamIds.length > 0 && this.teams) {
+            const teamIds = e.teamIds;
+            const { infos, members } = await this.tenantDb.withTenant(e.tenantId, async (tx) => ({
+                infos: await this.teams!.infos(tx, e.tenantId, teamIds),
+                members: await this.teams!.membersOf(tx, e.tenantId, teamIds),
+            }));
+            const reached = new Set(e.userIds);
+            for (const t of teamIds) {
+                const info = infos.get(t);
+                if (!info) continue;
+                const to = (members.get(t) ?? []).filter((u) => !reached.has(u));
+                to.forEach((u) => reached.add(u));
+                await this.deliver(e.tenantId, 'mention', to, {
+                    listId: e.listId,
+                    recordId: e.recordId,
+                    actorId: e.actorId,
+                    title: teamMentionTitle(actorName, ctx.title, info.name, 'description'),
+                    body: e.snippet,
+                });
+            }
+        }
     }
 
     async onRecordChange(c: RecordChange): Promise<void> {
@@ -233,6 +277,30 @@ export class NotificationsService implements OnModuleInit {
                 title: notificationTitle('assigned', { actorName, recordTitle: ctx.title }),
                 body: `En «${ctx.list.name}»`,
             });
+        }
+        // C1 — asignado a un EQUIPO: avisa a sus personas (sin quien lo hizo ni
+        // quien ya recibió «te asignó» por un campo Persona).
+        const teamFieldIds = ctx.fields.filter((f) => f.type === 'team').map((f) => f.id);
+        const newTeams = teamFieldIds.length > 0 ? newlyAssignedTeams(teamFieldIds, c.before, c.after) : [];
+        if (newTeams.length > 0 && this.teams) {
+            const { infos, members } = await this.tenantDb.withTenant(c.tenantId, async (tx) => ({
+                infos: await this.teams!.infos(tx, c.tenantId, newTeams),
+                members: await this.teams!.membersOf(tx, c.tenantId, newTeams),
+            }));
+            const reached = new Set(assigned);
+            for (const t of newTeams) {
+                const info = infos.get(t);
+                if (!info) continue;
+                const to = (members.get(t) ?? []).filter((u) => u !== actorId && !reached.has(u));
+                to.forEach((u) => reached.add(u));
+                await this.deliver(c.tenantId, 'team_assigned', to, {
+                    listId: c.listId,
+                    recordId: c.recordId,
+                    actorId: actorId > 0 ? actorId : null,
+                    title: teamAssignedTitle(actorName, ctx.title, info.name),
+                    body: `En «${ctx.list.name}»`,
+                });
+            }
         }
         if (c.kind === 'created') return;
 
@@ -304,7 +372,7 @@ export class NotificationsService implements OnModuleInit {
                       tenantId,
                       n.listId,
                       n.recordId,
-                      recipients.map((r) => ({ userId: r.userId, role: r.role })),
+                      recipients.map((r) => ({ userId: r.userId, role: r.role, teamIds: r.teamIds })),
                   )
                 : null;
         const allowed: Recipient[] = recipients.filter((r) => viewers === null || viewers.has(r.userId));
@@ -394,13 +462,15 @@ export class NotificationsService implements OnModuleInit {
     }
 
     private async recipients(tenantId: number, ids: number[]): Promise<Recipient[]> {
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx
+        const { rows, teamsOf } = await this.tenantDb.withTenant(tenantId, async (tx) => ({
+            rows: await tx
                 .select({ userId: memberships.userId, role: memberships.role, settings: memberships.settings, email: users.email, disabledAt: users.disabledAt })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
                 .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids))),
-        );
+            // C1 — el acceso por equipo cuenta para decidir si ve el registro.
+            teamsOf: this.teams ? await this.teams.teamIdsByUser(tx, tenantId, ids) : new Map<number, number[]>(),
+        }));
         return rows
             .filter((r) => r.role !== 'client' && !r.disabledAt)
             .map((r) => ({
@@ -408,6 +478,7 @@ export class NotificationsService implements OnModuleInit {
                 role: r.role as Role,
                 email: r.email,
                 prefs: readNotificationPrefs((r.settings as Record<string, unknown> | null)?.notifications),
+                teamIds: teamsOf.get(r.userId) ?? [],
             }));
     }
 
@@ -549,7 +620,7 @@ export class NotificationsService implements OnModuleInit {
 
     async setFollowing(
         tenantId: number,
-        actor: { userId: number; role: Role },
+        actor: AclSubject,
         listIdOrSlug: string,
         recordId: number,
         following: boolean,
@@ -596,7 +667,7 @@ export class NotificationsService implements OnModuleInit {
 
     // ─────────────────────────── Recordatorios ───────────────────────────
 
-    async createReminder(tenantId: number, actor: { userId: number; role: Role }, input: CreateReminderInput): Promise<ReminderDto> {
+    async createReminder(tenantId: number, actor: AclSubject, input: CreateReminderInput): Promise<ReminderDto> {
         let listId: number | null = null;
         if (input.record_id !== undefined) {
             if (input.list_id === undefined) {
@@ -619,7 +690,7 @@ export class NotificationsService implements OnModuleInit {
 
     async updateReminder(
         tenantId: number,
-        actor: { userId: number; role: Role },
+        actor: AclSubject,
         id: number,
         input: UpdateReminderInput,
     ): Promise<ReminderDto> {
@@ -655,7 +726,7 @@ export class NotificationsService implements OnModuleInit {
 
     async listReminders(
         tenantId: number,
-        actor: { userId: number; role: Role },
+        actor: AclSubject,
         opts: { includeDone?: boolean; recordId?: number } = {},
         schema?: WorkSchema,
     ): Promise<ReminderDto[]> {
@@ -747,7 +818,7 @@ export class NotificationsService implements OnModuleInit {
 
     // ─────────────────────────── Mi trabajo ───────────────────────────
 
-    async myWork(tenantId: number, actor: { userId: number; role: Role }): Promise<MyWorkDto> {
+    async myWork(tenantId: number, actor: AclSubject): Promise<MyWorkDto> {
         const schema = await this.workSchema(tenantId, actor);
         let withAssignee = 0;
         let truncated = false;
@@ -806,12 +877,53 @@ export class NotificationsService implements OnModuleInit {
         const order = new Map(follows.map((f, i) => [f.recordId, i]));
         following.sort((a, b) => (order.get(a.record_id) ?? 0) - (order.get(b.record_id) ?? 0));
 
+        // C1 — «De mis equipos»: lo asignado a uno de mis equipos por un campo
+        // «Equipo» visible, con los mismos filtros (alcance, sin terminados) y
+        // grupos por fecha. Lo que ya está en «Asignado a mí» no se repite.
+        const teamItems: MyWorkItem[] = [];
+        const myTeams = actor.teamIds ?? [];
+        if (myTeams.length > 0) {
+            const teamParts: SQL[] = [];
+            const teamDue: SQL[] = [];
+            for (const list of schema.lists) {
+                const view = schema.views.get(list.id);
+                if (!view?.teamMine) continue;
+                teamParts.push(and(eq(records.listId, list.id), view.teamMine, view.scope, view.notDone)!);
+                if (view.due) teamDue.push(sql`WHEN ${list.id} THEN ${view.due}`);
+            }
+            if (teamParts.length > 0) {
+                const dueSort = teamDue.length > 0 ? sql`(CASE ${records.listId} ${sql.join(teamDue, sql` `)} END) COLLATE "C"` : null;
+                const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ id: records.id, listId: records.listId, data: records.data })
+                        .from(records)
+                        .where(and(eq(records.tenantId, tenantId), isNull(records.deletedAt), or(...teamParts)))
+                        .orderBy(...(dueSort ? [sql`${dueSort} ASC NULLS LAST`] : []), asc(records.id))
+                        .limit(MAX_ITEMS + 1),
+                );
+                if (rows.length > MAX_ITEMS) truncated = true;
+                const mine = new Set(assigned.map((a) => a.record_id));
+                for (const r of rows.slice(0, MAX_ITEMS)) {
+                    if (mine.has(r.id)) continue;
+                    const view = schema.views.get(r.listId);
+                    if (!view) continue;
+                    const item = this.workItemFor(view, r.id, r.data);
+                    const data = (r.data ?? {}) as Record<string, unknown>;
+                    const hit = new Set<number>();
+                    for (const f of view.teamFields) for (const t of teamIdsOf(data[`f${f.id}`])) if (myTeams.includes(t)) hit.add(t);
+                    teamItems.push({ ...item, team_ids: [...hit] });
+                }
+                teamItems.sort(byDue);
+            }
+        }
+
         const reminderList = await this.listReminders(tenantId, actor, {}, schema);
         const checklistItems = await this.myChecklistItems(tenantId, actor, schema);
         if (checklistItems.length > MAX_ITEMS) truncated = true;
         return {
             assigned,
             checklist_items: checklistItems.slice(0, MAX_ITEMS),
+            teams: teamItems,
             following,
             reminders: reminderList,
             lists_with_assignee: withAssignee,
@@ -889,7 +1001,7 @@ export class NotificationsService implements OnModuleInit {
      * la persona puede leer de cada una — el MISMO ACL que el listado de
      * registros: alcance por rol (`scopeWhere`) y campos ocultos.
      */
-    private async workSchema(tenantId: number, actor: { userId: number; role: Role }): Promise<WorkSchema> {
+    private async workSchema(tenantId: number, actor: AclSubject): Promise<WorkSchema> {
         const lists = (await this.lists.list(tenantId)).slice(0, 500);
         const fieldsByList = await this.fields.listByTenantGrouped(tenantId);
         const views = new Map<number, WorkListView>();
@@ -996,6 +1108,9 @@ export class NotificationsService implements OnModuleInit {
                     .innerJoin(users, eq(users.id, memberships.userId))
                     .where(and(eq(memberships.tenantId, t.id), sql`${memberships.settings}->'notifications'->>'digest' = 'daily'`)),
             );
+            const teamsOf = this.teams && members.length > 0
+                ? await this.tenantDb.withTenant(t.id, (tx) => this.teams!.teamIdsByUser(tx, t.id, members.map((m) => m.userId)))
+                : new Map<number, number[]>();
             for (const m of members) {
                 if (m.role === 'client' || m.disabledAt) continue;
                 const prefs = readNotificationPrefs((m.settings as Record<string, unknown> | null)?.notifications);
@@ -1003,7 +1118,7 @@ export class NotificationsService implements OnModuleInit {
                 const fresh = await this.redis.set(`digest:${t.id}:${m.userId}:${ymd}`, '1', 'EX', 2 * 86_400, 'NX').catch(() => 'OK');
                 if (fresh !== 'OK') continue;
                 try {
-                    if (await this.sendDigest(t.id, t.name, { userId: m.userId, role: m.role as Role, email: m.email }, tz, now)) sent++;
+                    if (await this.sendDigest(t.id, t.name, { userId: m.userId, role: m.role as Role, email: m.email, teamIds: teamsOf.get(m.userId) ?? [] }, tz, now)) sent++;
                 } catch (err) {
                     // Una persona con un problema no deja sin resumen al resto.
                     this.logger.error(`Resumen diario de ${m.userId} (empresa ${t.id}): ${String(err)}`);
@@ -1016,7 +1131,7 @@ export class NotificationsService implements OnModuleInit {
     async sendDigest(
         tenantId: number,
         company: string,
-        who: { userId: number; role: Role; email: string },
+        who: { userId: number; role: Role; email: string; teamIds?: readonly number[] },
         tz: string,
         now: Date,
     ): Promise<boolean> {
@@ -1073,7 +1188,7 @@ export class NotificationsService implements OnModuleInit {
     /** Títulos de varios registros, con el ACL de la persona (una consulta para todas las listas). */
     private async titlesFor(
         tenantId: number,
-        actor: { userId: number; role: Role },
+        actor: AclSubject,
         refs: Array<{ listId: number; recordId: number }>,
         schema?: WorkSchema,
     ): Promise<Map<number, string>> {
@@ -1158,6 +1273,10 @@ interface WorkListView {
     scope: SQL | undefined;
     /** «Asignado a mí» por algún campo persona VISIBLE (undefined = no hay). */
     mine: SQL | undefined;
+    /** C1 — «De mis equipos» por algún campo «Equipo» VISIBLE (undefined = no hay o no tiene equipos). */
+    teamMine: SQL | undefined;
+    /** C1 — los campos «Equipo» visibles (para decir qué equipo lo tiene). */
+    teamFields: Field[];
     /** Texto ordenable del vencimiento (campo visible), o null. */
     due: SQL | null;
     /** Excluye los estados terminados (campo de estado visible). */
@@ -1171,12 +1290,11 @@ interface WorkSchema {
 }
 
 /** null si la persona no puede leer ningún registro de la lista. */
-function workListView(list: List, fields: Field[], actor: { userId: number; role: Role }): WorkListView | null {
+function workListView(list: List, fields: Field[], actor: AclSubject): WorkListView | null {
     const settings = list.settings as Record<string, unknown>;
-    const perms = effectivePermissions(settings, actor.role, actor.userId);
+    const perms = effectivePermissions(settings, actor);
     if (perms.view === 'none') return null;
-    const assignmentId = resolvePermissions(settings).assignment_field_id;
-    const scope = scopeWhere(perms.view, actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+    const scope = scopeWhere(perms.view, actor, assignmentKeys(settings));
     const hiddenIds = withDependentComputed(
         fields,
         new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id)),
@@ -1195,6 +1313,22 @@ function workListView(list: List, fields: Field[], actor: { userId: number; role
                       type: 'group',
                       logic: 'or',
                       children: userFields.map((f) => ({ type: 'condition' as const, field_id: f.id, op: 'eq' as const, value: actor.userId })),
+                  },
+                  new Date(),
+              );
+
+    // C1 — lo de mis equipos, por los campos «Equipo» visibles.
+    const teamFields = fields.filter((f) => f.type === 'team' && !hiddenIds.has(f.id));
+    const myTeams = actor.teamIds ?? [];
+    const teamMine =
+        teamFields.length === 0 || myTeams.length === 0
+            ? undefined
+            : compileFilterTree(
+                  new Map(teamFields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }])),
+                  {
+                      type: 'group',
+                      logic: 'or',
+                      children: teamFields.map((f) => ({ type: 'condition' as const, field_id: f.id, op: 'in' as const, value: [...myTeams] })),
                   },
                   new Date(),
               );
@@ -1220,6 +1354,8 @@ function workListView(list: List, fields: Field[], actor: { userId: number; role
         hiddenKeys: new Set([...hiddenIds].map((id) => jsonbKeyForField(id))),
         scope,
         mine,
+        teamMine,
+        teamFields,
         due,
         notDone,
     };

@@ -208,5 +208,5 @@ export class PublicDocumentsController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }

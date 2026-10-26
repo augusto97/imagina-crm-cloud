@@ -4,7 +4,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, automationRuns, automations, fields, lists, memberships, records, tenants, users } from '../src/db/schema';
+import { activity, automationRuns, automations, fields, lists, memberships, records, teams, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { AutomationEngine } from '../src/automations/automation-engine.service';
@@ -191,6 +191,7 @@ describe('Automatizaciones — auditoría del motor', () => {
                 config: { options: [{ value: 'abierto', label: 'Abierto' }, { value: 'cerrado', label: 'Cerrado' }] },
             },
             { label: 'Responsable', type: 'user', slug: 'responsable' },
+            { label: 'Equipo', type: 'team', slug: 'equipo', config: { multiple: true } },
         ];
         f = {};
         for (const d of defs) f[d.slug!] = await fieldsService.create(tenantId, 'tickets', d);
@@ -465,10 +466,14 @@ describe('Automatizaciones — auditoría del motor', () => {
     });
 
     it('variables legibles: persona (.email/.nombre), |fecha, |fechahora, |moneda; el «Para» acepta un campo Persona', async () => {
+        // C1 — `{{equipo.nombre}}` da los nombres de los equipos.
+        const [ventas] = await pg.db.insert(teams).values({ tenantId, name: 'Ventas' }).returning();
+        const [soporte] = await pg.db.insert(teams).values({ tenantId, name: 'Soporte' }).returning();
         const rec = await recs.create(tenantId, admin, 'tickets', {
             data: {
                 [k('nombre')]: 'T6',
                 [k('responsable')]: anaId,
+                [k('equipo')]: [ventas!.id, soporte!.id],
                 [k('monto')]: 1250000,
                 [k('vence')]: '2026-10-31',
                 [k('cita')]: '2026-10-21T19:30:00.000Z',
@@ -483,7 +488,7 @@ describe('Automatizaciones — auditoría del motor', () => {
                     config: {
                         to: 'responsable',
                         subject: 'Hola {{responsable.nombre}}',
-                        body: 'Monto {{monto|moneda}} · vence {{vence|fecha}} · cita {{cita|fechahora}} · email {{responsable.email}} · crudo {{monto}}',
+                        body: 'Monto {{monto|moneda}} · vence {{vence|fecha}} · cita {{cita|fechahora}} · email {{responsable.email}} · crudo {{monto}} · equipos {{equipo.nombre}}',
                     },
                 },
             ],
@@ -498,6 +503,7 @@ describe('Automatizaciones — auditoría del motor', () => {
         expect(m.text).toContain('cita 21/10/2026 14:30');
         expect(m.text).toContain('email ana@acme.test');
         expect(m.text).toContain('crudo 1250000');
+        expect(m.text).toContain('equipos Ventas, Soporte');
     });
 
     it('al guardar: un «Para» vacío o un cron inválido se rechazan (activa); pausada se guarda como borrador', async () => {

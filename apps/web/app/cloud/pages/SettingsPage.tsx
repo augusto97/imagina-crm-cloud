@@ -20,6 +20,7 @@ import { PersonalDataCard } from '@/admin/settings/PersonalDataCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
+import { TeamsPanel } from '@/cloud/components/TeamsPanel';
 import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
@@ -66,7 +67,8 @@ export function SettingsPage(): JSX.Element {
     });
 
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
-    const groups = settingsSectionGroups({ isAdmin, canManageAutomations });
+    const canManageTeams = useCan(CAP.MANAGE_TEAMS);
+    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams });
     const visible = groups.flatMap((g) => g.items);
     // Fallback a "plan" (admin) o "seguridad" si el param no existe o apunta a
     // una sección que este rol no ve.
@@ -161,6 +163,7 @@ export function SettingsPage(): JSX.Element {
                     </>
                 )}
                 {active === 'miembros' && isAdmin && <MembersPanel />}
+                {active === 'equipos' && (isAdmin || canManageTeams) && <TeamsPanel />}
                 {/* Branding white-label del workspace (nombre, color, logo) +
                     dominio personalizado (ADR-S17) + dominio del portal de
                     clientes (v0.1.245). */}

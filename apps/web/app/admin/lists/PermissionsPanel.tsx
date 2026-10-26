@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import type { RolePermissions, Scope } from '@imagina-base/shared';
 
 import { ACCESS_LEVELS, blankRolePermissions, levelOf, type AccessLevel } from './listAccessLevels';
+import { ListTeamAccess } from './ListTeamAccess';
 
 interface Props {
     listId: number;
@@ -38,6 +39,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
 
     const [perms, setPerms] = useState<Record<string, RolePermissions>>({});
     const [assignmentFieldId, setAssignmentFieldId] = useState<number | null>(null);
+    const [assignmentTeamFieldId, setAssignmentTeamFieldId] = useState<number | null>(null);
     const [dirty, setDirty] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -45,6 +47,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
         if (query.data) {
             setPerms(query.data.permissions);
             setAssignmentFieldId(query.data.assignment_field_id);
+            setAssignmentTeamFieldId(query.data.assignment_team_field_id ?? null);
             setDirty(false);
         }
     }, [query.data]);
@@ -56,6 +59,10 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
 
     const userFields = useMemo(
         () => (fields.data ?? []).filter((f) => f.type === 'user'),
+        [fields.data],
+    );
+    const teamFields = useMemo(
+        () => (fields.data ?? []).filter((f) => f.type === 'team'),
         [fields.data],
     );
 
@@ -96,7 +103,11 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
     const handleSave = async (): Promise<void> => {
         setSubmitError(null);
         try {
-            await update.mutateAsync({ permissions: perms, assignment_field_id: assignmentFieldId });
+            await update.mutateAsync({
+                permissions: perms,
+                assignment_field_id: assignmentFieldId,
+                assignment_team_field_id: assignmentTeamFieldId,
+            });
             setDirty(false);
         } catch (err) {
             setSubmitError(
@@ -279,15 +290,46 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
                             </option>
                         ))}
                     </Select>
-                    {userFields.length === 0 && (
+                    {teamFields.length > 0 && (
+                        <>
+                            <label htmlFor="assignment-team-field" className="imcrm-mt-2 imcrm-text-sm imcrm-font-medium">
+                                {__('¿Y qué campo dice qué equipo lo atiende? (opcional)')}
+                            </label>
+                            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                {__('Con un campo Equipo elegido, un registro también cuenta como asignado a todas las personas de los equipos que tiene.')}
+                            </p>
+                            <Select
+                                id="assignment-team-field"
+                                className="imcrm-max-w-md"
+                                value={assignmentTeamFieldId ?? ''}
+                                onChange={(e) => {
+                                    setAssignmentTeamFieldId(e.target.value === '' ? null : parseInt(e.target.value, 10));
+                                    setDirty(true);
+                                }}
+                                data-testid="imcrm-assignment-team-field"
+                            >
+                                <option value="">{__('— Ninguno —')}</option>
+                                {teamFields.map((f) => (
+                                    <option key={f.id} value={f.id}>
+                                        {f.label}
+                                    </option>
+                                ))}
+                            </Select>
+                        </>
+                    )}
+                    {userFields.length === 0 && teamFields.length === 0 && (
                         <p className="imcrm-text-xs imcrm-text-warning">
                             {__(
-                                'Esta lista no tiene ningún campo de tipo Usuario. Crea uno en la pestaña Campos para poder usar este nivel de acceso.',
+                                'Esta lista no tiene ningún campo de tipo Usuario ni Equipo. Crea uno en la pestaña Campos para poder usar este nivel de acceso.',
                             )}
                         </p>
                     )}
                 </div>
             )}
+
+            <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4">
+                <ListTeamAccess listId={listId} />
+            </section>
 
             {submitError !== null && (
                 <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

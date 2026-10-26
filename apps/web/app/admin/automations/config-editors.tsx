@@ -50,7 +50,8 @@ import type {
     TriggerConfig,
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
-import type { WebhookTestResult } from '@imagina-base/shared';
+import { teamIdsOf, type WebhookTestResult } from '@imagina-base/shared';
+import { TeamPicker } from '@/components/fields/TeamPicker';
 import { ActionTypeSelect } from './ActionTypeSelect';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
@@ -1948,6 +1949,12 @@ export function FieldValueInput({
         );
     }
 
+    // C1 — equipo(s): se ELIGEN (ids) o se usa una variable ({{equipo}} de
+    // otro registro): el backend acepta los ids o «3, 7».
+    if (field.type === 'team') {
+        return <TeamValueInput field={field} availableFields={availableFields ?? []} value={value} onChange={onChange} />;
+    }
+
     const textValue = typeof value === 'string' ? value : value === null || value === undefined ? '' : String(value);
 
     // date / datetime / number / currency: MergeTagInput — un input
@@ -2017,6 +2024,50 @@ export function FieldValueInput({
                 placeholder={__('Valor o usa los chips para insertar variables')}
                 aria-label={__('Valor')}
             />
+        </div>
+    );
+}
+
+function TeamValueInput({
+    field,
+    availableFields,
+    value,
+    onChange,
+}: {
+    field: FieldEntity;
+    availableFields: FieldEntity[];
+    value: unknown;
+    onChange: (next: unknown) => void;
+}): JSX.Element {
+    const isVariable = typeof value === 'string' && value.includes('{{');
+    const [useVariable, setUseVariable] = useState(isVariable);
+    return (
+        <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
+            {useVariable ? (
+                <MergeTagInput
+                    value={typeof value === 'string' ? value : ''}
+                    onChange={onChange}
+                    fields={availableFields}
+                    placeholder={__('{{equipo}}')}
+                    aria-label={__('Valor')}
+                />
+            ) : (
+                <TeamPicker
+                    value={teamIdsOf(value)}
+                    multiple={(field.config as { multiple?: unknown }).multiple === true}
+                    onChange={(ids) => onChange(ids)}
+                />
+            )}
+            <button
+                type="button"
+                className="imcrm-self-start imcrm-text-xs imcrm-text-primary hover:imcrm-underline"
+                onClick={() => {
+                    setUseVariable((v) => !v);
+                    onChange(useVariable ? [] : '');
+                }}
+            >
+                {useVariable ? __('Elegir el equipo de la lista') : __('Usar una variable')}
+            </button>
         </div>
     );
 }

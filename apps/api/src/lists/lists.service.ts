@@ -13,9 +13,9 @@ import {
     type UpdateListInput,
     type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { fields, listGroups, listSlugHistory, memberships, users } from '../db/schema';
+import { fields, listGroups, listSlugHistory, memberships, teamMembers, teams, users } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -71,10 +71,17 @@ export class ListsService {
             .map((k) => Number(k))
             .filter((n) => Number.isInteger(n) && n > 0);
         const people = ids.length > 0 ? await this.membersByIds(tenantId, ids) : [];
+        // C1 — accesos POR EQUIPO, resueltos contra los equipos vivos (un
+        // equipo borrado no se muestra y su acceso ya no sirve).
+        const teamIds = Object.keys(doc.teams)
+            .map((k) => Number(k))
+            .filter((n) => Number.isInteger(n) && n > 0);
+        const teamRows = teamIds.length > 0 ? await this.teamsByIds(tenantId, teamIds) : [];
         return {
             list_id: list.id,
             permissions: doc.permissions,
             assignment_field_id: doc.assignment_field_id,
+            assignment_team_field_id: doc.assignment_team_field_id,
             roles: CONFIGURABLE_ROLE_META,
             users: people.map((u) => ({
                 user_id: u.id,
@@ -82,7 +89,35 @@ export class ListsService {
                 email: u.email,
                 permissions: doc.users[String(u.id)]!,
             })),
+            teams: teamRows.map((t) => ({
+                team_id: t.id,
+                name: t.name,
+                color: t.color,
+                icon: t.icon,
+                member_count: t.memberCount,
+                permissions: doc.teams[String(t.id)]!,
+            })),
         };
+    }
+
+    /** C1 — equipos de la empresa por id, con cuántas personas tienen. */
+    private async teamsByIds(
+        tenantId: number,
+        ids: number[],
+    ): Promise<Array<{ id: number; name: string; color: string | null; icon: string | null; memberCount: number }>> {
+        return this.tenantDb.withTenant(tenantId, async (tx) =>
+            tx
+                .select({
+                    id: teams.id,
+                    name: teams.name,
+                    color: teams.color,
+                    icon: teams.icon,
+                    memberCount: sql<number>`(SELECT count(*)::int FROM ${teamMembers} tm WHERE tm.team_id = ${teams.id})`,
+                })
+                .from(teams)
+                .where(and(eq(teams.tenantId, tenantId), inArray(teams.id, ids)))
+                .orderBy(asc(teams.name)),
+        );
     }
 
     /**
@@ -154,12 +189,56 @@ export class ListsService {
                 ids.map((id) => [String(id), input.users![String(id)]!]),
             );
         }
+        // C1 — accesos por EQUIPO (mapa completo, como el de personas): sólo
+        // equipos de esta empresa.
+        let nextTeams = current.teams;
+        if (input.teams !== undefined) {
+            const ids = Object.keys(input.teams)
+                .map((k) => Number(k))
+                .filter((n) => Number.isInteger(n) && n > 0);
+            const found = ids.length > 0 ? await this.teamsByIds(tenantId, ids) : [];
+            const allowed = new Set(found.map((t) => t.id));
+            const invalid = ids.filter((id) => !allowed.has(id));
+            if (invalid.length > 0) {
+                throw new BadRequestException({
+                    code: 'team_not_found',
+                    message: 'Sólo se puede compartir con equipos de esta empresa',
+                    data: { status: 400, errors: { teams: invalid.join(', ') } },
+                });
+            }
+            nextTeams = Object.fromEntries(ids.map((id) => [String(id), input.teams![String(id)]!]));
+        }
+        // C1 — el campo «Equipo» de asignación tiene que ser un campo
+        // «Equipo» de ESTA lista.
+        let nextTeamAssignment = current.assignment_team_field_id;
+        if (input.assignment_team_field_id !== undefined) {
+            nextTeamAssignment = input.assignment_team_field_id;
+            if (nextTeamAssignment !== null) {
+                const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                    const [f] = await tx
+                        .select({ type: fields.type })
+                        .from(fields)
+                        .where(and(eq(fields.tenantId, tenantId), eq(fields.listId, list.id), eq(fields.id, nextTeamAssignment!)))
+                        .limit(1);
+                    return f?.type === 'team';
+                });
+                if (!ok) {
+                    throw new BadRequestException({
+                        code: 'invalid_assignment_team_field',
+                        message: 'El campo de asignación por equipo tiene que ser un campo «Equipo» de esta lista',
+                        data: { status: 400 },
+                    });
+                }
+            }
+        }
         const settings = {
             ...list.settings,
             permissions: {
                 permissions: nextPermissions,
                 assignment_field_id: nextAssignment,
                 users: nextUsers,
+                teams: nextTeams,
+                assignment_team_field_id: nextTeamAssignment,
             },
         };
         await this.update(tenantId, idOrSlug, { settings });

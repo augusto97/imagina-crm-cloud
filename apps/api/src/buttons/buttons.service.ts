@@ -35,7 +35,7 @@ import { applyMergeTags, labelResolverFor, regionalFormatterFor, singleTagToken,
 import { automationRuns, automations, memberships, tenants, users } from '../db/schema';
 import { DocumentsService } from '../documents/documents.service';
 import { FieldsService } from '../fields/fields.service';
-import { effectivePermissions, hiddenFieldsFor, resolvePermissions, rowInScope } from '../lists/list-acl';
+import { listRowInScope, hiddenFieldsFor } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -205,7 +205,7 @@ export class ButtonsService {
                     throw forbidden('button_forbidden', `Tu rol no puede presionar «${label}».`);
                 }
                 // Un botón oculto para el rol (permisos de la lista) tampoco se presiona.
-                if (hiddenFieldsFor(list.settings, actor.role, actor.userId).has(field.slug)) {
+                if (hiddenFieldsFor(list.settings, actor).has(field.slug)) {
                     throw forbidden('button_forbidden', `«${label}» no está disponible para tu rol.`);
                 }
             }
@@ -250,12 +250,7 @@ export class ButtonsService {
         if (scope.portal) return;
         if (buttonChangesRecord(prep.config)) {
             const caps = roleHasCapability(actor.role, 'edit_records') || roleHasCapability(actor.role, 'edit_own_records');
-            const scopeEdit = effectivePermissions(prep.list.settings, actor.role, actor.userId).edit;
-            const assignmentId = resolvePermissions(prep.list.settings).assignment_field_id;
-            const reach = rowInScope(scopeEdit, actor.userId, {
-                createdBy: record.created_by,
-                assignmentValue: assignmentId ? record.data[jsonbKeyForField(assignmentId)] : null,
-            });
+            const reach = listRowInScope(prep.list.settings, actor, 'edit', { createdBy: record.created_by, data: record.data });
             if (!caps || !reach) {
                 throw forbidden('button_needs_edit', `«${prep.label}» cambia el registro y tú no puedes editarlo.`);
             }

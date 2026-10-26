@@ -74,7 +74,7 @@ export class RecordSearchService {
             const targets: SearchTarget[] = [];
             const meta = new Map<number, (typeof listRows)[number]>();
             for (const list of listRows) {
-                const perms = effectivePermissions(list.settings, actor.role, actor.userId);
+                const perms = effectivePermissions(list.settings, actor);
                 if (perms.view === 'none') continue;
                 const candidates = byList.get(list.id) ?? [];
                 const titleId = resolveTitleFieldId(

@@ -59,7 +59,7 @@ export class McpController {
             raw.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Token de acceso inválido, vencido o revocado' }, id: null }));
             return;
         }
-        const ctx: AiToolContext = { tenantId: resolved.tenantId, userId: resolved.userId, role: resolved.role };
+        const ctx: AiToolContext = { tenantId: resolved.tenantId, userId: resolved.userId, role: resolved.role, teamIds: resolved.teamIds };
         const server = this.mcp.buildServer(ctx, resolved.scope, this.version);
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
         raw.on('close', () => {

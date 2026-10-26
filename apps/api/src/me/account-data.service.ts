@@ -18,6 +18,7 @@ import {
     recordFollows,
     reminders,
     savedFilters,
+    teamMembers,
     tenants,
     users,
 } from '../db/schema';
@@ -247,6 +248,8 @@ export class AccountDataService {
                 await tx.delete(notifications).where(and(eq(notifications.tenantId, tenantId), eq(notifications.userId, userId)));
                 await tx.delete(recordFollows).where(and(eq(recordFollows.tenantId, tenantId), eq(recordFollows.userId, userId)));
                 await tx.delete(reminders).where(and(eq(reminders.tenantId, tenantId), eq(reminders.userId, userId)));
+                // C1 — sus equipos en esa empresa.
+                await tx.delete(teamMembers).where(and(eq(teamMembers.tenantId, tenantId), eq(teamMembers.userId, userId)));
                 // v0.1.289 — su contraseña del portal de esa empresa.
                 await tx
                     .delete(portalCredentials)

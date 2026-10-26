@@ -162,6 +162,31 @@ describe('remapJson', () => {
             // La persona 999 no viajó: se descarta (si no, se vería a OTRA).
             workload_user_ids: [131, 130],
         });
+        // C1 — el filtro por equipo: traducido; un equipo que no viajó se quita.
+        const m = maps();
+        m.team.set(5, 105);
+        expect(remapViewConfig({ workload_person_field_id: 10, workload_team_id: 5 }, types, m)).toEqual({ workload_person_field_id: 110, workload_team_id: 105 });
+        expect(remapViewConfig({ workload_person_field_id: 10, workload_team_id: 6 }, types, m)).toEqual({ workload_person_field_id: 110 });
+    });
+
+    it('C1 — el paso de aprobación «Un equipo» apunta al equipo NUEVO (y a ninguno si no viajó)', () => {
+        const m = maps();
+        m.team.set(5, 105);
+        const config = {
+            steps: [
+                { id: 's1', approver: { type: 'team', team_id: 5 }, mode: 'all' },
+                { id: 's2', approver: { type: 'team', team_id: 6 } },
+                { id: 's3', approver: { type: 'users', approver_user_ids: [30, 999] } },
+            ],
+        };
+        expect(remapJson(config, m)).toEqual({
+            steps: [
+                { id: 's1', approver: { type: 'team', team_id: 105 }, mode: 'all' },
+                // Un equipo que no viajó no apunta al equipo de OTRA empresa.
+                { id: 's2', approver: { type: 'team', team_id: null } },
+                { id: 's3', approver: { type: 'users', approver_user_ids: [130] } },
+            ],
+        });
     });
 
     it('B4 — calendario: fin, fuentes adicionales, campo de color y reglas por convención', () => {

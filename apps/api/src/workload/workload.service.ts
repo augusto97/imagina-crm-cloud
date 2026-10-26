@@ -37,6 +37,7 @@ import type { FilterableField } from '../records/query-builder';
 import { RecordsService, type Actor, type ReadScope } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { TeamsService } from '../teams/teams.service';
 import { workloadItemsSql, workloadTimeSql, workloadUnscheduledSql, type WorkloadDateField, type WorkloadSqlBase } from './workload-sql';
 
 export interface WorkloadBundleQuery {
@@ -56,6 +57,12 @@ export interface WorkloadBundleQuery {
      * personas del equipo.
      */
     userIds: number[] | null;
+    /**
+     * C1 — Sólo las personas de este equipo (resuelto aquí, en vivo). Se
+     * combina con `userIds` (la intersección). Un equipo que no es de la
+     * empresa es un 400.
+     */
+    teamId?: number | null;
     showUnassigned: boolean;
     filterTree?: FilterGroup;
     search?: string;
@@ -104,6 +111,8 @@ export class WorkloadService {
         private readonly realtime: RealtimeService,
         @Optional() private readonly timeZones?: TenantTimeZones,
         @Optional() private readonly audit?: AuditService,
+        // C1 — el filtro por equipo.
+        @Optional() private readonly teams?: TeamsService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listKey: string, q: WorkloadBundleQuery): Promise<WorkloadBundle> {
@@ -186,7 +195,13 @@ export class WorkloadService {
             for (const k of Object.keys(unscheduled)) if (k !== WORKLOAD_UNASSIGNED) presentIds.add(Number(k));
             const outsiders = [...presentIds].filter((id) => !memberById.get(id)?.canView);
             const outsiderNames = await this.userNames(tx, outsiders.filter((id) => !memberById.has(id)));
-            const wanted = q.userIds ? new Set(q.userIds) : null;
+            let wanted = q.userIds ? new Set(q.userIds) : null;
+            if (q.teamId) {
+                const known = this.teams ? await this.teams.infos(tx, tenantId, [q.teamId]) : new Map();
+                if (!known.has(q.teamId)) throw badRequest('invalid_param', 'Ese equipo no existe en esta empresa.');
+                const inTeam = new Set(await this.teams!.memberIds(tx, q.teamId));
+                wanted = wanted ? new Set([...wanted].filter((id) => inTeam.has(id))) : inTeam;
+            }
             const people: WorkloadPerson[] = [];
             for (const m of members) {
                 if (!m.canView || (wanted && !wanted.has(m.userId))) continue;
@@ -303,6 +318,7 @@ export class WorkloadService {
                 name: users.name,
                 email: users.email,
                 disabledAt: users.disabledAt,
+                teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -316,7 +332,8 @@ export class WorkloadService {
                     role: r.role,
                     name: r.name?.trim() ? r.name : r.email,
                     email: r.email,
-                    canView: effectivePermissions(listSettings, r.role, r.userId).view !== 'none',
+                    // C1 — con sus equipos: el acceso por equipo a la lista cuenta.
+                    canView: effectivePermissions(listSettings, { userId: r.userId, role: r.role, teamIds: teamIdsOf(r.teamIds) }).view !== 'none',
                     capacity: cap.capacity,
                     custom: cap.custom,
                 };
@@ -445,8 +462,10 @@ function numericFilterable(f: FilterableField): boolean {
 /** ¿Quien mira puede editar ESTA fila? (capacidad del rol + alcance de edición de la lista) */
 function editability(scope: ReadScope, actor: Actor): (row: Pick<RawItem, 'created_by' | 'assigned'>) => boolean {
     const canEditAny = roleHasCapability(actor.role, 'edit_records') || roleHasCapability(actor.role, 'edit_own_records');
-    const editScope = effectivePermissions(scope.list.settings, actor.role, actor.userId).edit;
-    return (row) => canEditAny && rowInScope(editScope, actor.userId, { createdBy: row.created_by, assignmentValue: row.assigned });
+    // C1 — con sus equipos: el acceso por equipo a la lista cuenta (el PATCH
+    // vuelve a chequear todo, incluido «los asignados» por un campo Equipo).
+    const editScope = effectivePermissions(scope.list.settings, actor).edit;
+    return (row) => canEditAny && rowInScope(editScope, actor, { createdBy: row.created_by, assignmentValue: row.assigned });
 }
 
 function assertRange(from: string, to: string): void {
@@ -461,4 +480,9 @@ function assertRange(from: string, to: string): void {
 
 function badRequest(code: string, message: string): BadRequestException {
     return new BadRequestException({ code, message, data: { status: 400 } });
+}
+
+/** Ids de equipo de un `array_agg` (texto o número; sin basura). */
+function teamIdsOf(raw: readonly unknown[] | null): number[] {
+    return (raw ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
 }

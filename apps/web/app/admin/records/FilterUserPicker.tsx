@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { useTeams } from '@/hooks/useTeams';
 import { useWpUser, useWpUsersSearch } from '@/hooks/useWpUsers';
 import { getBootData } from '@/lib/boot';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 
 import type { FieldOption } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
@@ -70,6 +71,23 @@ export function FilterUserPicker({ mode, value, onChange }: FilterUserPickerProp
             },
         }]
         : [];
+    // C1 — atajo de equipos: en «es alguno de» un equipo suma a todas sus
+    // personas de una vez (con «es», que es una sola, no aplica).
+    const teams = useTeams(mode === 'multi');
+    if (mode === 'multi') {
+        for (const t of (teams.data ?? []).slice(0, 8)) {
+            if (t.members.length === 0) continue;
+            actions.push({
+                key: `team-${t.id}`,
+                label: sprintf(__('Equipo «%1$s» (%2$d)'), t.name, t.members.length),
+                onSelect: () => {
+                    const next = [...ids];
+                    for (const m of t.members) if (!next.includes(m.user_id)) next.push(m.user_id);
+                    emit(next.map(String));
+                },
+            });
+        }
+    }
 
     return (
         <FilterOptionPicker

@@ -30,6 +30,7 @@ import {
     Timer,
     Type,
     User,
+    Users,
     type LucideIcon,
     Sparkles,
 } from 'lucide-react';
@@ -56,6 +57,7 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     email: Mail,
     url: Link2,
     user: User,
+    team: Users,
     relation: GitBranch,
     file: Paperclip,
     computed: Sigma,

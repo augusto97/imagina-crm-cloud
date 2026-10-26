@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { isEffectivelyReadOnly, type BillingStatus, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
 import { DRIZZLE, type Db } from '../db/client';
 import { memberships, oauthClients, personalAccessTokens, tenants, users } from '../db/schema';
@@ -25,6 +25,8 @@ export interface ResolvedToken {
     tenantId: number;
     role: Role;
     scope: PersonalTokenScope;
+    /** C1 — equipos de la persona (ACL por equipo). */
+    teamIds: number[];
 }
 
 /**
@@ -189,6 +191,8 @@ export class PersonalTokensService {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                // C1 — los equipos de la persona (ACL por equipo en el MCP).
+                teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${personalAccessTokens.userId} AND tm.tenant_id = ${personalAccessTokens.tenantId})`,
             })
             .from(personalAccessTokens)
             .innerJoin(users, eq(users.id, personalAccessTokens.userId))
@@ -218,7 +222,8 @@ export class PersonalTokensService {
             paid_until: row.paidUntil,
         });
         const scope = readOnly ? 'read' : (row.scope as PersonalTokenScope);
-        return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope };
+        const teamIds = (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope, teamIds };
     }
 
     private async touch(id: number): Promise<void> {

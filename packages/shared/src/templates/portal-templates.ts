@@ -74,7 +74,7 @@ export interface PortalTemplateInput {
 
 // ── Reconocer los campos ────────────────────────────────────────────────
 
-const HIDDEN_TYPES: readonly FieldType[] = ['relation', 'user', 'computed', 'lookup', 'rollup'];
+const HIDDEN_TYPES: readonly FieldType[] = ['relation', 'user', 'computed', 'lookup', 'rollup', 'team'];
 const INTERNAL_RE = /intern|privad|confidencial|cost[oe]|margen|comisi|utilidad|ganancia|rentab|secret|s[oó]lo equipo|staff/i;
 const STAGE_RE = /estado|status|etapa|stage|fase|pipeline|progreso/i;
 const DUE_RE = /venc|entrega|due|l[ií]mite|cierre|pr[oó]xim|deadline|fin\b|cobro|pago/i;
@@ -153,7 +153,7 @@ function anatomy(l: PortalLinkedList): {
 
 /** En otra lista sí se puede mostrar un calculado (el servidor lo calcula al listar). */
 function shownFieldsOther(fields: readonly LayoutFieldLite[]): LayoutFieldLite[] {
-    return fields.filter((f) => f.type !== 'relation' && f.type !== 'user' && !INTERNAL_RE.test(hay(f)));
+    return fields.filter((f) => f.type !== 'relation' && f.type !== 'user' && f.type !== 'team' && !INTERNAL_RE.test(hay(f)));
 }
 
 /** Las columnas que el cliente va a ver de una lista vinculada (también las muestra la galería). */

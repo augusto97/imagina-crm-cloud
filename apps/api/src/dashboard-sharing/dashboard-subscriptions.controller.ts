@@ -14,7 +14,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { DashboardSubscriptionsService, type SubscriptionSendResult } from './dashboard-subscriptions.service';
 
 function viewer(req: FastifyRequest): DashboardViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 
 /**

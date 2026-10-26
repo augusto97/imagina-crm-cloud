@@ -50,6 +50,8 @@ const NODE_ATTRS: Record<string, readonly string[]> = {
     // Bloques "vivos" (v0.1.134): apuntan a entidades de la app por ID, no a
     // contenido pegado. El render los resuelve; aquí sólo se guarda el vínculo.
     mentionUser: ['id', 'label'],
+    // C1 — @equipo: avisa a las personas del equipo que pueden ver el registro.
+    mentionTeam: ['id', 'label'],
     mentionRecord: ['id', 'listSlug', 'label'],
     imageBlock: ['fileId', 'src', 'alt', 'width'],
     fileBlock: ['fileId', 'name', 'size'],
@@ -84,6 +86,7 @@ export const RICH_DOC_MAX_BYTES = 512 * 1024;
 /** Nodos que sin atributos válidos no tienen sentido (se descartan). */
 const ATOMIC_WITH_ATTRS = new Set([
     'mentionUser',
+    'mentionTeam',
     'mentionRecord',
     'imageBlock',
     'fileBlock',
@@ -234,7 +237,7 @@ function cleanAttrs(
     // Un enlace sin href no es un enlace.
     if (type === 'link' && out.href === undefined) return undefined;
     // Ídem los bloques vivos: sin la referencia no hay qué resolver.
-    if ((type === 'mentionUser' || type === 'mentionRecord') && out.id === undefined) return undefined;
+    if ((type === 'mentionUser' || type === 'mentionTeam' || type === 'mentionRecord') && out.id === undefined) return undefined;
     if (type === 'fileBlock' && out.fileId === undefined) return undefined;
     if (type === 'imageBlock' && out.fileId === undefined && out.src === undefined) return undefined;
     if (type === 'embedBlock' && out.url === undefined) return undefined;
@@ -322,6 +325,7 @@ export function isEmptyRichDoc(doc: RichDoc | null | undefined): boolean {
         'imageBlock',
         'fileBlock',
         'mentionUser',
+        'mentionTeam',
         'mentionRecord',
         'embedBlock',
         'tocBlock',
@@ -416,6 +420,20 @@ export function collectMentionedUserIds(doc: RichDoc | null | undefined): number
     const out = new Set<number>();
     const walk = (node: RichNode): void => {
         if (node.type === 'mentionUser') {
+            const id = Number((node.attrs as { id?: unknown } | undefined)?.id);
+            if (Number.isInteger(id) && id > 0) out.add(id);
+        }
+        for (const child of node.content ?? []) walk(child);
+    };
+    if (doc) walk(doc);
+    return [...out];
+}
+
+/** C1 — IDs de los EQUIPOS mencionados en el documento (nodos `mentionTeam`). */
+export function collectMentionedTeamIds(doc: RichDoc | null | undefined): number[] {
+    const out = new Set<number>();
+    const walk = (node: RichNode): void => {
+        if (node.type === 'mentionTeam') {
             const id = Number((node.attrs as { id?: unknown } | undefined)?.id);
             if (Number.isInteger(id) && id > 0) out.add(id);
         }

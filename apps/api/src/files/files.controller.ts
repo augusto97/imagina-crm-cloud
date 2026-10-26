@@ -241,5 +241,5 @@ export class FilesController {
 }
 
 function fileActor(req: FastifyRequest): FileActor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }

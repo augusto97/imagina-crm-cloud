@@ -93,6 +93,12 @@ export function compileFilterTree(
 export interface QueryClock {
     now: Date;
     timeZone: string;
+    /**
+     * C1 — los equipos de quien pide: resuelven el valor `$my_teams` de un
+     * filtro sobre un campo «Equipo» («es uno de mis equipos»). Sin ellos no
+     * coincide nada (falla cerrado).
+     */
+    myTeamIds?: readonly number[];
 }
 
 function compileNode(
@@ -170,6 +176,10 @@ function compileCondition(
 
     if (field.type === 'multi_select') {
         return compileMultiSelect(key, op, cond.value, dataRef);
+    }
+    // C1 — un campo «Equipo» guarda un ARRAY de ids de equipo.
+    if (field.type === 'team') {
+        return compileTeam(key, op, cond.value, dataRef, now.myTeamIds ?? []);
     }
     // v0.1.191 — `file` guarda una LISTA de ids de adjuntos: lo único que se
     // filtra es "tiene archivos / no tiene". `(data->>'fN') IS NULL` daba
@@ -625,6 +635,65 @@ function compileMultiSelect(
             return undefined;
     }
 }
+
+/**
+ * C1 — Condición sobre un campo «Equipo» (array de ids numéricos):
+ *  - `eq`/`contains` con un id = «incluye ese equipo»; `eq` con un ARRAY =
+ *    el conjunto exacto (lo usa la vista agrupada: el grupo es la combinación).
+ *  - `in` = incluye ALGUNO; `$my_teams` dentro del valor = los equipos de
+ *    quien pide (sin equipos no coincide nada).
+ *  - `neq`/`not_contains`/`nin` = las negaciones (los vacíos cuentan).
+ * Los ids viajan como parámetros (`jsonb_build_array($n::bigint)`).
+ */
+function compileTeam(
+    key: string,
+    op: FilterOperator,
+    value: unknown,
+    dataRef: DataRef,
+    myTeamIds: readonly number[],
+): SQL | undefined {
+    const arr = sql`(${dataRef} -> ${keyLit(key)})`;
+    const raw = toArray(value);
+    const mine = raw.includes(MY_TEAMS_VALUE);
+    const ids = [...new Set([...raw.filter((v) => v !== MY_TEAMS_VALUE), ...(mine ? myTeamIds : [])].map(Number))]
+        .filter((n) => Number.isInteger(n) && n > 0)
+        .slice(0, 200);
+    const anyOf = (list: number[]): SQL =>
+        list.length === 0 ? sql`false` : sql`(${sql.join(list.map((id) => sql`${arr} @> jsonb_build_array(${id}::bigint)`), sql` OR `)})`;
+    switch (op) {
+        case 'is_null':
+            return emptyArray(arr);
+        case 'is_not_null':
+            return sql`NOT ${emptyArray(arr)}`;
+        case 'eq':
+            if (Array.isArray(value) && !mine) {
+                if (ids.length === 0) return emptyArray(arr);
+                const set = sql`to_jsonb(ARRAY[${sql.join(ids.map((id) => sql`${id}::bigint`), sql`, `)}])`;
+                return sql`(${arr} @> ${set} AND ${arr} <@ ${set})`;
+            }
+            return ids.length === 0 && !mine ? undefined : anyOf(ids);
+        case 'contains':
+        case 'in':
+            return ids.length === 0 && !mine && op === 'contains' ? undefined : anyOf(ids);
+        case 'neq':
+            if (Array.isArray(value) && !mine) {
+                if (ids.length === 0) return sql`NOT ${emptyArray(arr)}`;
+                const set = sql`to_jsonb(ARRAY[${sql.join(ids.map((id) => sql`${id}::bigint`), sql`, `)}])`;
+                return sql`(${arr} IS NULL OR NOT (${arr} @> ${set} AND ${arr} <@ ${set}))`;
+            }
+            if (ids.length === 0) return mine ? undefined : undefined;
+            return sql`(${arr} IS NULL OR NOT ${anyOf(ids)})`;
+        case 'not_contains':
+        case 'nin':
+            if (ids.length === 0) return undefined;
+            return sql`(${arr} IS NULL OR NOT ${anyOf(ids)})`;
+        default:
+            return undefined;
+    }
+}
+
+/** Valor especial «es uno de mis equipos» (`MY_TEAMS_TOKEN` de shared). */
+const MY_TEAMS_VALUE = '$my_teams';
 
 /**
  * Presencia de un array JSONB: vacío = ausente, `null` JSON o `[]`.

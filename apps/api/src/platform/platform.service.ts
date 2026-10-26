@@ -77,6 +77,8 @@ import {
     recordChecklistItems,
     recordChecklists,
     recordTemplates,
+    teamMembers,
+    teams,
     ganttBaselines,
     ganttBaselineItems,
     approvalFlows,
@@ -441,6 +443,9 @@ export class PlatformService {
             await tx.delete(billingPayments).where(eq(billingPayments.tenantId, id));
             await tx.delete(billingSubscriptions).where(eq(billingSubscriptions.tenantId, id));
             await tx.delete(personalAccessTokens).where(eq(personalAccessTokens.tenantId, id));
+            // C1 — equipos y sus personas.
+            await tx.delete(teamMembers).where(eq(teamMembers.tenantId, id));
+            await tx.delete(teams).where(eq(teams.tenantId, id));
             await tx.delete(memberships).where(eq(memberships.tenantId, id));
             await tx.delete(tenants).where(eq(tenants.id, id));
         });

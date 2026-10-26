@@ -57,6 +57,8 @@ type Row = typeof dashboards.$inferSelect;
 export interface DashboardViewer {
     userId: number;
     role: string;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /**
@@ -693,7 +695,7 @@ export class DashboardsService {
 
         const page = await this.records.list(
             env.tenantId,
-            { userId: env.viewer.userId, role: env.viewer.role as Role },
+            { userId: env.viewer.userId, role: env.viewer.role as Role, teamIds: env.viewer.teamIds },
             String(widget.list_id),
             {
                 limit,
@@ -813,6 +815,16 @@ function dashboardFilterNodes(filters: DashboardFilterValue[], ctx: AggregateLis
         if (!field) continue;
         let value: unknown = f.value;
         if (value === '' || (Array.isArray(value) && value.length === 0)) continue;
+        if (field.type === 'team') {
+            // C1 — «mis equipos» (los de quien mira) o un equipo puntual: el
+            // registro tiene ALGUNO de esos equipos.
+            const raw = Array.isArray(value) ? value : [value];
+            const vals = raw.map((v) => (v === DASHBOARD_FILTER_ME ? '$my_teams' : Number(v)))
+                .filter((v) => v === '$my_teams' || (Number.isInteger(v) && (v as number) > 0));
+            if (vals.length === 0) continue;
+            out.push({ type: 'condition', field_id: field.id, op: 'in', value: vals });
+            continue;
+        }
         if (field.type === 'user') {
             const ids = (Array.isArray(value) ? value : [value])
                 .map((v) => (v === DASHBOARD_FILTER_ME ? viewer.userId : Number(v)))

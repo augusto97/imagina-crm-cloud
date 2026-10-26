@@ -57,6 +57,10 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'field.delete': { text: 'borró el campo', danger: true },
     'field.type_change': { text: 'cambió el tipo del campo', danger: true },
     'member.add': { text: 'agregó al workspace a' },
+    // C1 — equipos.
+    'team.create': { text: 'creó el equipo' },
+    'team.update': { text: 'cambió el equipo' },
+    'team.delete': { text: 'borró el equipo', danger: true },
     'member.invite_resend': { text: 'reenvió la invitación a' },
     'member.role_change': { text: 'cambió el rol de' },
     // B2 — capacidad de una persona en la carga de trabajo.

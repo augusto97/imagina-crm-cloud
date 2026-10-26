@@ -26,7 +26,7 @@ import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { withComputedExprs } from '../records/computed-sql';
 import { compileSearch } from '../records/search-sql';
-import { effectivePermissions, resolvePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
+import { assignmentKeys, effectivePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import {
     compileFilterTree,
@@ -53,6 +53,8 @@ const MINMAX_TYPES: readonly FieldType[] = [
 export interface AggregateViewer {
     role: Role;
     userId: number;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /**
@@ -139,7 +141,8 @@ export class AggregateService {
                 fieldsById: withComputedExprs(filterable, fields, timeZone, now),
                 hidden,
                 scope: base.scope,
-                clock: { now, timeZone },
+                // C1 — «es uno de mis equipos» en los filtros.
+                clock: { now, timeZone, myTeamIds: viewer?.teamIds ?? [] },
             };
         };
         return tx ? build(tx) : this.tenantDb.withTenant(tenantId, build);
@@ -648,7 +651,7 @@ export class AggregateService {
         const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
-        const footerClock = await this.clock(tenantId);
+        const footerClock = { ...(await this.clock(tenantId)), myTeamIds: opts.viewer?.teamIds ?? [] };
         const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields, footerClock.timeZone, footerClock.now);
         const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, footerClock);
         const baseWhere = and(
@@ -959,6 +962,21 @@ function multiSelectSetExpr(fieldId: number): SQL {
 }
 
 /**
+ * C1 — Clave de grupo de un campo «Equipo»: el conjunto ORDENADO de ids con
+ * la salida de texto de un array jsonb (`[3]`, `[3, 7]`; vacío → NULL). La
+ * misma clave arma `teamGroupKey` en shared (kanban y vista agrupada).
+ */
+function teamSetExpr(fieldId: number): SQL {
+    const col = sql`(${records.data} -> ${jsonbKeyForField(fieldId)})`;
+    return sql`(CASE
+        WHEN jsonb_typeof(${col}) IS DISTINCT FROM 'array' THEN NULL
+        WHEN jsonb_array_length(${col}) = 0 THEN NULL
+        WHEN jsonb_array_length(${col}) = 1 AND jsonb_typeof(${col} -> 0) = 'number' THEN ${col}::text
+        ELSE (SELECT jsonb_agg(to_jsonb((e #>> '{}')::numeric) ORDER BY (e #>> '{}')::numeric)::text FROM jsonb_array_elements(${col}) AS e WHERE (e #>> '{}') ~ '^[0-9]{1,18}$')
+    END)`;
+}
+
+/**
  * v0.1.286 — clave de grupo de una fila al agrupar por un campo (sin buckets
  * temporales): la que usan los buckets de `run`, el pie por grupo y las filas
  * de cada grupo de la vista agrupada — tiene que ser la misma en los tres.
@@ -967,6 +985,8 @@ export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableFie
     // Campo «Botón»: no tiene valor que agrupar.
     if (field.type === 'button') throw badRequest(`No se puede agrupar por «${field.label}»: es un botón.`);
     if (field.type === 'multi_select') return multiSelectSetExpr(field.id);
+    // C1 — un campo «Equipo» agrupa por el CONJUNTO de equipos (`[3, 7]`).
+    if (field.type === 'team') return teamSetExpr(field.id);
     // v0.1.300 — columnas de sistema: una fecha por DÍA (reloj de la empresa), una
     // persona por su id (ver `systemFilterable`).
     if (isSystemField(field.type)) {
@@ -1179,9 +1199,8 @@ export function aclFor(
     viewer: AggregateViewer | undefined,
 ): { scope: SQL | undefined; hidden: Set<number>; strip: <T>(m: Map<number, T>) => Map<number, T> } {
     if (!viewer) return { scope: undefined, hidden: new Set(), strip: (m) => m };
-    const perms = effectivePermissions(settings, viewer.role, viewer.userId);
-    const assignmentId = resolvePermissions(settings).assignment_field_id;
-    const scope = scopeWhere(perms.view, viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+    const perms = effectivePermissions(settings, viewer);
+    const scope = scopeWhere(perms.view, viewer, assignmentKeys(settings));
     const hiddenSlugs = new Set(perms.fields_hidden);
     const hidden = withDependentComputed(fields, new Set(fields.filter((f) => hiddenSlugs.has(f.slug)).map((f) => f.id)));
     return {

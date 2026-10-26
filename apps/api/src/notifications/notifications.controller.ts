@@ -24,8 +24,8 @@ import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { NotificationsService } from './notifications.service';
 
-function actor(req: FastifyRequest): { tenantId: number; userId: number; role: Role } {
-    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role };
+function actor(req: FastifyRequest): { tenantId: number; userId: number; role: Role; teamIds?: readonly number[] } {
+    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
 }
 
 const followSchema = z.object({ following: z.boolean() });

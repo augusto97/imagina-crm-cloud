@@ -440,6 +440,8 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
         { key: 'avatar', label: 'Avatar y nombre' },
         { key: 'name', label: 'Sólo el nombre' },
     ],
+    // C1 — el equipo se ve como chip con su color e icono.
+    team: [{ key: 'chips', label: 'Etiquetas' }],
     relation: [
         { key: 'chips', label: 'Etiquetas' },
         { key: 'list', label: 'Lista' },

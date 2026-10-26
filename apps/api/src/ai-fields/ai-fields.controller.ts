@@ -29,7 +29,7 @@ export class AiFieldsController {
         @Param('recordId', ParseIntPipe) recordId: number,
         @Param('fieldId', ParseIntPipe) fieldId: number,
     ): Promise<{ data: { value: string | null } }> {
-        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role };
+        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
         return { data: await this.svc.runNow(req.tenant!.tenantId, actor, list, recordId, fieldId) };
     }
 

@@ -9,7 +9,9 @@ import { openFilePreview } from '@/components/files/filePreview';
 import { isPlainClick, toPreviewFile } from '@/components/files/openAttachments';
 import { useAttachments } from '@/hooks/useAttachments';
 import { sanitizeHref } from '@/lib/sanitize';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
+import { TeamGlyph } from '@/components/fields/TeamChip';
+import { useTeamMap } from '@/hooks/useTeams';
 import { cn } from '@/lib/utils';
 
 /**
@@ -59,6 +61,51 @@ function MentionUserView({ node }: NodeViewProps): JSX.Element {
                 title={label}
             >
                 <AtSign className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                {label}
+            </span>
+        </NodeViewWrapper>
+    );
+}
+
+// ——— Mención de equipo (C1) ————————————————————————————————————————————
+
+/** `@ventas`: avisa a las personas del equipo que pueden ver el registro. */
+export const MentionTeam = Node.create({
+    name: 'mentionTeam',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+
+    addAttributes() {
+        return {
+            id: { default: null },
+            label: { default: '' },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'span[data-imcrm-mention-team]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return ['span', mergeAttributes({ 'data-imcrm-mention-team': '' }, HTMLAttributes)];
+    },
+    addNodeView() {
+        return ReactNodeViewRenderer(MentionTeamView);
+    },
+});
+
+function MentionTeamView({ node }: NodeViewProps): JSX.Element {
+    const teams = useTeamMap();
+    const id = Number(node.attrs.id);
+    const team = teams.get(id);
+    const label = team?.name ?? (String(node.attrs.label ?? '') || __('Equipo'));
+    return (
+        <NodeViewWrapper as="span" className="imcrm-inline" data-imcrm-mention-team="">
+            <span
+                className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-0.5 imcrm-align-baseline imcrm-text-[0.92em] imcrm-font-medium imcrm-text-foreground"
+                title={sprintf(__('Equipo «%s»'), label)}
+            >
+                <TeamGlyph team={team ?? null} size="xs" />
                 {label}
             </span>
         </NodeViewWrapper>

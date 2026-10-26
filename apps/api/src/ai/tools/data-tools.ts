@@ -916,7 +916,7 @@ export class DataTools implements AiProposalApplier {
 // ── Helpers puros ───────────────────────────────────────────────────────
 
 function actorOf(ctx: AiToolContext): Actor {
-    return { userId: ctx.userId, role: ctx.role };
+    return { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds };
 }
 
 function emptyPreview(partial: Partial<AiProposalPreview>): AiProposalPreview {

@@ -129,7 +129,7 @@ function tenantId(req: FastifyRequest): number {
     return req.tenant!.tenantId;
 }
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 function intParam(v: unknown, name: string): number {
     const n = Number(v);

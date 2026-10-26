@@ -23,7 +23,8 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { ChecklistsService } from './checklists.service';
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    // C1 — con sus equipos: el acceso por equipo a la lista cuenta.
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 
 /**

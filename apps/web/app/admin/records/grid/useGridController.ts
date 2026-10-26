@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
+import type { Team } from '@imagina-base/shared';
 import { useToast } from '@/components/ui/toast';
 import type { ResolvedAttachment } from '@/hooks/useAttachments';
 import type { RelationTitles } from '@/hooks/useRelationTitles';
+import { teamsKeys } from '@/hooks/useTeams';
 import type { WpUserSummary } from '@/hooks/useWpUsers';
 import { api } from '@/lib/api';
 import { __, _n, sprintf } from '@/lib/i18n';
@@ -404,6 +406,7 @@ export function useGridController(args: GridControllerArgs): GridController {
             },
             relationTitle: (fieldId, id) => latest.current.args.relationTitles.get(fieldId)?.[id] ?? null,
             fileName: (id) => qc.getQueryData<ResolvedAttachment | null>(['imcrm', 'attachment', id])?.title ?? null,
+            teamName: (id) => qc.getQueryData<Team[]>(teamsKeys.list())?.find((t) => t.id === id)?.name ?? null,
         }),
         [qc],
     );

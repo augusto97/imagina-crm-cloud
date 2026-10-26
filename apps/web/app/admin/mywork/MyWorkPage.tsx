@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { AlarmClock, Bell, Check, ClipboardCheck, Eye, EyeOff, ListChecks, ListTodo, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { AlarmClock, Bell, Check, ClipboardCheck, Eye, EyeOff, ListChecks, ListTodo, Loader2, Plus, Trash2, UsersRound, X } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { MyWorkChecklistItem, MyWorkItem, ReminderDto } from '@imagina-base/shared';
 
@@ -9,9 +9,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { OptionChip } from '@/admin/records/renderCellValue';
 import { IconSquare } from '@/admin/lists/FolderBadge';
+import { TeamChips } from '@/components/fields/TeamChip';
+import { useTeamDirectory } from '@/hooks/useTeams';
 import { notificationKeys, useDeleteReminder, useMyWork, useSetFollow, useUpdateReminder } from '@/hooks/useNotifications';
 import { invalidateForList, markLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
 import { api, ApiError } from '@/lib/api';
+import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { browserTimeZone, formatDateStr, formatDateTime, formatDateTimeStr, getTenantTimeZone } from '@/lib/tenantFormat';
@@ -22,10 +25,12 @@ import { ReminderForm } from './ReminderForm';
 import { MyApprovalsTab } from '@/admin/approvals/MyApprovalsTab';
 import { useMyApprovals } from '@/hooks/useApprovals';
 
-type Tab = 'assigned' | 'approvals' | 'reminders' | 'following';
+type Tab = 'assigned' | 'teams' | 'approvals' | 'reminders' | 'following';
+
+const TABS: readonly Tab[] = ['assigned', 'teams', 'approvals', 'reminders', 'following'];
 
 function readTab(raw: string | null): Tab {
-    return raw === 'reminders' || raw === 'following' || raw === 'approvals' ? raw : 'assigned';
+    return (TABS as readonly string[]).includes(raw ?? '') ? (raw as Tab) : 'assigned';
 }
 
 /**
@@ -44,6 +49,13 @@ export function MyWorkPage(): JSX.Element {
     const groups = useMemo(() => groupWork(work.data?.assigned ?? [], tz), [work.data, tz]);
     // A9 — los ítems de checklist asignados, en los mismos grupos.
     const itemGroups = useMemo(() => groupChecklistWork(work.data?.checklist_items ?? [], tz), [work.data, tz]);
+    // C1 — lo asignado a uno de MIS equipos, con los mismos grupos por fecha.
+    const teamGroups = useMemo(() => groupWork(work.data?.teams ?? [], tz), [work.data, tz]);
+    const teamDir = useTeamDirectory();
+    const myTeamCount = useMemo(() => {
+        const me = getBootData().user.id;
+        return [...teamDir.map.values()].filter((t) => t.members.some((m) => m.user_id === me)).length;
+    }, [teamDir.map]);
 
     const setTab = (t: Tab): void => {
         const next = new URLSearchParams(params);
@@ -54,6 +66,7 @@ export function MyWorkPage(): JSX.Element {
 
     const counts = {
         assigned: (work.data?.assigned.length ?? 0) + (work.data?.checklist_items?.length ?? 0),
+        teams: work.data?.teams?.length ?? 0,
         approvals: approvals.data?.pending_count ?? 0,
         reminders: work.data?.reminders.length ?? 0,
         following: work.data?.following.length ?? 0,
@@ -81,6 +94,7 @@ export function MyWorkPage(): JSX.Element {
                 {(
                     [
                         ['assigned', __('Asignado a mí'), ListChecks],
+                        ['teams', __('De mis equipos'), UsersRound],
                         ['approvals', __('Aprobaciones'), ClipboardCheck],
                         ['reminders', __('Recordatorios'), AlarmClock],
                         ['following', __('Siguiendo'), Eye],
@@ -172,6 +186,45 @@ export function MyWorkPage(): JSX.Element {
                         )}
                     </div>
                 )
+            ) : tab === 'teams' ? (
+                counts.teams === 0 ? (
+                    <Empty
+                        icon={UsersRound}
+                        title={myTeamCount === 0 ? __('No estás en ningún equipo') : __('Nada asignado a tus equipos')}
+                        text={
+                            myTeamCount === 0
+                                ? __('Quien administra la empresa arma los equipos en Ajustes → Equipos.')
+                                : __('Cuando un registro se asigne a uno de tus equipos con un campo «Equipo», aparece aquí.')
+                        }
+                    />
+                ) : (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="my-work-teams">
+                        {DUE_GROUPS.map((g) => {
+                            const items = teamGroups.get(g.key) ?? [];
+                            if (items.length === 0) return null;
+                            return (
+                                <section key={g.key} data-due-group={g.key}>
+                                    <h2
+                                        className={cn(
+                                            'imcrm-mb-1.5 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide',
+                                            g.key === 'overdue' ? 'imcrm-text-destructive' : 'imcrm-text-muted-foreground',
+                                        )}
+                                    >
+                                        {__(g.label)}
+                                        <span className="imcrm-font-normal">{items.length}</span>
+                                    </h2>
+                                    <Card>
+                                        <ul className="imcrm-divide-y imcrm-divide-border">
+                                            {items.map((i) => (
+                                                <WorkRow key={`${i.list_id}:${i.record_id}`} item={i} overdue={g.key === 'overdue'} />
+                                            ))}
+                                        </ul>
+                                    </Card>
+                                </section>
+                            );
+                        })}
+                    </div>
+                )
             ) : tab === 'reminders' ? (
                 <RemindersTab reminders={work.data?.reminders ?? []} />
             ) : counts.following === 0 ? (
@@ -205,6 +258,7 @@ function Empty({ icon: Icon, title, text }: { icon: typeof Bell; title: string; 
 
 function WorkRow({ item, overdue = false, following = false }: { item: MyWorkItem; overdue?: boolean; following?: boolean }): JSX.Element {
     const unfollow = useSetFollow(item.list_id, item.record_id);
+    const teamDir = useTeamDirectory();
     const due = item.due ? (item.due_is_datetime ? formatDateTimeStr(item.due) : formatDateStr(item.due.slice(0, 10))) : null;
     return (
         <li className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-px-3 imcrm-py-2.5" data-work-item={item.record_id}>
@@ -215,6 +269,11 @@ function WorkRow({ item, overdue = false, following = false }: { item: MyWorkIte
                 </Link>
                 <p className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{item.list_name}</p>
             </div>
+            {item.team_ids && item.team_ids.length > 0 && (
+                <span className="imcrm-hidden imcrm-max-w-[40%] sm:imcrm-inline-flex">
+                    <TeamChips ids={item.team_ids} teams={teamDir.map} known={teamDir.loaded} />
+                </span>
+            )}
             {item.status_label && (
                 <span className="imcrm-hidden sm:imcrm-inline-flex">
                     <OptionChip opt={{ value: item.status_label, label: item.status_label, color: item.status_color ?? undefined } as never} fallback={item.status_label} />

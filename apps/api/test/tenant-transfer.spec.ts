@@ -38,6 +38,8 @@ import {
     recurrences,
     relations,
     savedViews,
+    teamMembers,
+    teams,
     tenants,
     timeEntries,
     users,
@@ -86,6 +88,8 @@ describe('Migración de empresa (v0.1.197)', () => {
     let dashboardAId: number;
     let tplClientesId: number;
     let tplFacturasId: number;
+    let teamAId: number;
+    let equipoFieldId: number;
 
     // Destino
     let tenantB: number;
@@ -498,6 +502,28 @@ describe('Migración de empresa (v0.1.197)', () => {
         });
         await pg.db.insert(emailUsage).values({ tenantId: tenantA, period: '2026-09', sent: 7 });
 
+        // C1 — un equipo con Carlos, un campo «Equipo» con valor y acceso por
+        // equipo en el ACL: los ids de equipo viajan re-mapeados.
+        const [ventas] = await pg.db.insert(teams).values({ tenantId: tenantA, name: 'Ventas', color: '#16a34a' }).returning();
+        teamAId = ventas!.id;
+        await pg.db.insert(teamMembers).values({ tenantId: tenantA, teamId: teamAId, userId: carlosId, isLead: true });
+        const [equipoField] = await pg.db
+            .insert(fields)
+            .values({ tenantId: tenantA, listId: clientesId, slug: 'equipo', label: 'Equipo', type: 'team' })
+            .returning();
+        equipoFieldId = equipoField!.id;
+        await pg.db
+            .update(records)
+            .set({
+                data: {
+                    [`f${nombreFieldId}`]: 'Cliente Uno',
+                    [`f${dueñoFieldId}`]: anaId,
+                    [`f${adjuntoFieldId}`]: [attachmentId],
+                    [`f${equipoFieldId}`]: [teamAId],
+                },
+            })
+            .where(eq(records.id, clienteRecId));
+
         // `lists.settings` con las tres formas propias: id por convención,
         // ids como CLAVE y el token público.
         await pg.db
@@ -508,6 +534,8 @@ describe('Migración de empresa (v0.1.197)', () => {
                     permissions: {
                         agent: { view: 'own' },
                         users: { [String(carlosId)]: { view: 'all' } },
+                        teams: { [String(teamAId)]: { view: 'all' } },
+                        assignment_team_field_id: equipoFieldId,
                     },
                     portal: { enabled: true, related_lists: [facturasId] },
                     public: {
@@ -533,7 +561,8 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(out.size).toBeGreaterThan(0);
         expect(out.manifest.tenant.slug).toBe('acme');
         expect(out.manifest.counts.records).toBe(3);
-        expect(out.manifest.counts.fields).toBe(7);
+        expect(out.manifest.counts.fields).toBe(8);
+        expect(out.manifest.counts.teams).toBe(1);
         expect(out.manifest.files.count).toBe(1);
         expect(out.manifest.secrets_fingerprint).not.toBeNull();
 
@@ -578,7 +607,7 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newClientes.groupId).toBe(newGroups[0]!.id);
 
         const newFields = await pg.db.select().from(fields).where(eq(fields.tenantId, tenantB));
-        expect(newFields).toHaveLength(7);
+        expect(newFields).toHaveLength(8);
         const bySlug = new Map(newFields.map((f) => [f.slug, f]));
         const newNombre = bySlug.get('nombre')!;
         // La fórmula apunta al campo NUEVO (texto y nombres recordados).
@@ -806,6 +835,17 @@ describe('Migración de empresa (v0.1.197)', () => {
             String(newMentions[0]!.mentionedUserId),
         ]);
         expect((settings.portal as Record<string, unknown>).related_lists).toEqual([newFacturas.id]);
+        // C1 — equipos: la fila, sus personas, el valor del campo y el ACL.
+        const newTeams = await pg.db.select().from(teams).where(eq(teams.tenantId, tenantB));
+        expect(newTeams).toHaveLength(1);
+        expect(newTeams[0]!.name).toBe('Ventas');
+        expect(newTeams[0]!.id).not.toBe(teamAId);
+        const newTeamMembers = await pg.db.select().from(teamMembers).where(eq(teamMembers.tenantId, tenantB));
+        expect(newTeamMembers.map((m) => [m.userId, m.isLead])).toEqual([[newMentions[0]!.mentionedUserId, true]]);
+        const newEquipo = bySlug.get('equipo')!;
+        expect(newCliente.data[`f${newEquipo.id}`]).toEqual([newTeams[0]!.id]);
+        expect(Object.keys(permissions.teams as object)).toEqual([String(newTeams[0]!.id)]);
+        expect(permissions.assignment_team_field_id).toBe(newEquipo.id);
         const pub = settings.public as Record<string, unknown>;
         expect(pub.token).toBe(newPublic[0]!.token);
         expect(pub.view_id).toBe(newViews[0]!.id);

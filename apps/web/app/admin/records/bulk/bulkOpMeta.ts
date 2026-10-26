@@ -44,6 +44,9 @@ export const OP_LABELS: Record<BulkOpKind, string> = {
 export function opLabel(op: BulkOpKind, type: FieldTypeSlug): string {
     if (op === 'today' && type === 'datetime') return __('Poner la fecha y hora actual');
     if (op === 'set' && type === 'checkbox') return __('Marcar o desmarcar');
+    // C1 — en un campo «Equipo» se agregan o quitan equipos.
+    if (type === 'team' && op === 'add_options') return __('Agregar equipos');
+    if (type === 'team' && op === 'remove_options') return __('Quitar equipos');
     return __(OP_LABELS[op]);
 }
 
@@ -215,7 +218,7 @@ export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldTyp
             break;
         case 'add_options':
         case 'remove_options':
-            if (!d.values || d.values.length === 0) return { ok: false, error: __('Elige al menos una opción.') };
+            if (!d.values || d.values.length === 0) return { ok: false, error: __('Elige al menos una opción o un equipo.') };
             raw = { ...base, values: d.values };
             break;
         case 'shift_date': {

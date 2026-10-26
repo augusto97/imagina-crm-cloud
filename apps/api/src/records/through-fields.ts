@@ -246,7 +246,7 @@ export class ThroughEngine {
         tx: Tx,
         tenantId: number,
         plans: ThroughPlan[],
-        viewer: { role: Role; userId?: number } | undefined,
+        viewer: { role: Role; userId?: number; teamIds?: readonly number[] } | undefined,
     ): Promise<Set<number>> {
         const out = new Set<number>();
         if (!viewer || viewer.role === 'admin' || plans.length === 0) return out;
@@ -262,7 +262,7 @@ export class ThroughEngine {
                 out.add(p.field.id);
                 continue;
             }
-            const perms = effectivePermissions(settings, viewer.role, viewer.userId);
+            const perms = effectivePermissions(settings, { role: viewer.role, userId: viewer.userId ?? 0, teamIds: viewer.teamIds });
             if (perms.view !== 'all' || (p.targetField && perms.fields_hidden.includes(p.targetField.slug))) {
                 out.add(p.field.id);
             }

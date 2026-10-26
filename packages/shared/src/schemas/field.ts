@@ -80,6 +80,10 @@ export const FIELD_TYPES = [
     // se resuelve con una subconsulta sobre los ítems, así filtra («menos de
     // 100»), ordena y se promedia en el pie y los tableros.
     'checklist_progress',
+    // C1 — Equipo: el registro se asigna a uno o varios EQUIPOS («Ventas»,
+    // «Soporte»). Vive en `data` como un array de ids de equipo (también con
+    // uno solo), así filtra, agrupa y exporta igual tenga uno o varios.
+    'team',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -145,7 +149,7 @@ export type AiFieldConfig = z.infer<typeof aiFieldConfigSchema>;
 /** Tipos que un campo con IA puede leer (los archivos: PDF e imágenes). */
 export const AI_INPUT_TYPES: readonly string[] = [
     'text', 'long_text', 'number', 'currency', 'select', 'multi_select', 'date', 'datetime',
-    'checkbox', 'url', 'email', 'user', 'phone', 'rating', 'percent', 'duration', 'file', 'autonumber',
+    'checkbox', 'url', 'email', 'user', 'phone', 'rating', 'percent', 'duration', 'file', 'autonumber', 'team',
 ];
 
 export const fieldConfigSchemas = {
@@ -283,6 +287,8 @@ export const fieldConfigSchemas = {
     }),
     /** A9 — sólo lectura: % de ítems de checklist hechos (sin config). */
     checklist_progress: z.object({}),
+    /** C1 — `multiple`: admite varios equipos (default: uno solo). */
+    team: z.object({ multiple: z.boolean().optional() }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
@@ -382,6 +388,8 @@ export const LOOKUP_TARGET_TYPES: readonly FieldType[] = [
     'checkbox', 'url', 'email', 'user', 'computed', 'phone', 'rating', 'percent', 'duration',
     // v0.1.300 — el número de la factura vinculada («FAC-0042»).
     'autonumber',
+    // C1 — el equipo del registro vinculado.
+    'team',
 ];
 
 /** Campos que un rollup puede sumar/promediar. */

@@ -24,7 +24,7 @@ import type { Tx } from '../db/client';
 import { lists, records, timeEntries, users, type TimeEntryRow } from '../db/schema';
 import { neutralizeFormula } from '../export/export.service';
 import { FieldsService } from '../fields/fields.service';
-import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, effectivePermissions, scopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -407,9 +407,8 @@ export class TimeTrackingService {
      */
     async exportCsv(tenantId: number, actor: Actor, listIdOrSlug: string): Promise<{ filename: string; csv: string }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const perms = effectivePermissions(list.settings, actor.role, actor.userId);
-        const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-        const scope = scopeWhere(perms.view, actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+        const perms = effectivePermissions(list.settings, actor);
+        const scope = scopeWhere(perms.view, actor, assignmentKeys(list.settings));
         const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);

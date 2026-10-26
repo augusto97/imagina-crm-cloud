@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
+import { useTeamDirectory } from '@/hooks/useTeams';
 import { useUpdateSavedView } from '@/hooks/useSavedViews';
 import { useWorkloadPeople } from '@/hooks/useWorkload';
 import { ApiError } from '@/lib/api';
@@ -110,6 +111,10 @@ export function WorkloadSettingsDialog({ listId, view, fields: fieldsProp, open,
 
     const members = people.data ?? [];
     const allPeople = settings.userIds === null;
+    // C1 — filtro por equipo (se combina con las personas elegidas).
+    const teamDir = useTeamDirectory();
+    const teams = useMemo(() => [...teamDir.map.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')), [teamDir.map]);
+    const teamMembers = settings.teamId !== null ? teamDir.map.get(settings.teamId)?.members.map((m) => m.user_id) ?? [] : null;
     const togglePerson = (id: number): void => {
         const current = settings.userIds ?? members.map((m) => m.user_id);
         const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
@@ -286,8 +291,33 @@ export function WorkloadSettingsDialog({ listId, view, fields: fieldsProp, open,
                                 label={__('Mostrar la fila «Sin asignar»')}
                                 testId="workload-show-unassigned"
                             />
+                            {(teams.length > 0 || settings.teamId !== null) && (
+                                <Row label={__('Equipo')} htmlFor="workload-team">
+                                    <Select
+                                        id="workload-team"
+                                        value={settings.teamId === null ? '' : String(settings.teamId)}
+                                        onChange={(e) => patch({ teamId: e.target.value === '' ? null : Number(e.target.value) })}
+                                        data-testid="workload-team-filter"
+                                    >
+                                        <option value="">{__('Todos los equipos')}</option>
+                                        {settings.teamId !== null && teamDir.loaded && !teamDir.map.has(settings.teamId) && (
+                                            <option value={settings.teamId}>{__('(un equipo que ya no existe)')}</option>
+                                        )}
+                                        {teams.map((t) => (
+                                            <option key={t.id} value={t.id}>
+                                                {t.name}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Row>
+                            )}
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
                                 <span className="imcrm-text-sm imcrm-font-medium">{__('Personas visibles')}</span>
+                                {settings.teamId !== null && (
+                                    <span className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="workload-team-hint">
+                                        {__('Sólo se ven las personas del equipo (quien entra o sale del equipo aparece o desaparece solo).')}
+                                    </span>
+                                )}
                                 <Check
                                     checked={allPeople}
                                     onChange={(v) => patch({ userIds: v ? null : members.map((m) => m.user_id) })}
@@ -301,7 +331,7 @@ export function WorkloadSettingsDialog({ listId, view, fields: fieldsProp, open,
                                     )}
                                 >
                                     {people.isLoading && <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cargando…')}</p>}
-                                    {members.map((m) => {
+                                    {members.filter((m) => teamMembers === null || teamMembers.includes(m.user_id)).map((m) => {
                                         const checked = allPeople || (settings.userIds ?? []).includes(m.user_id);
                                         return (
                                             <label key={m.user_id} className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-sm hover:imcrm-bg-accent/50">

@@ -4,6 +4,8 @@ import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { chipSoftStyle, colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
 import { useMemberNames } from '@/hooks/useWpUsers';
+import { useTeams } from '@/hooks/useTeams';
+import { parseTeamGroupKey } from '@imagina-base/shared';
 import { __ } from '@/lib/i18n';
 import { OTHERS_GROUP_KEY } from '@/types/dashboard';
 
@@ -88,11 +90,20 @@ export function useGroupColorMap(
     groupByFieldId: number | undefined,
 ): Map<string, string> {
     const options = useGroupOptions(listId, groupByFieldId);
+    const fields = useFields(listId && listId > 0 ? listId : undefined);
+    const isTeam = fields.data?.find((f) => f.id === groupByFieldId)?.type === 'team';
+    const teams = useTeams(isTeam).data;
     return useMemo(() => {
         const map = new Map<string, string>();
         for (const [key, o] of options) if (o.color) map.set(key, o.color);
+        // C1 — un grupo de UN equipo toma el color del equipo.
+        if (isTeam) {
+            for (const t of teams ?? []) {
+                if (typeof t.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(t.color)) map.set(`[${t.id}]`, t.color);
+            }
+        }
         return map;
-    }, [options]);
+    }, [options, isTeam, teams]);
 }
 
 /**
@@ -114,11 +125,21 @@ export function useGroupLabelMap(
     // sistema, como fecha y hora.
     const groupField = rawGroupField ? asDisplayField(rawGroupField) : undefined;
     const isUser = groupField?.type === 'user';
+    const isTeam = groupField?.type === 'team';
+    const teamList = useTeams(isTeam).data;
     const names = useMemberNames(isUser ? keys.filter((k) => /^\d+$/.test(k)).map((k) => Number(k)) : []);
     const keysSig = keys.join('\u0000');
     return useMemo(() => {
         const map = new Map<string, string>();
         for (const [key, o] of options) map.set(key, o.label);
+        // C1 — el grupo de un campo «Equipo» es el conjunto (`[3, 7]`).
+        if (isTeam && teamList) {
+            const byId = new Map(teamList.map((t) => [t.id, t.name] as const));
+            for (const key of keysSig === '' ? [] : keysSig.split('\u0000')) {
+                const ids = parseTeamGroupKey(key);
+                if (ids.length > 0) map.set(key, ids.map((id) => byId.get(id) ?? __('Equipo borrado')).join(', '));
+            }
+        }
         for (const [id, name] of names.data ?? []) map.set(String(id), name);
         // v0.1.300 — un cambio hecho por una automatización o una sincronización.
         if (isUser && rawGroupField?.type !== 'user') map.set('0', __('Sistema'));
@@ -127,7 +148,7 @@ export function useGroupLabelMap(
         for (const [key, label] of groupDisplayLabels(keysSig === '' ? [] : keysSig.split('\u0000'), groupField)) map.set(key, label);
         return map;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [options, names.data, keysSig, groupField?.type]);
+    }, [options, names.data, keysSig, groupField?.type, teamList]);
 }
 
 /**

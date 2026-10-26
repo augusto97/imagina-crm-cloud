@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { parseTeamHandles, teamHandle } from '@imagina-base/shared';
 import type {
     CommentDto,
     CommentKind,
@@ -16,6 +17,7 @@ import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { CommentsRepository, type CommentRow } from './comments.repository';
 import { NotifyHub } from '../notifications/notify-hub';
+import { TeamsService } from '../teams/teams.service';
 
 @Injectable()
 export class CommentsService {
@@ -27,6 +29,8 @@ export class CommentsService {
         private readonly realtime: RealtimeService,
         // v0.1.276 — avisos (mención y comentario en un registro que se sigue).
         @Optional() private readonly notify?: NotifyHub,
+        // C1 — @equipo en los comentarios.
+        @Optional() private readonly teams?: TeamsService,
     ) {}
 
     async list(
@@ -81,6 +85,7 @@ export class CommentsService {
         const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
 
         let mentioned: number[] = [];
+        let mentionedTeams: Array<{ teamId: number; name: string; userIds: number[] }> = [];
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // v0.1.291 — hilos de UN nivel: responder a una respuesta cuelga
             // del mismo raíz, y la respuesta HEREDA la visibilidad del raíz
@@ -102,6 +107,8 @@ export class CommentsService {
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
             mentioned = await this.storeMentions(tx, tenantId, row);
+            // C1 — @equipo: la manija del nombre (`@ventas-norte`) → sus personas.
+            mentionedTeams = await this.teamMentions(tx, tenantId, row.body);
             // Comentar te suscribe al registro (ADR-S40) — en el MISMO tx, no
             // después: el aviso de `NotifyHub` corre en segundo plano y el
             // botón «Seguir» de la ficha releía el estado antes de que llegara
@@ -125,6 +132,7 @@ export class CommentsService {
             actorId: actor.userId,
             body: row.row.body,
             mentioned,
+            ...(mentionedTeams.length > 0 ? { mentionedTeams } : {}),
             commentId: row.row.id,
             visibility: row.row.visibility === 'client' ? 'client' : 'internal',
             ...(row.row.parentId !== null ? { parentId: row.row.parentId } : {}),
@@ -286,6 +294,35 @@ export class CommentsService {
             })),
         );
         return targets.map((m) => m.userId);
+    }
+
+    /**
+     * C1 — Equipos mencionados con su manija (`@ventas-norte`). Una manija que
+     * coincide con dos equipos (nombres que dan lo mismo sin acentos) no se
+     * resuelve. Devuelve las personas de cada uno; el aviso filtra después por
+     * el ACL del registro y saca a quien escribió.
+     */
+    private async teamMentions(
+        tx: Tx,
+        tenantId: number,
+        body: string,
+    ): Promise<Array<{ teamId: number; name: string; userIds: number[] }>> {
+        if (!this.teams) return [];
+        const handles = parseTeamHandles(body);
+        if (handles.length === 0) return [];
+        const all = await this.teams.infos(tx, tenantId);
+        const byHandle = new Map<string, number[]>();
+        for (const t of all.values()) {
+            const h = teamHandle(t.name);
+            byHandle.set(h, [...(byHandle.get(h) ?? []), t.id]);
+        }
+        const hit = handles
+            .map((h) => byHandle.get(h) ?? [])
+            .filter((ids) => ids.length === 1)
+            .map((ids) => ids[0]!);
+        if (hit.length === 0) return [];
+        const members = await this.teams.membersOf(tx, tenantId, hit);
+        return hit.map((id) => ({ teamId: id, name: all.get(id)!.name, userIds: members.get(id) ?? [] }));
     }
 
     private async resolveRecord(

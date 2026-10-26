@@ -61,5 +61,5 @@ export class TrashController {
 }
 
 function viewer(req: FastifyRequest): TrashViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role as Role };
+    return { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
 }

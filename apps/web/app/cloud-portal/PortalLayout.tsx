@@ -10,6 +10,7 @@ import { portalApi } from '@/cloud-portal/portalClient';
 import { WidgetDataOverrideContext, widgetErrorOf, type WidgetDataOverride } from '@/hooks/useDashboards';
 import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
+import { disableTeamsApi } from '@/hooks/useTeams';
 import { CloudApiError } from '@/lib/cloud/client';
 import type { WidgetData } from '@/types/dashboard';
 import type { FieldEntity } from '@/types/field';
@@ -137,6 +138,8 @@ export function PortalLayout({ boot, layout }: { boot: PortalBoot; layout: Recor
 
 /** Siembra las definiciones que usan los bloques (no se piden: no caducan). */
 function seedCaches(qc: QueryClient, boot: PortalBoot): void {
+    // C1 — el portal no tiene sesión del equipo: los equipos no se piden.
+    disableTeamsApi();
     const ld = boot.layout_data;
     if (!ld) return;
     qc.setQueryDefaults(fieldsKeys.all, { staleTime: Infinity, retry: false });

@@ -17,6 +17,11 @@ export type NotifyEvent =
           body: string;
           /** Ya mencionados en ESE comentario (reciben `mention`, no `comment`). */
           mentioned: number[];
+          /**
+           * C1 — equipos mencionados con `@manija` (sus personas reciben la
+           * mención si pueden ver el registro; nunca quien escribió).
+           */
+          mentionedTeams?: Array<{ teamId: number; name: string; userIds: number[] }>;
           commentId?: number;
           /** `client` = el cliente del portal también lo ve. */
           visibility?: 'internal' | 'client';
@@ -70,6 +75,8 @@ export type NotifyEvent =
           actorId: number;
           /** Sólo los que se sumaron en este guardado. */
           userIds: number[];
+          /** C1 — equipos mencionados que se sumaron en este guardado. */
+          teamIds?: number[];
           snippet: string;
       };
 

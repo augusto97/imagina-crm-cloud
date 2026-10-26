@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { isEffectivelyReadOnly, type BillingStatus } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { memberships, tenants } from '../db/schema';
 import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
@@ -18,6 +18,12 @@ export interface TenantContext {
     tenantSlug: string;
     role: (typeof memberships.$inferSelect)['role'];
     status: BillingStatus;
+    /**
+     * C1 — equipos de la persona en esta empresa (acceso por equipo a las
+     * listas y «los asignados» por un campo «Equipo»). Se lee UNA vez por
+     * request, en la misma consulta que la membresía.
+     */
+    teamIds: number[];
 }
 
 /** Los magic-link / consumo del portal no pasan por aquí; sí las mutaciones. */
@@ -60,6 +66,9 @@ export class TenantGuard implements CanActivate {
                     archivedAt: tenants.archivedAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
                     paidUntil: tenants.paidUntil,
+                    // C1 — `team_members_self` deja leer los equipos propios
+                    // sin empresa activa (mismo plano que `memberships_self`).
+                    teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
@@ -116,6 +125,7 @@ export class TenantGuard implements CanActivate {
             tenantSlug: membership.tenantSlug,
             role: membership.role,
             status,
+            teamIds: (membership.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
         };
         return true;
     }

@@ -3,6 +3,7 @@ import type { PublicDashboardBundle } from '@imagina-base/shared';
 
 import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
+import { disableTeamsApi } from '@/hooks/useTeams';
 
 /**
  * v0.1.292 (ADR-S50) — Piezas puras de la página pública de un tablero.
@@ -33,6 +34,8 @@ export function periodFromQuery(search: string): string {
  * paquete del enlace y NO se piden (mismo truco que el portal del cliente).
  */
 export function seedPublicCaches(qc: QueryClient, bundle: PublicDashboardBundle): void {
+    // C1 — los equipos no viajan en el paquete: sin sesión no se piden.
+    disableTeamsApi();
     qc.setQueryDefaults(fieldsKeys.all, { staleTime: Infinity, retry: false, enabled: false });
     qc.setQueryDefaults(listsKeys.all, { staleTime: Infinity, retry: false, enabled: false });
     for (const [listId, fields] of Object.entries(bundle.fields)) qc.setQueryData(fieldsKeys.forList(listId), fields);

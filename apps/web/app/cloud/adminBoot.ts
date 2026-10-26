@@ -18,8 +18,12 @@ function capsForRole(role: MembershipSummary['role']): Record<string, boolean> {
     };
     switch (role) {
         case 'admin':
-        case 'manager':
             grant(ALL_CAPS);
+            caps.workspace_admin = true;
+            break;
+        case 'manager':
+            // C1 — los equipos los arma el admin (o quien tiene el permiso).
+            grant(ALL_CAPS.filter((c) => c !== CAP.MANAGE_TEAMS));
             caps.workspace_admin = true;
             break;
         case 'agent':

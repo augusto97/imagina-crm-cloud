@@ -1,7 +1,7 @@
 import { FileCell } from '@/admin/records/renderCellValue';
 import { Check, ExternalLink, Mail, Minus, Paperclip, User as UserIcon } from 'lucide-react';
 
-import { formatDuration, type DurationFormat } from '@imagina-base/shared';
+import { formatDuration, teamIdsOf, type DurationFormat } from '@imagina-base/shared';
 
 import { PercentDisplay } from '@/components/fields/PercentDisplay';
 import { PhoneDisplay } from '@/components/fields/PhoneControl';
@@ -9,6 +9,8 @@ import { RatingControl, type RatingIcon } from '@/components/fields/RatingContro
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { useTeamDirectory } from '@/hooks/useTeams';
+import { TeamChips } from '@/components/fields/TeamChip';
 import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber, numberFormatLocale } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
@@ -107,6 +109,8 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
             return isImageUrlField(field.config) ? <UrlImage value={value} size="card" /> : <UrlDisplay value={value} />;
         case 'user':
             return <UserDisplay value={value} />;
+        case 'team':
+            return <TeamDisplay value={value} />;
         case 'file':
             return <FileDisplay value={value} />;
         case 'long_text':
@@ -270,6 +274,13 @@ function UrlDisplay({ value }: { value: unknown }): JSX.Element {
             <span className="imcrm-truncate">{display}</span>
         </a>
     );
+}
+
+function TeamDisplay({ value }: { value: unknown }): JSX.Element {
+    const { map: teams, loaded } = useTeamDirectory();
+    const ids = teamIdsOf(value);
+    if (ids.length === 0) return <span className="imcrm-text-muted-foreground">—</span>;
+    return <TeamChips ids={ids} teams={teams} known={loaded} wrap />;
 }
 
 function UserDisplay({ value }: { value: unknown }): JSX.Element {

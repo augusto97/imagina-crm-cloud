@@ -64,6 +64,8 @@ export function SaveViewDialog({
         () => [
             ...(fields.data ?? []).filter((f) => f.type === 'select'),
             ...(fields.data ?? []).filter((f) => f.type === 'user'),
+            // C1 — y por equipo.
+            ...(fields.data ?? []).filter((f) => f.type === 'team'),
         ],
         [fields.data],
     );

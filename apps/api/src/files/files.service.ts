@@ -15,7 +15,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL }
 import { ENV, type Env } from '../config/env';
 import { attachments, dashboards, documentNumbers, fields, lists, records } from '../db/schema';
 import type { Tx } from '../db/client';
-import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, effectivePermissions, scopeWhere } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import {
     FILE_STORAGE,
@@ -78,6 +78,8 @@ const MAX_BATCH = 100;
 export interface FileActor {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /**
@@ -114,7 +116,7 @@ async function readableBy(
     const visibleLists: number[] = [];
     for (const l of listRows) {
         const settings = (l.settings ?? {}) as Record<string, unknown>;
-        const perms = effectivePermissions(settings, actor.role, actor.userId);
+        const perms = effectivePermissions(settings, actor);
         if (perms.view === 'none') continue;
         visibleLists.push(l.id);
         const hidden = new Set(perms.fields_hidden);
@@ -122,8 +124,7 @@ async function readableBy(
             .filter((f) => f.listId === l.id && !hidden.has(f.slug))
             .map((f) => sql`jsonb_path_exists(${records.data} -> ${`f${f.id}`}, 'lax $[*] ? (@ == $x)', ${vars}, true)`);
         refs.push(sql`jsonb_path_exists(coalesce(${records.description}, 'null'::jsonb), 'lax $.**.fileId ? (@ == $x)', ${vars}, true)`);
-        const assignmentId = resolvePermissions(settings).assignment_field_id;
-        const scope = scopeWhere(perms.view, actor.userId, assignmentId ? `f${assignmentId}` : null);
+        const scope = scopeWhere(perms.view, actor, assignmentKeys(settings));
         perList.push(and(eq(records.listId, l.id), scope, or(...refs))!);
     }
 

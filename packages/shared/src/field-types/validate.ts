@@ -183,6 +183,22 @@ function validateTypedValue(field: FieldValueSpec, raw: unknown): ValueValidatio
             if (max !== null && raw.length > max) return fail(`Máximo ${max} archivos.`);
             return ok(raw);
         }
+        // C1 — equipo(s): siempre un array de ids (también con uno solo). Sin
+        // `multiple`, como mucho uno. Que el equipo EXISTA lo valida el
+        // servidor (el validador compartido no conoce los equipos).
+        case 'team': {
+            const list = Array.isArray(raw) ? raw : [raw];
+            const ids: number[] = [];
+            for (const v of list) {
+                const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN;
+                if (!Number.isInteger(n) || n < 1) return fail('Equipo inválido.');
+                if (!ids.includes(n)) ids.push(n);
+            }
+            if (ids.length === 0) return is_required ? fail('Este campo es obligatorio.') : ok(null);
+            if (config.multiple !== true && ids.length > 1) return fail('Este campo admite un solo equipo.');
+            if (ids.length > 50) return fail('Máximo 50 equipos.');
+            return ok(ids);
+        }
         // v0.1.277 — lo escribe el servidor (el modelo); se acepta texto.
         // v0.1.300 — el ID automático también lo escribe el servidor (texto).
         case 'autonumber':

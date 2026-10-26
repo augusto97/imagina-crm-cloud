@@ -24,6 +24,6 @@ export class RecordSearchController {
         @Req() req: FastifyRequest,
         @Query(new ZodValidationPipe(globalSearchQuerySchema)) query: GlobalSearchQuery,
     ): Promise<GlobalSearchHit[]> {
-        return this.search.search(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role }, query);
+        return this.search.search(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, query);
     }
 }

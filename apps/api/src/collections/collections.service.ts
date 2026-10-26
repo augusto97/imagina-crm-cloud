@@ -45,7 +45,7 @@ import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { collectionHooks, connections, fields, lists, paymentLinks, records, type PaymentLinkRowDb } from '../db/schema';
 import { IncidentHub } from '../incidents/incident-hub';
 import { FieldsService } from '../fields/fields.service';
-import { effectivePermissions, resolvePermissions, rowInScope } from '../lists/list-acl';
+import { listRowInScope } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsRepository } from '../records/records.repository';
@@ -74,6 +74,8 @@ import { gatewayBases } from './gateway-bases';
 export interface CollectionActor {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /** Lo que quedó escrito en un registro al cambiar su cobro. */
@@ -989,15 +991,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         action: 'view' | 'edit',
     ): Promise<{ data: Record<string, unknown> }> {
         const row = await this.tenantDb.withTenant(tenantId, (tx) => this.recordsRepo.findById(tx, tenantId, list.id, recordId));
-        const scope = effectivePermissions(list.settings, actor.role, actor.userId)[action];
-        const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-        const key = assignmentId ? jsonbKeyForField(assignmentId) : null;
-        const reach =
-            row !== null &&
-            rowInScope(scope, actor.userId, {
-                createdBy: row.createdBy,
-                assignmentValue: key ? (row.data as Record<string, unknown>)[key] : null,
-            });
+        const reach = row !== null && listRowInScope(list.settings, actor, action, { createdBy: row.createdBy, data: row.data });
         if (!reach || !row) {
             throw new NotFoundException({ code: 'record_not_found', message: `Registro ${recordId} no encontrado`, data: { status: 404 } });
         }

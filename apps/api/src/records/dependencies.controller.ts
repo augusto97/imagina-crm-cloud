@@ -21,7 +21,7 @@ import { DependenciesService } from './dependencies.service';
 import type { Actor } from './records.service';
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 
 /**

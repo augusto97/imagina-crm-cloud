@@ -212,7 +212,7 @@ export class BulkEditService {
     // ── Detalles ─────────────────────────────────────────────────────────────
 
     private context(list: List, fields: Field[], actor: Actor, operations: BulkOperation[]) {
-        const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
+        const hidden = hiddenFieldsFor(list.settings, actor);
         const byId = new Map(fields.map((f) => [f.id, f]));
         // Las columnas que la operación ESCRIBE y las que LEE (operandos, origen de una copia).
         for (const op of operations) {

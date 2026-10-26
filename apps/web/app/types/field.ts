@@ -38,7 +38,9 @@ export type FieldTypeSlug =
     // C5 — estado de la última solicitud de aprobación (derivado, sólo lectura).
     | 'approval'
     // A9 — progreso de los checklists del registro (0-100, sólo lectura).
-    | 'checklist_progress';
+    | 'checklist_progress'
+    // Equipos (C1): uno o varios equipos del workspace (ids).
+    | 'team';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

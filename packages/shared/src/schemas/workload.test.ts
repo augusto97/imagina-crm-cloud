@@ -150,6 +150,12 @@ describe('Carga de trabajo — config de la vista', () => {
         // El schema de la vista la acepta tal cual.
         expect(parseViewConfig('workload', config)).toMatchObject({ workload_person_field_id: 7, workload_user_ids: [3, 4] });
         expect(() => parseViewConfig('workload', { workload_metric: 'count' })).toThrow();
+        // C1 — el filtro por equipo viaja en la vista (y basura no).
+        const withTeam = withWorkloadSettings({}, { ...s, teamId: 12 });
+        expect(withTeam.workload_team_id).toBe(12);
+        expect(readWorkloadSettings(withTeam).teamId).toBe(12);
+        expect(readWorkloadSettings({ workload_person_field_id: 1, workload_team_id: 'x' }).teamId).toBeNull();
+        expect(parseViewConfig('workload', withTeam)).toMatchObject({ workload_team_id: 12 });
     });
 
     it('en «Tiempo registrado» los terminados cuentan por defecto', () => {

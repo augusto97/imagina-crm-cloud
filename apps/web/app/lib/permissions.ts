@@ -22,6 +22,8 @@ export const CAP = {
     MANAGE_VIEWS: 'imcrm_manage_views',
     MANAGE_AUTOMATIONS: 'imcrm_manage_automations',
     MANAGE_DASHBOARDS: 'imcrm_manage_dashboards',
+    // C1 — crear y editar equipos.
+    MANAGE_TEAMS: 'imcrm_manage_teams',
 
     // Records
     VIEW_RECORDS: 'imcrm_view_records',

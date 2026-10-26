@@ -104,6 +104,12 @@ function prepare(field: CoercibleField, raw: unknown, opts: CoerceOptions): unkn
             if (Array.isArray(raw)) return raw.map((x) => String(x)).join(', ');
             if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
             return raw;
+        // C1 — equipo(s): ids (un número, una lista o «3, 7» de un merge tag).
+        case 'team':
+            if (Array.isArray(raw)) return raw.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0);
+            if (typeof raw === 'number') return [raw];
+            if (typeof raw === 'string') return raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0);
+            return raw;
         case 'file':
             if (Array.isArray(raw)) return raw.map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0);
             if (typeof raw === 'string') {
