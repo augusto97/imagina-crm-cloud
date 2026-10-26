@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { describeDevice } from '@/lib/deviceLabel';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { useIsGuest } from '@/lib/guest';
@@ -22,27 +23,6 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
  * El id de cada sesión es un hash del token — el token nunca sale del
  * servidor, así que este panel no puede filtrar credenciales.
  */
-
-/** User-Agent crudo → algo legible ("Chrome en Windows"). */
-function describeDevice(ua: string): { label: string; mobile: boolean } {
-    if (ua === '') return { label: __('Dispositivo desconocido'), mobile: false };
-    const mobile = /Mobile|Android|iPhone|iPad/i.test(ua);
-    const browser =
-        /Edg\//.test(ua) ? 'Edge'
-        : /OPR\//.test(ua) ? 'Opera'
-        : /Chrome\//.test(ua) ? 'Chrome'
-        : /Safari\//.test(ua) ? 'Safari'
-        : /Firefox\//.test(ua) ? 'Firefox'
-        : __('Navegador');
-    const os =
-        /Windows/i.test(ua) ? 'Windows'
-        : /Macintosh|Mac OS/i.test(ua) ? 'macOS'
-        : /Android/i.test(ua) ? 'Android'
-        : /iPhone|iPad|iOS/i.test(ua) ? 'iOS'
-        : /Linux/i.test(ua) ? 'Linux'
-        : '';
-    return { label: os !== '' ? `${browser} · ${os}` : browser, mobile };
-}
 
 export function SecurityCard(): JSX.Element {
     const qc = useQueryClient();

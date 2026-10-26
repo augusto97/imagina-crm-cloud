@@ -14,6 +14,9 @@ import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
 import { initTheme } from '@/lib/theme';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
+import { captureInstallPrompt } from '@/lib/pwa/install';
+import { registerServiceWorker, takeTenantParam } from '@/lib/pwa/serviceWorker';
+import { useSession } from '@/cloud/session';
 import { installUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import '@fontsource-variable/inter';
 import '@/styles/globals.css';
@@ -63,6 +66,13 @@ installUnsavedChangesGuard();
 const container = document.getElementById('root');
 // v0.1.227 — encuadrada por otro sitio (clickjacking) la app no se monta.
 if (container && !blockCrossOriginFraming(container)) {
+    // H1 — app instalable: el aviso de «se puede instalar» llega temprano;
+    // el service worker se registra después de la carga. Una notificación que
+    // abre una ventana nueva trae `?t=<empresa>`: se arranca en esa empresa.
+    captureInstallPrompt();
+    void registerServiceWorker();
+    const pushTenant = takeTenantParam();
+    if (pushTenant !== null) useSession.getState().setActiveTenant(pushTenant);
     const resetToken = getResetToken();
     const verifyToken = getVerifyToken();
     const oauthRequestId = getOauthRequestId();

@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
@@ -120,6 +121,36 @@ function cspMeta(): Plugin {
 }
 
 /**
+ * H1 — El service worker de la app instalable (`pwa/sw.js`), en la RAÍZ del
+ * sitio (`/sw.js`: su alcance es `/`). En el build se emite con un id de
+ * versión derivado de los nombres de los archivos (que llevan el hash de su
+ * contenido): cada despliegue con cambios trae un service worker nuevo, que
+ * al activarse borra el caché de los assets viejos. En dev se sirve con id
+ * `dev` (no cachea nada de vite: sólo `/assets/*`, que en dev no existe).
+ */
+export function serviceWorkerBuildId(fileNames: readonly string[]): string {
+    return createHash('sha256').update([...fileNames].sort().join('|')).digest('hex').slice(0, 12);
+}
+
+function serviceWorker(): Plugin {
+    const src = path.resolve(__dirname, 'pwa/sw.js');
+    const render = (id: string): string => readFileSync(src, 'utf8').replace(/__BUILD_ID__/g, id);
+    return {
+        name: 'imagina-service-worker',
+        configureServer(server) {
+            server.middlewares.use('/sw.js', (_req, res) => {
+                res.setHeader('content-type', 'text/javascript; charset=utf-8');
+                res.setHeader('cache-control', 'no-cache');
+                res.end(render('dev'));
+            });
+        },
+        generateBundle(_opts, bundle) {
+            this.emitFile({ type: 'asset', fileName: 'sw.js', source: render(serviceWorkerBuildId(Object.keys(bundle))) });
+        },
+    };
+}
+
+/**
  * Build/dev STANDALONE del SPA cloud de Imagina Base (sin WordPress). El
  * config `vite.config.ts` sigue produciendo el bundle del plugin (WP); este
  * sirve el shell propio (login + workspace + listas + tabla) contra el
@@ -133,7 +164,7 @@ export default defineConfig({
     // "process is not defined".
     define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') },
     root: __dirname,
-    plugins: [react(), spaFallback(), cspMeta()],
+    plugins: [react(), spaFallback(), cspMeta(), serviceWorker()],
     resolve: {
         alias: [
             { find: '@', replacement: path.resolve(__dirname, './app') },

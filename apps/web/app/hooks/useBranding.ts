@@ -5,6 +5,7 @@ import type { BrandingResponse } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { applyFavicon } from '@/lib/favicon';
 import { setTitleAppName } from '@/lib/documentTitle';
+import { applyAppMeta } from '@/lib/pwa/appMeta';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { useTheme, type ResolvedTheme } from '@/lib/theme';
 
@@ -276,7 +277,9 @@ export function useBranding() {
         // v0.1.286 — el nombre de la app es la base; la pantalla (lista,
         // registro, tablero) la antepone `RouteTracker`.
         setTitleAppName(appName);
-    }, [logoUrl, appName]);
+        // H1 — color de la barra y nombre de la app instalada (iOS).
+        applyAppMeta(primaryColor, appName);
+    }, [logoUrl, appName, primaryColor]);
 
     return query;
 }
