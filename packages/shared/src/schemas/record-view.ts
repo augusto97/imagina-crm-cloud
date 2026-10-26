@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { activitySchema } from './activity';
+import type { AiAgentProposalDto } from './ai-agents';
 import { recordApprovalsSchema } from './approvals';
 import { recordPaymentsSchema } from './collections';
 import { commentSchema } from './comment';
@@ -106,5 +107,7 @@ export const recordViewBundleSchema = z.object({
     approvals: recordApprovalsSchema.nullable().default(null),
     /** A9 — checklists del registro con sus ítems (la sección no sale a pedirlos). */
     checklists: recordChecklistsSchema.nullable().default(null),
+    /** E6 — propuestas pendientes de agentes de IA sobre el registro (la tarjeta no sale a pedirlas). */
+    agent_proposals: z.array(z.custom<AiAgentProposalDto>()).nullable().default(null),
 });
 export type RecordViewBundle = z.infer<typeof recordViewBundleSchema>;

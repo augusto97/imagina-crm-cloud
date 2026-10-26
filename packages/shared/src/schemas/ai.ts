@@ -204,6 +204,8 @@ export const AI_PROPOSAL_KINDS = [
     'create_record_template',
     // D5 — crear o cambiar una página de agenda de citas de una lista.
     'configure_booking_page',
+    // E6 — crear un agente de IA (y, si se pide, cuándo trabaja).
+    'create_ai_agent',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

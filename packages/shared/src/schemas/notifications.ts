@@ -34,6 +34,8 @@ import { idSchema } from './common';
 /**
  * E5 — `sla`: un ticket de la mesa de ayuda entró en riesgo o se venció (a
  * quien la política de SLA indica, y al escalar).
+ * E6 — `agent`: un agente de IA dejó una propuesta para revisar (a las
+ * personas que revisan sus propuestas o, si no hay, a su dueño).
  */
 export const NOTIFICATION_KINDS = [
     'mention',
@@ -47,6 +49,7 @@ export const NOTIFICATION_KINDS = [
     'approval',
     'team_assigned',
     'sla',
+    'agent',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -62,6 +65,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     approval: 'Aprobaciones: te toca decidir o se resuelve lo que pediste',
     team_assigned: 'Asignan un registro a uno de tus equipos',
     sla: 'Mesa de ayuda: un ticket entra en riesgo o se vence',
+    agent: 'Agentes de IA: propuestas que esperan tu revisión',
 };
 
 export interface NotificationDto {
@@ -156,6 +160,12 @@ export const notificationPrefsSchema = z.object({
             team_assigned: z.boolean().default(false),
             /** E5 — un ticket a punto de vencer (o vencido) que te toca: encendido. */
             sla: z.boolean().default(true),
+            /**
+             * E6 — una propuesta de un agente para revisar. APAGADO: un agente
+             * trabaja sobre muchos registros y un correo por cada uno inundaría
+             * la casilla; la campana y «Mi trabajo» lo muestran igual.
+             */
+            agent: z.boolean().default(false),
         })
         .default({}),
     /**
@@ -191,6 +201,7 @@ export const updateNotificationPrefsSchema = z
                 approval: z.boolean(),
                 team_assigned: z.boolean(),
                 sla: z.boolean(),
+                agent: z.boolean(),
             })
             .partial(),
         push: kindFlagsPatchSchema(),
