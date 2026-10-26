@@ -16,6 +16,7 @@ import type { RecordsQuery } from '@/types/record';
 
 import { activityKeys, toEntity, type ActivityDtoWire } from './useActivity';
 import { approvalKeys } from './useApprovals';
+import { aiAgentKeys } from './useAiAgents';
 import { checklistKeys } from './useChecklists';
 import { commentsKeys, fromApiComment } from './useComments';
 import { fieldsKeys } from './useFields';
@@ -93,6 +94,8 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.time) qc.setQueryData(timeKeys.forRecord(lid, recordId), b.time);
     // C5 — aprobaciones: flujos disponibles y solicitudes del registro.
     if (b.approvals) qc.setQueryData(approvalKeys.forRecord(lid, recordId), b.approvals);
+    // E6 — propuestas pendientes de los agentes de IA (la tarjeta no sale a pedirlas).
+    if (b.agent_proposals) qc.setQueryData(aiAgentKeys.forRecord(lid, recordId), normalizeDates(b.agent_proposals));
     // A8 — dependencias («bloqueado por» / «bloquea»): la sección no sale a pedirlas.
     if (b.dependencies) qc.setQueryData(dependencyKeys.forRecord(lid, recordId), b.dependencies);
     // A9 — checklists del registro: la sección no sale a pedirlos.

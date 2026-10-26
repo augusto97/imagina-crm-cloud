@@ -57,6 +57,7 @@ import type { FieldEntity } from '@/types/field';
 import { teamIdsOf, type WebhookTestResult } from '@imagina-base/shared';
 import { TeamPicker } from '@/components/fields/TeamPicker';
 import { ActionTypeSelect } from './ActionTypeSelect';
+import { AskAgentConfig } from '@/admin/agents/AskAgentConfig';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
@@ -1361,6 +1362,8 @@ export function ActionConfigEditor({
                 />
             ) : spec.type === 'wait' ? (
                 <WaitConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'ask_agent' ? (
+                <AskAgentHost spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'request_approval' ? (
                 <RequestApprovalHost spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'wait_approval' ? (
@@ -2890,6 +2893,20 @@ function RequestApprovalHost({ spec, onChange, fields }: ActionConfigEditorProps
             onChange={onChange}
             renderNote={(value, set) => (
                 <MergeTagInput value={value} onChange={set} fields={fields} rows={2} autoGrow placeholder={__('Por ejemplo: gasto de {{monto|moneda}} de {{solicitante.nombre}}')} />
+            )}
+        />
+    );
+}
+
+/** E6 — «Pedirle a un agente». */
+function AskAgentHost({ spec, onChange, fields }: ActionConfigEditorProps): JSX.Element {
+    return (
+        <AskAgentConfig
+            listId={useAutomationListId()}
+            spec={spec}
+            onChange={onChange}
+            renderInstruction={(value, set) => (
+                <MergeTagInput value={value} onChange={set} fields={fields} rows={2} autoGrow placeholder={__('Por ejemplo: el cliente escribió {{asunto}}; fíjate si es urgente.')} />
             )}
         />
     );

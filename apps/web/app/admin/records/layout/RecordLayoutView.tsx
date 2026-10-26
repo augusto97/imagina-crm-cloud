@@ -19,6 +19,7 @@ import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine'
 
 import { RecordSubtasks } from '../RecordSubtasks';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
@@ -161,8 +162,17 @@ function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
     const isGuest = useIsGuest();
     const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'approval'))));
     // C3 — las aprobaciones son de la empresa: un invitado no las ve.
-    if (placed || isGuest) return null;
-    return <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} />;
+    if (isGuest) return null;
+    // E6 — las propuestas de los agentes de IA van siempre debajo de la cabecera
+    // (no tienen bloque propio: son algo que decidir, no parte del diseño).
+    const proposals = ctx.preview === true ? null : <RecordAgentProposals listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />;
+    if (placed) return proposals;
+    return (
+        <>
+            {proposals}
+            <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} />
+        </>
+    );
 }
 
 export interface LayoutBodyProps {

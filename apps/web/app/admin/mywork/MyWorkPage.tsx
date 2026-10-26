@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { AlarmClock, Bell, Check, ClipboardCheck, Eye, EyeOff, ListChecks, ListTodo, Loader2, Plus, Trash2, UsersRound, X } from 'lucide-react';
+import { AlarmClock, Bell, Bot, Check, ClipboardCheck, Eye, EyeOff, ListChecks, ListTodo, Loader2, Plus, Trash2, UsersRound, X } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { MyWorkChecklistItem, MyWorkItem, ReminderDto } from '@imagina-base/shared';
 
@@ -24,10 +24,13 @@ import { DUE_GROUPS, groupChecklistWork, groupWork } from './myWorkGroups';
 import { ReminderForm } from './ReminderForm';
 import { MyApprovalsTab } from '@/admin/approvals/MyApprovalsTab';
 import { useMyApprovals } from '@/hooks/useApprovals';
+import { MyAgentProposalsTab } from '@/admin/agents/AgentProposals';
+import { useMyAgentProposals } from '@/hooks/useAiAgents';
+import { CAP, useCan } from '@/lib/permissions';
 
-type Tab = 'assigned' | 'teams' | 'approvals' | 'reminders' | 'following';
+type Tab = 'assigned' | 'teams' | 'approvals' | 'agents' | 'reminders' | 'following';
 
-const TABS: readonly Tab[] = ['assigned', 'teams', 'approvals', 'reminders', 'following'];
+const TABS: readonly Tab[] = ['assigned', 'teams', 'approvals', 'agents', 'reminders', 'following'];
 
 function readTab(raw: string | null): Tab {
     return (TABS as readonly string[]).includes(raw ?? '') ? (raw as Tab) : 'assigned';
@@ -45,6 +48,9 @@ export function MyWorkPage(): JSX.Element {
     const work = useMyWork();
     // C5 — lo que espera mi aprobación y lo que pedí.
     const approvals = useMyApprovals();
+    // E6 — lo que proponen los agentes de IA que reviso.
+    const agentProposals = useMyAgentProposals();
+    const canManageAgents = useCan(CAP.MANAGE_AI_AGENTS);
     const tz = getTenantTimeZone() ?? browserTimeZone() ?? 'UTC';
     const groups = useMemo(() => groupWork(work.data?.assigned ?? [], tz), [work.data, tz]);
     // A9 — los ítems de checklist asignados, en los mismos grupos.
@@ -68,6 +74,7 @@ export function MyWorkPage(): JSX.Element {
         assigned: (work.data?.assigned.length ?? 0) + (work.data?.checklist_items?.length ?? 0),
         teams: work.data?.teams?.length ?? 0,
         approvals: approvals.data?.pending_count ?? 0,
+        agents: agentProposals.data?.pending.length ?? 0,
         reminders: work.data?.reminders.length ?? 0,
         following: work.data?.following.length ?? 0,
     };
@@ -96,10 +103,14 @@ export function MyWorkPage(): JSX.Element {
                         ['assigned', __('Asignado a mí'), ListChecks],
                         ['teams', __('De mis equipos'), UsersRound],
                         ['approvals', __('Aprobaciones'), ClipboardCheck],
+                        ['agents', __('Agentes'), Bot],
                         ['reminders', __('Recordatorios'), AlarmClock],
                         ['following', __('Siguiendo'), Eye],
                     ] as const
-                ).map(([key, label, Icon]) => (
+                )
+                    // E6 — la pestaña «Agentes» aparece si hay algo que revisar (o quien los administra).
+                    .filter(([key]) => key !== 'agents' || counts.agents > 0 || canManageAgents || tab === 'agents')
+                    .map(([key, label, Icon]) => (
                     <button
                         key={key}
                         type="button"
@@ -118,7 +129,7 @@ export function MyWorkPage(): JSX.Element {
                             <span
                                 className={cn(
                                     'imcrm-rounded-full imcrm-px-1.5 imcrm-text-[11px]',
-                                    key === 'approvals' && counts.approvals > 0
+                                    (key === 'approvals' && counts.approvals > 0) || (key === 'agents' && counts.agents > 0)
                                         ? 'imcrm-bg-amber-500/15 imcrm-font-medium imcrm-text-amber-800 dark:imcrm-text-amber-300'
                                         : 'imcrm-bg-muted imcrm-text-muted-foreground',
                                 )}
@@ -133,6 +144,8 @@ export function MyWorkPage(): JSX.Element {
 
             {tab === 'approvals' ? (
                 <MyApprovalsTab query={approvals} />
+            ) : tab === 'agents' ? (
+                <MyAgentProposalsTab query={agentProposals} />
             ) : work.isLoading ? (
                 <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
                     <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />

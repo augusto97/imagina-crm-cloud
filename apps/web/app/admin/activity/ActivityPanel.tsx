@@ -1,4 +1,4 @@
-import { Activity, Loader2 } from 'lucide-react';
+import { Activity, Bot, Loader2 } from 'lucide-react';
 import { teamIdsOf } from '@imagina-base/shared';
 import { TeamChip } from '@/components/fields/TeamChip';
 import { useTeamDirectory } from '@/hooks/useTeams';
@@ -98,7 +98,7 @@ function ActivityRow({
 
     return (
         <li className="imcrm-flex imcrm-gap-2.5 imcrm-py-2">
-            <Initials name={actor} system={entry.user_id === null || entry.user_id <= 0} />
+            <Initials name={actor} system={entry.user_id === null || entry.user_id <= 0} agent={entry.agent != null} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
                 <p className="imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
                     <span className="imcrm-font-medium imcrm-text-foreground">{actor}</span>
@@ -310,7 +310,7 @@ function OptionPill({
 }
 
 /** Avatar de iniciales (el sistema lleva su propio icono). */
-function Initials({ name, system }: { name: string; system: boolean }): JSX.Element {
+function Initials({ name, system, agent = false }: { name: string; system: boolean; agent?: boolean }): JSX.Element {
     const initials = name
         .split(/\s+/)
         .slice(0, 2)
@@ -321,7 +321,7 @@ function Initials({ name, system }: { name: string; system: boolean }): JSX.Elem
             aria-hidden
             className="imcrm-mt-0.5 imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-[10px] imcrm-font-semibold imcrm-text-foreground/70 imcrm-ring-1 imcrm-ring-border"
         >
-            {system ? <Activity className="imcrm-h-3 imcrm-w-3" /> : initials}
+            {agent ? <Bot className="imcrm-h-3 imcrm-w-3" /> : system ? <Activity className="imcrm-h-3 imcrm-w-3" /> : initials}
         </span>
     );
 }

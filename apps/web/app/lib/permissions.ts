@@ -29,6 +29,8 @@ export const CAP = {
     USE_AI_ASSISTANT: 'imcrm_use_ai_assistant',
     MANAGE_FORMS: 'imcrm_manage_forms',
     MANAGE_DOCUMENTS: 'imcrm_manage_documents',
+    // E6 — crear y administrar agentes de IA.
+    MANAGE_AI_AGENTS: 'imcrm_manage_ai_agents',
 
     // Records
     VIEW_RECORDS: 'imcrm_view_records',

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Activity as ActivityIcon, Loader2, Mail, MessageCircle, MessageSquare, MousePointerClick, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
+import { Activity as ActivityIcon, Bot, Loader2, Mail, MessageCircle, MessageSquare, MousePointerClick, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
 
 import { ActivityValue } from '@/admin/activity/ActivityPanel';
 import { RestorePreviousButton } from '@/admin/records/history/FieldHistory';
@@ -397,7 +397,9 @@ function ChangeRow({
     const created = first.action === 'record_created' || first.action === 'record.created';
     const Icon = created
         ? Plus
-        : first.action === 'automation.run'
+        : first.agent
+          ? Bot
+          : first.action === 'automation.run'
           ? Zap
           : first.action === 'button_pressed'
             ? MousePointerClick

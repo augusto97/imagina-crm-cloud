@@ -147,7 +147,9 @@ export function useCommentAuthors(comments: readonly CommentEntity[] | undefined
     const map = names.data;
     return useCallback(
         (c: CommentEntity): string =>
-            (c.user_name !== undefined && c.user_name !== null && c.user_name !== '' ? c.user_name : null)
+            // E6 — una nota de un agente de IA lleva su nombre (el autor real es su dueño).
+            (c.metadata?.agent?.name ? sprintf(/* translators: %s: agente */ __('%s (agente de IA)'), c.metadata.agent.name) : null)
+            ?? (c.user_name !== undefined && c.user_name !== null && c.user_name !== '' ? c.user_name : null)
             ?? (c.from_client ? c.author_name || __('Cliente') : null)
             ?? map?.get(c.user_id)
             ?? (c.user_id > 0 ? null : systemAuthor(c))

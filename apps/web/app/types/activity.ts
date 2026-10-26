@@ -39,6 +39,8 @@ export interface ActivityEntity {
     user_id: number | null;
     /** Nombre de quien hizo el cambio (v0.1.149); null si fue el sistema. */
     user_name: string | null;
+    /** E6 — el agente de IA que hizo el cambio (solo o por una propuesta aplicada). */
+    agent?: { id: number; name: string } | null;
     action: ActivityAction;
     /**
      * Diff por campo: `{ "f101": { from, to } }` (el backend lo guarda por

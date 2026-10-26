@@ -34,6 +34,9 @@ const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(
 const MyWorkPage = lazyWithReload(() => import('@/admin/mywork/MyWorkPage').then(m => ({ default: m.MyWorkPage })));
 // C5 — la pantalla a la que llevan los botones Aprobar / Rechazar del correo.
 const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/ApprovalConfirmPage').then(m => ({ default: m.ApprovalConfirmPage })));
+// E6 — agentes de IA (índice con plantillas y el editor con sus pestañas).
+const AgentsPage = lazyWithReload(() => import('@/admin/agents/AgentsPage').then(m => ({ default: m.AgentsPage })));
+const AgentEditorPage = lazyWithReload(() => import('@/admin/agents/AgentEditorPage').then(m => ({ default: m.AgentEditorPage })));
 const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
@@ -139,6 +142,15 @@ export function App(): JSX.Element {
                 } />
                 <Route path="approvals/:approvalId" element={
                     <Suspense fallback={<RouteFallback />}><ApprovalConfirmPage /></Suspense>
+                } />
+                <Route path="agents" element={
+                    <Suspense fallback={<RouteFallback />}><AgentsPage /></Suspense>
+                } />
+                <Route path="agents/new" element={
+                    <Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense>
+                } />
+                <Route path="agents/:agentId" element={
+                    <Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense>
                 } />
                 <Route path="favorites" element={
                     <Suspense fallback={<RouteFallback />}><FavoritesPage /></Suspense>

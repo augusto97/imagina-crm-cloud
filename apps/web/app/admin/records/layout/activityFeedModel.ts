@@ -73,6 +73,8 @@ function canMerge(a: ActivityEntity, b: ActivityEntity, tsA: number, tsB: number
         UPDATE_ACTIONS.has(a.action) &&
         UPDATE_ACTIONS.has(b.action) &&
         (a.user_id ?? 0) === (b.user_id ?? 0) &&
+        // E6 — lo que hizo un agente no se junta con lo de una persona.
+        (a.agent?.id ?? 0) === (b.agent?.id ?? 0) &&
         Math.abs(tsA - tsB) <= MERGE_WINDOW_MS &&
         dayKey(tsA) === dayKey(tsB)
     );

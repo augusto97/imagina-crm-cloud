@@ -33,6 +33,7 @@ import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
@@ -380,6 +381,8 @@ export function RecordPage(): JSX.Element {
                     )}
 
                     {/* C5 — aprobación (sin flujos en la lista, no aparece; no para un invitado). */}
+                    {/* E6 — lo que propone un agente de IA. */}
+                    {!isGuest && <RecordAgentProposals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordApprovals listId={listInfo.id} recordId={rec.id} />}
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el

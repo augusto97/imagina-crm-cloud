@@ -1,4 +1,4 @@
-import { formatDuration, formatPhone, type DurationFormat } from '@imagina-base/shared';
+import { formatDuration, formatPhone, readAgentActivity, type DurationFormat } from '@imagina-base/shared';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
@@ -73,6 +73,14 @@ export function changesOf(entry: ActivityEntity, fields: FieldEntity[]): FieldCh
 export function actorOf(entry: ActivityEntity): string {
     // D3 — un mensaje que LLEGÓ por WhatsApp no lo hizo nadie del equipo.
     if (entry.action === 'whatsapp' && whatsappEventOf(entry).event === 'received') return __('El contacto');
+    // E6 — un agente de IA: solo («El agente «X»») o por una propuesta que
+    // aplicó una persona («Ana (propuesta del agente «X»)»).
+    if (entry.agent) {
+        const person = entry.user_name !== null && entry.user_name !== undefined && entry.user_name !== '' ? entry.user_name : null;
+        return person
+            ? sprintf(/* translators: 1: persona, 2: agente */ __('%1$s (propuesta del agente «%2$s»)'), person, entry.agent.name)
+            : sprintf(/* translators: %s: agente */ __('El agente «%s»'), entry.agent.name);
+    }
     if (entry.user_name !== null && entry.user_name !== undefined && entry.user_name !== '') {
         return entry.user_name;
     }
@@ -241,6 +249,34 @@ export function whatsappText(entry: Pick<ActivityEntity, 'changes'>): string {
     return __('envió un mensaje por WhatsApp');
 }
 
+/**
+ * E6 — Una entrada `ai_agent` (`diff.agent` = {event, agent_name, count?,
+ * summary?, excerpt?, visibility?}), contada después del sujeto.
+ */
+export function agentActivityText(entry: Pick<ActivityEntity, 'changes'>): string {
+    const a = readAgentActivity(entry.changes);
+    if (!a) return __('trabajó en este registro');
+    switch (a.event) {
+        case 'note':
+            return a.visibility === 'client'
+                ? sprintf(__('respondió al cliente: «%s»'), a.excerpt ?? '')
+                : sprintf(__('dejó una nota interna: «%s»'), a.excerpt ?? '');
+        case 'proposed': {
+            const n = a.count ?? 1;
+            if (!a.summary) return __('propone cambios');
+            return n === 1 ? sprintf(__('propone un cambio: %s'), a.summary) : sprintf(__('propone %1$d cambios: %2$s'), n, a.summary);
+        }
+        case 'applied':
+            return sprintf(__('aplicó la propuesta del agente «%s»'), a.agent_name);
+        case 'discarded':
+            return sprintf(__('descartó la propuesta del agente «%s»'), a.agent_name);
+        case 'approval':
+            return __('pidió una aprobación');
+        case 'email':
+            return sprintf(__('mandó un correo: %s'), a.excerpt ?? '');
+    }
+}
+
 /** El verbo de la entrada, en pasado y con sujeto ya puesto aparte. */
 export function actionText(entry: ActivityEntity, changeCount: number): string {
     switch (entry.action) {
@@ -266,6 +302,9 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         // C5 — aprobaciones: `diff.approval` = {event, flow, step, steps, reason?…}.
         case 'approval':
             return approvalText(entry);
+        // E6 — lo que hizo un agente de IA que no es un cambio de campos.
+        case 'ai_agent':
+            return agentActivityText(entry);
         // A9 — checklists del registro.
         case 'checklist_created':
         case 'checklist_updated':

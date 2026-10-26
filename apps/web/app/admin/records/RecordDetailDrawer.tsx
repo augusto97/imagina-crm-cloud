@@ -62,6 +62,7 @@ import { RecordSubtasks } from './RecordSubtasks';
 import { isCloseCancelled } from './dependencies/closeGuard';
 import { RecordDependencies } from './dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordChecklists } from './checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from './templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
@@ -559,6 +560,8 @@ export function RecordDetailDrawer({
 
                                     {/* C5 — aprobación: «Pendiente de tu aprobación», las
                                         solicitudes y «Pedir aprobación». Sin flujos, no ocupa lugar. */}
+                                    {/* E6 — lo que propone un agente de IA (Aplicar / Descartar). */}
+                                    {view.ready && !isGuest && <RecordAgentProposals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
                                     {view.ready && !isGuest && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
 
                                     {/* Descripción rica (v0.1.133) — el cuerpo tipo

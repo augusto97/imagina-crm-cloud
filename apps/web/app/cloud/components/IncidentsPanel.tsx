@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import {
+    Bot,
     CalendarClock,
     ChartColumn,
     CircleCheck,
@@ -43,6 +44,7 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     booking: CalendarClock,
     // D2 — el buzón de soporte de una lista.
     helpdesk: Inbox,
+    ai_agent: Bot,
 };
 
 /**
