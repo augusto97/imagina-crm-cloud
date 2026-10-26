@@ -475,3 +475,17 @@ export function remapButtonConfig(config: Record<string, unknown>, maps: IdMaps,
     }
     return cleanResolvedButtonConfig(out);
 }
+
+/**
+ * D3 — WhatsApp oficial: `connections.config.whatsapp.inbound_list_id` (la
+ * lista donde caen los mensajes) no sigue la convención de `remapJson` en el
+ * resto de la conexión (que viaja tal cual). Una lista que no viajó deja la
+ * conexión sin lista de entrada en vez de apuntar a la de otra empresa.
+ */
+export function remapWhatsappConnectionConfig(provider: string, config: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
+    if (provider !== 'whatsapp_cloud') return config;
+    const wa = config.whatsapp;
+    if (wa === null || typeof wa !== 'object' || Array.isArray(wa)) return config;
+    const w = wa as Record<string, unknown>;
+    return { ...config, whatsapp: { ...w, inbound_list_id: w.inbound_list_id === null || w.inbound_list_id === undefined ? null : mapId(maps.list, w.inbound_list_id) } };
+}

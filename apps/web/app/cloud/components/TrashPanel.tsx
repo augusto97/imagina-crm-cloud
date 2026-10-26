@@ -65,6 +65,7 @@ const TRIGGER_LABEL: Record<string, string> = {
     scheduled: 'En un horario',
     incoming_webhook: 'Webhook entrante',
     payment_received: 'Al recibir un pago',
+    whatsapp_message_received: 'Al llegar un WhatsApp',
     form_submitted: 'Al enviar un formulario',
     button_pressed: 'Al presionar el botón',
     booking_event: 'Al agendar una cita',

@@ -17,6 +17,7 @@ import {
     BadgeDollarSign,
     ClipboardList,
     ClipboardCheck,
+    MessageCircle,
     MousePointerClick,
     Stamp,
     ListTodo,
@@ -77,6 +78,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: Webhook,
         title: 'Llega un webhook',
         description: 'Dispara cuando otro sistema (un formulario, Zapier, etc.) llama una URL pública única.',
+    },
+    // D3 — un contacto escribió por WhatsApp oficial.
+    whatsapp_message_received: {
+        icon: MessageCircle,
+        title: 'Llega un mensaje de WhatsApp',
+        description: 'Dispara cuando un contacto le escribe a tu número de WhatsApp Business (el registro ya se encontró o creó por su teléfono).',
     },
     payment_received: {
         icon: BadgeDollarSign,
@@ -298,6 +305,8 @@ export function summarizeTrigger(
             return __('Cuando llega un webhook entrante');
         case 'payment_received':
             return __('Cuando un cliente paga un link de cobro');
+        case 'whatsapp_message_received':
+            return __('Cuando llega un mensaje de WhatsApp');
         case 'form_submitted':
             return __('Cuando alguien envía un formulario');
         case 'booking_event': {

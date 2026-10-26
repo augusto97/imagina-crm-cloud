@@ -67,6 +67,8 @@ import {
 } from './woocommerce/wc-api';
 import { SQL_RUNNER, sqlConnParams, type SqlRunner } from './sqlserver/sql-runner';
 import { verifyS3 } from './storage-s3';
+import { graphBase } from '../whatsapp/whatsapp-graph';
+import { verifyWhatsappCloud } from '../whatsapp/whatsapp-verify';
 import {
     buildAuthorizeUrl,
     buildRefreshBody,
@@ -1604,6 +1606,8 @@ export class ConnectorsService {
         // v0.1.268 (ADR-S36): sube, lee y borra un archivo de prueba.
         if (key === 's3') return verifyS3(creds, { allowPrivate: this.env.STORAGE_ALLOW_PRIVATE_HOSTS });
         if (key === 'mercadopago' || key === 'wompi') return this.runCollectionVerify(key, creds);
+        // D3 — WhatsApp oficial: el número, la cuenta, el token y la clave de la app.
+        if (key === 'whatsapp_cloud') return verifyWhatsappCloud(creds, graphBase(this.env));
         const req = verifyRequest(key, creds);
         if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
         try {

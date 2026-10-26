@@ -47,6 +47,9 @@ import {
     users,
     bookingPages,
     bookingAppointments,
+    whatsappContacts,
+    whatsappHooks,
+    whatsappTemplates,
 } from '../src/db/schema';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { TenantTransferService } from '../src/platform/tenant-transfer.service';
@@ -87,6 +90,7 @@ describe('Migración de empresa (v0.1.197)', () => {
     let facturaRecId: number;
     let attachmentId: number;
     let connectionId: number;
+    let waConnectionId: number;
     let viewId: number;
     let hookToken: string;
     let publicToken: string;
@@ -201,6 +205,37 @@ describe('Migración de empresa (v0.1.197)', () => {
             .returning();
         connectionId = conn!.id;
 
+        // D3 — WhatsApp oficial: la conexión (con sus secretos), una plantilla
+        // aprobada, un contacto y el hook de avisos.
+        const [wa] = await pg.db
+            .insert(connections)
+            .values({
+                tenantId: tenantA,
+                name: 'WhatsApp Business (oficial) · +57 601 555 0100',
+                provider: 'whatsapp_cloud',
+                authType: 'bearer',
+                config: {
+                    fields: { phone_number_id: '109876543210987', waba_id: '201234567890123', display_phone: '+57 601 555 0100' },
+                    whatsapp: { inbound_list_id: clientesId, create_contacts: true },
+                },
+                secrets: { credential: 'enc:v1:token', signing_secret: 'enc:v1:appsecret' },
+                createdBy: anaId,
+            })
+            .returning();
+        waConnectionId = wa!.id;
+        await pg.db.insert(whatsappTemplates).values({
+            tenantId: tenantA,
+            connectionId: waConnectionId,
+            metaId: '9001',
+            name: 'recordatorio_pago',
+            language: 'es',
+            category: 'UTILITY',
+            status: 'APPROVED',
+            parameterFormat: 'POSITIONAL',
+            components: [{ type: 'BODY', text: 'Hola {{1}}' }],
+        });
+        await pg.db.insert(whatsappHooks).values({ token: 'wa-token-viejo-0123456789abcdef', tenantId: tenantA, connectionId: waConnectionId, verifyToken: 'verify-viejo' });
+
         const [cliente] = await pg.db
             .insert(records)
             .values({
@@ -215,6 +250,17 @@ describe('Migración de empresa (v0.1.197)', () => {
             })
             .returning();
         clienteRecId = cliente!.id;
+        await pg.db.insert(whatsappContacts).values({
+            tenantId: tenantA,
+            connectionId: waConnectionId,
+            phone: '573001112233',
+            profileName: 'Cliente Uno',
+            lastInboundAt: new Date(),
+            lastOutboundWamid: 'wamid.X',
+            lastOutboundStatus: 'entregado',
+            lastOutboundListId: clientesId,
+            lastOutboundRecordId: clienteRecId,
+        });
         const [subtarea] = await pg.db
             .insert(records)
             .values({
@@ -815,9 +861,30 @@ describe('Migración de empresa (v0.1.197)', () => {
             .select()
             .from(connections)
             .where(eq(connections.tenantId, tenantB));
-        expect(rama.config.connection_id).toBe(newConnections[0]!.id);
+        const gateway = newConnections.find((c) => c.name === 'Gateway')!;
+        expect(rama.config.connection_id).toBe(gateway.id);
         // El secreto viajó porque la clave de cifrado es la misma.
-        expect(newConnections[0]!.secrets).toEqual({ credential: 'enc:v1:loquesea' });
+        expect(gateway.secrets).toEqual({ credential: 'enc:v1:loquesea' });
+
+        // ── D3 — WhatsApp oficial ──────────────────────────────────────
+        // La conexión viaja SIN token ni clave de la app (gastan dinero en la
+        // cuenta de Meta de la empresa) y la lista de entrada apunta a la NUEVA.
+        const newWa = newConnections.find((c) => c.provider === 'whatsapp_cloud')!;
+        expect(newWa.id).not.toBe(waConnectionId);
+        expect(newWa.secrets).toEqual({});
+        expect((newWa.config as { whatsapp?: { inbound_list_id?: number } }).whatsapp?.inbound_list_id).toBe(newClientes.id);
+        const newTplsWa = await pg.db.select().from(whatsappTemplates).where(eq(whatsappTemplates.tenantId, tenantB));
+        expect(newTplsWa.map((t) => [t.name, t.connectionId])).toEqual([['recordatorio_pago', newWa.id]]);
+        const newContacts = await pg.db.select().from(whatsappContacts).where(eq(whatsappContacts.tenantId, tenantB));
+        expect(newContacts).toHaveLength(1);
+        expect(newContacts[0]!.connectionId).toBe(newWa.id);
+        expect(newContacts[0]!.lastOutboundListId).toBe(newClientes.id);
+        expect(newContacts[0]!.lastOutboundRecordId).not.toBe(clienteRecId);
+        // El contacto apunta al registro NUEVO de «Cliente Uno».
+        expect(newContacts[0]!.lastOutboundRecordId).toBe(newCliente.id);
+        // El hook de avisos NO viaja: la URL y el token de verificación se emiten de nuevo.
+        expect(await pg.db.select().from(whatsappHooks).where(eq(whatsappHooks.tenantId, tenantB))).toHaveLength(0);
+        expect(res.warnings.some((w) => w.includes('WhatsApp'))).toBe(true);
 
         // ── A9 / C6 — plantillas de registro y checklists ──────────────
         const newTpls = await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, tenantB));

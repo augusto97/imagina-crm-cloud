@@ -42,6 +42,9 @@ import {
     dataConsentVersions,
     bookingAppointments,
     bookingPages,
+    whatsappContacts,
+    whatsappHooks,
+    whatsappTemplates,
 } from '../src/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
@@ -344,6 +347,11 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
             createdBy: owner!.id,
         });
         await pg.db.insert(connections).values({ tenantId: id, name: 'Gateway', createdBy: owner!.id });
+        // D3 — WhatsApp oficial: conexión, hook de avisos, plantilla y contacto.
+        const [wa] = await pg.db.insert(connections).values({ tenantId: id, name: 'WhatsApp', provider: 'whatsapp_cloud', createdBy: owner!.id }).returning();
+        await pg.db.insert(whatsappHooks).values({ token: `wa-a-borrar-${id}-0123456789`, tenantId: id, connectionId: wa!.id, verifyToken: 'v' });
+        await pg.db.insert(whatsappTemplates).values({ tenantId: id, connectionId: wa!.id, metaId: '1', name: 'aviso', language: 'es', category: 'UTILITY', status: 'APPROVED' });
+        await pg.db.insert(whatsappContacts).values({ tenantId: id, connectionId: wa!.id, phone: '573001112233', lastOutboundListId: list!.id, lastOutboundRecordId: record!.id });
         await pg.db.insert(templates).values({ tenantId: id, name: 'Plantilla', blueprint: {} });
         const [comment] = await pg.db
             .insert(comments)
@@ -431,6 +439,9 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await expect(platform.getTenant(id)).rejects.toBeInstanceOf(NotFoundException);
         expect(await pg.db.select().from(attachments).where(eq(attachments.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(connections).where(eq(connections.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(whatsappHooks).where(eq(whatsappHooks.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(whatsappTemplates).where(eq(whatsappTemplates.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(whatsappContacts).where(eq(whatsappContacts.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(templates).where(eq(templates.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(listGroups).where(eq(listGroups.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(mentions).where(eq(mentions.tenantId, id))).toHaveLength(0);

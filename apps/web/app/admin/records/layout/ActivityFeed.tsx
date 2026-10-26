@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Activity as ActivityIcon, Loader2, Mail, MessageSquare, MousePointerClick, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
+import { Activity as ActivityIcon, Loader2, Mail, MessageCircle, MessageSquare, MousePointerClick, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
 
 import { ActivityValue } from '@/admin/activity/ActivityPanel';
 import { RestorePreviousButton } from '@/admin/records/history/FieldHistory';
@@ -397,7 +397,9 @@ function ChangeRow({
           ? Zap
           : first.action === 'button_pressed'
             ? MousePointerClick
-            : first.action.includes('deleted')
+            : first.action === 'whatsapp'
+              ? MessageCircle
+              : first.action.includes('deleted')
               ? Trash2
               : Pencil;
     // Lo que cambió de un registro recién creado son TODOS sus valores: el

@@ -73,6 +73,9 @@ const GLYPHS: Record<string, { viewBox: string; d: string }> = {
     },
 };
 
+// WhatsApp Business oficial (D3): el mismo glifo, sobre el verde oscuro de la marca.
+GLYPHS.whatsapp_cloud = GLYPHS.whatsapp!;
+
 /** Una API personalizada no tiene marca: se dibuja un enchufe neutro. */
 const PLUG = {
     viewBox: '0 0 256 256',

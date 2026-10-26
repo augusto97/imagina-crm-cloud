@@ -161,7 +161,12 @@ export type AuditAction =
     | 'guest.level_change'
     | 'guest.unshare'
     | 'guest.remove'
-    | 'guest.promote';
+    | 'guest.promote'
+    // D3 — WhatsApp oficial: dónde caen los mensajes, columnas de la lista y
+    // suscribir la app de Meta a la cuenta.
+    | 'whatsapp.config'
+    | 'whatsapp.columns'
+    | 'whatsapp.subscribe';
 
 export interface AuditEntryDto {
     id: number;

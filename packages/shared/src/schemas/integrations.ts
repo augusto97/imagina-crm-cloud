@@ -108,6 +108,8 @@ export const INTEGRATION_PROVIDER_DEFS: Record<IntegrationProvider, IntegrationP
 
 export const INTEGRATION_KEYS = [
     'whatsapp',
+    // D3 — WhatsApp oficial (Meta WhatsApp Cloud API), al lado del de WAS.
+    'whatsapp_cloud',
     'telegram',
     'slack',
     'gmail',
@@ -299,10 +301,10 @@ export const WOO_ORDER_STATUS_OPTIONS: Array<{ value: string; label: string }> =
 export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'whatsapp',
-        name: 'WhatsApp',
-        tagline: 'Manda mensajes de WhatsApp desde tus automatizaciones.',
+        name: 'WhatsApp (WAS)',
+        tagline: 'Manda mensajes de WhatsApp con tu cuenta de Imagina WAS (no oficial).',
         description:
-            'Usa tu cuenta de Imagina WAS: avisos de vencimiento, confirmaciones, recordatorios de pago. El número de destino lo toma del registro.',
+            'Usa tu cuenta de Imagina WAS: avisos de vencimiento, confirmaciones, recordatorios de pago. El número de destino lo toma del registro. No es la API oficial de Meta: para plantillas aprobadas y respuestas de tus clientes, conecta «WhatsApp Business (oficial)».',
         category: 'mensajeria',
         color: '#25D366',
         auth: {
@@ -385,6 +387,99 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         ],
                     },
                     { key: 'caption', label: 'Texto que lo acompaña', type: 'long_text' },
+                ],
+            }),
+        ],
+    },
+    {
+        // D3 — Meta WhatsApp Cloud API. La empresa conecta SU número y SU
+        // cuenta: plantillas aprobadas por Meta, avisos de los mensajes que
+        // le escriben y el estado de cada envío (entregado, leído, fallido).
+        key: 'whatsapp_cloud',
+        name: 'WhatsApp Business (oficial)',
+        tagline: 'La API oficial de Meta: plantillas aprobadas, respuestas de tus clientes y estado de cada envío.',
+        description:
+            'Conecta tu número de WhatsApp Business con la API oficial de Meta (Cloud API). Manda plantillas aprobadas desde un registro o una automatización, entérate cuando un cliente te escribe (el registro se crea o se actualiza solo) y mira si cada envío se entregó o se leyó. La conversación sigue en WhatsApp: en el registro queda sólo el último mensaje.',
+        category: 'mensajeria',
+        color: '#128C7E',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'access_token',
+                    label: 'Token de acceso permanente',
+                    secret: true,
+                    required: true,
+                    placeholder: 'EAAG…',
+                    help: 'El token de un usuario del sistema de tu portafolio de Meta Business, sin vencimiento. Se guarda cifrado.',
+                }),
+                field({
+                    key: 'phone_number_id',
+                    label: 'Identificador del número de teléfono',
+                    required: true,
+                    placeholder: '123456789012345',
+                    help: 'En tu app de Meta → WhatsApp → Configuración de la API («Phone number ID»). No es el número, es su identificador.',
+                }),
+                field({
+                    key: 'waba_id',
+                    label: 'Identificador de la cuenta de WhatsApp Business',
+                    required: true,
+                    placeholder: '123456789012345',
+                    help: 'En el mismo lugar («WhatsApp Business Account ID»). Con él se leen tus plantillas.',
+                }),
+                field({
+                    key: 'app_secret',
+                    label: 'Clave secreta de la app',
+                    secret: true,
+                    secret_slot: 'signing_secret',
+                    required: true,
+                    placeholder: '32 caracteres',
+                    help: 'En tu app de Meta → Configuración → Básica → «Clave secreta de la app». Con ella verificamos que cada aviso viene de Meta. Se guarda cifrada.',
+                }),
+                field({ key: 'display_phone', label: 'Número', hidden: true }),
+                field({ key: 'verified_name', label: 'Nombre verificado', hidden: true }),
+                field({ key: 'quality_rating', label: 'Calidad', hidden: true }),
+            ],
+            how_to: [
+                'Necesitas una app de Meta con el producto WhatsApp y tu número ya registrado en la Cloud API (developers.facebook.com → tu app → WhatsApp).',
+                'En business.facebook.com → Configuración del negocio → Usuarios del sistema, crea un usuario del sistema administrador y asígnale tu app y tu cuenta de WhatsApp con control total.',
+                'Genera un token para ese usuario con los permisos whatsapp_business_messaging y whatsapp_business_management, con vencimiento «Nunca», y pégalo aquí.',
+                'Copia el identificador del número de teléfono y el de la cuenta de WhatsApp Business (en tu app → WhatsApp → Configuración de la API) y la clave secreta de la app (Configuración → Básica).',
+                'Al conectar comprobamos los datos con Meta. Después abre «WhatsApp» en esta conexión para pegar en Meta la URL de los avisos y su token de verificación.',
+            ],
+        },
+        actions: [
+            action({
+                key: 'send_template',
+                label: 'Enviar plantilla de WhatsApp',
+                description: 'Una plantilla aprobada por Meta, con sus variables. Sirve siempre, aunque el contacto no te haya escrito.',
+                params: [
+                    {
+                        key: 'to',
+                        label: 'Número de destino',
+                        required: true,
+                        help: 'Con indicativo de país. Puedes usar el campo teléfono: {{telefono}}.',
+                    },
+                    { key: 'template', label: 'Plantilla', required: true, help: 'El nombre de la plantilla aprobada en Meta.' },
+                    { key: 'language', label: 'Idioma', default: 'es', help: 'El código del idioma de la plantilla (es, es_MX, en_US…).' },
+                    {
+                        key: 'variables',
+                        label: 'Variables',
+                        type: 'long_text',
+                        help: 'Un objeto con el valor de cada variable: {"body.1": "{{nombre}}", "header.1": "…", "button.0": "…"}. Admite variables del registro.',
+                    },
+                    { key: 'header_media', label: 'Enlace del adjunto del encabezado', help: 'Para plantillas con imagen, video o documento en el encabezado: una dirección pública https://.' },
+                    { key: 'header_filename', label: 'Nombre del documento', help: 'Cómo se llama el documento del encabezado (Factura.pdf).' },
+                ],
+            }),
+            action({
+                key: 'send_text',
+                label: 'Enviar mensaje de texto de WhatsApp',
+                description: 'Texto libre. Sólo dentro de las 24 h siguientes al último mensaje del contacto; fuera de esa ventana hay que usar una plantilla.',
+                params: [
+                    { key: 'to', label: 'Número de destino', required: true, help: 'Con indicativo de país. Puedes usar {{telefono}}.' },
+                    { key: 'text', label: 'Mensaje', type: 'long_text', required: true },
+                    { key: 'preview_url', label: 'Mostrar la vista previa de los enlaces', type: 'boolean', default: 'false' },
                 ],
             }),
         ],

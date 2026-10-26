@@ -71,6 +71,8 @@ export function changesOf(entry: ActivityEntity, fields: FieldEntity[]): FieldCh
 
 /** ¿La entrada la produjo una persona o el sistema (automatización, import)? */
 export function actorOf(entry: ActivityEntity): string {
+    // D3 — un mensaje que LLEGÓ por WhatsApp no lo hizo nadie del equipo.
+    if (entry.action === 'whatsapp' && whatsappEventOf(entry).event === 'received') return __('El contacto');
     if (entry.user_name !== null && entry.user_name !== undefined && entry.user_name !== '') {
         return entry.user_name;
     }
@@ -216,6 +218,29 @@ export function approvalText(entry: Pick<ActivityEntity, 'changes'>): string {
     }
 }
 
+/**
+ * D3 — `diff.whatsapp` = {event: received|sent, kind, template?, language?,
+ * connection}. Nunca trae el TEXTO del mensaje: la actividad la ven todos los
+ * que ven el registro y una conversación no tiene por qué quedar ahí.
+ */
+export function whatsappEventOf(entry: Pick<ActivityEntity, 'changes'>): { event: string; kind: string; template: string | null; connection: string | null } {
+    const raw = (entry.changes as Record<string, unknown> | null | undefined)?.whatsapp;
+    const w = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    return {
+        event: typeof w.event === 'string' ? w.event : '',
+        kind: typeof w.kind === 'string' ? w.kind : '',
+        template: typeof w.template === 'string' && w.template !== '' ? w.template : null,
+        connection: typeof w.connection === 'string' && w.connection !== '' ? w.connection : null,
+    };
+}
+
+export function whatsappText(entry: Pick<ActivityEntity, 'changes'>): string {
+    const w = whatsappEventOf(entry);
+    if (w.event === 'received') return __('escribió por WhatsApp');
+    if (w.template) return sprintf(/* translators: %s: nombre de la plantilla */ __('envió la plantilla «%s» por WhatsApp'), w.template);
+    return __('envió un mensaje por WhatsApp');
+}
+
 /** El verbo de la entrada, en pasado y con sujeto ya puesto aparte. */
 export function actionText(entry: ActivityEntity, changeCount: number): string {
     switch (entry.action) {
@@ -255,6 +280,8 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         // C6 — el registro nació de una plantilla.
         case 'record_template_applied':
             return templateAppliedText(entry);
+        case 'whatsapp':
+            return whatsappText(entry);
         // Campo «Botón»: `diff.button` = {label, ok, error?}.
         case 'button_pressed': {
             const b = buttonPressOf(entry);

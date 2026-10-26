@@ -54,6 +54,7 @@ import {
     type ListRecordsQuery,
     type StoreListMarker,
     type TenantFormat,
+    type WhatsappEventInfo,
 } from '@imagina-base/shared';
 import { and, asc, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { safeWebhookFetch, type SafeFetchResult } from '../common/safe-fetch';
@@ -77,6 +78,7 @@ import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { BOOKING_SIMULATOR, type BookingSimulator } from '../booking/booking-simulator';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
@@ -136,6 +138,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     checklist_completed: ['checklist_completed'],
     // D5 — una cita de la agenda se agendó, se reprogramó o se canceló.
     booking_event: ['booking_event'],
+    // D3 — un contacto escribió por WhatsApp (oficial).
+    whatsapp_message_received: ['whatsapp_message_received'],
 };
 
 interface PersonInfo {
@@ -174,6 +178,8 @@ interface RunContext {
     checklist?: ChecklistCompletedInfo;
     /** D5 — la cita de la agenda (`{{cita.servicio}}`, `{{cita.inicio}}`…). */
     booking?: BookingEventInfo;
+    /** D3 — el mensaje de WhatsApp que llegó (`{{whatsapp.texto}}`, `{{whatsapp.de}}`…). */
+    whatsapp?: WhatsappEventInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
@@ -439,6 +445,24 @@ export class AutomationEngine {
         return this.approvalsSvc;
     }
 
+    /** D3 — WhatsApp oficial (se resuelve al usarlo: su módulo depende de registros y campos). */
+    private whatsappSvc: WhatsappService | null | undefined;
+    private whatsapp(): WhatsappService | null {
+        if (this.whatsappSvc === undefined) {
+            try {
+                this.whatsappSvc = this.moduleRef?.get(WhatsappService, { strict: false }) ?? null;
+            } catch {
+                this.whatsappSvc = null;
+            }
+        }
+        return this.whatsappSvc;
+    }
+
+    /** Para los specs que arman el motor a mano. */
+    setWhatsapp(svc: WhatsappService | null): void {
+        this.whatsappSvc = svc;
+    }
+
     /** C6 — plantillas de registro (se resuelve al usarlo, igual que RecordsService). */
     private recordTemplates(): RecordTemplatesService | null {
         if (this.recordTemplatesSvc === undefined) {
@@ -524,6 +548,7 @@ export class AutomationEngine {
                 ...(event.approval ? { approval: event.approval } : {}),
                 ...(event.checklist ? { checklist: event.checklist } : {}),
                 ...(event.booking ? { booking: event.booking } : {}),
+                ...(event.whatsapp ? { whatsapp: event.whatsapp } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -1092,6 +1117,9 @@ export class AutomationEngine {
             case 'payment_received':
                 notes.push('En la prueba no hay un pago real: las variables {{pago.x}} quedan vacías.');
                 break;
+            case 'whatsapp_message_received':
+                notes.push('En la prueba no llegó un mensaje real: las variables {{whatsapp.x}} quedan vacías.');
+                break;
             case 'form_submitted':
                 notes.push('Se asume que este registro llegó por el formulario.');
                 break;
@@ -1239,6 +1267,13 @@ export class AutomationEngine {
         if (auto.triggerType === 'booking_event') {
             if (!ctx.booking || !bookingTriggerMatches(cfg, ctx.booking)) return false;
         }
+        // D3 — «Cuando llega un mensaje de WhatsApp»: sin `connection_id` vale
+        // cualquier número de la empresa; con uno, sólo ese.
+        if (auto.triggerType === 'whatsapp_message_received') {
+            if (!ctx.whatsapp) return false;
+            const wanted = Number(cfg.connection_id);
+            if (Number.isInteger(wanted) && wanted > 0 && ctx.whatsapp.conexion_id !== wanted) return false;
+        }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
 
@@ -1337,6 +1372,11 @@ export class AutomationEngine {
             if (token === 'boton.nombre') return ctx.button?.label ?? '';
             if (token === 'boton.persona') return ctx.button?.user_name ?? '';
             if (token === 'boton.email') return ctx.button?.user_email ?? '';
+            // D3 — el mensaje de WhatsApp que llegó.
+            if (token.startsWith('whatsapp.')) {
+                const v = ctx.whatsapp?.[token.slice('whatsapp.'.length) as keyof WhatsappEventInfo];
+                return v === undefined || v === null ? '' : v;
+            }
             // A9 — el checklist que quedó completo.
             if (token === 'checklist.nombre') return ctx.checklist?.name ?? '';
             if (token === 'checklist.items') return ctx.checklist?.total ?? '';
@@ -2829,6 +2869,25 @@ export class AutomationEngine {
                         link_id: created.link.id,
                         url: created.link.url,
                     });
+                }
+                // D3 — WhatsApp oficial: la petición la arma el canal (plantilla
+                // aprobada, ventana de 24 h) y el envío queda en el registro.
+                if (resolved.integration && resolved.integration.key === 'whatsapp_cloud') {
+                    const wa = this.whatsapp();
+                    if (!wa) throw new Error('WhatsApp no está disponible en este servidor.');
+                    const out = await wa.runAutomationAction(tx, {
+                        tenantId: ctx.tenantId,
+                        listId: ctx.listId,
+                        recordId: ctx.recordId,
+                        connectionId: connId,
+                        actionKey: resolved.action.key,
+                        values,
+                        merge: (raw) => merge(raw),
+                        realCall,
+                    });
+                    if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
+                    if (out.status === 'failed') return fail('connector_action', out.message, { integration: 'whatsapp_cloud', ...out.details });
+                    return ok('connector_action', out.message, { action: resolved.action.key, integration: 'whatsapp_cloud', ...out.details });
                 }
                 if (resolved.integration) {
                     const integ = resolved.integration;
