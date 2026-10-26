@@ -9376,6 +9376,74 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto la fase 4 queda completa.**
 
+- [ ] **Fase 5 del estudio — la app en el teléfono, mesa de ayuda y WhatsApp**
+      (aprobada sin «De documento a registro», que quedó en `docs/ideas.md`;
+      orden: app instalable → mesa de ayuda → WhatsApp oficial):
+  - [x] **App instalable + notificaciones push + escáner de códigos (v0.1.314,
+        ADR-S68, opciones H1 y H3 del estudio)**: la app se instala en el
+        teléfono o el computador, avisa con notificaciones del sistema aunque
+        esté cerrada y lee códigos QR y de barras con la cámara.
+        (a) **Instalable**: manifiesto que arma el API por Host
+        (`GET /public/manifest.webmanifest`; en el dominio propio de una
+        empresa —ADR-S17— su nombre y su color; íconos genéricos 192/512 y
+        «maskable», porque el logo de una empresa no tiene forma ni formato
+        fijos), enlazado desde el SPA (mismo origen: la CSP no cambia).
+        **Service worker propio** que el build emite con el id de la versión:
+        el HTML siempre va a la red (un despliegue nunca deja la app vieja
+        pegada), los assets con hash salen del caché y la API jamás; sin red,
+        una pantalla «Sin conexión» con «Reintentar» (no hay modo offline: eso
+        es H2). Al activarse borra el caché de la versión anterior y busca una
+        nueva cada hora y al volver a la pestaña. «Instalar la app» en el menú
+        de la persona (el aviso del navegador en Chrome/Edge/Android; en iPhone,
+        los pasos de Compartir → Agregar a inicio). El portal del cliente no es
+        instalable. (b) **Web Push propio, sin dependencias**: cifrado
+        aes128gcm (RFC 8291/8188, verificado contra el vector del RFC) y JWT
+        VAPID ES256 (RFC 8292) con `node:crypto`. Llaves VAPID generadas una vez
+        en Redis `platform:push` (la privada cifrada con `SECRETS_KEY`;
+        ilegible → 503, nunca se regeneran solas; viajan en el snapshot). Tabla
+        `push_subscriptions` (migración 0088, RLS): una por persona, empresa y
+        dispositivo, **atada a la sesión** que la creó — cerrar sesión,
+        revocarla, que venza, recuperar la contraseña o desactivar/borrar la
+        cuenta deja de enviar a ese dispositivo y lo borra. Un 404/410 del
+        servicio la borra y se recuerda 30 días: si el navegador la vuelve a
+        ofrecer, el servidor la rechaza (`push_subscription_gone`) y el
+        dispositivo pide una nueva solo. (c) **El mismo aviso de la campana**
+        (ADR-S40), con una columna «Push» junto a «Correo» por tipo en Ajustes →
+        Cuenta → Avisos (por defecto: menciones, asignaciones, aprobaciones y
+        recordatorios). Destinatarios = los de la campana, **nunca un invitado
+        ni un cliente del portal**; payload mínimo (título, una línea y la URL
+        del registro, nunca el comentario entero), tope de 20 por persona y
+        hora (el resto queda en la campana), cola BullMQ propia. El clic enfoca
+        la pestaña abierta y abre el registro, cambiando de empresa si hace
+        falta. (d) **«Notificaciones en este dispositivo»** en Ajustes →
+        Seguridad: activar, «Enviarme una prueba», desactivar, la lista de
+        dispositivos con quitar, cómo desbloquear el permiso según el navegador
+        y el aviso de iPhone (necesita la app instalada, iOS 16.4+).
+        `/me/push/*` cerrado a invitados e impersonaciones. (e) **Escáner**
+        (BarcodeDetector nativo o zxing en su propio chunk, a pedido):
+        «Escanear un código» en la búsqueda global; botón en la barra de la
+        lista (uno → la ficha, varios → la lista, ninguno → «Crear registro» con
+        el código puesto); **escaneo continuo** con sonido y vibración
+        opcionales (inventario, entradas a un evento); cámara en el campo
+        «Código» de la ficha y del alta. `GET /search/code`: coincidencia EXACTA
+        sin mayúsculas ni espacios, en una consulta y con el ACL de la búsqueda
+        global (alcance por lista, rol propio, campos ocultos, papelera). El
+        campo «Código» se elige en el administrador de campos
+        (`settings.scan_field_id`, validado y re-mapeado como cualquier
+        `*_field_id`) o se deduce del nombre (SKU, código, serial, boleta…); el
+        asistente/MCP lo ve y lo propone. **Bug atrapado en el E2E**: tras un
+        410 el navegador sigue devolviendo la suscripción muerta y la
+        re-vinculación al abrir la app la resucitaba. Dependencia nueva
+        `@zxing/library` (sin avisos). Tests: web-push (vector RFC 8291), push
+        (13 con Postgres y Redis reales), escáner (10), shared y front (API
+        1590, front 562, shared 477 en verde) + E2E navegador 21/21 (manifiesto
+        por dominio, SW, despliegue simulado, sin conexión, CSP), 23/23 (push
+        real descifrado aparte del código de la app, mención, preferencia
+        apagada, 410 con renovación, logout) y 27/27 (cámara con un QR de
+        verdad, celular, oscuro, iPhone, permiso denegado). Queda fuera: modo
+        offline (H2), push al portal, el logo de la empresa como ícono y llenar
+        con la cámara otros campos.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

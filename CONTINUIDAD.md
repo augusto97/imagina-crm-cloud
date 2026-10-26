@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.313** (agenda de citas pública; fase 4 completa), en `main`.
+versión publicada: **v0.1.314** (app instalable, push y escáner; primera entrega de la fase 5), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
@@ -720,6 +720,24 @@ versión publicada: **v0.1.313** (agenda de citas pública; fase 4 completa), en
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.314** — **App instalable + notificaciones push +
+  escáner** (ADR-S68, opciones H1 y H3; primera entrega de la fase 5).
+  Manifiesto por Host (en el dominio de una empresa, su nombre y su color),
+  service worker propio (HTML a la red, assets con hash en caché, «Sin
+  conexión» con Reintentar, borra el caché viejo en cada despliegue) e
+  «Instalar la app» en el menú (pasos de Safari en iPhone). Push con Web Push
+  propio (aes128gcm + VAPID con `node:crypto`, llaves en `platform:push`),
+  canal «Push» por tipo de aviso con los mismos destinatarios que la campana
+  (nunca invitados ni clientes), atado a la sesión, tope de 20 por hora.
+  Escáner QR/barras (nativo o zxing a pedido) en la búsqueda global, la barra
+  de la lista (con modo continuo) y el campo «Código»; `GET /search/code` con
+  el ACL de la búsqueda global. Migración 0088. Bug atrapado en el E2E: tras un
+  410 el navegador seguía devolviendo la suscripción muerta y la
+  re-vinculación la resucitaba. Decisiones: íconos genéricos en los dominios de
+  empresa; el portal no es instalable (todavía). E2E 21/21, 23/23 y 27/27.
+  **Al desplegar no hay nada que tocar en el proxy** (todo es del mismo
+  origen); con `APP_BASE_URL` sin https, el «subject» VAPID cae al `mailto:` de
+  `MAIL_FROM`.
 - **2026-10-26 · v0.1.313** — **Agenda de citas pública estilo Calendly**
   (ADR-S67, opción D5; la fase 4 era sólo esto → **fase 4 completa**). Páginas
   de agenda por lista (Ajustes de la lista → Agenda) con constructor a pantalla
