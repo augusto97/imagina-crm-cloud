@@ -67,11 +67,12 @@ aquí, pospuestos:
   Sheets ya tiene el permiso `spreadsheets` (lectura y escritura): no hace falta
   pedir uno nuevo a Google.
 
-**Oleada 7 · propuesta el 2026-10-26, esperando respuesta** (el estudio sólo
-traía seis oleadas): E1 + E2 + E3 (automatizaciones completas), A14
-(duplicados y fusionar), F1 + F2 + E7 + mejoras de agentes (IA en el día a
-día), F7 + I7 (empezar fácil) y G4 (calendario en dos sentidos). Lo que el
-usuario no elija sigue en este banco.
+**Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
+con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
+I9 pasan a la fase 7 y salen de este banco al publicarse). Siguen aquí, sin
+elegir: E1 + E2 + E3 (automatizaciones completas), A14 (duplicados y
+fusionar), F1 + F2 + E7 + mejoras de agentes (IA en el día a día) y G4
+(calendario en dos sentidos).
 
 ---
 
