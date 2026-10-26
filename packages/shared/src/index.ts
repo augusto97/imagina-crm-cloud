@@ -103,4 +103,5 @@ export * from './schemas/kanban';
 export * from './schemas/calendar';
 export * from './schemas/dependency';
 export * from './schemas/gantt';
+export * from './schemas/workload';
 export * from './xlsx';
