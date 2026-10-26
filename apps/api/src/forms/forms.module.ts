@@ -4,6 +4,7 @@ import { FieldsModule } from '../fields/fields.module';
 import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
+import { RecordTemplatesModule } from '../record-templates/record-templates.module';
 import { PlatformCaptchaController, WorkspaceCaptchaController } from './captcha.controller';
 import { CaptchaService } from './captcha.service';
 import { FormsController, PublicFormPageController, PublicFormsController } from './forms.controller';
@@ -19,7 +20,7 @@ import { FormsService } from './forms.service';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule],
+    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule, RecordTemplatesModule],
     controllers: [FormsController, PublicFormsController, PublicFormPageController, PlatformCaptchaController, WorkspaceCaptchaController],
     providers: [FormsService, CaptchaService],
     exports: [FormsService, CaptchaService],

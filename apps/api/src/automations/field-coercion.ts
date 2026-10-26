@@ -46,7 +46,7 @@ export type CoerceResult = { ok: true; value: unknown } | { ok: false; error: st
 
 /** Tipos que una automatización no escribe: los calcula el servidor o viven fuera de `data`. */
 export const READ_ONLY_TYPES: readonly string[] = [
-    'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'formula',
+    'computed', 'lookup', 'rollup', 'ai', 'time_tracked', 'formula', 'checklist_progress',
     // v0.1.300 — ID automático y columnas de sistema.
     'autonumber', 'created_at', 'updated_at', 'created_by', 'updated_by',
     // Campo «Botón»: no tiene valor.

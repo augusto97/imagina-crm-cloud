@@ -18,6 +18,7 @@ import {
     type List,
     type ListNotificationsQuery,
     type MarkNotificationsInput,
+    type MyWorkChecklistItem,
     type MyWorkDto,
     type MyWorkItem,
     type NotificationDto,
@@ -33,7 +34,19 @@ import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'driz
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { comments, lists, memberships, notifications, records, recordFollows, reminders, tenants, users } from '../db/schema';
+import {
+    comments,
+    lists,
+    memberships,
+    notifications,
+    recordChecklistItems,
+    recordChecklists,
+    records,
+    recordFollows,
+    reminders,
+    tenants,
+    users,
+} from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -48,6 +61,8 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import {
     changeSummary,
+    checklistAssignedBody,
+    checklistAssignedTitle,
     digestEmail,
     newlyAssigned,
     notificationEmail,
@@ -173,6 +188,21 @@ export class NotificationsService implements OnModuleInit {
                     body: snippet,
                 },
             );
+            return;
+        }
+        if (e.type === 'checklist_assigned') {
+            // A9 — un aviso por persona con lo que le tocó (uno o varios ítems).
+            const byUser = new Map<number, Array<{ text: string; checklist: string }>>();
+            for (const a of e.assignments) byUser.set(a.userId, [...(byUser.get(a.userId) ?? []), { text: a.text, checklist: a.checklist }]);
+            for (const [userId, items] of byUser) {
+                await this.deliver(e.tenantId, 'assigned', [userId], {
+                    listId: e.listId,
+                    recordId: e.recordId,
+                    actorId: e.actorId > 0 ? e.actorId : null,
+                    title: checklistAssignedTitle(e.actorId > 0 ? actorName : null, items, ctx.title),
+                    body: checklistAssignedBody(items),
+                });
+            }
             return;
         }
         await this.deliver(e.tenantId, 'mention', e.userIds, {
@@ -777,13 +807,81 @@ export class NotificationsService implements OnModuleInit {
         following.sort((a, b) => (order.get(a.record_id) ?? 0) - (order.get(b.record_id) ?? 0));
 
         const reminderList = await this.listReminders(tenantId, actor, {}, schema);
+        const checklistItems = await this.myChecklistItems(tenantId, actor, schema);
+        if (checklistItems.length > MAX_ITEMS) truncated = true;
         return {
             assigned,
+            checklist_items: checklistItems.slice(0, MAX_ITEMS),
             following,
             reminders: reminderList,
             lists_with_assignee: withAssignee,
             truncated,
         };
+    }
+
+    /**
+     * A9 — Los ítems de checklist PENDIENTES asignados a la persona, de los
+     * registros que puede VER (el mismo alcance por lista que el resto de «Mi
+     * trabajo»; nada de la papelera), en UNA consulta, por fecha.
+     */
+    private async myChecklistItems(tenantId: number, actor: { userId: number; role: Role }, schema: WorkSchema): Promise<MyWorkChecklistItem[]> {
+        const parts: SQL[] = [];
+        for (const view of schema.views.values()) {
+            parts.push(view.scope ? and(eq(records.listId, view.list.id), view.scope)! : eq(records.listId, view.list.id));
+        }
+        if (parts.length === 0) return [];
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    itemId: recordChecklistItems.id,
+                    checklistId: recordChecklistItems.checklistId,
+                    checklistName: recordChecklists.name,
+                    text: recordChecklistItems.text,
+                    dueDate: recordChecklistItems.dueDate,
+                    dueAt: recordChecklistItems.dueAt,
+                    recordId: records.id,
+                    listId: records.listId,
+                    data: records.data,
+                })
+                .from(recordChecklistItems)
+                .innerJoin(recordChecklists, eq(recordChecklists.id, recordChecklistItems.checklistId))
+                .innerJoin(records, eq(records.id, recordChecklistItems.recordId))
+                .where(
+                    and(
+                        eq(recordChecklistItems.tenantId, tenantId),
+                        eq(recordChecklistItems.assigneeId, actor.userId),
+                        sql`NOT ${recordChecklistItems.done}`,
+                        isNull(records.deletedAt),
+                        or(...parts),
+                    ),
+                )
+                .orderBy(
+                    sql`coalesce(${recordChecklistItems.dueAt}, ${recordChecklistItems.dueDate}::timestamptz) ASC NULLS LAST`,
+                    asc(recordChecklistItems.id),
+                )
+                .limit(MAX_ITEMS + 1),
+        );
+        const out: MyWorkChecklistItem[] = [];
+        for (const r of rows) {
+            const view = schema.views.get(r.listId);
+            if (!view) continue;
+            out.push({
+                item_id: r.itemId,
+                checklist_id: r.checklistId,
+                checklist_name: r.checklistName,
+                text: r.text,
+                due: r.dueAt ? r.dueAt.toISOString() : (r.dueDate ?? null),
+                due_is_datetime: r.dueAt !== null,
+                list_id: view.list.id,
+                list_slug: view.list.slug,
+                list_name: view.list.name,
+                list_icon: view.list.icon ?? null,
+                list_color: view.list.color ?? null,
+                record_id: r.recordId,
+                record_title: this.workItemFor(view, r.recordId, r.data).title,
+            });
+        }
+        return out;
     }
 
     /**
@@ -927,8 +1025,17 @@ export class NotificationsService implements OnModuleInit {
         const weekEnd = addDaysYmd(today, 6);
         const localDue = (i: MyWorkItem): string | null => (i.due && i.due_is_datetime ? zonedToday(tz, new Date(i.due)) : i.due);
         const line = (i: MyWorkItem): DigestItem => ({ title: i.title, detail: [i.list_name, i.status_label].filter(Boolean).join(' · ') });
-        const overdue = work.assigned.filter((i) => dueBucket(localDue(i), today, weekEnd) === 'overdue').slice(0, 10).map(line);
-        const dueToday = work.assigned.filter((i) => dueBucket(localDue(i), today, weekEnd) === 'today').slice(0, 10).map(line);
+        // A9 — los ítems de checklist asignados también entran al resumen.
+        const itemDue = (i: MyWorkChecklistItem): string | null => (i.due && i.due_is_datetime ? zonedToday(tz, new Date(i.due)) : i.due);
+        const itemLine = (i: MyWorkChecklistItem): DigestItem => ({ title: i.text, detail: [i.record_title, i.list_name].filter(Boolean).join(' · ') });
+        const overdue = [
+            ...work.assigned.filter((i) => dueBucket(localDue(i), today, weekEnd) === 'overdue').map(line),
+            ...work.checklist_items.filter((i) => dueBucket(itemDue(i), today, weekEnd) === 'overdue').map(itemLine),
+        ].slice(0, 10);
+        const dueToday = [
+            ...work.assigned.filter((i) => dueBucket(localDue(i), today, weekEnd) === 'today').map(line),
+            ...work.checklist_items.filter((i) => dueBucket(itemDue(i), today, weekEnd) === 'today').map(itemLine),
+        ].slice(0, 10);
         const page = await this.list(tenantId, who.userId, { limit: 8, unread: true });
         if (overdue.length === 0 && dueToday.length === 0 && page.unread === 0) return false;
         const links = await this.links(tenantId, null);

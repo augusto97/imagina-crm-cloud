@@ -55,6 +55,7 @@ import { ActionTypeSelect } from './ActionTypeSelect';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
+import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { ActionTypeMenu } from './ActionTypeMenu';
 import { ifElseDepth, insideLoop, type SeqPath } from './actionsTree';
 import { LoopItemProvider, StepScope, useAutomationFlow, useLoopItem, useRememberSample, useStepPath } from './flowContext';
@@ -163,6 +164,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
     // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
+    // A9 — checklist_completed: cualquiera (default), uno por nombre o todos.
+    if (c.checklist_mode === 'named' || c.checklist_mode === 'all') out.checklist_mode = c.checklist_mode;
+    if (typeof c.checklist_name === 'string' && c.checklist_name.trim() !== '') out.checklist_name = c.checklist_name.trim();
     // button_pressed: sólo un botón; sin él, cualquier botón de la lista.
     if (typeof c.button_field_id === 'number' && c.button_field_id > 0) out.button_field_id = c.button_field_id;
     // C5 — approval_resolved: un flujo (sin él, cualquiera) y los resultados.
@@ -199,6 +203,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando alguien presiona un campo «Botón» de un registro de esta lista (en la tabla, la ficha o el portal, si el botón lo permite). Sirve para tareas que se hacen a pedido: enviar una cotización, avisar al equipo, crear la factura. Puedes usar {{boton.nombre}} y {{boton.persona}}.');
         case 'approval_resolved':
             return __('Se ejecuta cuando una solicitud de aprobación de esta lista se resuelve: alguien la aprueba (en el último paso), la rechaza, la devuelve para corregir o la cancela. Puedes usar {{aprobacion.resultado}}, {{aprobacion.flujo}}, {{aprobacion.motivo}} y {{aprobacion.decidio}}.');
+        case 'checklist_completed':
+            return __('Se ejecuta cuando alguien marca el último ítem pendiente de un checklist de un registro de esta lista. Puede ser cualquier checklist, uno con un nombre en particular («Documentación») o recién cuando el registro tiene TODOS sus checklists completos. Puedes usar {{checklist.nombre}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
@@ -300,6 +306,54 @@ export function TriggerConfigEditor({
             {triggerType === 'button_pressed' && <ButtonPressedConfig config={config} onChange={onChange} fields={fields} />}
 
             {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
+            {triggerType === 'checklist_completed' && <ChecklistCompletedConfig config={config} onChange={onChange} />}
+        </div>
+    );
+}
+
+/** A9 — «Cuando se completa un checklist»: cualquiera, uno por nombre o todos. */
+function ChecklistCompletedConfig({ config, onChange }: { config: TriggerConfig; onChange: (next: TriggerConfig) => void }): JSX.Element {
+    const listId = useAutomationListId();
+    const templates = useRecordTemplates(listId, 'checklist');
+    const mode = config.checklist_mode === 'named' || config.checklist_mode === 'all' ? config.checklist_mode : 'any';
+    const name = typeof config.checklist_name === 'string' ? config.checklist_name : '';
+    const suggestions = (templates.data ?? []).flatMap((t) => t.content.checklists.map((c) => c.name));
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="trigger-checklist-config">
+            <Label htmlFor="trigger-checklist-mode">{__('Qué checklist')}</Label>
+            <Select
+                id="trigger-checklist-mode"
+                value={mode}
+                onChange={(e) => {
+                    const next: TriggerConfig = { ...config, checklist_mode: e.target.value };
+                    if (e.target.value !== 'named') delete next.checklist_name;
+                    onChange(next);
+                }}
+            >
+                <option value="any">{__('Cualquier checklist del registro')}</option>
+                <option value="named">{__('Uno con un nombre en particular')}</option>
+                <option value="all">{__('Cuando TODOS los checklists del registro quedan completos')}</option>
+            </Select>
+            {mode === 'named' && (
+                <>
+                    <Input
+                        value={name}
+                        onChange={(e) => onChange({ ...config, checklist_name: e.target.value })}
+                        placeholder={__('Ej.: Documentación')}
+                        list="trigger-checklist-names"
+                        aria-label={__('Nombre del checklist')}
+                        data-testid="trigger-checklist-name"
+                    />
+                    {suggestions.length > 0 && (
+                        <datalist id="trigger-checklist-names">
+                            {[...new Set(suggestions)].map((s) => (
+                                <option key={s} value={s} />
+                            ))}
+                        </datalist>
+                    )}
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Sin distinguir mayúsculas ni acentos.')}</p>
+                </>
+            )}
         </div>
     );
 }
@@ -1213,6 +1267,8 @@ export function ActionConfigEditor({
                 <SendEmailConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'generate_pdf' ? (
                 <GeneratePdfConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'create_subtasks_from_template' ? (
+                <SubtasksFromTemplateConfig spec={spec} onChange={onChange} />
             ) : spec.type === 'if_else' ? (
                 <IfElseConfig
                     spec={spec}
@@ -1514,6 +1570,59 @@ function UpdateFieldConfig({
  * cada valor con el schema del campo destino y vincula los campos
  * relation (ej. `{{record.id}}` en una relación hacia la lista origen).
  */
+/** C6 — «Crear subtareas desde una plantilla» (de esta lista). */
+function SubtasksFromTemplateConfig({ spec, onChange }: { spec: ActionSpec; onChange: (next: ActionSpec) => void }): JSX.Element {
+    const listId = useAutomationListId();
+    const templates = useRecordTemplates(listId, 'record');
+    const current = Number(spec.config.template_id) || 0;
+    const list = templates.data ?? [];
+    const tpl = list.find((t) => t.id === current);
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="action-subtasks-template">
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Agrega al registro que disparó la automatización las subtareas de una plantilla de registro, con sus responsables y fechas relativas (que se calculan desde HOY o desde los campos de este registro).')}
+            </p>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label htmlFor="action-subtasks-template-id">{__('Plantilla')}</Label>
+                <Select
+                    id="action-subtasks-template-id"
+                    value={String(current)}
+                    onChange={(e) => {
+                        const id = Number(e.target.value);
+                        onChange({ ...spec, config: { ...spec.config, template_id: id > 0 ? id : undefined } });
+                    }}
+                >
+                    <option value="0">{__('— Elige una plantilla —')}</option>
+                    {list.map((t) => (
+                        <option key={t.id} value={t.id}>
+                            {t.name}
+                        </option>
+                    ))}
+                    {current > 0 && !tpl && !templates.isLoading && <option value={current}>{__('Plantilla eliminada')}</option>}
+                </Select>
+                {tpl && (
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {tpl.content.subtasks.length === 0
+                            ? __('Esta plantilla no tiene subtareas.')
+                            : sprintf(__('Crea: %s.'), tpl.content.subtasks.map((s) => s.title).slice(0, 6).join(', ') + (tpl.content.subtasks.length > 6 ? '…' : ''))}
+                    </p>
+                )}
+                {!templates.isLoading && list.length === 0 && (
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Esta lista todavía no tiene plantillas de registro: créalas en Ajustes de la lista → Plantillas.')}</p>
+                )}
+            </div>
+            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                <input
+                    type="checkbox"
+                    checked={spec.config.include_checklists === true}
+                    onChange={(e) => onChange({ ...spec, config: { ...spec.config, include_checklists: e.target.checked } })}
+                />
+                {__('Agregar también los checklists de la plantilla al registro')}
+            </label>
+        </div>
+    );
+}
+
 function CreateRecordConfig({
     spec,
     onChange,
@@ -1550,6 +1659,10 @@ function CreateRecordConfig({
     };
 
     const tf = targetFields.data ?? [];
+    // C6 — una plantilla de la lista DESTINO: el registro nace con sus
+    // valores, subtareas y checklists; los valores de abajo la pisan.
+    const recordTemplates = useRecordTemplates(targetListId, 'record');
+    const templateId = Number(spec.config.template_id) || 0;
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
@@ -1575,6 +1688,30 @@ function CreateRecordConfig({
                     ))}
                 </Select>
             </div>
+            {((recordTemplates.data ?? []).length > 0 || templateId > 0) && (
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2" data-testid="action-create-record-template">
+                    <Label className="imcrm-shrink-0 imcrm-text-xs">{__('Plantilla')}</Label>
+                    <Select
+                        value={String(templateId)}
+                        onChange={(e) => {
+                            const id = Number(e.target.value);
+                            onChange({ ...spec, config: { ...spec.config, template_id: id > 0 ? id : undefined } });
+                        }}
+                        aria-label={__('Plantilla de registro')}
+                        className="imcrm-flex-1"
+                    >
+                        <option value="0">{__('Sin plantilla')}</option>
+                        {(recordTemplates.data ?? []).map((t) => (
+                            <option key={t.id} value={t.id}>
+                                {t.name}
+                            </option>
+                        ))}
+                        {templateId > 0 && !(recordTemplates.data ?? []).some((t) => t.id === templateId) && !recordTemplates.isLoading && (
+                            <option value={templateId}>{__('Plantilla eliminada')}</option>
+                        )}
+                    </Select>
+                </div>
+            )}
             {/* Fila por campo: selector + eliminar arriba, valor a ancho
                 completo abajo — en columnas angostas el layout en línea
                 hacía que inputs y chips se entremezclaran sin estructura. */}

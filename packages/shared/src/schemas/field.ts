@@ -75,6 +75,11 @@ export const FIELD_TYPES = [
     // resuelve en cada lectura con una subconsulta sobre `approval_requests`,
     // así filtra («pendientes»), ordena y agrupa como una selección.
     'approval',
+    // A9 — progreso de los checklists del registro (0-100, % de ítems
+    // hechos; vacío si no tiene ítems). Como `time_tracked`: no se persiste,
+    // se resuelve con una subconsulta sobre los ítems, así filtra («menos de
+    // 100»), ordena y se promedia en el pie y los tableros.
+    'checklist_progress',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -276,6 +281,8 @@ export const fieldConfigSchemas = {
         approval_flow_id: idSchema.nullable().optional(),
         options: z.array(selectOptionSchema).optional(),
     }),
+    /** A9 — sólo lectura: % de ítems de checklist hechos (sin config). */
+    checklist_progress: z.object({}),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /**
@@ -316,6 +323,8 @@ export const NON_DATA_FIELD_TYPES: readonly FieldType[] = [
     'formula',
     // C5 — el estado de aprobación sale de `approval_requests`.
     'approval',
+    // A9 — progreso de los checklists: subconsulta sobre los ítems.
+    'checklist_progress',
 ];
 
 export function isDataField(type: FieldType): boolean {
@@ -350,6 +359,8 @@ export function valueBaseType(type: FieldType): FieldType {
     if (type === 'autonumber') return 'text';
     // C5 — el estado de aprobación se muestra como una selección (sus opciones son fijas).
     if (type === 'approval') return 'select';
+    // A9 — el progreso del checklist se lee como un porcentaje (0-100).
+    if (type === 'checklist_progress') return 'percent';
     return type;
 }
 

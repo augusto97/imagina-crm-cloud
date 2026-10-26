@@ -599,7 +599,7 @@ function safeFileName(name: string): string {
 /** Derivados que SÍ salen en el CSV (`relation` incluida: se exporta el título). */
 function isExportableDerived(type: string): boolean {
     return (
-        type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation' || type === 'time_tracked'
+        type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation' || type === 'time_tracked' || type === 'checklist_progress'
         // Fórmulas (A1): con el valor calculado de cada fila.
         || type === 'formula'
         // v0.1.300 — columnas de sistema (creado/modificado por y cuándo).
@@ -680,7 +680,7 @@ function stringifyCell(value: unknown, type: string, targetType?: string): strin
     if (type === 'duration') return formatDuration(value);
     // v0.1.291 — el tiempo registrado, como la duración: `12h 30m`.
     if (type === 'time_tracked') return formatDuration(value);
-    if (type === 'percent') return `${String(value)}%`;
+    if (type === 'percent' || type === 'checklist_progress') return `${String(value)}%`;
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
 }

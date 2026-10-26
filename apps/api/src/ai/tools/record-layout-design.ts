@@ -218,7 +218,7 @@ export interface DesignBuildResult {
 }
 
 const DEFAULT_WIDTHS: Record<number, number[]> = { 1: [12], 2: [6, 6], 3: [4, 4, 4], 4: [3, 3, 3, 3] };
-const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked']);
+const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration', 'rollup', 'computed', 'time_tracked', 'checklist_progress']);
 
 export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext): DesignBuildResult {
     const own = new Map(ctx.fields.map((f) => [f.slug, f]));

@@ -247,6 +247,12 @@ export const formSettingsSchema = z.object({
      * personales). Sin texto activo en la empresa no se pide.
      */
     data_consent: z.boolean().default(true),
+    /**
+     * C6 — El registro que crea el formulario sale de esta plantilla de
+     * registro de la lista (valores, subtareas y checklists). Lo que el
+     * formulario completa PISA lo de la plantilla. null = alta normal.
+     */
+    record_template_id: z.number().int().positive().nullable().default(null),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 

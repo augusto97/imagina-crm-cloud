@@ -29,6 +29,8 @@ import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
+import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { readStoreListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
@@ -227,6 +229,15 @@ export function RecordPage(): JSX.Element {
                                 fields={fields.data}
                                 compact
                             />
+                            {!storeRules && (
+                                <SaveRecordAsTemplateButton
+                                    listId={list.data.id}
+                                    listSlug={list.data.slug}
+                                    recordId={record.data.id}
+                                    title={recordTitleFor(fields.data, record.data.fields) ?? ''}
+                                    compact
+                                />
+                            )}
                         </>
                     }
                 />
@@ -291,6 +302,7 @@ export function RecordPage(): JSX.Element {
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-1.5">
                         <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />
                         <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
+                        {!storeRules && <SaveRecordAsTemplateButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} title={title} compact />}
                         {!storeRules && (
                             <Button
                                 variant="ghost"
@@ -400,6 +412,9 @@ export function RecordPage(): JSX.Element {
                                 className="imcrm-mt-4"
                             />
                         )}
+
+                        {/* A9 — checklists del registro. */}
+                        <RecordChecklists listId={listInfo.id} recordId={id} isSubtask={rec.parent_id !== null} storeManaged={storeRules !== null} className="imcrm-mt-5" />
 
                         {/* A8 — dependencias («bloqueado por» / «bloquea»). */}
                         <RecordDependencies listId={listInfo.id} listSlug={listInfo.slug} recordId={id} className="imcrm-mt-5" />

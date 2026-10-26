@@ -175,6 +175,9 @@ function compileRef(run: Run, name: string): Compiled {
         case 'time_tracked':
             if (!ff.expr) return notSql(`«${f.label}» no tiene expresión`);
             return { sql: sql`(${ff.expr})::numeric`, kind: 'number', blank: false };
+        case 'checklist_progress':
+            if (!ff.expr) return notSql(`«${f.label}» no tiene expresión`);
+            return { sql: sql`(${ff.expr})::numeric`, kind: 'number', blank: true };
         case 'computed':
             if (!ff.expr) return notSql(`usa «${f.label}», un calculado que no se puede llevar a la base`);
             return { sql: sql`(${ff.expr})::numeric`, kind: 'number', blank: true };

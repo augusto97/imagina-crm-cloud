@@ -29,6 +29,8 @@ export const AUTOMATION_TRIGGERS = [
     'scheduled',
     // C5 — una solicitud de aprobación del registro se resolvió.
     'approval_resolved',
+    // A9 — un checklist del registro quedó completo.
+    'checklist_completed',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
@@ -73,6 +75,8 @@ export const AUTOMATION_ACTIONS = [
     // C5 — pedir una aprobación y esperar a que se resuelva.
     'request_approval',
     'wait_approval',
+    // C6 — subtareas (y checklists) de una plantilla de registro sobre el registro.
+    'create_subtasks_from_template',
 ] as const;
 
 export interface ActionSpec {
@@ -515,6 +519,11 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                     out.push({ path: `${at}.config.document_template_id`, message: 'Elige la plantilla del documento PDF.' });
                 }
                 break;
+            case 'create_subtasks_from_template':
+                if (isBlankConfig(cfg.template_id)) {
+                    out.push({ path: `${at}.config.template_id`, message: 'Elige la plantilla de registro.' });
+                }
+                break;
             case 'connector_action':
                 if (isBlankConfig(cfg.connection_id) || isBlankConfig(cfg.action_key)) {
                     out.push({ path: `${at}.config.connection_id`, message: 'Elige la app conectada y la acción.' });
@@ -606,6 +615,10 @@ export function automationConfigIssues(input: {
     }
     if (input.trigger_type === 'field_changed' && isBlankConfig(cfg.field)) {
         out.push({ path: 'trigger_config.field', message: 'Elige el campo a observar.' });
+    }
+    // A9 — «uno con un nombre en particular» sin nombre no dispararía nunca.
+    if (input.trigger_type === 'checklist_completed' && cfg.checklist_mode === 'named' && isBlankConfig(cfg.checklist_name)) {
+        out.push({ path: 'trigger_config.checklist_name', message: 'Escribe el nombre del checklist que dispara la automatización.' });
     }
     if (input.actions !== undefined) actionIssues(input.actions, 'actions', 0, out, { inLoop: false, responseNames: new Set() });
     return out;

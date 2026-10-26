@@ -36,7 +36,9 @@ export type FieldTypeSlug =
     // Fórmulas (A1): se calcula sola con una fórmula en español.
     | 'formula'
     // C5 — estado de la última solicitud de aprobación (derivado, sólo lectura).
-    | 'approval';
+    | 'approval'
+    // A9 — progreso de los checklists del registro (0-100, sólo lectura).
+    | 'checklist_progress';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

@@ -38,6 +38,7 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     delete_document_template: 'Eliminar documento PDF',
     set_dependencies: 'Dependencias',
     configure_approval_flow: 'Flujo de aprobación',
+    create_record_template: 'Plantilla de registro',
 };
 
 /**

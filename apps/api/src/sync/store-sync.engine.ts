@@ -1508,7 +1508,7 @@ function minusOneSecond(at: string): string {
 }
 
 function isDataField(f: Field): boolean {
-    return !['relation', 'computed', 'lookup', 'rollup', 'time_tracked', 'created_at', 'updated_at', 'created_by', 'updated_by', 'formula', 'approval'].includes(f.type);
+    return !['relation', 'computed', 'lookup', 'rollup', 'time_tracked', 'created_at', 'updated_at', 'created_by', 'updated_by', 'formula', 'approval', 'checklist_progress'].includes(f.type);
 }
 
 function sameValue(a: unknown, b: unknown): boolean {

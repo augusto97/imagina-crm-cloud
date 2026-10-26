@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
 import {
     addDaysYmd,
     BLUEPRINT_EXCLUDED_SETTINGS,
@@ -8,6 +8,10 @@ import {
     findDependencyCycle,
     isDataField,
     jsonbKeyForField,
+    portableTemplateContent,
+    readTemplateContent,
+    templateContentFromPortable,
+    templateRefs,
     formulaRefsToSlugs,
     resolveFieldRefs,
     resolveListRefs,
@@ -23,12 +27,14 @@ import {
     type ListBlueprint,
     type WidgetSpec,
 } from '@imagina-base/shared';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { withoutApprovalFlowRefs } from '../approvals/approval-refs';
 import { AutomationsService } from '../automations/automations.service';
 import { BillingService } from '../billing/billing.service';
 import { DashboardsService } from '../dashboards/dashboards.service';
-import { recordDependencies, records } from '../db/schema';
+import { memberships, recordDependencies, records, recordTemplates, users } from '../db/schema';
+import { ChecklistsRepository } from '../checklists/checklists.repository';
+import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -94,6 +100,9 @@ export class BlueprintService {
         private readonly billing: BillingService,
         private readonly realtime: RealtimeService,
         private readonly dashboards: DashboardsService,
+        // C6 — plantillas de registro de la lista (Optional + al final: los
+        // specs que arman el servicio a mano siguen andando).
+        @Optional() private readonly recordTemplates?: RecordTemplatesService,
     ) {}
 
     // ── Serializar ───────────────────────────────────────────────────────
@@ -164,6 +173,7 @@ export class BlueprintService {
                 views: [],
                 automations: [],
                 records: [],
+                record_templates: [],
             };
 
             if (include.views) {
@@ -190,10 +200,31 @@ export class BlueprintService {
                         trigger_type: a.trigger_type,
                         // C5 — los flujos de aprobación no viajan (ver withoutApprovalFlowRefs).
                         trigger_config: tokenize(withoutApprovalFlowRefs(trigger)) as Record<string, unknown>,
-                        actions: tokenize(withoutApprovalFlowRefs(a.actions)) as unknown[],
+                        // C6 — la plantilla de registro de una acción viaja por key.
+                        actions: tokenize(tokenizeRecordTemplateRefs(withoutApprovalFlowRefs(a.actions))) as unknown[],
                         is_active: a.is_active,
                     };
                 });
+            }
+
+            // C6 — plantillas de registro y de checklist (van con los ajustes).
+            if (include.settings) {
+                const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select()
+                        .from(recordTemplates)
+                        .where(and(eq(recordTemplates.tenantId, tenantId), eq(recordTemplates.listId, list.id)))
+                        .orderBy(asc(recordTemplates.position), asc(recordTemplates.id)),
+                );
+                bp.record_templates = rows.map((r) => ({
+                    key: recordTemplateKey(r.id),
+                    kind: r.kind === 'checklist' ? 'checklist' : 'record',
+                    name: r.name,
+                    description: r.description ?? null,
+                    icon: r.icon ?? null,
+                    color: r.color ?? null,
+                    content: portableTemplateContent(readTemplateContent(r.content), (id) => idToSlug.get(id)),
+                }));
             }
 
             if (include.records) {
@@ -256,6 +287,17 @@ export class BlueprintService {
                 blockedBy.set(e.blocked_id, list);
             }
         }
+        // A9 — los checklists de los registros que viajan (nombre, ítems y casilla).
+        const checklistsByRecord =
+            rows.length > 0
+                ? await this.tenantDb.withTenant(tenantId, (tx) =>
+                      new ChecklistsRepository().forRecords(
+                          tx,
+                          tenantId,
+                          rows.map((r) => r.id),
+                      ),
+                  )
+                : new Map();
         return rows.map((r) => {
             const data: Record<string, unknown> = {};
             for (const f of fields) {
@@ -267,6 +309,13 @@ export class BlueprintService {
             if (r.parentId !== null && ids.has(r.parentId)) rec.parent_key = keyOf(r.parentId);
             const deps = blockedBy.get(r.id);
             if (deps && deps.length > 0) rec.blocked_by = deps;
+            const cls = checklistsByRecord.get(r.id) ?? [];
+            if (cls.length > 0) {
+                rec.checklists = cls.slice(0, 20).map((c: { name: string; items: Array<{ text: string; done: boolean }> }) => ({
+                    name: c.name,
+                    items: c.items.slice(0, 200).map((i) => ({ text: i.text, done: i.done })),
+                }));
+            }
             const byField = targets.get(r.id);
             if (byField) {
                 const rel: Record<string, Array<string | number>> = {};
@@ -378,6 +427,11 @@ export class BlueprintService {
             }
         }
 
+        // B2) C6 — plantillas de registro y de checklist de cada lista (antes de
+        //     las automatizaciones: «Crear subtareas desde una plantilla» las
+        //     nombra por key).
+        const recordTemplateIds = await this.materializeRecordTemplates(tenantId, actorId, blueprint, created, slugMaps, warnings);
+
         // C) Ajustes, D) vistas, E) automatizaciones.
         const autoIdsByKey = new Map<string, Array<number | null>>();
         for (const [i, bl] of blueprint.lists.entries()) {
@@ -417,14 +471,18 @@ export class BlueprintService {
             for (const a of bl.automations) {
                 autoIds.push(null);
                 const slot = autoIds.length - 1;
+                const lostTemplate = { value: false };
                 const parsed = createAutomationSchema.safeParse({
                     name: a.name,
                     description: a.description,
                     trigger_type: a.trigger_type,
                     trigger_config: resolve(a.trigger_config),
-                    actions: resolve(a.actions),
+                    actions: resolveRecordTemplateRefs(resolve(a.actions), recordTemplateIds, lostTemplate),
                     is_active: a.is_active,
                 });
+                if (lostTemplate.value) {
+                    warnings.push(`Automatización «${a.name}» de «${bl.name}»: usa una plantilla de registro que no viajó; elígela de nuevo.`);
+                }
                 if (!parsed.success) {
                     warnings.push(`Automatización «${a.name}» de «${bl.name}»: datos inválidos`);
                     continue;
@@ -685,6 +743,66 @@ export class BlueprintService {
         return out;
     }
 
+    /**
+     * C6 — Las plantillas de registro y de checklist del pack, con sus campos
+     * re-apuntados a las listas nuevas. Una persona fija que no es del equipo
+     * de ESTA empresa (otra empresa, alguien que se fue) se descarta. Devuelve
+     * key → id nuevo (para las automatizaciones del pack).
+     */
+    private async materializeRecordTemplates(
+        tenantId: number,
+        actorId: number,
+        blueprint: ListBlueprint,
+        created: List[],
+        slugMaps: ReadonlyMap<string, ReadonlyMap<string, number>>,
+        warnings: string[],
+    ): Promise<Map<string, number>> {
+        const out = new Map<string, number>();
+        const all = blueprint.lists.flatMap((bl) => bl.record_templates ?? []);
+        if (all.length === 0) return out;
+        if (!this.recordTemplates) {
+            warnings.push('Las plantillas de registro no se copiaron (no están disponibles en este servidor).');
+            return out;
+        }
+        for (const [i, bl] of blueprint.lists.entries()) {
+            const list = created[i]!;
+            const slugToId = slugMaps.get(bl.key);
+            for (const rt of bl.record_templates ?? []) {
+                let content = templateContentFromPortable(rt.content, (slug) => slugToId?.get(slug));
+                const userIds = [...templateRefs(content).userIds];
+                if (userIds.length > 0) {
+                    const ok = await this.memberIds(tenantId, userIds);
+                    content = dropTemplateUsers(content, ok);
+                }
+                try {
+                    const t = await this.recordTemplates.create(tenantId, actorId, String(list.id), {
+                        kind: rt.kind,
+                        name: rt.name,
+                        description: rt.description,
+                        icon: rt.icon,
+                        color: rt.color,
+                        content,
+                    });
+                    out.set(rt.key, t.id);
+                } catch (err) {
+                    warnings.push(`Plantilla de registro «${rt.name}» de «${bl.name}»: ${message(err)}`);
+                }
+            }
+        }
+        return out;
+    }
+
+    private async memberIds(tenantId: number, ids: number[]): Promise<Set<number>> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: memberships.userId, role: memberships.role })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids), isNull(users.disabledAt))),
+        );
+        return new Set(rows.filter((r) => r.role !== 'client').map((r) => r.id));
+    }
+
     private async materializeRecords(
         tenantId: number,
         actorId: number,
@@ -730,6 +848,17 @@ export class BlueprintService {
                         createdBy: actorId,
                     });
                     if (rec.key !== undefined) recordIds.set(`${bl.key}:${rec.key}`, row.id);
+                    // A9 — los checklists de muestra (sin responsables ni fechas).
+                    for (const c of rec.checklists ?? []) {
+                        const repo = new ChecklistsRepository();
+                        const cl = await repo.insertChecklist(tx, { tenantId, listId: list.id, recordId: row.id, name: c.name, createdBy: actorId > 0 ? actorId : null });
+                        await repo.insertItems(
+                            tx,
+                            cl,
+                            c.items.map((i) => ({ text: i.text, assigneeId: null, due: null, done: i.done })),
+                            actorId > 0 ? actorId : null,
+                        );
+                    }
                     const relations: Array<{ fieldId: number; targets: Array<string | number> }> = [];
                     for (const [slug, targets] of Object.entries(rec.relations ?? {})) {
                         const fid = slugToId.get(slug);
@@ -881,4 +1010,73 @@ function formulaBlueprintConfig(config: Record<string, unknown>, slugOf: (id: nu
     delete out.labels;
     if (typeof config.formula === 'string') out.formula = formulaRefsToSlugs(config.formula, slugOf);
     return out;
+}
+
+// ── C6 — plantillas de registro en el blueprint ───────────────────────────
+
+/** Key portable de una plantilla de registro (`rt{id}`). */
+export function recordTemplateKey(id: number): string {
+    return `rt${id}`;
+}
+
+const TEMPLATE_ACTIONS = new Set(['create_subtasks_from_template', 'create_record']);
+
+/**
+ * Acciones → la `template_id` de «Crear subtareas desde una plantilla» y de
+ * «Crear un registro» pasa a `{ $record_template: key }` (también dentro de
+ * si/sino y de un bucle).
+ */
+export function tokenizeRecordTemplateRefs(actions: unknown): unknown {
+    if (!Array.isArray(actions)) return actions;
+    return actions.map((a) => {
+        if (!a || typeof a !== 'object') return a;
+        const spec = a as { type?: unknown; config?: Record<string, unknown> };
+        const cfg = { ...(spec.config ?? {}) };
+        if (TEMPLATE_ACTIONS.has(String(spec.type)) && Number.isInteger(Number(cfg.template_id)) && Number(cfg.template_id) > 0) {
+            cfg.template_id = { $record_template: recordTemplateKey(Number(cfg.template_id)) };
+        }
+        for (const branch of ['then', 'else', 'actions'] as const) {
+            if (Array.isArray(cfg[branch])) cfg[branch] = tokenizeRecordTemplateRefs(cfg[branch]);
+        }
+        return { ...spec, config: cfg };
+    });
+}
+
+/** Lo inverso al materializar: key → id nuevo; si no viajó, se quita (y se avisa). */
+export function resolveRecordTemplateRefs(actions: unknown, ids: ReadonlyMap<string, number>, lost: { value: boolean }): unknown {
+    if (!Array.isArray(actions)) return actions;
+    return actions.map((a) => {
+        if (!a || typeof a !== 'object') return a;
+        const spec = a as { type?: unknown; config?: Record<string, unknown> };
+        const cfg = { ...(spec.config ?? {}) };
+        const ref = cfg.template_id as { $record_template?: unknown } | undefined;
+        if (ref && typeof ref === 'object' && typeof ref.$record_template === 'string') {
+            const id = ids.get(ref.$record_template);
+            if (id !== undefined) cfg.template_id = id;
+            else {
+                delete cfg.template_id;
+                lost.value = true;
+            }
+        }
+        for (const branch of ['then', 'else', 'actions'] as const) {
+            if (Array.isArray(cfg[branch])) cfg[branch] = resolveRecordTemplateRefs(cfg[branch], ids, lost);
+        }
+        return { ...spec, config: cfg };
+    });
+}
+
+/** Saca de una plantilla las personas fijas que no están en `ok`. */
+function dropTemplateUsers(content: ReturnType<typeof templateContentFromPortable>, ok: ReadonlySet<number>): ReturnType<typeof templateContentFromPortable> {
+    const keep = (p: { kind: string; user_id?: number } | null): boolean => !p || p.kind !== 'user' || ok.has(p.user_id ?? 0);
+    const values = (vals: typeof content.values): typeof content.values =>
+        Object.fromEntries(Object.entries(vals).filter(([, v]) => v.mode !== 'person' || keep(v.person)));
+    return {
+        ...content,
+        values: values(content.values),
+        subtasks: content.subtasks.map((s) => ({ ...s, values: values(s.values) })),
+        checklists: content.checklists.map((c) => ({
+            ...c,
+            items: c.items.map((i) => (keep(i.assignee) ? i : { ...i, assignee: null })),
+        })),
+    };
 }

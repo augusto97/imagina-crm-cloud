@@ -207,3 +207,40 @@ describe('campo nuevo con la tabla abierta', () => {
         expect(res.data[0]!.fields).toMatchObject({ producto: 'Taza', total: 75000 });
     });
 });
+
+describe('C6 / A9 — alta desde una plantilla y progreso del checklist', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('el progreso del checklist viaja en el registro (sólo si tiene ítems)', () => {
+        const out = mapRecord({ id: 1, data: {}, checklist: { done: 2, total: 5 } }, MAP) as { checklist?: unknown };
+        expect(out.checklist).toEqual({ done: 2, total: 5 });
+        const none = mapRecord({ id: 2, data: {} }, MAP) as { checklist?: unknown };
+        expect(none.checklist).toBeUndefined();
+    });
+
+    it('POST records/from-template: el cuerpo va por f{id} con template_id y la respuesta vuelve por slug', async () => {
+        const json = (body: unknown): Response =>
+            new Response(JSON.stringify(body), { status: 201, headers: { 'Content-Type': 'application/json' } });
+        const calls: Array<{ url: string; body: unknown }> = [];
+        const replies: unknown[] = [
+            { data: [{ id: 801, list_id: 88, slug: 'nombre' }, { id: 802, list_id: 88, slug: 'estado' }] },
+            { data: { id: 9, list_id: 88, data: { f801: 'Acme', f802: 'nuevo' } }, meta: { record_id: 9, subtask_ids: [10, 11], checklist_ids: [3], warnings: [] } },
+        ];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (url: string, init?: RequestInit) => {
+                calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+                return json(replies.shift());
+            }),
+        );
+        await api.get('/lists/clientes_tpl/fields');
+        const res = await api.post<{ id: number; fields: Record<string, unknown> }>('/lists/clientes_tpl/records/from-template', {
+            template_id: 4,
+            fields: { nombre: 'Acme' },
+            parent_id: null,
+        });
+        expect(calls[1]!.body).toEqual({ template_id: 4, parent_id: null, data: { f801: 'Acme' } });
+        expect(res.data).toMatchObject({ id: 9, fields: { nombre: 'Acme', estado: 'nuevo' } });
+        expect(res.meta).toMatchObject({ subtask_ids: [10, 11] });
+    });
+});

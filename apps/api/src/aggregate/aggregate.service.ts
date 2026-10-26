@@ -975,7 +975,9 @@ export function groupKeyExpr(field: Field, fieldsById: Map<number, FilterableFie
         if (ff?.expr) return sql`(${ff.expr})::text`;
         throw badRequest(`No se puede agrupar por «${field.label}».`);
     }
-    if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') return throughGroupExpr(field, fieldsById);
+    if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked' || field.type === 'checklist_progress') {
+        return throughGroupExpr(field, fieldsById);
+    }
     // C5 — «Aprobación»: por el estado de la última solicitud (NULL = sin pedir).
     if (field.type === 'approval') {
         const ff = fieldsById.get(field.id);
@@ -1080,6 +1082,8 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
     }
     // v0.1.291 — el tiempo registrado (minutos) se suma y promedia como número.
     if (type === 'time_tracked') return ff?.expr ? ['count', 'sum', 'avg', 'min', 'max'] : [];
+    // A9 — el progreso del checklist (%) se promedia y se cuenta vacío (sin checklist).
+    if (type === 'checklist_progress') return ff?.expr ? ['count', 'count_empty', 'avg', 'min', 'max'] : [];
     // v0.1.252 — una relación vive en otra tabla: «vacíos» y «únicos» se
     // calculaban sobre `data` (siempre vacío) y mentían. Sólo el conteo.
     if (type === 'relation' || type === 'file') return ['count'];

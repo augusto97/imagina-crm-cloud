@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { allSafeIds, idSchema, isoDateTimeSchema, queryIdSchema } from './common';
 import { filterTreeSchema } from './filter';
+import { checklistProgressSchema } from './checklist';
 
 /**
  * Record del API. `data` son los valores dinámicos con claves `f{field_id}`
@@ -45,6 +46,12 @@ export const recordSchema = z.object({
      * indicador de la fila; 0 = ninguna.
      */
     approval_pending: z.number().int().nonnegative().optional(),
+    /**
+     * A9 — Progreso de los checklists del registro (hechos / total de ítems).
+     * Viaja en el listado (una consulta por página) para el «☑ 3/8» junto al
+     * título; ausente si el registro no tiene ítems.
+     */
+    checklist: checklistProgressSchema.optional(),
     /**
      * A8 — Sólo en la respuesta de una edición: los registros que se
      * corrieron por la reprogramación en cadena (ids).

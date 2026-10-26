@@ -128,6 +128,7 @@ export const list = (
     views: [table()],
     automations: [],
     records: [],
+    record_templates: [],
     ...rest,
 });
 

@@ -26,6 +26,10 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'template.create': { text: 'guardó la plantilla' },
     'template.delete': { text: 'borró la plantilla', danger: true },
     'template.apply': { text: 'creó desde una plantilla la lista' },
+    // C6 — plantillas de registro (y de checklist) de una lista.
+    'record_template.create': { text: 'creó la plantilla de registro' },
+    'record_template.update': { text: 'cambió la plantilla de registro' },
+    'record_template.delete': { text: 'borró la plantilla de registro', danger: true },
     'dashboard_template.create': { text: 'guardó la plantilla de dashboard' },
     'dashboard_template.delete': { text: 'borró la plantilla de dashboard', danger: true },
     'dashboard_template.apply': { text: 'creó desde una plantilla el dashboard' },

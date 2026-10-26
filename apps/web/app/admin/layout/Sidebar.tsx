@@ -33,7 +33,7 @@ import { useMyWork } from '@/hooks/useNotifications';
 import { useEventCallback } from '@/hooks/useEventCallback';
 import { useRecents } from '@/lib/recents';
 import { getTenantTimeZone, browserTimeZone, formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
-import { DUE_GROUPS, groupWork } from '@/admin/mywork/myWorkGroups';
+import { DUE_GROUPS, groupChecklistWork, groupWork } from '@/admin/mywork/myWorkGroups';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
@@ -970,9 +970,11 @@ function MyWorkPanelSummary(): JSX.Element {
     const groups = groupWork(assigned, tz);
     const urgent = [...(groups.get('overdue') ?? []), ...(groups.get('today') ?? []), ...(groups.get('week') ?? [])].slice(0, 6);
     const overdueIds = new Set((groups.get('overdue') ?? []).map((i) => i.record_id));
+    // A9 — los ítems de checklist asignados también cuentan.
+    const itemGroups = groupChecklistWork(work.data?.checklist_items ?? [], tz);
     const counts = DUE_GROUPS.filter((g) => g.key === 'overdue' || g.key === 'today' || g.key === 'week').map((g) => ({
         ...g,
-        n: groups.get(g.key)?.length ?? 0,
+        n: (groups.get(g.key)?.length ?? 0) + (itemGroups.get(g.key)?.length ?? 0),
     }));
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="mywork-panel">

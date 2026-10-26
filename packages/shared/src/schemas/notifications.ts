@@ -203,8 +203,32 @@ export interface MyWorkItem {
     status_color: string | null;
 }
 
+/**
+ * A9 — Un ÍTEM de checklist asignado a la persona (pendiente), con su fecha y
+ * el registro del que cuelga. «Mi trabajo» los agrupa con lo asignado
+ * (Vencido / Hoy / …) y se marcan desde ahí.
+ */
+export interface MyWorkChecklistItem {
+    item_id: number;
+    checklist_id: number;
+    checklist_name: string;
+    text: string;
+    /** `AAAA-MM-DD` (sin hora) o instante ISO (con hora). */
+    due: string | null;
+    due_is_datetime: boolean;
+    list_id: number;
+    list_slug: string;
+    list_name: string;
+    list_icon: string | null;
+    list_color: string | null;
+    record_id: number;
+    record_title: string;
+}
+
 export interface MyWorkDto {
     assigned: MyWorkItem[];
+    /** A9 — ítems de checklist pendientes asignados a la persona. */
+    checklist_items: MyWorkChecklistItem[];
     following: MyWorkItem[];
     reminders: ReminderDto[];
     /** Listas donde la persona puede tener registros asignados (tienen un campo persona). */

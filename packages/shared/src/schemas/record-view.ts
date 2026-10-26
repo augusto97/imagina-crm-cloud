@@ -6,6 +6,7 @@ import { commentSchema } from './comment';
 import { idSchema } from './common';
 import type { RecordDataConsentDto } from './data-consent';
 import { recordDependenciesSchema } from './dependency';
+import { recordChecklistsSchema } from './checklist';
 import { documentTemplateSummarySchema, issuedDocumentSchema } from './document-design';
 import { fieldSchema } from './field';
 import { listSchema } from './list';
@@ -103,5 +104,7 @@ export const recordViewBundleSchema = z.object({
      * solicitudes con su historial (la sección no sale a pedirlas).
      */
     approvals: recordApprovalsSchema.nullable().default(null),
+    /** A9 — checklists del registro con sus ítems (la sección no sale a pedirlos). */
+    checklists: recordChecklistsSchema.nullable().default(null),
 });
 export type RecordViewBundle = z.infer<typeof recordViewBundleSchema>;

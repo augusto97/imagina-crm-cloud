@@ -75,6 +75,11 @@ export function withComputedExprs(
         const expr = approvalStatusExpr(readApprovalFlowId(f.config as Record<string, unknown>));
         out.set(f.id, { id: f.id, type: 'approval', expr, valueKind: 'text', groupExpr: expr });
     }
+    // A9 — «Progreso del checklist»: % de ítems hechos del registro.
+    for (const f of fields) {
+        if (f.type !== 'checklist_progress' || !available.has(f.id)) continue;
+        out.set(f.id, { id: f.id, type: 'checklist_progress', expr: checklistProgressExpr(), valueKind: 'numeric' });
+    }
     for (const f of fields) {
         if (f.type !== 'computed' || !available.has(f.id)) continue;
         const expr = computedExpr(f, byId, out, new Set(), 0);
@@ -117,6 +122,15 @@ export function timeTrackedExpr(): SQL {
     // sería `te.id`. Ver `approvalStatusExpr`, donde sí pasaba.
     const recordId = sql`${records.id}`;
     return sql`(SELECT round(coalesce(sum(te.seconds), 0) / 60.0) FROM time_entries te WHERE te.record_id = ${recordId})`;
+}
+
+/**
+ * A9 — % (0-100, redondeado) de los ítems de checklist hechos del registro de
+ * la fila; NULL si no tiene ítems (así «está vacío» = sin checklist). El
+ * índice `(record_id, done)` la resuelve sin tocar la tabla.
+ */
+export function checklistProgressExpr(): SQL {
+    return sql`(SELECT CASE WHEN count(*) = 0 THEN NULL ELSE round(100.0 * count(*) FILTER (WHERE ci.done) / count(*)) END FROM record_checklist_items ci WHERE ci.record_id = ${records.id})`;
 }
 
 /**
@@ -195,7 +209,7 @@ function inputExpr(
     if (input.type === 'computed') return computedExpr(input, byId, available, visiting, depth);
     const ff = available.get(input.id);
     // Un rollup numérico resuelto (o el tiempo registrado) entra con su subconsulta.
-    if (input.type === 'rollup' || input.type === 'time_tracked') {
+    if (input.type === 'rollup' || input.type === 'time_tracked' || input.type === 'checklist_progress') {
         return ff?.expr && ff.valueKind !== 'text' ? sql`(${ff.expr})::numeric` : undefined;
     }
     if (NUMERIC_INPUT_TYPES.includes(input.type)) return fieldTypedExpr({ id: input.id, type: input.type });

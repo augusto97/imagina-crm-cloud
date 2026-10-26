@@ -10,6 +10,7 @@ import { FieldsModule } from '../fields/fields.module';
 import { ListsModule } from '../lists/lists.module';
 import { PublicListsModule } from '../public-lists/public-lists.module';
 import { RecordsModule } from '../records/records.module';
+import { RecordTemplatesModule } from '../record-templates/record-templates.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ViewsModule } from '../views/views.module';
 import { AiQuotaService } from './ai-quota.service';
@@ -44,7 +45,7 @@ import { StructureTools } from './tools/structure-tools';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule, ApprovalsModule],
+    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule, ApprovalsModule, RecordTemplatesModule],
     controllers: [AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
     providers: [
         AiModelCatalogService,

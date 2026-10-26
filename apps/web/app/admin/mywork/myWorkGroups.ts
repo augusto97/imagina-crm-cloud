@@ -1,4 +1,4 @@
-import { addDaysYmd, dueBucket, zonedToday, type DueBucket, type MyWorkItem } from '@imagina-base/shared';
+import { addDaysYmd, dueBucket, zonedToday, type DueBucket, type MyWorkChecklistItem, type MyWorkItem } from '@imagina-base/shared';
 
 /**
  * v0.1.276 — «Mi trabajo» agrupado por vencimiento, con «hoy» en la zona de
@@ -20,10 +20,19 @@ export function localDueDay(item: Pick<MyWorkItem, 'due' | 'due_is_datetime'>, t
     return Number.isNaN(d.getTime()) ? item.due.slice(0, 10) : zonedToday(tz, d);
 }
 
-export function groupWork(items: readonly MyWorkItem[], tz: string, now: Date = new Date()): Map<DueBucket, MyWorkItem[]> {
+export function groupWork<T extends Pick<MyWorkItem, 'due' | 'due_is_datetime'>>(
+    items: readonly T[],
+    tz: string,
+    now: Date = new Date(),
+): Map<DueBucket, T[]> {
     const today = zonedToday(tz, now);
     const weekEnd = addDaysYmd(today, 7);
-    const out = new Map<DueBucket, MyWorkItem[]>(DUE_GROUPS.map((g) => [g.key, []]));
+    const out = new Map<DueBucket, T[]>(DUE_GROUPS.map((g) => [g.key, []]));
     for (const i of items) out.get(dueBucket(localDueDay(i, tz), today, weekEnd))!.push(i);
     return out;
+}
+
+/** A9 — los ítems de checklist asignados entran a los MISMOS grupos de vencimiento. */
+export function groupChecklistWork(items: readonly MyWorkChecklistItem[], tz: string, now: Date = new Date()): Map<DueBucket, MyWorkChecklistItem[]> {
+    return groupWork(items, tz, now);
 }

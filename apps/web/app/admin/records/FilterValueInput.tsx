@@ -194,6 +194,7 @@ export function FilterValueInput({
         case 'percent':
         case 'duration':
         case 'time_tracked':
+        case 'checklist_progress':
         case 'rollup':
         case 'computed':
             // v0.1.158 — percent/duration son números: el filtro compara el

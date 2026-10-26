@@ -139,6 +139,15 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
             );
         case 'duration':
             return <Row><span className="imcrm-tabular-nums">1h 30m</span></Row>;
+        case 'checklist_progress':
+            return (
+                <Row>
+                    <span className="imcrm-h-1.5 imcrm-w-16 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted">
+                        <span className="imcrm-block imcrm-h-full imcrm-rounded-full imcrm-bg-emerald-500" style={{ width: '38%' }} />
+                    </span>
+                    <span className="imcrm-text-muted-foreground">3/8</span>
+                </Row>
+            );
         case 'time_tracked':
             return (
                 <Row>

@@ -38,6 +38,7 @@ import {
     ClipboardCheck,
     GitBranch,
     type LucideIcon,
+    ListTodo,
 } from 'lucide-react';
 import type { LayoutBlock, LayoutBlockType, LayoutDataSource } from '@imagina-base/shared';
 
@@ -237,6 +238,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Pedir aprobación, «Pendiente de tu aprobación» con Aprobar / Rechazar / Devolver y el historial.'),
         icon: ClipboardCheck,
         create: () => block('approval'),
+    },
+    {
+        key: 'checklist',
+        type: 'checklist',
+        category: 'record',
+        label: __('Checklists'),
+        description: __('Los checklists del registro: progreso, ítems con responsable y fecha.'),
+        icon: ListTodo,
+        create: () => block('checklist'),
     },
     // Vinculados
     related('related_table', 'table', __('Tabla de vinculados'), __('Los registros de otra lista vinculados a éste.'), Table2),

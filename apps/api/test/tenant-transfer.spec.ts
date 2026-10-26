@@ -31,7 +31,10 @@ import {
     portalLinks,
     publicDashboards,
     publicLists,
+    recordChecklistItems,
+    recordChecklists,
     records,
+    recordTemplates,
     recurrences,
     relations,
     savedViews,
@@ -81,6 +84,8 @@ describe('Migración de empresa (v0.1.197)', () => {
     let hookToken: string;
     let publicToken: string;
     let dashboardAId: number;
+    let tplClientesId: number;
+    let tplFacturasId: number;
 
     // Destino
     let tenantB: number;
@@ -361,6 +366,36 @@ describe('Migración de empresa (v0.1.197)', () => {
             diff: { [`f${nombreFieldId}`]: { from: 'viejo', to: 'Cliente Uno' } },
         });
 
+        // A9 / C6 — plantillas de registro (apuntan a campos y personas por id)
+        // y un checklist con su ítem asignado y marcado.
+        const [tplC] = await pg.db
+            .insert(recordTemplates)
+            .values({
+                tenantId: tenantA,
+                listId: clientesId,
+                kind: 'record',
+                name: 'Cliente nuevo',
+                content: {
+                    values: { [`f${nombreFieldId}`]: { mode: 'fixed', value: 'Nuevo' }, [`f${dueñoFieldId}`]: { mode: 'person', person: { kind: 'user', user_id: carlosId } } },
+                    subtasks: [{ title: 'Llamada de bienvenida', values: { [`f${dueñoFieldId}`]: { mode: 'person', person: { kind: 'field', field_id: dueñoFieldId } } } }],
+                    checklists: [{ name: 'Alta', items: [{ text: 'Contrato', assignee: { kind: 'user', user_id: carlosId }, due: null }] }],
+                    record_description: null,
+                },
+                createdBy: anaId,
+            })
+            .returning();
+        tplClientesId = tplC!.id;
+        const [tplF] = await pg.db
+            .insert(recordTemplates)
+            .values({ tenantId: tenantA, listId: facturasId, kind: 'record', name: 'Factura', content: { values: { [`f${estadoFieldId}`]: { mode: 'fixed', value: 'pendiente' } } }, createdBy: anaId })
+            .returning();
+        tplFacturasId = tplF!.id;
+        const [cl] = await pg.db.insert(recordChecklists).values({ tenantId: tenantA, listId: clientesId, recordId: clienteRecId, name: 'Onboarding', createdBy: anaId }).returning();
+        await pg.db.insert(recordChecklistItems).values([
+            { tenantId: tenantA, listId: clientesId, recordId: clienteRecId, checklistId: cl!.id, text: 'Firmar', done: true, doneBy: anaId, doneAt: new Date(), assigneeId: carlosId, dueDate: '2026-11-03', position: 0 },
+            { tenantId: tenantA, listId: clientesId, recordId: clienteRecId, checklistId: cl!.id, text: 'Pagar', position: 1 },
+        ]);
+
         await pg.db.insert(automations).values({
             tenantId: tenantA,
             listId: clientesId,
@@ -370,7 +405,7 @@ describe('Migración de empresa (v0.1.197)', () => {
             actions: [
                 {
                     type: 'create_record',
-                    config: { target_list_id: facturasId, values: { estado: 'pendiente' } },
+                    config: { target_list_id: facturasId, values: { estado: 'pendiente' }, template_id: tplFacturasId },
                 },
                 {
                     type: 'if_else',
@@ -381,6 +416,7 @@ describe('Migración de empresa (v0.1.197)', () => {
                         else_actions: [],
                     },
                 },
+                { type: 'create_subtasks_from_template', config: { template_id: tplClientesId, include_checklists: true } },
             ] as never,
         });
         hookToken = 'token-viejo-del-origen';
@@ -683,6 +719,35 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(rama.config.connection_id).toBe(newConnections[0]!.id);
         // El secreto viajó porque la clave de cifrado es la misma.
         expect(newConnections[0]!.secrets).toEqual({ credential: 'enc:v1:loquesea' });
+
+        // ── A9 / C6 — plantillas de registro y checklists ──────────────
+        const newTpls = await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, tenantB));
+        expect(newTpls).toHaveLength(2);
+        const tplCli = newTpls.find((t) => t.name === 'Cliente nuevo')!;
+        const tplFac = newTpls.find((t) => t.name === 'Factura')!;
+        expect(tplCli.listId).toBe(newClientes.id);
+        expect(tplFac.listId).toBe(newFacturas.id);
+        const content = tplCli.content as unknown as {
+            values: Record<string, unknown>;
+            subtasks: Array<{ values: Record<string, unknown> }>;
+            checklists: Array<{ items: Array<{ assignee: unknown }> }>;
+        };
+        expect(content.values[`f${newNombre.id}`]).toEqual({ mode: 'fixed', value: 'Nuevo' });
+        // Carlos se creó de nuevo: la persona fija apunta a la cuenta NUEVA.
+        const carlosNew = (await pg.db.select().from(users).where(eq(users.email, 'carlos@acme.test')))[0]!.id;
+        const dueñoNew = Object.keys(content.values).find((k) => k !== `f${newNombre.id}`)!;
+        expect(content.values[dueñoNew]).toEqual({ mode: 'person', person: { kind: 'user', user_id: carlosNew } });
+        expect(content.subtasks[0]!.values[dueñoNew]).toEqual({ mode: 'person', person: { kind: 'field', field_id: Number(dueñoNew.slice(1)) } });
+        expect(content.checklists[0]!.items[0]!.assignee).toEqual({ kind: 'user', user_id: carlosNew });
+        // Las acciones nombran las plantillas NUEVAS.
+        expect(acciones[0]!.config.template_id).toBe(tplFac.id);
+        expect(acciones[2]!.config.template_id).toBe(tplCli.id);
+        const newCls = await pg.db.select().from(recordChecklists).where(eq(recordChecklists.tenantId, tenantB));
+        expect(newCls).toEqual([expect.objectContaining({ name: 'Onboarding', listId: newClientes.id, recordId: newCliente.id })]);
+        const newItems = await pg.db.select().from(recordChecklistItems).where(eq(recordChecklistItems.tenantId, tenantB));
+        expect(newItems).toHaveLength(2);
+        expect(newItems.every((i) => i.checklistId === newCls[0]!.id && i.recordId === newCliente.id)).toBe(true);
+        expect(newItems.find((i) => i.text === 'Firmar')).toMatchObject({ done: true, doneBy: anaId, assigneeId: carlosNew, dueDate: '2026-11-03' });
 
         // El webhook entrante estrena URL: la vieja es del servidor de origen.
         const entrante = newAutos.find((a) => a.name === 'Entrante')!;

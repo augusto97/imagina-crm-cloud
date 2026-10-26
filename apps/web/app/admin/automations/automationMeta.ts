@@ -18,6 +18,8 @@ import {
     ClipboardCheck,
     MousePointerClick,
     Stamp,
+    ListTodo,
+    ListTree,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
@@ -98,6 +100,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Cuando se aprueba o se rechaza',
         description: 'Dispara cuando una solicitud de aprobación de esta lista se aprueba, se rechaza, se devuelve o se cancela.',
     },
+    // A9 — checklists del registro.
+    checklist_completed: {
+        icon: ListTodo,
+        title: 'Se completa un checklist',
+        description: 'Dispara cuando se marca el último ítem de un checklist de un registro (cualquiera, uno por nombre o todos).',
+    },
 };
 
 export const ACTION_META: Record<string, StepMeta> = {
@@ -153,6 +161,12 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: ClipboardCheck,
         title: 'Esperar aprobación',
         description: 'Pausa el flujo hasta que alguien aprueba, rechaza o devuelve la solicitud (con un tope de días opcional); después usa el resultado en un «Si / Si no».',
+    },
+    // C6 — plantillas de registro.
+    create_subtasks_from_template: {
+        icon: ListTree,
+        title: 'Crear subtareas desde una plantilla',
+        description: 'Agrega al registro las subtareas (y, si quieres, los checklists) de una plantilla de registro de la lista.',
     },
     for_each_linked: {
         icon: Repeat,
@@ -287,6 +301,13 @@ export function summarizeTrigger(
                 results.length <= 1 ? (results[0] ?? '') : `${results.slice(0, -1).join(', ')} ${__('o')} ${results[results.length - 1]}`,
             );
         }
+        case 'checklist_completed': {
+            const mode = typeof config.checklist_mode === 'string' ? config.checklist_mode : 'any';
+            const name = typeof config.checklist_name === 'string' ? config.checklist_name.trim() : '';
+            if (mode === 'all') return __('Cuando el registro tiene todos sus checklists completos');
+            if (mode === 'named' && name !== '') return sprintf(__('Cuando se completa el checklist «%s»'), name);
+            return __('Cuando se completa un checklist');
+        }
         case 'button_pressed': {
             const id = typeof config.button_field_id === 'number' ? config.button_field_id : 0;
             const button = id > 0 ? fields.find((f) => f.id === id) : undefined;
@@ -378,7 +399,15 @@ export function summarizeAction(
             const base = listName !== undefined
                 ? sprintf(__('Crea un registro en «%s»'), listName)
                 : __('Crea un registro en esta lista');
-            return values > 0 ? `${base} · ${sprintf(__('%d valores'), values)}` : base;
+            // C6 — con plantilla: el registro trae sus subtareas y checklists.
+            const withTpl = cfg.template_id ? `${base} · ${__('desde una plantilla')}` : base;
+            return values > 0 ? `${withTpl} · ${sprintf(__('%d valores'), values)}` : withTpl;
+        }
+        case 'create_subtasks_from_template': {
+            if (!cfg.template_id) return __('Crea subtareas desde una plantilla (elige la plantilla)');
+            return cfg.include_checklists === true
+                ? __('Crea las subtareas y los checklists de una plantilla')
+                : __('Crea las subtareas de una plantilla');
         }
         case 'bulk_edit': {
             const n = Array.isArray(cfg.operations) ? cfg.operations.length : 0;

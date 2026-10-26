@@ -151,6 +151,7 @@ export function formatFieldValueText(field: FieldEntity, value: unknown): string
     if (n === null) return typeof value === 'string' ? value : '—';
     switch (field.type) {
         case 'percent':
+        case 'checklist_progress':
             return `${formatNumber(n, { maxFrac: 1 })} %`;
         case 'duration':
         case 'time_tracked':
@@ -180,7 +181,7 @@ function BigValue({ field, value, prefix, suffix, size = 'lg' }: FieldDisplayPro
         );
     }
     const n = asNumber(value);
-    const text = n !== null || ['currency', 'number', 'percent', 'duration', 'rating', 'rollup', 'computed', 'time_tracked'].includes(field.type)
+    const text = n !== null || ['currency', 'number', 'percent', 'duration', 'rating', 'rollup', 'computed', 'time_tracked', 'checklist_progress'].includes(field.type)
         ? formatFieldValueText(field, value)
         : null;
     if (text !== null) {

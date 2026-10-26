@@ -204,6 +204,7 @@ function validateTypedValue(field: FieldValueSpec, raw: unknown): ValueValidatio
         case 'button':
         case 'formula':
         case 'approval':
+        case 'checklist_progress':
             return fail(`El tipo '${type}' no se escribe en los datos del registro.`);
         default: {
             const _exhaustive: never = type;

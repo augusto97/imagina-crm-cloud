@@ -89,6 +89,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'dependencies',
     // C5 — aprobaciones: pedir, decidir y el historial de las solicitudes.
     'approval',
+    // A9 — checklists del registro (progreso, ítems con responsable y fecha).
+    'checklist',
 ] as const;
 export const layoutBlockTypeSchema = z.enum(LAYOUT_BLOCK_TYPES);
 export type LayoutBlockType = z.infer<typeof layoutBlockTypeSchema>;
@@ -387,6 +389,14 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
     time_tracked: [
         { key: 'number', label: 'Duración' },
         { key: 'big', label: 'Cifra grande' },
+    ],
+    // A9 — el progreso del checklist se lee como un porcentaje.
+    checklist_progress: [
+        { key: 'bar', label: 'Barra de progreso' },
+        { key: 'ring', label: 'Anillo' },
+        { key: 'gauge', label: 'Medidor' },
+        { key: 'big', label: 'Cifra grande' },
+        { key: 'number', label: 'Número' },
     ],
     date: [
         { key: 'date', label: 'Fecha' },

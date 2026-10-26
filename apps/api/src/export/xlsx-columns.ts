@@ -229,6 +229,9 @@ export function planXlsxColumns(writer: XlsxStreamWriter, fields: Field[], ctx: 
                 return plan((r) => currencyCell(raw(r), field));
             case 'percent':
                 return plan((r) => percentCell(raw(r), field));
+            // A9 — el progreso del checklist (0-100) como porcentaje.
+            case 'checklist_progress':
+                return plan((r) => percentCell(raw(r), field));
             case 'rating':
                 return plan((r) => looseNumberCell(raw(r)));
             case 'duration':

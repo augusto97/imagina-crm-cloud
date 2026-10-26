@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlignLeft, ChevronRight, ClipboardCheck, CornerDownRight, Lock } from 'lucide-react';
+import { AlignLeft, ChevronRight, ClipboardCheck, CornerDownRight, ListTodo, Lock } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -102,6 +102,24 @@ export function RecordNameCell({
                     <ClipboardCheck aria-hidden className="imcrm-h-3.5 imcrm-w-3.5" />
                 </span>
             )}
+            {/* A9 — progreso de los checklists («3/8»; viaja en el listado,
+                una consulta por página). Completo = verde. */}
+            {record.checklist && record.checklist.total > 0 && (
+                <span
+                    title={checklistTitle(record.checklist.done, record.checklist.total)}
+                    aria-label={checklistTitle(record.checklist.done, record.checklist.total)}
+                    className={cn(
+                        'imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5 imcrm-rounded imcrm-px-1 imcrm-text-[11px] imcrm-font-medium imcrm-tabular-nums',
+                        record.checklist.done === record.checklist.total
+                            ? 'imcrm-bg-emerald-500/15 imcrm-text-emerald-700 dark:imcrm-text-emerald-400'
+                            : 'imcrm-text-muted-foreground',
+                    )}
+                    data-testid="imcrm-row-checklist"
+                >
+                    <ListTodo aria-hidden className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {record.checklist.done}/{record.checklist.total}
+                </span>
+            )}
             {/* Señal de que el registro tiene descripción (v0.1.133): el
                 contenido no viaja en el listado, sólo este booleano. */}
             {record.has_description && (
@@ -119,4 +137,9 @@ export function blockedTitle(n: number): string {
     return n === 1
         ? __('Bloqueado por 1 registro abierto')
         : sprintf(/* translators: %d: open blockers */ __('Bloqueado por %d registros abiertos'), n);
+}
+
+/** «Checklist: 3 de 8 hechos». */
+export function checklistTitle(done: number, total: number): string {
+    return sprintf(/* translators: %1$d hechos, %2$d total */ __('Checklist: %1$d de %2$d hechos'), done, total);
 }

@@ -81,6 +81,7 @@ import { applyRowFormulas, buildFormulaRuntime, type FormulaRuntime } from './fo
 import type { ThroughPlan } from './through-fields';
 import { RelationsRepository } from './relations.repository';
 import { DependenciesRepository } from './dependencies.repository';
+import { ChecklistsRepository } from '../checklists/checklists.repository';
 import { compileSearch } from './search-sql';
 import { relatedScopeSql, type RelatedScope } from './related-scope';
 import { BillingService } from '../billing/billing.service';
@@ -91,6 +92,19 @@ interface ShiftedRecord {
     id: number;
     before: Record<string, unknown>;
     after: Record<string, unknown>;
+}
+
+/**
+ * C6 — Un alta validada y lista para escribir (ver `prepareCreate`): el
+ * registro y las subtareas de una plantilla se preparan antes y se escriben
+ * juntos en una transacción.
+ */
+export interface PreparedCreate {
+    list: List;
+    fields: Field[];
+    data: Record<string, unknown>;
+    relValues: Array<{ field: Field; targetListId: number; ids: number[] }>;
+    parentId: number | null;
 }
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
@@ -170,6 +184,8 @@ export class RecordsService {
     }
 
     private readonly deps: DependenciesRepository;
+    /** A9 — progreso de los checklists (el «☑ 3/8» del listado). Sin estado. */
+    private readonly checklists = new ChecklistsRepository();
 
     private async clock(tenantId: number, tx?: Tx): Promise<QueryClock> {
         return { now: new Date(), timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE };
@@ -204,65 +220,16 @@ export class RecordsService {
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
-        assertNotStoreManaged(list, 'create');
-        // ACL por lista: el rol debe tener create habilitado para esta lista.
-        if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
-            throw new ForbiddenException({
-                code: 'forbidden_create',
-                message: 'Tu rol no puede crear registros en esta lista',
-                data: { status: 403 },
-            });
-        }
+        this.assertCanCreate(list, actor);
         // El tope del plan se verifica DENTRO de la transacción del alta (ver
         // assertRecordRoomInTx): aquí sólo se lee cuál es.
         const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
         const fields = await this.fields.listByListId(tenantId, listId);
-        // Los campos `relation` NO viven en el JSONB: se separan del payload
-        // y se sincronizan a la tabla `relations` dentro del mismo tx.
-        const rel = splitRelationValues(fields, input.data);
-        // v0.1.300 — valores por defecto: lo que NO viene en el alta (fijo, hoy en
-        // el reloj de la empresa, quien lo crea, una opción).
-        const clock = await this.clock(tenantId);
-        const withDefaults = applyFieldDefaults(fields, rel.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId });
-        const data = this.validateData(fields, withDefaults, { partial: opts.lenientRequired === true });
-        // v0.1.300 — "obligatorio si otro campo vale X" mira el registro entero.
-        if (opts.lenientRequired !== true) assertRequiredIf(fields, data);
+        const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true });
 
         const { row, enriched, rt } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
-            await this.assertUniqueInTx(tx, tenantId, listId, fields, data, null);
-            // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
-            // lista y ser de primer nivel — un solo nivel de anidado.
-            const parentId = input.parent_id ?? null;
-            if (parentId !== null) {
-                const parent = await this.repo.findById(tx, tenantId, listId, parentId);
-                if (!parent) throw recordNotFound(parentId);
-                if (parent.parentId !== null) {
-                    throw new BadRequestException({
-                        code: 'subtask_depth',
-                        message: 'Una subtarea no puede tener subtareas',
-                        data: { status: 400 },
-                    });
-                }
-            }
-            const inserted = await this.repo.insert(tx, {
-                tenantId,
-                listId,
-                data,
-                parentId,
-                createdBy: actor.userId,
-            });
-            await this.syncRelations(tx, tenantId, inserted.id, rel.values);
-            await this.activity.logInTx(tx, {
-                tenantId,
-                listId,
-                recordId: inserted.id,
-                // v0.1.275 — el sistema (0: formulario público, motor) no es
-                // una persona: la actividad queda sin autor, no "usuario #0".
-                userId: actor.userId > 0 ? actor.userId : null,
-                action: 'record_created',
-                diff: computeDiff({}, inserted.data),
-            });
+            const inserted = await this.insertPreparedInTx(tx, tenantId, actor, prep);
             // v0.1.170 — lookup/rollup sólo para el DTO (la actividad y las
             // automatizaciones ven los datos persistidos).
             return {
@@ -273,6 +240,129 @@ export class RecordsService {
         });
         // `silent` (v0.1.294): el alta en lote avisa UNA vez al final.
         if (!opts.silent) this.realtime.records(tenantId, listId);
+        this.afterCreate(tenantId, actor, prep, row, opts.automationChain ? { automationChain: opts.automationChain } : {});
+        const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
+        return toRecord(withComputed(fields, enriched[0] ?? row, rt), {
+            ...byFieldToKeys(relFieldIds, undefined),
+            ...relationsToMap(prep.relValues),
+        });
+    }
+
+    /**
+     * C6 — El chequeo del tope de registros del plan para `additional` altas
+     * DENTRO de la transacción que las escribe (con las altas de la empresa en
+     * fila, ver `assertRecordRoomInTx`). null = sin tope. El tope se lee aquí,
+     * ANTES de abrir la transacción (leerlo adentro tomaría otra conexión).
+     */
+    async planRoomChecker(tenantId: number, additional: number): Promise<((tx: Tx) => Promise<void>) | null> {
+        const cap = (await this.billing?.recordLimit(tenantId)) ?? null;
+        const billing = this.billing;
+        if (!cap || !billing) return null;
+        return (tx) => billing.assertRecordRoomInTx(tx, tenantId, cap, additional);
+    }
+
+    /**
+     * Lista de una tienda (sus registros nacen en WooCommerce) o rol sin
+     * permiso de crear en ESTA lista → error. Lo comparten el alta normal y la
+     * de una plantilla (C6).
+     */
+    assertCanCreate(list: List, actor: Actor): void {
+        assertNotStoreManaged(list, 'create');
+        // ACL por lista: el rol debe tener create habilitado para esta lista.
+        if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
+            throw new ForbiddenException({
+                code: 'forbidden_create',
+                message: 'Tu rol no puede crear registros en esta lista',
+                data: { status: 403 },
+            });
+        }
+    }
+
+    /**
+     * C6 — Prepara un alta SIN escribir: valores por defecto, validación y
+     * «obligatorio si». El alta desde una plantilla prepara el registro y sus
+     * subtareas primero (un dato inválido corta antes de escribir nada) y
+     * después las escribe todas en UNA transacción con `insertPreparedInTx`.
+     */
+    async prepareCreate(
+        tenantId: number,
+        actor: Actor,
+        list: List,
+        fields: Field[],
+        input: CreateRecordInput,
+        opts: { lenientRequired?: boolean } = {},
+    ): Promise<PreparedCreate> {
+        // Los campos `relation` NO viven en el JSONB: se separan del payload
+        // y se sincronizan a la tabla `relations` dentro del mismo tx.
+        const rel = splitRelationValues(fields, input.data);
+        // v0.1.300 — valores por defecto: lo que NO viene en el alta (fijo, hoy en
+        // el reloj de la empresa, quien lo crea, una opción).
+        const clock = await this.clock(tenantId);
+        const withDefaults = applyFieldDefaults(fields, rel.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId });
+        const data = this.validateData(fields, withDefaults, { partial: opts.lenientRequired === true });
+        // v0.1.300 — "obligatorio si otro campo vale X" mira el registro entero.
+        if (opts.lenientRequired !== true) assertRequiredIf(fields, data);
+        return { list, fields, data, relValues: rel.values, parentId: input.parent_id ?? null };
+    }
+
+    /**
+     * Escribe un alta ya preparada dentro de una transacción abierta: unicidad,
+     * padre (subtareas de un nivel), fila, vínculos y actividad. Sin efectos
+     * fuera de la base: el llamador avisa con `afterCreate` tras el commit.
+     * `parentId` pisa el de la preparación (la subtarea de una plantilla nace
+     * colgando del registro que se creó en la misma transacción).
+     */
+    async insertPreparedInTx(tx: Tx, tenantId: number, actor: Actor, prep: PreparedCreate, parentIdOverride?: number | null): Promise<RecordRow> {
+        const listId = prep.list.id;
+        await this.assertUniqueInTx(tx, tenantId, listId, prep.fields, prep.data, null);
+        // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
+        // lista y ser de primer nivel — un solo nivel de anidado.
+        const parentId = parentIdOverride !== undefined ? parentIdOverride : prep.parentId;
+        if (parentId !== null) {
+            const parent = await this.repo.findById(tx, tenantId, listId, parentId);
+            if (!parent) throw recordNotFound(parentId);
+            if (parent.parentId !== null) {
+                throw new BadRequestException({
+                    code: 'subtask_depth',
+                    message: 'Una subtarea no puede tener subtareas',
+                    data: { status: 400 },
+                });
+            }
+        }
+        const inserted = await this.repo.insert(tx, {
+            tenantId,
+            listId,
+            data: prep.data,
+            parentId,
+            createdBy: actor.userId,
+        });
+        await this.syncRelations(tx, tenantId, inserted.id, prep.relValues);
+        await this.activity.logInTx(tx, {
+            tenantId,
+            listId,
+            recordId: inserted.id,
+            // v0.1.275 — el sistema (0: formulario público, motor) no es
+            // una persona: la actividad queda sin autor, no "usuario #0".
+            userId: actor.userId > 0 ? actor.userId : null,
+            action: 'record_created',
+            diff: computeDiff({}, inserted.data),
+        });
+        return inserted;
+    }
+
+    /**
+     * Lo que pasa DESPUÉS del commit de un alta: las automatizaciones de
+     * «Cuando se crea un registro» y el aviso en proceso (avisos, tiendas).
+     * El realtime lo decide el llamador (un lote avisa una vez).
+     */
+    afterCreate(
+        tenantId: number,
+        actor: Actor,
+        prep: Pick<PreparedCreate, 'list' | 'fields'>,
+        row: Pick<RecordRow, 'id' | 'data'>,
+        opts: { automationChain?: AutomationChain } = {},
+    ): void {
+        const listId = prep.list.id;
         this.automations.dispatch({
             tenantId,
             listId,
@@ -282,12 +372,7 @@ export class RecordsService {
             ...(opts.automationChain ? { chain: opts.automationChain } : {}),
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list, fields });
-        const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-        return toRecord(withComputed(fields, enriched[0] ?? row, rt), {
-            ...byFieldToKeys(relFieldIds, undefined),
-            ...relationsToMap(rel.values),
-        });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId, list: prep.list, fields: prep.fields });
     }
 
     /**
@@ -301,7 +386,7 @@ export class RecordsService {
             : await this.lists.get(tenantId, listIdOrSlug);
         const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
             outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
-        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, approvalPending, rt } = await run(async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds, subtaskCount, blockedOpen, approvalPending, checklist, rt } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
@@ -331,6 +416,7 @@ export class RecordsService {
                 subtaskCount: r ? counts.get(r.id) ?? 0 : 0,
                 blockedOpen: r ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [r.id])).get(r.id) ?? 0 : 0,
                 approvalPending: r ? (await pendingApprovalCounts(tx, [r.id])).get(r.id) ?? 0 : 0,
+                checklist: r ? (await this.checklists.progressOf(tx, tenantId, [r.id])).get(r.id) : undefined,
                 rt: r ? await this.formulaRuntime(tx, tenantId, list.id, fields, plans) : undefined,
             };
         });
@@ -341,6 +427,7 @@ export class RecordsService {
                 ...toRecord(withComputed(fields, row, rt), byFieldToKeys(relFieldIds, relMap.get(row.id)), subtaskCount),
                 blocked_by_open: blockedOpen,
                 approval_pending: approvalPending,
+                ...withChecklist(checklist),
             },
             hiddenKeys,
         );
@@ -919,6 +1006,8 @@ export class RecordsService {
         const blocked = await this.openBlockers(tx, tenantId, ctx.fields, ctx.hiddenIds, ids);
         // C5 — aprobaciones pendientes de la tanda (indicador de la fila), una consulta.
         const pendingApprovals = await pendingApprovalCounts(tx, ids);
+        // A9 — progreso de los checklists de la tanda («☑ 3/8»), una consulta.
+        const progress = await this.checklists.progressOf(tx, tenantId, ids);
         const hiddenKeys = new Set([...ctx.hiddenIds].map((id) => jsonbKeyForField(id)));
         return result.map((r) =>
             stripHidden(
@@ -926,6 +1015,7 @@ export class RecordsService {
                     ...toRecord(withComputed(ctx.fields, r, ctx.formula), byFieldToKeys(relFieldIds, rels.get(r.id)), subtaskCounts.get(r.id) ?? 0),
                     blocked_by_open: blocked.get(r.id) ?? 0,
                     approval_pending: pendingApprovals.get(r.id) ?? 0,
+                    ...withChecklist(progress.get(r.id)),
                 },
                 hiddenKeys,
             ),
@@ -1041,8 +1131,9 @@ export class RecordsService {
                 : 0;
             const blockedOpen = updated ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
             const approvalPending = updated ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
+            const checklist = updated ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
             const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
-            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, rt };
+            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -1080,6 +1171,7 @@ export class RecordsService {
             ),
             blocked_by_open: result.blockedOpen,
             approval_pending: result.approvalPending,
+            ...withChecklist(result.checklist),
             ...(result.rescheduled.length > 0 ? { rescheduled: result.rescheduled.map((r) => r.id) } : {}),
         };
     }
@@ -2035,6 +2127,11 @@ function toRecord(
         // Fórmulas (A1): las que dieron error en esta fila, con el motivo.
         ...(row.formulaErrors ? { formula_errors: row.formulaErrors } : {}),
     };
+}
+
+/** A9 — el progreso del checklist sólo viaja si el registro tiene ítems. */
+function withChecklist(p: { done: number; total: number } | undefined): { checklist?: { done: number; total: number } } {
+    return p && p.total > 0 ? { checklist: p } : {};
 }
 
 /**

@@ -51,6 +51,7 @@ import { RecordDescription } from '@/admin/records/description/RecordDescription
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
 import { CommentsThreadBlock } from '@/portal/blocks/CommentsThreadBlock';
@@ -245,6 +246,8 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
             return __('Dependencias');
         case 'approval':
             return __('Aprobación');
+        case 'checklist':
+            return __('Checklists');
         default:
             return null;
     }
@@ -367,6 +370,18 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
             // C5 — las aprobaciones son del equipo: el portal no las muestra.
             if (ctx.mode === 'portal') return null;
             return <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} readOnly={ctx.preview === true} hideHeading />;
+        case 'checklist':
+            // A9 — los checklists son del trabajo del equipo: el portal no los muestra.
+            if (ctx.mode === 'portal') return null;
+            return (
+                <RecordChecklists
+                    listId={ctx.list.id}
+                    recordId={ctx.record.id}
+                    isSubtask={ctx.record.parent_id !== null}
+                    readOnly={ctx.preview === true}
+                    hideHeading
+                />
+            );
         case 'subtasks':
             if (ctx.mode === 'portal') return null;
             return (

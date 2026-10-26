@@ -41,6 +41,8 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
     // el tipo de su resultado.
     if (isFormulaError(value)) return <FormulaErrorBadge message={value.message} detailed />;
     if (field.type === 'formula') return <FieldValueDisplay field={asDisplayField(field)} value={value} />;
+    // A9 — progreso del checklist: un porcentaje.
+    if (field.type === 'checklist_progress') return <FieldValueDisplay field={asDisplayField(field)} value={value} />;
     // v0.1.170 — a través de una relación: se pinta con el campo destino.
     if (field.type === 'lookup') {
         const display = lookupDisplayField(field);

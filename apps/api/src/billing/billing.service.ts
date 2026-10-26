@@ -99,13 +99,18 @@ export class BillingService {
      * El tope se pide antes con `recordLimit`: leerlo aquí abriría una segunda
      * conexión con ésta ocupada (y con el pool lleno, se trancarían).
      */
-    async assertRecordRoomInTx(tx: Tx, tenantId: number, cap: { limit: number; plan: Plan }): Promise<void> {
+    async assertRecordRoomInTx(tx: Tx, tenantId: number, cap: { limit: number; plan: Plan }, additional = 1): Promise<void> {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`records-limit:${tenantId}`}, 0))`);
         const count = await this.countRecords(tx, tenantId);
-        if (count >= cap.limit) {
+        // C6 — una plantilla crea el registro y sus subtareas en una
+        // transacción: el lote entero entra o no entra.
+        if (count + Math.max(1, additional) > cap.limit) {
             throw new ForbiddenException({
                 code: 'plan_limit_reached',
-                message: `Alcanzaste el límite de ${cap.limit} registros del plan ${cap.plan}`,
+                message:
+                    additional > 1
+                        ? `Se superaría el límite de ${cap.limit} registros del plan ${cap.plan} (tienes ${count}, se agregarían ${additional})`
+                        : `Alcanzaste el límite de ${cap.limit} registros del plan ${cap.plan}`,
                 data: { status: 403, errors: { plan: 'límite de registros' } },
             });
         }

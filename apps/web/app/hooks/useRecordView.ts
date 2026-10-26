@@ -16,6 +16,7 @@ import type { RecordsQuery } from '@/types/record';
 
 import { activityKeys, toEntity, type ActivityDtoWire } from './useActivity';
 import { approvalKeys } from './useApprovals';
+import { checklistKeys } from './useChecklists';
 import { commentsKeys, fromApiComment } from './useComments';
 import { fieldsKeys } from './useFields';
 import { listsKeys } from './useLists';
@@ -94,6 +95,8 @@ export function seedRecordView(qc: QueryClient, b: RecordViewBundle): void {
     if (b.approvals) qc.setQueryData(approvalKeys.forRecord(lid, recordId), b.approvals);
     // A8 — dependencias («bloqueado por» / «bloquea»): la sección no sale a pedirlas.
     if (b.dependencies) qc.setQueryData(dependencyKeys.forRecord(lid, recordId), b.dependencies);
+    // A9 — checklists del registro: la sección no sale a pedirlos.
+    if (b.checklists) qc.setQueryData(checklistKeys.forRecord(lid, recordId), b.checklists);
     if (b.comments) {
         const rows = normalizeDates(b.comments) as Array<Parameters<typeof fromApiComment>[0]>;
         qc.setQueryData(commentsKeys.forRecord(listId, recordId), rows.map(fromApiComment));

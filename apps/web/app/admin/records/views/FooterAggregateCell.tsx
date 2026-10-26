@@ -42,7 +42,7 @@ export type AggregateKind =
     | 'date_max'
     | 'date_range';
 
-const NUMERIC_TYPES = new Set(['number', 'currency', 'rating', 'percent', 'duration', 'time_tracked']);
+const NUMERIC_TYPES = new Set(['number', 'currency', 'rating', 'percent', 'duration', 'time_tracked', 'checklist_progress']);
 /** Operaciones de `computed` con valor numérico en SQL (espejo de `computed-sql.ts`). */
 const NUMERIC_COMPUTED_OPS = new Set(['sum', 'product', 'subtract', 'divide', 'abs']);
 

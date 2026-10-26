@@ -94,6 +94,8 @@ export * from './schemas/document-calc';
 export * from './templates/document-templates';
 export * from './schemas/record-view';
 export * from './schemas/time-tracking';
+export * from './schemas/checklist';
+export * from './schemas/record-template';
 export * from './dashboard-report/report';
 export * from './dashboard-report/report-svg';
 export * from './dashboard-report/report-csv';

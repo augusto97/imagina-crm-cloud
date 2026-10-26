@@ -1215,7 +1215,7 @@ function OperandPicker({
 
 // ── Totales ──────────────────────────────────────────────────────────────
 
-const NUMERIC = new Set(['number', 'currency', 'percent', 'computed', 'rollup', 'lookup', 'time_tracked']);
+const NUMERIC = new Set(['number', 'currency', 'percent', 'computed', 'rollup', 'lookup', 'time_tracked', 'checklist_progress']);
 
 function TotalsFields(p: DocInspectorProps): JSX.Element {
     const block = p.block as Extract<DocBlock, { type: 'totals' }>;

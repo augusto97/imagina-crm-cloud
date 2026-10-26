@@ -330,7 +330,14 @@ export class ThroughEngine {
         // C5 — «Aprobación»: el estado de la última solicitud de su flujo, UNA
         // query por campo y página.
         const approvalFields = allFields.filter((f) => f.type === 'approval');
-        if ((plans.length === 0 && unresolved.length === 0 && timeFields.length === 0 && approvalFields.length === 0) || rows.length === 0) return rows;
+        // A9 — «Progreso del checklist»: % de ítems hechos, una query por página.
+        const progressFields = allFields.filter((f) => f.type === 'checklist_progress');
+        if (
+            (plans.length === 0 && unresolved.length === 0 && timeFields.length === 0 && approvalFields.length === 0 && progressFields.length === 0)
+            || rows.length === 0
+        ) {
+            return rows;
+        }
         const ids = rows.map((r) => r.id);
         const values = new Map<number, Map<number, unknown>>();
         const minutes = timeFields.length > 0 ? await trackedMinutes(tx, ids) : new Map<number, number>();
@@ -338,6 +345,7 @@ export class ThroughEngine {
         for (const f of approvalFields) {
             approvalStatuses.set(f.id, await latestApprovalStatuses(tx, ids, readApprovalFlowId(f.config as Record<string, unknown>)));
         }
+        const percents = progressFields.length > 0 ? await checklistPercents(tx, ids) : new Map<number, number>();
 
         // Lookups: una query por relación (varios lookups sobre la misma
         // relación comparten las filas vinculadas).
@@ -377,6 +385,7 @@ export class ThroughEngine {
             }
             for (const f of timeFields) data[jsonbKeyForField(f.id)] = minutes.get(r.id) ?? 0;
             for (const f of approvalFields) data[jsonbKeyForField(f.id)] = approvalStatuses.get(f.id)?.get(r.id) ?? null;
+            for (const f of progressFields) data[jsonbKeyForField(f.id)] = percents.get(r.id) ?? null;
             return { ...r, data };
         });
     }
@@ -495,6 +504,24 @@ async function trackedMinutes(tx: Tx, ids: number[]): Promise<Map<number, number
     const out = new Map<number, number>();
     for (const row of res.rows as Array<{ id: unknown; minutes: unknown }>) {
         out.set(Number(row.id), Number(row.minutes) || 0);
+    }
+    return out;
+}
+
+/**
+ * A9 — % de ítems de checklist hechos por registro de una página (la misma
+ * cuenta que `checklistProgressExpr`). Sin ítems, el registro no aparece.
+ */
+async function checklistPercents(tx: Tx, ids: number[]): Promise<Map<number, number>> {
+    const res = await tx.execute(sql`
+        SELECT ci.record_id AS id, round(100.0 * count(*) FILTER (WHERE ci.done) / count(*)) AS pct
+        FROM record_checklist_items ci
+        WHERE ci.record_id IN (${idList(ids)})
+        GROUP BY ci.record_id
+    `);
+    const out = new Map<number, number>();
+    for (const row of res.rows as Array<{ id: unknown; pct: unknown }>) {
+        out.set(Number(row.id), Number(row.pct) || 0);
     }
     return out;
 }

@@ -2,6 +2,9 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
     bulkOperationSchema,
+    checklistTriggerMatches,
+    type ChecklistCompletedInfo,
+    type FromTemplateResult,
     fieldDefaultOf,
     isSystemField,
     type SystemFieldType,
@@ -65,6 +68,7 @@ import { automationRuns, documentTemplates, lists, memberships, records, tenants
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
+import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
@@ -120,6 +124,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     button_pressed: ['button_pressed'],
     // C5 — una solicitud de aprobación del registro se resolvió.
     approval_resolved: ['approval_resolved'],
+    // A9 — un checklist del registro quedó completo.
+    checklist_completed: ['checklist_completed'],
 };
 
 interface PersonInfo {
@@ -154,6 +160,8 @@ interface RunContext {
     form?: { id: number; name: string };
     /** Campo «Botón» — el botón que se presionó (`{{boton.nombre}}`, `{{boton.persona}}`). */
     button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
+    /** A9 — el checklist que quedó completo (`{{checklist.nombre}}`). */
+    checklist?: ChecklistCompletedInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
@@ -289,6 +297,7 @@ export interface ResumeState {
         pago?: Record<string, unknown>;
         form?: { id: number; name: string };
         button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
+        checklist?: ChecklistCompletedInfo;
         pdf?: Record<string, unknown>;
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
@@ -354,6 +363,7 @@ export class AutomationEngine {
     /** v0.1.265 — arma el correo (diseño / texto / HTML + firma). Sin dependencias. */
     private readonly composer = new EmailComposer();
     private recordsSvc: RecordsService | null | undefined;
+    private recordTemplatesSvc: RecordTemplatesService | null | undefined;
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -414,6 +424,18 @@ export class AutomationEngine {
         return this.approvalsSvc;
     }
 
+    /** C6 — plantillas de registro (se resuelve al usarlo, igual que RecordsService). */
+    private recordTemplates(): RecordTemplatesService | null {
+        if (this.recordTemplatesSvc === undefined) {
+            try {
+                this.recordTemplatesSvc = this.moduleRef?.get(RecordTemplatesService, { strict: false }) ?? null;
+            } catch {
+                this.recordTemplatesSvc = null;
+            }
+        }
+        return this.recordTemplatesSvc;
+    }
+
     /** Marca de lista de tienda (v0.1.213), o null. Una lectura por lista y por corrida. */
     private async storeMarkerOf(ctx: RunContext, listId: number): Promise<StoreListMarker | null> {
         ctx.storeMarkers ??= new Map();
@@ -472,6 +494,7 @@ export class AutomationEngine {
                 ...(event.form ? { form: event.form } : {}),
                 ...(event.button ? { button: event.button } : {}),
                 ...(event.approval ? { approval: event.approval } : {}),
+                ...(event.checklist ? { checklist: event.checklist } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -775,6 +798,7 @@ export class AutomationEngine {
             ...(state.ctx.pago ? { pago: state.ctx.pago } : {}),
             ...(state.ctx.form ? { form: state.ctx.form } : {}),
             ...(state.ctx.button ? { button: state.ctx.button } : {}),
+            ...(state.ctx.checklist ? { checklist: state.ctx.checklist } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
@@ -1070,6 +1094,9 @@ export class AutomationEngine {
                 }
                 break;
             }
+            case 'checklist_completed':
+                notes.push('Se asume que se completó un checklist de este registro; {{checklist.nombre}} queda vacío en la prueba.');
+                break;
             default:
                 break;
         }
@@ -1159,6 +1186,10 @@ export class AutomationEngine {
             if (flowId !== null && ctx.approval.flow_id !== flowId) return false;
             if (!(readApprovalTriggerResults(cfg) as readonly string[]).includes(ctx.approval.status)) return false;
         }
+        // A9 — «Cuando se completa un checklist»: cualquiera, uno por nombre o todos.
+        if (auto.triggerType === 'checklist_completed') {
+            if (!ctx.checklist || !checklistTriggerMatches(cfg, ctx.checklist)) return false;
+        }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
 
@@ -1247,6 +1278,9 @@ export class AutomationEngine {
             if (token === 'boton.nombre') return ctx.button?.label ?? '';
             if (token === 'boton.persona') return ctx.button?.user_name ?? '';
             if (token === 'boton.email') return ctx.button?.user_email ?? '';
+            // A9 — el checklist que quedó completo.
+            if (token === 'checklist.nombre') return ctx.checklist?.name ?? '';
+            if (token === 'checklist.items') return ctx.checklist?.total ?? '';
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -1453,6 +1487,7 @@ export class AutomationEngine {
                 ...(ctx.pago ? { pago: ctx.pago } : {}),
                 ...(ctx.form ? { form: ctx.form } : {}),
                 ...(ctx.button ? { button: ctx.button } : {}),
+                ...(ctx.checklist ? { checklist: ctx.checklist } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),
@@ -1571,13 +1606,15 @@ export class AutomationEngine {
 
         // Escribir registros: por RecordsService (abre y confirma su propia
         // transacción, con actividad, tiempo real y automatizaciones).
-        if (spec.type === 'update_field' || spec.type === 'create_record') {
+        if (spec.type === 'update_field' || spec.type === 'create_record' || spec.type === 'create_subtasks_from_template') {
             try {
                 return {
                     log: tag([
                         spec.type === 'update_field'
                             ? await this.updateField(ctx, spec.config ?? {})
-                            : await this.createRecord(ctx, spec.config ?? {}),
+                            : spec.type === 'create_record'
+                              ? await this.createRecord(ctx, spec.config ?? {})
+                              : await this.createSubtasksFromTemplate(ctx, spec.config ?? {}),
                     ]),
                 };
             } catch (err) {
@@ -2281,9 +2318,13 @@ export class AutomationEngine {
                 }
             });
         }
+        // C6 — «Crear un registro» desde una plantilla de la lista destino: los
+        // valores de la acción pisan los de la plantilla.
+        const templateId = Number(cfg.template_id);
+        const useTemplate = Number.isInteger(templateId) && templateId > 0;
         // Obligatorios que quedaron vacíos: el registro se crea igual (como
-        // siempre), pero se avisa.
-        for (const f of pre.fields) {
+        // siempre), pero se avisa. Con plantilla, la plantilla puede llenarlos.
+        for (const f of useTemplate ? [] : pre.fields) {
             if (!f.isRequired || READ_ONLY_TYPES.includes(f.type) || f.type === 'checkbox') continue;
             // v0.1.300 — con valor por defecto el alta lo completa sola.
             if (fieldDefaultOf(f.config as Record<string, unknown>) !== null) continue;
@@ -2306,17 +2347,93 @@ export class AutomationEngine {
             const [tl] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
                 tx.select({ name: lists.name }).from(lists).where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, targetList))).limit(1),
             );
-            return ok('create_record', `Crearía un registro en «${tl?.name ?? `lista ${targetList}`}» con ${shown.length} valor(es).${note}`, {
+            const tpl = useTemplate ? await this.recordTemplates()?.get(ctx.tenantId, String(targetList), templateId).catch(() => null) : null;
+            if (useTemplate && !tpl) return fail('create_record', 'La plantilla de registro elegida ya no existe en la lista destino.');
+            const fromTpl = tpl
+                ? ` desde la plantilla «${tpl.name}» (${tpl.content.subtasks.length} subtarea(s), ${tpl.content.checklists.length} checklist(s))`
+                : '';
+            return ok('create_record', `Crearía un registro en «${tl?.name ?? `lista ${targetList}`}»${fromTpl} con ${shown.length} valor(es).${note}`, {
                 _sim: 'would_run',
                 list: tl?.name ?? null,
                 values: shown,
                 ...(skipped.length > 0 ? { warnings: skipped } : {}),
             });
         }
+        if (useTemplate) {
+            const out = await this.writeCreateFromTemplate(ctx, targetList, templateId, data, relations.filter((r) => r.ids.length > 0));
+            const extra = [
+                out.subtask_ids.length > 0 ? `${out.subtask_ids.length} subtarea(s)` : '',
+                out.checklist_ids.length > 0 ? `${out.checklist_ids.length} checklist(s)` : '',
+            ].filter(Boolean);
+            const warnings = [...skipped, ...out.warnings];
+            return ok('create_record', `Creó registro #${out.record_id} en lista ${targetList} desde una plantilla${extra.length > 0 ? ` (con ${extra.join(' y ')})` : ''}.${note}`, {
+                record_id: out.record_id,
+                subtask_ids: out.subtask_ids,
+                ...(warnings.length > 0 ? { warnings } : {}),
+            });
+        }
         const created = await this.writeCreate(ctx, targetList, data, relations.filter((r) => r.ids.length > 0));
         return ok('create_record', `Creó registro #${created.id} en lista ${targetList}.${note}`, {
             record_id: created.id,
             ...(skipped.length > 0 ? { warnings: skipped } : {}),
+        });
+    }
+
+    /** C6 — «Crear un registro» con plantilla: el registro, sus subtareas y checklists en una transacción. */
+    private async writeCreateFromTemplate(
+        ctx: RunContext,
+        listId: number,
+        templateId: number,
+        data: Record<string, unknown>,
+        relations: Array<{ fieldId: number; ids: number[] }>,
+    ): Promise<FromTemplateResult> {
+        const svc = this.recordTemplates();
+        if (!svc) throw new Error('Las plantillas de registro no están disponibles en este servidor.');
+        const input = { ...data } as Record<string, unknown>;
+        for (const r of relations) input[jsonbKeyForField(r.fieldId)] = r.ids;
+        return svc.createFromTemplate(
+            ctx.tenantId,
+            SYSTEM_ACTOR,
+            String(listId),
+            { template_id: templateId, data: input },
+            { lenientRequired: true, automationChain: nextChain(ctx.chain, ctx.automation?.id ?? 0) },
+        );
+    }
+
+    /**
+     * C6 — «Crear subtareas desde una plantilla»: las subtareas de una
+     * plantilla de registro (y, si se pide, sus checklists) sobre el registro
+     * que disparó la automatización, en una transacción.
+     */
+    private async createSubtasksFromTemplate(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const action = 'create_subtasks_from_template';
+        if (ctx.recordId === null) return skip(action, 'Esta acción necesita un registro (el que disparó la automatización).');
+        const templateId = Number(cfg.template_id);
+        if (!Number.isInteger(templateId) || templateId <= 0) return skip(action, 'Elige la plantilla de registro.');
+        const svc = this.recordTemplates();
+        if (!svc) return fail(action, 'Las plantillas de registro no están disponibles en este servidor.');
+        const includeChecklists = cfg.include_checklists === true;
+        if (ctx.sim) {
+            const tpl = await svc.get(ctx.tenantId, String(ctx.listId), templateId).catch(() => null);
+            if (!tpl) return fail(action, 'La plantilla de registro elegida ya no existe en esta lista.');
+            const n = tpl.content.subtasks.length;
+            const c = includeChecklists ? tpl.content.checklists.length : 0;
+            return ok(action, `Crearía ${n} subtarea(s)${c > 0 ? ` y ${c} checklist(s)` : ''} desde «${tpl.name}» en este registro.`, {
+                _sim: 'would_run',
+                template: tpl.name,
+                subtasks: tpl.content.subtasks.map((s) => s.title),
+            });
+        }
+        const res = await svc.applyToRecord(ctx.tenantId, SYSTEM_ACTOR, String(ctx.listId), ctx.recordId, templateId, {
+            lenientRequired: true,
+            includeChecklists,
+            automationChain: nextChain(ctx.chain, ctx.automation?.id ?? 0),
+        });
+        const parts = [`${res.subtask_ids.length} subtarea(s)`, ...(res.checklist_ids.length > 0 ? [`${res.checklist_ids.length} checklist(s)`] : [])];
+        return ok(action, `Creó ${parts.join(' y ')} desde la plantilla.`, {
+            subtask_ids: res.subtask_ids,
+            checklist_ids: res.checklist_ids,
+            ...(res.warnings.length > 0 ? { warnings: res.warnings } : {}),
         });
     }
 

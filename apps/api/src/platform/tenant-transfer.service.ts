@@ -21,6 +21,8 @@ import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Opt
 import {
     TENANT_TRANSFER_FORMAT,
     remapFormulaConfig,
+    readTemplateContent,
+    remapTemplateContent,
     tenantTransferManifestSchema,
     type ExportTenantInput,
     type ExportTenantResult,
@@ -79,6 +81,9 @@ import {
     users,
     syncLinks,
     recordDependencies,
+    recordChecklists,
+    recordChecklistItems,
+    recordTemplates,
     ganttBaselines,
     ganttBaselineItems,
     approvalFlows,
@@ -340,6 +345,11 @@ export class TenantTransferService {
                     and(liveRecord(recordDependencies.blockerRecordId), liveRecord(recordDependencies.blockedRecordId)),
                 ),
             );
+            // C6 — plantillas de registro y de checklist (de listas vivas).
+            await dump('record_templates', await this.byTenant(recordTemplates, tenantId, liveList(recordTemplates.listId)));
+            // A9 — checklists de los registros vivos, con sus ítems.
+            await dump('record_checklists', await this.byTenant(recordChecklists, tenantId, liveRecord(recordChecklists.recordId)));
+            await dump('record_checklist_items', await this.byTenant(recordChecklistItems, tenantId, liveRecord(recordChecklistItems.recordId)));
             // B1 — líneas base del Gantt (la de una vista en la papelera no viaja).
             await dump('gantt_baselines', await this.byTenant(ganttBaselines, tenantId, liveView(ganttBaselines.viewId)));
             await dump(
@@ -954,6 +964,51 @@ export class TenantTransferService {
             };
         });
 
+        // A9 — checklists (el registro y la lista re-mapeados) y sus ítems
+        //      (responsable y quién lo marcó: una persona que no viajó queda vacía).
+        const checklistMap = new Map<number, number>();
+        counts.record_checklists = await this.insertMapped(
+            tx,
+            await this.readAll(rows('record_checklists')),
+            recordChecklists,
+            checklistMap,
+            (c) => ({
+                tenantId,
+                listId: maps.list.get(Number(c.listId))!,
+                recordId: maps.record.get(Number(c.recordId))!,
+                name: String(c.name ?? 'Checklist').slice(0, 120),
+                position: Number(c.position ?? 0) || 0,
+                createdBy: mapId(maps.user, c.createdBy),
+                createdAt: this.date(c.createdAt) ?? new Date(),
+                updatedAt: this.date(c.updatedAt) ?? new Date(),
+            }),
+            (c) => maps.list.has(Number(c.listId)) && maps.record.has(Number(c.recordId)),
+        );
+        counts.record_checklist_items = await this.insertPlain(tx, rows('record_checklist_items'), recordChecklistItems, (it) => {
+            const checklistId = mapId(checklistMap, it.checklistId);
+            const recordId = mapId(maps.record, it.recordId);
+            const listId = mapId(maps.list, it.listId);
+            if (checklistId === null || recordId === null || listId === null) return null;
+            const dueAt = this.date(it.dueAt);
+            return {
+                tenantId,
+                listId,
+                recordId,
+                checklistId,
+                text: String(it.text ?? '').slice(0, 500) || '—',
+                done: it.done === true,
+                doneBy: mapId(maps.user, it.doneBy),
+                doneAt: this.date(it.doneAt),
+                assigneeId: mapId(maps.user, it.assigneeId),
+                dueDate: dueAt ? null : typeof it.dueDate === 'string' ? it.dueDate.slice(0, 10) : null,
+                dueAt,
+                position: Number(it.position ?? 0) || 0,
+                createdBy: mapId(maps.user, it.createdBy),
+                createdAt: this.date(it.createdAt) ?? new Date(),
+                updatedAt: this.date(it.updatedAt) ?? new Date(),
+            };
+        });
+
         // B1 — líneas base del Gantt: la vista, los campos de inicio/fin y
         // cada registro congelado se re-mapean (las fechas viajan tal cual).
         const baselineMap = new Map<number, number>();
@@ -1144,6 +1199,39 @@ export class TenantTransferService {
                 createdBy: mapId(maps.user, d.createdBy),
             }),
             (d) => maps.list.has(Number(d.listId)),
+        );
+
+        // 7b2. C6 — Plantillas de registro y de checklist (antes que los
+        //      formularios y las automatizaciones, que las nombran por id). Su
+        //      contenido apunta a campos y personas por id: se re-apuntan (una
+        //      persona que no viajó se descarta, el ítem queda sin responsable).
+        counts.record_templates = await this.insertMapped(
+            tx,
+            await this.readAll(rows('record_templates')),
+            recordTemplates,
+            maps.recordTemplate,
+            (t) => {
+                const content = remapTemplateContent(readTemplateContent(t.content), {
+                    field: (id) => maps.field.get(id) ?? null,
+                    user: (id) => maps.user.get(id) ?? null,
+                });
+                if (content.record_description) content.record_description = remapRichDoc(content.record_description, maps);
+                return {
+                    tenantId,
+                    listId: maps.list.get(Number(t.listId))!,
+                    kind: t.kind === 'checklist' ? 'checklist' : 'record',
+                    name: String(t.name ?? 'Plantilla').slice(0, 120),
+                    description: typeof t.description === 'string' ? t.description.slice(0, 500) : null,
+                    icon: typeof t.icon === 'string' ? t.icon : null,
+                    color: typeof t.color === 'string' ? t.color : null,
+                    content: content as unknown as Row,
+                    position: Number(t.position ?? 0) || 0,
+                    createdBy: mapId(maps.user, t.createdBy),
+                    createdAt: this.date(t.createdAt) ?? new Date(),
+                    updatedAt: this.date(t.updatedAt) ?? new Date(),
+                };
+            },
+            (t) => maps.list.has(Number(t.listId)),
         );
 
         // 7c. Formularios públicos (antes que las automatizaciones: el

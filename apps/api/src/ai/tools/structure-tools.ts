@@ -124,6 +124,8 @@ import { ApprovalsService } from '../../approvals/approvals.service';
 import { isNumericComputed } from '../../records/computed-sql';
 import { DependenciesRepository } from '../../records/dependencies.repository';
 import { FormsService } from '../../forms/forms.service';
+import { RecordTemplatesService } from '../../record-templates/record-templates.service';
+import { templateForModel } from './record-template-spec';
 import { DataConsentService } from '../../data-consent/data-consent.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
@@ -179,6 +181,8 @@ const AI_FIELD_TYPES = [
     'button',
     // Fórmulas (A1).
     'formula',
+    // A9 — progreso de los checklists del registro (sólo lectura).
+    'checklist_progress',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -534,7 +538,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -547,7 +551,8 @@ const automationSpec = z.object({
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}. ' +
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
-                'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}.',
+                'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
+                'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -557,7 +562,8 @@ const automationSpec = z.object({
             'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?, include_signature?, signature_user_id? (id de un miembro: su firma va al final), ' +
                 'preheader?, design? — el correo DISEÑADO por bloques del editor visual (prefiérelo a body cuando el correo lo ve un cliente): {theme?, blocks:[{type: heading|text|button|image|fields|divider|spacer|signature|html|columns, …}]}; los text usan formato sencillo (**negrita**, - viñetas, [enlace](url)). Vocabulario completo en la descripción de propose_create_automation} | ' +
                 'update_field {values: {slug: valor}} — cambia campos DEL REGISTRO que disparó la automatización (es lo que corresponde a "cambiar/actualizar/marcar un campo") | ' +
-                'create_record {target_list: slug, values: {slug: valor}} | ' +
+                'create_record {target_list: slug, values: {slug: valor}, template_id? (id de una plantilla de registro de la lista destino: el registro nace con sus valores, subtareas y checklists; values pisa la plantilla)} | ' +
+                'create_subtasks_from_template {template_id (id de una de las `record_templates` de get_list_schema), include_checklists?: true} — crea las subtareas de esa plantilla (y, si se pide, sus checklists) DEBAJO del registro que disparó la automatización | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
                 'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
@@ -648,7 +654,7 @@ type Payload =
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
 type StructureKind = Exclude<
     AiProposalKind,
-    'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'configure_approval_flow'
+    'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'configure_approval_flow' | 'create_record_template'
 >;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
@@ -710,6 +716,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly dataConsent?: DataConsentService,
         // C5 — flujos de aprobación (el disparador y las acciones los nombran).
         @Optional() private readonly approvals?: ApprovalsService,
+        // C6 — plantillas de registro (las lee get_list_schema).
+        @Optional() private readonly recordTemplates?: RecordTemplatesService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -930,7 +938,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1098,6 +1106,7 @@ export class StructureTools implements AiProposalApplier {
         const listForms = this.forms ? await this.forms.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
         // C5 — flujos de aprobación de la lista.
         const approvalFlowList = this.approvals ? await this.approvals.listFlows(ctx.tenantId, String(list.id)).catch(() => []) : [];
+        const recordTpls = this.recordTemplates ? await this.recordTemplates.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
         // ¿La empresa pide la autorización de datos? (versión vigente o null).
         const consent = this.dataConsent && listForms.length > 0 ? await this.dataConsent.active(ctx.tenantId).catch(() => null) : null;
         const allLists = await this.lists.list(ctx.tenantId);
@@ -1242,6 +1251,10 @@ export class StructureTools implements AiProposalApplier {
                     on_reject: Object.fromEntries(f.config.on_reject.map((x) => [fieldById.get(x.field_id)?.slug ?? `f${x.field_id}`, x.value])),
                     allow_resubmit: f.config.allow_resubmit,
                 })),
+                // C6 — plantillas de registro (y de checklist): para crear
+                // registros desde una (`template` en propose_create_records) o
+                // nombrarlas en create_subtasks_from_template / create_record.
+                record_templates: recordTpls.map((t) => templateForModel(t, fields)),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -1399,6 +1412,7 @@ export class StructureTools implements AiProposalApplier {
                 views,
                 automations,
                 records: recordsBp,
+                record_templates: [],
             });
         }
 
@@ -3552,7 +3566,7 @@ export class StructureTools implements AiProposalApplier {
                 column: column(r.column),
                 required_field_ids: r.require.map((slug) => {
                     const f = resolve(slug);
-                    if (['lookup', 'rollup', 'computed', 'ai', 'time_tracked'].includes(f.type)) {
+                    if (['lookup', 'rollup', 'computed', 'ai', 'time_tracked', 'checklist_progress', 'approval'].includes(f.type)) {
                         throw new AiToolError(`Vista «${v.name}»: «${slug}» es un campo calculado (${f.type}); no se puede pedir al mover.`);
                     }
                     return f.id;
@@ -4074,7 +4088,7 @@ interface UpdateViewSpec {
 
 // ── Helpers puros ───────────────────────────────────────────────────────
 
-const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'computed', 'time_tracked'];
+const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'computed', 'time_tracked', 'checklist_progress'];
 const DATE_TYPES: readonly FieldType[] = ['date', 'datetime'];
 
 /**
@@ -4222,6 +4236,9 @@ function describeFieldForModel(
     }
     if (f.type === 'time_tracked') {
         out.note = 'Sólo lectura: minutos registrados con el cronómetro o a mano en la ficha (se filtra, ordena y suma).';
+    }
+    if (f.type === 'checklist_progress') {
+        out.note = 'Sólo lectura: % de ítems de checklist hechos del registro (vacío si no tiene checklist; se filtra, ordena y promedia).';
     }
     // Fórmulas (A1): la fórmula por NOMBRE (como se escribe), su resultado y si filtra.
     if (f.type === 'formula') {
@@ -4513,6 +4530,12 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             const name = APPROVAL_FLOW_NAMES.get(cfg);
             return name ? `Cuando se resuelve una aprobación de «${name}»` : 'Cuando se aprueba o se rechaza';
         }
+        case 'checklist_completed':
+            return cfg.checklist_mode === 'all'
+                ? 'Cuando se completan todos los checklists'
+                : cfg.checklist_mode === 'named' && typeof cfg.checklist_name === 'string'
+                  ? `Cuando se completa el checklist «${cfg.checklist_name}»`
+                  : 'Cuando se completa un checklist';
         default:
             return type;
     }
@@ -4539,6 +4562,8 @@ function describeActions(
                 return `Llamar webhook ${String(cfg.url ?? '')}`;
             case 'generate_pdf':
                 return `Generar PDF (plantilla #${String(cfg.document_template_id ?? '')})`;
+            case 'create_subtasks_from_template':
+                return `Crear subtareas desde la plantilla #${String(cfg.template_id ?? '')}`;
             case 'connector_action':
                 return connectorLabel(cfg);
             case 'if_else':

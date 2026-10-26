@@ -8,6 +8,7 @@ import { ListsModule } from '../lists/lists.module';
 import { RecordsRepository } from '../records/records.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { ViewsModule } from '../views/views.module';
+import { RecordTemplatesModule } from '../record-templates/record-templates.module';
 import { AutomationTemplatesService } from './automation-templates.service';
 import { BlueprintService } from './blueprint.service';
 import { DashboardTemplatesService } from './dashboard-templates.service';
@@ -16,7 +17,7 @@ import { TemplatesService } from './templates.service';
 
 /** Duplicar listas + plantillas de listas, dashboards y automatizaciones (v0.1.166/167). */
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, BillingModule, DashboardsModule],
+    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, BillingModule, DashboardsModule, RecordTemplatesModule],
     controllers: [TemplatesController],
     providers: [
         BlueprintService,
