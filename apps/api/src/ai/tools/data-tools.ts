@@ -25,6 +25,11 @@ import {
     summarizeBulkOperations,
     type BulkEditTarget,
     type BulkOperation,
+    readTemplateContent,
+    describeRelativeDate,
+    type CreateRecordTemplateInput,
+    type RecordTemplate,
+    type RecordTemplateContent,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -34,8 +39,10 @@ import { ListsService } from '../../lists/lists.service';
 import { BulkEditService } from '../../records/bulk-edit.service';
 import { DependenciesService } from '../../records/dependencies.service';
 import { RecordsService, type Actor } from '../../records/records.service';
+import { RecordTemplatesService } from '../../record-templates/record-templates.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
-import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
+import { AiToolError, AiToolRegistry, toolAllowed, type AiToolContext, type AiToolResult } from './registry';
+import { recordTemplateSpec, templateSpecToContent, type RecordTemplateSpec } from './record-template-spec';
 import { bulkOpsSpec, translateBulkOps } from './bulk-ops';
 import { filterRuleSpec, rulesToFilterTree, type FilterRuleSpec } from './structure-tools';
 
@@ -76,7 +83,14 @@ const valuesSpec = z
 
 const createRecordsSpec = z.object({
     list: z.string().max(63),
-    records: z.array(valuesSpec).min(1).max(50).describe('Un objeto por registro'),
+    records: z.array(valuesSpec).min(1).max(50).describe('Un objeto por registro (con `template`, puede ir vacío: {})'),
+    template: z
+        .string()
+        .max(120)
+        .optional()
+        .describe(
+            'C6 — nombre o id de una plantilla de registro de la lista (ver `record_templates` en get_list_schema). Cada registro nace con los valores, subtareas y checklists de la plantilla; lo que pases en records pisa los valores de la plantilla.',
+        ),
 });
 type CreateRecordsSpec = z.infer<typeof createRecordsSpec>;
 
@@ -115,7 +129,14 @@ const setDependenciesSpec = z.object({
 type SetDependenciesSpec = z.infer<typeof setDependenciesSpec>;
 
 type Payload =
-    | { kind: 'create_records'; listId: number; listSlug: string; rows: Array<Record<string, unknown>> }
+    | {
+          kind: 'create_records';
+          listId: number;
+          listSlug: string;
+          rows: Array<Record<string, unknown>>;
+          /** C6 — si se crean desde una plantilla de registro. */
+          templateId?: number;
+      }
     | { kind: 'update_records'; listId: number; listSlug: string; ids: number[]; data: Record<string, unknown> }
     | { kind: 'delete_records'; listId: number; listSlug: string; ids: number[] }
     | { kind: 'bulk_edit_records'; listId: number; listSlug: string; ids: number[]; operations: BulkOperation[] }
@@ -125,9 +146,10 @@ type Payload =
           listSlug: string;
           add: Array<{ blocker: number; blocked: number; lag_days: number }>;
           remove: Array<{ blocker: number; blocked: number }>;
-      };
+      }
+    | { kind: 'create_record_template'; listId: number; listSlug: string; input: CreateRecordTemplateInput };
 
-type DataKind = 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies';
+type DataKind = 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'create_record_template';
 const CAPABILITY_BY_KIND: Record<DataKind, Capability | null> = {
     create_records: 'create_records',
     update_records: 'bulk_actions',
@@ -137,7 +159,11 @@ const CAPABILITY_BY_KIND: Record<DataKind, Capability | null> = {
     // edit_own_records): cada par se chequea al proponer Y al aplicar con el
     // ACL de la fila (poder editar el registro bloqueado).
     set_dependencies: null,
+    // C6 — administrar plantillas: manage_lists o manage_views (se chequea al aplicar).
+    create_record_template: null,
 };
+/** C6 — quién administra plantillas de registro (igual que el controller). */
+const TEMPLATE_CAPS = ['manage_lists', 'manage_views'] as const;
 
 /** Tipos que el asistente puede escribir por valor (el resto son referencias a otras entidades o derivados). */
 const WRITABLE_TYPES = new Set([
@@ -160,7 +186,14 @@ const WRITABLE_TYPES = new Set([
  */
 @Injectable()
 export class DataTools implements AiProposalApplier {
-    static readonly KINDS: ReadonlySet<AiProposalKind> = new Set(['create_records', 'update_records', 'delete_records', 'bulk_edit_records', 'set_dependencies']);
+    static readonly KINDS: ReadonlySet<AiProposalKind> = new Set([
+        'create_records',
+        'update_records',
+        'delete_records',
+        'bulk_edit_records',
+        'set_dependencies',
+        'create_record_template',
+    ]);
 
     constructor(
         private readonly lists: ListsService,
@@ -172,6 +205,8 @@ export class DataTools implements AiProposalApplier {
         @Optional() private readonly bulkEditService?: BulkEditService,
         // A8 — dependencias entre registros.
         @Optional() private readonly dependencies?: DependenciesService,
+        // C6 — plantillas de registro (crear registros desde una plantilla).
+        @Optional() private readonly recordTemplates?: RecordTemplatesService,
     ) {}
 
     private get bulkEdit(): BulkEditService {
@@ -200,10 +235,20 @@ export class DataTools implements AiProposalApplier {
         registry.register({
             name: 'propose_create_records',
             label: 'Preparando los registros',
-            description: 'Propone crear registros en una lista existente a partir de valores por slug (hasta 50). Se validan con el tipo de cada campo antes de proponer.',
+            description:
+                'Propone crear registros en una lista existente a partir de valores por slug (hasta 50). Se validan con el tipo de cada campo antes de proponer. Con `template` (una plantilla de registro de la lista) cada registro nace con los valores, subtareas y checklists de esa plantilla.',
             capability: 'create_records',
             input: createRecordsSpec,
             run: (ctx, input) => this.proposeCreateRecords(ctx, input as CreateRecordsSpec),
+        });
+        registry.register({
+            name: 'propose_create_record_template',
+            label: 'Armando la plantilla de registro',
+            description:
+                'C6 — Propone una PLANTILLA DE REGISTRO de una lista: valores por slug (fijos, fechas relativas {date:{days, from?, business_days?, time?}} o personas {person: "creator" | id | {field: slug}}), subtareas que nacen con el registro y checklists (ítems con responsable y fecha relativa opcionales). Con kind="checklist" es una plantilla de UN checklist que se aplica desde la ficha. Después se usa al crear registros (la persona la elige, o `template` en propose_create_records) y desde automatizaciones.',
+            capability: TEMPLATE_CAPS,
+            input: recordTemplateSpec,
+            run: (ctx, input) => this.proposeCreateRecordTemplate(ctx, input as RecordTemplateSpec),
         });
         registry.register({
             name: 'propose_update_records',
@@ -307,27 +352,99 @@ export class DataTools implements AiProposalApplier {
         if (readStoreListMarker(list.settings)) {
             throw new AiToolError(`«${list.name}» está sincronizada con una tienda: sus registros se crean en WooCommerce y llegan solos.`);
         }
+        // C6 — plantilla de registro: completa lo que no viene en el pedido.
+        const template = input.template ? await this.findRecordTemplate(ctx, list.id, input.template) : null;
+        const tplContent = template ? readTemplateContent(template.content) : null;
+        const filledByTemplate = new Set(tplContent ? Object.keys(tplContent.values) : []);
         const rows: Array<Record<string, unknown>> = [];
         const sample: AiProposalPreview['rows'] = [];
         for (const [i, values] of input.records.entries()) {
             const data = this.coerceValues(values, bySlug, list, `Registro ${i + 1}`);
             // Requeridos: el create real los exige; mejor avisarlo antes de proponer.
             for (const f of fields) {
-                if (f.is_required && isDataField(f.type) && (data[jsonbKeyForField(f.id)] === undefined || data[jsonbKeyForField(f.id)] === null || data[jsonbKeyForField(f.id)] === '')) {
+                const key = jsonbKeyForField(f.id);
+                if (filledByTemplate.has(key)) continue;
+                if (f.is_required && isDataField(f.type) && (data[key] === undefined || data[key] === null || data[key] === '')) {
                     throw new AiToolError(`Registro ${i + 1}: falta el campo obligatorio «${f.slug}» (${f.label}).`);
                 }
             }
             rows.push(data);
             if (sample.length < 5) sample.push(this.previewRow(data, fields));
         }
+        const n = rows.length;
+        const extra = tplContent
+            ? [
+                  tplContent.subtasks.length > 0 ? `${tplContent.subtasks.length} subtarea${tplContent.subtasks.length === 1 ? '' : 's'}` : null,
+                  tplContent.checklists.length > 0 ? `${tplContent.checklists.length} checklist${tplContent.checklists.length === 1 ? '' : 's'}` : null,
+              ].filter((x): x is string => x !== null)
+            : [];
         return this.saveProposal(ctx, {
             kind: 'create_records',
-            title: `Crear ${rows.length} registro${rows.length === 1 ? '' : 's'} en «${list.name}»`,
-            summary: `Se agregan ${rows.length} registro${rows.length === 1 ? '' : 's'} a «${list.name}».`,
+            title: template
+                ? `Crear ${n} registro${n === 1 ? '' : 's'} en «${list.name}» desde la plantilla «${template.name}»`
+                : `Crear ${n} registro${n === 1 ? '' : 's'} en «${list.name}»`,
+            summary: template
+                ? `Se agregan ${n} registro${n === 1 ? '' : 's'} a «${list.name}» con la plantilla «${template.name}»${extra.length > 0 ? ` (cada uno con ${extra.join(' y ')})` : ''}.`
+                : `Se agregan ${n} registro${n === 1 ? '' : 's'} a «${list.name}».`,
             destructive: false,
             listSlug: list.slug,
-            preview: emptyPreview({ affected_count: rows.length, rows: sample }),
-            payload: { kind: 'create_records', listId: list.id, listSlug: list.slug, rows },
+            preview: emptyPreview({ affected_count: n, rows: sample }),
+            payload: { kind: 'create_records', listId: list.id, listSlug: list.slug, rows, ...(template ? { templateId: template.id } : {}) },
+        });
+    }
+
+    /** C6 — plantilla de registro (o de checklist) en el vocabulario del modelo, validada como la interfaz. */
+    private async proposeCreateRecordTemplate(ctx: AiToolContext, input: RecordTemplateSpec): Promise<AiToolResult> {
+        if (!this.recordTemplates) throw new AiToolError('Las plantillas de registro no están disponibles en este servidor.');
+        const { list, fields } = await this.loadList(ctx, input.list);
+        const kind = input.kind ?? 'record';
+        const draft = templateSpecToContent(input, fields);
+        let content: RecordTemplateContent;
+        try {
+            content = await this.recordTemplates.validate(ctx.tenantId, String(list.id), kind, draft);
+        } catch (err) {
+            throw new AiToolError(errMessage(err));
+        }
+        const existing = await this.recordTemplates.list(ctx.tenantId, String(list.id), kind);
+        if (existing.some((t) => t.name.trim().toLowerCase() === input.name.trim().toLowerCase())) {
+            throw new AiToolError(`Ya hay una plantilla «${input.name}» en «${list.name}». Usa otro nombre.`);
+        }
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const changes: AiProposalPreview['changes'] = [];
+        for (const [key, v] of Object.entries(content.values)) {
+            const f = byId.get(Number(key.slice(1)));
+            if (!f) continue;
+            const to =
+                v.mode === 'fixed'
+                    ? displayValue(f, v.value)
+                    : v.mode === 'relative_date'
+                      ? describeRelativeDate(v.date, (id) => byId.get(id)?.label)
+                      : v.person.kind === 'creator'
+                        ? 'Quien crea el registro'
+                        : v.person.kind === 'field'
+                          ? `La persona de «${byId.get(v.person.field_id)?.label ?? '—'}»`
+                          : `Persona #${v.person.user_id}`;
+            changes.push({ label: f.label, from: null, to });
+        }
+        for (const s of content.subtasks) changes.push({ label: 'Subtarea', from: null, to: s.title });
+        for (const c of content.checklists) changes.push({ label: 'Checklist', from: null, to: `${c.name} (${c.items.length} ítem${c.items.length === 1 ? '' : 's'})` });
+        const what = kind === 'checklist' ? 'plantilla de checklist' : 'plantilla de registro';
+        return this.saveProposal(ctx, {
+            kind: 'create_record_template',
+            title: `Crear la ${what} «${input.name}» en «${list.name}»`,
+            summary:
+                kind === 'checklist'
+                    ? `Se guarda el checklist «${content.checklists[0]?.name ?? input.name}» como plantilla para aplicarlo desde la ficha de cualquier registro de «${list.name}».`
+                    : `Se guarda la plantilla «${input.name}» en «${list.name}»: ${content.subtasks.length} subtarea${content.subtasks.length === 1 ? '' : 's'}, ${content.checklists.length} checklist${content.checklists.length === 1 ? '' : 's'} y ${Object.keys(content.values).length} valor${Object.keys(content.values).length === 1 ? '' : 'es'}.`,
+            destructive: false,
+            listSlug: list.slug,
+            preview: emptyPreview({ changes }),
+            payload: {
+                kind: 'create_record_template',
+                listId: list.id,
+                listSlug: list.slug,
+                input: { kind, name: input.name, description: input.description ?? null, icon: null, color: null, content },
+            },
         });
     }
 
@@ -488,9 +605,16 @@ export class DataTools implements AiProposalApplier {
             case 'create_records': {
                 let created = 0;
                 const warnings: string[] = [];
+                const templateId = payload.templateId;
+                if (templateId !== undefined && !this.recordTemplates) throw new AiToolError('Las plantillas de registro no están disponibles en este servidor.');
                 for (const [i, data] of payload.rows.entries()) {
                     try {
-                        await this.records.create(ctx.tenantId, actor, String(payload.listId), { data });
+                        if (templateId !== undefined && this.recordTemplates) {
+                            const res = await this.recordTemplates.createFromTemplate(ctx.tenantId, actor, String(payload.listId), { template_id: templateId, data, parent_id: null });
+                            for (const w of res.warnings) warnings.push(`Registro ${i + 1}: ${w}`);
+                        } else {
+                            await this.records.create(ctx.tenantId, actor, String(payload.listId), { data });
+                        }
                         created += 1;
                     } catch (err) {
                         warnings.push(`Registro ${i + 1}: ${errMessage(err)}`);
@@ -500,6 +624,18 @@ export class DataTools implements AiProposalApplier {
                     message: `${created} registro${created === 1 ? '' : 's'} creado${created === 1 ? '' : 's'}.`,
                     links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }],
                     warnings,
+                };
+            }
+            case 'create_record_template': {
+                if (!toolAllowed(ctx.role, TEMPLATE_CAPS)) {
+                    throw new AiToolError('Tu rol no puede administrar las plantillas de esta lista.');
+                }
+                if (!this.recordTemplates) throw new AiToolError('Las plantillas de registro no están disponibles en este servidor.');
+                const tpl = await this.recordTemplates.create(ctx.tenantId, ctx.userId, String(payload.listId), payload.input);
+                return {
+                    message: `Plantilla «${tpl.name}» creada.`,
+                    links: [{ label: 'Ver las plantillas', href: `/lists/${payload.listSlug}/edit?s=plantillas` }],
+                    warnings: [],
                 };
             }
             case 'update_records': {
@@ -690,6 +826,25 @@ export class DataTools implements AiProposalApplier {
         return out;
     }
 
+    /** C6 — la plantilla de registro por id o por nombre (sin mayúsculas ni acentos). */
+    private async findRecordTemplate(ctx: AiToolContext, listId: number, ref: string): Promise<RecordTemplate> {
+        if (!this.recordTemplates) throw new AiToolError('Las plantillas de registro no están disponibles en este servidor.');
+        const all = await this.recordTemplates.list(ctx.tenantId, String(listId), 'record');
+        const norm = (s: string): string =>
+            s
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim()
+                .toLowerCase();
+        const id = /^\d+$/.test(ref.trim()) ? Number(ref.trim()) : null;
+        const hit = all.find((t) => (id !== null && t.id === id) || norm(t.name) === norm(ref));
+        if (!hit) {
+            const names = all.map((t) => `«${t.name}» (id ${t.id})`).join(', ');
+            throw new AiToolError(`No existe la plantilla «${ref}» en esta lista. ${all.length > 0 ? `Disponibles: ${names}.` : 'La lista no tiene plantillas de registro.'}`);
+        }
+        return hit;
+    }
+
     private rowForModel(r: RecordDto, shown: Field[], all: Field[]): Record<string, unknown> {
         const out: Record<string, unknown> = { id: r.id };
         const allById = new Map(all.map((f) => [f.id, f]));
@@ -713,6 +868,8 @@ export class DataTools implements AiProposalApplier {
             }
         }
         if (r.parent_id) out.parent_id = r.parent_id;
+        // A9 — avance de sus checklists («3/8»), si tiene alguno.
+        if (r.checklist && r.checklist.total > 0) out.checklist = `${r.checklist.done}/${r.checklist.total}`;
         // A8 — cuántos bloqueantes sin terminar tiene (0 = nada lo bloquea).
         if ((r.blocked_by_open ?? 0) > 0) out.blocked_by_open = r.blocked_by_open;
         return out;

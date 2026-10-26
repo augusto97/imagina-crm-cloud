@@ -200,6 +200,8 @@ export const AI_PROPOSAL_KINDS = [
     'set_dependencies',
     // C5 — crear o cambiar un flujo de aprobación de una lista.
     'configure_approval_flow',
+    // C6 — plantillas de registro (y de checklist, A9).
+    'create_record_template',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

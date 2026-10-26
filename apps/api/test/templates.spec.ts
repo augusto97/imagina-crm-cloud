@@ -23,7 +23,7 @@ import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
-import { automationHooks, records, relations, tenants, users } from '../src/db/schema';
+import { automationHooks, memberships, recordChecklistItems, recordChecklists, records, relations, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -33,7 +33,14 @@ import { EmailQuotaService } from '../src/mail/email-quota.service';
 import { TenantSmtpService } from '../src/mail/tenant-smtp.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
+import { ActivityRepository } from '../src/activity/activity.repository';
+import { ActivityService } from '../src/activity/activity.service';
+import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
+import { ChecklistsRepository } from '../src/checklists/checklists.repository';
+import { ChecklistsService } from '../src/checklists/checklists.service';
+import { RecordTemplatesService } from '../src/record-templates/record-templates.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { BlueprintService } from '../src/templates/blueprint.service';
 import { SYSTEM_TEMPLATES } from '../src/templates/system-catalog';
@@ -253,6 +260,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
     let dashboardsService: DashboardsService;
     let dashboardTemplates: DashboardTemplatesService;
     let automationTemplates: AutomationTemplatesService;
+    let recordTemplatesSvc: RecordTemplatesService;
     let tenantA: number;
     let tenantB: number;
     let actor: number;
@@ -281,6 +289,22 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             new TenantSmtpService(pg.db, env),
         );
         dashboardsService = new DashboardsService(tenantDb, null as never, null as never, null as never);
+        // C6 — las plantillas de registro viajan en el blueprint.
+        const activitySvc = new ActivityService(tenantDb, new ActivityRepository(), listsService);
+        const dispatcher = new AutomationDispatcher();
+        const recordsSvc = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, activitySvc, dispatcher, new RelationsRepository());
+        const checklistsSvc = new ChecklistsService(tenantDb, listsService, fieldsService, recordsSvc, new RecordsRepository(), new ChecklistsRepository(), activitySvc, rt, dispatcher);
+        recordTemplatesSvc = new RecordTemplatesService(
+            tenantDb,
+            listsService,
+            fieldsService,
+            recordsSvc,
+            new RecordsRepository(),
+            checklistsSvc,
+            new ChecklistsRepository(),
+            activitySvc,
+            rt,
+        );
         const blueprints = new BlueprintService(
             tenantDb,
             listsService,
@@ -292,6 +316,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             billing,
             rt,
             dashboardsService,
+            recordTemplatesSvc,
         );
         const audit = new AuditService(tenantDb);
         templates = new TemplatesService(tenantDb, listsService, blueprints, audit);
@@ -391,6 +416,73 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         );
         expect(rows).toHaveLength(1);
         expect(rows[0]!.data).toEqual({ [`f${bySlug.get('titulo')!.id}`]: 'Primera', [`f${bySlug.get('horas')!.id}`]: 3 });
+    });
+
+    it('C6 / A9 — duplicar lleva las plantillas de registro (campos re-apuntados), la acción que las usa y los checklists de los registros', async () => {
+        await pg.db.insert(memberships).values({ tenantId: tenantA, userId: actor, role: 'admin' }).onConflictDoNothing();
+        const src = await listsService.create(tenantA, { name: 'Obras' });
+        const nombre = await fieldsService.create(tenantA, String(src.id), { label: 'Nombre', type: 'text' });
+        const inicio = await fieldsService.create(tenantA, String(src.id), { label: 'Inicio', type: 'date' });
+        const fin = await fieldsService.create(tenantA, String(src.id), { label: 'Fin', type: 'date' });
+        const resp = await fieldsService.create(tenantA, String(src.id), { label: 'Responsable', type: 'user' });
+        const tpl = await recordTemplatesSvc.create(tenantA, actor, String(src.id), {
+            kind: 'record',
+            name: 'Obra estándar',
+            content: {
+                values: {
+                    [`f${fin.id}`]: { mode: 'relative_date', date: { days: 10, from_field_id: inicio.id, business_days: true, time: null } },
+                    [`f${resp.id}`]: { mode: 'person', person: { kind: 'user', user_id: actor } },
+                },
+                subtasks: [{ title: 'Permisos', values: { [`f${resp.id}`]: { mode: 'person', person: { kind: 'field', field_id: resp.id } } } }],
+                checklists: [{ name: 'Seguridad', items: [{ text: 'Casco', assignee: { kind: 'creator' }, due: null }] }],
+                record_description: null,
+            } as never,
+        });
+        await automationsService.create(tenantA, String(src.id), {
+            name: 'Subtareas',
+            trigger_type: 'record_created',
+            trigger_config: {},
+            actions: [{ type: 'create_subtasks_from_template', config: { template_id: tpl.id } }],
+        });
+        const recId = await withTenant(pg.db, tenantA, async (tx) => {
+            const [r] = await tx.insert(records).values({ tenantId: tenantA, listId: src.id, data: { [`f${nombre.id}`]: 'Casa' }, createdBy: actor }).returning();
+            const [cl] = await tx.insert(recordChecklists).values({ tenantId: tenantA, listId: src.id, recordId: r!.id, name: 'Compras' }).returning();
+            await tx.insert(recordChecklistItems).values({ tenantId: tenantA, listId: src.id, recordId: r!.id, checklistId: cl!.id, text: 'Cemento', done: true, position: 0 });
+            return r!.id;
+        });
+
+        const { lists: created, warnings } = await templates.duplicate(tenantA, actor, String(src.id), {
+            name: 'Obras (copia)',
+            include: { views: true, automations: true, settings: true, records: true },
+        });
+        expect(warnings).toEqual([]);
+        const copy = created[0]!;
+        const cf = new Map((await fieldsService.listByListId(tenantA, copy.id)).map((f) => [f.slug, f]));
+        const [copiedTpl] = await recordTemplatesSvc.list(tenantA, String(copy.id));
+        expect(copiedTpl!.name).toBe('Obra estándar');
+        expect(copiedTpl!.id).not.toBe(tpl.id);
+        expect(copiedTpl!.content.values).toEqual({
+            [`f${cf.get('fin')!.id}`]: { mode: 'relative_date', date: { days: 10, from_field_id: cf.get('inicio')!.id, business_days: true, time: null } },
+            [`f${cf.get('responsable')!.id}`]: { mode: 'person', person: { kind: 'user', user_id: actor } },
+        });
+        expect(copiedTpl!.content.subtasks[0]!.values).toEqual({
+            [`f${cf.get('responsable')!.id}`]: { mode: 'person', person: { kind: 'field', field_id: cf.get('responsable')!.id } },
+        });
+        expect(copiedTpl!.content.checklists).toEqual([{ name: 'Seguridad', items: [{ text: 'Casco', assignee: { kind: 'creator' }, due: null }] }]);
+        // La acción de la automatización copiada nombra la plantilla NUEVA.
+        const [auto] = await automationsService.list(tenantA, String(copy.id));
+        expect((auto!.actions[0] as unknown as { config: { template_id: number } }).config.template_id).toBe(copiedTpl!.id);
+        // El registro de muestra trae su checklist.
+        const [copiedRec] = await withTenant(pg.db, tenantA, (tx) => tx.select().from(records).where(and(eq(records.listId, copy.id), isNull(records.deletedAt))));
+        expect(copiedRec!.id).not.toBe(recId);
+        const items = await withTenant(pg.db, tenantA, (tx) => tx.select().from(recordChecklistItems).where(eq(recordChecklistItems.recordId, copiedRec!.id)));
+        expect(items.map((i) => [i.text, i.done])).toEqual([['Cemento', true]]);
+        // Sin «ajustes», las plantillas no viajan.
+        const { lists: bare } = await templates.duplicate(tenantA, actor, String(src.id), {
+            name: 'Obras (sin ajustes)',
+            include: { views: false, automations: false, settings: false, records: false },
+        });
+        expect(await recordTemplatesSvc.list(tenantA, String(bare[0]!.id))).toEqual([]);
     });
 
     it('v0.1.300 — duplicar lleva el ID automático (renumerado), los valores por defecto y «obligatorio si» re-apuntado', async () => {

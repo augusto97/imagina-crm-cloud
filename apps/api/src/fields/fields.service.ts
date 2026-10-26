@@ -961,6 +961,7 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'rollup',
     'time_tracked',
     'formula',
+    'checklist_progress',
     // v0.1.158 — numéricos puros: sugerir "90" no ayuda a nadie (el
     // teléfono SÍ queda con autocomplete: buscar por prefijo es útil).
     'rating',
@@ -1069,6 +1070,8 @@ function fieldNotFound(idOrSlug: string): NotFoundException {
  */
 const NON_CONVERTIBLE: readonly FieldType[] = [
     'computed', 'relation', 'file', 'lookup', 'rollup', 'ai', 'time_tracked',
+    // A9 — progreso del checklist (se calcula de los ítems).
+    'checklist_progress',
     // v0.1.300 — columnas de sistema (no tienen datos propios).
     'created_at', 'updated_at', 'created_by', 'updated_by',
     // Campo «Botón»: no guarda valor (sólo su config).

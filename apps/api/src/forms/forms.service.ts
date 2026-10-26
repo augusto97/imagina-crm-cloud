@@ -47,7 +47,8 @@ import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, formPendingSubmissions, forms, lists, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
+import { attachments, formPendingSubmissions, forms, lists, recordTemplates, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
+import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { DataConsentService, newWithdrawRef } from '../data-consent/data-consent.service';
 import { DomainsService } from '../domains/domains.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
@@ -205,6 +206,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly mail?: MailService,
         // Autorización de tratamiento de datos personales (Ley 1581).
         @Optional() private readonly dataConsent?: DataConsentService,
+        // C6 — el registro de una respuesta puede salir de una plantilla.
+        @Optional() private readonly recordTemplates?: RecordTemplatesService,
     ) {}
 
     onModuleInit(): void {
@@ -298,6 +301,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         }
         const fields = await this.fields.listByListId(tenantId, list.id);
         const config = sanitizeConfig(input.config ?? defaultFormConfig(list.name, fields), fields);
+        await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(forms)
@@ -328,13 +332,35 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         }
         if (input.config !== undefined) {
             const fields = await this.fields.listByListId(tenantId, list.id);
-            patch.config = sanitizeConfig(input.config, fields) as unknown as Record<string, unknown>;
+            const clean = sanitizeConfig(input.config, fields);
+            await this.assertTemplate(tenantId, list.id, clean.settings.record_template_id);
+            patch.config = clean as unknown as Record<string, unknown>;
         }
         if (input.regenerate_token) patch.token = newToken();
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.update(forms).set(patch).where(and(eq(forms.tenantId, tenantId), eq(forms.id, current.id))).returning(),
         );
         return this.toDto(row!, await this.publicBase(tenantId));
+    }
+
+    /** C6 — la plantilla elegida tiene que ser una plantilla de REGISTRO de esta lista. */
+    private async assertTemplate(tenantId: number, listId: number, templateId: number | null | undefined): Promise<void> {
+        if (templateId === null || templateId === undefined) return;
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: recordTemplates.id })
+                .from(recordTemplates)
+                .where(
+                    and(
+                        eq(recordTemplates.tenantId, tenantId),
+                        eq(recordTemplates.id, templateId),
+                        eq(recordTemplates.listId, listId),
+                        eq(recordTemplates.kind, 'record'),
+                    ),
+                )
+                .limit(1),
+        );
+        if (!row) throw badRequest('template_not_found', 'La plantilla elegida no existe en esta lista.');
     }
 
     async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<{ name: string }> {
@@ -653,9 +679,25 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             }
         }
 
-        let created;
+        let created: { id: number; data: Record<string, unknown> };
         try {
-            created = await this.records.create(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), { data });
+            // C6 — con plantilla, el registro nace con sus valores, subtareas y
+            // checklists (lo que respondió la persona pisa la plantilla). Si la
+            // plantilla ya no existe, alta normal: la respuesta no se pierde.
+            const templateId = f.config.settings.record_template_id;
+            created =
+                templateId && this.recordTemplates
+                    ? await this.recordTemplates
+                          .createFromTemplate(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), { template_id: templateId, data })
+                          .then((r) => r.record)
+                          .catch(async (err: unknown) => {
+                              if ((err as { status?: number }).status === 404 && (err as { response?: { code?: string } }).response?.code === 'template_not_found') {
+                                  this.logger.warn(`Formulario ${f.row.id}: la plantilla ${templateId} ya no existe; alta sin plantilla.`);
+                                  return this.records.create(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), { data });
+                              }
+                              throw err;
+                          })
+                    : await this.records.create(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), { data });
         } catch (err) {
             await this.releaseSlot(f);
             if (evidence && this.dataConsent) await this.dataConsent.discard(f.row.tenantId, evidence.id);

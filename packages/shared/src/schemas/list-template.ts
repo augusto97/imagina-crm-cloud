@@ -89,8 +89,35 @@ export const blueprintRecordSchema = z.object({
         .array(z.object({ key: z.string().min(1), lag_days: z.number().int().min(-365).max(365).optional() }))
         .max(100)
         .optional(),
+    /** A9 — los checklists del registro (nombre e ítems con su casilla). */
+    checklists: z
+        .array(
+            z.object({
+                name: z.string().min(1).max(120),
+                items: z.array(z.object({ text: z.string().min(1).max(500), done: z.boolean().default(false) })).max(200).default([]),
+            }),
+        )
+        .max(20)
+        .optional(),
 });
 export type BlueprintRecord = z.infer<typeof blueprintRecordSchema>;
+
+/**
+ * C6 — Plantilla de registro (o de checklist) de una lista del blueprint.
+ * `content` va en el formato PORTABLE (campos por slug, ver
+ * `portableTemplateContent`). `key` permite que una automatización del pack la
+ * nombre (`{ "$record_template": key }`).
+ */
+export const blueprintRecordTemplateSchema = z.object({
+    key: z.string().min(1).max(63),
+    kind: z.enum(['record', 'checklist']).default('record'),
+    name: z.string().min(1).max(120),
+    description: z.string().max(500).nullable().default(null),
+    icon: z.string().max(64).nullable().default(null),
+    color: z.string().max(32).nullable().default(null),
+    content: z.record(z.unknown()).default({}),
+});
+export type BlueprintRecordTemplate = z.infer<typeof blueprintRecordTemplateSchema>;
 
 export const blueprintListSchema = z.object({
     /** Identificador dentro del blueprint (para `$list`). */
@@ -103,6 +130,8 @@ export const blueprintListSchema = z.object({
     views: z.array(blueprintViewSchema).default([]),
     automations: z.array(blueprintAutomationSchema).default([]),
     records: z.array(blueprintRecordSchema).default([]),
+    /** C6 — plantillas de registro y de checklist de la lista. */
+    record_templates: z.array(blueprintRecordTemplateSchema).default([]),
 });
 export type BlueprintList = z.infer<typeof blueprintListSchema>;
 

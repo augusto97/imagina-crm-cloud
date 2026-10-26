@@ -27,6 +27,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'button_pressed', label: 'Al presionar el botón', event: 'imagina_crm/button_pressed', config_schema: {} },
     // C5 — una solicitud de aprobación del registro se resolvió.
     { slug: 'approval_resolved', label: 'Cuando se aprueba o se rechaza', event: 'imagina_crm/approval_resolved', config_schema: {} },
+    // A9 — un checklist del registro quedó completo (uno por nombre o todos).
+    { slug: 'checklist_completed', label: 'Cuando se completa un checklist', event: 'imagina_crm/checklist_completed', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [
@@ -44,6 +46,8 @@ const ACTIONS: ActionMeta[] = [
     // C5 — aprobaciones: pedir una y esperar a que se resuelva.
     { slug: 'request_approval', label: 'Pedir aprobación', config_schema: {} },
     { slug: 'wait_approval', label: 'Esperar aprobación', config_schema: {} },
+    // C6 — las subtareas (y checklists) de una plantilla de registro sobre el registro.
+    { slug: 'create_subtasks_from_template', label: 'Crear subtareas desde una plantilla', config_schema: {} },
 ];
 
 @Controller()

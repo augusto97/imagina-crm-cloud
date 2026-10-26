@@ -74,6 +74,9 @@ import {
     recurrences,
     relations,
     recordDependencies,
+    recordChecklistItems,
+    recordChecklists,
+    recordTemplates,
     ganttBaselines,
     ganttBaselineItems,
     approvalFlows,
@@ -394,6 +397,10 @@ export class PlatformService {
             await tx.delete(approvalFlows).where(eq(approvalFlows.tenantId, id));
             // A8/B1 — dependencias y líneas base del Gantt (antes que registros y vistas).
             await tx.delete(recordDependencies).where(eq(recordDependencies.tenantId, id));
+            // A9 / C6 — checklists (ítems primero) y plantillas de registro.
+            await tx.delete(recordChecklistItems).where(eq(recordChecklistItems.tenantId, id));
+            await tx.delete(recordChecklists).where(eq(recordChecklists.tenantId, id));
+            await tx.delete(recordTemplates).where(eq(recordTemplates.tenantId, id));
             await tx.delete(ganttBaselineItems).where(eq(ganttBaselineItems.tenantId, id));
             await tx.delete(ganttBaselines).where(eq(ganttBaselines.tenantId, id));
             await tx.delete(recurrences).where(eq(recurrences.tenantId, id));

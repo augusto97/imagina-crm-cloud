@@ -22,6 +22,20 @@ export const ACTIVITY_ACTIONS = [
     // steps, reason?, note?} (event: requested | approved_step | approved |
     // rejected | returned | cancelled).
     'approval',
+    // A9 — checklists del registro. El diff guarda `{ checklist: {id, name} }`
+    // y, según la acción, `item: {id, text}`, `items` (textos), `count`,
+    // `changes` ({text|assignee_id|due|checklist: {from, to}}) o `subtask_id`.
+    'checklist_created',
+    'checklist_updated',
+    'checklist_deleted',
+    'checklist_items_added',
+    'checklist_item_checked',
+    'checklist_item_unchecked',
+    'checklist_item_updated',
+    'checklist_item_deleted',
+    'checklist_item_to_subtask',
+    // C6 — el registro (o sus subtareas) salió de una plantilla. `diff.template` = {id, name}.
+    'record_template_applied',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;

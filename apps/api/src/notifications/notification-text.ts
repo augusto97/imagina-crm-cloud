@@ -269,3 +269,25 @@ ${button(o.link, 'Ir a Mi trabajo')}`;
         html: shell(o.company, inner, footer),
     };
 }
+
+/**
+ * A9 — «Ana te asignó «Revisar contrato» en «Acme»» o, con varios ítems,
+ * «Ana te asignó 3 ítems del checklist de «Acme»».
+ */
+export function checklistAssignedTitle(actorName: string | null, items: ReadonlyArray<{ text: string }>, recordTitle: string): string {
+    const rec = quote(recordTitle);
+    const out =
+        items.length === 1
+            ? `${who(actorName)} te asignó ${quote(items[0]!.text)} en ${rec}`
+            : `${who(actorName)} te asignó ${items.length} ítems del checklist de ${rec}`;
+    return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
+}
+
+/** El extracto: el checklist y, si son varios, los primeros ítems. */
+export function checklistAssignedBody(items: ReadonlyArray<{ text: string; checklist: string }>): string {
+    const lists = [...new Set(items.map((i) => i.checklist))];
+    const head = lists.length === 1 ? `Checklist «${lists[0]}»` : `Checklists ${lists.map((l) => `«${l}»`).join(', ')}`;
+    if (items.length === 1) return head;
+    const shown = items.slice(0, 5).map((i) => `• ${i.text}`);
+    return [head, ...shown, ...(items.length > 5 ? [`… y ${items.length - 5} más`] : [])].join('\n');
+}

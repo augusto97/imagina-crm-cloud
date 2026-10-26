@@ -599,7 +599,7 @@ export function orderBuckets<T extends GroupBucket>(field: Pick<Field, 'type' | 
     });
 }
 
-const NUMERIC_GROUP_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'time_tracked']);
+const NUMERIC_GROUP_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'rating', 'percent', 'duration', 'rollup', 'time_tracked', 'checklist_progress']);
 
 /** Clave de un grupo multi_select (`["a", "b"]`) → array; otra cosa → null. */
 function parseSetKey(key: string): string[] | null {
@@ -627,6 +627,8 @@ export function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<s
         blocked_by_open: r.blocked_by_open ?? 0,
         // C5 — indicador de aprobación pendiente en la fila y en la tarjeta.
         approval_pending: r.approval_pending ?? 0,
+        // A9 — el «3/8» de los checklists (vista agrupada, kanban, Gantt).
+        ...(r.checklist ? { checklist: r.checklist } : {}),
         created_by: r.created_by,
         created_at: stripZ(r.created_at),
         updated_at: stripZ(r.updated_at),

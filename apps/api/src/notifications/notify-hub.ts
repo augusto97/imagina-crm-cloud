@@ -51,6 +51,18 @@ export type NotifyEvent =
           listName: string;
       }
     | {
+          /**
+           * A9 — le asignaron ítems de un checklist (a una o varias personas):
+           * reciben `assigned` con el texto del ítem.
+           */
+          type: 'checklist_assigned';
+          tenantId: number;
+          listId: number;
+          recordId: number;
+          actorId: number;
+          assignments: Array<{ userId: number; text: string; checklist: string }>;
+      }
+    | {
           type: 'description_mention';
           tenantId: number;
           listId: number;

@@ -23,6 +23,7 @@ import { ListsService } from '../lists/lists.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { DependenciesService } from '../records/dependencies.service';
+import { ChecklistsService } from '../checklists/checklists.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TimeTrackingService } from '../time-tracking/time-tracking.service';
@@ -67,6 +68,8 @@ export class RecordViewService {
         @Optional() private readonly dependencies?: DependenciesService,
         // C5 — la sección «Aprobación» (flujos que se pueden pedir e historial).
         @Optional() private readonly approvals?: ApprovalsService,
+        // A9 — la sección «Checklist» (el registro ya pasó el ACL arriba).
+        @Optional() private readonly checklists?: ChecklistsService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<RecordViewBundle> {
@@ -138,6 +141,11 @@ export class RecordViewService {
             () => (this.dependencies ? soft('dependencias', () => this.dependencies!.forRecord(tenantId, actor, listKey, recordId)) : Promise.resolve(null)),
             // C5 — aprobaciones del registro (flujos y solicitudes con su historial).
             () => (this.approvals ? soft('aprobaciones', () => this.approvals!.recordApprovals(tenantId, actor, listKey, recordId)) : Promise.resolve(null)),
+            // A9 — checklists del registro (con sus ítems).
+            () =>
+                this.checklists
+                    ? soft('checklists', () => this.tenantDb.withTenant(tenantId, (tx) => this.checklists!.forRecordInTx(tx, tenantId, recordId)))
+                    : Promise.resolve(null),
         ];
         const [
             fields,
@@ -156,6 +164,7 @@ export class RecordViewService {
             dataConsents,
             dependencies,
             approvals,
+            checklists,
         ] = (await mapLimit(tasks, PARALLEL, (t) => t())) as [
             RecordViewBundle['fields'],
             RecordViewBundle['description'],
@@ -173,6 +182,7 @@ export class RecordViewService {
             RecordViewBundle['data_consents'],
             RecordViewBundle['dependencies'],
             RecordViewBundle['approvals'],
+            RecordViewBundle['checklists'],
         ];
 
         // Lo que depende de las relaciones: las listas del otro lado (cabecera
@@ -231,6 +241,7 @@ export class RecordViewService {
             data_consents: dataConsents,
             dependencies,
             approvals,
+            checklists,
         };
     }
 

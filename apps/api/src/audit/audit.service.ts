@@ -60,6 +60,10 @@ export type AuditAction =
     | 'template.create'
     | 'template.delete'
     | 'template.apply'
+    // C6 / A9 — plantillas de registro y de checklist de una lista.
+    | 'record_template.create'
+    | 'record_template.update'
+    | 'record_template.delete'
     | 'dashboard_template.create'
     | 'dashboard_template.delete'
     | 'dashboard_template.apply'

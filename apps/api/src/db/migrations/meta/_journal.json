@@ -589,6 +589,13 @@
       "when": 1784200000170,
       "tag": "0083_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1784200000180,
+      "tag": "0084_checklists_record_templates",
+      "breakpoints": true
     }
   ]
 }

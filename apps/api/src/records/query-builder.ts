@@ -131,7 +131,8 @@ function compileCondition(
     // v0.1.229 — también un `computed` numérico (su expresión la arma
     // `withComputedExprs`); sin expresión se descarta como antes.
     // v0.1.291 — y el tiempo registrado (suma de `time_entries`).
-    if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked') {
+    // A9 — y el progreso del checklist (% de ítems hechos).
+    if (isThroughField(field.type) || field.type === 'computed' || field.type === 'time_tracked' || field.type === 'checklist_progress') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
     }
     // C5 — «Aprobación»: el estado de la última solicitud (subconsulta sobre la

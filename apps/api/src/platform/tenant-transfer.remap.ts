@@ -31,6 +31,8 @@ export interface IdMaps {
     approval_flow: Map<number, number>;
     /** C5 — solicitudes de aprobación (las nombra la actividad del registro). */
     approval_request: Map<number, number>;
+    /** C6 — plantillas de registro (formularios y acciones de automatización las nombran). */
+    recordTemplate: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -47,6 +49,7 @@ export function emptyMaps(): IdMaps {
         form: new Map(),
         approval_flow: new Map(),
         approval_request: new Map(),
+        recordTemplate: new Map(),
     };
 }
 
@@ -85,6 +88,10 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     // C5 — el flujo de aprobación de un campo «Aprobación», del disparador
     // «Cuando se aprueba o se rechaza» y de «Pedir / Esperar aprobación».
     approval_flow_id: 'approval_flow',
+    // C6 — la plantilla de registro de un formulario y de las acciones
+    // «Crear subtareas desde una plantilla» / «Crear un registro».
+    record_template_id: 'recordTemplate',
+    template_id: 'recordTemplate',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {

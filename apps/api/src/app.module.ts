@@ -60,6 +60,8 @@ import { TenancyModule } from './tenancy/tenancy.module';
 import { ViewsModule } from './views/views.module';
 import { GanttModule } from './gantt/gantt.module';
 import { WorkloadModule } from './workload/workload.module';
+import { ChecklistsModule } from './checklists/checklists.module';
+import { RecordTemplatesModule } from './record-templates/record-templates.module';
 import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 
@@ -104,6 +106,9 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ViewsModule,
         GanttModule,
         WorkloadModule,
+        // A9 / C6 — checklists del registro y plantillas de registro.
+        ChecklistsModule,
+        RecordTemplatesModule,
         SavedFiltersModule,
         ActivityModule,
         CommentsModule,
