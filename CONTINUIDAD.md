@@ -367,6 +367,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.317** (agentes de IA; con ellos la fase 6 queda completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-26 — **Fase 7 propuesta, esperando respuesta.** El estudio sólo traía
+  seis oleadas; a pedido del usuario ("muéstrame qué hay para la fase 7") se armó
+  una desde `docs/ideas.md`: (1) automatizaciones completas (E1 + E2 + E3:
+  disparadores «empieza a cumplir una condición», «se agrega un comentario»,
+  «se sube un archivo», «se borra un registro»; acciones buscar registros, crear o
+  actualizar por clave, asignar por turno, avisar en la app, copiar/mover a otra
+  lista, preguntarle a la IA; «según el valor de…», qué hacer si un paso falla y
+  reintento de webhooks); (2) duplicados y fusionar (A14); (3) IA en el día a día
+  (F1 + F2 + E7 + «Pedir al agente» en la ficha y agentes en lote); (4) empezar
+  fácil (F7 + I7); (5) calendario en dos sentidos (G4). De paso se propuso
+  arreglar que un PATCH parcial de `settings` de una lista borre ajustes. Queda
+  esperando qué entregas elige.
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
   («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
   facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
