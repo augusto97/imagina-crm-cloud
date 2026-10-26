@@ -84,6 +84,8 @@ describe('H1 — manifiesto (puro)', () => {
             team_assigned: false,
             // E5 — un ticket que vence (o venció) y te toca.
             sla: true,
+            // E6 — una propuesta de un agente: campana y «Mi trabajo», sin push.
+            agent: false,
         });
         expect(readNotificationPrefs({ push: { update: true } }).push).toMatchObject({ update: true, mention: true });
     });
