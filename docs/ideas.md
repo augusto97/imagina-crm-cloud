@@ -36,12 +36,12 @@ citas (D5) y pidió guardar el resto para después.
 
 ## 2. Próximas oleadas propuestas en el estudio
 
-**Oleada 5 · Canales y celular**
-- H1 App instalable (PWA) + notificaciones push (+ H3 escáner de códigos).
-- D3 WhatsApp oficial (Meta Cloud API).
-- D2 Mesa de ayuda por correo + E5 SLA y escalamiento.
-- F3 De documento a registro (la IA lee una factura o un RUT y crea el
-  registro).
+**Oleada 5 · Canales y celular** — el usuario la aprobó el 2026-10-26 SIN F3:
+H1 + H3 (PWA, push y escáner), D2 + E5 (mesa de ayuda por correo con SLA) y
+D3 (WhatsApp oficial) pasan a la fase 5 y salen de este banco al publicarse.
+**F3 · De documento a registro** quedó aquí, pospuesto por el usuario ("lo
+dejaría en ideas"): subir o reenviar una factura, un RUT o una orden de
+compra y que la IA cree o actualice el registro, con pantalla de revisión.
 
 **Oleada 6 · Crecer**
 - I1 Interfaz en inglés y portugués.
@@ -89,8 +89,8 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | D1 · El correo de cada registro (Gmail/Outlook de cada persona en la ficha) | alto (CRM) · L | Opt-in por persona; sólo hilos con contactos de la lista. |
-| D2 · Mesa de ayuda por correo (cada correo crea un ticket) | alto (soporte) · L | Oleada 5. |
-| D3 · WhatsApp oficial (Meta Cloud API) con plantillas aprobadas y disparador «llega un mensaje» | alto en LatAm · L | Oleada 5. Sin guardar la conversación completa (pedido del usuario). Hoy: envío por WAS/Zender. |
+| D2 · Mesa de ayuda por correo (cada correo crea un ticket) | alto (soporte) · L | **En la fase 5** (aprobada 2026-10-26). |
+| D3 · WhatsApp oficial (Meta Cloud API) con plantillas aprobadas y disparador «llega un mensaje» | alto en LatAm · L | **En la fase 5.** Sin guardar la conversación completa (pedido del usuario). Hoy: envío por WAS/Zender. |
 | D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
 | D7 · Chat para el sitio web que crea el lead | medio · M-L | Guardando sólo lo necesario, como D3. |
 | D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | |
@@ -103,7 +103,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | E2 · Acciones que faltan | alto · M-L | «Buscar registros», «crear o actualizar por una clave», «asignar por turno», «notificar en la app», «copiar a otra lista», «preguntarle a la IA». Ya existen: pedir aprobación y subtareas desde plantilla. |
 | E3 · Varias ramas («según el valor de…»), subflujos, manejo de errores por paso, reintento de webhooks | medio · M | |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
-| E5 · SLA y escalamiento | medio-alto · M | Oleada 5. |
+| E5 · SLA y escalamiento | medio-alto · M | **En la fase 5** (con D2). |
 | E6 · Agentes de IA | alto · L-XL | Oleada 6. Base: el registro de herramientas y «propone → aplica». |
 | E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |
 
@@ -112,7 +112,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | F1 · Resumen del registro («¿qué pasó con este cliente?») | medio-alto · S | |
 | F2 · IA al escribir (/ia en la descripción, sugerir respuestas) | medio · S-M | |
-| F3 · De documento a registro | alto · M | Oleada 5. |
+| F3 · De documento a registro | alto · M | Pospuesto por el usuario al armar la fase 5 (2026-10-26). Los campos con IA ya leen PDF; reenviar por correo depende de D2. |
 | F4 · Preguntas sobre los datos que arman el widget del tablero | medio · M | |
 | F5 · Notas de voz a texto | medio · M | |
 | F6 · Búsqueda por significado (embeddings, pgvector) | medio · L | |
@@ -137,9 +137,9 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### H. Celular
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| H1 · App instalable (PWA) + notificaciones push | alto · M | Oleada 5. |
+| H1 · App instalable (PWA) + notificaciones push | alto · M | **En la fase 5.** |
 | H2 · Sin conexión (capturar sin señal y sincronizar al volver) | medio-alto · L | |
-| H3 · Escáner de código de barras / QR | medio-alto · M | Oleada 5. |
+| H3 · Escáner de código de barras / QR | medio-alto · M | **En la fase 5** (con H1). |
 | H4 · Foto y ubicación al cargar | medio · S-M | |
 | H5 · Apps nativas iOS/Android | medio · XL | Sólo después de la PWA y si los clientes lo piden. |
 

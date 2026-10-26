@@ -377,6 +377,18 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
   del estudio por área, lo que quedó afuera de cada versión, pendientes
   técnicos, lo no recomendado y lo descartado). **Cuando el usuario pida ideas,
   partir de ahí** (regla 7 de `CLAUDE.md` §6).
+- 2026-10-26 — **Fase 5 aprobada sin «De documento a registro»** ("de esta fase
+  5 quitaría lo de «De documento a registro» y lo dejaría en ideas, de resto en
+  esa fase haría todo"). Entregas: (1) **PWA + notificaciones push + escáner de
+  códigos** (H1+H3); (2) **mesa de ayuda por correo + SLA** (D2+E5), con los
+  correos entrantes leídos del buzón de la empresa por **IMAP** (lo recomendado:
+  sin costo extra; leer Gmail por su API exige un permiso restringido con
+  auditoría paga, descartado como camino); (3) **WhatsApp oficial (Meta Cloud
+  API)** con plantillas aprobadas y disparador «llega un mensaje», guardando
+  sólo el último mensaje, el estado y un resumen opcional (cada empresa conecta
+  su propia cuenta de WhatsApp Business). Orden: (1) primero, (2) después y (3)
+  al final. Se arranca cuando estén publicadas las tres entregas en curso
+  (Equipos, Roles e invitados, Agenda). F3 quedó en `docs/ideas.md`.
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
   completa de una»).** El usuario no respondió las tres preguntas pendientes,
   así que se tomaron decisiones por defecto (se le informan; se pueden cambiar):
