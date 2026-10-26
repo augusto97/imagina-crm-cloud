@@ -33,7 +33,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { activity, automations, records } from '../db/schema';
 import { FilesService } from '../files/files.service';
-import { effectivePermissions, resolvePermissions, rowInScope, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, listRowInScope, effectivePermissions, scopeWhere } from '../lists/list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { enterTrashMode, exitTrashMode } from './trash-ops';
@@ -41,6 +41,8 @@ import { enterTrashMode, exitTrashMode } from './trash-ops';
 export interface TrashViewer {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /** Fila cruda del listado (una por cosa en la papelera). */
@@ -220,15 +222,14 @@ export class TrashService {
         const visible: SQL[] = [];
         for (const l of liveLists) {
             const listFields = fieldsByList.get(l.id) ?? [];
-            const perms = effectivePermissions(l.settings, viewer.role, uid);
+            const perms = effectivePermissions(l.settings, { ...viewer, userId: uid });
             const titleId = resolveTitleFieldId(listFields as never, l.settings);
             const title = titleId === null ? undefined : listFields.find((f) => f.id === titleId);
             if (title && (isAdmin || !perms.fields_hidden.includes(title.slug))) {
                 whens.push(sql`WHEN ${l.id} THEN (${records.data} ->> ${`f${title.id}`})`);
             }
             if (isAdmin || perms.view === 'none') continue;
-            const assignmentId = resolvePermissions(l.settings).assignment_field_id;
-            const scope = scopeWhere(perms.view, uid, assignmentId ? `f${assignmentId}` : null);
+            const scope = scopeWhere(perms.view, { ...viewer, userId: uid }, assignmentKeys(l.settings));
             visible.push(scope ? sql`(${records.listId} = ${l.id} AND ${scope})` : sql`${records.listId} = ${l.id}`);
         }
         const titleExpr = whens.length > 0 ? sql`(CASE ${records.listId} ${sql.join(whens, sql` `)} END)` : sql`NULL::text`;
@@ -927,10 +928,7 @@ export class TrashService {
     ): void {
         if (viewer.role === 'admin') return;
         if (row.deletedBy !== viewer.userId) throw notAllowed();
-        const scope = effectivePermissions(settings, viewer.role, viewer.userId).delete;
-        const assignmentId = resolvePermissions(settings).assignment_field_id;
-        const assignmentValue = assignmentId ? row.data[`f${assignmentId}`] : null;
-        if (!rowInScope(scope, viewer.userId, { createdBy: row.createdBy, assignmentValue })) throw notAllowed();
+        if (!listRowInScope(settings, viewer, 'delete', { createdBy: row.createdBy, data: row.data })) throw notAllowed();
     }
 
     /** Una fila de la papelera (deja el modo papelera ENCENDIDO). */

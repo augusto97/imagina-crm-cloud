@@ -45,7 +45,7 @@ export class ExportController {
         @Query('with_id') withId?: string,
         @Query('freeze') freeze?: string,
     ): Promise<void> {
-        const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role };
+        const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
         const fieldIds = (fields ?? '')
             .split(',')
             .map((s) => Number(s.trim()))

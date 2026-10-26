@@ -26,7 +26,6 @@ import {
     isStoreField,
     isThroughField,
     jsonbKeyForField,
-    type Role,
     LOOKUP_TARGET_TYPES,
     parseFieldConfig,
     readApprovalFlowId,
@@ -42,11 +41,11 @@ import {
     type Field,
     type FieldType,
     type StoreListMarker,
-    type UpdateFieldInput,
+    type UpdateFieldInput
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { approvalFlows, lists, memberships, records, users } from '../db/schema';
-import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, type AclSubject, effectivePermissions, scopeWhere } from '../lists/list-acl';
 import type { Tx } from '../db/client';
 import { pgErrorCode } from '../common/http-exception.filter';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -470,7 +469,7 @@ export class FieldsService {
         fieldIdOrSlug: string,
         search: string,
         limit: number,
-        viewer?: { role: Role; userId: number },
+        viewer?: AclSubject,
     ): Promise<Array<{ value: string; count: number }>> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const { row, settings } = await this.tenantDb.withTenant(tenantId, async (tx) => ({
@@ -486,10 +485,9 @@ export class FieldsService {
         // registros) obtenía todos los valores distintos con su frecuencia.
         let scope: SQL | undefined;
         if (viewer) {
-            const perms = effectivePermissions(settings, viewer.role, viewer.userId);
+            const perms = effectivePermissions(settings, viewer);
             if (perms.fields_hidden.includes(field.slug)) return [];
-            const assignmentId = resolvePermissions(settings).assignment_field_id;
-            scope = scopeWhere(perms.view, viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+            scope = scopeWhere(perms.view, viewer, assignmentKeys(settings));
         }
 
         const key = jsonbKeyForField(field.id);

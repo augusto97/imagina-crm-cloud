@@ -24,7 +24,7 @@ import { PlansService } from '../src/billing/plans.service';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
-import { memberships, personalAccessTokens, tenants, users } from '../src/db/schema';
+import { memberships, personalAccessTokens, teamMembers, teams, tenants, users } from '../src/db/schema';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
@@ -169,6 +169,11 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         await pg.db.insert(memberships).values({ tenantId, userId: u!.id, role: 'manager' });
         const tk = await tokens.create(u!.id, tenantId, { name: 'temp', scope: 'read', expires_in_days: null }, 'manager');
         expect((await tokens.resolve(tk.secret))?.role).toBe('manager');
+        // C1 — los equipos de la persona viajan con el token (ACL por equipo en el MCP).
+        expect((await tokens.resolve(tk.secret))?.teamIds).toEqual([]);
+        const [team] = await pg.db.insert(teams).values({ tenantId, name: 'Equipo MCP' }).returning();
+        await pg.db.insert(teamMembers).values({ tenantId, teamId: team!.id, userId: u!.id });
+        expect((await tokens.resolve(tk.secret))?.teamIds).toEqual([team!.id]);
         // Cambio de rol → el token lo refleja (no queda congelado).
         await pg.db.update(memberships).set({ role: 'agent' }).where(eq(memberships.userId, u!.id));
         expect((await tokens.resolve(tk.secret))?.role).toBe('agent');
@@ -201,7 +206,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         const readNames = (await read.listTools()).tools.map((t) => t.name).sort();
         expect(readNames).toEqual([
             'aggregate_records', 'get_document_template', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
-            'list_lists', 'list_members', 'list_record_comments', 'query_records',
+            'list_lists', 'list_members', 'list_record_comments', 'list_teams', 'query_records',
         ]);
         await read.close();
 
@@ -222,7 +227,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         // sigue afuera aunque su token sea `full`.
         expect(viewerNames).toEqual([
             'aggregate_records', 'apply_proposal', 'get_document_template', 'get_list_schema', 'list_dashboards',
-            'list_lists', 'list_members', 'list_record_comments', 'query_records',
+            'list_lists', 'list_members', 'list_record_comments', 'list_teams', 'query_records',
         ]);
         await viewer.close();
     });

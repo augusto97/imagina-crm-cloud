@@ -1,4 +1,7 @@
 import { Activity, Loader2 } from 'lucide-react';
+import { teamIdsOf } from '@imagina-base/shared';
+import { TeamChip } from '@/components/fields/TeamChip';
+import { useTeamDirectory } from '@/hooks/useTeams';
 
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
@@ -243,6 +246,10 @@ export function ActivityValue({
             </span>
         );
     }
+    if (field !== undefined && field.type === 'team') {
+        const ids = teamIdsOf(raw);
+        if (ids.length > 0) return <TeamValues ids={ids} old={old} />;
+    }
     if (field !== undefined && field.type === 'user') {
         const ids = (Array.isArray(raw) ? raw : [raw]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
         if (ids.length > 0) {
@@ -256,6 +263,17 @@ export function ActivityValue({
         }
     }
     return <ValueText text={text} old={old} />;
+}
+
+function TeamValues({ ids, old }: { ids: number[]; old?: boolean }): JSX.Element {
+    const { map: teams, loaded } = useTeamDirectory();
+    return (
+        <span className={cn('imcrm-inline-flex imcrm-flex-wrap imcrm-gap-1 imcrm-align-middle', old && 'imcrm-line-through imcrm-opacity-70')}>
+            {ids.map((id) => (
+                <TeamChip key={id} id={id} known={loaded} team={teams.get(id)} />
+            ))}
+        </span>
+    );
 }
 
 function OptionPill({

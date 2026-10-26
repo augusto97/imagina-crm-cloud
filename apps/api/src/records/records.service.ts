@@ -12,6 +12,7 @@ import {
     applyFieldDefaults,
     checkRequiredIf,
     collectMentionedUserIds,
+    collectMentionedTeamIds,
     doneRuleFor,
     effectiveEndMs,
     FALLBACK_TIME_ZONE,
@@ -53,16 +54,14 @@ import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
 import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
-import { memberships, mentions, records } from '../db/schema';
+import { memberships, mentions, records, teams } from '../db/schema';
 import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
-import {
+import { assignmentKeys, listRowInScope,
     andWhere,
     effectivePermissions,
     hiddenFieldsFor,
-    resolvePermissions,
-    rowInScope,
     scopeWhere,
-    withDependentComputed,
+    withDependentComputed
 } from '../lists/list-acl';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -111,6 +110,8 @@ export interface PreparedCreate {
 export interface Actor {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 export interface RecordsPage {
@@ -269,7 +270,7 @@ export class RecordsService {
     assertCanCreate(list: List, actor: Actor): void {
         assertNotStoreManaged(list, 'create');
         // ACL por lista: el rol debe tener create habilitado para esta lista.
-        if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
+        if (!effectivePermissions(list.settings, actor).create) {
             throw new ForbiddenException({
                 code: 'forbidden_create',
                 message: 'Tu rol no puede crear registros en esta lista',
@@ -944,7 +945,7 @@ export class RecordsService {
         // correlacionada (el motor la arma; sin plan, se descartan).
         const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
         // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
-        const perms = effectivePermissions(list.settings, actor.role, actor.userId);
+        const perms = effectivePermissions(list.settings, actor);
         // SEC-25 (v0.1.226): un campo oculto para este rol tampoco se
         // FILTRA, se BUSCA ni se ORDENA — cualquiera de las tres es un
         // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
@@ -954,7 +955,8 @@ export class RecordsService {
         // no ve completa — ocultos igual que un campo oculto.
         for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
         for (const id of withDependentComputed(fields, hiddenIds)) hiddenIds.add(id);
-        const clock = await this.clock(tenantId, tx);
+        // C1 — «es uno de mis equipos» en los filtros: los equipos de quien pide.
+        const clock: QueryClock = { ...(await this.clock(tenantId, tx)), myTeamIds: actor.teamIds ?? [] };
         const fieldsById = withComputedExprs(
             new Map<number, FilterableField>(
                 [
@@ -969,15 +971,13 @@ export class RecordsService {
             clock.timeZone,
             clock.now,
         );
-        const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-        const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
         return {
             list,
             fields,
             plans,
             hiddenIds,
             fieldsById,
-            scopeW: scopeWhere(perms.view, actor.userId, assignmentKey),
+            scopeW: scopeWhere(perms.view, actor, assignmentKeys(list.settings)),
             clock,
             formula: await this.formulaRuntime(tx, tenantId, list.id, fields, plans),
         };
@@ -1302,9 +1302,8 @@ export class RecordsService {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
-            const perms = effectivePermissions(list.settings, actor.role, actor.userId);
-            const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-            const scopeW = scopeWhere(perms[scope], actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+            const perms = effectivePermissions(list.settings, actor);
+            const scopeW = scopeWhere(perms[scope], actor, assignmentKeys(list.settings));
             let where: SQL | undefined;
             let parent: 'roots' | 'any';
             if ('ids' in target) {
@@ -1313,7 +1312,7 @@ export class RecordsService {
             } else {
                 // SEC-25: tampoco se apunta una edición en lote por un campo oculto.
                 const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
-                const bulkClock = await this.clock(tenantId);
+                const bulkClock: QueryClock = { ...(await this.clock(tenantId)), myTeamIds: actor.teamIds ?? [] };
                 const fieldsById = withComputedExprs(
                     new Map<number, FilterableField>(
                         [
@@ -1421,6 +1420,7 @@ export class RecordsService {
         const clean = sanitizeRichDoc(input.description);
 
         let newlyMentioned: number[] = [];
+        let newTeams: number[] = [];
         const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // Fila bloqueada (igual que `update`): dos autoguardados seguidos
             // no leen el mismo "antes" ni juntan la actividad a la vez.
@@ -1429,6 +1429,18 @@ export class RecordsService {
             const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean, actor.userId);
             newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
+            // C1 — @equipo: sólo los equipos que se SUMARON en este guardado
+            // (el autoguardado reescribe el documento a cada rato) y que
+            // existen en esta empresa.
+            const beforeTeams = new Set(collectMentionedTeamIds(before));
+            const added = collectMentionedTeamIds(clean).filter((t) => !beforeTeams.has(t));
+            if (added.length > 0) {
+                const live = await tx
+                    .select({ id: teams.id })
+                    .from(teams)
+                    .where(and(eq(teams.tenantId, tenantId), inArray(teams.id, added)));
+                newTeams = live.map((t) => t.id);
+            }
             // La bitácora registra QUE cambió (con un resumen corto, nunca el
             // documento entero) y junta el autoguardado de una misma persona
             // en una sola entrada — si no, cada segundo escribiendo era un
@@ -1443,7 +1455,7 @@ export class RecordsService {
         this.realtime.records(tenantId, list.id);
         // v0.1.276 — avisa SÓLO a quien se sumó en este guardado: el autoguardado
         // re-escribe las menciones a cada rato y no puede re-avisar cada vez.
-        if (newlyMentioned.length > 0) {
+        if (newlyMentioned.length > 0 || newTeams.length > 0) {
             this.notify?.emit({
                 type: 'description_mention',
                 tenantId,
@@ -1451,6 +1463,7 @@ export class RecordsService {
                 recordId: id,
                 actorId: actor.userId,
                 userIds: newlyMentioned,
+                ...(newTeams.length > 0 ? { teamIds: newTeams } : {}),
                 snippet: richDocToPlainText(clean, 180),
             });
         }
@@ -1770,7 +1783,7 @@ export class RecordsService {
     ): Promise<BatchCreateRecordsResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         assertNotStoreManaged(list, 'create');
-        if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
+        if (!effectivePermissions(list.settings, actor).create) {
             throw new ForbiddenException({
                 code: 'forbidden_create',
                 message: 'Tu rol no puede crear registros en esta lista',
@@ -1931,13 +1944,7 @@ export class RecordsService {
         action: 'view' | 'edit' | 'delete',
         row: Pick<RecordRow, 'data' | 'createdBy'>,
     ): boolean {
-        const scope = effectivePermissions(list.settings, actor.role, actor.userId)[action];
-        const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-        const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
-        const assignmentValue = assignmentKey
-            ? (row.data as Record<string, unknown>)[assignmentKey]
-            : null;
-        return rowInScope(scope, actor.userId, { createdBy: row.createdBy, assignmentValue });
+        return listRowInScope(list.settings, actor, action, { createdBy: row.createdBy, data: row.data });
     }
 
     /**
@@ -2002,6 +2009,29 @@ export class RecordsService {
         excludeId: number | null,
     ): Promise<void> {
         const errors: Record<string, string> = {};
+        // C1 — los equipos de un campo «Equipo» tienen que existir en ESTA
+        // empresa (el validador compartido no conoce los equipos). Una sola
+        // consulta para todos los campos «Equipo» del payload.
+        const teamFields = fields.filter((f) => f.type === 'team' && Array.isArray(data[jsonbKeyForField(f.id)]));
+        if (teamFields.length > 0) {
+            const wanted = [...new Set(teamFields.flatMap((f) => (data[jsonbKeyForField(f.id)] as unknown[]).map(Number)))].filter(
+                (n) => Number.isInteger(n) && n > 0,
+            );
+            const found = wanted.length > 0
+                ? new Set(
+                      (
+                          await tx
+                              .select({ id: teams.id })
+                              .from(teams)
+                              .where(and(eq(teams.tenantId, tenantId), inArray(teams.id, wanted)))
+                      ).map((r) => r.id),
+                  )
+                : new Set<number>();
+            for (const f of teamFields) {
+                const ids = (data[jsonbKeyForField(f.id)] as unknown[]).map(Number);
+                if (ids.some((id) => !found.has(id))) errors[f.slug] = 'Ese equipo no existe en esta empresa.';
+            }
+        }
         for (const field of fields) {
             if (!field.is_unique) continue;
             const key = jsonbKeyForField(field.id);
@@ -2255,7 +2285,7 @@ function hiddenKeysWithDerived(
     actor: Actor,
     restricted: ReadonlySet<number>,
 ): Set<string> {
-    const slugs = hiddenFieldsFor(settings, actor.role, actor.userId);
+    const slugs = hiddenFieldsFor(settings, actor);
     const ids = new Set([...fields.filter((f) => slugs.has(f.slug)).map((f) => f.id), ...restricted]);
     return new Set([...withDependentComputed(fields, ids)].map((id) => jsonbKeyForField(id)));
 }
@@ -2434,6 +2464,14 @@ export function parseFieldSort(
             const text = fieldTypedExpr(field);
             out.push(sql`regexp_replace(${text}, '[0-9]+$', '') COLLATE "und-x-icu" ${dir} NULLS LAST`);
             out.push(sql`(substring(${text} from '([0-9]+)$'))::numeric ${dir} NULLS LAST`);
+            continue;
+        }
+        // C1 — un equipo se ordena por su NOMBRE (con varios, el primero por nombre).
+        if (field.type === 'team' && !hasExpr) {
+            const col = sql`(${records.data} -> ${sql.raw(`'f${field.id}'`)})`;
+            out.push(
+                sql`(SELECT min(t.name) FROM teams t WHERE jsonb_typeof(${col}) = 'array' AND ${col} @> jsonb_build_array(t.id)) COLLATE "und-x-icu" ${dir} NULLS LAST`,
+            );
             continue;
         }
         if (field.type === 'user' && !hasExpr) {

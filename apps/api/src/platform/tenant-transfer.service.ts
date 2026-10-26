@@ -84,6 +84,8 @@ import {
     recordChecklists,
     recordChecklistItems,
     recordTemplates,
+    teamMembers,
+    teams,
     ganttBaselines,
     ganttBaselineItems,
     approvalFlows,
@@ -286,6 +288,9 @@ export class TenantTransferService {
             await dump('tenant', [tenant]);
             await dump('users', userRows);
             await dump('memberships', members);
+            // C1 — equipos y sus personas (sólo las que viajan: miembros de ésta).
+            await dump('teams', await this.byTenant(teams, tenantId));
+            await dump('team_members', await this.byTenant(teamMembers, tenantId));
             await dump('list_groups', await this.byTenant(listGroups, tenantId));
             // Papelera: lo que está en la papelera NO viaja (ni lo que cuelga
             // de ello). La conexión base no pasa por la RLS: el filtro va a mano.
@@ -649,6 +654,22 @@ export class TenantTransferService {
         if (memberValues.length) await this.insertValues(tx, memberships, memberValues);
         counts.memberships = memberValues.length;
 
+        // C1 — equipos (antes que los registros: el campo «Equipo» guarda sus ids).
+        counts.teams = await this.insertMapped(tx, await this.readAll(rows('teams')), teams, maps.team, (t) => ({
+            tenantId,
+            name: String(t.name).slice(0, 80),
+            description: (t.description as string | null) ?? null,
+            icon: (t.icon as string | null) ?? null,
+            color: (t.color as string | null) ?? null,
+            createdBy: mapId(maps.user, t.createdBy),
+        }));
+        counts.team_members = await this.insertPlain(tx, rows('team_members'), teamMembers, (m) => {
+            const teamId = mapId(maps.team, m.teamId);
+            const userId = mapId(maps.user, m.userId);
+            if (teamId === null || userId === null) return null;
+            return { tenantId, teamId, userId, isLead: Boolean(m.isLead) };
+        });
+
         // 4. Carpetas → listas → campos
         const groupMap = new Map<number, number>();
         counts.list_groups = await this.insertMapped(
@@ -740,6 +761,12 @@ export class TenantTransferService {
             let config = remapJson((f.config as Row | null) ?? {}, maps) as Row;
             // Fórmulas (A1): los ids viven DENTRO del texto (`{#12}`).
             if (String(f.type) === 'formula') config = remapFormulaConfig(config, (id) => mapId(maps.field, id)) as Row;
+            // C1 — el valor por defecto de un campo «Equipo» son ids de equipo.
+            if (String(f.type) === 'team' && config.default_value && typeof config.default_value === 'object') {
+                const d = config.default_value as { kind?: unknown; value?: unknown };
+                const ids = (Array.isArray(d.value) ? d.value : []).map((v) => mapId(maps.team, v)).filter((v): v is number => v !== null);
+                config = { ...config, default_value: ids.length > 0 ? { ...d, value: ids } : null };
+            }
             await tx.update(fields).set({ config }).where(eq(fields.id, newId));
         }
 

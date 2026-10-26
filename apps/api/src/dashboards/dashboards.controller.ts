@@ -151,5 +151,5 @@ function tenantId(req: FastifyRequest): number {
 }
 
 function viewer(req: FastifyRequest): DashboardViewer {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }

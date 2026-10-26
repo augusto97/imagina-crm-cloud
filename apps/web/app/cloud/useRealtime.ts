@@ -26,6 +26,7 @@ import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { notificationKeys } from '@/hooks/useNotifications';
 import { invalidateDashboardsForList } from '@/hooks/useDashboards';
+import { teamsKeys } from '@/hooks/useTeams';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -137,6 +138,11 @@ export function useRealtime(): void {
                 case 'notifications':
                     // v0.1.276 — llega sólo a la sala de esta persona.
                     void qc.invalidateQueries({ queryKey: notificationKeys.all });
+                    break;
+                case 'teams':
+                    // C1 — alguien creó, cambió o borró un equipo (nombre,
+                    // color, personas): chips, selectores y permisos.
+                    void qc.invalidateQueries({ queryKey: teamsKeys.all });
                     break;
                 case 'timer':
                     // v0.1.291 — el cronómetro de esta persona cambió en otra

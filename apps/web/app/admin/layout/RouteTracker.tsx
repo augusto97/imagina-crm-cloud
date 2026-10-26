@@ -30,6 +30,7 @@ export function RouteTracker(): null {
     const tenantId = useSession((s) => s.activeTenantId);
     const isAdmin = useSession((s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin');
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
+    const canManageTeams = useCan(CAP.MANAGE_TEAMS);
     const lists = useLists();
     const dashboards = useDashboards();
     const groups = useListGroups();
@@ -71,7 +72,7 @@ export function RouteTracker(): null {
         if (pathname.startsWith('/settings/sql/')) return `${__('Sincronización SQL')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/collections/')) return `${__('Cobros')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings')) {
-            const groupsS = settingsSectionGroups({ isAdmin, canManageAutomations });
+            const groupsS = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams });
             const id = resolveSettingsSection(groupsS, params.get('s'));
             const label = groupsS.flatMap((g) => g.items).find((i) => i.id === id)?.label;
             return label ? `${label} · ${__('Ajustes')}` : __('Ajustes');

@@ -76,6 +76,7 @@ describe('Bootstrap + Slugs (Postgres real)', () => {
             tenantSlug: 'acme',
             role: 'admin',
             status: 'active',
+            teamIds: [],
         });
 
         // El shape completo cumple el schema compartido (contrato front↔back).

@@ -24,6 +24,8 @@ const mark = (tenantId: number, key: string) => `incident:${tenantId}:${key}`;
 export interface IncidentViewer {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /**

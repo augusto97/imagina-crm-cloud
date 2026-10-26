@@ -50,7 +50,7 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import type { Tx } from '../db/client';
 import { automations, fields as fieldsTable, lists as listsTable, memberships, records, users, type ApprovalFlowRow, type ApprovalRequestRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { effectivePermissions, resolvePermissions, rowInScope } from '../lists/list-acl';
+import { listRowInScope, type AclSubject } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { NotificationsService, fallbackWorkTitle } from '../notifications/notifications.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -61,16 +61,19 @@ import { approvalFlowRefs } from './approval-refs';
 import { askTitle, decisionMessage, resolvedTitle } from './approval-text';
 import { ApprovalsRepository } from './approvals.repository';
 
-export interface ApprovalActor {
-    userId: number;
-    role: Role;
-}
+/**
+ * Quién pide, decide o mira. Es el sujeto del ACL de las listas: C1 — con
+ * sus equipos (`teamIds`), así el acceso por equipo cuenta para ver y editar.
+ */
+export type ApprovalActor = AclSubject;
 
 /** Una persona del equipo que puede aprobar (miembro activo, no cliente). */
 interface Member {
     userId: number;
     role: Role;
     name: string;
+    /** C1 — sus equipos: el acceso por equipo a la lista cuenta para ver el registro. */
+    teamIds: number[];
 }
 
 /** Lo mínimo del registro para resolver aprobadores y el ACL. */
@@ -89,6 +92,9 @@ interface RecordRowLite {
  * no lo ofrece).
  */
 export type TeamMembersResolver = (tx: Tx, tenantId: number, teamId: number) => Promise<number[]>;
+
+/** C1 — Los equipos de la empresa (id → nombre): nombran el aprobador y validan el flujo. */
+export type TeamDirectoryResolver = (tx: Tx, tenantId: number) => Promise<ReadonlyMap<number, { name: string }>>;
 
 /** Las resueltas que «Mi trabajo» muestra a quien las pidió. */
 const REQUESTED_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -116,8 +122,10 @@ const INBOX_SCAN = 500;
 @Injectable()
 export class ApprovalsService {
     private readonly logger = new Logger(ApprovalsService.name);
-    /** Ver `TeamMembersResolver`: lo conecta la entrega de equipos. */
+    /** Ver `TeamMembersResolver`: lo conecta el módulo de equipos al arrancar. */
     private teamMembers: TeamMembersResolver | null = null;
+    /** Ver `TeamDirectoryResolver`: idem. */
+    private teamDirectory: TeamDirectoryResolver | null = null;
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -136,6 +144,11 @@ export class ApprovalsService {
     /** Conecta la resolución de equipos (la llama el módulo de equipos al arrancar). */
     setTeamMembersResolver(fn: TeamMembersResolver): void {
         this.teamMembers = fn;
+    }
+
+    /** C1 — Conecta el directorio de equipos (nombres y validación del flujo). */
+    setTeamDirectoryResolver(fn: TeamDirectoryResolver): void {
+        this.teamDirectory = fn;
     }
 
     // ─────────────────────────── Flujos ───────────────────────────
@@ -316,6 +329,17 @@ export class ApprovalsService {
                 }
                 const res = validateFieldValue({ type: f.type, config: f.config, is_required: false }, s.value);
                 if (!res.ok) problems.push(`${what}: «${f.label}» — ${res.error}`);
+            }
+        }
+        // C1 — un paso «equipo» apunta a un equipo de ESTA empresa.
+        const teamSteps = config.steps.filter((s) => s.approver.type === 'team');
+        if (teamSteps.length > 0) {
+            const known = this.teamDirectory ? await this.teamDirectory(tx, tenantId) : new Map<number, { name: string }>();
+            for (const s of teamSteps) {
+                const teamId = (s.approver as { team_id: number }).team_id;
+                if (!known.has(teamId)) {
+                    problems.push(`«${stepLabel(s, config.steps.indexOf(s))}»: ese equipo no existe en esta empresa.`);
+                }
             }
         }
         const userIds = [...new Set(config.steps.flatMap((s) => (s.approver.type === 'users' ? s.approver.approver_user_ids : [])))];
@@ -1023,7 +1047,7 @@ export class ApprovalsService {
             const m = members.get(id);
             if (!m) continue;
             if (requesterId !== null && id === requesterId && !config.self_approval) continue;
-            if (!canViewRecord(list, { userId: m.userId, role: m.role }, record)) continue;
+            if (!canViewRecord(list, { userId: m.userId, role: m.role, teamIds: m.teamIds }, record)) continue;
             out.push(m);
         }
         return out;
@@ -1042,8 +1066,8 @@ export class ApprovalsService {
                 return Number.isInteger(id) && id > 0 && members.has(id) ? [id] : [];
             }
             case 'team':
-                // TODO(equipos): `TeamsService.memberIds(tx, teamId)` — lo conecta
-                // la entrega de equipos con `setTeamMembersResolver`.
+                // C1 — las personas del equipo AHORA (lo conecta el módulo de
+                // equipos con `setTeamMembersResolver`). Sin equipos, nadie.
                 return this.teamMembers ? (await this.teamMembers(tx, tenantId, approver.team_id)).filter((id) => members.has(id)) : [];
         }
     }
@@ -1059,11 +1083,28 @@ export class ApprovalsService {
     /** Los miembros activos del equipo (no clientes del portal), una consulta. */
     private async loadMembers(tx: Tx, tenantId: number): Promise<Map<number, Member>> {
         const rows = await tx
-            .select({ userId: memberships.userId, role: memberships.role, name: users.name, email: users.email })
+            .select({
+                userId: memberships.userId,
+                role: memberships.role,
+                name: users.name,
+                email: users.email,
+                // C1 — sus equipos (para el acceso por equipo a la lista).
+                teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+            })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client'), isNull(users.disabledAt)));
-        return new Map(rows.map((r) => [r.userId, { userId: r.userId, role: r.role as Role, name: r.name?.trim() || r.email }]));
+        return new Map(
+            rows.map((r) => [
+                r.userId,
+                {
+                    userId: r.userId,
+                    role: r.role as Role,
+                    name: r.name?.trim() || r.email,
+                    teamIds: (r.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+                },
+            ]),
+        );
     }
 
     private async names(tx: Tx, ids: number[]): Promise<Map<number, string>> {
@@ -1127,6 +1168,9 @@ export class ApprovalsService {
         ];
         const names = await this.names(tx, nameIds);
         const fieldLabel = new Map(fields.map((f) => [f.id, f.label]));
+        // C1 — el nombre del equipo de los pasos «equipo» (una consulta, sólo si hay).
+        const hasTeamStep = rows.some((r) => (readApprovalFlowConfig(r.config)?.steps ?? []).some((s) => s.approver.type === 'team'));
+        const teamNames = hasTeamStep && this.teamDirectory ? await this.teamDirectory(tx, tenantId) : new Map<number, { name: string }>();
         const out: ApprovalRequestDto[] = [];
         for (const r of rows) {
             const cfg = readApprovalFlowConfig(r.config);
@@ -1162,6 +1206,7 @@ export class ApprovalsService {
                     approver_label: describeApprover(s.approver, {
                         fieldLabel: s.approver.type === 'field' ? (fieldLabel.get(s.approver.approver_field_id) ?? null) : null,
                         userNames,
+                        teamName: s.approver.type === 'team' ? (teamNames.get(s.approver.team_id)?.name ?? null) : null,
                     }),
                     state,
                     approvers:
@@ -1238,13 +1283,12 @@ export function requestBlock(config: ApprovalFlowConfig, rowsOfFlow: ReadonlyArr
     return null;
 }
 
+/**
+ * ¿Puede VER el registro? El mismo alcance que el listado: rol, persona y
+ * C1 — equipos (acceso por equipo y «los asignados» por un campo Equipo).
+ */
 function canViewRecord(list: List, actor: ApprovalActor, record: RecordRowLite): boolean {
-    const perms = effectivePermissions(list.settings, actor.role, actor.userId);
-    const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-    return rowInScope(perms.view, actor.userId, {
-        createdBy: record.createdBy,
-        assignmentValue: assignmentId ? record.data[jsonbKeyForField(assignmentId)] : undefined,
-    });
+    return listRowInScope(list.settings, actor, 'view', { createdBy: record.createdBy, data: record.data });
 }
 
 function canEditRecord(records: RecordsService, list: List, actor: ApprovalActor, record: RecordRowLite): boolean {

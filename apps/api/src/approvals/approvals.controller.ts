@@ -25,7 +25,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { ApprovalsService, type ApprovalActor } from './approvals.service';
 
 function actor(req: FastifyRequest): ApprovalActor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 
 /**

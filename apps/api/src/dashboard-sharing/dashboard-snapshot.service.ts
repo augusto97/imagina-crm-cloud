@@ -14,7 +14,7 @@ import {
     type TenantFormat,
     type WidgetReport,
 } from '@imagina-base/shared';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { AggregateService } from '../aggregate/aggregate.service';
 import { lists, memberships, tenants, users } from '../db/schema';
 import { DashboardsService, type DashboardViewer } from '../dashboards/dashboards.service';
@@ -82,14 +82,18 @@ export class DashboardSnapshotService {
     async viewerFor(tenantId: number, userId: number): Promise<DashboardViewer | null> {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
-                .select({ role: memberships.role })
+                .select({
+                    role: memberships.role,
+                    // C1 — el ACL por equipo de quien publicó.
+                    teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId), isNull(users.disabledAt)))
                 .limit(1),
         );
         if (!row || row.role === 'client') return null;
-        return { userId, role: row.role };
+        return { userId, role: row.role, teamIds: (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0) };
     }
 
     async snapshot(
@@ -111,7 +115,7 @@ export class DashboardSnapshotService {
         for (const listId of listIds) {
             let hidden: Set<number>;
             try {
-                const ctx = await this.aggregate.listContext(tenantId, String(listId), { userId: viewer.userId, role: viewer.role as Role });
+                const ctx = await this.aggregate.listContext(tenantId, String(listId), { userId: viewer.userId, role: viewer.role as Role, teamIds: viewer.teamIds });
                 hidden = ctx.hidden;
             } catch {
                 continue; // lista borrada o sin acceso: sus widgets ya traen su error

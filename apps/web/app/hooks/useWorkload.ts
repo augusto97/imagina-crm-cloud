@@ -27,8 +27,10 @@ export interface WorkloadBundleArgs {
     estimateFieldId: number | null;
     estimateUnit: WorkloadEstimateUnit;
     hideDone: boolean;
-    /** Personas visibles (`null` = todas). Aquí se engancha un filtro por equipo. */
+    /** Personas visibles (`null` = todas). */
     userIds: number[] | null;
+    /** C1 — sólo las personas de este equipo (lo resuelve el servidor). */
+    teamId?: number | null;
     showUnassigned: boolean;
     filterTree?: unknown;
     search?: string;
@@ -51,6 +53,7 @@ export function workloadBundleParams(args: WorkloadBundleArgs): Record<string, u
         params.unit = args.estimateUnit;
     }
     if (args.userIds !== null) params.users = [...args.userIds].sort((a, b) => a - b).join(',');
+    if (args.teamId) params.team = args.teamId;
     if (!args.showUnassigned) params.unassigned = 0;
     if (args.filterTree) params.filter_tree = JSON.stringify(args.filterTree);
     if (args.search && args.search.trim() !== '') params.search = args.search.trim();

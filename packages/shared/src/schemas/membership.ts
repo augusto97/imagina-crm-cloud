@@ -28,6 +28,8 @@ export const CAPABILITIES = [
     'export_records',
     'bulk_actions',
     'access_portal',
+    // C1 — crear, editar y borrar equipos y sus personas (sólo admin de base).
+    'manage_teams',
 ] as const;
 export const capabilitySchema = z.enum(CAPABILITIES);
 export type Capability = z.infer<typeof capabilitySchema>;

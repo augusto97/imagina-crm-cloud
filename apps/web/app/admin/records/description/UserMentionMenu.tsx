@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AtSign } from 'lucide-react';
+import { teamHandle } from '@imagina-base/shared';
+
+import { TeamGlyph } from '@/components/fields/TeamChip';
+import { useTeams } from '@/hooks/useTeams';
 
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { api } from '@/lib/api';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 export interface MentionableUser {
     id: number;
     login: string;
     display_name: string;
+    /** C1 — un equipo (`id` es el del equipo). */
+    kind?: 'team';
+    team?: { icon: string | null; color: string | null; member_count: number };
 }
 
 interface UserMentionMenuProps {
@@ -51,7 +58,27 @@ export function UserMentionMenu({
     });
     // useMemo: `hits` es dependencia del efecto de teclado — sin identidad
     // estable, el listener se re-registraría en cada render.
-    const hits = useMemo(() => search.data ?? [], [search.data]);
+    // C1 — los equipos también se mencionan.
+    const teams = useTeams();
+    const hits = useMemo<MentionableUser[]>(() => {
+        const folded = debounced.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const q = teamHandle(debounced);
+        const teamHits = (teams.data ?? [])
+            .filter((t) => {
+                if (folded === '') return true;
+                const name = t.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                return name.includes(folded) || (q !== '' && teamHandle(t.name).startsWith(q));
+            })
+            .slice(0, 4)
+            .map((t) => ({
+                id: t.id,
+                login: `@${teamHandle(t.name)}`,
+                display_name: t.name,
+                kind: 'team' as const,
+                team: { icon: t.icon, color: t.color, member_count: t.member_count },
+            }));
+        return [...(search.data ?? []), ...teamHits];
+    }, [search.data, teams.data, debounced]);
 
     useEffect(() => {
         setIndex(0);
@@ -84,7 +111,7 @@ export function UserMentionMenu({
     return (
         <div
             role="listbox"
-            aria-label={__('Mencionar persona')}
+            aria-label={__('Mencionar persona o equipo')}
             // Menú propio abierto: Esc lo cierra a él, no a la ficha.
             data-imcrm-floating-menu=""
             className="imcrm-absolute imcrm-z-50 imcrm-max-h-64 imcrm-w-64 imcrm-overflow-y-auto imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
@@ -92,7 +119,7 @@ export function UserMentionMenu({
         >
             {hits.map((user, i) => (
                 <button
-                    key={user.id}
+                    key={`${user.kind ?? 'user'}-${user.id}`}
                     type="button"
                     role="option"
                     aria-selected={i === index}
@@ -106,15 +133,21 @@ export function UserMentionMenu({
                         i === index ? 'imcrm-bg-accent' : 'hover:imcrm-bg-accent/60',
                     )}
                 >
-                    <span className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
-                        <AtSign className="imcrm-h-3 imcrm-w-3" aria-hidden />
-                    </span>
+                    {user.kind === 'team' ? (
+                        <span className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center">
+                            <TeamGlyph team={user.team} size="sm" />
+                        </span>
+                    ) : (
+                        <span className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
+                            <AtSign className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                        </span>
+                    )}
                     <span className="imcrm-min-w-0">
                         <span className="imcrm-block imcrm-truncate imcrm-text-[13px] imcrm-font-medium">
                             {user.display_name}
                         </span>
                         <span className="imcrm-block imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {user.login}
+                            {user.kind === 'team' ? sprintf(__('Equipo · %d personas'), user.team?.member_count ?? 0) : user.login}
                         </span>
                     </span>
                 </button>

@@ -25,6 +25,7 @@ import {
     type SelectOption,
     type TextCoercionOptions,
     coerceTextToFieldValue,
+    buildTeamLookup,
     normalizeDateString as sharedNormalizeDateString,
 } from '@imagina-base/shared';
 import { parseCsv } from './csv-parser';
@@ -41,7 +42,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { readTenantFormat } from '../tenancy/tenant-format';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { eq } from 'drizzle-orm';
-import { memberships, users } from '../db/schema';
+import { memberships, teams, users } from '../db/schema';
 
 /**
  * Import de filas a una lista (CONTRACT §11). Valida cada valor con el
@@ -91,7 +92,7 @@ export class ImportService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         assertNotStoreManaged(list, 'import');
         assertCanCreate(list.settings, actor);
-        const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
+        const hidden = hiddenFieldsFor(list.settings, actor);
         const fields = (await this.fields.list(tenantId, String(list.id))).filter((f) => !hidden.has(f.slug));
         const byId = new Map(fields.map((f) => [f.id, f]));
 
@@ -269,7 +270,7 @@ export class ImportService {
                 data: { status: 403 },
             });
         }
-        const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
+        const hidden = hiddenFieldsFor(list.settings, actor);
         const parsed = parseCsv(input.csv);
         const headers = parsed.headers;
         let rows = parsed.rows;
@@ -598,9 +599,15 @@ export class ImportService {
      * conserva la lectura histórica (sin formato, horas en UTC).
      */
     async readOptions(tenantId: number, source: ImportSource | undefined): Promise<TextCoercionOptions> {
-        if (source !== 'xlsx') return {};
+        // C1 — el campo «Equipo» se lee por el NOMBRE del equipo (así lo exporta).
+        const teamRows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.tenantId, tenantId)),
+        );
+        const teamLookup = teamRows.length > 0 ? { teams: buildTeamLookup(teamRows) } : {};
+        if (source !== 'xlsx') return teamLookup;
         const format = await readTenantFormat(this.tenantDb, tenantId);
         return {
+            ...teamLookup,
             numberFormat: format.number_format,
             dateFormat: format.date_format,
             timeZone: format.timezone ?? undefined,
@@ -897,11 +904,13 @@ function makeOptionSlug(label: string, usedSlugs: string[]): string {
 export interface ImportActor {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /** El ACL de la lista tiene que dejarle CREAR registros a esta persona. */
 function assertCanCreate(settings: Record<string, unknown>, actor: ImportActor): void {
-    if (!effectivePermissions(settings, actor.role, actor.userId).create) {
+    if (!effectivePermissions(settings, actor).create) {
         throw new ForbiddenException({
             code: 'forbidden_create',
             message: 'Tu rol no puede crear registros en esta lista',

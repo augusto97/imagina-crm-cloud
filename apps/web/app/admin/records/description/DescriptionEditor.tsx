@@ -505,7 +505,9 @@ export function DescriptionEditor({
                             .focus()
                             .deleteRange({ from: slash.from, to: slash.from + userQuery.length + 1 })
                             .insertContent([
-                                { type: 'mentionUser', attrs: { id: user.id, label: user.display_name } },
+                                user.kind === 'team'
+                                    ? { type: 'mentionTeam', attrs: { id: user.id, label: user.display_name } }
+                                    : { type: 'mentionUser', attrs: { id: user.id, label: user.display_name } },
                                 { type: 'text', text: ' ' },
                             ])
                             .run());

@@ -1,4 +1,4 @@
-import { buildMemberLookup, foldSearchText, type TextCoercionOptions } from '@imagina-base/shared';
+import { buildMemberLookup, buildTeamLookup, foldSearchText, type Team, type TextCoercionOptions } from '@imagina-base/shared';
 
 import type { WpUserSummary } from '@/hooks/useWpUsers';
 import { relationTarget } from '@/hooks/useRelationTitles';
@@ -164,6 +164,17 @@ export async function preparePaste(args: {
         );
     }
 
+    // C1 — equipos por nombre (el portapapeles interno ya trae los ids).
+    let teams: Map<string, number> | undefined;
+    if (cols.some(({ column }) => column.field?.type === 'team')) {
+        try {
+            const res = await api.get<Team[]>('/teams');
+            teams = buildTeamLookup((Array.isArray(res.data) ? res.data : []).map((t) => ({ id: t.id, name: t.name })));
+        } catch {
+            teams = undefined;
+        }
+    }
+
     const fmt = getTenantFormat();
     return {
         block,
@@ -173,6 +184,7 @@ export async function preparePaste(args: {
         relationIds,
         coercion: {
             members,
+            teams,
             numberFormat: fmt.number_format,
             dateFormat: fmt.date_format,
             // Una fecha y hora se lee en el reloj de quien pega (el mismo en

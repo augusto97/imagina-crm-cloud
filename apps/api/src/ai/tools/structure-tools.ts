@@ -127,6 +127,7 @@ import { FormsService } from '../../forms/forms.service';
 import { RecordTemplatesService } from '../../record-templates/record-templates.service';
 import { templateForModel } from './record-template-spec';
 import { DataConsentService } from '../../data-consent/data-consent.service';
+import { TeamsService } from '../../teams/teams.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -183,6 +184,8 @@ const AI_FIELD_TYPES = [
     'formula',
     // A9 — progreso de los checklists del registro (sólo lectura).
     'checklist_progress',
+    // C1 — Equipo (uno o varios; con `multiple`).
+    'team',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -206,6 +209,7 @@ const fieldSpec = z.object({
     relation_to: z.string().max(63).optional().describe('Sólo relation: slug de la lista destino (existente, o la `key` de otra lista del mismo pedido)'),
     highlight_overdue: z.boolean().optional().describe('date/datetime: pintar en rojo las fechas vencidas'),
     default_country: z.string().length(2).optional().describe('phone: país por defecto ISO-2 (CO, MX, AR…)'),
+    multiple: z.boolean().optional().describe('team: admite varios equipos (por defecto, uno solo)'),
     computed: z
         .object({
             operation: z.enum(['date_diff_months', 'date_diff_days', 'sum', 'product', 'subtract', 'divide', 'concat', 'abs']),
@@ -597,7 +601,11 @@ interface SetPermissionsSpec {
     roles?: Partial<Record<(typeof CONFIGURABLE_ROLES)[number], z.infer<typeof permissionSpec>>>;
     users?: Array<z.infer<typeof permissionSpec> & { user_id: number }>;
     remove_users?: number[];
+    /** C1 — accesos por equipo (agregar/cambiar) y quitar. */
+    teams?: Array<z.infer<typeof permissionSpec> & { team_id: number }>;
+    remove_teams?: number[];
     assignment_field_slug?: string | null;
+    assignment_team_field_slug?: string | null;
 }
 
 interface PublicSharingSpec {
@@ -643,6 +651,9 @@ type Payload =
            * acceso a Ana" le sacaba el acceso a todos los demás.
            */
           usersSet?: Record<string, RolePermissions>;
+          /** C1 — mismos cambios, por equipo. */
+          teamsSet?: Record<string, RolePermissions>;
+          teamsRemove?: number[];
           usersRemove?: number[];
       }
     | { kind: 'configure_public_sharing'; listId: number; listSlug: string; input: UpdatePublicListInput }
@@ -718,6 +729,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly approvals?: ApprovalsService,
         // C6 — plantillas de registro (las lee get_list_schema).
         @Optional() private readonly recordTemplates?: RecordTemplatesService,
+        // C1 — equipos (list_teams, permisos por equipo, list_members).
+        @Optional() private readonly teams?: TeamsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -993,6 +1006,15 @@ export class StructureTools implements AiProposalApplier {
             run: (ctx) => this.listMembers(ctx),
         });
         registry.register({
+            name: 'list_teams',
+            label: 'Leyendo los equipos',
+            description:
+                'Lista los EQUIPOS del workspace (Ventas, Soporte…) con su id, descripción y personas. Úsala para asignar un registro a un equipo (campo de tipo team: guarda una lista de ids) o para dar acceso a una lista a un equipo (propose_set_list_permissions → teams).',
+            capability: null,
+            input: z.object({}),
+            run: (ctx) => this.listTeams(ctx),
+        });
+        registry.register({
             name: 'list_record_comments',
             label: 'Leyendo los comentarios',
             description:
@@ -1009,7 +1031,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_set_list_permissions',
             label: 'Armando los permisos de la lista',
             description:
-                'Propone QUIÉN puede ver y editar los registros de una lista. Por ROL (manager / agent / viewer) con un alcance por operación: all (todo), assigned (lo asignado a esa persona), own (lo que creó) o none; más si puede crear y qué campos NO ve. También por PERSONA (pisa su rol sólo en esta lista) — pide los ids con list_members. `admin` siempre tiene acceso total y no se configura.',
+                'Propone QUIÉN puede ver y editar los registros de una lista. Por ROL (manager / agent / viewer) con un alcance por operación: all (todo), assigned (lo asignado a esa persona o a uno de sus equipos), own (lo que creó) o none; más si puede crear y qué campos NO ve. También por PERSONA (pisa su rol sólo en esta lista; ids con list_members) y por EQUIPO (pisa el rol de sus personas; ids con list_teams; si alguien está en varios equipos con acceso vale lo más permisivo). Prioridad: persona > equipo > rol. `admin` siempre tiene acceso total y no se configura.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
@@ -1027,12 +1049,28 @@ export class StructureTools implements AiProposalApplier {
                     .max(50)
                     .optional()
                     .describe('Ids de personas a las que se les QUITA el acceso propio a esta lista (vuelven a lo que diga su rol)'),
+                teams: z
+                    .array(z.object({ team_id: z.number().int().positive() }).and(permissionSpec))
+                    .max(50)
+                    .optional()
+                    .describe('Accesos POR EQUIPO a agregar o cambiar (pide los ids con list_teams). Prioridad: persona > equipo > rol. Los que no mandas se CONSERVAN'),
+                remove_teams: z
+                    .array(z.number().int().positive())
+                    .max(50)
+                    .optional()
+                    .describe('Ids de equipos a los que se les QUITA el acceso a esta lista'),
                 assignment_field_slug: z
                     .string()
                     .max(63)
                     .nullable()
                     .optional()
                     .describe('Campo de tipo user que define el alcance `assigned`'),
+                assignment_team_field_slug: z
+                    .string()
+                    .max(63)
+                    .nullable()
+                    .optional()
+                    .describe('Campo de tipo team que TAMBIÉN cuenta para `assigned` (lo asignado a uno de los equipos de la persona)'),
             }),
             run: (ctx, input) => this.proposeSetListPermissions(ctx, input as SetPermissionsSpec),
         });
@@ -2761,6 +2799,15 @@ export class StructureTools implements AiProposalApplier {
                     Object.assign(merged, payload.usersSet ?? {});
                     input.users = merged;
                 }
+                if (payload.teamsSet !== undefined || payload.teamsRemove !== undefined) {
+                    // C1 — igual con los equipos: cambios sobre lo guardado AHORA.
+                    const now = await this.lists.getPermissions(ctx.tenantId, String(payload.listId));
+                    const merged: Record<string, RolePermissions> = {};
+                    for (const t of now.teams) merged[String(t.team_id)] = t.permissions;
+                    for (const id of payload.teamsRemove ?? []) delete merged[String(id)];
+                    Object.assign(merged, payload.teamsSet ?? {});
+                    input.teams = merged;
+                }
                 const doc = await this.lists.updatePermissions(ctx.tenantId, String(payload.listId), input);
                 const roles = Object.keys(doc.permissions).length;
                 return {
@@ -2821,10 +2868,30 @@ export class StructureTools implements AiProposalApplier {
      */
     private async listMembers(ctx: AiToolContext): Promise<AiToolResult> {
         const rows = await this.lists.workspaceMembers(ctx.tenantId);
+        // C1 — los equipos de cada persona (una consulta para todos).
+        const teams = this.teams ? await this.teams.list(ctx.tenantId) : [];
+        const teamsOf = new Map<number, string[]>();
+        for (const t of teams) for (const m of t.members) teamsOf.set(m.user_id, [...(teamsOf.get(m.user_id) ?? []), t.name]);
         return {
             content: {
-                members: rows.map((m) => ({ id: m.id, name: m.name, email: m.email, role: m.role })),
-                note: 'Los ids son los que piden los campos de tipo user y propose_set_list_permissions.',
+                members: rows.map((m) => ({ id: m.id, name: m.name, email: m.email, role: m.role, teams: teamsOf.get(m.id) ?? [] })),
+                note: 'Los ids son los que piden los campos de tipo user y propose_set_list_permissions. Los equipos (con su id) están en list_teams.',
+            },
+        };
+    }
+
+    /** C1 — Equipos del workspace con su id y sus personas. */
+    private async listTeams(ctx: AiToolContext): Promise<AiToolResult> {
+        const teams = this.teams ? await this.teams.list(ctx.tenantId) : [];
+        return {
+            content: {
+                teams: teams.map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    description: t.description,
+                    members: t.members.map((m) => ({ id: m.user_id, name: m.name, lead: m.is_lead })),
+                })),
+                note: 'El campo de tipo team guarda una lista de estos ids. propose_set_list_permissions acepta `teams` con estos ids.',
             },
         };
     }
@@ -2836,7 +2903,7 @@ export class StructureTools implements AiProposalApplier {
         const list = await this.resolveList(ctx, input.list);
         const all = await this.comments.list(
             ctx.tenantId,
-            { userId: ctx.userId, role: ctx.role },
+            { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds },
             String(list.id),
             input.record_id,
         );
@@ -2941,6 +3008,48 @@ export class StructureTools implements AiProposalApplier {
                 changes.push({ label: 'Otros accesos por persona', from: null, to: `se conservan (${kept.map((u) => u.name || u.email).join(', ')})` });
             }
         }
+        // C1 — accesos por EQUIPO (cambios, como los de personas).
+        let teamsSet: Record<string, RolePermissions> | undefined;
+        let teamsRemove: number[] | undefined;
+        if (input.teams !== undefined || input.remove_teams !== undefined) {
+            const all = this.teams ? await this.teams.list(ctx.tenantId) : [];
+            const byId = new Map(all.map((t) => [t.id, t]));
+            const before = new Map(current.teams.map((t) => [t.team_id, t.permissions]));
+            teamsSet = {};
+            for (const t of input.teams ?? []) {
+                const team = byId.get(t.team_id);
+                if (!team) {
+                    throw new AiToolError(`El equipo #${t.team_id} no existe en esta empresa. Pide la lista con list_teams.`);
+                }
+                teamsSet[String(t.team_id)] = {
+                    view: t.view, create: t.create, edit: t.edit, delete: t.delete,
+                    fields_hidden: checkHidden(t.fields_hidden ?? [], `el equipo ${team.name}`),
+                };
+                const prev = before.get(t.team_id);
+                changes.push({ label: `Equipo ${team.name}`, from: prev ? describeScope(prev) : null, to: describeScope(teamsSet[String(t.team_id)]!) });
+            }
+            teamsRemove = [];
+            for (const id of input.remove_teams ?? []) {
+                const had = current.teams.find((t) => t.team_id === id);
+                if (!had) throw new AiToolError(`El equipo #${id} no tiene acceso propio en «${list.name}»: no hay nada que quitar.`);
+                teamsRemove.push(id);
+                changes.push({ label: `Equipo ${had.name}`, from: describeScope(had.permissions), to: 'sin acceso propio (sus personas vuelven a su rol)' });
+            }
+        }
+        if (input.assignment_team_field_slug !== undefined) {
+            let id: number | null = null;
+            if (input.assignment_team_field_slug !== null) {
+                const f = bySlug.get(input.assignment_team_field_slug);
+                if (!f || f.type !== 'team') {
+                    throw new AiToolError(
+                        `El alcance «assigned» por equipo necesita un campo de tipo team. «${input.assignment_team_field_slug}» ${f ? `es de tipo ${f.type}` : 'no existe'}.`,
+                    );
+                }
+                id = f.id;
+            }
+            patch.assignment_team_field_id = id;
+            changes.push({ label: 'Campo de asignación por equipo', from: current.assignment_team_field_id === null ? '(ninguno)' : String(current.assignment_team_field_id), to: input.assignment_team_field_slug ?? '(ninguno)' });
+        }
         if (input.assignment_field_slug !== undefined) {
             let id: number | null = null;
             if (input.assignment_field_slug !== null) {
@@ -2955,8 +3064,8 @@ export class StructureTools implements AiProposalApplier {
             patch.assignment_field_id = id;
             changes.push({ label: 'Campo de asignación', from: current.assignment_field_id === null ? '(ninguno)' : String(current.assignment_field_id), to: input.assignment_field_slug ?? '(ninguno)' });
         }
-        if (Object.keys(patch).length === 0 && usersSet === undefined) {
-            throw new AiToolError('No hay nada que cambiar: manda `roles`, `users`, `remove_users` o `assignment_field_slug`.');
+        if (Object.keys(patch).length === 0 && usersSet === undefined && teamsSet === undefined) {
+            throw new AiToolError('No hay nada que cambiar: manda `roles`, `users`, `remove_users`, `teams`, `remove_teams` o `assignment_field_slug`.');
         }
 
         return this.saveProposal(ctx, {
@@ -2967,7 +3076,7 @@ export class StructureTools implements AiProposalApplier {
             destructive: changes.some((c) => String(c.to).startsWith('sin acceso')),
             listSlug: list.slug,
             preview: { changes },
-            payload: { kind: 'set_list_permissions', listId: list.id, listSlug: list.slug, input: patch, usersSet, usersRemove },
+            payload: { kind: 'set_list_permissions', listId: list.id, listSlug: list.slug, input: patch, usersSet, usersRemove, teamsSet, teamsRemove },
         });
     }
 
@@ -3217,6 +3326,9 @@ export class StructureTools implements AiProposalApplier {
                 break;
             case 'phone':
                 if (f.default_country) config.default_country = f.default_country.toUpperCase();
+                break;
+            case 'team':
+                if (f.multiple) config.multiple = true;
                 break;
             case 'relation': {
                 if (!f.relation_to) throw new AiToolError(`El campo «${slug}» (relation) necesita relation_to (slug de la lista destino).`);

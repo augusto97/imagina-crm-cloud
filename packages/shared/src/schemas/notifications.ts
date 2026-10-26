@@ -28,8 +28,10 @@ import { idSchema } from './common';
 /**
  * C5 — `approval`: te toca aprobar (o rechazar/devolver) un paso, o se
  * resolvió una solicitud de aprobación que pediste.
+ * C1 — `team_assigned`: un registro se asignó a un EQUIPO de la persona (campo
+ * «Equipo»). Le llega a cada miembro del equipo que puede ver el registro.
  */
-export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply', 'consent', 'approval'] as const;
+export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply', 'consent', 'approval', 'team_assigned'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
@@ -42,6 +44,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     reply: 'Responden a tus comentarios',
     consent: 'Alguien retira su autorización de datos personales (sólo admins)',
     approval: 'Aprobaciones: te toca decidir o se resuelve lo que pediste',
+    team_assigned: 'Asignan un registro a uno de tus equipos',
 };
 
 export interface NotificationDto {
@@ -103,6 +106,13 @@ export const notificationPrefsSchema = z.object({
             consent: z.boolean().default(true),
             /** C5 — una aprobación que espera tu decisión: encendido (trae los botones). */
             approval: z.boolean().default(true),
+            /**
+             * C1 — APAGADO por defecto: una asignación a un equipo le llega a
+             * TODAS sus personas a la vez; un correo por cada una inundaría las
+             * casillas (y gastaría la cuota de correo de la empresa). La
+             * campana lo muestra igual, y quien lo quiera por correo lo enciende.
+             */
+            team_assigned: z.boolean().default(false),
         })
         .default({}),
     /**
@@ -131,6 +141,7 @@ export const updateNotificationPrefsSchema = z
                 reply: z.boolean(),
                 consent: z.boolean(),
                 approval: z.boolean(),
+                team_assigned: z.boolean(),
             })
             .partial(),
         digest: z.enum(['off', 'daily']),
@@ -201,6 +212,8 @@ export interface MyWorkItem {
     due_is_datetime: boolean;
     status_label: string | null;
     status_color: string | null;
+    /** C1 — en «De mis equipos»: cuáles de mis equipos lo tienen asignado. */
+    team_ids?: number[];
 }
 
 /**
@@ -229,6 +242,8 @@ export interface MyWorkDto {
     assigned: MyWorkItem[];
     /** A9 — ítems de checklist pendientes asignados a la persona. */
     checklist_items: MyWorkChecklistItem[];
+    /** C1 — lo asignado a uno de MIS equipos (campo «Equipo»), con los mismos grupos por fecha. */
+    teams: MyWorkItem[];
     following: MyWorkItem[];
     reminders: ReminderDto[];
     /** Listas donde la persona puede tener registros asignados (tienen un campo persona). */

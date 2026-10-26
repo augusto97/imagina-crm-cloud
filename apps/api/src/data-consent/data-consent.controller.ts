@@ -189,7 +189,7 @@ export class RecordDataConsentController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: RecordDataConsentDto[] }> {
-        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role };
+        const actor = { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
         // 404 si la persona no ve el registro (mismo ACL que la ficha).
         const record = await this.records.get(req.tenant!.tenantId, actor, list, id);
         return { data: await this.consents.forRecord(req.tenant!.tenantId, record.id) };

@@ -57,6 +57,7 @@ import { TimeTrackingModule } from './time-tracking/time-tracking.module';
 import { TrashModule } from './trash/trash.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
+import { TeamsModule } from './teams/teams.module';
 import { ViewsModule } from './views/views.module';
 import { GanttModule } from './gantt/gantt.module';
 import { WorkloadModule } from './workload/workload.module';
@@ -81,6 +82,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ObservabilityModule,
         RealtimeModule,
         AuditModule,
+        // C1 — equipos (global: ACL, avisos, «Mi trabajo», import/export).
+        TeamsModule,
         ConnectorsModule,
         StoreSyncModule,
         SqlSyncModule,

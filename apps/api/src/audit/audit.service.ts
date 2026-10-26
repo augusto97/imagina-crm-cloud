@@ -140,7 +140,11 @@ export type AuditAction =
     // C5 — flujos de aprobación de una lista (quién aprueba y qué se pone al resolver).
     | 'approval_flow.create'
     | 'approval_flow.update'
-    | 'approval_flow.delete';
+    | 'approval_flow.delete'
+    // C1 — equipos.
+    | 'team.create'
+    | 'team.update'
+    | 'team.delete';
 
 export interface AuditEntryDto {
     id: number;

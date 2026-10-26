@@ -44,6 +44,8 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'phone', label: 'Teléfono', description: 'Número con indicativo del país.', supportsUnique: true },
     { slug: 'url', label: 'URL', description: 'Enlace web validado.', supportsUnique: true },
     { slug: 'user', label: 'Usuario', description: 'Un miembro del workspace.', supportsUnique: false },
+    // C1 — Equipos.
+    { slug: 'team', label: 'Equipo', description: 'Uno o varios equipos de la empresa (Ventas, Soporte…).', supportsUnique: false },
     { slug: 'relation', label: 'Relación', description: 'Vincula registros de otra lista.', supportsUnique: false },
     { slug: 'file', label: 'Archivo', description: 'Archivos adjuntos al registro.', supportsUnique: false },
     { slug: 'rating', label: 'Calificación', description: 'Estrellas (de 1 a 10).', supportsUnique: false },

@@ -14,6 +14,8 @@ import {
     memberships,
     records as recordsTable,
     tenants,
+    teamMembers,
+    teams as teamsTable,
     users,
 } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -48,6 +50,8 @@ import { RecordsService, type Actor } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { TenantTimeZones } from '../src/tenancy/tenant-time-zone.service';
+import { TeamsService } from '../src/teams/teams.service';
+import { connectTeamApprovers } from '../src/teams/teams.module';
 import { startPostgres, type TestPg } from './helpers/containers';
 import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
@@ -334,6 +338,62 @@ describe('Aprobaciones (Postgres real + RLS)', () => {
         // Historial: quien decidió cada paso.
         const hist = await approvals.recordApprovals(tenantA, ana, 'gastos', g.id);
         expect(hist.requests[0]!.decisions.map((d) => d.user_name)).toEqual(['Jorge Jefe', 'Marta', 'Mario']);
+    });
+
+    it('C1 — «Un equipo» aprueba: sus personas EN VIVO, con acceso por equipo, nombre en el paso y equipo de otra empresa rechazado', async () => {
+        const teamsSvc = new TeamsService(tenantDb, new RealtimeService(), new AuditService(tenantDb));
+        connectTeamApprovers(approvals, teamsSvc);
+        try {
+            await withTenant(pg.db, tenantA, async (tx) => {
+                await tx.delete(teamMembers).where(eq(teamMembers.tenantId, tenantA));
+                await tx.delete(teamsTable).where(eq(teamsTable.tenantId, tenantA));
+            });
+            // Finanzas: Vera (lectora) y Marta. Vera NO ve los gastos por su rol…
+            const finanzas = await teamsSvc.create(tenantA, ana.userId, { name: 'Finanzas', members: [{ user_id: vera.userId, is_lead: false }, { user_id: m1.userId, is_lead: false }] });
+            const l = await lists.get(tenantA, 'gastos');
+            const perms = (l.settings as { permissions: Record<string, unknown> }).permissions;
+            await lists.update(tenantA, 'gastos', {
+                settings: {
+                    ...l.settings,
+                    permissions: {
+                        ...perms,
+                        permissions: { ...(perms.permissions as object), viewer: { view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] } },
+                        // …pero el EQUIPO tiene acceso a la lista: eso alcanza para aprobar.
+                        teams: { [String(finanzas.id)]: { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] } },
+                    },
+                },
+            });
+            const flow = await approvals.createFlow(tenantA, ana, 'gastos', {
+                name: 'Por Finanzas',
+                config: { steps: [{ id: 's1', approver: { type: 'team', team_id: finanzas.id }, mode: 'all' }] },
+            });
+            const g = await gasto('Servidor');
+            const req = await approvals.request(tenantA, ana, 'gastos', g.id, { flow_id: flow.id });
+            expect(delivered).toEqual([expect.objectContaining({ kind: 'approval', users: [m1.userId, vera.userId].sort((a, b) => a - b) })]);
+            const hist = await approvals.recordApprovals(tenantA, ana, 'gastos', g.id);
+            expect(hist.requests[0]!.steps[0]!.approver_label).toBe('Equipo: Finanzas');
+            expect(hist.requests[0]!.steps[0]!.approvers.map((a) => a.id).sort((a, b) => a - b)).toEqual([m1.userId, vera.userId].sort((a, b) => a - b));
+            // Vera decide CON sus equipos (acceso por equipo); Mario no es del equipo.
+            const veraT = { ...vera, teamIds: [finanzas.id] };
+            expect((await approvals.myApprovals(tenantA, veraT)).pending.map((p) => p.id)).toEqual([req.id]);
+            await expectCode(approvals.decide(tenantA, m2, req.id, { decision: 'approve', step: 0 }), ForbiddenException, 'approval_not_approver');
+            await approvals.decide(tenantA, veraT, req.id, { decision: 'approve', step: 0 });
+            // En vivo: sacar a Marta del equipo la saca de los aprobadores.
+            await teamsSvc.update(tenantA, ana.userId, finanzas.id, { members: [{ user_id: vera.userId, is_lead: false }] });
+            await expectCode(approvals.decide(tenantA, m1, req.id, { decision: 'approve', step: 0 }), ForbiddenException, 'approval_not_approver');
+            const now = await approvals.recordApprovals(tenantA, ana, 'gastos', g.id);
+            expect(now.requests[0]!.steps[0]!.approvers.map((a) => a.id)).toEqual([vera.userId]);
+
+            // Un equipo que no es de la empresa (u otro id inventado) no se guarda.
+            const otroEquipo = await new TeamsService(tenantDb, new RealtimeService(), new AuditService(tenantDb)).create(tenantB, 0, { name: 'Ajeno' });
+            await expectCode(
+                approvals.createFlow(tenantA, ana, 'gastos', { name: 'Ajeno', config: { steps: [{ id: 's1', approver: { type: 'team', team_id: otroEquipo.id } }] } }),
+                BadRequestException,
+                'invalid_approval_flow',
+            );
+        } finally {
+            approvals.setTeamMembersResolver(async () => []);
+        }
     });
 
     it('el campo «Aprobación» filtra, ordena y agrupa por el estado (subconsulta, sin N+1)', async () => {

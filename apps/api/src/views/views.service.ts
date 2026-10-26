@@ -19,6 +19,8 @@ import { trashRow } from '../trash/trash-ops';
 export interface ViewViewer {
     userId: number;
     role: string;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
 /** ¿La ve esta persona? Las privadas, sólo quien las creó. */

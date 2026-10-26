@@ -26,6 +26,8 @@ export interface ConditionOptions {
     /** Zona de la empresa ("hoy", "este mes"). */
     timeZone?: string;
     now?: Date;
+    /** C1 — los equipos de quien mira (resuelve «es uno de mis equipos», `$my_teams`). */
+    myTeamIds?: readonly number[];
 }
 
 // ── Automatizaciones (por slug) ─────────────────────────────────────────────
@@ -240,6 +242,42 @@ function parseInstant(value: string): number | null {
 
 // ── Filtros de vista (por field_id, con el tipo del campo) ──────────────────
 
+/** C1 — `$my_teams` dentro del valor de un filtro de equipo → los ids de la persona. */
+function expandMyTeams(expected: unknown, myTeamIds: readonly number[]): string[] {
+    const raw = Array.isArray(expected) ? expected : expected === undefined || expected === null || expected === '' ? [] : [expected];
+    const out: string[] = [];
+    for (const v of raw) {
+        if (v === '$my_teams') out.push(...myTeamIds.map(String));
+        else if (v !== null && v !== undefined && v !== '') out.push(String(v));
+    }
+    return [...new Set(out)];
+}
+
+function evaluateTeamCondition(op: string, set: string[], expected: unknown, myTeamIds: readonly number[]): boolean | null {
+    const mine = Array.isArray(expected) ? expected.includes('$my_teams') : expected === '$my_teams';
+    const wanted = expandMyTeams(expected, myTeamIds);
+    switch (op) {
+        case 'eq':
+            if (Array.isArray(expected) && !mine) return sameSet(set, wanted);
+            if (wanted.length === 0) return mine ? false : null;
+            return wanted.some((w) => set.includes(w));
+        case 'contains':
+        case 'in':
+            if (wanted.length === 0) return mine || op === 'in' ? false : null;
+            return wanted.some((w) => set.includes(w));
+        case 'neq':
+            if (Array.isArray(expected) && !mine) return !sameSet(set, wanted);
+            if (wanted.length === 0) return mine ? true : null;
+            return !wanted.some((w) => set.includes(w));
+        case 'not_contains':
+        case 'nin':
+            if (wanted.length === 0) return mine ? true : null;
+            return !wanted.some((w) => set.includes(w));
+        default:
+            return null;
+    }
+}
+
 /** Lo que el evaluador necesita saber de un campo: su tipo y su valor en la fila. */
 export interface FilterFieldValue {
     type: string;
@@ -293,9 +331,14 @@ export function evaluateFilterCondition(
         }
     }
 
-    // multi_select: el valor es un CONJUNTO de opciones.
-    if (type === 'multi_select') {
+    // multi_select: el valor es un CONJUNTO de opciones. C1 — un campo
+    // «Equipo» también es un conjunto (de ids), con `$my_teams` = los equipos
+    // de quien mira.
+    if (type === 'multi_select' || type === 'team') {
         const set = toStringList(actual);
+        if (type === 'team') {
+            return evaluateTeamCondition(op, set, expected, opts.myTeamIds ?? []);
+        }
         switch (op) {
             case 'eq':
                 if (Array.isArray(expected)) return sameSet(set, toStringList(expected));

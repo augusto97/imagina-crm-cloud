@@ -479,7 +479,9 @@ const CLIENT_JS = String.raw`
       input.addEventListener('input', function () { values[key] = transform ? transform(input.value) : input.value; setErr(f.id, ''); refresh(); });
       return input;
     }
-    switch (f.field_type) {
+    // C1 — un «Equipo» se dibuja como una selección (una o varias).
+    var kind = f.field_type === 'team' ? (f.display === 'checkboxes' ? 'multi_select' : 'select') : f.field_type;
+    switch (kind) {
       case 'long_text':
         return bindText(el('textarea', { id: id, placeholder: ph, maxlength: cfg.max_length }));
       case 'email':
@@ -609,7 +611,7 @@ const CLIENT_JS = String.raw`
       if (f.type !== 'field' || !params.has(f.slug)) return;
       var raw = params.get(f.slug) || '';
       var c = controls[f.id];
-      switch (f.field_type) {
+      switch (f.field_type === 'team' ? (f.display === 'checkboxes' ? 'multi_select' : 'select') : f.field_type) {
         case 'multi_select': {
           var vals = raw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
           values[f.key] = vals;

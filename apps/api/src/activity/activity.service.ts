@@ -4,14 +4,13 @@ import {
     type ActivityAction,
     type ActivityDto,
     type FieldHistoryEntry,
-    type FieldHistoryPage,
-    type Role,
-} from '@imagina-base/shared';
+    type FieldHistoryPage
+    } from '@imagina-base/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { activity, fields as fieldsTable, records } from '../db/schema';
-import { rowInScope } from '../lists/list-acl';
-import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, listRowInScope, type AclSubject } from '../lists/list-acl';
+import { effectivePermissions, scopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ActivityRepository, type ActivityRow } from './activity.repository';
@@ -128,7 +127,7 @@ export class ActivityService {
         listIdOrSlug: string,
         recordId: number,
         fieldId: number,
-        opts: { cursor?: number; limit?: number; viewer: { role: Role; userId: number } },
+        opts: { cursor?: number; limit?: number; viewer: AclSubject },
     ): Promise<FieldHistoryPage> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const limit = Math.min(Math.max(Math.trunc(opts.limit ?? HISTORY_DEFAULT_LIMIT) || HISTORY_DEFAULT_LIMIT, 1), HISTORY_MAX_LIMIT);
@@ -140,7 +139,7 @@ export class ActivityService {
                 .where(and(eq(fieldsTable.id, fieldId), eq(fieldsTable.listId, list.id)))
                 .limit(1);
             if (!field) throw historyNotFound();
-            const perms = effectivePermissions(list.settings, opts.viewer.role, opts.viewer.userId);
+            const perms = effectivePermissions(list.settings, opts.viewer);
             if (perms.fields_hidden.includes(field.slug)) throw historyNotFound();
             const [rec] = await tx
                 .select({ id: records.id, data: records.data, createdBy: records.createdBy })
@@ -148,9 +147,7 @@ export class ActivityService {
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, recordId), sql`${records.deletedAt} IS NULL`))
                 .limit(1);
             if (!rec) throw historyNotFound();
-            const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-            const assignmentValue = assignmentId ? (rec.data as Record<string, unknown>)[jsonbKeyForField(assignmentId)] : undefined;
-            if (!rowInScope(perms.view, opts.viewer.userId, { createdBy: rec.createdBy, assignmentValue })) {
+            if (!listRowInScope(list.settings, opts.viewer, 'view', { createdBy: rec.createdBy, data: rec.data })) {
                 throw historyNotFound();
             }
             return this.repo.fieldHistory(tx, tenantId, list.id, recordId, key, { cursor: opts.cursor, limit: limit + 1 });
@@ -166,7 +163,7 @@ export class ActivityService {
     async list(
         tenantId: number,
         listIdOrSlug: string,
-        opts: { recordId?: number; cursor?: number; limit?: number; viewer?: { role: Role; userId: number } },
+        opts: { recordId?: number; cursor?: number; limit?: number; viewer?: AclSubject },
     ): Promise<{ data: ActivityDto[]; meta: { next_cursor: string | null } }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const limit = Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
@@ -178,9 +175,8 @@ export class ActivityService {
             let where;
             let hiddenKeys = new Set<string>();
             if (opts.viewer) {
-                const perms = effectivePermissions(list.settings, opts.viewer.role, opts.viewer.userId);
-                const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-                const scope = scopeWhere(perms.view, opts.viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+                const perms = effectivePermissions(list.settings, opts.viewer);
+                const scope = scopeWhere(perms.view, opts.viewer, assignmentKeys(list.settings));
                 if (scope) {
                     where = inArray(
                         activity.recordId,

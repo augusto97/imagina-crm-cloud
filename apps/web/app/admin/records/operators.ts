@@ -78,6 +78,20 @@ const USER_LIKE: OperatorMeta[] = [
 ];
 
 /**
+ * C1 — equipo(s): el valor es una lista de ids. «es» = tiene ese equipo
+ * (entre otros), «es alguno de» = tiene al menos uno; el picker ofrece
+ * además «Mis equipos» (los de quien mira, resueltos por el servidor).
+ */
+const TEAM_LIKE: OperatorMeta[] = [
+    { op: 'eq', label: __('es') },
+    { op: 'neq', label: __('no es') },
+    { op: 'in', label: __('es alguno de') },
+    { op: 'nin', label: __('no es ninguno de') },
+    { op: 'is_not_null', label: __('tiene equipo'), nullary: true },
+    { op: 'is_null', label: __('sin equipo'), nullary: true },
+];
+
+/**
  * v0.1.191 — un campo de archivos guarda una LISTA de ids de adjuntos:
  * compararla con un número tipeado a mano nunca matcheaba nada. Lo único
  * que tiene sentido filtrar es si hay archivos o no.
@@ -179,6 +193,8 @@ export function operatorsForType(
             return [{ op: 'eq', label: __('es') }];
         case 'user':
             return USER_LIKE;
+        case 'team':
+            return TEAM_LIKE;
         case 'file':
             return FILE_LIKE;
         case 'relation':

@@ -6,6 +6,7 @@ import {
     kanbanBucketValue,
     kanbanCellKey,
     kanbanRawKey,
+    parseTeamGroupKey,
     type DurationFormat,
     type FieldType,
     type KanbanSettings,
@@ -85,12 +86,19 @@ export interface BoardInput {
     bundle: KanbanBundleResponse | undefined;
     /** Nombres de personas (columnas o carriles por un campo persona). */
     userNames?: Map<number, string>;
+    /** C1 — nombres de equipos (columnas o carriles por un campo «Equipo»). */
+    teamNames?: ReadonlyMap<number, string>;
 }
 
 const NULL = KANBAN_NULL_KEY;
 
 /** Etiqueta visible de un grupo (columna o carril). */
-export function bucketLabel(field: FieldEntity, raw: string | null, userNames?: Map<number, string>): string {
+export function bucketLabel(
+    field: FieldEntity,
+    raw: string | null,
+    userNames?: Map<number, string>,
+    teamNames?: ReadonlyMap<number, string>,
+): string {
     if (raw === null) return __('Sin valor');
     if (field.type === 'select' || field.type === 'multi_select') {
         const options = extractFieldOptions(field);
@@ -104,6 +112,10 @@ export function bucketLabel(field: FieldEntity, raw: string | null, userNames?: 
     if (field.type === 'user') {
         const id = Number(raw);
         return userNames?.get(id) ?? `#${raw}`;
+    }
+    if (field.type === 'team') {
+        const ids = parseTeamGroupKey(raw);
+        return ids.length === 0 ? __('Sin valor') : ids.map((id) => teamNames?.get(id) ?? __('Equipo')).join(' + ');
     }
     if (field.type === 'checkbox') return raw === 'true' || raw === '1' ? __('Sí') : __('No');
     if (field.type === 'date' || field.type === 'datetime') return formatDateStr(raw);
@@ -124,7 +136,7 @@ function optionColor(field: FieldEntity, raw: string | null): string | undefined
 function groupKeys(
     field: FieldEntity,
     present: Array<{ value: string | null; count: number }>,
-    opts: { hideEmpty: boolean; userNames?: Map<number, string> },
+    opts: { hideEmpty: boolean; userNames?: Map<number, string>; teamNames?: ReadonlyMap<number, string> },
 ): Array<string | null> {
     const count = new Map(present.map((p) => [p.value, p.count]));
     const out: Array<string | null> = [];
@@ -136,9 +148,11 @@ function groupKeys(
         for (const v of ['true', 'false']) if (!opts.hideEmpty || (count.get(v) ?? 0) > 0) out.push(v);
     }
     const extras = present.filter((p) => p.value !== null && !out.includes(p.value) && p.count > 0).map((p) => p.value as string);
-    if (field.type === 'user') {
+    if (field.type === 'user' || field.type === 'team') {
         const collator = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
-        extras.sort((a, b) => collator.compare(bucketLabel(field, a, opts.userNames), bucketLabel(field, b, opts.userNames)));
+        extras.sort((a, b) =>
+            collator.compare(bucketLabel(field, a, opts.userNames, opts.teamNames), bucketLabel(field, b, opts.userNames, opts.teamNames)),
+        );
     }
     out.push(...extras);
     if ((count.get(null) ?? 0) > 0) out.push(null);
@@ -159,7 +173,7 @@ function numericValue(record: RecordEntity, field: FieldEntity | null): number {
 }
 
 export function buildBoard(input: BoardInput): Board {
-    const { groupField, laneField, valueField, settings, bundle, userNames } = input;
+    const { groupField, laneField, valueField, settings, bundle, userNames, teamNames } = input;
     const lanesOn = laneField !== null && bundle?.lanes !== undefined;
     const additive = settings.valueMetric === 'sum' && valueField !== null;
 
@@ -241,12 +255,12 @@ export function buildBoard(input: BoardInput): Board {
         if (!serverCols.has(k) && adj.count > 0) presentCols.push({ value: kanbanRawKey(k), count: adj.count });
     }
     const hidden = new Set(settings.hiddenColumns);
-    const allKeys = groupKeys(groupField, presentCols, { hideEmpty: settings.hideEmpty, userNames });
+    const allKeys = groupKeys(groupField, presentCols, { hideEmpty: settings.hideEmpty, userNames, teamNames });
     const columns: BoardColumn[] = [];
     const hiddenColumns: Board['hiddenColumns'] = [];
     for (const raw of allKeys) {
         const key = raw ?? NULL;
-        const label = bucketLabel(groupField, raw, userNames);
+        const label = bucketLabel(groupField, raw, userNames, teamNames);
         if (hidden.has(key)) {
             hiddenColumns.push({ key, label });
             continue;
@@ -277,14 +291,14 @@ export function buildBoard(input: BoardInput): Board {
         for (const [k, adj] of laneAdj) {
             if (!serverLanes.has(k) && adj.count > 0) presentLanes.push({ value: kanbanRawKey(k), count: adj.count });
         }
-        lanes = groupKeys(laneField, presentLanes, { hideEmpty: settings.hideEmpty, userNames }).map((raw) => {
+        lanes = groupKeys(laneField, presentLanes, { hideEmpty: settings.hideEmpty, userNames, teamNames }).map((raw) => {
             const key = raw ?? NULL;
             const server = serverLanes.get(key);
             const adj = laneAdj.get(key);
             return {
                 key,
                 raw,
-                label: bucketLabel(laneField, raw, userNames),
+                label: bucketLabel(laneField, raw, userNames, teamNames),
                 color: optionColor(laneField, raw),
                 count: (server?.count ?? 0) + (adj?.count ?? 0),
                 total: valueField === null ? null : additive ? (server?.total ?? 0) + (adj?.total ?? 0) : server?.total ?? null,

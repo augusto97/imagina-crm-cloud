@@ -6,7 +6,7 @@ import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
-import { auditLog, fields, lists, memberships, records, tenants, timeEntries, users } from '../src/db/schema';
+import { auditLog, fields, lists, memberships, records, teamMembers, teams, tenants, timeEntries, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -18,6 +18,7 @@ import { RecordsService, type Actor } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { TenantTimeZones } from '../src/tenancy/tenant-time-zone.service';
+import { TeamsService } from '../src/teams/teams.service';
 import { parseBundleQuery } from '../src/workload/workload.controller';
 import { WorkloadService, type WorkloadBundleQuery } from '../src/workload/workload.service';
 import { startPostgres, type TestPg } from './helpers/containers';
@@ -332,6 +333,45 @@ describe('Carga de trabajo — bundle (B2)', () => {
         // El tiempo no necesita fechas.
         const time = await bundle(admin, { metric: 'time', startFieldId: null, endFieldId: null });
         expect(time.meta.metric).toBe('time');
+    });
+
+    it('C1 — filtro por EQUIPO: sólo sus personas (en vivo), combinado con las elegidas; el acceso por equipo cuenta', async () => {
+        const tenantDb = new TenantDb(pg.db);
+        const teamsSvc = new TeamsService(tenantDb, new RealtimeService(), new AuditService(tenantDb));
+        const wlT = new WorkloadService(tenantDb, recs, new RealtimeService(), new TenantTimeZones(tenantDb), new AuditService(tenantDb), teamsSvc);
+        await withTenant(pg.db, tenantId, async (tx) => {
+            await tx.delete(teamMembers).where(eq(teamMembers.tenantId, tenantId));
+            await tx.delete(teams).where(eq(teams.tenantId, tenantId));
+        });
+        const diseno = await teamsSvc.create(tenantId, admin.userId, { name: 'Diseño', members: [{ user_id: ana.userId, is_lead: false }, { user_id: carla.userId, is_lead: false }] });
+        const b = (q: Partial<WorkloadBundleQuery>) => wlT.bundle(tenantId, admin, 'tareas', query({ metric: 'count', zoom: 'week', estimateFieldId: null, showUnassigned: false, ...q }));
+
+        const byTeam = await b({ teamId: diseno.id });
+        expect(byTeam.people.map((p) => p.user_id).sort((x, y) => x! - y!)).toEqual([ana.userId, carla.userId].sort((x, y) => x - y));
+        expect(byTeam.items.every((i) => i.person === String(ana.userId) || i.person === String(carla.userId))).toBe(true);
+        // Combinado con las personas elegidas: la intersección.
+        expect((await b({ teamId: diseno.id, userIds: [ana.userId, beto.userId] })).people.map((p) => p.user_id)).toEqual([ana.userId]);
+        // En vivo: quien sale del equipo deja de verse.
+        await teamsSvc.update(tenantId, admin.userId, diseno.id, { members: [{ user_id: ana.userId, is_lead: false }] });
+        expect((await b({ teamId: diseno.id })).people.map((p) => p.user_id)).toEqual([ana.userId]);
+        // Un equipo de otra empresa (o inventado) es un 400.
+        const ajeno = await teamsSvc.create(otherTenant, 0, { name: 'Ajeno' });
+        await expect(b({ teamId: ajeno.id })).rejects.toBeInstanceOf(BadRequestException);
+
+        // El acceso por equipo cuenta para ser fila del equipo: Carla (lectora)
+        // pierde la lista por su rol, pero su equipo la ve.
+        await teamsSvc.update(tenantId, admin.userId, diseno.id, { members: [{ user_id: carla.userId, is_lead: false }] });
+        const l = await lists_.get(tenantId, 'tareas');
+        const viewerNone = { view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] };
+        await lists_.update(tenantId, 'tareas', { settings: { ...l.settings, permissions: { permissions: { viewer: viewerNone } } } });
+        const noTeam = await b({});
+        expect(noTeam.people.find((p) => p.user_id === carla.userId)?.member).toBe(false);
+        await lists_.update(tenantId, 'tareas', {
+            settings: { ...l.settings, permissions: { permissions: { viewer: viewerNone }, teams: { [String(diseno.id)]: { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] } } } },
+        });
+        const withTeam = await b({});
+        expect(withTeam.people.find((p) => p.user_id === carla.userId)?.member).toBe(true);
+        expect(parseBundleQuery({ from: '2026-10-26', to: '2026-11-08', person_field_id: '5', team: '9' }).teamId).toBe(9);
     });
 
     it('parámetros del bundle', () => {

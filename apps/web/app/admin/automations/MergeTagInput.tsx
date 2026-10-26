@@ -286,6 +286,13 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                       { tag: `${f.slug}.nombre`, label: `${f.label} · ${__('nombre')}`, hint: `{{${f.slug}.nombre}}` },
                   ])
                   .filter((t) => matches(t.label) || matches(t.tag) || matches(__('Persona')))
+                  // C1 — un campo «Equipo» guarda ids: `.nombre` da sus nombres.
+                  .concat(
+                      fields
+                          .filter((f) => f.type === 'team')
+                          .map((f) => ({ tag: `${f.slug}.nombre`, label: `${f.label} · ${__('nombre del equipo')}`, hint: `{{${f.slug}.nombre}}` }))
+                          .filter((t) => matches(t.label) || matches(t.tag) || matches(__('Equipo'))),
+                  )
             : [];
     // Con el formato regional de la empresa (separadores, orden de la fecha,
     // su zona horaria). Sin modificador la variable sale cruda: 1250000,

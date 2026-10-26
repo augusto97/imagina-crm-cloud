@@ -330,6 +330,11 @@ export function formatActivityValue(field: FieldEntity | undefined, value: unkno
             // El NOMBRE lo resuelve `ActivityValue` (necesita una consulta);
             // éste es el texto de respaldo para un usuario borrado.
             return sprintf(/* translators: %s: user id */ __('Usuario #%s'), String(value));
+        case 'team': {
+            // El NOMBRE (y el chip) lo pone `ActivityValue`; esto es el respaldo.
+            const n = Array.isArray(value) ? value.length : 1;
+            return n === 1 ? __('un equipo') : sprintf(__('%d equipos'), n);
+        }
         case 'file':
             return __('un archivo');
         default:

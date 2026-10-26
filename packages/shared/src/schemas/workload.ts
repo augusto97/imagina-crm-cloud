@@ -109,8 +109,8 @@ export function normalizeCapacity(c: WorkloadCapacity): WorkloadCapacity {
 /**
  * Claves `workload_*` de la config de la vista. Las referencias a campos
  * terminan en `_field_id` (las re-mapean solas las plantillas y migrar una
- * empresa); `workload_user_ids` son PERSONAS, que migrar una empresa traduce
- * aparte (ver `remapViewConfig`).
+ * empresa); `workload_user_ids` son PERSONAS y `workload_team_id` un EQUIPO,
+ * que migrar una empresa traduce aparte (ver `remapViewConfig`).
  */
 export const workloadViewConfigShape = {
     workload_person_field_id: idSchema,
@@ -122,6 +122,12 @@ export const workloadViewConfigShape = {
     workload_zoom: workloadZoomSchema.optional(),
     /** Personas visibles (por id). Sin valor = todas las que pueden ver la lista. */
     workload_user_ids: z.array(idSchema).max(WORKLOAD_MAX_PEOPLE).nullable().optional(),
+    /**
+     * C1 — Sólo las personas de un EQUIPO (resuelto en el servidor, en vivo:
+     * quien entra o sale del equipo aparece o desaparece solo). Se combina con
+     * `workload_user_ids` (la intersección).
+     */
+    workload_team_id: idSchema.nullable().optional(),
     workload_show_unassigned: z.boolean().optional(),
     /** Ocultar terminados (el criterio de «Mi trabajo»). Sin valor: sí, salvo en «Tiempo registrado». */
     workload_hide_done: z.boolean().optional(),
@@ -138,6 +144,8 @@ export interface WorkloadSettings {
     zoom: WorkloadZoom;
     /** `null` = todas las personas. */
     userIds: number[] | null;
+    /** C1 — `null` = sin filtro por equipo. */
+    teamId: number | null;
     showUnassigned: boolean;
     hideDone: boolean;
 }
@@ -151,6 +159,7 @@ export const DEFAULT_WORKLOAD_SETTINGS: WorkloadSettings = {
     estimateUnit: 'hours',
     zoom: 'week',
     userIds: null,
+    teamId: null,
     showUnassigned: true,
     hideDone: true,
 };
@@ -184,6 +193,7 @@ export function readWorkloadSettings(config: unknown): WorkloadSettings {
             : 'hours',
         zoom: (WORKLOAD_ZOOMS as readonly unknown[]).includes(c.workload_zoom) ? (c.workload_zoom as WorkloadZoom) : 'week',
         userIds,
+        teamId: posInt(c.workload_team_id),
         showUnassigned: c.workload_show_unassigned !== false,
         hideDone: typeof c.workload_hide_done === 'boolean' ? c.workload_hide_done : defaultHideDone(metric),
     };
@@ -203,6 +213,7 @@ export function workloadSettingsToConfig(s: WorkloadSettings): Record<string, un
     if (s.estimateUnit !== 'hours') out.workload_estimate_unit = s.estimateUnit;
     if (s.zoom !== 'week') out.workload_zoom = s.zoom;
     if (s.userIds !== null) out.workload_user_ids = [...s.userIds];
+    if (s.teamId !== null) out.workload_team_id = s.teamId;
     if (!s.showUnassigned) out.workload_show_unassigned = false;
     if (s.hideDone !== defaultHideDone(s.metric)) out.workload_hide_done = s.hideDone;
     return out;

@@ -364,9 +364,39 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main`.
+versión publicada: **v0.1.311** (equipos), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
+  («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
+  facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
+  citas pública estilo Calendly (D5)**: "lo otro puedes ponerlo en un documento
+  de ideas para retomar después si surge la necesidad". Se lanzó un agente
+  (slot 2, migración 0086). El resto quedó en **`docs/ideas.md`**, el banco de
+  ideas: todo lo no descartado (pospuestos de la fase 4, oleadas 5-6, el resto
+  del estudio por área, lo que quedó afuera de cada versión, pendientes
+  técnicos, lo no recomendado y lo descartado). **Cuando el usuario pida ideas,
+  partir de ahí** (regla 7 de `CLAUDE.md` §6).
+- 2026-10-26 — **Fase 5 aprobada sin «De documento a registro»** ("de esta fase
+  5 quitaría lo de «De documento a registro» y lo dejaría en ideas, de resto en
+  esa fase haría todo"). Entregas: (1) **PWA + notificaciones push + escáner de
+  códigos** (H1+H3); (2) **mesa de ayuda por correo + SLA** (D2+E5), con los
+  correos entrantes leídos del buzón de la empresa por **IMAP** (lo recomendado:
+  sin costo extra; leer Gmail por su API exige un permiso restringido con
+  auditoría paga, descartado como camino); (3) **WhatsApp oficial (Meta Cloud
+  API)** con plantillas aprobadas y disparador «llega un mensaje», guardando
+  sólo el último mensaje, el estado y un resumen opcional (cada empresa conecta
+  su propia cuenta de WhatsApp Business). Orden: (1) primero, (2) después y (3)
+  al final. Se arranca cuando estén publicadas las tres entregas en curso
+  (Equipos, Roles e invitados, Agenda). F3 quedó en `docs/ideas.md`.
+- 2026-10-26 — **Fase 6: sólo «Agentes de IA» (E6)** ("por el momento solo me
+  interesaría la de Agentes de IA, los otros por el momento ponlos en ideas").
+  Un agente con nombre y tarea que corre cuando pasa algo, con herramientas
+  limitadas, cada paso en la actividad y aprobación opcional antes de cambiar
+  algo (reusa las aprobaciones de la fase 3); tope de consumo de IA por agente.
+  Idioma inglés/portugués, modo agencia, importadores y Google Sheets en dos
+  sentidos quedaron en `docs/ideas.md` con sus decisiones pendientes. Va
+  después de la fase 5.
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
   completa de una»).** El usuario no respondió las tres preguntas pendientes,
   así que se tomaron decisiones por defecto (se le informan; se pueden cambiar):
@@ -400,8 +430,8 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
   sólo los base de `APPROVER_ROLES`). Queda fuera de Aprobaciones: verlas en el
   portal del cliente, delegar/escalar por plazo y campos por paso.
   Checklists + plantillas de registro publicadas (v0.1.310, migración 0084).
-  Sólo falta **Equipos + roles + invitados** (migración 0085), que además
-  conecta los equipos con Aprobaciones y con Carga de trabajo.
+  Equipos publicada (v0.1.311, migración 0085, ya conectada con Aprobaciones y
+  Carga de trabajo). Falta **Roles propios + invitados** (v0.1.312, 0086).
 - 2026-10-26 — **Hilos abiertos que dejó la fase 3** (no urgentes):
   (a) **eco del realtime**: la ventana de 2,5 s que ignora el eco de una edición
   propia (v0.1.253) también se come el aviso de una automatización que dispara
@@ -684,6 +714,21 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.311** — **Equipos** (ADR-S65, opción C1; cuarta entrega de
+  la fase 3). Equipos con color, icono y líder (Ajustes → Equipos); campo
+  «Equipo»; acceso por equipo en las listas (persona > equipo > rol, lo más
+  permisivo entre equipos); @equipo en comentarios y descripción; «De mis
+  equipos» en Mi trabajo; aviso `team_assigned` (correo apagado por defecto);
+  aprobador «Un equipo» y filtro «Equipo» en la carga de trabajo. Migración
+  0085. Al integrar se corrigió que Checklists y Plantillas armaban el actor sin
+  equipos, y que la migración de empresa no re-mapeaba el equipo de un paso de
+  aprobación. La entrega vino junto con «Roles propios + invitados» (v0.1.312),
+  publicada aparte. E2E 26/26 y 15/15.
+- **2026-10-26 · conversación** — Fase 4: el usuario eligió sólo la agenda de
+  citas pública (D5) y pidió un documento con todas las ideas no descartadas
+  para retomarlas cuando vuelva a pedir ideas → `docs/ideas.md` (regla 7 de
+  `CLAUDE.md` §6). Pospuestos: API pública + n8n/Make/Zapier, firma
+  electrónica y facturación DIAN.
 - **2026-10-26 · v0.1.310** — **Checklists dentro del registro + plantillas de
   registro** (ADR-S64, opciones A9 + C6; tercera entrega de la fase 3).
   Checklists con nombre por registro (casilla, responsable, fecha, orden) en la

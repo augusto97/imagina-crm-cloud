@@ -163,7 +163,7 @@ export class AiController {
 }
 
 function ctxOf(req: FastifyRequest): AiToolContext {
-    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role };
+    return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
 }
 
 function assertAdmin(req: FastifyRequest): void {

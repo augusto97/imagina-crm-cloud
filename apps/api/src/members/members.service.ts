@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import type {
     AddMemberInput,
     AddMemberResult,
@@ -8,6 +8,7 @@ import type {
 import { AuthService } from '../auth/auth.service';
 import { BillingService } from '../billing/billing.service';
 import type { Tx } from '../db/client';
+import { TeamsService } from '../teams/teams.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MembersRepository, type MemberRow } from './members.repository';
 
@@ -24,6 +25,7 @@ export class MembersService {
         private readonly repo: MembersRepository,
         private readonly auth: AuthService,
         private readonly billing: BillingService,
+        @Optional() private readonly teams?: TeamsService,
     ) {}
 
     async list(tenantId: number): Promise<WorkspaceMember[]> {
@@ -98,6 +100,8 @@ export class MembersService {
             }
             if (member.role === 'admin') await this.assertNotLastAdmin(tx, tenantId);
             await this.repo.remove(tx, tenantId, targetUserId);
+            // C1 — deja de ser del equipo de trabajo: sale de sus equipos.
+            await this.teams?.removeUserEverywhere(tx, tenantId, targetUserId);
             return toMember(member);
         });
     }

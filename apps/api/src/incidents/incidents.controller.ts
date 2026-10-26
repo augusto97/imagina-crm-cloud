@@ -34,6 +34,6 @@ export class IncidentsController {
     }
 }
 
-function viewer(req: FastifyRequest): { userId: number; role: Role } {
-    return { userId: req.authUserId!, role: req.tenant!.role as Role };
+function viewer(req: FastifyRequest): { userId: number; role: Role; teamIds?: readonly number[] } {
+    return { userId: req.authUserId!, role: req.tenant!.role as Role, teamIds: req.tenant!.teamIds };
 }

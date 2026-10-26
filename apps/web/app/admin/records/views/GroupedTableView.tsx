@@ -1,5 +1,5 @@
 import { createContext, forwardRef, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { formatDuration } from '@imagina-base/shared';
+import { formatDuration, parseTeamGroupKey } from '@imagina-base/shared';
 import { ChevronDown, ChevronRight, Inbox, KeyRound, Loader2, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -60,6 +60,8 @@ import { GridOverlays } from '../grid/GridOverlays';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { asDisplayField, displayTypeOf } from '@/lib/fieldTypeCatalog';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { useTeamDirectory } from '@/hooks/useTeams';
+import { TeamChips } from '@/components/fields/TeamChip';
 import { useWidth } from '../grid/useWidth';
 import { getTenantTimeZone } from '@/lib/tenantFormat';
 
@@ -1621,7 +1623,9 @@ const GroupHeaderButton = forwardRef<
             {level === 1 && (
                 <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{field.label}</span>
             )}
-            {useOptionChip && bucket.value !== null ? (
+            {field.type === 'team' && bucket.value !== null ? (
+                <GroupTeamChips value={bucket.value} />
+            ) : useOptionChip && bucket.value !== null ? (
                 <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
                     {chipValues.map((v) => (
                         <OptionChip
@@ -1802,6 +1806,12 @@ function filterOpForBucket(
     if (value === null) {
         return { op: 'is_null', value: true };
     }
+    if (type === 'team') {
+        // C1 — el grupo es el conjunto de equipos (`[3, 7]`): igualdad de
+        // conjunto, como la combinación del multi_select.
+        const ids = parseTeamGroupKey(value);
+        return ids.length > 0 ? { op: 'eq', value: ids } : { op: 'is_null', value: true };
+    }
     if (type === 'multi_select') {
         // v0.1.190 — el grupo es la combinación exacta: `eq` con el array
         // compila a igualdad de conjunto en el backend.
@@ -1845,6 +1855,12 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
     if (field.type === 'checkbox') {
         return value === '1' || value === 'true' ? __('Sí') : __('No');
     }
+    // C1 — el nombre de cada equipo lo pone el encabezado (`GroupTeamChips`);
+    // esto es el texto accesible de respaldo.
+    if (field.type === 'team') {
+        const ids = parseTeamGroupKey(value);
+        return ids.length === 0 ? __('(Sin valor)') : ids.map((id) => sprintf(__('Equipo %d'), id)).join(' + ');
+    }
     // v0.1.300 — «Creado/Modificado por»: el 0 es un cambio del sistema
     // (automatización, sincronización); el resto, la persona (ver GroupPersonName).
     if ((field.type === 'created_by' || field.type === 'updated_by') && value === '0') return __('Sistema');
@@ -1865,6 +1881,13 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
         return formatDateStr(value);
     }
     return value;
+}
+
+/** C1 — Los chips de los equipos de un grupo (`[3, 7]`), con su icono y color. */
+function GroupTeamChips({ value }: { value: string }): JSX.Element {
+    const { map: teams, loaded } = useTeamDirectory();
+    const ids = parseTeamGroupKey(value);
+    return <TeamChips ids={ids} teams={teams} known={loaded} wrap />;
 }
 
 /** v0.1.300 — Nombre de la persona del grupo (campo persona o «Creado/Modificado por»). */

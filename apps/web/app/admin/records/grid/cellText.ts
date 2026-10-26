@@ -1,4 +1,4 @@
-import { formatDuration, formatPhone, type DurationFormat } from '@imagina-base/shared';
+import { formatDuration, formatPhone, teamIdsOf, type DurationFormat } from '@imagina-base/shared';
 
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { isFormulaError } from '@/lib/formulaError';
@@ -24,6 +24,8 @@ export interface CellTextContext {
     relationTitle: (fieldId: number, id: number) => string | null;
     /** Nombre de un archivo por id. */
     fileName: (id: number) => string | null;
+    /** C1 — nombre de un equipo por id (null si no se conoce). */
+    teamName?: (id: number) => string | null;
 }
 
 export function cellToText(field: FieldEntity, value: unknown, ctx: CellTextContext): string {
@@ -80,6 +82,9 @@ export function cellToText(field: FieldEntity, value: unknown, ctx: CellTextCont
             const ids = (Array.isArray(value) ? value : [value]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
             return ids.map((id) => ctx.relationTitle(field.id, id) ?? `#${id}`).join(', ');
         }
+        case 'team':
+            // C1 — el NOMBRE de cada equipo (pegarlo de vuelta lo resuelve).
+            return teamIdsOf(value).map((id) => ctx.teamName?.(id) ?? String(id)).join(', ');
         case 'file': {
             const ids = (Array.isArray(value) ? value : [value]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
             return ids.map((id) => ctx.fileName(id) ?? `#${id}`).join(', ');

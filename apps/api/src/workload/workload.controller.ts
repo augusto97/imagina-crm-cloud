@@ -59,7 +59,7 @@ export class WorkloadController {
 }
 
 function actor(req: FastifyRequest): Actor {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 
 /**
@@ -87,6 +87,7 @@ export function parseBundleQuery(q: Record<string, unknown>): WorkloadBundleQuer
         estimateUnit: enumParam<WorkloadEstimateUnit>(q.unit, WORKLOAD_ESTIMATE_UNITS, 'hours'),
         hideDone,
         userIds: users,
+        teamId: optionalInt(q.team, 'team'),
         showUnassigned: q.unassigned !== '0' && q.unassigned !== 'false',
         filterTree: parseFilter(q.filter_tree),
         search: typeof q.search === 'string' && q.search.trim() !== '' && q.search.length <= 200 ? q.search : undefined,

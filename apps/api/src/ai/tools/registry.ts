@@ -18,6 +18,8 @@ export interface AiToolContext {
     tenantId: number;
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
     /** Dónde está parada la persona (lista abierta), para no preguntar lo obvio. */
     listSlug?: string;
     /** Conversación que originó la propuesta (para reflejar el "aplicado" en el transcript). */

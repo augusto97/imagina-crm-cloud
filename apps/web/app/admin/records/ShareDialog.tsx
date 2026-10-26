@@ -18,6 +18,7 @@ import type { UpdatePublicListInput } from '@imagina-base/shared';
 
 import { publicFieldIds } from '@/admin/lists/publicListFields';
 import { ListPeopleAccess } from '@/admin/lists/ListPeopleAccess';
+import { ListTeamAccess } from '@/admin/lists/ListTeamAccess';
 
 interface ShareDialogProps {
     open: boolean;
@@ -198,6 +199,9 @@ export function ShareDialog({
                             {canPublish && (
                                 <div className="imcrm-mt-3 imcrm-border-t imcrm-border-border imcrm-pt-3">
                                     <ListPeopleAccess listId={listId} />
+                                    <div className="imcrm-mt-4">
+                                        <ListTeamAccess listId={listId} compact />
+                                    </div>
                                 </div>
                             )}
                         </section>

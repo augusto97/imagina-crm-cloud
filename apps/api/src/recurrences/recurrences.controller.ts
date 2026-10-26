@@ -89,8 +89,8 @@ function tenantId(req: FastifyRequest): number {
 }
 
 /** Quién pide: el alcance por fila del ACL de la lista se aplica con esto. */
-function actorOf(req: FastifyRequest): { userId: number; role: NonNullable<FastifyRequest['tenant']>['role'] } {
-    return { userId: req.authUserId!, role: req.tenant!.role };
+function actorOf(req: FastifyRequest): { userId: number; role: NonNullable<FastifyRequest['tenant']>['role']; teamIds?: readonly number[] } {
+    return { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds };
 }
 
 /** Parsea `?ids=1,2,3` a números positivos únicos (cap defensivo). */

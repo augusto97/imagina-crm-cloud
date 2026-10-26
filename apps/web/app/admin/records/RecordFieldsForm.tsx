@@ -1,3 +1,4 @@
+import { teamIdsOf } from '@imagina-base/shared';
 import { AiFieldValue } from './AiFieldValue';
 
 import { DurationControl } from '@/components/fields/DurationControl';
@@ -17,6 +18,7 @@ import { isRequiredNow } from '@/lib/fieldRules';
 
 import { DateCellEditor } from './DateCellEditor';
 import { RelationPicker } from '@/components/fields/RelationPicker';
+import { TeamPicker } from '@/components/fields/TeamPicker';
 
 import { CompactFieldRow } from './crm/CompactFieldRow';
 import { FileFieldControl } from './FileFieldControl';
@@ -79,7 +81,7 @@ interface RecordFieldsFormProps {
     history?: { canRestore: boolean; onRestored?: (slug: string, value: unknown, saved: RecordEntity | null) => void } | null;
 }
 
-const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
+const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'team', 'file', 'relation'];
 
 /**
  * Form per-tipo reutilizado por RecordCreateDialog y RecordDetailDrawer.
@@ -342,6 +344,15 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
                 <UserPicker
                     value={typeof value === 'number' ? value : value ? Number(value) : null}
                     onChange={(id) => onChange(id)}
+                />
+            );
+            break;
+        case 'team':
+            control = (
+                <TeamPicker
+                    value={teamIdsOf(value)}
+                    multiple={(field.config as { multiple?: unknown }).multiple === true}
+                    onChange={(ids) => onChange(ids)}
                 />
             );
             break;

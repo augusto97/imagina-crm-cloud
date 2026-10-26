@@ -164,6 +164,19 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                     <span>Ana Gómez</span>
                 </Row>
             );
+        case 'team':
+            return (
+                <Row>
+                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-py-px imcrm-pl-0.5 imcrm-pr-1.5 imcrm-text-xs">
+                        <span className="imcrm-inline-flex imcrm-h-3.5 imcrm-w-3.5 imcrm-items-center imcrm-justify-center imcrm-rounded-[3px] imcrm-bg-[#22c55e] imcrm-text-[8px] imcrm-text-white" aria-hidden>●</span>
+                        {__('Ventas')}
+                    </span>
+                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-py-px imcrm-pl-0.5 imcrm-pr-1.5 imcrm-text-xs">
+                        <span className="imcrm-inline-flex imcrm-h-3.5 imcrm-w-3.5 imcrm-items-center imcrm-justify-center imcrm-rounded-[3px] imcrm-bg-[#6366f1] imcrm-text-[8px] imcrm-text-white" aria-hidden>●</span>
+                        {__('Soporte')}
+                    </span>
+                </Row>
+            );
         case 'relation':
             return (
                 <Row>

@@ -370,8 +370,8 @@ export class GanttService {
     }
 }
 
-function viewer(actor: Actor): { userId: number; role: string } {
-    return { userId: actor.userId, role: actor.role };
+function viewer(actor: Actor): { userId: number; role: string; teamIds?: readonly number[] } {
+    return { userId: actor.userId, role: actor.role, teamIds: actor.teamIds };
 }
 
 function assertRange(from: string, to: string): void {

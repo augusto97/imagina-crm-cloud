@@ -28,6 +28,7 @@ import { useToast } from '@/components/ui/toast';
 import { UserPicker } from '@/components/ui/user-picker';
 import { useApprovalFlows, useCreateApprovalFlow, useDeleteApprovalFlow, useUpdateApprovalFlow } from '@/hooks/useApprovals';
 import { useFields } from '@/hooks/useFields';
+import { useTeamDirectory } from '@/hooks/useTeams';
 import { useMemberNames } from '@/hooks/useWpUsers';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
@@ -43,9 +44,9 @@ import type { FieldEntity } from '@/types/field';
  * todo de nuevo al guardar; aquí se avisa mientras se edita con la MISMA
  * función (`approvalFlowConfigProblems`).
  *
- * Los EQUIPOS como aprobador todavía no se ofrecen: el tipo `team` ya existe
- * en el schema y en la resolución del servidor, y se habilita aquí cuando la
- * empresa tenga equipos (ver ApprovalsService.resolveApprovers).
+ * C1 — «Un equipo» como aprobador: las personas del equipo en el momento de
+ * decidir (las resuelve el servidor, `ApprovalsService.resolveApprovers`). Se
+ * ofrece cuando la empresa tiene equipos.
  */
 export function ApprovalFlowsPanel({ listId }: { listId: number }): JSX.Element {
     const flows = useApprovalFlows(listId);
@@ -163,6 +164,7 @@ export function ApprovalFlowsPanel({ listId }: { listId: number }): JSX.Element 
 function FlowStepsSummary({ config, fields }: { config: ApprovalFlowConfig; fields: FieldEntity[] }): JSX.Element {
     const ids = config.steps.flatMap((s) => (s.approver.type === 'users' ? s.approver.approver_user_ids : []));
     const names = useMemberNames(ids).data;
+    const teams = useTeamDirectory().map;
     const fieldLabel = (id: number): string | null => fields.find((f) => f.id === id)?.label ?? null;
     return (
         <ol className="imcrm-mt-2 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5 imcrm-text-xs">
@@ -176,6 +178,7 @@ function FlowStepsSummary({ config, fields }: { config: ApprovalFlowConfig; fiel
                             {describeApprover(s.approver, {
                                 fieldLabel: s.approver.type === 'field' ? fieldLabel(s.approver.approver_field_id) : null,
                                 userNames: names,
+                                teamName: s.approver.type === 'team' ? teams.get(s.approver.team_id)?.name ?? null : null,
                             })}
                             {' · '}
                             {APPROVAL_MODE_LABELS[s.mode]}
@@ -426,10 +429,16 @@ function StepEditor({
     const a = step.approver;
     const ids = a.type === 'users' ? a.approver_user_ids : [];
     const names = useMemberNames(ids).data;
+    const teamDir = useTeamDirectory();
+    const teamList = useMemo(
+        () => [...teamDir.map.values()].sort((x, y) => x.name.localeCompare(y.name, 'es')),
+        [teamDir.map],
+    );
     const setType = (type: string): void => {
         let next: Approver;
         if (type === 'users') next = { type: 'users', approver_user_ids: [] as number[] } as unknown as Approver;
         else if (type === 'field') next = { type: 'field', approver_field_id: userFields[0]?.id ?? 0 };
+        else if (type === 'team') next = { type: 'team', team_id: teamList[0]?.id ?? 0 } as Approver;
         else next = { type: 'role', role: 'manager' };
         onChange({ approver: next });
     };
@@ -465,8 +474,12 @@ function StepEditor({
                         </option>
                         <option value="role">{__('Todas las personas con un rol')}</option>
                         <option value="users">{__('Personas puntuales')}</option>
-                        {/* `team`: se habilita cuando la empresa tenga equipos. */}
-                        {a.type === 'team' && <option value="team">{__('Un equipo')}</option>}
+                        {/* C1 — un equipo: sus personas en el momento de decidir. */}
+                        {(teamList.length > 0 || a.type === 'team') && (
+                            <option value="team" disabled={teamList.length === 0}>
+                                {teamList.length === 0 ? __('Un equipo (la empresa no tiene)') : __('Un equipo')}
+                            </option>
+                        )}
                     </Select>
                 </div>
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -520,7 +533,27 @@ function StepEditor({
                             {ids.length === 0 && <span className="imcrm-text-xs imcrm-text-destructive">{__('Elige al menos una persona.')}</span>}
                         </div>
                     )}
-                    {a.type === 'team' && <span className="imcrm-text-xs imcrm-text-muted-foreground">{sprintf(__('Equipo #%d'), a.team_id)}</span>}
+                    {a.type === 'team' && (
+                        <>
+                            <Select
+                                value={String(a.team_id)}
+                                onChange={(e) => onChange({ approver: { type: 'team', team_id: Number(e.target.value) } as Approver })}
+                                data-testid="imcrm-approval-approver-team"
+                            >
+                                {teamDir.loaded && !teamDir.map.has(a.team_id) && (
+                                    <option value={a.team_id}>{__('(un equipo que ya no existe)')}</option>
+                                )}
+                                {teamList.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name}
+                                    </option>
+                                ))}
+                            </Select>
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                {__('Deciden las personas del equipo en ese momento, si pueden ver el registro.')}
+                            </span>
+                        </>
+                    )}
                 </div>
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Label className="imcrm-text-xs">{__('Cómo se aprueba')}</Label>

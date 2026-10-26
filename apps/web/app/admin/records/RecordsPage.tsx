@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
-import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
+import { parseTeamGroupKey, readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     BookmarkPlus,
@@ -1835,6 +1835,11 @@ function prefillForGroup(
             return { [field.slug]: parseMultiBucket(bucketValue) ?? [bucketValue] };
         case 'checkbox':
             return { [field.slug]: bucketValue === '1' || bucketValue === 'true' };
+        case 'team': {
+            // C1 — el grupo es el conjunto de equipos (`[3, 7]`).
+            const ids = parseTeamGroupKey(bucketValue);
+            return ids.length > 0 ? { [field.slug]: ids } : undefined;
+        }
         case 'number':
         case 'currency':
         case 'user':

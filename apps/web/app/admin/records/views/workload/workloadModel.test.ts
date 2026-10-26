@@ -73,5 +73,8 @@ describe('Carga de trabajo — presentación', () => {
             unit: 'hours',
             search: 'web',
         });
+        // C1 — el equipo viaja como `team` (lo resuelve el servidor).
+        expect(workloadBundleParams({ ...base, teamId: 4 })).toMatchObject({ team: 4 });
+        expect(workloadBundleParams({ ...base, teamId: null })).not.toHaveProperty('team');
     });
 });

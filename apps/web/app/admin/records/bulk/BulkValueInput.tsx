@@ -1,5 +1,7 @@
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
+import { teamIdsOf } from '@imagina-base/shared';
 import { RelationPicker } from '@/components/fields/RelationPicker';
+import { TeamPicker } from '@/components/fields/TeamPicker';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,6 +47,15 @@ export function BulkValueInput({
     }
     if (field.type === 'user') {
         return <FilterUserPicker mode="single" value={value} onChange={(next) => onChange(next ?? '')} />;
+    }
+    if (field.type === 'team') {
+        return (
+            <TeamPicker
+                value={teamIdsOf(value)}
+                multiple={(field.config as { multiple?: unknown }).multiple === true}
+                onChange={(ids) => onChange(ids)}
+            />
+        );
     }
     if (field.type === 'rating') {
         const cfg = field.config as { max?: unknown; icon?: unknown };

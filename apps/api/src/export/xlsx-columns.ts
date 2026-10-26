@@ -251,6 +251,7 @@ export function planXlsxColumns(writer: XlsxStreamWriter, fields: Field[], ctx: 
             case 'created_by': // v0.1.300 — «Creado por» / «Modificado por»: el nombre (0 = Sistema).
             case 'updated_by':
             case 'file':
+            case 'team': // C1 — los nombres de los equipos.
                 return plan((r) => {
                     const v = raw(r);
                     if (v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) return null;

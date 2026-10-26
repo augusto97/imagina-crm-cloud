@@ -32,7 +32,7 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { comparableDate, hasTimeComponent, nextOccurrence, nowUtc } from './date-roller';
 import { RecurrencesRepository, type RecurrenceRow } from './recurrences.repository';
 import { BillingService } from '../billing/billing.service';
-import { effectivePermissions, resolvePermissions, rowInScope, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, effectivePermissions, listRowInScope, scopeWhere } from '../lists/list-acl';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { IncidentHub } from '../incidents/incident-hub';
 
@@ -212,9 +212,9 @@ export class RecurrencesService {
         const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
             let ids = recordIds;
             if (actor) {
-                const scope = effectivePermissions(list.settings, actor.role, actor.userId).view;
+                const scope = effectivePermissions(list.settings, actor).view;
                 if (scope !== 'all' && ids.length > 0) {
-                    const where = scopeWhere(scope, actor.userId, assignmentKeyOf(list.settings));
+                    const where = scopeWhere(scope, actor, assignmentKeys(list.settings));
                     const visible = await tx
                         .select({ id: records.id })
                         .from(records)
@@ -271,14 +271,7 @@ export class RecurrencesService {
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.recordsRepo.findById(tx, tenantId, list.id, recordId),
         );
-        const scope = effectivePermissions(list.settings, actor.role, actor.userId)[action];
-        const key = assignmentKeyOf(list.settings);
-        const reach =
-            row !== null &&
-            rowInScope(scope, actor.userId, {
-                createdBy: row.createdBy,
-                assignmentValue: key ? (row.data as Record<string, unknown>)[key] : null,
-            });
+        const reach = row !== null && listRowInScope(list.settings, actor, action, { createdBy: row.createdBy, data: row.data });
         if (!reach) {
             throw new NotFoundException({
                 code: 'record_not_found',
@@ -556,9 +549,7 @@ function recordNotFound(id: number): NotFoundException {
 export interface RecurrenceActor {
     userId: number;
     role: Role;
+    /** C1 — equipos de la persona (ACL por equipo y «los asignados» por equipo). */
+    teamIds?: readonly number[];
 }
 
-function assignmentKeyOf(settings: Record<string, unknown>): string | null {
-    const id = resolvePermissions(settings).assignment_field_id;
-    return id ? jsonbKeyForField(id) : null;
-}

@@ -24,6 +24,8 @@ export interface TextCoercionOptions {
      * `buildMemberLookup`: un nombre repetido no resuelve (sería adivinar).
      */
     members?: ReadonlyMap<string, number>;
+    /** C1 — Equipos por nombre (minúsculas y sin acentos) → id (`buildTeamLookup`). */
+    teams?: ReadonlyMap<string, number>;
     /** Separadores de la empresa: deciden «1.500» (mil quinientos o 1,5). */
     numberFormat?: TextNumberFormat;
     /** Orden de fecha de la empresa: decide «03/04/2026» (3 de abril o 4 de marzo). */
@@ -91,6 +93,17 @@ export function coerceTextToFieldValue(raw: string, field: CoercibleField, opts:
             const members = opts.members;
             return members?.get(trimmed.toLowerCase()) ?? members?.get(foldSearchText(trimmed)) ?? trimmed;
         }
+        case 'team': {
+            // C1 — el export escribe el NOMBRE del equipo («Ventas, Soporte»):
+            // se acepta el nombre (sin importar mayúsculas ni acentos) o el id.
+            // Lo que no resuelve queda como texto y el validador lo rechaza.
+            const teams = opts.teams;
+            const parts = trimmed.split(/[,;\n]/).map((p) => p.trim()).filter((p) => p !== '');
+            return parts.map((p) => {
+                if (/^\d+$/.test(p)) return Number(p);
+                return teams?.get(p.toLowerCase()) ?? teams?.get(foldSearchText(p)) ?? p;
+            });
+        }
         case 'file':
             return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
         case 'date':
@@ -120,6 +133,24 @@ export function buildMemberLookup(rows: ReadonlyArray<{ id: number; name?: strin
         const name = (u.name ?? '').trim();
         put(name.toLowerCase(), u.id);
         put(foldSearchText(name), u.id);
+    }
+    for (const k of dup) out.delete(k);
+    return out;
+}
+
+/**
+ * C1 — Equipos por nombre (minúsculas y sin acentos) → id. Un nombre repetido
+ * no resuelve (sería adivinar).
+ */
+export function buildTeamLookup(rows: ReadonlyArray<{ id: number; name: string }>): Map<string, number> {
+    const out = new Map<string, number>();
+    const dup = new Set<string>();
+    for (const t of rows) {
+        for (const key of [t.name.trim().toLowerCase(), foldSearchText(t.name.trim())]) {
+            if (key === '') continue;
+            if (out.has(key) && out.get(key) !== t.id) dup.add(key);
+            else out.set(key, t.id);
+        }
     }
     for (const k of dup) out.delete(k);
     return out;

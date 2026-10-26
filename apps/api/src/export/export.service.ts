@@ -22,7 +22,7 @@ import {
     type ViewType,
     type XlsxOutCell,
 } from '@imagina-base/shared';
-import { attachments, memberships, records, users } from '../db/schema';
+import { attachments, memberships, records, teams, users } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { hiddenFieldsFor } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
@@ -306,7 +306,7 @@ export class ExportService {
         fieldIds: number[],
     ): Promise<Field[]> {
         const all = await this.fields.list(tenantId, String(list.id));
-        const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
+        const hidden = hiddenFieldsFor(list.settings, actor);
         const exportable = all
             .filter((f) => (isDataField(f.type) || isExportableDerived(f.type)) && !hidden.has(f.slug))
             // Fórmulas (A1): salen con el formato de su resultado (moneda, fecha…).
@@ -406,6 +406,14 @@ export class ExportService {
             );
             for (const u of rows) members.set(u.id, u.name && u.name.trim() !== '' ? u.name : u.email);
         }
+        // C1 — el campo «Equipo» sale con el NOMBRE de cada equipo (el import lo lee igual).
+        const teamNames = new Map<number, string>();
+        if (columns.some((c) => c.type === 'team' || (c.type === 'lookup' && targetTypeOf(c) === 'team'))) {
+            const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.tenantId, tenantId)),
+            );
+            for (const t of rows) teamNames.set(t.id, t.name);
+        }
         const fileCols = columns.filter((c) => c.type === 'file');
         const fileTitles = new Map<number, string>();
         const asIds = (v: unknown): number[] =>
@@ -455,6 +463,8 @@ export class ExportService {
                     }
                     case 'file':
                         return asIds(value).map((id) => fileTitles.get(id) ?? `#${id}`).join(', ');
+                    case 'team':
+                        return asIds(value).map((id) => teamNames.get(id) ?? `Equipo ${id}`).join(', ');
                     default:
                         return null;
                 }

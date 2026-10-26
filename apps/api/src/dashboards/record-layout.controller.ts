@@ -31,7 +31,7 @@ export class RecordLayoutController {
         @Body(new ZodValidationPipe(layoutDataRequestSchema)) body: LayoutDataRequest,
     ): Promise<{ data: Record<string, unknown> }> {
         return this.service
-            .data(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role }, list, id, body)
+            .data(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, id, body)
             .then((data) => ({ data }));
     }
 }

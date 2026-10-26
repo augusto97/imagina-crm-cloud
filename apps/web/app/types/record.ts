@@ -187,6 +187,8 @@ export const GROUPABLE_FIELD_TYPES = [
     'select',
     'multi_select',
     'user',
+    // C1 — por equipo (el conjunto de equipos del registro).
+    'team',
     'checkbox',
     'date',
     'datetime',

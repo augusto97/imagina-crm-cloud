@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import {
     KANBAN_PAGE_SIZE,
+    parseTeamGroupKey,
     readKanbanSettings,
     withKanbanSettings,
     type KanbanSettings,
@@ -38,6 +39,8 @@ import { CAP, useCanAny } from '@/lib/permissions';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { useUpdateSavedView } from '@/hooks/useSavedViews';
 import { useMemberNames } from '@/hooks/useWpUsers';
+import { useTeamDirectory, useTeams } from '@/hooks/useTeams';
+import { TeamChips } from '@/components/fields/TeamChip';
 import { __, sprintf } from '@/lib/i18n';
 import { proxiedImageUrl } from '@/lib/imageProxy';
 import { formatNumber } from '@/lib/tenantFormat';
@@ -212,10 +215,14 @@ export function KanbanView({
         return out;
     }, [bundle.data, groupByField, laneField]);
     const names = useMemberNames(userIds);
+    // C1 — nombres de equipos (columnas o carriles por un campo «Equipo»).
+    const teamsOn = groupByField.type === 'team' || laneField?.type === 'team';
+    const teamList = useTeams(teamsOn).data;
+    const teamNames = useMemo(() => new Map((teamList ?? []).map((t) => [t.id, t.name] as const)), [teamList]);
 
     const board = useMemo(
-        () => buildBoard({ groupField: groupByField, laneField, valueField, settings, bundle: bundle.data, userNames: names.data }),
-        [groupByField, laneField, valueField, settings, bundle.data, names.data],
+        () => buildBoard({ groupField: groupByField, laneField, valueField, settings, bundle: bundle.data, userNames: names.data, teamNames }),
+        [groupByField, laneField, valueField, settings, bundle.data, names.data, teamNames],
     );
     const lanesOn = board.lanes !== null;
 
@@ -437,7 +444,7 @@ export function KanbanView({
     const groupWritable = !['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'checklist_progress'].includes(groupByField.type);
     const canDrag = canEdit && groupWritable && !touchOnly;
 
-    const laneCandidates = fields.filter((f) => f.id !== groupByField.id && ['select', 'user', 'checkbox'].includes(f.type));
+    const laneCandidates = fields.filter((f) => f.id !== groupByField.id && ['select', 'user', 'team', 'checkbox'].includes(f.type));
     const valueCandidates = fields.filter(isValueCandidate);
 
     const renderCards = (cell: BoardCell, column: BoardColumn): React.ReactNode => (
@@ -758,6 +765,9 @@ function columnTint(color: string | undefined): { solid?: string; tint?: string 
 
 /** Etiqueta de un grupo: chip con el color de la opción, persona con avatar, o chip neutro. */
 function GroupLabel({ field, raw, label, color }: { field: FieldEntity; raw: string | null; label: string; color?: string }): JSX.Element {
+    if (field.type === 'team' && raw !== null) {
+        return <KanbanTeamLabel raw={raw} />;
+    }
     if (field.type === 'user' && raw !== null) {
         return (
             <span className="imcrm-inline-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5">
@@ -777,6 +787,12 @@ function GroupLabel({ field, raw, label, color }: { field: FieldEntity; raw: str
             {label}
         </span>
     );
+}
+
+/** C1 — Columna/carril por equipo: los chips de sus equipos (icono y color). */
+function KanbanTeamLabel({ raw }: { raw: string }): JSX.Element {
+    const { map, loaded } = useTeamDirectory();
+    return <TeamChips ids={parseTeamGroupKey(raw)} teams={map} known={loaded} className="imcrm-font-semibold" />;
 }
 
 interface ColumnHeaderProps {

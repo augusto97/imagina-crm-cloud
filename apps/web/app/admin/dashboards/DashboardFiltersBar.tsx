@@ -5,11 +5,12 @@ import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { FilterUserPicker } from '@/admin/records/FilterUserPicker';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
+import { useTeams } from '@/hooks/useTeams';
 import { __, sprintf } from '@/lib/i18n';
 import type { DashboardFilterDef, DashboardFilterValue } from '@/types/dashboard';
 
 /** Tipos de campo que se pueden usar como filtro del tablero. */
-export const DASHBOARD_FILTER_TYPES = ['select', 'multi_select', 'user', 'checkbox'] as const;
+export const DASHBOARD_FILTER_TYPES = ['select', 'multi_select', 'user', 'team', 'checkbox'] as const;
 
 /** Lee `settings.filters` (tolerante a datos viejos o rotos). */
 export function readDashboardFilterDefs(settings: Record<string, unknown> | undefined): DashboardFilterDef[] {
@@ -124,6 +125,10 @@ function FilterControl({
         );
     }
 
+    if (field.type === 'team') {
+        return <TeamFilterControl fieldLabel={field.label} value={value} onChange={onChange} clear={clear} />;
+    }
+
     if (field.type === 'checkbox') {
         return (
             <span className="imcrm-flex imcrm-items-center imcrm-gap-1">
@@ -154,6 +159,44 @@ function FilterControl({
                 <option value="">{label(__('todos'))}</option>
                 {options.map((o) => (
                     <option key={o.value} value={o.value}>{label(o.label)}</option>
+                ))}
+            </Select>
+            {clear}
+        </span>
+    );
+}
+
+/** C1 — Filtro por equipo: todos, «mis equipos» (los de quien mira) o uno. */
+function TeamFilterControl({
+    fieldLabel,
+    value,
+    onChange,
+    clear,
+}: {
+    fieldLabel: string;
+    value: DashboardFilterValue['value'] | undefined;
+    onChange: (next: DashboardFilterValue['value'] | null) => void;
+    clear: JSX.Element | null;
+}): JSX.Element {
+    const teams = useTeams();
+    const label = (text: string): string => sprintf(__('%1$s: %2$s'), fieldLabel, text);
+    const current = value === 'me' ? 'me' : typeof value === 'number' ? String(value) : typeof value === 'string' && /^\d+$/.test(value) ? value : '';
+    return (
+        <span className="imcrm-flex imcrm-items-center imcrm-gap-1">
+            <Select
+                value={current}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    onChange(v === '' ? null : v === 'me' ? 'me' : Number(v));
+                }}
+                className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
+                aria-label={fieldLabel}
+                data-testid="imcrm-dashboard-team-filter"
+            >
+                <option value="">{label(__('todos'))}</option>
+                <option value="me">{label(__('mis equipos'))}</option>
+                {(teams.data ?? []).map((t) => (
+                    <option key={t.id} value={String(t.id)}>{label(t.name)}</option>
                 ))}
             </Select>
             {clear}

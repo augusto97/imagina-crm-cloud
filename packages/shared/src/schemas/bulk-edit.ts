@@ -205,6 +205,8 @@ export const BULK_OPS_BY_TYPE: Partial<Record<FieldType, readonly BulkOpKind[]>>
     date: ['set', 'clear', 'shift_date', 'today', 'copy'],
     datetime: ['set', 'clear', 'shift_date', 'today', 'copy'],
     user: ['set', 'clear', 'copy'],
+    // C1 — equipos: poner, vaciar, agregar o quitar equipos (los `values` son ids).
+    team: ['set', 'clear', 'add_options', 'remove_options'],
     relation: ['set', 'clear', 'add_links', 'remove_links'],
     file: ['clear'],
 };
@@ -397,6 +399,12 @@ function compute(
         }
         case 'add_options':
         case 'remove_options': {
+            if (field.type === 'team') {
+                const have = Array.isArray(current) ? current.map(Number) : [];
+                const ids = op.values.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+                const next = op.op === 'add_options' ? [...new Set([...have, ...ids])] : have.filter((v) => !ids.includes(v));
+                return { value: next };
+            }
             const list = Array.isArray(current) ? current.map(String) : [];
             const next =
                 op.op === 'add_options' ? [...new Set([...list, ...op.values])] : list.filter((v) => !op.values.includes(v));

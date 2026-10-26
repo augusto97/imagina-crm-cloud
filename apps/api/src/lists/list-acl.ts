@@ -2,7 +2,10 @@ import {
     CONFIGURABLE_ROLES,
     defaultRolePermissions,
     formulaDependencies,
+    jsonbKeyForField,
     listPermissionsSchema,
+    mostPermissive,
+    teamIdsOf,
     type ConfigurableRole,
     type ListPermissions,
     type RolePermissions,
@@ -20,7 +23,25 @@ import { records } from '../db/schema';
  *  - `client` no toca el admin (va al portal): scope `none`.
  *  - manager/agent/viewer usan el ACL de la lista; si no hay ACL configurada,
  *    caen a los defaults que reflejan las capabilities globales.
+ *  - Prioridad de los accesos: persona > equipo (C1) > rol.
  */
+
+/**
+ * Quién pide, para el ACL por lista. `role` es el rol BASE del workspace;
+ * C1 — `teamIds`: los equipos de la persona en esta empresa (acceso por
+ * equipo y el alcance «los asignados» por un campo «Equipo»). Lo arma el
+ * TenantGuard una vez por request (`req.tenant.teamIds`); un llamador interno
+ * que no lo trae se evalúa sin equipos (nunca da MÁS acceso del debido).
+ */
+export interface AclSubject {
+    userId: number;
+    role: Role;
+    teamIds?: readonly number[];
+}
+
+function subjectOf(who: AclSubject | Role, userId?: number): AclSubject {
+    return typeof who === 'string' ? { role: who, userId: userId ?? 0, teamIds: [] } : who;
+}
 
 /** Normaliza `settings.permissions` a un doc completo con defaults por rol. */
 export function resolvePermissions(settings: Record<string, unknown>): ListPermissions {
@@ -28,13 +49,19 @@ export function resolvePermissions(settings: Record<string, unknown>): ListPermi
     const parsed = listPermissionsSchema.safeParse(raw);
     const base: ListPermissions = parsed.success
         ? parsed.data
-        : { permissions: {}, assignment_field_id: null, users: {} };
+        : { permissions: {}, assignment_field_id: null, users: {}, teams: {}, assignment_team_field_id: null };
     // Rellenar los roles configurables faltantes con defaults.
     const permissions: Record<string, RolePermissions> = { ...base.permissions };
     for (const role of CONFIGURABLE_ROLES) {
         if (!permissions[role]) permissions[role] = defaultRolePermissions(role);
     }
-    return { permissions, assignment_field_id: base.assignment_field_id, users: base.users ?? {} };
+    return {
+        permissions,
+        assignment_field_id: base.assignment_field_id,
+        users: base.users ?? {},
+        teams: base.teams ?? {},
+        assignment_team_field_id: base.assignment_team_field_id ?? null,
+    };
 }
 
 /**
@@ -44,12 +71,18 @@ export function resolvePermissions(settings: Record<string, unknown>): ListPermi
  * ese acceso MANDA sobre el de su rol: es el punto de compartir con alguien
  * puntual sin cambiarle el rol en todo el workspace. `admin` queda afuera a
  * propósito (siempre tiene acceso total) y `client` va por el portal.
+ *
+ * C1 — después de la persona, el acceso de sus EQUIPOS (lo más permisivo de
+ * cada eje entre todos los que tienen acceso; un campo se oculta sólo si
+ * todos lo ocultan) y, al final, el de su rol.
  */
 export function effectivePermissions(
     settings: Record<string, unknown>,
-    role: Role,
+    who: AclSubject | Role,
     userId?: number,
 ): RolePermissions {
+    const subject = subjectOf(who, userId);
+    const role = subject.role;
     if (role === 'admin') {
         return { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] };
     }
@@ -57,10 +90,16 @@ export function effectivePermissions(
         return { view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] };
     }
     const doc = resolvePermissions(settings);
-    if (userId !== undefined) {
-        const own = doc.users[String(userId)];
+    if (subject.userId > 0) {
+        const own = doc.users[String(subject.userId)];
         if (own) return creatorSeesOwn(own);
     }
+    const byTeam = mostPermissive(
+        (subject.teamIds ?? [])
+            .map((t) => doc.teams[String(t)])
+            .filter((p): p is RolePermissions => p !== undefined),
+    );
+    if (byTeam) return creatorSeesOwn(byTeam);
     return creatorSeesOwn(doc.permissions[role] ?? defaultRolePermissions(role as ConfigurableRole));
 }
 
@@ -78,20 +117,65 @@ function creatorSeesOwn(p: RolePermissions): RolePermissions {
 /** Scope efectivo del rol para una acción. */
 export function scopeFor(
     settings: Record<string, unknown>,
-    role: Role,
+    who: AclSubject | Role,
     action: 'view' | 'edit' | 'delete',
     userId?: number,
 ): Scope {
-    return effectivePermissions(settings, role, userId)[action];
+    return effectivePermissions(settings, who, userId)[action];
 }
 
 /** Campos ocultos para el rol (Set de slugs). */
 export function hiddenFieldsFor(
     settings: Record<string, unknown>,
-    role: Role,
+    who: AclSubject | Role,
     userId?: number,
 ): Set<string> {
-    return new Set(effectivePermissions(settings, role, userId).fields_hidden);
+    return new Set(effectivePermissions(settings, who, userId).fields_hidden);
+}
+
+/** Claves JSONB (`f{id}`) de los campos de asignación de la lista (Persona y Equipo). */
+export interface AssignmentKeys {
+    user: string | null;
+    team: string | null;
+}
+
+export function assignmentKeys(settings: Record<string, unknown>): AssignmentKeys {
+    const doc = resolvePermissions(settings);
+    return {
+        user: doc.assignment_field_id ? jsonbKeyForField(doc.assignment_field_id) : null,
+        team: doc.assignment_team_field_id ? jsonbKeyForField(doc.assignment_team_field_id) : null,
+    };
+}
+
+/**
+ * Condición SQL del alcance de la lista para quien pide y la acción, con los
+ * campos de asignación de la lista. Es la forma corta de
+ * `effectivePermissions` + `scopeWhere` que usan los listados.
+ */
+export function listScopeWhere(
+    settings: Record<string, unknown>,
+    who: AclSubject,
+    action: 'view' | 'edit' | 'delete' = 'view',
+): SQL | undefined {
+    const scope = effectivePermissions(settings, who)[action];
+    return scopeWhere(scope, who, assignmentKeys(settings));
+}
+
+/** ¿La fila cae en el alcance de la lista para quien pide y la acción? */
+export function listRowInScope(
+    settings: Record<string, unknown>,
+    who: AclSubject,
+    action: 'view' | 'edit' | 'delete',
+    row: { createdBy: number; data: unknown },
+): boolean {
+    const scope = effectivePermissions(settings, who)[action];
+    const keys = assignmentKeys(settings);
+    const data = (row.data ?? {}) as Record<string, unknown>;
+    return rowInScope(scope, who, {
+        createdBy: row.createdBy,
+        assignmentValue: keys.user ? data[keys.user] : null,
+        teamValue: keys.team ? data[keys.team] : null,
+    });
 }
 
 /**
@@ -105,37 +189,66 @@ export function hiddenFieldsFor(
  * con "los que tiene asignados" daba de alta un registro sin ponerse de
  * responsable y lo perdía en el acto (el admin sí lo veía). Y sin campo de
  * asignación elegido ya no deniega todo: queda en "los que creó".
+ *
+ * C1 — con un campo «Equipo» de asignación, `assigned` también incluye los
+ * registros asignados a uno de los equipos de la persona.
  */
 export function scopeWhere(
     scope: Scope,
-    actorUserId: number,
-    assignmentKey: string | null,
+    who: number | AclSubject,
+    assignment: string | null | AssignmentKeys,
 ): SQL | undefined {
+    const actorUserId = typeof who === 'number' ? who : who.userId;
+    const teamIds = typeof who === 'number' ? [] : (who.teamIds ?? []);
+    const keys: AssignmentKeys =
+        assignment === null || typeof assignment === 'string' ? { user: assignment, team: null } : assignment;
     if (scope === 'all') return undefined;
     if (scope === 'own') return eq(records.createdBy, actorUserId);
     if (scope === 'assigned') {
-        const created = eq(records.createdBy, actorUserId);
-        if (!assignmentKey) return created;
+        const parts: SQL[] = [eq(records.createdBy, actorUserId)];
         // El campo user guarda un id numérico en JSONB.
-        return or(
-            created,
-            sql`(${records.data} ->> ${sql.raw(`'${assignmentKey}'`)}) = ${String(actorUserId)}`,
-        );
+        if (keys.user) parts.push(sql`(${records.data} ->> ${keyLit(keys.user)}) = ${String(actorUserId)}`);
+        // C1 — el campo «Equipo» guarda un array de ids: alcanza con que
+        // contenga UNO de los equipos de la persona.
+        if (keys.team && teamIds.length > 0) parts.push(teamContainsAny(keys.team, teamIds));
+        return parts.length === 1 ? parts[0] : or(...parts);
     }
     return sql`false`; // none
+}
+
+/** `data->'fN'` contiene alguno de los ids de equipo (un `@>` por equipo, con parámetros). */
+export function teamContainsAny(key: string, teamIds: readonly number[]): SQL {
+    const col = sql`(${records.data} -> ${keyLit(key)})`;
+    return sql`(${sql.join(
+        teamIds.slice(0, 100).map((t) => sql`${col} @> jsonb_build_array(${t}::bigint)`),
+        sql` OR `,
+    )})`;
+}
+
+/** La clave `f{id}` como literal (validada), igual que en el QueryBuilder. */
+function keyLit(key: string): SQL {
+    if (!/^f\d+$/.test(key)) throw new Error('Clave de campo inválida');
+    return sql.raw(`'${key}'`);
 }
 
 /** ¿La fila (createdBy + valor de asignación) cae dentro del scope? */
 export function rowInScope(
     scope: Scope,
-    actorUserId: number,
-    row: { createdBy: number; assignmentValue: unknown },
+    who: number | AclSubject,
+    row: { createdBy: number; assignmentValue: unknown; teamValue?: unknown },
 ): boolean {
+    const actorUserId = typeof who === 'number' ? who : who.userId;
+    const teamIds = typeof who === 'number' ? [] : (who.teamIds ?? []);
     if (scope === 'all') return true;
     if (scope === 'none') return false;
     if (scope === 'own') return row.createdBy === actorUserId;
     // assigned (v0.1.253: o creado por la persona)
-    return row.createdBy === actorUserId || String(row.assignmentValue) === String(actorUserId);
+    if (row.createdBy === actorUserId || String(row.assignmentValue) === String(actorUserId)) return true;
+    // C1 — o asignado a uno de sus equipos.
+    if (teamIds.length > 0 && row.teamValue !== undefined && row.teamValue !== null) {
+        return teamIdsOf(row.teamValue).some((t) => teamIds.includes(t));
+    }
+    return false;
 }
 
 /** Combina un scopeWhere con un where existente. */

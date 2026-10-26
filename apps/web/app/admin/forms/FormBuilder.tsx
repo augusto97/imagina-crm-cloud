@@ -54,6 +54,7 @@ import { useToast } from '@/components/ui/toast';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
+import { useTeams } from '@/hooks/useTeams';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
@@ -210,6 +211,12 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     // ── Vista previa: la página real, alimentada por postMessage ──
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [ready, setReady] = useState(false);
+    // C1 — las preguntas «Equipo» se eligen entre los equipos de la empresa.
+    const teams = useTeams(fields.some((f) => f.type === 'team'));
+    const teamOptions = useMemo(
+        () => [...(teams.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'es')).map((t) => ({ value: String(t.id), label: t.name })),
+        [teams.data],
+    );
     const meta = useMemo<PublicFormMeta>(() => {
         const s = config.settings;
         const b = branding.data;
@@ -226,7 +233,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             logo_url: s.show_logo ? (b?.logo_url ?? null) : null,
             company: b?.app_name ?? '',
             number_format: getTenantFormat().number_format,
-            items: buildPublicFormItems(config, fields),
+            items: buildPublicFormItems(config, fields, teamOptions),
             closed: null,
             stamp: '',
             max_upload_bytes: 20 * 1024 * 1024,
@@ -236,7 +243,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             // Ley 1581 — la casilla de autorización con el texto vigente de la empresa.
             data_consent: s.data_consent && dataConsent.data?.active ? dataConsent.data.consent : null,
         };
-    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data]);
+    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions]);
 
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {

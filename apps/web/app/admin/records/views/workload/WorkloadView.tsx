@@ -193,6 +193,7 @@ export function WorkloadView({
         estimateUnit: settings.estimateUnit,
         hideDone: settings.hideDone,
         userIds: settings.userIds,
+        teamId: settings.teamId,
         showUnassigned: settings.showUnassigned,
         filterTree: filterTree.children.length > 0 ? filterTree : undefined,
         search,

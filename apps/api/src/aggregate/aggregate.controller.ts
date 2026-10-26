@@ -33,7 +33,7 @@ export class AggregateController {
         @Body(new ZodValidationPipe(aggregateRequestSchema)) body: AggregateRequest,
     ): Promise<AggregateResult> {
         return this.aggregate.run(req.tenant!.tenantId, list, body, {
-            viewer: { role: req.tenant!.role, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
             // v0.1.286 — un agrupado por un campo casi único devolvía 100k
             // grupos (7,5 MB): a partir de MAX_GROUPS el resto va a "Otros".
             top: body.group_by_field_id !== undefined ? { limit: MAX_GROUPS, byValue: false } : undefined,

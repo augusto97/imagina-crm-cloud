@@ -26,7 +26,7 @@ export class ActivityController {
         return this.activity.list(req.tenant!.tenantId, list, {
             cursor: cursor ? Number(cursor) : undefined,
             limit: limit ? Number(limit) : undefined,
-            viewer: { role: req.tenant!.role, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
         });
     }
 
@@ -48,7 +48,7 @@ export class ActivityController {
         return this.activity.fieldHistory(req.tenant!.tenantId, list, id, fieldId, {
             cursor: c !== undefined && Number.isSafeInteger(c) && c > 0 ? c : undefined,
             limit: limit ? Number(limit) : undefined,
-            viewer: { role: req.tenant!.role, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
         });
     }
 
@@ -66,7 +66,7 @@ export class ActivityController {
             recordId: id,
             cursor: cursor ? Number(cursor) : undefined,
             limit: limit ? Number(limit) : undefined,
-            viewer: { role: req.tenant!.role, userId: req.authUserId! },
+            viewer: { role: req.tenant!.role, teamIds: req.tenant!.teamIds, userId: req.authUserId! },
         });
     }
 }

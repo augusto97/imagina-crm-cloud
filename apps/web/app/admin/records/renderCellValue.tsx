@@ -1,10 +1,12 @@
-import { formatDuration, type DurationFormat } from '@imagina-base/shared';
+import { formatDuration, teamIdsOf, type DurationFormat } from '@imagina-base/shared';
 
 import { PercentDisplay } from '@/components/fields/PercentDisplay';
 import { PhoneDisplay } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { useTeamDirectory } from '@/hooks/useTeams';
+import { TeamChip } from '@/components/fields/TeamChip';
 import { isPlainClick, openAttachmentsPreview } from '@/components/files/openAttachments';
 import { useAttachment } from '@/hooks/useAttachments';
 import { __ } from '@/lib/i18n';
@@ -125,6 +127,13 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         // Defensivo: una automatización vieja guardaba «0» / «false» como
         // TEXTO (verdadero en JS) y la celda mostraba ✓ en una casilla vacía.
         return isCheckedValue(value) ? '✓' : '—';
+    }
+
+    // C1 — equipo(s): chips con su icono y color (un borrado se nombra así).
+    if (field.type === 'team') {
+        const ids = teamIdsOf(value);
+        if (ids.length === 0) return <span className="imcrm-text-muted-foreground">—</span>;
+        return <TeamCell ids={ids} />;
     }
 
     if (field.type === 'multi_select' && Array.isArray(value)) {
@@ -293,6 +302,17 @@ function isOverdueDateValue(type: string, value: string): boolean {
  * a 1 sola request. Fallback al ID si el endpoint falla o el user
  * no existe.
  */
+function TeamCell({ ids }: { ids: number[] }): JSX.Element {
+    const { map: teams, loaded } = useTeamDirectory();
+    return (
+        <div className="imcrm-cell-chips imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+            {ids.map((id) => (
+                <TeamChip key={id} id={id} known={loaded} team={teams.get(id)} />
+            ))}
+        </div>
+    );
+}
+
 function UserCell({ id }: { id: number }): JSX.Element {
     const { data: user, isLoading } = useWpUser(id);
     if (isLoading) {

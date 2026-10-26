@@ -28,9 +28,9 @@ interface EditKanbanViewDialogProps {
 }
 
 /** Tipos por los que se arman las columnas del kanban. */
-const GROUP_BY_TYPES = ['select', 'user', 'checkbox'] as const;
+const GROUP_BY_TYPES = ['select', 'user', 'team', 'checkbox'] as const;
 /** Tipos de los carriles. */
-const LANE_TYPES = ['select', 'user', 'checkbox'] as const;
+const LANE_TYPES = ['select', 'user', 'team', 'checkbox'] as const;
 
 type SortChoice = { fieldId: number; dir: 'asc' | 'desc' } | null;
 

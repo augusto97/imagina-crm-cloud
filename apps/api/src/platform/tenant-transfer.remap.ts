@@ -33,6 +33,8 @@ export interface IdMaps {
     approval_request: Map<number, number>;
     /** C6 — plantillas de registro (formularios y acciones de automatización las nombran). */
     recordTemplate: Map<number, number>;
+    /** C1 — equipos (valor del campo «Equipo», acceso por equipo, @equipo). */
+    team: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -50,6 +52,7 @@ export function emptyMaps(): IdMaps {
         approval_flow: new Map(),
         approval_request: new Map(),
         recordTemplate: new Map(),
+        team: new Map(),
     };
 }
 
@@ -92,6 +95,9 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     // «Crear subtareas desde una plantilla» / «Crear un registro».
     record_template_id: 'recordTemplate',
     template_id: 'recordTemplate',
+    // C1 — el equipo que aprueba un paso («Un equipo») de un flujo de aprobación
+    // (y la copia de los pasos de cada solicitud).
+    team_id: 'team',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
@@ -182,6 +188,12 @@ function remapFieldValue(value: unknown, type: string, maps: IdMaps): unknown {
     if (type === 'user') {
         return value === null || value === undefined ? value : mapId(maps.user, value);
     }
+    // C1 — el campo «Equipo» guarda un array de ids de equipo.
+    if (type === 'team') {
+        const ids = Array.isArray(value) ? value : value === null || value === undefined ? [] : [value];
+        const mapped = ids.map((v) => mapId(maps.team, v)).filter((v): v is number => v !== null);
+        return mapped.length > 0 ? mapped : null;
+    }
     return value;
 }
 
@@ -200,6 +212,7 @@ export function remapRichDoc(doc: unknown, maps: IdMaps): unknown {
     if (attrs !== null && typeof attrs === 'object') {
         const a = { ...(attrs as Record<string, unknown>) };
         if (node.type === 'mentionUser') a.id = mapId(maps.user, a.id);
+        if (node.type === 'mentionTeam') a.id = mapId(maps.team, a.id);
         if (node.type === 'mentionRecord') a.id = mapId(maps.record, a.id);
         if (node.type === 'imageBlock' || node.type === 'fileBlock') {
             a.fileId = mapId(maps.attachment, a.fileId);
@@ -236,6 +249,16 @@ export function remapListSettings(
                 if (newId !== null) remapped[String(newId)] = perms;
             }
             p.users = remapped;
+        }
+        // C1 — las CLAVES de `permissions.teams` son ids de equipo.
+        const teams = p.teams;
+        if (teams !== null && typeof teams === 'object') {
+            const remapped: Record<string, unknown> = {};
+            for (const [oldTeamId, perms] of Object.entries(teams as Record<string, unknown>)) {
+                const newId = mapId(maps.team, oldTeamId);
+                if (newId !== null) remapped[String(newId)] = perms;
+            }
+            p.teams = remapped;
         }
         out.permissions = p;
     }
@@ -295,6 +318,44 @@ export function remapViewConfig(
     if (isUserField(config.kanban_lane_field_id) && out.kanban_collapsed_lanes !== undefined) {
         out.kanban_collapsed_lanes = keys(out.kanban_collapsed_lanes);
     }
+    // C1 — kanban agrupado por EQUIPO: las claves son el conjunto de ids (`[3, 7]`).
+    const isTeamField = (raw: unknown): boolean => {
+        const id = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(id) && fieldTypeByOldId.get(id) === 'team';
+    };
+    const teamKey = (key: unknown): string | null => {
+        if (typeof key !== 'string') return null;
+        if (key === '__null__') return key;
+        try {
+            const parsed: unknown = JSON.parse(key);
+            const ids = (Array.isArray(parsed) ? parsed : [parsed]).map((v) => mapId(maps.team, v));
+            if (ids.some((v) => v === null)) return null;
+            return `[${(ids as number[]).sort((a, b) => a - b).join(', ')}]`;
+        } catch {
+            return null;
+        }
+    };
+    const teamKeys = (raw: unknown): string[] | undefined =>
+        Array.isArray(raw) ? raw.map(teamKey).filter((k): k is string => k !== null) : undefined;
+    const teamByColumn = (raw: unknown): unknown =>
+        Array.isArray(raw)
+            ? raw.flatMap((entry) => {
+                  if (!entry || typeof entry !== 'object') return [];
+                  const column = teamKey((entry as { column?: unknown }).column);
+                  return column === null ? [] : [{ ...(entry as Record<string, unknown>), column }];
+              })
+            : raw;
+    if (isTeamField(config.group_by_field_id)) {
+        for (const k of ['kanban_collapsed_columns', 'kanban_hidden_columns'] as const) {
+            if (out[k] !== undefined) out[k] = teamKeys(out[k]);
+        }
+        for (const k of ['kanban_wip_limits', 'kanban_move_rules'] as const) {
+            if (out[k] !== undefined) out[k] = teamByColumn(out[k]);
+        }
+    }
+    if (isTeamField(config.kanban_lane_field_id) && out.kanban_collapsed_lanes !== undefined) {
+        out.kanban_collapsed_lanes = teamKeys(out.kanban_collapsed_lanes);
+    }
     // B1 — Gantt agrupado por PERSONA: los grupos plegados son ids de usuario.
     if (isUserField(config.gantt_group_by_field_id) && out.collapsed_groups !== undefined) {
         out.collapsed_groups = keys(out.collapsed_groups);
@@ -303,6 +364,13 @@ export function remapViewConfig(
     // clave no sigue ninguna convención). Una que no viajó se descarta.
     if (Array.isArray(out.workload_user_ids)) {
         out.workload_user_ids = out.workload_user_ids.map((v) => mapId(maps.user, v)).filter((v): v is number => v !== null);
+    }
+    // C1 — el filtro por equipo de la carga: un equipo que no viajó se quita
+    // (la vista vuelve a mostrar a todos, no a nadie).
+    if (out.workload_team_id !== undefined && out.workload_team_id !== null) {
+        const t = mapId(maps.team, out.workload_team_id);
+        if (t === null) delete out.workload_team_id;
+        else out.workload_team_id = t;
     }
     return out;
 }

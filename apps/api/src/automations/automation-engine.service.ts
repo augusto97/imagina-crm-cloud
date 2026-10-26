@@ -23,6 +23,7 @@ import {
     resolveTitleFieldId,
     storeCellAccess,
     storeValueError,
+    teamIdsOf,
     tenantFormatSchema,
     waitResumeAt,
     zonedToday,
@@ -64,7 +65,7 @@ import { buildWebhookRequest, type MergeFn } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
-import { automationRuns, documentTemplates, lists, memberships, records, tenants, users } from '../db/schema';
+import { automationRuns, documentTemplates, lists, memberships, records, teams, tenants, users } from '../db/schema';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
@@ -189,6 +190,8 @@ interface RunContext {
     approval?: ApprovalEventInfo;
     /** Personas de los campos «Persona» (`{{responsable.email}}`), por id. */
     people?: Map<number, PersonInfo | null>;
+    /** C1 — nombres de los equipos de los campos «Equipo» (`{{equipo.nombre}}`), por id. */
+    teamNames?: Map<number, string>;
     /** Marca de tienda por lista, leída una vez por corrida. */
     storeMarkers?: Map<number, StoreListMarker | null>;
     /**
@@ -1256,6 +1259,16 @@ export class AutomationEngine {
                 if (!info) return '';
                 return person[3] === 'email' ? info.email : info.name;
             }
+            // C1 — un campo «Equipo» guarda ids: `.nombre` da sus nombres («Ventas, Soporte»).
+            const teamTok = /^(before\.)?([a-zA-Z0-9_]+)\.nombre$/.exec(token);
+            if (teamTok && ctx.fieldsBySlug.get(teamTok[2]!)?.type === 'team') {
+                const key = ctx.slugToKey.get(teamTok[2]!);
+                const source = teamTok[1] ? ctx.before : ctx.data;
+                return teamIdsOf(key !== undefined ? source?.[key] : undefined)
+                    .map((id) => ctx.teamNames?.get(id))
+                    .filter((n): n is string => typeof n === 'string')
+                    .join(', ');
+            }
             if (token.startsWith('before.')) {
                 const key = ctx.slugToKey.get(token.slice('before.'.length));
                 return key !== undefined && ctx.before ? ctx.before[key] : undefined;
@@ -1399,6 +1412,30 @@ export class AutomationEngine {
         );
         for (const id of ids) ctx.people.set(id, null);
         for (const r of rows) ctx.people.set(r.id, { name: r.name ?? '', email: r.email });
+    }
+
+    /** C1 — Carga (una vez por corrida) los nombres de los equipos del registro. */
+    private async ensureTeamNames(ctx: RunContext): Promise<void> {
+        const keys: string[] = [];
+        for (const [slug, f] of ctx.fieldsBySlug) {
+            if (f.type !== 'team') continue;
+            const key = ctx.slugToKey.get(slug);
+            if (key) keys.push(key);
+        }
+        if (keys.length === 0) return;
+        ctx.teamNames ??= new Map();
+        const ids = new Set<number>();
+        for (const source of [ctx.data, ctx.before ?? {}]) {
+            for (const key of keys) for (const id of teamIdsOf(source[key])) if (!ctx.teamNames.has(id)) ids.add(id);
+        }
+        if (ids.size === 0) return;
+        const rows = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ id: teams.id, name: teams.name })
+                .from(teams)
+                .where(and(eq(teams.tenantId, ctx.tenantId), inArray(teams.id, [...ids]))),
+        );
+        for (const r of rows) ctx.teamNames.set(r.id, r.name);
     }
 
     private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<number | null> {
@@ -1568,6 +1605,7 @@ export class AutomationEngine {
         const tag = (entries: ActionLogEntry[]): ActionLogEntry[] =>
             entries.map((e) => (e.details && 'path' in e.details ? e : { ...e, details: { ...(e.details ?? {}), path: pathKey } }));
         await this.ensurePeople(ctx);
+        await this.ensureTeamNames(ctx);
         const fv = this.accessor(ctx);
         if (spec.condition) {
             // La misma evaluación que decide el motor, regla por regla en «Probar».

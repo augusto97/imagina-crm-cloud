@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { AiFieldValue } from '../AiFieldValue';
 import { ExternalLink, Lock, Mail, Pencil, Phone } from 'lucide-react';
-import { formatPhone, isDataField } from '@imagina-base/shared';
+import { formatPhone, isDataField, teamIdsOf } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
+import { TeamPicker } from '@/components/fields/TeamPicker';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
@@ -109,6 +110,8 @@ export function CompactFieldRow({
         field.type === 'select' ||
         field.type === 'multi_select' ||
         field.type === 'user' ||
+        // C1 — equipo(s): selector con buscador, como persona.
+        field.type === 'team' ||
         // Fechas: el DateCellEditor (calendario + recurrencia, el mismo
         // de la tabla) se abre con UN click — sin modo edición nativo.
         field.type === 'date' ||
@@ -455,6 +458,18 @@ function InlineControl({
 
     if (field.type === 'relation') {
         return <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} variant={flat ? 'cell' : 'default'} wrap={flat} />;
+    }
+
+    if (field.type === 'team') {
+        return (
+            <TeamPicker
+                value={teamIdsOf(value)}
+                multiple={(field.config as { multiple?: unknown }).multiple === true}
+                onChange={(ids) => onChange(ids)}
+                compact
+                variant={flat ? 'flat' : 'default'}
+            />
+        );
     }
 
     if (field.type === 'user') {

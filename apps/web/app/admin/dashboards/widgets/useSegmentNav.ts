@@ -1,4 +1,5 @@
 import { useContext } from 'react';
+import { MY_TEAMS_TOKEN, parseTeamGroupKey } from '@imagina-base/shared';
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { useNavigate } from 'react-router';
 
@@ -171,6 +172,13 @@ export function dashboardFilterNode(
 ): FilterNode | null {
     const field = asDisplayField(rawField);
     if (value === '' || (Array.isArray(value) && value.length === 0)) return null;
+    if (field.type === 'team') {
+        // C1 — «mis equipos» lo resuelve el servidor (`$my_teams`).
+        const vals = (Array.isArray(value) ? value : [value])
+            .map((v) => (v === 'me' ? MY_TEAMS_TOKEN : Number(v)))
+            .filter((v) => v === MY_TEAMS_TOKEN || (Number.isInteger(v) && (v as number) > 0));
+        return vals.length === 0 ? null : { type: 'condition', field_id: field.id, op: 'in', value: vals };
+    }
     if (field.type === 'user') {
         const ids = (Array.isArray(value) ? value : [value])
             .map((v) => (v === 'me' ? userId : Number(v)))
@@ -209,6 +217,14 @@ function segmentCondition(rawField: Pick<FieldEntity, 'id' | 'type'>, label: str
         if (range) return { type: 'condition', field_id: field.id, op: 'between_relative', value: range };
         if (bucketed) return null;
         return { type: 'condition', field_id: field.id, op: 'eq', value: label };
+    }
+    if (field.type === 'team') {
+        // C1 — el grupo es el CONJUNTO exacto de equipos (`[3, 7]`): `eq` con
+        // un array compara conjuntos, igual que la vista agrupada.
+        const ids = parseTeamGroupKey(label);
+        return ids.length === 0
+            ? { type: 'condition', field_id: field.id, op: 'is_null', value: null }
+            : { type: 'condition', field_id: field.id, op: 'eq', value: ids };
     }
     if (field.type === 'multi_select') {
         // v0.1.190 — el grupo es el SET exacto: `eq` con un array compara

@@ -11,6 +11,7 @@ import {
 } from '@imagina-base/shared';
 
 import { RelationPicker } from '@/components/fields/RelationPicker';
+import { TeamPicker } from '@/components/fields/TeamPicker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -640,6 +641,16 @@ function OperationInputs({
             );
         case 'add_options':
         case 'remove_options':
+            // C1 — en un campo «Equipo» las "opciones" son los equipos.
+            if (field.type === 'team') {
+                return (
+                    <TeamPicker
+                        multiple
+                        value={(draft.values ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0)}
+                        onChange={(ids) => set({ values: ids.map(String) })}
+                    />
+                );
+            }
             return (
                 <FilterOptionPicker
                     mode="multi"

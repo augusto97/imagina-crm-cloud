@@ -17,6 +17,7 @@ import {
 import { extractFieldOptions } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
 import { datetimeFilterToInput, datetimeInputToFilter } from './filterDatetime';
+import { FilterTeamPicker } from './FilterTeamPicker';
 import { FilterUserPicker } from './FilterUserPicker';
 import { isMultiValueOperator, toValueList } from './filterValue';
 
@@ -133,6 +134,14 @@ export function FilterValueInput({
         case 'user':
             return (
                 <FilterUserPicker
+                    mode={multi ? 'multi' : 'single'}
+                    value={value}
+                    onChange={(next) => onChange(next ?? (multi ? [] : ''))}
+                />
+            );
+        case 'team':
+            return (
+                <FilterTeamPicker
                     mode={multi ? 'multi' : 'single'}
                     value={value}
                     onChange={(next) => onChange(next ?? (multi ? [] : ''))}

@@ -36,6 +36,8 @@ export interface ReportContext {
     field: (id: unknown) => ReportField | undefined;
     /** Nombre visible de una persona (los grupos por un campo persona son ids). */
     userName: (id: number) => string | null;
+    /** C1 — nombre de un equipo (los grupos por un campo «Equipo» son ids). */
+    teamName?: (id: number) => string | null;
     format: ReportFormat;
     /** Color de una opción (`blue` o `#3366ff`) → color pintable. Sin él, el hex de la paleta clara. */
     optionColor?: (color: string) => string;
@@ -337,6 +339,17 @@ export function reportGroupLabel(key: string, field: ReportField | undefined, ct
             const id = Number(key);
             return Number.isInteger(id) ? (ctx.userName(id) ?? `Usuario ${id}`) : key;
         }
+        case 'team': {
+            // C1 — la clave de grupo es el conjunto de ids (`[3, 7]`).
+            try {
+                const arr: unknown = JSON.parse(key);
+                const ids = (Array.isArray(arr) ? arr : [arr]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+                if (ids.length === 0) return EMPTY_GROUP_LABEL;
+                return ids.map((id) => ctx.teamName?.(id) ?? `Equipo ${id}`).join(', ');
+            } catch {
+                return key;
+            }
+        }
         case 'checkbox':
             return key === 'true' ? 'Sí' : key === 'false' ? 'No' : key;
         case 'date':
@@ -479,7 +492,7 @@ export function buildWidgetReport(widget: ReportWidget, data: unknown, ctx: Repo
                 return n === 0 ? '' : n === 1 ? '1 archivo' : `${n} archivos`;
             }
             const field = ctx.field(col.id);
-            return formatEmailFieldValue(field ?? { type: col.type }, v, ctx.format, ctx.userName);
+            return formatEmailFieldValue(field ?? { type: col.type }, v, ctx.format, ctx.userName, ctx.teamName);
         };
         return {
             ...base,

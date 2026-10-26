@@ -1,4 +1,4 @@
-import type { NotificationKind } from '@imagina-base/shared';
+import { teamIdsOf, type NotificationKind } from '@imagina-base/shared';
 import { escapeHtml } from '../legal/legal-page';
 
 /**
@@ -64,6 +64,10 @@ export function notificationTitle(
         case 'approval':
             // C5 — las aprobaciones arman su propio título (approval-text.ts).
             out = `Aprobación de ${rec}`;
+            break;
+        case 'team_assigned':
+            // C1 — el título real lo arma `teamAssignedTitle` (nombra al equipo).
+            out = `${who(o.actorName)} asignó ${rec} a tu equipo`;
             break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
@@ -147,6 +151,38 @@ export function newlyAssigned(
         out.add(now);
     }
     return [...out];
+}
+
+/**
+ * C1 — Equipos que se SUMARON a los campos «Equipo» en este cambio (id de
+ * equipo → ids de campo). Un equipo que ya estaba no vuelve a avisar.
+ */
+export function newlyAssignedTeams(
+    teamFieldIds: readonly number[],
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+): number[] {
+    const out = new Set<number>();
+    for (const id of teamFieldIds) {
+        const key = `f${id}`;
+        if (!(key in after)) continue;
+        const had = new Set(teamIdsOf(before[key]));
+        for (const t of teamIdsOf(after[key])) if (!had.has(t)) out.add(t);
+    }
+    return [...out];
+}
+
+/** C1 — «Ana asignó «Acme» al equipo «Ventas»». */
+export function teamAssignedTitle(actorName: string | null, recordTitle: string, teamName: string): string {
+    const out = `${who(actorName)} asignó ${quote(recordTitle)} al equipo «${teamName}»`;
+    return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
+}
+
+/** C1 — «Ana mencionó a tu equipo «Ventas» en «Acme»». */
+export function teamMentionTitle(actorName: string | null, recordTitle: string, teamName: string, source: 'comment' | 'description'): string {
+    const where = source === 'description' ? `la descripción de ${quote(recordTitle)}` : quote(recordTitle);
+    const out = `${who(actorName)} mencionó a tu equipo «${teamName}» en ${where}`;
+    return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }
 
 // ─────────────────────────── Correo ───────────────────────────

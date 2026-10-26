@@ -1,15 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AtSign } from 'lucide-react';
+import { teamHandle } from '@imagina-base/shared';
+
+import { TeamGlyph } from '@/components/fields/TeamChip';
+import { useTeams } from '@/hooks/useTeams';
 
 import { api } from '@/lib/api';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 interface UserHit {
     id: number;
     login: string;
     display_name: string;
+    /** C1 — un equipo: `login` es su manija (`@ventas`). */
+    kind?: 'team';
+    team?: { icon: string | null; color: string | null; member_count: number };
 }
 
 interface MentionAutocompleteProps {
@@ -53,7 +60,28 @@ export function MentionAutocomplete({
         staleTime: 30 * 1000,
     });
 
-    const hits = search.data ?? [];
+    // C1 — los equipos también se mencionan (`@ventas` avisa a sus personas).
+    const teams = useTeams();
+    const teamHits = useMemo<UserHit[]>(() => {
+        const q = teamHandle(debounced);
+        const folded = debounced.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        return (teams.data ?? [])
+            .filter((t) => {
+                if (folded === '') return true;
+                const name = t.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                return name.includes(folded) || (q !== '' && teamHandle(t.name).startsWith(q));
+            })
+            .filter((t) => teamHandle(t.name) !== '')
+            .slice(0, 4)
+            .map((t) => ({
+                id: -t.id,
+                login: teamHandle(t.name),
+                display_name: t.name,
+                kind: 'team' as const,
+                team: { icon: t.icon, color: t.color, member_count: t.member_count },
+            }));
+    }, [teams.data, debounced]);
+    const hits = useMemo(() => [...(search.data ?? []), ...teamHits], [search.data, teamHits]);
 
     // Reset highlight cuando cambia la query.
     useEffect(() => {
@@ -114,7 +142,7 @@ export function MentionAutocomplete({
                     {search.isLoading
                         ? __('Buscando…')
                         : debounced.length === 0
-                          ? __('Escribe para buscar personas.')
+                          ? __('Escribe para buscar personas o equipos.')
                           : __('Sin resultados.')}
                 </p>
             ) : (
@@ -139,13 +167,19 @@ export function MentionAutocomplete({
                                         : 'imcrm-text-foreground hover:imcrm-bg-accent/40',
                                 )}
                             >
-                                <AtSign className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
+                                {hit.kind === 'team' ? (
+                                    <TeamGlyph team={hit.team} size="xs" />
+                                ) : (
+                                    <AtSign className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
+                                )}
                                 <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
                                     <span className="imcrm-truncate imcrm-text-sm">
                                         {hit.display_name || hit.login}
                                     </span>
                                     <span className="imcrm-truncate imcrm-text-[10px] imcrm-text-muted-foreground">
-                                        @{hit.login}
+                                        {hit.kind === 'team'
+                                            ? sprintf(__('Equipo · avisa a %d personas'), hit.team?.member_count ?? 0)
+                                            : `@${hit.login}`}
                                     </span>
                                 </div>
                             </button>

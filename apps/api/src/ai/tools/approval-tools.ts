@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
     APPROVAL_MODE_LABELS,
     APPROVAL_STATUS_LABELS,
@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { ApprovalsService } from '../../approvals/approvals.service';
 import { FieldsService } from '../../fields/fields.service';
 import { ListsService } from '../../lists/lists.service';
+import { TeamsService } from '../../teams/teams.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 
@@ -36,10 +37,13 @@ import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } fr
 
 const approverSpec = z
     .object({
-        type: z.enum(['users', 'role', 'field']).describe('users = personas puntuales; role = todas las personas de un rol; field = la persona del campo Persona del registro'),
+        type: z
+            .enum(['users', 'role', 'field', 'team'])
+            .describe('users = personas puntuales; role = todas las personas de un rol; field = la persona del campo Persona del registro; team = las personas de un equipo'),
         user_ids: z.array(z.number().int().positive()).max(50).optional().describe('type users: ids de miembros (list_members)'),
         role: z.enum(APPROVER_ROLES).optional().describe('type role: admin | manager | agent | viewer'),
         field: z.string().max(63).optional().describe('type field: slug de un campo Persona de la lista («Jefe»)'),
+        team: z.string().max(120).optional().describe('type team: nombre del equipo (list_teams), p. ej. «Finanzas»'),
     })
     .describe('Quién aprueba el paso');
 
@@ -95,6 +99,8 @@ export class ApprovalTools implements AiProposalApplier {
         private readonly fields: FieldsService,
         private readonly approvals: ApprovalsService,
         private readonly store: ProposalsStore,
+        // C1 — aprobadores «un equipo» (por nombre).
+        @Optional() private readonly teams?: TeamsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -123,7 +129,7 @@ export class ApprovalTools implements AiProposalApplier {
     // ── Lectura ──────────────────────────────────────────────────────────
 
     private async listRequests(ctx: AiToolContext, input: ListRequestsSpec): Promise<AiToolResult> {
-        const mine = await this.approvals.myApprovals(ctx.tenantId, { userId: ctx.userId, role: ctx.role });
+        const mine = await this.approvals.myApprovals(ctx.tenantId, { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds });
         const keep = (i: ApprovalInboxItem): boolean => !input.list || i.list_slug === input.list;
         const shape = (i: ApprovalInboxItem): Record<string, unknown> => ({
             id: i.id,
@@ -171,7 +177,8 @@ export class ApprovalTools implements AiProposalApplier {
         }
 
         const base: ApprovalFlowConfig | null = current ? current.config : null;
-        const steps = input.steps ? input.steps.map((s, i) => this.buildStep(s, i, fields)) : base?.steps;
+        const teamByName = input.steps?.some((s) => s.approver.type === 'team') ? await this.teamsByName(ctx) : new Map<string, { id: number; name: string }>();
+        const steps = input.steps ? input.steps.map((s, i) => this.buildStep(s, i, fields, teamByName)) : base?.steps;
         if (!steps) throw new AiToolError('Un flujo nuevo necesita al menos un paso (steps).');
         const config = approvalFlowConfigSchema.safeParse({
             steps,
@@ -186,11 +193,13 @@ export class ApprovalTools implements AiProposalApplier {
 
         const names = await this.memberNames(ctx);
         const byId = new Map(fields.map((f) => [f.id, f]));
+        const teamNames = new Map([...teamByName.values()].map((t) => [t.id, t.name]));
         const stepRows = config.data.steps.map((s, i) => ({
             type: `${i + 1}. ${stepLabel(s, i)}`,
             label: describeApprover(s.approver, {
                 fieldLabel: s.approver.type === 'field' ? (byId.get(s.approver.approver_field_id)?.label ?? null) : null,
                 userNames: names,
+                teamName: s.approver.type === 'team' ? (teamNames.get(s.approver.team_id) ?? null) : null,
             }),
             detail: APPROVAL_MODE_LABELS[s.mode],
         }));
@@ -251,7 +260,7 @@ export class ApprovalTools implements AiProposalApplier {
 
     async apply(ctx: AiToolContext, stored: StoredProposal): Promise<AiApplyOutcome> {
         const p = stored.payload as Payload;
-        const actor = { userId: ctx.userId, role: ctx.role };
+        const actor = { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds };
         const link = { label: 'Ver las aprobaciones de la lista', href: `/lists/${p.listSlug}/edit?s=aprobaciones` };
         if (p.op === 'create') {
             const flow = await this.approvals.createFlow(ctx.tenantId, actor, String(p.listId), {
@@ -273,7 +282,18 @@ export class ApprovalTools implements AiProposalApplier {
 
     // ── Ayudas ───────────────────────────────────────────────────────────
 
-    private buildStep(s: z.infer<typeof stepSpec>, i: number, fields: readonly Field[]): Record<string, unknown> {
+    /** C1 — Los equipos de la empresa por nombre (sin mayúsculas ni espacios de más). */
+    private async teamsByName(ctx: AiToolContext): Promise<Map<string, { id: number; name: string }>> {
+        const all = this.teams ? await this.teams.list(ctx.tenantId) : [];
+        return new Map(all.map((t) => [t.name.trim().toLowerCase(), { id: t.id, name: t.name }]));
+    }
+
+    private buildStep(
+        s: z.infer<typeof stepSpec>,
+        i: number,
+        fields: readonly Field[],
+        teamByName: ReadonlyMap<string, { id: number; name: string }> = new Map(),
+    ): Record<string, unknown> {
         const where = `Paso ${i + 1}`;
         let approver: Record<string, unknown>;
         switch (s.approver.type) {
@@ -290,6 +310,15 @@ export class ApprovalTools implements AiProposalApplier {
                 if (!f) throw new AiToolError(`${where}: el campo «${s.approver.field ?? ''}» no existe. Campos Persona: ${fields.filter((x) => x.type === 'user').map((x) => x.slug).join(', ') || 'ninguno'}.`);
                 if (f.type !== 'user') throw new AiToolError(`${where}: «${f.slug}» no es un campo Persona (es ${f.type}).`);
                 approver = { type: 'field', approver_field_id: f.id };
+                break;
+            }
+            case 'team': {
+                const t = teamByName.get((s.approver.team ?? '').trim().toLowerCase());
+                if (!t) {
+                    const known = [...teamByName.values()].map((x) => x.name).join(', ');
+                    throw new AiToolError(`${where}: el equipo «${s.approver.team ?? ''}» no existe. Equipos: ${known || 'ninguno (créalos en Ajustes → Equipos)'}.`);
+                }
+                approver = { type: 'team', team_id: t.id };
                 break;
             }
         }

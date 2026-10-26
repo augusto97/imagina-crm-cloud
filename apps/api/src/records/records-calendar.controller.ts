@@ -20,7 +20,7 @@ export class RecordsCalendarController {
     @RequireCapability('view_records', 'view_own_records')
     bundle(@Req() req: FastifyRequest, @Param('list') list: string, @Query() q: Record<string, unknown>): Promise<CalendarBundle> {
         const perDay = Number(q.per_day);
-        return this.calendar.bundle(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role }, list, {
+        return this.calendar.bundle(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, teamIds: req.tenant!.teamIds }, list, {
             from: typeof q.from === 'string' ? q.from : '',
             to: typeof q.to === 'string' ? q.to : '',
             sources: parseSources(q.sources),

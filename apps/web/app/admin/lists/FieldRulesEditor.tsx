@@ -10,6 +10,7 @@ import {
     formatDuration,
     isUserWritableType,
     parseDuration,
+    teamIdsOf,
     validationKindsFor,
     type FieldDefault,
     type FieldFormatPreset,
@@ -18,6 +19,7 @@ import {
     type RequiredIfOp,
 } from '@imagina-base/shared';
 
+import { TeamPicker } from '@/components/fields/TeamPicker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
@@ -135,6 +137,18 @@ function DefaultValueSection({ type, config, onChange }: SectionProps): JSX.Elem
                     <option value="">{__('Desmarcada')}</option>
                     <option value="1">{__('Marcada')}</option>
                 </Select>
+            );
+            break;
+        case 'team':
+            // C1 — el equipo con el que nace cada registro (también los que
+            // llegan por un formulario público: ahí el equipo no se pregunta).
+            control = (
+                <TeamPicker
+                    value={teamIdsOf(fixed)}
+                    multiple={config.multiple === true}
+                    onChange={(ids) => setValue(ids)}
+                    placeholder={__('Ninguno')}
+                />
             );
             break;
         case 'user':

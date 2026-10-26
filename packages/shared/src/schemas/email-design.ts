@@ -1365,6 +1365,8 @@ export function formatEmailFieldValue(
     value: unknown,
     format: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'> & { timezone?: string | null },
     userName?: (id: number) => string | null,
+    /** C1 — nombre de un equipo por id (campo «Equipo»). Sin él, «Equipo N». */
+    teamName?: (id: number) => string | null,
 ): string {
     if (value === null || value === undefined || value === '') return '';
     const cfg = (field?.config ?? {}) as Record<string, unknown>;
@@ -1430,6 +1432,10 @@ export function formatEmailFieldValue(
         case 'user': {
             const id = Number(value);
             return (Number.isInteger(id) && userName?.(id)) || '';
+        }
+        case 'team': {
+            const ids = (Array.isArray(value) ? value : [value]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+            return ids.map((id) => teamName?.(id) || `Equipo ${id}`).join(', ');
         }
         default:
             if (Array.isArray(value)) return value.map((v) => String(v)).join(', ');
