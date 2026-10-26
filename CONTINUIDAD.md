@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.307** (vista «Carga de trabajo»), en `main`.
+versión publicada: **v0.1.308** (release de dependencias), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
@@ -390,9 +390,9 @@ versión publicada: **v0.1.307** (vista «Carga de trabajo»), en `main`.
   **Avance**: Carga de trabajo publicada (v0.1.307); el enchufe para el filtro
   por equipo es el parámetro `users` del bundle y `workload_user_ids` en la
   vista (falta traducir «equipo → ids» cuando entre Equipos). Los otros tres
-  agentes siguen. **Pendiente aparte**: `pnpm audit --prod` volvió a dar avisos
-  publicados después de v0.1.299 (zod, nodemailer, body-parser y fast-uri vía el
-  SDK de MCP, msal-node vía mssql) → release de dependencias.
+  agentes siguen. Los avisos de dependencias que encontró el agente se cerraron
+  en v0.1.308 (queda planificada la migración a Zod 4, ver «Pendientes
+  técnicos»).
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
   ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
   en paralelo en copias aisladas (worktrees), cada una con su instancia de
@@ -639,10 +639,17 @@ versión publicada: **v0.1.307** (vista «Carga de trabajo»), en `main`.
   subir de versión mayor: migración aparte), `undici`/`@grpc/grpc-js` vía
   Testcontainers, `js-yaml` vía ESLint, `browserslist` vía babel. Un release
   de "tooling" cuando haya ventana; no afectan a producción.
-- Excepción de auditoría vigente (ADR-S38): `GHSA-hp3w-g68c-fv3c`
-  (`sprintf-js`, vía mssql→tedious, sin versión arreglada; tedious sólo usa
-  formatos fijos). Sacarla de `pnpm.auditConfig.ignoreGhsas` el día que
-  tedious la reemplace o salga un parche.
+- Excepciones de auditoría vigentes (ADR-S38), en `pnpm.auditConfig.ignoreGhsas`:
+  - `GHSA-hp3w-g68c-fv3c` (`sprintf-js`, vía mssql→tedious, sin versión
+    arreglada; tedious sólo usa formatos fijos). Sacarla el día que tedious la
+    reemplace o salga un parche.
+  - `GHSA-xcx6-jx8p-x3h5` (`@azure/msal-node` <7.1.0, vía mssql→tedious→
+    `@azure/identity`; sólo afecta al flujo `auth_code` y el conector SQL usa
+    usuario y contraseña). Sacarla cuando `@azure/identity` acepte msal-node 7.1.
+  - `GHSA-mrhx-c7xc-m3w5` (`zod` <4.6.6; el parche sólo corta arrays con
+    `.max()`). Cerrado en la entrada con el tope de 100.000 elementos de array
+    por cuerpo (413 `too_many_items`, v0.1.308). Sacarla con la **migración a
+    Zod 4** (~100 archivos), planificada para después de integrar la fase 3.
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
   migrar cada instalación por consola).
 - `style-src 'unsafe-inline'` en la CSP (React escribe `style=""`).
@@ -658,6 +665,20 @@ versión publicada: **v0.1.307** (vista «Carga de trabajo»), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.308** — **Dependencias de producción otra vez en 0 +
+  freno de arrays en el cuerpo** (addendum de ADR-S38). El agente de Carga de
+  trabajo encontró 10 avisos nuevos en `pnpm audit --prod`. `nodemailer`
+  10.2.1 (tres avisos del parser de direcciones) y, por override,
+  `body-parser` ≥2.4.0 y `fast-uri` ≥4.2.3 (vía el SDK de MCP). Dos
+  excepciones nuevas, verificadas: `@azure/msal-node` (sólo el flujo
+  `auth_code`, que el conector SQL no usa; `@azure/identity` todavía no acepta
+  la versión arreglada) y `zod`. Para zod se midió que un cuerpo de 2 MB con un
+  millón de ceros ocupa ~300 MB y 1,5 s de CPU al validar, y que el parche
+  (4.6.6) sólo corta los arrays con `.max()` —sin tope, la 4.6.7 consume lo
+  mismo—. Se cerró en la entrada: todo cuerpo con más de 100.000 elementos de
+  array responde 413 `too_many_items` antes de validar (verificado en vivo: 48
+  ms). Migración a Zod 4 pendiente para después de la fase 3. Verificado: tests
+  de correo, MCP, OAuth y entrada 107/107, y MCP real por HTTP.
 - **2026-10-26 · v0.1.307** — **Carga de trabajo por persona** (ADR-S62,
   opción B2 del estudio, primera entrega de la fase 3). Vista nueva `workload`:
   personas × días/semanas/meses sobre un campo Persona y las fechas del

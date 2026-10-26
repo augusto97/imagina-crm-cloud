@@ -9097,6 +9097,32 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         oscuro). Queda fuera: arrastrar en el tiempo (para eso está el Gantt),
         capacidad por día puntual (vacaciones) y recurrencias proyectadas.
 
+  - [x] **Dependencias de producción otra vez en 0 + freno de arrays en el
+        cuerpo (v0.1.308, addendum de ADR-S38)**: `pnpm audit --prod` había
+        vuelto a dar 10 avisos (3 high) publicados después de v0.1.299.
+        Cerrados: `nodemailer` 10.0.13 → 10.2.1 (tres avisos del parser de
+        direcciones: comentario anidado, `;` dentro de comillas y `>` en una
+        parte local entre comillas, que entregaban a un dominio que el
+        encabezado no nombra) y, por override, `body-parser` ≥2.4.0 (DoS con
+        bytes después de un cuerpo comprimido) y `fast-uri` ≥4.2.3 (esquemas y
+        hosts), los dos vía el SDK de MCP. Dos excepciones nuevas por id,
+        verificadas como no explotables en nuestro uso: `@azure/msal-node` (vía
+        mssql → tedious → `@azure/identity`, sólo afecta al flujo `auth_code`;
+        el conector SQL usa usuario y contraseña, y `@azure/identity` todavía
+        exige msal-node ^6) y `zod` <4.6.6. Para zod se MIDIÓ: un cuerpo de
+        2 MB con un millón de ceros contra un array de objetos ocupa ~300 MB y
+        1,5 s de CPU por request, y el parche de la 4.6.6 sólo corta los arrays
+        con `.max()` (sin tope, la 4.6.7 consume lo mismo que la 3). Así que el
+        vector se cierra en la ENTRADA, sin depender de la versión: el hook de
+        higiene (`common/request-input.ts`, `exceedsArrayItems`) rechaza con
+        413 `too_many_items` todo cuerpo con más de 100.000 elementos de array
+        sumados a cualquier profundidad, antes de validar (el import más grande
+        son 10.000 filas; una descripción, 5.000 nodos). La migración a Zod 4
+        queda planificada para después de integrar la fase 3. 1 test nuevo
+        (tope exacto, arrays anidados sumados, 413 sin llegar al handler) y
+        specs de correo, MCP, OAuth y entrada 107/107; verificado en vivo
+        (un millón de elementos → 413 en 48 ms, MCP real por HTTP con token).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

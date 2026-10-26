@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ApiExceptionFilter, pgErrorCode, pgErrorResponse } from '../src/common/http-exception.filter';
-import { cleanString, hasImpossibleId, registerRequestInputHooks, sanitizeInput } from '../src/common/request-input';
+import { cleanString, exceedsArrayItems, hasImpossibleId, MAX_BODY_ARRAY_ITEMS, registerRequestInputHooks, sanitizeInput } from '../src/common/request-input';
 import { createDb, createPool, withoutTimeouts } from '../src/db/client';
 import { tenants } from '../src/db/schema';
 import { startPostgres, type TestPg } from './helpers/containers';
@@ -74,6 +74,43 @@ describe('higiene de la entrada (NUL, sustitutos sueltos, ids imposibles)', () =
         expect(huge.json()).toMatchObject({ code: 'not_found' });
         const max = await app.inject({ method: 'GET', url: '/echo/9007199254740991' });
         expect(max.statusCode).toBe(200);
+        await app.close();
+    });
+
+    it('corta los cuerpos con demasiados elementos de array antes de validar (GHSA-mrhx-c7xc-m3w5)', async () => {
+        expect(exceedsArrayItems({ rows: Array(10_000).fill({ a: 'x' }), tags: ['a', 'b'] })).toBe(false);
+        expect(exceedsArrayItems(Array(MAX_BODY_ARRAY_ITEMS).fill(0))).toBe(false);
+        expect(exceedsArrayItems(Array(MAX_BODY_ARRAY_ITEMS + 1).fill(0))).toBe(true);
+        // Se suman todos los arrays, a cualquier profundidad.
+        expect(exceedsArrayItems({ a: [Array(60_000).fill(0)], b: { c: Array(60_000).fill(0) } })).toBe(true);
+        expect(exceedsArrayItems('texto')).toBe(false);
+        expect(exceedsArrayItems(Buffer.alloc(10))).toBe(false);
+
+        const app = Fastify({ bodyLimit: 4 * 1024 * 1024 });
+        registerRequestInputHooks(app);
+        let reached = false;
+        app.post('/echo', async (req) => {
+            reached = true;
+            return { n: Array.isArray(req.body) ? req.body.length : 0 };
+        });
+        await app.ready();
+        const big = await app.inject({
+            method: 'POST',
+            url: '/echo',
+            headers: { 'content-type': 'application/json' },
+            payload: JSON.stringify(Array(1_000_000).fill(0)),
+        });
+        expect(big.statusCode).toBe(413);
+        expect(big.json()).toMatchObject({ code: 'too_many_items', data: { status: 413 } });
+        expect(reached).toBe(false);
+        const ok = await app.inject({
+            method: 'POST',
+            url: '/echo',
+            headers: { 'content-type': 'application/json' },
+            payload: JSON.stringify(Array(10_000).fill(0)),
+        });
+        expect(ok.statusCode).toBe(200);
+        expect(ok.json()).toEqual({ n: 10_000 });
         await app.close();
     });
 });
