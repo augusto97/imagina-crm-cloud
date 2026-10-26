@@ -32,6 +32,7 @@ import {
     parseFlowPath,
     readApprovalFlowId,
     readApprovalTriggerResults,
+    readAskAgentConfig,
     readStoreListMarker,
     readWaitApprovalConfig,
     readWaitConfig,
@@ -101,6 +102,8 @@ import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
+import { AgentHub } from '../ai-agents/agent-hub';
+import { wrapMergedValue } from '../ai-agents/agent-prompt';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import {
     AutomationDispatcher,
@@ -178,7 +181,7 @@ interface RunContext {
     /** v0.1.110 — payload crudo del webhook entrante ({{payload.x}}). */
     payload?: Record<string, unknown>;
     /** v0.1.221 — la automatización que corre (la edición en lote la nombra). */
-    automation?: { id: number; name: string };
+    automation?: { id: number; name: string; trigger?: string };
     /**
      * v0.1.251 — el cobro en contexto: el que acaba de pagarse (trigger
      * `payment_received`) o el link que creó una acción anterior. `{{pago.x}}`.
@@ -395,6 +398,7 @@ const ACTION_NAMES: Record<string, string> = {
     request_approval: 'Pedir aprobación',
     wait_approval: 'Esperar aprobación',
     reply_email: 'Responder por correo',
+    ask_agent: 'Pedirle a un agente',
     engine: 'Motor de automatizaciones',
 };
 
@@ -434,6 +438,8 @@ export class AutomationEngine {
         // RecordsService vive en RecordsModule, que ya depende de este módulo
         // (el dispatcher es global): se resuelve al usarlo, sin ciclo de DI.
         @Optional() private readonly moduleRef?: ModuleRef,
+        // E6 — «Pedirle a un agente»: el módulo de agentes atiende por este hub.
+        @Optional() private readonly agents?: AgentHub,
     ) {}
 
     /**
@@ -1623,7 +1629,7 @@ export class AutomationEngine {
     }
 
     private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<number | null> {
-        ctx.automation = { id: auto.id, name: auto.name };
+        ctx.automation = { id: auto.id, name: auto.name, trigger: auto.triggerType };
         // v0.1.300 — las columnas de sistema para las variables (`{{creado_por}}`).
         if (ctx.recordId !== null && [...ctx.fieldsBySlug.entries()].some(([slug, f]) => isSystemField(f.type) && !(ctx.slugToKey.get(slug)! in ctx.data))) {
             ctx.data = { ...ctx.data, ...(await this.systemData(ctx.tenantId, ctx.recordId, ctx)) };
@@ -1840,6 +1846,16 @@ export class AutomationEngine {
             }
         }
 
+        // E6 — pedirle trabajo a un agente de IA: queda en su cola (corre aparte,
+        // con el acceso de su dueño) y deja su propio historial.
+        if (spec.type === 'ask_agent') {
+            try {
+                return { log: tag([await this.askAgent(ctx, spec.config ?? {})]) };
+            } catch (err) {
+                return { log: tag([fail('ask_agent', explainError(err))]) };
+            }
+        }
+
         // Escribir registros: por RecordsService (abre y confirma su propia
         // transacción, con actividad, tiempo real y automatizaciones).
         if (spec.type === 'update_field' || spec.type === 'create_record' || spec.type === 'create_subtasks_from_template') {
@@ -2018,6 +2034,45 @@ export class AutomationEngine {
                 : `Ya había una solicitud pendiente de «${res.info.flow_name}» para este registro: se usa esa.`,
             { request_id: res.info.request_id, created: res.created },
         );
+    }
+
+    /**
+     * E6 — «Pedirle a un agente». Las variables de la instrucción extra traen
+     * DATOS del registro: se envuelven como dato para el modelo. En «Probar»
+     * no se le pide nada (el agente tiene su propio «Probar», que sí llama al
+     * modelo): sólo se dice qué pasaría. Lo que escriba el agente lleva la
+     * cadena de esta automatización (tope de profundidad, sin re-disparo).
+     */
+    private async askAgent(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const { agent_id, instruction } = readAskAgentConfig(cfg);
+        if (agent_id === null) return fail('ask_agent', 'Elige el agente de IA al que se le pide el trabajo.');
+        if (!this.agents) return fail('ask_agent', 'Los agentes de IA no están disponibles en este servidor.');
+        const { merge } = this.mergers(ctx);
+        const extra = instruction ? merge(instruction, wrapMergedValue).trim() : '';
+        if (ctx.sim) {
+            const p = await this.agents.preview(ctx.tenantId, agent_id, ctx.listId);
+            if (!p) return fail('ask_agent', 'El agente de IA ya no existe.');
+            if (!p.active) return skip('ask_agent', `El agente «${p.name}» está en pausa: no se le pediría nada.`);
+            if (!p.inScope) return fail('ask_agent', `El agente «${p.name}» no trabaja en esta lista.`);
+            return ok(
+                'ask_agent',
+                `Le pediría al agente «${p.name}» que trabaje sobre ${ctx.recordId !== null ? 'este registro' : 'este disparo'}${extra ? ` (instrucción: «${extra.slice(0, 160)}»)` : ''}. ${p.mode === 'propose' ? 'Sus cambios quedarían como propuesta.' : 'Haría los cambios.'} Para ver qué haría, usa «Probar» en el agente.`,
+                { _sim: 'would_run', agent: p.name },
+            );
+        }
+        const res = await this.agents.ask({
+            tenantId: ctx.tenantId,
+            agentId: agent_id,
+            listId: ctx.listId,
+            recordId: ctx.recordId,
+            automation: ctx.automation ? { id: ctx.automation.id, name: ctx.automation.name } : null,
+            triggerType: ctx.automation?.trigger ?? '',
+            instruction: extra,
+            chain: nextChain(ctx.chain, ctx.automation?.id ?? 0),
+        });
+        if (res.status === 'failed') return fail('ask_agent', res.message);
+        if (res.status === 'skipped') return skip('ask_agent', res.message);
+        return ok('ask_agent', res.message, { agent: res.agentName, agent_run_id: res.runId });
     }
 
     /**

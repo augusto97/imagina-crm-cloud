@@ -15,5 +15,7 @@ export const activity = pgTable('activity', {
     userId: bigint('user_id', { mode: 'number' }),
     action: varchar('action', { length: 32 }).notNull(),
     diff: jsonb('diff').$type<Record<string, unknown>>().notNull().default({}),
+    /** E6 — el agente de IA que hizo (o propuso) el cambio (sin FK: el nombre se resuelve al leer). */
+    agentId: bigint('agent_id', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

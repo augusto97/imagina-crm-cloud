@@ -3,6 +3,7 @@ import type { ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { AclExtras } from '../../lists/list-acl';
 import { can, canAny } from '../../authz/can';
+import type { AiProposalApplier } from '../proposals.store';
 
 /**
  * Registro de herramientas del asistente (ADR-S21).
@@ -74,8 +75,46 @@ export function toolAllowed(who: ToolSubject, capability: Capability | readonly 
     return canAny(subject, capability);
 }
 
+/**
+ * Lo que un módulo de afuera le suma a `get_list_schema` (E6: los agentes de
+ * IA de la lista). Corre con quien habla; si falla, se omite.
+ */
+export type ListSchemaExtra = (ctx: AiToolContext, list: { id: number; slug: string }) => Promise<Record<string, unknown>>;
+
 export class AiToolRegistry {
     private readonly tools = new Map<string, AiToolDef>();
+    private readonly appliers = new Map<string, AiProposalApplier>();
+    private readonly schemaExtras: ListSchemaExtra[] = [];
+
+    /**
+     * Quién aplica las propuestas de un `kind` que no vive en el asistente
+     * (E6: `create_ai_agent`). Los de estructura, datos y aprobaciones siguen
+     * resolviéndose en `ProposalsService`.
+     */
+    registerApplier(kinds: Iterable<string>, applier: AiProposalApplier): void {
+        for (const k of kinds) this.appliers.set(k, applier);
+    }
+
+    applierFor(kind: string): AiProposalApplier | undefined {
+        return this.appliers.get(kind);
+    }
+
+    addListSchemaExtra(fn: ListSchemaExtra): void {
+        this.schemaExtras.push(fn);
+    }
+
+    /** Las extensiones de `get_list_schema`, juntas. Una que falla no rompe el esquema. */
+    async listSchemaExtras(ctx: AiToolContext, list: { id: number; slug: string }): Promise<Record<string, unknown>> {
+        const out: Record<string, unknown> = {};
+        for (const fn of this.schemaExtras) {
+            try {
+                Object.assign(out, await fn(ctx, list));
+            } catch {
+                // Una extensión caída no le quita el esquema al modelo.
+            }
+        }
+        return out;
+    }
 
     register<I = unknown>(def: AiToolDef<I>): void {
         if (this.tools.has(def.name)) throw new Error(`Herramienta duplicada: ${def.name}`);

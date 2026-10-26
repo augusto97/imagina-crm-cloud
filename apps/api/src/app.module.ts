@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ActivityModule } from './activity/activity.module';
 import { AggregateModule } from './aggregate/aggregate.module';
 import { AiModule } from './ai/ai.module';
+import { AgentHubModule } from './ai-agents/agent-hub';
+import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { HelpdeskModule } from './helpdesk/helpdesk.module';
@@ -81,6 +83,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         NotifyHubModule,
         // C5 — aviso en proceso de "una aprobación se resolvió" (esperas de automatizaciones).
         ApprovalHubModule,
+        // E6 — «Pedirle a un agente» (el motor de automatizaciones no importa a los agentes).
+        AgentHubModule,
         IncidentHubModule,
         TenancyModule,
         AuthzModule,
@@ -158,6 +162,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ApprovalsModule,
         // D2 + E5 — mesa de ayuda por correo + SLA.
         HelpdeskModule,
+        // E6 — agentes de IA.
+        AiAgentsModule,
     ],
 })
 export class AppModule {}

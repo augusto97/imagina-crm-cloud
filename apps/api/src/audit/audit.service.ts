@@ -171,7 +171,12 @@ export type AuditAction =
     | 'helpdesk.mailbox_connect'
     | 'helpdesk.mailbox_update'
     | 'helpdesk.mailbox_delete'
-    | 'helpdesk.settings';
+    | 'helpdesk.settings'
+    // E6 — agentes de IA.
+    | 'ai_agent.create'
+    | 'ai_agent.update'
+    | 'ai_agent.delete'
+    | 'ai_agent.trigger_add';
 
 export interface AuditEntryDto {
     id: number;

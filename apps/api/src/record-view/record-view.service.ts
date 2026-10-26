@@ -12,6 +12,7 @@ import {
     type RelationPath,
 } from '@imagina-base/shared';
 import { ActivityService } from '../activity/activity.service';
+import { AgentProposalsService } from '../ai-agents/agent-proposals.service';
 import { CollectionsService } from '../collections/collections.service';
 import { CommentsService } from '../comments/comments.service';
 import { DataConsentService } from '../data-consent/data-consent.service';
@@ -71,6 +72,8 @@ export class RecordViewService {
         @Optional() private readonly approvals?: ApprovalsService,
         // A9 — la sección «Checklist» (el registro ya pasó el ACL arriba).
         @Optional() private readonly checklists?: ChecklistsService,
+        // E6 — propuestas pendientes de los agentes de IA (Aplicar / Descartar).
+        @Optional() private readonly agentProposals?: AgentProposalsService,
     ) {}
 
     async bundle(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<RecordViewBundle> {
@@ -148,6 +151,11 @@ export class RecordViewService {
                 this.checklists
                     ? soft('checklists', () => this.tenantDb.withTenant(tenantId, (tx) => this.checklists!.forRecordInTx(tx, tenantId, recordId)))
                     : Promise.resolve(null),
+            // E6 — propuestas pendientes de los agentes de IA (el registro ya pasó el ACL arriba).
+            () =>
+                this.agentProposals
+                    ? soft('propuestas de agentes', () => this.tenantDb.withTenant(tenantId, (tx) => this.agentProposals!.pendingForRecordInTx(tx, tenantId, recordId)))
+                    : Promise.resolve(null),
         ];
         const [
             fields,
@@ -167,6 +175,7 @@ export class RecordViewService {
             dependencies,
             approvals,
             checklists,
+            agentProposals,
         ] = (await mapLimit(tasks, PARALLEL, (t) => t())) as [
             RecordViewBundle['fields'],
             RecordViewBundle['description'],
@@ -185,6 +194,7 @@ export class RecordViewService {
             RecordViewBundle['dependencies'],
             RecordViewBundle['approvals'],
             RecordViewBundle['checklists'],
+            RecordViewBundle['agent_proposals'],
         ];
 
         // Lo que depende de las relaciones: las listas del otro lado (cabecera
@@ -244,6 +254,7 @@ export class RecordViewService {
             dependencies,
             approvals,
             checklists,
+            agent_proposals: agentProposals,
         };
     }
 
@@ -316,6 +327,7 @@ export class RecordViewService {
             dependencies: null,
             approvals: null,
             checklists: null,
+            agent_proposals: null,
         };
     }
 

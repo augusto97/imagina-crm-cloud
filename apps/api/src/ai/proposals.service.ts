@@ -7,7 +7,7 @@ import { ApprovalTools } from './tools/approval-tools';
 import { BookingTools } from './tools/booking-tools';
 import { DataTools } from './tools/data-tools';
 import { StructureTools } from './tools/structure-tools';
-import type { AiToolContext } from './tools/registry';
+import { AiToolRegistry, type AiToolContext } from './tools/registry';
 import { can } from '../authz/can';
 
 /**
@@ -30,6 +30,8 @@ export class ProposalsService {
         @Optional() private readonly approvalTools?: ApprovalTools,
         // D5 — páginas de agenda (opcional por la misma razón).
         @Optional() private readonly bookingTools?: BookingTools,
+        // E6 — tipos que aplican otros módulos (los agentes de IA).
+        @Optional() private readonly registry?: AiToolRegistry,
     ) {}
 
     async get(ctx: AiToolContext, id: string): Promise<AiProposal> {
@@ -52,13 +54,13 @@ export class ProposalsService {
                 data: { status: 403 },
             });
         }
-        const applier = DataTools.KINDS.has(stored.kind)
+        const applier = this.registry?.applierFor(stored.kind) ?? (DataTools.KINDS.has(stored.kind)
             ? this.data
             : ApprovalTools.KINDS.has(stored.kind)
               ? this.approvalTools
               : BookingTools.KINDS.has(stored.kind)
                 ? this.bookingTools
-                : this.structure;
+                : this.structure);
         if (!applier) throw new NotFoundException({ code: 'ai_proposal_not_found', message: 'Tipo de propuesta no disponible', data: { status: 404 } });
         if (!(await this.store.claim(ctx.tenantId, id))) {
             throw new ConflictException({ code: 'ai_proposal_applying', message: 'Esta propuesta ya se está aplicando', data: { status: 409 } });

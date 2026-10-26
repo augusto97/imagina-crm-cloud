@@ -585,6 +585,7 @@ const automationSpec = z.object({
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
                 'wait {mode: "duration", amount, unit: minutes|hours|days} o {mode: "until_field", date_field: slug de un campo date/datetime, offset_amount?, offset_unit?: minutes|hours|days, offset_direction?: before|after, at_time?: "09:00"} + resume_condition?: [{field, op, value}] — PAUSA la corrida y sigue sola con los pasos siguientes (máx. 366 días; se reanuda con el registro releído y sólo si cumple resume_condition); puede ir dentro de if_else, NO dentro de for_each_linked | ' +
+                'ask_agent {agent_id (id de uno de los `ai_agents` de get_list_schema), instruction?: texto extra con variables {{slug}}} — le pide a un AGENTE DE IA que trabaje sobre el registro (corre aparte; según su modo cambia o deja una propuesta) | ' +
                 'request_approval {approval_flow: id o nombre de un flujo de approval_flows, note?} — PIDE una aprobación del registro con ese flujo (los aprobadores reciben el aviso; si ya hay una pendiente de ese flujo, no pide otra). Los flujos se crean con propose_configure_approval_flow | ' +
                 'wait_approval {approval_flow?: id o nombre (sin él, la que pidió esta automatización o cualquier pendiente del registro), timeout_days?: n} — PAUSA la corrida hasta que la solicitud se resuelva y deja {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada, o vencida si pasaron timeout_days) para un if_else {condition: [{field: "aprobacion.resultado", op: "eq", value: "aprobada"}]}; NO dentro de for_each_linked | ' +
                 'reply_email {body, subject?, cc?} — MESA DE AYUDA: responde por correo al HILO del ticket (al cliente, con las cabeceras del hilo y el número del ticket en el asunto) desde la dirección de soporte; el body es texto con variables ({{slug}}, {{correo.asunto}}, {{ticket.numero}}, {{cliente.nombre}}); sólo en listas con buzón de soporte conectado | ' +
@@ -677,7 +678,15 @@ type Payload =
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
 type StructureKind = Exclude<
     AiProposalKind,
-    'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records' | 'set_dependencies' | 'configure_approval_flow' | 'create_record_template' | 'configure_booking_page'
+    | 'create_records'
+    | 'update_records'
+    | 'delete_records'
+    | 'bulk_edit_records'
+    | 'set_dependencies'
+    | 'configure_approval_flow'
+    | 'create_record_template'
+    | 'configure_booking_page'
+    | 'create_ai_agent'
 >;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
@@ -747,7 +756,11 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly booking?: BookingService,
     ) {}
 
+    /** E6 — para sumarle a `get_list_schema` lo de otros módulos (agentes de IA). */
+    private registry: AiToolRegistry | null = null;
+
     registerInto(registry: AiToolRegistry): void {
+        this.registry = registry;
         registry.register({
             name: 'list_lists',
             label: 'Leyendo las listas',
@@ -1189,8 +1202,11 @@ export class StructureTools implements AiProposalApplier {
         const depCount = await this.tenantDb
             .withTenant(ctx.tenantId, (tx) => new DependenciesRepository().countForList(tx, ctx.tenantId, list.id))
             .catch(() => 0);
+        // E6 — lo que suman otros módulos (los agentes de IA de la lista).
+        const extras = this.registry ? await this.registry.listSchemaExtras(ctx, { id: list.id, slug: list.slug }) : {};
         return {
             content: {
+                ...extras,
                 list: {
                     slug: list.slug,
                     name: list.name,
@@ -4807,6 +4823,8 @@ function describeActions(
             }
             case 'wait_approval':
                 return describeWaitApproval(cfg, APPROVAL_FLOW_NAMES.get(cfg) ?? null);
+            case 'ask_agent':
+                return `Pedirle al agente de IA #${String(cfg.agent_id ?? '')}`;
             case 'for_each_linked': {
                 const n = Array.isArray(cfg.actions) ? cfg.actions.length : 0;
                 return `Repetir por cada registro vinculado (${n} ${n === 1 ? 'acción' : 'acciones'})`;

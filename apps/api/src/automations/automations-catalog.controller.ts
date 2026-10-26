@@ -58,6 +58,8 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'create_subtasks_from_template', label: 'Crear subtareas desde una plantilla', config_schema: {} },
     // D2 — responder por correo al hilo del ticket (mesa de ayuda).
     { slug: 'reply_email', label: 'Responder por correo al hilo del registro', config_schema: {} },
+    // E6 — pedirle a un agente de IA que trabaje sobre el registro.
+    { slug: 'ask_agent', label: 'Pedirle a un agente', config_schema: {} },
 ];
 
 @Controller()
@@ -148,3 +150,6 @@ export class AutomationsCatalogController {
         return this.automations.hookCaptures(req.tenant!.tenantId, id).then((data) => ({ data }));
     }
 }
+
+/** E6 — el historial de los agentes de IA nombra el disparador con este mismo catálogo. */
+export { TRIGGERS as AUTOMATION_TRIGGERS };

@@ -64,6 +64,8 @@ export class ActivityService {
             userId: number | null;
             action: ActivityAction;
             diff?: Record<string, unknown>;
+            /** E6 — el agente de IA que hizo (o propuso) el cambio. */
+            agentId?: number | null;
         },
     ): Promise<void> {
         return this.repo.log(tx, {
@@ -73,6 +75,7 @@ export class ActivityService {
             userId: params.userId,
             action: params.action,
             diff: params.diff ?? {},
+            agentId: params.agentId ?? null,
         });
     }
 
@@ -244,7 +247,7 @@ function toHistoryEntry(row: ActivityRow, key: string): FieldHistoryEntry {
     return {
         id: row.id,
         user_id: row.userId,
-        user_name: row.userName,
+        user_name: agentAuthor(row),
         action: row.action as ActivityAction,
         from: p.from ?? null,
         to: p.to ?? null,
@@ -264,7 +267,16 @@ function toActivity(row: ActivityRow): ActivityDto {
         user_name: row.userName,
         diff: row.diff,
         created_at: row.createdAt.toISOString(),
+        // E6 — el agente de IA (un agente borrado conserva su id y pierde el nombre).
+        agent: row.agentId ? { id: row.agentId, name: row.agentName ?? 'Un agente de IA' } : null,
     };
+}
+
+/** E6 — Quién, en el historial de un campo: el agente (y quien aplicó su propuesta). */
+function agentAuthor(row: ActivityRow): string | null {
+    if (!row.agentId) return row.userName;
+    const agent = `Agente «${row.agentName ?? 'de IA'}»`;
+    return row.userName ? `${row.userName} (propuesta del ${agent.charAt(0).toLowerCase()}${agent.slice(1)})` : agent;
 }
 
 /** El diff sin las claves `f{id}` de los campos ocultos para quien mira. */

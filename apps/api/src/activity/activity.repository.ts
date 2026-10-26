@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq, lt, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { activity, users } from '../db/schema';
+import { activity, aiAgents, users } from '../db/schema';
 
 /**
  * Fila de actividad + el NOMBRE de quien la hizo (v0.1.149). El feed mostraba
@@ -9,7 +9,7 @@ import { activity, users } from '../db/schema';
  * misma query (leftJoin, igual que la bitácora administrativa) para no hacer
  * una request por entrada.
  */
-export type ActivityRow = typeof activity.$inferSelect & { userName: string | null };
+export type ActivityRow = typeof activity.$inferSelect & { userName: string | null; agentName?: string | null };
 
 @Injectable()
 export class ActivityRepository {
@@ -62,9 +62,13 @@ export class ActivityRepository {
                 diff: activity.diff,
                 createdAt: activity.createdAt,
                 userName: users.name,
+                // E6 — el agente que hizo (o propuso) el cambio.
+                agentId: activity.agentId,
+                agentName: aiAgents.name,
             })
             .from(activity)
             .leftJoin(users, eq(users.id, activity.userId))
+            .leftJoin(aiAgents, eq(aiAgents.id, activity.agentId))
             .where(
                 and(
                     eq(activity.tenantId, tenantId),
@@ -97,9 +101,13 @@ export class ActivityRepository {
                 diff: activity.diff,
                 createdAt: activity.createdAt,
                 userName: users.name,
+                // E6 — el agente que hizo (o propuso) el cambio.
+                agentId: activity.agentId,
+                agentName: aiAgents.name,
             })
             .from(activity)
             .leftJoin(users, eq(users.id, activity.userId))
+            .leftJoin(aiAgents, eq(aiAgents.id, activity.agentId))
             .where(
                 and(
                     eq(activity.tenantId, tenantId),
