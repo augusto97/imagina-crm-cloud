@@ -15,6 +15,7 @@ import { useTimeZoneAutoSetup } from '@/cloud/useTimeZoneAutoSetup';
 import { useRealtime } from '@/cloud/useRealtime';
 import { useIsGuest } from '@/lib/guest';
 import { disableTeamsApi } from '@/hooks/useTeams';
+import { usePwaBridge } from '@/cloud/usePwaBridge';
 
 // Lazy-loaded pages. React.lazy + Vite produce un chunk por cada
 // import — esos chunks viven en `dist/assets/*-<hash>.js` y se
@@ -97,6 +98,8 @@ export function App(): JSX.Element {
     useRealtime();
     // v0.1.263 — la primera vez que entra un admin, la empresa toma su zona horaria.
     useTimeZoneAutoSetup();
+    // H1 — clics en notificaciones y re-vínculo del push de este dispositivo.
+    usePwaBridge();
     // C3 — una persona invitada de afuera tiene su propio shell.
     const isGuest = useIsGuest();
     if (isGuest) return <GuestApp />;

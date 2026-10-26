@@ -1,6 +1,7 @@
-import { Bell, Mail } from 'lucide-react';
+import { Bell, BellRing, Mail } from 'lucide-react';
 import { NOTIFICATION_KIND_LABELS, NOTIFICATION_KINDS, type NotificationKind } from '@imagina-base/shared';
 
+import { PushDeviceCard } from '@/admin/settings/PushDeviceCard';
 import { activeMembership } from '@/cloud/session';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
@@ -38,7 +39,7 @@ export function NotificationPrefsCard(): JSX.Element {
             <div>
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Avisos')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Todo llega a la campana de la barra superior. Elige qué quieres recibir también por correo en esta empresa.')}
+                    {__('Todo llega a la campana de la barra superior. Elige qué quieres recibir también por correo o como notificación en tus dispositivos, en esta empresa.')}
                 </p>
             </div>
 
@@ -46,26 +47,50 @@ export function NotificationPrefsCard(): JSX.Element {
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">{__('Cargando…')}</p>
             ) : (
                 <>
+                    {/* H1 — las notificaciones push de este dispositivo. */}
+                    <PushDeviceCard />
+
                     <Card>
                         <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-pt-4">
-                            <p className="imcrm-mb-1 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
-                                <Mail className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                {__('Por correo, en el momento')}
-                            </p>
+                            {/* H1 — dos canales por tipo de aviso: correo y push. */}
+                            <div className="imcrm-mb-1 imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-px-2">
+                                <p className="imcrm-flex-1 imcrm-text-sm imcrm-font-medium">{__('Qué te llega, y por dónde')}</p>
+                                <span className="imcrm-flex imcrm-w-14 imcrm-flex-col imcrm-items-center imcrm-text-[11px] imcrm-text-muted-foreground" title={__('Por correo, en el momento')}>
+                                    <Mail className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                    {__('Correo')}
+                                </span>
+                                <span className="imcrm-flex imcrm-w-14 imcrm-flex-col imcrm-items-center imcrm-text-[11px] imcrm-text-muted-foreground" title={__('Notificación push en tus dispositivos')}>
+                                    <BellRing className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                    {__('Push')}
+                                </span>
+                            </div>
                             {kinds.map((k: NotificationKind) => (
-                                <label key={k} className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-md imcrm-px-2 imcrm-py-2 hover:imcrm-bg-accent/50">
-                                    <span className="imcrm-text-sm">{__(NOTIFICATION_KIND_LABELS[k])}</span>
-                                    <input
-                                        type="checkbox"
-                                        className="imcrm-h-4 imcrm-w-4 imcrm-accent-[hsl(var(--imcrm-primary))]"
-                                        checked={p.email[k]}
-                                        onChange={(e) => save({ email: { [k]: e.target.checked } })}
-                                        data-pref-email={k}
-                                    />
-                                </label>
+                                <div key={k} className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-px-2 imcrm-py-2 hover:imcrm-bg-accent/50">
+                                    <span className="imcrm-flex-1 imcrm-text-sm">{__(NOTIFICATION_KIND_LABELS[k])}</span>
+                                    <span className="imcrm-flex imcrm-w-14 imcrm-justify-center">
+                                        <input
+                                            type="checkbox"
+                                            className="imcrm-h-4 imcrm-w-4 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
+                                            checked={p.email[k]}
+                                            onChange={(e) => save({ email: { [k]: e.target.checked } })}
+                                            aria-label={`${__(NOTIFICATION_KIND_LABELS[k])} — ${__('correo')}`}
+                                            data-pref-email={k}
+                                        />
+                                    </span>
+                                    <span className="imcrm-flex imcrm-w-14 imcrm-justify-center">
+                                        <input
+                                            type="checkbox"
+                                            className="imcrm-h-4 imcrm-w-4 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
+                                            checked={p.push?.[k] ?? false}
+                                            onChange={(e) => save({ push: { [k]: e.target.checked } })}
+                                            aria-label={`${__(NOTIFICATION_KIND_LABELS[k])} — ${__('push')}`}
+                                            data-pref-push={k}
+                                        />
+                                    </span>
+                                </div>
                             ))}
                             <p className="imcrm-px-2 imcrm-pt-1 imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {__('Como mucho 10 correos por hora: en una edición masiva el resto queda sólo en la campana.')}
+                                {__('Como mucho 10 correos por hora: en una edición masiva el resto queda sólo en la campana. El push llega a los dispositivos donde lo activaste.')}
                             </p>
                         </CardContent>
                     </Card>

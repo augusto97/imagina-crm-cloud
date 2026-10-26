@@ -4103,4 +4103,44 @@ Google no mueve la cita (no hay sincronización inversa).
 
 ---
 
-**Versión del documento:** 1.110.0 (agenda de citas)
+### ADR-S68 — App instalable, notificaciones push y escáner de códigos (v0.1.314)
+
+**Contexto.** La app se usaba desde el navegador del teléfono sin ícono propio,
+los avisos sólo llegaban a la campana o al correo, y quien hace inventario o
+controla entradas tenía que escribir los códigos a mano.
+
+**Decisión.**
+1. **PWA sin modo offline**: manifiesto por Host servido por el API (nombre y
+   color de la empresa en su dominio; íconos genéricos) y un service worker
+   propio que el build emite con el id de la versión. El HTML va siempre a la
+   red, los assets con hash salen del caché; la API, el realtime y
+   `/.well-known/` nunca se tocan. Sin red, una pantalla propia sin scripts.
+   Cada despliegue trae un SW nuevo que borra el caché anterior. El portal del
+   cliente no enlaza el manifiesto.
+2. **Web Push propio** (RFC 8030/8188/8291/8292 con `node:crypto`), sin la
+   librería `web-push` para no sumar dependencias de producción. Llaves VAPID
+   únicas por instalación en Redis (`platform:push`, la privada cifrada con
+   `SECRETS_KEY`; viajan en el snapshot de ADR-S20). Sólo https, por el guard
+   anti-SSRF.
+3. **Una suscripción = persona + empresa + dispositivo, atada a la sesión** que
+   la creó (`push_subscriptions`, RLS). Sólo se envía a sesiones vivas, se borra
+   al cerrar sesión, revocar, desactivar o borrar la cuenta, y con 404/410; un
+   endpoint dado de baja se recuerda 30 días para que la re-vinculación no lo
+   resucite.
+4. **El push es un canal de la bandeja (ADR-S40)**: los mismos destinatarios que
+   la campana (ACL del registro, rol propio, equipos), sin invitados ni
+   clientes; preferencia por tipo; payload mínimo; tope por persona y hora. La
+   campana y el correo no dependen del push.
+5. **Escáner en el cliente** (BarcodeDetector o zxing a pedido) y búsqueda
+   EXACTA en el servidor (`GET /search/code`) con el ACL de la búsqueda global;
+   el campo «Código» vive en `settings.scan_field_id`.
+
+**Consecuencias.** Nada que tocar en el proxy: todo es del mismo origen y la CSP
+no cambia. Los dispositivos no viajan en la migración de empresa (dependen de
+las llaves VAPID de la instalación). Un navegador que cambia la suscripción con
+la app cerrada se re-vincula recién al volver a abrirla. Quedan fuera el modo
+offline (H2), el push al portal del cliente y el logo de la empresa como ícono.
+
+---
+
+**Versión del documento:** 1.111.0 (app instalable, push y escáner)

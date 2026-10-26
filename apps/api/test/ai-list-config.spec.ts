@@ -894,6 +894,26 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect((listed.dashboards as Array<{ name: string; widgets: Array<{ type: string; list: string }> }>).map((d) => ({ name: d.name, w: d.widgets[0] }))).toEqual([{ name: 'Resumen', w: { type: 'kpi', title: 'Clientes', list: 'clientes', metric: 'count' } }]);
     });
 
+    it('H3 — propose_update_list elige el campo «Código» del escáner (texto/número) y lo quita con null', async () => {
+        const schemaOf = async (): Promise<string | null> =>
+            (json(await call('get_list_schema', { list: 'facturas' })).list as { scan_code_field: string | null }).scan_code_field;
+        expect(await schemaOf()).toBeNull();
+        const wrong = await call('propose_update_list', { list: 'facturas', scan_field: 'monto' });
+        expect(isError(wrong)).toBe(true);
+        expect(json(wrong).error).toContain('texto, número o ID automático');
+        const set = json(await call('propose_update_list', { list: 'facturas', scan_field: 'numero' }));
+        expect((set.proposal as { preview: { changes: Array<{ label: string; to: string }> } }).preview.changes).toEqual([
+            { label: 'Campo del código (escáner)', from: null, to: 'Número' },
+        ]);
+        await apply(set.proposal_id);
+        const numero = (await fields.list(tenantId, 'facturas')).find((f) => f.slug === 'numero')!;
+        expect((await lists.get(tenantId, 'facturas')).settings).toMatchObject({ scan_field_id: numero.id });
+        expect(await schemaOf()).toBe('numero');
+        const off = json(await call('propose_update_list', { list: 'facturas', scan_field: null }));
+        await apply(off.proposal_id);
+        expect((await lists.get(tenantId, 'facturas')).settings).not.toHaveProperty('scan_field_id');
+    });
+
     it('propose_delete_list es destructiva, describe lo que se lleva y al aplicar la lista desaparece', async () => {
         const del = json(await call('propose_delete_list', { list: 'gastos' }));
         const p = del.proposal as { destructive: boolean; summary: string; preview: { lists: Array<{ name: string }> } };

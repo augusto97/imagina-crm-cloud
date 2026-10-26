@@ -10,6 +10,7 @@ import {
     Loader2,
     Pin,
     Plus,
+    ScanLine,
     Search,
     Settings,
     ShieldAlert,
@@ -38,6 +39,10 @@ interface GlobalCommandPaletteProps {
     /** Abre el alta de lista (la paleta se cierra antes). */
     onCreateList?: () => void;
     onShowShortcuts?: () => void;
+    /** H3 — «Escanear un código» (la paleta se cierra y se abre la cámara). */
+    onScan?: () => void;
+    /** Texto con el que abre (p. ej. un código escaneado que no se encontró). */
+    initialQuery?: string;
 }
 
 type CommandIcon = ListIconComponent | LucideIcon;
@@ -80,6 +85,8 @@ export function GlobalCommandPalette({
     onOpenChange,
     onCreateList,
     onShowShortcuts,
+    onScan,
+    initialQuery,
 }: GlobalCommandPaletteProps): JSX.Element {
     const navigate = useNavigate();
     const tenantId = useSession((s) => s.activeTenantId);
@@ -219,6 +226,9 @@ export function GlobalCommandPalette({
             ...(onShowShortcuts
                 ? [{ id: 'shortcuts', label: __('Atajos de teclado'), icon: Keyboard, section: __('Acciones'), keywords: 'teclado atajos ayuda', action: onShowShortcuts }]
                 : []),
+            ...(onScan && (canViewRecords || canViewOwnRecords)
+                ? [{ id: 'scan', label: __('Escanear un código'), description: __('QR o código de barras, con la cámara'), icon: ScanLine, section: __('Acciones'), keywords: 'escanear qr barras camara codigo sku inventario', action: onScan }]
+                : []),
         ];
         for (const c of [...nav, ...actions]) {
             if (!typing || paletteMatches(`${c.label} ${c.keywords ?? ''}`, q)) out.push(c);
@@ -238,13 +248,18 @@ export function GlobalCommandPalette({
         isSuperadmin,
         onCreateList,
         onShowShortcuts,
+        onScan,
+        canViewRecords,
+        canViewOwnRecords,
     ]);
 
     useEffect(() => {
         if (open) {
-            setQuery('');
+            setQuery(initialQuery ?? '');
             setActiveIndex(0);
         }
+        // Sólo al abrir: el texto inicial no pisa lo que la persona escribe.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     useEffect(() => {
@@ -333,6 +348,22 @@ export function GlobalCommandPalette({
                         />
                         {searchingRecords && (
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-animate-spin imcrm-text-muted-foreground" aria-label={__('Buscando registros…')} />
+                        )}
+                        {onScan && (canViewRecords || canViewOwnRecords) && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onOpenChange(false);
+                                    onScan();
+                                }}
+                                className="imcrm-inline-flex imcrm-h-8 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                title={__('Escanear un código QR o de barras')}
+                                data-testid="palette-scan"
+                            >
+                                <ScanLine className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                                <span className="imcrm-hidden sm:imcrm-inline">{__('Escanear')}</span>
+                                <span className="imcrm-sr-only sm:imcrm-hidden">{__('Escanear')}</span>
+                            </button>
                         )}
                     </div>
 

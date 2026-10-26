@@ -489,6 +489,7 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
                             onChange={(v) => ctx.setValue(field.slug, v)}
                             error={ctx.errors[field.slug]}
                             allowCreateOptions={ctx.mode !== 'portal'}
+                            scan={ctx.mode !== 'portal' && !ctx.preview}
                             history={ctx.mode === 'portal' || ctx.preview ? null : { canRestore: true }}
                         />
                     </PopoverContent>
@@ -530,6 +531,7 @@ export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: s
                             onChange={(v) => ctx.setValue(f.slug, v)}
                             error={ctx.errors[f.slug]}
                             allowCreateOptions={ctx.mode !== 'portal'}
+                            scan={ctx.mode !== 'portal' && !ctx.preview}
                             // v0.1.291 — «Ver historial» (no en el portal ni en el editor).
                             history={ctx.mode === 'portal' || ctx.preview ? null : { canRestore: ctx.canEdit }}
                             lockedReason={

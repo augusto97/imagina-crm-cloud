@@ -10,6 +10,7 @@ import { loadEnv } from '../src/config/env';
 import {
     attachments,
     auditLog,
+    pushSubscriptions,
     automations,
     commentReactions,
     comments,
@@ -364,6 +365,8 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
             frequency: 'monthly',
         });
         await pg.db.insert(auditLog).values({ tenantId: id, action: 'list.create', targetLabel: 'X' });
+        // H1 — un dispositivo con notificaciones push.
+        await pg.db.insert(pushSubscriptions).values({ tenantId: id, userId: owner!.id, endpoint: 'https://push.test/x', endpointHash: 'x', p256dh: 'p', auth: 'a' });
         // v0.1.291 — reacciones y registro de tiempo.
         await pg.db.insert(commentReactions).values({ tenantId: id, commentId: comment!.id, userId: owner!.id, emoji: '👍' });
         await pg.db.insert(timeEntries).values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, workDate: '2026-10-20', seconds: 60 });
@@ -433,6 +436,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(await pg.db.select().from(mentions).where(eq(mentions.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recurrences).where(eq(recurrences.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(auditLog).where(eq(auditLog.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(pushSubscriptions).where(eq(pushSubscriptions.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(listSlugHistory).where(eq(listSlugHistory.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(publicDashboards).where(eq(publicDashboards.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(dashboardSubscriptions).where(eq(dashboardSubscriptions.tenantId, id))).toHaveLength(0);

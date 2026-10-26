@@ -10,6 +10,16 @@
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" data-imcrm-default="1" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" data-imcrm-default="1" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" data-imcrm-default="1" />
+        <!-- H1 — app instalable: el manifiesto lo arma el API por Host (en el
+             dominio de una empresa, su nombre y su color). Mismo origen: la CSP
+             no cambia. `lib/pwa` actualiza theme-color y el título de iOS con
+             la marca. -->
+        <link rel="manifest" href="/api/v1/public/manifest.webmanifest" />
+        <meta name="theme-color" content="#0c7e97" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Imagina Base" />
         <script>
             /* Tema (v0.1.112): se pinta ANTES de que monte React para que una
              * sesión en oscuro no arranque con un flash blanco. Misma clave y

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Keyboard, LogOut, Moon, Settings, Sun, UserRound } from 'lucide-react';
+import { Download, Keyboard, LogOut, Moon, Settings, Sun, UserRound } from 'lucide-react';
 
 import { roleLabel, useWorkspaces } from '@/cloud/workspaceSwitch';
 import { useSession } from '@/cloud/session';
@@ -13,6 +14,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { __ } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
+import { InstallAppDialog } from '@/components/pwa/InstallAppDialog';
+import { currentAppName } from '@/lib/pwa/appMeta';
+import { promptInstall, useInstallMode } from '@/lib/pwa/install';
+import { forgetPushOnLogout } from '@/lib/pwa/push';
 
 import { initials, WorkspaceMenuItems } from './WorkspaceSwitcher';
 
@@ -27,12 +32,17 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
     const impersonating = useSession((s) => s.impersonating);
     const { memberships, active, locked } = useWorkspaces();
     const theme = useTheme();
+    const installMode = useInstallMode();
+    const [iosHelp, setIosHelp] = useState(false);
     if (!user) return null;
     const displayName = user.name.trim() !== '' ? user.name : user.email;
     const isDark = theme.resolved === 'dark';
 
     const logout = async (): Promise<void> => {
         const { api, useSession: store } = await import('@/cloud/session');
+        // H1 — quien entre después en este equipo no hereda los avisos push
+        // (el servidor ya borra los dispositivos de la sesión al cerrarla).
+        if (!impersonating) await forgetPushOnLogout().catch(() => undefined);
         try {
             await api.logout();
         } catch {
@@ -43,6 +53,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
     };
 
     return (
+        <>
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <button
@@ -114,6 +125,18 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                     {isDark ? <Sun className="imcrm-h-4 imcrm-w-4" /> : <Moon className="imcrm-h-4 imcrm-w-4" />}
                     {isDark ? __('Modo claro') : __('Modo oscuro')}
                 </DropdownMenuItem>
+                {installMode !== null && (
+                    <DropdownMenuItem
+                        onSelect={() => {
+                            if (installMode === 'prompt') void promptInstall();
+                            else window.setTimeout(() => setIosHelp(true), 0);
+                        }}
+                        data-testid="user-menu-install"
+                    >
+                        <Download className="imcrm-h-4 imcrm-w-4" />
+                        {__('Instalar la app')}
+                    </DropdownMenuItem>
+                )}
                 {onShowShortcuts && (
                     <DropdownMenuItem onSelect={onShowShortcuts}>
                         <Keyboard className="imcrm-h-4 imcrm-w-4" />
@@ -128,5 +151,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
+        {iosHelp && <InstallAppDialog open={iosHelp} onOpenChange={setIosHelp} appName={currentAppName()} />}
+        </>
     );
 }

@@ -77,6 +77,7 @@ import {
 } from './notification-text';
 import { TeamsService } from '../teams/teams.service';
 import { NotifyHub, type NotifyEvent } from './notify-hub';
+import { PushService } from '../pwa/push.service';
 
 /** Avisos por correo en el momento: tope por persona y hora (una edición masiva no inunda la casilla). */
 const MAIL_PER_HOUR = 10;
@@ -133,6 +134,8 @@ export class NotificationsService implements OnModuleInit {
         @Optional() private readonly timeZones?: TenantTimeZones,
         @Optional() private readonly domains?: DomainsService,
         @Optional() private readonly teams?: TeamsService,
+        /** H1 — el canal push (a los dispositivos donde la persona lo activó). */
+        @Optional() private readonly push?: PushService,
     ) {}
 
     onModuleInit(): void {
@@ -445,6 +448,17 @@ export class NotificationsService implements OnModuleInit {
         });
         for (const r of allowed) this.realtime.notifications(tenantId, r.userId);
 
+        // H1 — push: el MISMO aviso (título, una línea y el enlace), a quien lo
+        // pidió para este tipo, de los MISMOS destinatarios que la campana. Nunca
+        // a un invitado ni a un cliente del portal: el push es del equipo.
+        // Un fallo del canal no tumba la bandeja ni el correo.
+        const pushTo = allowed.filter((r) => r.role !== 'guest' && r.role !== 'client');
+        if (this.push && pushTo.length > 0) {
+            await this.push
+                .deliver(tenantId, pushTo, { kind, listId: n.listId, recordId: n.recordId, title: n.title, body })
+                .catch((err) => this.logger.warn(`Push de aviso: ${String(err)}`));
+        }
+
         const mailTo = allowed.filter((r) => r.prefs.email[kind]);
         if (mailTo.length > 0) {
             const links = await this.links(tenantId, n.listId);
@@ -645,6 +659,7 @@ export class NotificationsService implements OnModuleInit {
                 ...current,
                 ...input,
                 email: { ...current.email, ...(input.email ?? {}) },
+                push: { ...current.push, ...(input.push ?? {}) },
                 digest_days: input.digest_days ? [...new Set(input.digest_days)].sort() : current.digest_days,
             });
             settings.notifications = next;

@@ -213,6 +213,11 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   la interfaz (la API está lista); recalcular por desfase al reprogramar; ruta
   crítica.
 - **Campo Botón (v0.1.303)**: botones en el kanban y en las tarjetas.
+- **App instalable y push (v0.1.314)**: modo offline (H2); push e
+  instalación para el portal del cliente (junto con su dominio); el logo de la
+  empresa como ícono de la app; re-vincular la suscripción con la app cerrada
+  (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
+  administre push; llenar con la cámara otros campos además del «Código».
 - **Agenda de citas (v0.1.313)**: «quién atiende» por equipo; cobrar al
   agendar (hoy el precio es informativo; se uniría a los cobros de ADR-S31);
   citas grupales o con capacidad mayor que 1; margen por servicio (hoy es de la

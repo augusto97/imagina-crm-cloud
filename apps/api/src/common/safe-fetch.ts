@@ -26,7 +26,8 @@ import { BadRequestException } from '@nestjs/common';
 export interface SafeFetchOptions {
     method?: string;
     headers?: Record<string, string>;
-    body?: string;
+    /** Texto o bytes (el push manda el mensaje cifrado, binario). */
+    body?: string | Buffer;
     timeoutMs?: number;
     /**
      * Devolver el cuerpo de la respuesta (capado). Lo usa el PROBADOR de
@@ -190,7 +191,7 @@ export async function safeWebhookFetch(
 export function withContentLength(
     headers: Record<string, string>,
     method: string,
-    body: string | undefined,
+    body: string | Buffer | undefined,
 ): Record<string, string> {
     const out = { ...headers };
     const verb = method.toUpperCase();

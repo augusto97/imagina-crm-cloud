@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 
 import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
@@ -13,13 +13,18 @@ import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
 import { Topbar } from '@/admin/layout/Topbar';
 import { __ } from '@/lib/i18n';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { CHORD_TIMEOUT_MS, isTypingTarget, resolveGoChord } from '@/lib/shortcuts';
+
+const GlobalScanDialog = lazyWithReload(() => import('@/admin/scan/GlobalScanDialog'));
 
 export function AdminShell(): JSX.Element {
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const [createListOpen, setCreateListOpen] = useState(false);
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [scanOpen, setScanOpen] = useState(false);
+    const [paletteQuery, setPaletteQuery] = useState('');
     const location = useLocation();
     const navigate = useNavigate();
 
@@ -82,6 +87,7 @@ export function AdminShell(): JSX.Element {
     const openPalette = useCallback(() => setPaletteOpen(true), []);
     const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
     const openCreateList = useCallback(() => setCreateListOpen(true), []);
+    const openScan = useCallback(() => setScanOpen(true), []);
 
     return (
         <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-overflow-hidden imcrm-bg-background imcrm-text-foreground">
@@ -122,10 +128,29 @@ export function AdminShell(): JSX.Element {
             </div>
             <GlobalCommandPalette
                 open={paletteOpen}
-                onOpenChange={setPaletteOpen}
+                onOpenChange={(o) => {
+                    setPaletteOpen(o);
+                    if (!o) setPaletteQuery('');
+                }}
                 onCreateList={openCreateList}
                 onShowShortcuts={openShortcuts}
+                onScan={openScan}
+                initialQuery={paletteQuery}
             />
+            {/* H3 — escáner de la búsqueda global (se carga a pedido). */}
+            {scanOpen && (
+                <Suspense fallback={null}>
+                    <GlobalScanDialog
+                        open={scanOpen}
+                        onOpenChange={setScanOpen}
+                        onSearchAsText={(code) => {
+                            setScanOpen(false);
+                            setPaletteQuery(code);
+                            setPaletteOpen(true);
+                        }}
+                    />
+                </Suspense>
+            )}
             {shortcutsOpen && <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />}
             {createListOpen && <ListCreateDialog open={createListOpen} onOpenChange={setCreateListOpen} />}
             {/* v0.1.181 — asistente IA (ADR-S21): drawer a la derecha, se abre desde el Topbar. */}

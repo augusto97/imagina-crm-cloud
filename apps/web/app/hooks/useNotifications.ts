@@ -94,6 +94,7 @@ export function useUpdateNotificationPrefs() {
                     ...prev,
                     ...input,
                     email: { ...prev.email, ...(input.email ?? {}) },
+                    push: { ...prev.push, ...(input.push ?? {}) },
                     digest_days: input.digest_days ?? prev.digest_days,
                 });
             }
