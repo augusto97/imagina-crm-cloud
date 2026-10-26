@@ -105,6 +105,49 @@ export function buttonPressOf(entry: Pick<ActivityEntity, 'changes'>): { label: 
     };
 }
 
+/**
+ * C5 — Lo que guardó un evento de aprobación (`diff.approval`): `event`
+ * (requested | approved_step | approved | rejected | returned | cancelled),
+ * flujo, paso (índice 0), pasos, motivo, nota, automatización.
+ */
+export function approvalText(entry: Pick<ActivityEntity, 'changes'>): string {
+    const raw = (entry.changes as Record<string, unknown> | null | undefined)?.approval;
+    const a = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    const flow = typeof a.flow === 'string' && a.flow !== '' ? a.flow : __('aprobación');
+    const steps = typeof a.steps === 'number' && a.steps > 0 ? a.steps : 1;
+    const step = (typeof a.step === 'number' && a.step >= 0 ? a.step : 0) + 1;
+    const reason = typeof a.reason === 'string' ? a.reason.trim() : '';
+    const note = typeof a.note === 'string' ? a.note.trim() : '';
+    const automation = typeof a.automation === 'string' && a.automation !== '' ? a.automation : null;
+    const waiting = typeof a.waiting_on === 'number' ? a.waiting_on : 0;
+    const withReason = (text: string): string => (reason !== '' ? `${text}: ${reason}` : text);
+    switch (a.event) {
+        case 'requested': {
+            let text = sprintf(/* translators: %s: nombre del flujo */ __('pidió aprobación (%s)'), flow);
+            if (automation) text += ` · ${sprintf(__('desde la automatización «%s»'), automation)}`;
+            return note !== '' ? `${text} · ${note}` : text;
+        }
+        case 'approved_step': {
+            const text = sprintf(/* translators: %1$d paso, %2$d total */ __('aprobó el paso %1$d de %2$d'), step, steps);
+            return waiting > 0
+                ? `${text} · ${waiting === 1 ? __('falta 1 persona') : sprintf(__('faltan %d personas'), waiting)}`
+                : text;
+        }
+        case 'approved':
+            return steps > 1
+                ? sprintf(__('aprobó el paso %1$d de %2$d · la solicitud quedó aprobada (%3$s)'), step, steps, flow)
+                : sprintf(__('aprobó la solicitud (%s)'), flow);
+        case 'rejected':
+            return withReason(steps > 1 ? sprintf(__('rechazó en el paso %1$d de %2$d'), step, steps) : __('rechazó'));
+        case 'returned':
+            return withReason(__('devolvió la solicitud para corregir'));
+        case 'cancelled':
+            return withReason(sprintf(__('canceló la solicitud de aprobación (%s)'), flow));
+        default:
+            return sprintf(__('actualizó la aprobación (%s)'), flow);
+    }
+}
+
 /** El verbo de la entrada, en pasado y con sujeto ya puesto aparte. */
 export function actionText(entry: ActivityEntity, changeCount: number): string {
     switch (entry.action) {
@@ -127,6 +170,9 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         case 'dependency_added':
         case 'dependency_removed':
             return dependencyText(entry);
+        // C5 — aprobaciones: `diff.approval` = {event, flow, step, steps, reason?…}.
+        case 'approval':
+            return approvalText(entry);
         // Campo «Botón»: `diff.button` = {label, ok, error?}.
         case 'button_pressed': {
             const b = buttonPressOf(entry);

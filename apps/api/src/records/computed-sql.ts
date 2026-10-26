@@ -2,12 +2,14 @@ import {
     COMPUTED_MAX_DEPTH,
     FALLBACK_TIME_ZONE,
     isSystemField,
+    readApprovalFlowId,
     systemFieldBaseType,
     type Field,
     type FieldType,
     type SystemFieldType,
 } from '@imagina-base/shared';
 import { sql, type SQL } from 'drizzle-orm';
+import { approvalStatusExpr } from '../approvals/approval-sql';
 import { records } from '../db/schema';
 import { fieldTypedExpr, type FilterableField } from './query-builder';
 import { compileFormulaField, formulaGroupExpr } from './formula-sql';
@@ -66,6 +68,13 @@ export function withComputedExprs(
         if (f.type !== 'time_tracked' || !available.has(f.id)) continue;
         out.set(f.id, { id: f.id, type: 'time_tracked', expr: timeTrackedExpr(), valueKind: 'numeric' });
     }
+    // C5 — «Aprobación»: el estado de la última solicitud del registro (de su
+    // flujo). Filtra («pendientes»), ordena y agrupa por la subconsulta.
+    for (const f of fields) {
+        if (f.type !== 'approval' || !available.has(f.id)) continue;
+        const expr = approvalStatusExpr(readApprovalFlowId(f.config as Record<string, unknown>));
+        out.set(f.id, { id: f.id, type: 'approval', expr, valueKind: 'text', groupExpr: expr });
+    }
     for (const f of fields) {
         if (f.type !== 'computed' || !available.has(f.id)) continue;
         const expr = computedExpr(f, byId, out, new Set(), 0);
@@ -102,7 +111,12 @@ export function withComputedExprs(
  * `(record_id, seconds)` la resuelve sin tocar la tabla.
  */
 export function timeTrackedExpr(): SQL {
-    return sql`(SELECT round(coalesce(sum(te.seconds), 0) / 60.0) FROM time_entries te WHERE te.record_id = ${records.id})`;
+    // La columna va ANIDADA (defensivo): como chunk de primer nivel, drizzle
+    // la escribe sin tabla (`"id"`) si la expresión llega tal cual como
+    // columna del SELECT de una sola tabla, y dentro de la subconsulta `"id"`
+    // sería `te.id`. Ver `approvalStatusExpr`, donde sí pasaba.
+    const recordId = sql`${records.id}`;
+    return sql`(SELECT round(coalesce(sum(te.seconds), 0) / 60.0) FROM time_entries te WHERE te.record_id = ${recordId})`;
 }
 
 /**

@@ -48,6 +48,8 @@ export function FieldDisplay(props: FieldDisplayProps): JSX.Element {
         const big = resolveDisplay('formula', props.display) === 'big';
         return <FieldDisplay {...props} field={asDisplayField(field)} display={big ? 'big' : undefined} />;
     }
+    // C5 — el estado de la aprobación se muestra como una selección (chip).
+    if (field.type === 'approval') return <FieldDisplay {...props} field={asDisplayField(field)} />;
     const display = resolveDisplay(field.type, props.display);
     const accent = props.accent ?? 'hsl(var(--imcrm-primary))';
 

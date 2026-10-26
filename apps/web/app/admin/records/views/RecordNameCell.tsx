@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlignLeft, ChevronRight, CornerDownRight, Lock } from 'lucide-react';
+import { AlignLeft, ChevronRight, ClipboardCheck, CornerDownRight, Lock } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -88,6 +88,18 @@ export function RecordNameCell({
                     data-testid="imcrm-row-blocked"
                 >
                     <Lock aria-hidden className="imcrm-h-3.5 imcrm-w-3.5" />
+                </span>
+            )}
+            {/* C5 — aprobación pendiente (viaja en el listado). */}
+            {(record.approval_pending ?? 0) > 0 && (
+                <span
+                    role="img"
+                    title={__('Aprobación pendiente')}
+                    aria-label={__('Aprobación pendiente')}
+                    className="imcrm-inline-flex imcrm-shrink-0 imcrm-text-amber-600 dark:imcrm-text-amber-400"
+                    data-testid="imcrm-row-approval-pending"
+                >
+                    <ClipboardCheck aria-hidden className="imcrm-h-3.5 imcrm-w-3.5" />
                 </span>
             )}
             {/* Señal de que el registro tiene descripción (v0.1.133): el

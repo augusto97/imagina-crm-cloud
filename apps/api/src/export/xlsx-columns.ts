@@ -242,6 +242,7 @@ export function planXlsxColumns(writer: XlsxStreamWriter, fields: Field[], ctx: 
                 return plan((r) => dateTimeCell(raw(r)));
             case 'select':
             case 'multi_select':
+            case 'approval': // C5 — el estado con su etiqueta.
             case 'checkbox':
             case 'user':
             case 'created_by': // v0.1.300 — «Creado por» / «Modificado por»: el nombre (0 = Sistema).

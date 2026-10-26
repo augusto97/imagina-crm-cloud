@@ -57,6 +57,7 @@ import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordSubtasks } from './RecordSubtasks';
 import { isCloseCancelled } from './dependencies/closeGuard';
 import { RecordDependencies } from './dependencies/RecordDependencies';
+import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, useStoreRules } from './storeRules';
@@ -531,6 +532,10 @@ export function RecordDetailDrawer({
                                             className="imcrm-mb-4"
                                         />
                                     )}
+
+                                    {/* C5 — aprobación: «Pendiente de tu aprobación», las
+                                        solicitudes y «Pedir aprobación». Sin flujos, no ocupa lugar. */}
+                                    {view.ready && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
 
                                     {/* Descripción rica (v0.1.133) — el cuerpo tipo
                                         documento de la ficha, arriba de los campos

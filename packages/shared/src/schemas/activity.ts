@@ -18,6 +18,10 @@ export const ACTIVITY_ACTIONS = [
     'dependency_removed',
     // Campo «Botón»: alguien lo presionó. `diff.button` = {field_id, label, ok, actions}.
     'button_pressed',
+    // C5 — aprobaciones. `diff.approval` = {event, request_id, flow, step,
+    // steps, reason?, note?} (event: requested | approved_step | approved |
+    // rejected | returned | cancelled).
+    'approval',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;

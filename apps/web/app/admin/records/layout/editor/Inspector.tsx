@@ -90,7 +90,7 @@ function HeadButton({ label, onClick, danger = false, children }: { label: strin
 
 // ── Bloque ───────────────────────────────────────────────────────────────
 
-const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed', 'time_tracking', 'dependencies']);
+const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed', 'time_tracking', 'dependencies', 'approval']);
 
 function BlockInspector({ block }: { block: LayoutBlock }): JSX.Element {
     const ed = useEditor();
@@ -198,6 +198,8 @@ function BlockForm(props: FormProps): JSX.Element | null {
             return <InfoForm text={__('Botón para invitar al cliente a su portal. Sólo aparece si la lista tiene el portal activado.')} />;
         case 'dependencies':
             return <InfoForm text={__('Los registros que bloquean a éste (con un candado si siguen abiertos) y los que él bloquea, con su estado. Se agregan con el buscador y se quitan con la ×. Al cerrar algo que tiene bloqueantes abiertos, la app avisa.')} />;
+        case 'approval':
+            return <InfoForm text={__('Muestra las solicitudes de aprobación del registro con sus pasos y motivos, el aviso «Pendiente de tu aprobación» a quien le toca decidir y el botón «Pedir aprobación». Los flujos se configuran en Ajustes de la lista → Aprobaciones.')} />;
         case 'subtasks':
             return <InfoForm text={__('Las subtareas del registro con su estado y una fila para agregar otra. Si el registro es una subtarea, muestra el vínculo a su padre.')} />;
         case 'payments':

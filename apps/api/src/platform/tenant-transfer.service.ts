@@ -81,6 +81,9 @@ import {
     recordDependencies,
     ganttBaselines,
     ganttBaselineItems,
+    approvalFlows,
+    approvalRequests,
+    approvalDecisions,
 } from '../db/schema';
 import { FILE_STORAGE, TENANT_STORAGE, type FileStorage, type TenantStorageResolver } from '../files/file-storage';
 import {
@@ -348,6 +351,19 @@ export class TenantTransferService {
                         liveRecord(ganttBaselineItems.recordId),
                         sql`EXISTS (SELECT 1 FROM gantt_baselines b JOIN saved_views v ON v.id = b.view_id WHERE b.id = ${ganttBaselineItems.baselineId} AND v.deleted_at IS NULL)`,
                     ),
+                ),
+            );
+
+            // C5 — aprobaciones: los flujos de cada lista, las solicitudes (de
+            // registros vivos) y sus decisiones.
+            await dump('approval_flows', await this.byTenant(approvalFlows, tenantId, liveList(approvalFlows.listId)));
+            await dump('approval_requests', await this.byTenant(approvalRequests, tenantId, liveRecord(approvalRequests.recordId)));
+            await dump(
+                'approval_decisions',
+                await this.byTenant(
+                    approvalDecisions,
+                    tenantId,
+                    sql`EXISTS (SELECT 1 FROM approval_requests ar JOIN records r ON r.id = ar.record_id WHERE ar.id = ${approvalDecisions.requestId} AND r.deleted_at IS NULL)`,
                 ),
             );
 
@@ -688,6 +704,26 @@ export class TenantTransferService {
             }),
             (f) => maps.list.has(Number(f.listId)),
         );
+        // C5 — flujos de aprobación ANTES de la segunda pasada de los campos:
+        // la config de un campo «Aprobación» nombra su flujo, y el flujo nombra
+        // campos (aprobador por campo Persona, qué poner al aprobar).
+        counts.approval_flows = await this.insertMapped(
+            tx,
+            await this.readAll(rows('approval_flows')),
+            approvalFlows,
+            maps.approval_flow,
+            (a) => ({
+                tenantId,
+                listId: maps.list.get(Number(a.listId))!,
+                name: String(a.name ?? 'Aprobación'),
+                description: String(a.description ?? ''),
+                config: remapJson((a.config as Row | null) ?? {}, maps) as Row,
+                isActive: a.isActive !== false,
+                position: Number(a.position ?? 0),
+                createdBy: mapId(maps.user, a.createdBy),
+            }),
+            (a) => maps.list.has(Number(a.listId)),
+        );
         for (const f of fieldRows) {
             const newId = maps.field.get(Number(f.id));
             if (newId === undefined) continue;
@@ -825,6 +861,52 @@ export class TenantTransferService {
                 sourceRecordId,
                 targetRecordId,
                 position: Number(r.position ?? 0),
+            };
+        });
+
+        // C5 — solicitudes de aprobación (con la COPIA de los pasos re-mapeada)
+        // y sus decisiones.
+        counts.approval_requests = await this.insertMapped(
+            tx,
+            await this.readAll(rows('approval_requests')),
+            approvalRequests,
+            maps.approval_request,
+            (q) => ({
+                tenantId,
+                listId: maps.list.get(Number(q.listId))!,
+                recordId: maps.record.get(Number(q.recordId))!,
+                flowId: mapId(maps.approval_flow, q.flowId),
+                flowName: String(q.flowName ?? 'Aprobación'),
+                config: remapJson((q.config as Row | null) ?? {}, maps) as Row,
+                status: String(q.status ?? 'cancelled'),
+                currentStep: Number(q.currentStep ?? 0) || 0,
+                stepStartedAt: this.date(q.stepStartedAt) ?? new Date(),
+                note: String(q.note ?? ''),
+                source: q.source === 'automation' ? 'automation' : 'user',
+                // La automatización que la pidió: el id cambia (no hay FK);
+                // queda el nombre para mostrar.
+                automationId: null,
+                automationName: (q.automationName as string | null) ?? null,
+                requestedBy: mapId(maps.user, q.requestedBy),
+                requestedAt: this.date(q.requestedAt) ?? new Date(),
+                resolvedAt: this.date(q.resolvedAt),
+                resolvedBy: mapId(maps.user, q.resolvedBy),
+                reason: String(q.reason ?? ''),
+                updatedAt: this.date(q.updatedAt) ?? new Date(),
+            }),
+            (q) => maps.list.has(Number(q.listId)) && maps.record.has(Number(q.recordId)),
+        );
+        counts.approval_decisions = await this.insertPlain(tx, rows('approval_decisions'), approvalDecisions, (d) => {
+            const requestId = mapId(maps.approval_request, d.requestId);
+            if (requestId === null) return null;
+            return {
+                tenantId,
+                requestId,
+                step: Number(d.step ?? 0) || 0,
+                userId: mapId(maps.user, d.userId),
+                decision: String(d.decision ?? 'approve'),
+                reason: String(d.reason ?? ''),
+                createdAt: this.date(d.createdAt) ?? new Date(),
             };
         });
 
@@ -1926,6 +2008,12 @@ function remapActivityDiff(action: string, diff: Row, maps: IdMaps): Row {
         const dep = (diff.dependency ?? null) as Row | null;
         if (!dep || typeof dep !== 'object') return diff;
         return { ...diff, dependency: { ...dep, record_id: mapId(maps.record, dep.record_id) } };
+    }
+    // C5 — la actividad de una aprobación nombra la solicitud por id.
+    if (action === 'approval') {
+        const ap = (diff.approval ?? null) as Row | null;
+        if (!ap || typeof ap !== 'object') return diff;
+        return { ...diff, approval: { ...ap, request_id: mapId(maps.approval_request, ap.request_id) } };
     }
     return remapRecordData(diff, new Map(), maps);
 }

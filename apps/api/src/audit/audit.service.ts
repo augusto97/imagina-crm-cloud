@@ -132,7 +132,11 @@ export type AuditAction =
     | 'gantt.baseline_save'
     | 'gantt.baseline_delete'
     // B2 — capacidad de una persona en la vista «Carga de trabajo».
-    | 'workload.capacity';
+    | 'workload.capacity'
+    // C5 — flujos de aprobación de una lista (quién aprueba y qué se pone al resolver).
+    | 'approval_flow.create'
+    | 'approval_flow.update'
+    | 'approval_flow.delete';
 
 export interface AuditEntryDto {
     id: number;

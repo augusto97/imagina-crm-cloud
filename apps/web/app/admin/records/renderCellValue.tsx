@@ -112,6 +112,8 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     if (field.type === 'created_at' || field.type === 'updated_at' || field.type === 'created_by' || field.type === 'updated_by') {
         return renderCellValue(asDisplayField(field), value);
     }
+    // C5 — estado de la aprobación: chip con el color del estado.
+    if (field.type === 'approval') return renderCellValue(asDisplayField(field), value);
 
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground">—</span>;

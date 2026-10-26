@@ -27,6 +27,10 @@ export interface IdMaps {
     document: Map<number, number>;
     /** v0.1.275 — formularios públicos (el disparador «Cuando se envía un formulario»). */
     form: Map<number, number>;
+    /** C5 — flujos de aprobación (campo «Aprobación», disparador y acciones). */
+    approval_flow: Map<number, number>;
+    /** C5 — solicitudes de aprobación (las nombra la actividad del registro). */
+    approval_request: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -41,6 +45,8 @@ export function emptyMaps(): IdMaps {
         view: new Map(),
         document: new Map(),
         form: new Map(),
+        approval_flow: new Map(),
+        approval_request: new Map(),
     };
 }
 
@@ -76,11 +82,16 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     file_id: 'attachment',
     // v0.1.275 — el formulario que filtra un disparador `form_submitted`.
     form_id: 'form',
+    // C5 — el flujo de aprobación de un campo «Aprobación», del disparador
+    // «Cuando se aprueba o se rechaza» y de «Pedir / Esperar aprobación».
+    approval_flow_id: 'approval_flow',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
     // v0.1.266 — PDFs adjuntos a un send_email.
     pdf_templates: 'document',
+    // C5 — las personas que aprueban un paso de un flujo de aprobación.
+    approver_user_ids: 'user',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);

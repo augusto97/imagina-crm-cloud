@@ -11,7 +11,7 @@ import type { FieldEntity } from '@/types/field';
 
 /** Campos que se pueden pedir al mover (los que se escriben a mano). */
 export function requirableFields(fields: FieldEntity[], exclude: number[]): FieldEntity[] {
-    const NOT = ['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'relation', 'file'];
+    const NOT = ['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'relation', 'file'];
     return fields.filter((f) => !NOT.includes(f.type) && !exclude.includes(f.id)).sort((a, b) => a.position - b.position);
 }
 

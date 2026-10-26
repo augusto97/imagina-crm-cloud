@@ -28,6 +28,7 @@ import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
+import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { readStoreListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
@@ -336,6 +337,9 @@ export function RecordPage(): JSX.Element {
                     {rec.parent_id && (
                         <RecordSubtasks listId={listInfo.id} listSlug={listInfo.slug} record={rec} fields={fields.data ?? []} />
                     )}
+
+                    {/* C5 — aprobación (sin flujos en la lista, no aparece). */}
+                    <RecordApprovals listId={listInfo.id} recordId={rec.id} />
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el
                         modal del registro. */}

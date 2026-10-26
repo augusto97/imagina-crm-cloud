@@ -374,6 +374,7 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
         case 'lookup':
         case 'rollup':
         case 'time_tracked':
+        case 'approval':
         case 'autonumber':
         case 'created_at':
         case 'updated_at':

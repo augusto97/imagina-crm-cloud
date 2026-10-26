@@ -16,7 +16,7 @@ import type { Tx } from './client';
  * sólo deja de compilar una consulta corta.
  */
 export function groupKeyHasSubquery(type: string): boolean {
-    return type === 'multi_select' || type === 'lookup' || type === 'rollup' || type === 'computed' || type === 'time_tracked' || type === 'formula';
+    return type === 'multi_select' || type === 'lookup' || type === 'rollup' || type === 'computed' || type === 'time_tracked' || type === 'formula' || type === 'approval';
 }
 
 export async function disableJitForTx(tx: Tx): Promise<void> {

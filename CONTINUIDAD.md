@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.308** (release de dependencias), en `main`.
+versión publicada: **v0.1.309** (aprobaciones), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
@@ -392,7 +392,13 @@ versión publicada: **v0.1.308** (release de dependencias), en `main`.
   vista (falta traducir «equipo → ids» cuando entre Equipos). Los otros tres
   agentes siguen. Los avisos de dependencias que encontró el agente se cerraron
   en v0.1.308 (queda planificada la migración a Zod 4, ver «Pendientes
-  técnicos»).
+  técnicos»). Aprobaciones publicada (v0.1.309, migración 0083). **Al juntarla
+  con Equipos**: en el arranque del módulo de equipos llamar a
+  `ApprovalsService.setTeamMembersResolver((tx, tenantId, teamId) => …memberIds)`,
+  habilitar «Un equipo» (con su selector) en `ApprovalFlowsPanel` y agregar su
+  test; con los roles propios, decidir si el aprobador «rol» los acepta (hoy,
+  sólo los base de `APPROVER_ROLES`). Queda fuera de Aprobaciones: verlas en el
+  portal del cliente, delegar/escalar por plazo y campos por paso.
 - 2026-10-23 — **El usuario aprobó las fases 1 y 2 del estudio «de una»**
   ("ya cuando termines y probemos seguimos con las otras fases"). Se trabajan
   en paralelo en copias aisladas (worktrees), cada una con su instancia de
@@ -665,6 +671,23 @@ versión publicada: **v0.1.308** (release de dependencias), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.309** — **Aprobaciones** (ADR-S63, opción C5 del
+  estudio + su disparador y su acción; segunda entrega de la fase 3). Flujos por
+  lista con pasos en serie (campo Persona, rol o personas; «cualquiera» o
+  «todos»), qué se pone al aprobar o rechazar, y pedir otra vez tras un rechazo.
+  Se pide desde la ficha o una automatización; se decide en la ficha, en Mi
+  trabajo → Aprobaciones o desde el correo, cuyos botones llevan a la app y
+  confirman con sesión (sin token, nunca en un GET). El aprobador se resuelve en
+  vivo, quien pide no aprueba lo suyo y el ACL se re-chequea en cada decisión;
+  las decisiones son concurrentes-seguras. Campo derivado «Aprobación» para
+  filtrar, agrupar y ordenar, con indicador en la fila. Disparador «Cuando se
+  aprueba o se rechaza», «Pedir aprobación» y «Esperar aprobación» (espera
+  durable con tope de días → «vencida»). La papelera cancela las pendientes y
+  restaurar no las revive. El asistente/MCP configura flujos y lee solicitudes,
+  pero no decide. Migración 0083 (era 0086 en la copia del agente). Al integrar
+  sobre v0.1.308 sólo chocó la lista de acciones de la bitácora, y el lint atrapó
+  un comentario entre dos `case` (no-fallthrough). E2E 54/54. Queda: equipos
+  como aprobador (gancho listo), aprobaciones en el portal y escalado por plazo.
 - **2026-10-26 · v0.1.308** — **Dependencias de producción otra vez en 0 +
   freno de arrays en el cuerpo** (addendum de ADR-S38). El agente de Carga de
   trabajo encontró 10 avisos nuevos en `pnpm audit --prod`. `nodemailer`

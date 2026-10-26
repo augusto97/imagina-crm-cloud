@@ -3,6 +3,7 @@ import {
     isSystemField,
     isThroughField,
     jsonbKeyForField,
+    readApprovalFlowId,
     type SystemFieldType,
     type Field,
     type FilterGroup,
@@ -10,6 +11,7 @@ import {
     type ThroughInfo,
 } from '@imagina-base/shared';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { latestApprovalStatuses } from '../approvals/approval-sql';
 import type { Tx } from '../db/client';
 import { lists, records, tenants } from '../db/schema';
 import { parseTenantTimeZone } from '../tenancy/tenant-time-zone.service';
@@ -325,10 +327,17 @@ export class ThroughEngine {
         // v0.1.291 — «Tiempo registrado»: también se resuelve en cada lectura
         // (la suma de `time_entries`), en UNA query por página.
         const timeFields = allFields.filter((f) => f.type === 'time_tracked');
-        if ((plans.length === 0 && unresolved.length === 0 && timeFields.length === 0) || rows.length === 0) return rows;
+        // C5 — «Aprobación»: el estado de la última solicitud de su flujo, UNA
+        // query por campo y página.
+        const approvalFields = allFields.filter((f) => f.type === 'approval');
+        if ((plans.length === 0 && unresolved.length === 0 && timeFields.length === 0 && approvalFields.length === 0) || rows.length === 0) return rows;
         const ids = rows.map((r) => r.id);
         const values = new Map<number, Map<number, unknown>>();
         const minutes = timeFields.length > 0 ? await trackedMinutes(tx, ids) : new Map<number, number>();
+        const approvalStatuses = new Map<number, Map<number, string>>();
+        for (const f of approvalFields) {
+            approvalStatuses.set(f.id, await latestApprovalStatuses(tx, ids, readApprovalFlowId(f.config as Record<string, unknown>)));
+        }
 
         // Lookups: una query por relación (varios lookups sobre la misma
         // relación comparten las filas vinculadas).
@@ -367,6 +376,7 @@ export class ThroughEngine {
                 data[jsonbKeyForField(f.id)] = f.type === 'lookup' ? [] : null;
             }
             for (const f of timeFields) data[jsonbKeyForField(f.id)] = minutes.get(r.id) ?? 0;
+            for (const f of approvalFields) data[jsonbKeyForField(f.id)] = approvalStatuses.get(f.id)?.get(r.id) ?? null;
             return { ...r, data };
         });
     }

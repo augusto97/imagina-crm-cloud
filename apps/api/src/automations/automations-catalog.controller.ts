@@ -25,6 +25,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'form_submitted', label: 'Cuando se envía un formulario', event: 'imagina_crm/form_submitted', config_schema: {} },
     // Campo «Botón» — alguien presionó un botón del registro (todos o uno).
     { slug: 'button_pressed', label: 'Al presionar el botón', event: 'imagina_crm/button_pressed', config_schema: {} },
+    // C5 — una solicitud de aprobación del registro se resolvió.
+    { slug: 'approval_resolved', label: 'Cuando se aprueba o se rechaza', event: 'imagina_crm/approval_resolved', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [
@@ -39,6 +41,9 @@ const ACTIONS: ActionMeta[] = [
     // v0.1.288 — esperar un tiempo o hasta una fecha, y repetir por cada vinculado.
     { slug: 'wait', label: 'Esperar', config_schema: {} },
     { slug: 'for_each_linked', label: 'Repetir por cada registro vinculado', config_schema: {} },
+    // C5 — aprobaciones: pedir una y esperar a que se resuelva.
+    { slug: 'request_approval', label: 'Pedir aprobación', config_schema: {} },
+    { slug: 'wait_approval', label: 'Esperar aprobación', config_schema: {} },
 ];
 
 @Controller()

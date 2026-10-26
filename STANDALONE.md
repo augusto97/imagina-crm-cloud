@@ -3916,4 +3916,58 @@ arrastrar en el tiempo (para eso está el Gantt), la capacidad por día puntual
 
 ---
 
-**Versión del documento:** 1.105.0 (dependencias y freno de arrays en el cuerpo)
+### ADR-S63 — Aprobaciones (v0.1.309)
+
+**Contexto.** Gastos, descuentos, contratos y compras necesitan un visto bueno
+antes de seguir, a veces de varias personas en orden. Hasta acá se resolvía con
+un campo Estado que cualquiera con permiso podía cambiar: no quedaba rastro de
+quién aprobó, no había avisos, ni forma de que una automatización esperara la
+decisión.
+
+**Decisión.**
+1. **Modelo** en tres tablas con RLS (migración 0083): `approval_flows` (la
+   configuración de la lista: pasos en serie, cada uno con aprobador `users` /
+   `role` / `team` / `field` y modo `any` / `all`, más `on_approve`,
+   `on_reject`, `allow_resubmit` y `self_approval`), `approval_requests` (la
+   COPIA de la config al pedir: cambiar el flujo no altera las pendientes;
+   índice único parcial, una pendiente por flujo y registro) y
+   `approval_decisions` (una fila por persona y paso). Referencias por id con
+   las convenciones del re-mapeo.
+2. **El aprobador se resuelve en vivo en cada decisión**, en un único punto
+   (`resolveApprovers`): si el campo Persona cambió, decide el valor de ahora;
+   se excluye a quien pidió salvo `self_approval` (si no, bastaría ponerse de
+   «Jefe» para autoaprobarse); se exige poder ver el registro. El rol usa los
+   roles base; el equipo se conecta con `setTeamMembersResolver`.
+3. **Concurrencia**: la decisión lee la solicitud con `FOR UPDATE` y trae el
+   paso que se vio; si cambió, 409 `approval_step_changed`. En «todos» las
+   aprobaciones se encolan; en «cualquiera» la segunda recibe el 409 y un doble
+   clic no aprueba el paso siguiente.
+4. **Correo**: los botones llevan a la app (`/#/approvals/:id?d=approve|reject`),
+   que confirma con la sesión de la persona. Sin token en el enlace y nunca se
+   decide en un GET: un correo reenviado no aprueba nada.
+5. **Campo derivado `approval`**: el estado de la última solicitud (de un flujo
+   o de cualquiera) por subconsulta correlacionada con índice
+   `(record_id, id DESC)`; filtra, ordena, agrupa y entra en agregados y
+   exportación con la maquinaria de lookup/rollup. `approval_pending` viaja en
+   cada fila con una consulta por página.
+6. **Automatizaciones**: disparador `approval_resolved` (filtro por flujo y
+   resultados), acción `request_approval` y paso `wait_approval`, que reusa la
+   espera durable de ADR-S47 (lo despierta `ApprovalHub`; al tope de días sigue
+   como `vencida`). Variables `{{aprobacion.*}}`; «Probar» simula las tres.
+7. **Papelera**: un disparador de base cancela las pendientes al borrar el
+   registro; restaurarlo no las revive (los aprobadores no reciben solicitudes
+   zombi y quien pidió vuelve a pedir).
+8. **Asistente/MCP** lee flujos y solicitudes y propone configurar flujos, pero
+   **no decide**.
+9. La migración de empresa lleva flujos, solicitudes y decisiones re-mapeados;
+   las plantillas de lista no llevan flujos (referencias en `null`).
+
+**Consecuencias.** Tres tablas nuevas y un disparador sobre `records`; avisos
+`approval` con correo encendido por defecto; bloque propio en la ficha diseñada
+(y la sección implícita si el diseño no lo trae). Queda fuera: aprobaciones en
+el portal del cliente, delegar o escalar por plazo, campos por paso, y equipos y
+roles propios como aprobadores (se conectan al integrar esa entrega).
+
+---
+
+**Versión del documento:** 1.106.0 (aprobaciones)

@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AggregateModule } from '../aggregate/aggregate.module';
+import { ApprovalsModule } from '../approvals/approvals.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommentsModule } from '../comments/comments.module';
 import { AutomationsModule } from '../automations/automations.module';
@@ -27,6 +28,7 @@ import { ProposalsService } from './proposals.service';
 import { ProposalsStore } from './proposals.store';
 import { PersonalTokensController } from './tokens.controller';
 import { PersonalTokensService } from './tokens.service';
+import { ApprovalTools } from './tools/approval-tools';
 import { DataTools } from './tools/data-tools';
 import { AiToolRegistry } from './tools/registry';
 import { StructureTools } from './tools/structure-tools';
@@ -42,7 +44,7 @@ import { StructureTools } from './tools/structure-tools';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule],
+    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule, ApprovalsModule],
     controllers: [AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
     providers: [
         AiModelCatalogService,
@@ -52,13 +54,16 @@ import { StructureTools } from './tools/structure-tools';
         ConversationsStore,
         StructureTools,
         DataTools,
+        ApprovalTools,
         {
             provide: AiToolRegistry,
-            inject: [StructureTools, DataTools],
-            useFactory: (structure: StructureTools, data: DataTools): AiToolRegistry => {
+            inject: [StructureTools, DataTools, ApprovalTools],
+            useFactory: (structure: StructureTools, data: DataTools, approvals: ApprovalTools): AiToolRegistry => {
                 const registry = new AiToolRegistry();
                 structure.registerInto(registry);
                 data.registerInto(registry);
+                // C5 — aprobaciones (leer pendientes y configurar flujos).
+                approvals.registerInto(registry);
                 return registry;
             },
         },

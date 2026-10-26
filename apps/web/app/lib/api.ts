@@ -324,6 +324,8 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         has_description: r.has_description === true,
         // A8 — bloqueantes abiertos (icono «bloqueado») y lo reprogramado en cadena.
         ...(typeof r.blocked_by_open === 'number' ? { blocked_by_open: r.blocked_by_open } : {}),
+        // C5 — solicitudes de aprobación pendientes (indicador de la fila).
+        ...(typeof r.approval_pending === 'number' && r.approval_pending > 0 ? { approval_pending: r.approval_pending } : {}),
         ...(Array.isArray(r.rescheduled) ? { rescheduled: r.rescheduled } : {}),
         created_by: r.created_by,
         // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,

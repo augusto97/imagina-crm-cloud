@@ -24,6 +24,7 @@ import {
     type WidgetSpec,
 } from '@imagina-base/shared';
 import { and, asc, eq, isNull } from 'drizzle-orm';
+import { withoutApprovalFlowRefs } from '../approvals/approval-refs';
 import { AutomationsService } from '../automations/automations.service';
 import { BillingService } from '../billing/billing.service';
 import { DashboardsService } from '../dashboards/dashboards.service';
@@ -126,7 +127,11 @@ export class BlueprintService {
             const autos = include.automations ? await this.automations.list(tenantId, String(list.id)) : [];
             const autoIndexById = new Map(autos.map((a, i) => [a.id, i]));
             const fieldConfig = (f: Field): Record<string, unknown> =>
-                f.type === 'button' ? portableButtonConfig(f.config, autoIndexById) : f.config;
+                f.type === 'button'
+                    ? portableButtonConfig(f.config, autoIndexById)
+                    : f.type === 'approval'
+                      ? withoutApprovalFlowRefs(f.config) // C5 — los flujos no viajan.
+                      : f.config;
 
             const settings: Record<string, unknown> = {};
             if (include.settings) {
@@ -183,8 +188,9 @@ export class BlueprintService {
                         name: a.name,
                         description: a.description,
                         trigger_type: a.trigger_type,
-                        trigger_config: tokenize(trigger) as Record<string, unknown>,
-                        actions: tokenize(a.actions) as unknown[],
+                        // C5 — los flujos de aprobación no viajan (ver withoutApprovalFlowRefs).
+                        trigger_config: tokenize(withoutApprovalFlowRefs(trigger)) as Record<string, unknown>,
+                        actions: tokenize(withoutApprovalFlowRefs(a.actions)) as unknown[],
                         is_active: a.is_active,
                     };
                 });

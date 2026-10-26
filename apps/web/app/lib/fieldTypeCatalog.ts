@@ -1,3 +1,4 @@
+import { APPROVAL_FIELD_OPTIONS } from '@imagina-base/shared';
 import type { FieldTypeMeta, FieldTypeSlug, FormulaInfo } from '@/types/field';
 
 /**
@@ -65,6 +66,8 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'created_by', label: 'Creado por', description: 'Quién creó el registro. Se llena solo.', supportsUnique: false },
     { slug: 'updated_by', label: 'Modificado por', description: 'Quién cambió el registro por última vez. Se llena solo.', supportsUnique: false },
     // Campo «Botón» (A5).
+    // C5 — Aprobaciones.
+    { slug: 'approval', label: 'Aprobación', description: 'Muestra el estado de la aprobación del registro (pendiente, aprobada, rechazada…). Se filtra y agrupa.', supportsUnique: false },
     { slug: 'button', label: 'Botón', description: 'Un click abre WhatsApp o un enlace, marca como pagado, corre una automatización o genera un PDF.', supportsUnique: false },
 ];
 
@@ -72,7 +75,7 @@ const ENTRIES: CatalogEntry[] = [
 const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>([
     'relation', 'computed', 'lookup', 'rollup', 'time_tracked',
     'created_at', 'updated_at', 'created_by', 'updated_by', 'formula',
-    'button',
+    'button', 'approval',
 ]);
 
 /**
@@ -88,6 +91,8 @@ export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set([
     'button',
     // Fórmulas (A1).
     'formula',
+    // C5 — el estado de la aprobación lo escribe el flujo, no la persona.
+    'approval',
 ]);
 
 /** v0.1.300 — Columnas de sistema (metadata del registro). */
@@ -102,6 +107,8 @@ export function displayTypeOf(type: string): FieldTypeSlug {
     if (type === 'created_at' || type === 'updated_at') return 'datetime';
     if (type === 'created_by' || type === 'updated_by') return 'user';
     if (type === 'autonumber') return 'text';
+    // C5 — el estado de la aprobación se ve y se filtra como una selección.
+    if (type === 'approval') return 'select';
     return type as FieldTypeSlug;
 }
 
@@ -115,6 +122,12 @@ export function asDisplayField<T extends { type: string }>(field: T): T {
         const info = (field as { formula?: FormulaInfo | null }).formula;
         if (!info) return { ...field, type: 'text' };
         return { ...field, type: info.result_type, config: info.display_config ?? {} };
+    }
+    if (field.type === 'approval') {
+        // Las opciones son fijas (los estados de una solicitud): el servidor
+        // ya las manda en la config, pero se aseguran aquí por si faltan.
+        const config = (field as { config?: Record<string, unknown> }).config ?? {};
+        return { ...field, type: 'select', config: { ...config, options: APPROVAL_FIELD_OPTIONS } };
     }
     const t = displayTypeOf(field.type);
     return t === field.type ? field : { ...field, type: t };

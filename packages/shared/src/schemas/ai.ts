@@ -198,6 +198,8 @@ export const AI_PROPOSAL_KINDS = [
     'delete_document_template',
     // A8 — agregar y quitar dependencias «bloquea / bloqueado por».
     'set_dependencies',
+    // C5 — crear o cambiar un flujo de aprobación de una lista.
+    'configure_approval_flow',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

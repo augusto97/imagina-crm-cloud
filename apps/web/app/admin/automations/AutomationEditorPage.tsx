@@ -502,10 +502,11 @@ function EditorBody({
     const flowValue = useMemo<AutomationFlowValue>(
         () => ({
             actions: state.actions,
+            triggerType: state.triggerType,
             samples,
             setSample: (path, body) => setSamples((prev) => ({ ...prev, [path]: body })),
         }),
-        [state.actions, samples],
+        [state.actions, state.triggerType, samples],
     );
 
     const restoreVersion = (v: AutomationVersion): void => {

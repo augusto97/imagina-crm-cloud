@@ -16,6 +16,7 @@ import type { RecordEntity } from '@/types/record';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 
 import { RecordSubtasks } from '../RecordSubtasks';
+import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
@@ -97,6 +98,12 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                     ) : (
                         <LayoutBody
                             layout={layout}
+                            renderHeader={(header) => (
+                                <>
+                                    {header}
+                                    <ImplicitApprovals layout={layout} />
+                                </>
+                            )}
                             footer={
                                 <>
                                     <ImplicitSubtasks layout={layout} />
@@ -128,6 +135,20 @@ function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
     const has = (r.subtask_count ?? 0) > 0 || (r.parent_id !== null && r.parent_id !== undefined);
     if (!onFirst || placed || !has) return null;
     return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} />;
+}
+
+/**
+ * C5 — Un diseño sin el bloque «Aprobación» no esconde las aprobaciones: si la
+ * lista tiene flujos o el registro solicitudes, la sección va debajo de la
+ * cabecera (ahí aparece «Pendiente de tu aprobación»). Sin flujos ni
+ * solicitudes no ocupa lugar. Quien quiera ubicarla en otro lado agrega el
+ * bloque.
+ */
+function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'approval'))));
+    if (placed) return null;
+    return <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} />;
 }
 
 export interface LayoutBodyProps {

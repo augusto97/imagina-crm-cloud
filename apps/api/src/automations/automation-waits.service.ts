@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { waitResumeAt } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
+import { ApprovalHub, type ApprovalResolvedEvent } from '../approvals/approval-hub';
 import { DRIZZLE, type Db } from '../db/client';
 import { automationRuns, automations } from '../db/schema';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -40,10 +41,15 @@ export class AutomationWaitsService implements OnModuleInit {
         @Optional() private readonly changes?: RecordChangeHub,
         @Optional() private readonly timeZones?: TenantTimeZones,
         @Optional() private readonly incidents?: IncidentHub,
+        // C5 — una aprobación que se resuelve despierta a quien la esperaba.
+        @Optional() private readonly approvals?: ApprovalHub,
     ) {}
 
     onModuleInit(): void {
         this.changes?.subscribe((change) => this.onRecordChange(change));
+        this.approvals?.subscribe(async (event) => {
+            await this.onApprovalResolved(event);
+        });
     }
 
     /**
@@ -66,24 +72,54 @@ export class AutomationWaitsService implements OnModuleInit {
              RETURNING r.id, r.tenant_id`);
             const rows = claimed.rows.map((r) => ({ id: Number(r.id), tenantId: Number(r.tenant_id) }));
             total += rows.length;
-            for (const row of rows) {
-                let queued = false;
-                try {
-                    queued = await this.dispatcher.dispatchResume({ tenantId: row.tenantId, runId: row.id });
-                } catch (err) {
-                    // La cola no respondió: la corrida vuelve a esperar (el próximo tick la reintenta).
-                    this.logger.warn(`No se pudo encolar la reanudación de la corrida ${row.id}: ${String(err)}`);
-                    await this.db
-                        .update(automationRuns)
-                        .set({ status: 'waiting', resumedAt: null })
-                        .where(and(eq(automationRuns.id, row.id), eq(automationRuns.status, 'running')));
-                    continue;
-                }
-                if (!queued) await this.resume(row.tenantId, row.id);
-            }
+            await this.resumeClaimed(rows);
             if (rows.length < CLAIM_BATCH) break;
         }
         return total;
+    }
+
+    /** Reanuda corridas ya tomadas (pasadas a `running`): por la cola o en el acto. */
+    private async resumeClaimed(rows: Array<{ id: number; tenantId: number }>): Promise<void> {
+        for (const row of rows) {
+            let queued = false;
+            try {
+                queued = await this.dispatcher.dispatchResume({ tenantId: row.tenantId, runId: row.id });
+            } catch (err) {
+                // La cola no respondió: la corrida vuelve a esperar (el próximo tick la reintenta).
+                this.logger.warn(`No se pudo encolar la reanudación de la corrida ${row.id}: ${String(err)}`);
+                await this.db
+                    .update(automationRuns)
+                    .set({ status: 'waiting', resumedAt: null })
+                    .where(and(eq(automationRuns.id, row.id), eq(automationRuns.status, 'running')));
+                continue;
+            }
+            if (!queued) await this.resume(row.tenantId, row.id);
+        }
+    }
+
+    /**
+     * C5 — Una solicitud de aprobación se resolvió: las corridas en «Esperar
+     * aprobación» de ESA solicitud siguen en el acto (no esperan a su próximo
+     * chequeo). Se toman con el mismo `FOR UPDATE SKIP LOCKED` + `running` del
+     * reloj, así una que el reloj ya tomó no se reanuda dos veces. Sólo mira
+     * las corridas en espera del registro (índice parcial por registro).
+     */
+    async onApprovalResolved(event: ApprovalResolvedEvent): Promise<number> {
+        const claimed = await this.db.execute<{ id: number | string; tenant_id: number | string }>(sql`
+            UPDATE automation_runs r
+               SET status = 'running', resumed_at = now()
+             WHERE r.id IN (
+                    SELECT id FROM automation_runs
+                     WHERE status = 'waiting'
+                       AND tenant_id = ${event.tenantId}
+                       AND record_id = ${event.recordId}
+                       AND (resume_state -> 'approval_wait' ->> 'request_id') = ${String(event.info.request_id)}
+                     FOR UPDATE SKIP LOCKED)
+               AND r.status = 'waiting'
+         RETURNING r.id, r.tenant_id`);
+        const rows = claimed.rows.map((r) => ({ id: Number(r.id), tenantId: Number(r.tenant_id) }));
+        await this.resumeClaimed(rows);
+        return rows.length;
     }
 
     /** Reanuda una corrida ya tomada (el job 'resume'). Un error no la deja colgada. */

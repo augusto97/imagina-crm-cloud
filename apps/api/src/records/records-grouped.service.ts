@@ -625,6 +625,8 @@ export function toBundleRow(r: RecordDto, toSlug: Map<string, string>): Record<s
         has_description: r.has_description ?? false,
         // A8 — icono «bloqueado» en la tarjeta del kanban y en la barra del Gantt.
         blocked_by_open: r.blocked_by_open ?? 0,
+        // C5 — indicador de aprobación pendiente en la fila y en la tarjeta.
+        approval_pending: r.approval_pending ?? 0,
         created_by: r.created_by,
         created_at: stripZ(r.created_at),
         updated_at: stripZ(r.updated_at),

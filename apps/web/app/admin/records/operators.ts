@@ -167,7 +167,9 @@ export function operatorsForType(
         case 'date':
         case 'datetime':
             return DATE_LIKE;
+        // C5 — `approval`: el estado de la aprobación (subconsulta sobre la última solicitud).
         case 'select':
+        case 'approval':
             return SELECT_LIKE;
         case 'multi_select':
             return MULTI_SELECT_LIKE;

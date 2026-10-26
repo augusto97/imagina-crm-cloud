@@ -434,7 +434,7 @@ export function KanbanView({
         () => (board.lanes ? board.lanes.map((l) => ({ key: l.key, label: l.label, color: l.color })) : null),
         [board.lanes],
     );
-    const groupWritable = !['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked'].includes(groupByField.type);
+    const groupWritable = !['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval'].includes(groupByField.type);
     const canDrag = canEdit && groupWritable && !touchOnly;
 
     const laneCandidates = fields.filter((f) => f.id !== groupByField.id && ['select', 'user', 'checkbox'].includes(f.type));

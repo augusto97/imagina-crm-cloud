@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
+import type { ApprovalEventInfo } from '../approvals/approval-hub';
 import { DRIZZLE, type Db } from '../db/client';
 import { automations } from '../db/schema';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -18,6 +19,8 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     payment_received: ['payment_received'],
     form_submitted: ['form_submitted'],
     button_pressed: ['button_pressed'],
+    // C5 — una solicitud de aprobación del registro se resolvió.
+    approval_resolved: ['approval_resolved'],
 };
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
@@ -53,7 +56,7 @@ export interface TriggerEvent {
     tenantId: number;
     listId: number;
     recordId: number;
-    trigger: 'record_created' | 'record_updated' | 'payment_received' | 'form_submitted' | 'button_pressed';
+    trigger: 'record_created' | 'record_updated' | 'payment_received' | 'form_submitted' | 'button_pressed' | 'approval_resolved';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -73,6 +76,11 @@ export interface TriggerEvent {
      * el filtro por botón y `{{boton.nombre}}`, `{{boton.persona}}`.
      */
     button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
+    /**
+     * C5 — la solicitud de aprobación que se resolvió (trigger
+     * `approval_resolved`): el filtro por flujo y resultado y `{{aprobacion.x}}`.
+     */
+    approval?: ApprovalEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ActivityModule } from './activity/activity.module';
 import { AggregateModule } from './aggregate/aggregate.module';
 import { AiModule } from './ai/ai.module';
+import { ApprovalHubModule } from './approvals/approval-hub';
+import { ApprovalsModule } from './approvals/approvals.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
@@ -68,6 +70,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RedisModule,
         RecordChangeHubModule,
         NotifyHubModule,
+        // C5 — aviso en proceso de "una aprobación se resolvió" (esperas de automatizaciones).
+        ApprovalHubModule,
         IncidentHubModule,
         TenancyModule,
         AuthzModule,
@@ -127,6 +131,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RecoveryModule,
         // Papelera: restaurar, borrar para siempre y el vaciado diario.
         TrashModule,
+        // C5 — aprobaciones: flujos por lista, solicitudes y decisiones.
+        ApprovalsModule,
     ],
 })
 export class AppModule {}

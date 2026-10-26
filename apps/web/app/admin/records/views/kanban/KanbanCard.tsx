@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ArrowRightLeft, ExternalLink, Lock, MoreHorizontal, Rows3 } from 'lucide-react';
+import { ArrowRightLeft, ClipboardCheck, ExternalLink, Lock, MoreHorizontal, Rows3 } from 'lucide-react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { colorVar, type OptionColor } from '@/components/ui/color-picker';
@@ -150,6 +150,18 @@ function KanbanCardImpl({
                             data-testid="imcrm-kanban-card-blocked"
                         >
                             <Lock className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </span>
+                    )}
+                    {/* C5 — aprobación pendiente. */}
+                    {(record.approval_pending ?? 0) > 0 && (
+                        <span
+                            role="img"
+                            title={__('Aprobación pendiente')}
+                            aria-label={__('Aprobación pendiente')}
+                            className="imcrm-mt-0.5 imcrm-shrink-0 imcrm-text-amber-600 dark:imcrm-text-amber-400"
+                            data-testid="imcrm-kanban-card-approval"
+                        >
+                            <ClipboardCheck className="imcrm-h-3.5 imcrm-w-3.5" />
                         </span>
                     )}
                     {lockReason !== null && (

@@ -4,6 +4,7 @@ import {
     Calendar,
     CalendarClock,
     CheckSquare,
+    ClipboardCheck,
     CircleDollarSign,
     Clock,
     Eye,
@@ -72,6 +73,7 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     created_by: UserCheck,
     updated_by: UserPen,
     button: MousePointerClick,
+    approval: ClipboardCheck,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */
