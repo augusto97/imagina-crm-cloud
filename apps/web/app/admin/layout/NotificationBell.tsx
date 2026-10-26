@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlarmClock, AtSign, Bell, CheckCheck, ClipboardCheck, ListChecks, MessageSquare, PenLine, Reply, Scale, Settings2, Timer, TriangleAlert, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, Bot, CheckCheck, ClipboardCheck, ListChecks, MessageSquare, PenLine, Reply, Scale, Settings2, Timer, TriangleAlert, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -24,6 +24,8 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
     team_assigned: Users,
     // E5 — un ticket de la mesa de ayuda en riesgo o vencido.
     sla: Timer,
+    // E6 — un agente de IA propone cambios que revisas.
+    agent: Bot,
 };
 
 /**

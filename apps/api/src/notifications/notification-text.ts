@@ -73,6 +73,10 @@ export function notificationTitle(
             // E5 — los avisos del SLA arman su propio título (HelpdeskSlaService).
             out = `SLA de ${rec}`;
             break;
+        case 'agent':
+            // E6 — las propuestas de los agentes arman su propio título.
+            out = `Un agente de IA propone cambios en ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

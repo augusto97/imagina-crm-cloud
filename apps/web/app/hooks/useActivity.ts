@@ -23,6 +23,7 @@ export interface ActivityDtoWire {
     record_id: number | null;
     user_id: number | null;
     user_name?: string | null;
+    agent?: { id: number; name: string } | null;
     action: string;
     diff?: Record<string, unknown>;
     changes?: Record<string, unknown>;
@@ -36,6 +37,7 @@ export function toEntity(row: ActivityDtoWire): ActivityEntity {
         record_id: row.record_id,
         user_id: row.user_id,
         user_name: row.user_name ?? null,
+        agent: row.agent ?? null,
         action: row.action,
         // El backend cloud manda `diff`; `changes` es el nombre histórico.
         changes: row.diff ?? row.changes ?? {},

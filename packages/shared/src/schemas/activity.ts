@@ -40,6 +40,9 @@ export const ACTIVITY_ACTIONS = [
     // template?, language?, connection}. NUNCA el texto: la conversación vive
     // en WhatsApp; en el registro queda sólo el último mensaje.
     'whatsapp',
+    // E6 — lo que hizo un agente de IA que no es un cambio de campos (una nota,
+    // una propuesta, un correo). `diff.agent` = {event, agent_id, agent_name, …}.
+    'ai_agent',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;
@@ -61,6 +64,11 @@ export const activitySchema = z.object({
     action: activityActionSchema,
     diff: z.record(z.unknown()),
     created_at: isoDateTimeSchema,
+    /**
+     * E6 — el agente de IA que hizo (o propuso) el cambio. Con `user_id`, una
+     * persona aplicó lo que el agente propuso.
+     */
+    agent: z.object({ id: idSchema, name: z.string() }).nullable().optional(),
 });
 export type ActivityDto = z.infer<typeof activitySchema>;
 

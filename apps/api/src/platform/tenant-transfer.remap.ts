@@ -39,6 +39,8 @@ export interface IdMaps {
     customRole: Map<number, number>;
     /** D5 — páginas de agenda (el disparador «Cuando se agenda… una cita» las nombra). */
     bookingPage: Map<number, number>;
+    /** E6 — agentes de IA (la acción «Pedirle a un agente» y la actividad que dejan). */
+    agent: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -59,6 +61,7 @@ export function emptyMaps(): IdMaps {
         team: new Map(),
         customRole: new Map(),
         bookingPage: new Map(),
+        agent: new Map(),
     };
 }
 
@@ -110,6 +113,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     staff_user_id: 'user',
     // D2/E5 — la persona que el SLA pone al escalar (campo Persona).
     escalate_set_user_id: 'user',
+    // E6 — el agente de IA de la acción «Pedirle a un agente».
+    agent_id: 'agent',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
@@ -122,6 +127,8 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
     escalate_user_ids: 'user',
     notify_team_ids: 'team',
     escalate_team_ids: 'team',
+    // E6 — quienes revisan las propuestas de un agente de IA.
+    reviewer_user_ids: 'user',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);

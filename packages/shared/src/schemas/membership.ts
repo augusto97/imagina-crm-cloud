@@ -43,6 +43,9 @@ export const CAPABILITIES = [
     'use_ai_assistant',
     'manage_forms',
     'manage_documents',
+    // E6 — crear, editar y pausar agentes de IA (sólo admin de base; un rol
+    // propio puede recibirla, un invitado nunca).
+    'manage_ai_agents',
 ] as const;
 export const capabilitySchema = z.enum(CAPABILITIES);
 export type Capability = z.infer<typeof capabilitySchema>;
@@ -191,7 +194,14 @@ export const CAPABILITY_GROUPS: ReadonlyArray<{
     },
     {
         module: 'Asistente IA',
-        items: [{ capability: 'use_ai_assistant', label: 'Usar el asistente IA', help: 'Conversa con el asistente y conecta Claude u otros clientes por MCP.' }],
+        items: [
+            { capability: 'use_ai_assistant', label: 'Usar el asistente IA', help: 'Conversa con el asistente y conecta Claude u otros clientes por MCP.' },
+            {
+                capability: 'manage_ai_agents',
+                label: 'Gestionar agentes de IA',
+                help: 'Crea, cambia y pausa agentes de IA. Cada agente trabaja con el acceso de quien lo crea.',
+            },
+        ],
     },
 ];
 

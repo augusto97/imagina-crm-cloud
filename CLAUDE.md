@@ -9537,6 +9537,65 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto la fase 5 queda completa.**
 
+- [x] **Fase 6 del estudio — agentes de IA** (el usuario eligió sólo E6;
+      idioma inglés/portugués, modo agencia, importadores y Google Sheets en
+      dos sentidos quedaron en `docs/ideas.md`):
+  - [x] **Agentes de IA (v0.1.317, ADR-S71, opción E6 del estudio)**:
+        compañeros que trabajan solos sobre los registros, con las
+        herramientas que se les dan y nunca con más acceso que quien los
+        configuró. (a) **Sección «Agentes»** en el riel (capacidad nueva
+        `manage_ai_agents`, sólo admin por defecto; un rol propio puede
+        recibirla, un invitado nunca). Cada agente tiene nombre, ícono y color,
+        instrucciones en lenguaje natural, las listas donde trabaja y
+        herramientas de una lista curada: leer el registro con sus vinculados y
+        comentarios, buscar, cambiar campos, crear registros, comentar (nota
+        interna o, si se habilita, para el cliente), asignar a una persona o un
+        equipo, pedir una aprobación (ADR-S63) y mandar un correo (apagado por
+        defecto). Trae 5 plantillas: clasificar tickets, resumir al cerrar,
+        completar datos, sugerir respuesta y asignar por tema. (b) **Cuándo
+        trabaja**: acción nueva de automatización **«Pedirle a un agente»**
+        (`ask_agent`), con una instrucción extra que acepta variables; la
+        pestaña «Cuándo trabaja» del agente arma esas automatizaciones. Sirve
+        con **cualquier** disparador, presente o futuro (también la agenda,
+        WhatsApp, el correo entrante y el SLA de la mesa de ayuda). La
+        automatización sólo encola: la corrida va en la cola `ai-agents`, con
+        su propio historial. (c) **Dos modos**: «Hace los cambios» o «Propone y
+        una persona aprueba» (por defecto). Las propuestas son durables
+        (`ai_agent_proposals`) y se aplican o descartan desde la ficha, «Mi
+        trabajo» → Agentes y la campana (aviso nuevo `agent`; correo y push
+        apagados por defecto). Quien aplica lo hace con SU acceso, y un campo
+        que cambió desde la propuesta no se pisa. (d) **Permisos**: corre con
+        el acceso VIGENTE de su dueño (rol, rol propio, equipos, ACL por lista,
+        campos ocultos), intersectado con sus listas y herramientas, con los
+        mismos validadores y reglas de la tienda que una persona y un tope de
+        escrituras por corrida. Si el dueño se va, queda desactivado o pasa a
+        invitado o cliente, el agente se pausa y abre un Problema. Lo del
+        registro viaja como DATO, no como instrucción, y una persona no puede
+        firmar un comentario como agente. (e) **Costo**: la misma resolución
+        de IA que el asistente (clave de la plataforma con cuota del plan, o
+        clave propia; modelo y esfuerzo de la empresa) más topes por agente:
+        pasos por corrida, corridas por día y tokens por mes. Pasado un tope no
+        arranca y avisa una vez; sin IA, falla con el motivo y abre un
+        Problema. (f) **Visibilidad**: historial de corridas con cada paso,
+        tokens y error; la actividad del registro nombra al agente («El agente
+        «X» cambió…» o «Ana (propuesta del agente «X»)»); «Probar» corre en
+        simulación sobre un registro real (lee y no escribe); versiones
+        (últimas 30). El asistente y el MCP ven los agentes en
+        `get_list_schema` y los crean con `propose_create_ai_agent` (regla 20
+        del prompt). (g) Migrar una empresa lleva los agentes re-mapeados y EN
+        PAUSA (sin corridas ni propuestas); borrarla limpia todo; la papelera
+        oculta los agentes cuyas listas están todas borradas. Migración 0091
+        (cinco tablas con RLS + `activity.agent_id`). **Bug atrapado al
+        integrar** con la mesa de ayuda: al texto del aviso `sla` le faltaba
+        el `break` y caía al del agente. 17 tests de API nuevos + casos en
+        plataforma, migración de empresa, avisos y push (API 1642, front 574,
+        shared 511 en verde) + E2E navegador 45/45 con un proveedor de IA
+        simulado, en celular y modo oscuro. Queda fuera: un botón «Pedir al
+        agente» en la ficha, correr un agente en lote sobre registros
+        existentes, memoria entre corridas y modelo por agente.
+
+        **Con esto la fase 6 queda completa.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

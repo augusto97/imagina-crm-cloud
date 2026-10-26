@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
     BarChart3,
+    Bot,
     ChevronsLeft,
     ChevronsRight,
     AlarmClock,
@@ -52,6 +53,7 @@ import type { ListSummary } from '@/types/list';
 import { ViewSwitch } from '@/components/ui/view-switch';
 import { FolderSquare } from '@/admin/lists/FolderBadge';
 import { isPlatformTab, PLATFORM_TABS } from '@/admin/platform/platformTabs';
+import { AgentsPanel } from '@/admin/agents/AgentsPanel';
 
 import { DashboardPanelItem } from './DashboardPanelItem';
 import { DashboardsPanelList } from './DashboardsPanelList';
@@ -72,12 +74,13 @@ function readCollapsedPref(): boolean {
 }
 
 /** Sección del riel activa — derivada de la RUTA (no estado aparte). */
-type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'settings' | 'platform';
+type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'agents' | 'settings' | 'platform';
 
 function railSectionFromPath(pathname: string): RailSection {
     if (pathname.startsWith('/my-work')) return 'mywork';
     if (pathname.startsWith('/favorites')) return 'favorites';
     if (pathname.startsWith('/dashboards')) return 'dashboards';
+    if (pathname.startsWith('/agents')) return 'agents';
     if (pathname.startsWith('/settings')) return 'settings';
     if (pathname.startsWith('/platform')) return 'platform';
     return 'home';
@@ -249,6 +252,8 @@ export function Sidebar({
     // Hooks siempre en el mismo orden (rules-of-hooks): resolvemos cada
     // capability por separado y recién después combinamos.
     const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
+    // E6 — «Agentes» sólo para quien los administra.
+    const canManageAgents = useCan(CAP.MANAGE_AI_AGENTS);
     const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
     const canManageLists = useCan(CAP.MANAGE_LISTS);
     // C2 — «Ver tableros» es una capacidad (rol propio); los roles base la tienen.
@@ -271,7 +276,9 @@ export function Sidebar({
                 ? __('Favoritos')
                 : sec === 'mywork'
                   ? __('Mi trabajo')
-                  : workspaceTitle;
+                  : sec === 'agents'
+                    ? __('Agentes de IA')
+                    : workspaceTitle;
 
     /**
      * El CONTENIDO del panel para una sección. Lo usan las dos superficies
@@ -334,6 +341,8 @@ export function Sidebar({
             )}
 
             {sec === 'mywork' && <MyWorkPanelSummary />}
+
+            {sec === 'agents' && <AgentsPanel pathname={pathname} />}
 
             {sec === 'favorites' && (
                 <>
@@ -529,6 +538,18 @@ export function Sidebar({
                         onPeek={() => peek('dashboards')}
                         onUnpeek={unpeek}
                         onSelect={(e) => handleRailSelect(e, 'dashboards')}
+                    />
+                )}
+                {canManageAgents && (
+                    <RailItem
+                        to="/agents"
+                        active={section === 'agents'}
+                        icon={Bot}
+                        label={__('Agentes')}
+                        hint={__('Agentes de IA')}
+                        onPeek={() => peek('agents')}
+                        onUnpeek={unpeek}
+                        onSelect={(e) => handleRailSelect(e, 'agents')}
                     />
                 )}
                 <RailItem

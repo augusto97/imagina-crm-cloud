@@ -9,6 +9,8 @@ export type CommentKind = 'note' | 'call' | 'email' | 'meeting';
  */
 export interface CommentMetadata {
     kind?: CommentKind;
+    /** E6 — lo escribió un agente de IA (con el acceso de su dueño). */
+    agent?: { id: number; name: string };
     /** call: minutos. */
     duration_minutes?: number;
     /** call: 'connected' | 'voicemail' | 'no_answer' | 'busy'. */

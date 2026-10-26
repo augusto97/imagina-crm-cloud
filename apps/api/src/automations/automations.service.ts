@@ -1,4 +1,5 @@
 import { assertApprovalFlowRefs } from '../approvals/approval-refs';
+import { assertAgentRefs } from '../ai-agents/agent-refs';
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
@@ -306,6 +307,8 @@ export class AutomationsService {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // C5 — los flujos de aprobación que usa tienen que ser de esta lista.
             await assertApprovalFlowRefs(tx, tenantId, list.id, { trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions });
+            // E6 — los agentes de IA que nombra tienen que trabajar en esta lista.
+            await assertAgentRefs(tx, tenantId, list.id, input.actions);
             const inserted = await this.repo.insert(tx, {
                 tenantId,
                 listId: list.id,
@@ -550,6 +553,8 @@ export class AutomationsService {
                     actions: patch.actions ?? current.actions,
                 });
             }
+            // E6 — sólo si cambian las acciones (pausar una con un agente borrado se puede).
+            if (patch.actions !== undefined) await assertAgentRefs(tx, tenantId, list.id, patch.actions);
             const changes: Partial<typeof import('../db/schema').automations.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;
             if (patch.description !== undefined) changes.description = patch.description ?? null;

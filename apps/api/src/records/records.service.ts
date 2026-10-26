@@ -116,6 +116,23 @@ export interface PreparedCreate {
 export interface Actor extends AclExtras {
     userId: number;
     role: Role;
+    /**
+     * E6 — un agente de IA escribe con el acceso de su DUEÑO (`userId`, `role`
+     * y los extras del ACL) y su id queda en la actividad: «El agente
+     * «Clasificador» cambió Prioridad a Alta».
+     */
+    agentId?: number;
+    /**
+     * E6 — una PERSONA aplica lo que propuso el agente `agentId`: la actividad
+     * nombra a los dos («Ana aplicó lo que propuso el agente…»).
+     */
+    viaAgentProposal?: boolean;
+}
+
+/** E6 — quién figura en la actividad: nadie (el agente solo) o la persona. */
+function activityUserId(actor: Actor): number | null {
+    if (actor.agentId && !actor.viaAgentProposal) return null;
+    return actor.userId > 0 ? actor.userId : null;
 }
 
 export interface RecordsPage {
@@ -356,9 +373,10 @@ export class RecordsService {
             recordId: inserted.id,
             // v0.1.275 — el sistema (0: formulario público, motor) no es
             // una persona: la actividad queda sin autor, no "usuario #0".
-            userId: actor.userId > 0 ? actor.userId : null,
+            userId: activityUserId(actor),
             action: 'record_created',
             diff: computeDiff({}, inserted.data),
+            agentId: actor.agentId ?? null,
         });
         return inserted;
     }
@@ -1136,9 +1154,10 @@ export class RecordsService {
                     listId,
                     recordId: id,
                     // El sistema (0: una automatización) no es una persona.
-                    userId: actor.userId > 0 ? actor.userId : null,
+                    userId: activityUserId(actor),
                     action: 'record_updated',
                     diff: computeDiff(current.data, merged),
+                    agentId: actor.agentId ?? null,
                 });
                 rescheduled = await this.rescheduleDependentsInTx(tx, tenantId, list, fields, actor, id, current.data, updated.data);
             }
@@ -1306,6 +1325,60 @@ export class RecordsService {
      */
     canReach(list: List, actor: Actor, action: 'view' | 'edit' | 'delete', row: Pick<RecordRow, 'data' | 'createdBy'>): boolean {
         return this.aclCanReach(list, actor, action, row);
+    }
+
+    /**
+     * E6 — Los MISMOS chequeos de `update` sin escribir nada: el registro existe
+     * y el actor lo puede editar, los valores pasan el validador de cada campo,
+     * unicidad, «obligatorio si» y las reglas de la tienda. Lo usa un agente de
+     * IA en modo «propone» (y en «Probar»): lo que queda en la propuesta es lo
+     * que se habría escrito. Devuelve el patch validado y los valores de antes.
+     */
+    async checkUpdate(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        id: number,
+        data: Record<string, unknown>,
+        opts: { lenientRequired?: boolean } = {},
+    ): Promise<{ patch: Record<string, unknown>; before: Record<string, unknown>; list: List; fields: Field[] }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        assertGuestWritable(list.settings, fields, actor, data);
+        const rel = splitRelationValues(fields, data);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const current = await this.repo.findById(tx, tenantId, list.id, id);
+            if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
+            const patch = this.validateData(fields, rel.data, { partial: true });
+            await this.assertUniqueInTx(tx, tenantId, list.id, fields, patch, id);
+            const merged = mergeData(current.data, patch);
+            if (!opts.lenientRequired) assertRequiredIf(fields, merged, new Set(Object.keys(patch)));
+            this.assertStoreEdit(list, fields, current.data, merged, [
+                ...Object.keys(patch).map((k) => Number(k.slice(1))),
+                ...rel.values.map((v) => v.field.id),
+            ]);
+            return { patch, before: current.data, list, fields };
+        });
+    }
+
+    /**
+     * E6 — Los MISMOS chequeos de `create` sin escribir: el actor puede crear en
+     * la lista (ACL y tienda), valores por defecto, validador, unicidad y
+     * «obligatorio si». Devuelve los datos como se guardarían.
+     */
+    async checkCreate(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        input: CreateRecordInput,
+        opts: { lenientRequired?: boolean } = {},
+    ): Promise<{ data: Record<string, unknown>; list: List; fields: Field[] }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        this.assertCanCreate(list, actor);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true });
+        await this.tenantDb.withTenant(tenantId, (tx) => this.assertUniqueInTx(tx, tenantId, list.id, fields, prep.data, null));
+        return { data: prep.data, list, fields };
     }
 
     /**

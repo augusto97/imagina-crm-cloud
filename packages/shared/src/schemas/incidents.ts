@@ -29,6 +29,8 @@ export const INCIDENT_SOURCES = [
     'booking',
     // D2 — el buzón de la mesa de ayuda (no se puede leer o hay correos pendientes).
     'helpdesk',
+    // E6 — un agente de IA que no pudo trabajar (sin IA, dueño sin acceso, topes).
+    'ai_agent',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -45,6 +47,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     dashboard: 'Tablero',
     booking: 'Agenda',
     helpdesk: 'Mesa de ayuda',
+    ai_agent: 'Agente de IA',
 };
 
 export interface IncidentDto {
@@ -114,6 +117,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return i.source_id ? `/dashboards/${i.source_id}?share=email` : '/dashboards';
         case 'helpdesk':
             return list ? `${list}/edit?s=correo` : '/lists';
+        case 'ai_agent':
+            return i.source_id ? `/agents/${i.source_id}` : '/agents';
         default:
             return '/settings?s=problemas';
     }

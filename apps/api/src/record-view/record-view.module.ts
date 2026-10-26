@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from '../activity/activity.module';
+import { AiAgentsModule } from '../ai-agents/ai-agents.module';
 import { ApprovalsModule } from '../approvals/approvals.module';
 import { AuthModule } from '../auth/auth.module';
 import { CommentsModule } from '../comments/comments.module';
@@ -32,6 +33,8 @@ import { RecordViewService } from './record-view.service';
         // C5 — la sección «Aprobación» de la ficha.
         ApprovalsModule,
         ChecklistsModule,
+        // E6 — propuestas pendientes de los agentes de IA.
+        AiAgentsModule,
     ],
     controllers: [RecordViewController],
     providers: [RecordViewService],

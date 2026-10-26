@@ -62,7 +62,7 @@ export class CommentsController {
         @Param('recordId', ParseIntPipe) recordId: number,
         @Body(new ZodValidationPipe(createCommentSchema)) input: CreateCommentInput,
     ): Promise<CommentDto> {
-        return this.comments.create(req.tenant!.tenantId, actor(req), list, recordId, input);
+        return this.comments.create(req.tenant!.tenantId, actor(req), list, recordId, withoutAgentMark(input));
     }
 
     @Patch(':id')
@@ -74,7 +74,7 @@ export class CommentsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateCommentSchema)) patch: UpdateCommentInput,
     ): Promise<CommentDto> {
-        return this.comments.update(req.tenant!.tenantId, actor(req), list, recordId, id, patch);
+        return this.comments.update(req.tenant!.tenantId, actor(req), list, recordId, id, withoutAgentMark(patch));
     }
 
     /**
@@ -105,6 +105,16 @@ export class CommentsController {
     ): Promise<void> {
         await this.comments.remove(req.tenant!.tenantId, actor(req), list, recordId, id);
     }
+}
+
+/**
+ * E6 — La marca «lo escribió un agente de IA» (`metadata.agent`) la pone sólo
+ * el motor de agentes: una persona no puede firmar como un agente.
+ */
+function withoutAgentMark<T extends { metadata?: Record<string, unknown> }>(input: T): T {
+    if (!input.metadata || !('agent' in input.metadata)) return input;
+    const { agent: _agent, ...rest } = input.metadata;
+    return { ...input, metadata: rest };
 }
 
 function actor(req: FastifyRequest): Actor {

@@ -4247,4 +4247,62 @@ Quedan fuera OAuth para IMAP y los horarios hábiles por equipo.
 
 ---
 
-**Versión del documento:** 1.113.0 (mesa de ayuda por correo y SLA)
+### ADR-S71 — Agentes de IA (v0.1.317)
+
+**Contexto.** El asistente propone y una persona aplica en el momento, y los
+campos con IA calculan un valor sin herramientas. Faltaba alguien que trabaje
+solo, registro por registro, con criterio y con herramientas, sin abrir un
+agujero de permisos ni de costo.
+
+**Decisión.**
+1. **Un agente es una entidad del workspace** (`ai_agents` + `ai_agent_lists`,
+   RLS) con instrucciones, listas, herramientas curadas, modo `propose|act` y
+   topes (pasos por corrida, corridas por día, tokens por mes). Administrarlos
+   exige la capacidad `manage_ai_agents` (por `can()`; ninguna ruta lleva
+   `@AllowGuest()`).
+2. **No tiene disparadores propios**: trabaja cuando una automatización ejecuta
+   `ask_agent`. Así hereda todos los disparadores, presentes y futuros, sin
+   acoplamiento: el motor llama a un `AgentHub` global que registra el módulo
+   de agentes, y las etiquetas de los disparadores salen del mismo catálogo que
+   el editor. La automatización encola; la corrida va en BullMQ `ai-agents`.
+3. **Acceso**: en cada corrida se resuelve el acceso VIGENTE del dueño
+   (`ownerActor`: rol, rol propio, equipos). Si es `null` (se fue, cuenta
+   desactivada, `guest` o `client`), el agente se pausa y abre un Problema
+   (ADR-S44). Las herramientas que ve el modelo son las del agente ∩ las
+   capacidades del dueño; cada llamada se re-chequea y la escritura va por
+   `RecordsService` y `CommentsService` con el ACL del dueño, `agentId` en la
+   actividad y un tope de escrituras por corrida. Una persona no puede firmar
+   como agente (el controller de comentarios descarta `metadata.agent`).
+4. **Inyección**: el contenido del registro y las variables de la instrucción
+   extra viajan etiquetados como datos; una herramienta no permitida queda como
+   paso «Bloqueado» y no se ejecuta.
+5. **Propuestas**: en modo `propose` los cambios se guardan como propuesta
+   durable (`ai_agent_proposals`) con el contrato propone→aplica de ADR-S21,
+   pero en Postgres en vez de Redis porque esperan a una persona. Se aplican
+   por id con el acceso de QUIEN aplica, salteando los campos que cambiaron
+   desde la propuesta. Las aprobaciones de ADR-S63 se usan como herramienta
+   (`request_approval`), no como transporte. Aviso `agent` a quienes revisan
+   (o al dueño), con correo y push apagados por defecto: un agente trabaja
+   sobre muchos registros.
+6. **Costo**: la misma resolución de IA y cuota del plan que el asistente
+   (ADR-S21, S60, S61) más los topes del agente. Pasado un tope la corrida no
+   arranca y avisa una vez; sin IA falla con el motivo y abre un Problema.
+7. **Visibilidad**: `ai_agent_runs` guarda pasos, tokens y error; versiones en
+   `ai_agent_versions` (últimas 30); «Probar» corre el mismo bucle en
+   simulación (lee de verdad, no escribe).
+8. El registro de herramientas del asistente acepta *appliers* y *extras* de
+   `get_list_schema` de otros módulos; por eso `propose_create_ai_agent` vive en
+   el módulo de agentes sin crear un ciclo.
+9. Migrar una empresa lleva los agentes re-mapeados y pausados (sin corridas ni
+   propuestas); `deleteTenant` los borra; los agentes no viajan en plantillas de
+   lista ni al duplicar una lista (son del workspace).
+
+**Consecuencias.** Un agente nunca amplía el acceso de nadie y sirve con
+cualquier disparador nuevo sin tocar su código. El costo queda acotado por plan
+y por agente. Queda pendiente disparar un agente a mano desde la ficha,
+correrlo en lote sobre registros existentes, memoria entre corridas y modelo por
+agente.
+
+---
+
+**Versión del documento:** 1.114.0 (agentes de IA)

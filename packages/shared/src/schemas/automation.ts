@@ -85,6 +85,8 @@ export const AUTOMATION_ACTIONS = [
     'create_subtasks_from_template',
     // D2 — responder por correo al hilo del ticket (sale por el correo de la empresa).
     'reply_email',
+    // E6 — pedirle a un agente de IA que trabaje sobre el registro.
+    'ask_agent',
 ] as const;
 
 export interface ActionSpec {
@@ -542,6 +544,17 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                     out.push({ path: `${at}.config.connection_id`, message: 'Elige la app conectada y la acción.' });
                 }
                 break;
+            case 'ask_agent': {
+                // E6 — «Pedirle a un agente».
+                const agent = Number(cfg.agent_id);
+                if (!Number.isInteger(agent) || agent <= 0) {
+                    out.push({ path: `${at}.config.agent_id`, message: 'Elige el agente de IA al que se le pide el trabajo.' });
+                }
+                if (typeof cfg.instruction === 'string' && cfg.instruction.length > 1000) {
+                    out.push({ path: `${at}.config.instruction`, message: 'La instrucción extra es demasiado larga (máximo 1.000 caracteres).' });
+                }
+                break;
+            }
             case 'bulk_edit':
                 if (!Array.isArray(cfg.operations) || cfg.operations.length === 0) {
                     out.push({ path: `${at}.config.operations`, message: 'Agrega al menos un cambio para la edición en lote.' });

@@ -1,4 +1,5 @@
 import {
+    Bot,
     CalendarCheck,
     CalendarClock,
     Clock,
@@ -198,6 +199,12 @@ export const ACTION_META: Record<string, StepMeta> = {
         title: 'Esperar aprobación',
         description: 'Pausa el flujo hasta que alguien aprueba, rechaza o devuelve la solicitud (con un tope de días opcional); después usa el resultado en un «Si / Si no».',
     },
+    // E6 — agentes de IA.
+    ask_agent: {
+        icon: Bot,
+        title: 'Pedirle a un agente',
+        description: 'Le pide a un agente de IA que trabaje sobre el registro (clasificar, resumir, completar datos…). Corre aparte y, según su modo, cambia el registro o deja una propuesta.',
+    },
     // C6 — plantillas de registro.
     create_subtasks_from_template: {
         icon: ListTree,
@@ -217,6 +224,19 @@ export const ACTION_META: Record<string, StepMeta> = {
         description: 'Ejecuta una acción con nombre de una conexión configurada en Ajustes.',
     },
 };
+
+/**
+ * E6 — Nombres de los agentes para los resúmenes («Le pide trabajo al agente
+ * «Clasificador»»). Los registra el selector cuando carga las opciones; sin
+ * ellos el resumen cae a «un agente de IA».
+ */
+const AGENT_NAMES = new Map<number, string>();
+export function rememberAgentNames(agents: ReadonlyArray<{ id: number; name: string }>): void {
+    for (const a of agents) AGENT_NAMES.set(a.id, a.name);
+}
+function agentNameFor(id: number): string | null {
+    return Number.isInteger(id) && id > 0 ? (AGENT_NAMES.get(id) ?? null) : null;
+}
 
 export function triggerMetaFor(slug: string): StepMeta {
     return TRIGGER_META[slug] ?? { icon: Zap, title: slug, description: '' };
@@ -413,6 +433,11 @@ export function summarizeAction(
         }
         case 'wait_approval':
             return describeWaitApproval(cfg);
+        case 'ask_agent': {
+            const note = typeof cfg.instruction === 'string' && cfg.instruction.trim() !== '' ? ` · «${cfg.instruction.trim().slice(0, 60)}»` : '';
+            const name = agentNameFor(Number(cfg.agent_id));
+            return `${name ? sprintf(__('Le pide trabajo al agente «%s»'), name) : __('Le pide trabajo a un agente de IA')}${note}`;
+        }
         case 'for_each_linked': {
             const relId = Number(cfg.relation_field_id);
             const path = (relationPaths ?? []).find((p) => p.relation_field_id === relId);

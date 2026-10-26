@@ -51,3 +51,4 @@ export * from './booking';
 export * from './push-subscriptions';
 export * from './whatsapp';
 export * from './helpdesk';
+export * from './ai-agents';
