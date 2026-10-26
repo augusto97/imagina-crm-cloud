@@ -110,6 +110,9 @@ export * from './schemas/dependency';
 export * from './schemas/approvals';
 export * from './schemas/gantt';
 export * from './schemas/workload';
+// D2 + E5 — mesa de ayuda por correo y SLA.
+export * from './schemas/helpdesk';
+export * from './schemas/business-hours';
 export * from './xlsx';
 export * from './schemas/team';
 export * from './schemas/custom-role';

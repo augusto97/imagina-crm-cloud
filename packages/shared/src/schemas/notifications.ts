@@ -31,7 +31,23 @@ import { idSchema } from './common';
  * C1 — `team_assigned`: un registro se asignó a un EQUIPO de la persona (campo
  * «Equipo»). Le llega a cada miembro del equipo que puede ver el registro.
  */
-export const NOTIFICATION_KINDS = ['mention', 'assigned', 'comment', 'update', 'reminder', 'failure', 'reply', 'consent', 'approval', 'team_assigned'] as const;
+/**
+ * E5 — `sla`: un ticket de la mesa de ayuda entró en riesgo o se venció (a
+ * quien la política de SLA indica, y al escalar).
+ */
+export const NOTIFICATION_KINDS = [
+    'mention',
+    'assigned',
+    'comment',
+    'update',
+    'reminder',
+    'failure',
+    'reply',
+    'consent',
+    'approval',
+    'team_assigned',
+    'sla',
+] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
@@ -45,6 +61,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     consent: 'Alguien retira su autorización de datos personales (sólo admins)',
     approval: 'Aprobaciones: te toca decidir o se resuelve lo que pediste',
     team_assigned: 'Asignan un registro a uno de tus equipos',
+    sla: 'Mesa de ayuda: un ticket entra en riesgo o se vence',
 };
 
 export interface NotificationDto {
@@ -96,7 +113,8 @@ export type MarkNotificationsInput = z.infer<typeof markNotificationsSchema>;
  * registro que se sigue sería ruido. Un tipo nuevo de aviso nace APAGADO
  * para push hasta que se lo agregue aquí.
  */
-export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder'];
+// E5 — `sla` también: un ticket que vence (o venció) y te toca tiene apuro.
+export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder', 'sla'];
 
 /** `{ mention: z.boolean().default(…), … }` para TODOS los tipos (también los que se agreguen). */
 function kindFlagsSchema(defaults: readonly NotificationKind[]) {
@@ -136,6 +154,8 @@ export const notificationPrefsSchema = z.object({
              * campana lo muestra igual, y quien lo quiera por correo lo enciende.
              */
             team_assigned: z.boolean().default(false),
+            /** E5 — un ticket a punto de vencer (o vencido) que te toca: encendido. */
+            sla: z.boolean().default(true),
         })
         .default({}),
     /**
@@ -170,6 +190,7 @@ export const updateNotificationPrefsSchema = z
                 consent: z.boolean(),
                 approval: z.boolean(),
                 team_assigned: z.boolean(),
+                sla: z.boolean(),
             })
             .partial(),
         push: kindFlagsPatchSchema(),
