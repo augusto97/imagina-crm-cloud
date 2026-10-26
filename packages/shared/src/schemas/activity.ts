@@ -36,6 +36,10 @@ export const ACTIVITY_ACTIONS = [
     'checklist_item_to_subtask',
     // C6 — el registro (o sus subtareas) salió de una plantilla. `diff.template` = {id, name}.
     'record_template_applied',
+    // D3 — WhatsApp oficial. `diff.whatsapp` = {event: received | sent, kind,
+    // template?, language?, connection}. NUNCA el texto: la conversación vive
+    // en WhatsApp; en el registro queda sólo el último mensaje.
+    'whatsapp',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;

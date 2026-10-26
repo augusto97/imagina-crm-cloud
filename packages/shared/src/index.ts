@@ -75,6 +75,7 @@ export * from './schemas/templates';
 export * from './schemas/connector';
 export * from './schemas/integrations';
 export * from './schemas/collections';
+export * from './schemas/whatsapp';
 export * from './schemas/provider-guides';
 export * from './schemas/legal-pages';
 export * from './schemas/store-sync';
