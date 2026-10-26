@@ -11,6 +11,7 @@ import {
     Settings2,
 } from 'lucide-react';
 import {
+    HELPDESK_MANAGED_REASON,
     KANBAN_PAGE_SIZE,
     parseTeamGroupKey,
     readKanbanSettings,
@@ -70,6 +71,7 @@ import {
 } from './kanban/kanbanModel';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { usePageStickyTop } from './stickyTop';
+import { useHelpdeskManaged } from '@/admin/helpdesk/managedFields';
 
 /**
  * Vista Kanban — v0.1.297 «Kanban para ventas» (B5).
@@ -283,7 +285,10 @@ export function KanbanView({
     const [pendingError, setPendingError] = useState<string | null>(null);
     const [pendingSaving, setPendingSaving] = useState(false);
 
+    // E5 — un tablero agrupado por una columna del SLA (p. ej. «Por SLA») no se mueve a mano.
+    const helpdeskManaged = useHelpdeskManaged();
     const lockedReason = useEventCallback((field: FieldEntity, record: RecordEntity): string | null => {
+        if (helpdeskManaged?.has(field.id)) return __(HELPDESK_MANAGED_REASON);
         const access = storeAccessFor(storeRules, field, record);
         return access?.access === 'locked' ? access.reason : null;
     });
@@ -441,7 +446,9 @@ export function KanbanView({
         () => (board.lanes ? board.lanes.map((l) => ({ key: l.key, label: l.label, color: l.color })) : null),
         [board.lanes],
     );
-    const groupWritable = !['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'checklist_progress'].includes(groupByField.type);
+    const groupWritable =
+        !['lookup', 'rollup', 'computed', 'formula', 'ai', 'time_tracked', 'approval', 'checklist_progress'].includes(groupByField.type) &&
+        !helpdeskManaged?.has(groupByField.id);
     const canDrag = canEdit && groupWritable && !touchOnly;
 
     const laneCandidates = fields.filter((f) => f.id !== groupByField.id && ['select', 'user', 'team', 'checkbox'].includes(f.type));

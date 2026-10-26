@@ -1,4 +1,4 @@
-import { BookmarkPlus, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { BookmarkPlus, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Inbox, Paintbrush, Settings2, ShieldCheck, Timer, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -25,7 +25,9 @@ export type ListSettingsSectionId =
     | 'formularios'
     | 'agenda'
     | 'aprobaciones'
-    | 'plantillas';
+    | 'plantillas'
+    | 'correo'
+    | 'sla';
 
 export interface ListSettingsSection {
     id: ListSettingsSectionId;
@@ -121,6 +123,22 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: BookmarkPlus,
         title: __('Plantillas de registro y de checklist'),
         description: __('Un registro que nace con sus valores, sus subtareas y sus checklists de una vez, y checklists listos para agregar a cualquier registro.'),
+    },
+    {
+        // D2 — mesa de ayuda: el buzón de soporte y cómo entra cada correo.
+        id: 'correo',
+        label: __('Correo entrante'),
+        icon: Inbox,
+        title: __('Correo entrante (mesa de ayuda)'),
+        description: __('Conecta el buzón de soporte: cada correo nuevo crea un ticket en esta lista, las respuestas del cliente se suman a su ticket y el equipo responde desde la ficha.'),
+    },
+    {
+        // E5 — SLA y escalamiento.
+        id: 'sla',
+        label: __('SLA'),
+        icon: Timer,
+        title: __('SLA y escalamiento'),
+        description: __('Cuánto tiempo hay para la primera respuesta y para resolver, en horas hábiles, a quién se avisa cuando un ticket está en riesgo y a quién se escala al vencer.'),
     },
 ];
 

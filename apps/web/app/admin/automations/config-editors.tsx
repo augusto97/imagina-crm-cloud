@@ -61,6 +61,7 @@ import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
 import { useBookingPages } from '../booking/useBookingPages';
+import { EmailReceivedTriggerConfig, ReplyEmailActionConfig, SlaAlertTriggerConfig, cleanHelpdeskTriggerConfig } from '../helpdesk/helpdeskAutomation';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { ActionTypeMenu } from './ActionTypeMenu';
 import { ifElseDepth, insideLoop, type SeqPath } from './actionsTree';
@@ -186,6 +187,8 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
         out.for_each_record = true;
         if (c.records_filter && typeof c.records_filter === 'object') out.records_filter = c.records_filter;
     }
+    // D2/E5 — email_received (qué correos) y sla_alert (qué alertas y objetivos).
+    cleanHelpdeskTriggerConfig(c, out);
     return out;
 }
 
@@ -216,6 +219,10 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando alguien marca el último ítem pendiente de un checklist de un registro de esta lista. Puede ser cualquier checklist, uno con un nombre en particular («Documentación») o recién cuando el registro tiene TODOS sus checklists completos. Puedes usar {{checklist.nombre}}.');
         case 'booking_event':
             return __('Se ejecuta cuando un cliente agenda una cita en una página de agenda de esta lista, cuando la cambia o la cancela desde el enlace de su correo, o cuando el equipo la mueve o la cancela en la app. El registro es la cita. Puedes usar {{cita.servicio}}, {{cita.inicio}}, {{cita.persona}}, {{cita.enlace_reprogramar}} y {{cita.enlace_cancelar}}.');
+        case 'email_received':
+            return __('Se ejecuta cuando llega un correo al buzón de soporte de esta lista: un ticket nuevo (el registro ya está creado con el asunto, el remitente y el texto) o la respuesta del cliente a un ticket abierto. Puedes usar {{correo.de}}, {{correo.nombre}}, {{correo.asunto}} y {{correo.texto}}.');
+        case 'sla_alert':
+            return __('Se ejecuta cuando el SLA de un ticket de esta lista queda en riesgo (pasó el porcentaje de aviso) o se vence, una sola vez por alerta. Sirve para escalar a otro equipo, cambiar la prioridad o avisar por WhatsApp. Puedes usar {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}} y {{sla.prioridad}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         case 'whatsapp_message_received':
@@ -245,6 +252,7 @@ export function TriggerConfigEditor({
     fields,
 }: TriggerConfigEditorProps): JSX.Element {
     const changed = Array.isArray(config.changed_fields) ? config.changed_fields : [];
+    const listId = useAutomationListId();
 
     const updateChanged = (next: string[]): void => {
         onChange({ ...config, changed_fields: next });
@@ -316,6 +324,8 @@ export function TriggerConfigEditor({
 
             {triggerType === 'form_submitted' && <FormSubmittedConfig config={config} onChange={onChange} />}
             {triggerType === 'booking_event' && <BookingEventConfig config={config} onChange={onChange} />}
+            {triggerType === 'email_received' && <EmailReceivedTriggerConfig listId={listId} config={config} onChange={onChange} />}
+            {triggerType === 'sla_alert' && <SlaAlertTriggerConfig listId={listId} config={config} onChange={onChange} />}
 
             {triggerType === 'button_pressed' && <ButtonPressedConfig config={config} onChange={onChange} fields={fields} />}
 
@@ -1323,6 +1333,7 @@ export function ActionConfigEditor({
     actionsCatalog,
     nestedInline = true,
 }: ActionConfigEditorPropsExtended): JSX.Element {
+    const listId = useAutomationListId();
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {spec.type === 'update_field' ? (
@@ -1354,6 +1365,8 @@ export function ActionConfigEditor({
                 <RequestApprovalHost spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'wait_approval' ? (
                 <WaitApprovalHost spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'reply_email' ? (
+                <ReplyEmailActionConfig listId={listId} spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'for_each_linked' ? (
                 <ForEachLinkedConfig spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
             ) : (

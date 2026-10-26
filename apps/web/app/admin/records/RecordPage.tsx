@@ -58,6 +58,7 @@ import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { HelpdeskManagedContext, helpdeskLockedReasons, useHelpdeskManagedIds } from '@/admin/helpdesk/managedFields';
 
 /**
  * Vista "Card" — página completa de un record con:
@@ -116,7 +117,12 @@ export function RecordPage(): JSX.Element {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [JSON.stringify(storeMarker), fields.data],
     );
-    const lockedReasons = useMemo(() => lockedReasonsFor(storeRules, fields.data ?? [], values), [storeRules, fields.data, values]);
+    // E5 — las columnas del SLA (si la lista es una mesa de ayuda) tampoco se editan a mano.
+    const helpdeskManaged = useHelpdeskManagedIds(list.data?.settings);
+    const lockedReasons = useMemo(
+        () => ({ ...lockedReasonsFor(storeRules, fields.data ?? [], values), ...helpdeskLockedReasons(helpdeskManaged, fields.data ?? []) }),
+        [storeRules, fields.data, values, helpdeskManaged],
+    );
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'comments' | 'activity'>('comments');
@@ -218,6 +224,7 @@ export function RecordPage(): JSX.Element {
     if (useCrmLayout && fields.data) {
         return (
             <StoreRulesContext.Provider value={storeRules}>
+            <HelpdeskManagedContext.Provider value={helpdeskManaged}>
                 <RecordLayoutView
                     key={record.data.id}
                     list={list.data}
@@ -254,6 +261,7 @@ export function RecordPage(): JSX.Element {
                         </>
                     }
                 />
+            </HelpdeskManagedContext.Provider>
             </StoreRulesContext.Provider>
         );
     }

@@ -142,7 +142,7 @@ export function useUpdateComment(
 export function useCommentAuthors(comments: readonly CommentEntity[] | undefined): (c: CommentEntity) => string {
     // El cliente del portal no está en el directorio de miembros: su nombre
     // viene en `author_name`.
-    const missing = (comments ?? []).filter((c) => !c.user_name && !c.from_client).map((c) => c.user_id);
+    const missing = (comments ?? []).filter((c) => !c.user_name && !c.from_client && c.user_id > 0).map((c) => c.user_id);
     const names = useMemberNames(missing);
     const map = names.data;
     return useCallback(
@@ -150,6 +150,7 @@ export function useCommentAuthors(comments: readonly CommentEntity[] | undefined
             (c.user_name !== undefined && c.user_name !== null && c.user_name !== '' ? c.user_name : null)
             ?? (c.from_client ? c.author_name || __('Cliente') : null)
             ?? map?.get(c.user_id)
+            ?? (c.user_id > 0 ? null : systemAuthor(c))
             ?? sprintf(/* translators: %d: user id */ __('Usuario #%d'), c.user_id),
         [map],
     );
@@ -209,4 +210,10 @@ export function useToggleCommentReaction(listId: string | number, recordId: numb
             markLocalRecordsChange(qc, listId);
         },
     });
+}
+
+/** D2 — un comentario sin persona (la respuesta automática de la mesa de ayuda). */
+function systemAuthor(c: CommentEntity): string {
+    const auto = (c.metadata as { email?: { automation?: unknown } } | undefined)?.email?.automation;
+    return typeof auto === 'string' && auto !== '' ? sprintf(__('Automatización «%s»'), auto) : __('Automatización');
 }

@@ -6,6 +6,8 @@ import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments
 import { buildThreads } from '@/admin/comments/commentThreads';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { MentionAutocomplete } from '@/admin/comments/MentionAutocomplete';
+import { EmailCommentMeta, emailOf } from '@/admin/helpdesk/EmailCommentMeta';
+import { TicketMailPanel } from '@/admin/helpdesk/TicketMailPanel';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -131,6 +133,8 @@ export function CommentsPanel({
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
+            {/* D2 — ticket por correo: el SLA y «Responder por correo» (si la lista lee un buzón). */}
+            <TicketMailPanel listId={listId} recordId={recordId} compact />
             <div ref={scrollRef} className="imcrm-flex-1 imcrm-overflow-y-auto imcrm-pr-1">
                 {comments.isLoading ? (
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
@@ -283,7 +287,8 @@ function CommentItem({
     footer,
 }: CommentItemProps): JSX.Element {
     // Un raíz eliminado (con respuestas vivas) ya no se edita ni se borra.
-    const canEdit = canEditRaw && !comment.deleted;
+    // D2 — un correo (recibido o enviado) tampoco se edita: es lo que se mandó.
+    const canEdit = canEditRaw && !comment.deleted && emailOf(comment) === null;
     const canDelete = canDeleteRaw && !comment.deleted;
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(comment.content);
@@ -403,7 +408,10 @@ function CommentItem({
             ) : comment.deleted ? (
                 <DeletedCommentPlaceholder />
             ) : (
-                <CommentContent content={comment.content} />
+                <>
+                    <EmailCommentMeta comment={comment} />
+                    <CommentContent content={comment.content} />
+                </>
             )}
             {!editing && <div className="imcrm-mt-2">{footer}</div>}
         </li>

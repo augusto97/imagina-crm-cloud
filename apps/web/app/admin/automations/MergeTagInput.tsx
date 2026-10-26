@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
-import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, PAYMENT_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
+import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, EMAIL_MERGE_TAGS, PAYMENT_MERGE_TAGS, SLA_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,7 +13,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { StepVariablesContext } from './flowContext';
+import { AutomationFlowContext, StepVariablesContext } from './flowContext';
 
 interface MergeTagInputProps {
     value: string;
@@ -231,7 +231,17 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
     // punto del flujo: el vinculado de un bucle y las respuestas de los
     // webhooks anteriores (con las rutas de una respuesta real, si la hay).
     const stepVars = useContext(StepVariablesContext);
-    const extra = context === 'automation' ? [...stepVars, ...extraProp] : extraProp;
+    // D2/E5 — el correo que llegó y la alerta del SLA sólo existen con su disparador.
+    const flowTrigger = useContext(AutomationFlowContext)?.triggerType;
+    const helpdeskVars: MergeTagSection[] =
+        context !== 'automation'
+            ? []
+            : flowTrigger === 'email_received'
+              ? [{ title: __('Correo recibido'), items: EMAIL_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` })) }]
+              : flowTrigger === 'sla_alert'
+                ? [{ title: __('SLA del ticket'), items: SLA_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` })) }]
+                : [];
+    const extra = context === 'automation' ? [...stepVars, ...helpdeskVars, ...extraProp] : extraProp;
 
     const matches = (s: string): boolean =>
         search === '' || s.toLowerCase().includes(search.toLowerCase());

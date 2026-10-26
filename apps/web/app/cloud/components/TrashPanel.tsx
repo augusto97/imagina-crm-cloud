@@ -69,6 +69,8 @@ const TRIGGER_LABEL: Record<string, string> = {
     form_submitted: 'Al enviar un formulario',
     button_pressed: 'Al presionar el botón',
     booking_event: 'Al agendar una cita',
+    email_received: 'Al llegar un correo',
+    sla_alert: 'Al vencer un SLA',
 };
 
 const PAGE_SIZE = 25;
