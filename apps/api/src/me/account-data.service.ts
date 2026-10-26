@@ -22,6 +22,7 @@ import {
     tenants,
     users,
 } from '../db/schema';
+import { deletePushForUser } from '../pwa/push-cleanup';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
@@ -262,6 +263,8 @@ export class AccountDataService {
             });
         }
         await this.sessions.destroyAllForUser(userId);
+        // H1 — sus dispositivos con notificaciones push (en todas las empresas).
+        await deletePushForUser(this.db, userId);
         this.logger.warn(`Cuenta ${userId} borrada a pedido del usuario (identidad anonimizada)`);
     }
 

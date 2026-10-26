@@ -136,6 +136,7 @@ const EXCLUDED = [
     'El enlace público de cada lista y la URL del webhook entrante: son credenciales de la instancia de origen; el import emite unos nuevos.',
     'El dominio propio: es único global y apunta al servidor anterior.',
     'Sesiones abiertas: cada persona vuelve a iniciar sesión en la instancia nueva.',
+    'Los dispositivos con notificaciones push: el navegador se suscribió con las llaves del servidor de origen; cada persona las vuelve a activar en Ajustes → Cuenta → Avisos.',
 ];
 
 /** Fila cruda leída de una NDJSON (o de un `select()` sin tipar). */

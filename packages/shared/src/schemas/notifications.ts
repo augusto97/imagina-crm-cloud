@@ -89,6 +89,29 @@ export type MarkNotificationsInput = z.infer<typeof markNotificationsSchema>;
 
 // ─────────────────────────── Preferencias ───────────────────────────
 
+/**
+ * H1 — Tipos que llegan por PUSH sin que la persona lo pida: lo que es para
+ * ella y tiene apuro (la mencionan, le asignan algo, le toca aprobar, su
+ * recordatorio). El resto queda apagado: un push por cada cambio de un
+ * registro que se sigue sería ruido. Un tipo nuevo de aviso nace APAGADO
+ * para push hasta que se lo agregue aquí.
+ */
+export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder'];
+
+/** `{ mention: z.boolean().default(…), … }` para TODOS los tipos (también los que se agreguen). */
+function kindFlagsSchema(defaults: readonly NotificationKind[]) {
+    const shape = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k, z.boolean().default(defaults.includes(k))])) as Record<
+        NotificationKind,
+        z.ZodDefault<z.ZodBoolean>
+    >;
+    return z.object(shape);
+}
+
+function kindFlagsPatchSchema() {
+    const shape = Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k, z.boolean()])) as Record<NotificationKind, z.ZodBoolean>;
+    return z.object(shape).partial();
+}
+
 export const notificationPrefsSchema = z.object({
     /** Qué tipos llegan TAMBIÉN por correo, en el momento. */
     email: z
@@ -115,6 +138,11 @@ export const notificationPrefsSchema = z.object({
             team_assigned: z.boolean().default(false),
         })
         .default({}),
+    /**
+     * H1 — Qué tipos llegan TAMBIÉN como notificación push a los dispositivos
+     * donde la persona la activó (Ajustes → Cuenta → Avisos).
+     */
+    push: kindFlagsSchema(PUSH_DEFAULT_KINDS).default({}),
     /**
      * Resumen diario por correo (avisos sin leer + lo vencido y lo que vence
      * hoy). Apagado por defecto: un correo nuevo para todos al actualizar
@@ -144,6 +172,7 @@ export const updateNotificationPrefsSchema = z
                 team_assigned: z.boolean(),
             })
             .partial(),
+        push: kindFlagsPatchSchema(),
         digest: z.enum(['off', 'daily']),
         digest_hour: z.number().int().min(0).max(23),
         digest_days: z.array(z.number().int().min(0).max(6)).max(7),

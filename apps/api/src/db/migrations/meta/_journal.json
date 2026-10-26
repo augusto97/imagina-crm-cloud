@@ -617,6 +617,13 @@
       "when": 1784200000210,
       "tag": "0087_booking_pages",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1784200000220,
+      "tag": "0088_push_subscriptions",
+      "breakpoints": true
     }
   ]
 }

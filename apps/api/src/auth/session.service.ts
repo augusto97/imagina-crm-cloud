@@ -59,6 +59,11 @@ export interface ActiveSession {
     impersonated: boolean;
 }
 
+/** Id PÚBLICO de una sesión: hash del token (el token es la credencial y no sale nunca). */
+export function sessionPublicId(token: string): string {
+    return createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
+
 /**
  * Sesiones opacas en Redis (STANDALONE.md §5): revocación instantánea,
  * sin JWT stateless. TTL deslizante — cada lectura renueva la expiración.
@@ -81,7 +86,27 @@ export class SessionService {
 
     /** Id público de una sesión (para listarla/revocarla sin exponer el token). */
     private publicId(token: string): string {
-        return createHash('sha256').update(token).digest('hex').slice(0, 16);
+        return sessionPublicId(token);
+    }
+
+    /**
+     * H1 — Ids PÚBLICOS de las sesiones vivas del usuario (sin deslizar su
+     * TTL). Lo usa el push: un dispositivo cuya sesión se cerró, venció o fue
+     * revocada deja de recibir avisos aunque el navegador siga suscripto.
+     */
+    async alivePublicIds(userId: number): Promise<Set<string>> {
+        const tokens = await this.redis.smembers(this.userKey(userId));
+        if (tokens.length === 0) return new Set();
+        const raws = await this.redis.mget(...tokens.map((t) => this.key(t)));
+        const out = new Set<string>();
+        tokens.forEach((t, i) => {
+            const raw = raws[i];
+            if (!raw) return;
+            const data = JSON.parse(raw) as SessionData;
+            if (data.expiresAt && Date.parse(data.expiresAt) < Date.now()) return;
+            out.add(this.publicId(t));
+        });
+        return out;
     }
 
     async create(

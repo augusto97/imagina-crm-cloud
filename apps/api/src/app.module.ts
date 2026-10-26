@@ -42,6 +42,7 @@ import { FormsModule } from './forms/forms.module';
 import { BookingModule } from './booking/booking.module';
 import { DataConsentModule } from './data-consent/data-consent.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PwaModule } from './pwa/pwa.module';
 import { AiFieldsModule } from './ai-fields/ai-fields.module';
 import { NotifyHubModule } from './notifications/notify-hub';
 import { IncidentHubModule } from './incidents/incident-hub';
@@ -99,6 +100,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         BookingModule,
         DataConsentModule,
         NotificationsModule,
+        PwaModule,
         IncidentsModule,
         AiFieldsModule,
         TimeTrackingModule,

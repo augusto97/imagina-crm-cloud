@@ -35,7 +35,8 @@ import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
 import { passwordCheckFailKey, verifyAccountPassword } from './password-check';
-import { SessionService, type ActiveSession } from './session.service';
+import { deletePushForSessionId, deletePushForUser } from '../pwa/push-cleanup';
+import { sessionPublicId, SessionService, type ActiveSession } from './session.service';
 import {
     generateBackupCodes,
     generateTotpSecret,
@@ -399,7 +400,10 @@ export class AuthService implements OnModuleInit {
             .update(users)
             .set({ disabledAt: disabled ? sql`now()` : null })
             .where(eq(users.id, userId));
-        if (disabled) await this.sessions.destroyAllForUser(userId);
+        if (disabled) {
+            await this.sessions.destroyAllForUser(userId);
+            await deletePushForUser(this.db, userId);
+        }
         this.logger.log(`Usuario ${userId} ${disabled ? 'desactivado' : 'reactivado'} por operador`);
     }
 
@@ -1250,6 +1254,7 @@ export class AuthService implements OnModuleInit {
     /** Cierra una sesión concreta del usuario. 404 si no le pertenece. */
     async revokeSession(userId: number, publicId: string): Promise<void> {
         const ok = await this.sessions.destroyOneForUser(userId, publicId);
+        if (ok) await deletePushForSessionId(this.db, publicId);
         if (!ok) {
             throw new NotFoundException({
                 code: 'session_not_found',
@@ -1307,6 +1312,8 @@ export class AuthService implements OnModuleInit {
 
     async logout(token: string): Promise<void> {
         await this.sessions.destroy(token);
+        // H1 — el dispositivo deja de recibir notificaciones push de inmediato.
+        await deletePushForSessionId(this.db, sessionPublicId(token));
     }
 
     async membershipsOf(userId: number): Promise<MembershipSummary[]> {

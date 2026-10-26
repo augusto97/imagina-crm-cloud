@@ -103,6 +103,7 @@ import {
     dataConsents,
     dataConsentVersions,
     portalCredentials,
+    pushSubscriptions,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
@@ -378,6 +379,8 @@ export class PlatformService {
             await tx.delete(mentions).where(eq(mentions.tenantId, id));
             // v0.1.276 — avisos, seguidos y recordatorios.
             await tx.delete(notifications).where(eq(notifications.tenantId, id));
+            // H1 — dispositivos con notificaciones push.
+            await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.tenantId, id));
             await tx.delete(recordFollows).where(eq(recordFollows.tenantId, id));
             await tx.delete(reminders).where(eq(reminders.tenantId, id));
             // v0.1.285 — problemas (la FK a lists/users se borra antes que ellas).
