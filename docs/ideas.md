@@ -45,7 +45,8 @@ compra y que la IA cree o actualice el registro, con pantalla de revisión.
 
 **Oleada 6 · Crecer** — el usuario eligió el 2026-10-26 SÓLO **E6 · Agentes de
 IA** para la fase 6 ("por el momento solo me interesaría la de Agentes de IA,
-los otros por el momento ponlos en ideas"). Quedan aquí, pospuestos:
+los otros por el momento ponlos en ideas"); E6 se publicó en v0.1.317. Quedan
+aquí, pospuestos:
 - **I1 · Interfaz en inglés y portugués.** La pieza de traducción ya existe
   (`lib/i18n.ts`, ~7.000 textos marcados en la interfaz, hoy sólo español).
   Falta traducir todo (también errores del API, correos, portal, páginas
@@ -117,7 +118,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | E2 · Acciones que faltan | alto · M-L | «Buscar registros», «crear o actualizar por una clave», «asignar por turno», «notificar en la app», «copiar a otra lista», «preguntarle a la IA». Ya existen: pedir aprobación y subtareas desde plantilla. |
 | E3 · Varias ramas («según el valor de…»), subflujos, manejo de errores por paso, reintento de webhooks | medio · M | |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
-| E6 · Agentes de IA | alto · L-XL | **En la fase 6** (aprobada 2026-10-26). Base: el registro de herramientas y «propone → aplica». |
 | E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |
 
 ### F. Inteligencia artificial
@@ -213,6 +213,12 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada
   (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
   administre push; llenar con la cámara otros campos además del «Código».
+- **Agentes de IA (v0.1.317)**: un botón «Pedir al agente» en la ficha (hoy
+  sólo trabaja cuando lo llama una automatización); correr un agente en lote
+  sobre registros que ya existen; memoria entre corridas (hoy cada corrida
+  arranca de cero); elegir el modelo por agente (hoy usa el del asistente de
+  la empresa); que el asistente/MCP cambie o pause un agente (hoy sólo lo
+  crea).
 - **Mesa de ayuda (v0.1.316)**: entrar al buzón por OAuth (Gmail/Microsoft)
   en vez de contraseña de aplicación; horario hábil por equipo (hoy uno por
   lista); que un Problema abierto mire la papelera (hoy el de un buzón cuya

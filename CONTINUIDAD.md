@@ -364,7 +364,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.316** (mesa de ayuda por correo y SLA; con ella la fase 5 queda completa), en `main`.
+versión publicada: **v0.1.317** (agentes de IA; con ellos la fase 6 queda completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
@@ -403,7 +403,13 @@ versión publicada: **v0.1.316** (mesa de ayuda por correo y SLA; con ella la fa
   algo (reusa las aprobaciones de la fase 3); tope de consumo de IA por agente.
   Idioma inglés/portugués, modo agencia, importadores y Google Sheets en dos
   sentidos quedaron en `docs/ideas.md` con sus decisiones pendientes. Va
-  después de la fase 5.
+  después de la fase 5. **Publicada en v0.1.317** (migración 0091); con ella
+  la **fase 6 queda completa**. Decisiones tomadas por defecto (se pueden
+  cambiar): un agente no tiene disparadores propios —trabaja cuando una
+  automatización usa «Pedirle a un agente», así sirve con cualquier
+  disparador—; el modo por defecto es «propone y una persona aprueba»; corre
+  con el acceso vigente de quien lo configuró; el aviso `agent` llega a la
+  campana con correo y push apagados.
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
   completa de una»).** El usuario no respondió las tres preguntas pendientes,
   así que se tomaron decisiones por defecto (se le informan; se pueden cambiar):
@@ -727,6 +733,25 @@ versión publicada: **v0.1.316** (mesa de ayuda por correo y SLA; con ella la fa
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-26 · v0.1.317** — **Agentes de IA** (ADR-S71, opción E6; única
+  entrega de la fase 6 → **fase 6 completa**). Agentes con instrucciones,
+  listas, herramientas curadas y modo «propone» (por defecto) o «hace».
+  Trabajan cuando una automatización usa «Pedirle a un agente», así que sirven
+  con cualquier disparador (incluidos los de la agenda, WhatsApp y la mesa de
+  ayuda). Corren con el acceso vigente de su dueño (se pausan y abren un
+  Problema si lo pierde o pasa a invitado o cliente), con la resolución de IA
+  del asistente y topes por agente (pasos por corrida, corridas por día, tokens
+  por mes). Tienen historial, «Probar» en simulación, versiones (últimas 30),
+  propuestas en la ficha, en «Mi trabajo» y en la campana (aviso `agent`,
+  correo y push apagados) y `propose_create_ai_agent` para el asistente y el
+  MCP. Migran en pausa al mover una empresa. Migración 0091. Al integrar con la
+  mesa de ayuda apareció un `break` faltante en el texto del aviso `sla`, que
+  caía al del agente. API 1642, front 574 y shared 511 en verde; E2E 45/45 con
+  un proveedor de IA simulado. **OJO en dev**: una base que ya tenga la 0091
+  aplicada no recibe 0087-0090 con `pnpm db:migrate` (drizzle compara por
+  `when`): aplicarlas a mano con psql. **Anotado en `docs/ideas.md`**: botón
+  «Pedir al agente» en la ficha, corridas en lote sobre registros existentes,
+  memoria entre corridas y modelo por agente.
 - **2026-10-26 · v0.1.316** — **Mesa de ayuda por correo + SLA y
   escalamiento** (ADR-S70, opciones D2 y E5; tercera entrega → **fase 5
   completa**). Un buzón de soporte por lista leído por IMAP (Ajustes de la
