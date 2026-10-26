@@ -47,6 +47,8 @@ import {
     automationRuns,
     automations,
     automationVersions,
+    aiAgentLists,
+    aiAgents,
     commentReactions,
     comments,
     connections,
@@ -332,6 +334,11 @@ export class TenantTransferService {
             await dump('automations', await this.byTenant(automations, tenantId, sql`${automations.deletedAt} IS NULL`));
             // v0.1.288 — historial de versiones (fotos sin secretos).
             await dump('automation_versions', await this.byTenant(automationVersions, tenantId, liveAutomation(automationVersions.automationId)));
+            // E6 — agentes de IA y sus listas (las de la papelera no viajan).
+            // Sus corridas y propuestas NO viajan: son historia de este
+            // servidor (los registros que tocaron sí, con su actividad).
+            await dump('ai_agents', await this.byTenant(aiAgents, tenantId));
+            await dump('ai_agent_lists', await this.byTenant(aiAgentLists, tenantId, liveList(aiAgentLists.listId)));
             await dump('dashboards', await this.byTenant(dashboards, tenantId, sql`${dashboards.deletedAt} IS NULL`));
             // v0.1.292 — envíos programados y enlaces públicos de los tableros.
             // El TOKEN del enlace no viaja (es la credencial de ESTE servidor):
@@ -1248,6 +1255,34 @@ export class TenantTransferService {
             };
         });
 
+        // E6 — agentes de IA ANTES que la actividad (que los nombra) y las
+        // automatizaciones («Pedirle a un agente»). Llegan PAUSADOS: su dueño y
+        // sus disparadores se revisan en el servidor nuevo antes de que trabajen.
+        counts.ai_agents = await this.insertMapped(tx, await this.readAll(rows('ai_agents')), aiAgents, maps.agent, (g) => ({
+            tenantId,
+            name: String(g.name ?? 'Agente').slice(0, 80),
+            description: String(g.description ?? ''),
+            color: (g.color as string | null) ?? null,
+            icon: (g.icon as string | null) ?? null,
+            instructions: String(g.instructions ?? ''),
+            tools: Array.isArray(g.tools) ? g.tools : [],
+            mode: String(g.mode ?? 'propose') === 'act' ? 'act' : 'propose',
+            settings: remapJson((g.settings as Row | null) ?? {}, maps) as Row,
+            maxSteps: Number(g.maxSteps ?? 8),
+            maxRunsPerDay: Number(g.maxRunsPerDay ?? 200),
+            monthlyTokenBudget: g.monthlyTokenBudget === null || g.monthlyTokenBudget === undefined ? null : Number(g.monthlyTokenBudget),
+            ownerId: mapId(maps.user, g.ownerId),
+            isActive: false,
+            pausedReason: 'Se trajo desde otro servidor: revísalo y reanúdalo.',
+            createdBy: mapId(maps.user, g.createdBy),
+            createdAt: this.date(g.createdAt) ?? new Date(),
+        }));
+        counts.ai_agent_lists = await this.insertPlain(tx, rows('ai_agent_lists'), aiAgentLists, (l) => {
+            const agentId = mapId(maps.agent, l.agentId);
+            const listId = mapId(maps.list, l.listId);
+            return agentId === null || listId === null ? null : { tenantId, agentId, listId };
+        });
+
         counts.activity = await this.streamInsert(rows('activity'), async (batch) => {
             const values = batch
                 .filter((a) => maps.list.has(Number(a.listId)))
@@ -1262,6 +1297,8 @@ export class TenantTransferService {
                     // claves (mapa de tipos vacío) para que el feed siga
                     // nombrando el campo correcto sin tocar el contenido.
                     diff: remapActivityDiff(String(a.action), (a.diff as Row | null) ?? {}, maps),
+                    // E6 — el agente de IA que hizo el cambio (si existe aquí).
+                    agentId: mapId(maps.agent, a.agentId),
                     createdAt: this.date(a.createdAt) ?? new Date(),
                 }));
             if (!values.length) return 0;
@@ -2000,6 +2037,11 @@ export class TenantTransferService {
         if (publicDashboardsCount > 0) {
             warnings.push(`${publicDashboardsCount} tablero(s) público(s) tienen un enlace NUEVO: hay que volver a repartirlo (y a insertarlo en los sitios que lo usan).`);
         }
+        if ((counts.ai_agents ?? 0) > 0) {
+            warnings.push(
+                `${counts.ai_agents} agente(s) de IA llegaron PAUSADOS: revisa cada uno en Agentes (con qué acceso trabaja y cuándo) y reanúdalo. Su historial de corridas y sus propuestas pendientes no viajaron.`,
+            );
+        }
         if ((counts.dashboard_subscriptions ?? 0) > 0) {
             warnings.push(
                 `${counts.dashboard_subscriptions} envío(s) programado(s) de tableros llegaron PAUSADOS (para no duplicar correos con el servidor anterior): actívalos en cada tablero → Compartir → Envío por correo.`,
@@ -2403,6 +2445,13 @@ function remapActivityDiff(action: string, diff: Row, maps: IdMaps): Row {
         const ap = (diff.approval ?? null) as Row | null;
         if (!ap || typeof ap !== 'object') return diff;
         return { ...diff, approval: { ...ap, request_id: mapId(maps.approval_request, ap.request_id) } };
+    }
+    // E6 — lo que hizo un agente de IA: su id (si viajó); la propuesta no viaja.
+    if (action === 'ai_agent') {
+        const ag = (diff.agent ?? null) as Row | null;
+        if (!ag || typeof ag !== 'object') return diff;
+        const { proposal_id: _proposal, ...rest } = ag;
+        return { ...diff, agent: { ...rest, agent_id: mapId(maps.agent, ag.agent_id) ?? 0 } };
     }
     return remapRecordData(diff, new Map(), maps);
 }

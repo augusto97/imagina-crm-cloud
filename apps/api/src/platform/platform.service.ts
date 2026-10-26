@@ -39,6 +39,11 @@ import {
     automationRuns,
     automations,
     automationVersions,
+    aiAgentLists,
+    aiAgentProposals,
+    aiAgentRuns,
+    aiAgentVersions,
+    aiAgents,
     commentReactions,
     comments,
     timeEntries,
@@ -407,6 +412,12 @@ export class PlatformService {
             await tx.delete(helpdeskMessages).where(eq(helpdeskMessages.tenantId, id));
             await tx.delete(helpdeskTickets).where(eq(helpdeskTickets.tenantId, id));
             await tx.delete(helpdeskMailboxes).where(eq(helpdeskMailboxes.tenantId, id));
+            // E6 — agentes de IA (propuestas y corridas antes que registros y listas).
+            await tx.delete(aiAgentProposals).where(eq(aiAgentProposals.tenantId, id));
+            await tx.delete(aiAgentRuns).where(eq(aiAgentRuns.tenantId, id));
+            await tx.delete(aiAgentVersions).where(eq(aiAgentVersions.tenantId, id));
+            await tx.delete(aiAgentLists).where(eq(aiAgentLists.tenantId, id));
+            await tx.delete(aiAgents).where(eq(aiAgents.tenantId, id));
             await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
             // v0.1.288 — historial de versiones (antes que las automatizaciones).

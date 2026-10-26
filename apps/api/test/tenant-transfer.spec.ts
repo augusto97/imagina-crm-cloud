@@ -45,6 +45,8 @@ import {
     teams,
     customRoles,
     recordShares,
+    aiAgentLists,
+    aiAgents,
     tenants,
     timeEntries,
     users,
@@ -102,6 +104,7 @@ describe('Migración de empresa (v0.1.197)', () => {
     let tplFacturasId: number;
     let teamAId: number;
     let roleAId: number;
+    let agentAId: number;
     let equipoFieldId: number;
     let mailboxAId: number;
 
@@ -454,6 +457,21 @@ describe('Migración de empresa (v0.1.197)', () => {
             authorUserId: anaId,
             snippet: 'revisa esto',
         });
+        // E6 — un agente de IA de Ana en Clientes, con Carlos como revisor.
+        const [agente] = await pg.db
+            .insert(aiAgents)
+            .values({
+                tenantId: tenantA,
+                name: 'Clasificador',
+                instructions: 'Clasifica.',
+                tools: ['read_record', 'update_fields'],
+                settings: { client_comments: false, reviewer_user_ids: [carlosId] },
+                ownerId: anaId,
+                createdBy: anaId,
+            })
+            .returning();
+        agentAId = agente!.id;
+        await pg.db.insert(aiAgentLists).values({ tenantId: tenantA, agentId: agentAId, listId: clientesId });
         await pg.db.insert(activity).values({
             tenantId: tenantA,
             listId: clientesId,
@@ -461,6 +479,7 @@ describe('Migración de empresa (v0.1.197)', () => {
             userId: anaId,
             action: 'record_updated',
             diff: { [`f${nombreFieldId}`]: { from: 'viejo', to: 'Cliente Uno' } },
+            agentId: agentAId,
         });
 
         // A9 / C6 — plantillas de registro (apuntan a campos y personas por id)
@@ -510,7 +529,7 @@ describe('Migración de empresa (v0.1.197)', () => {
                         then_actions: [
                             { type: 'call_webhook', config: { connection_id: connectionId, url: 'https://x.test' } },
                         ],
-                        else_actions: [],
+                        else_actions: [{ type: 'ask_agent', config: { agent_id: agentAId, instruction: 'Revisa' } }],
                     },
                 },
                 { type: 'create_subtasks_from_template', config: { template_id: tplClientesId, include_checklists: true } },
@@ -900,6 +919,18 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newTickets).toEqual([expect.objectContaining({ recordId: newCliente.id, listId: newClientes.id, customerEmail: 'cliente@uno.test' })]);
         expect(newTickets[0]!.alerts).toEqual({ 'first_response:at_risk': '2026-11-03T13:35:00Z' });
         expect(res.warnings.some((w) => w.includes('buzón de soporte'))).toBe(true);
+        // E6 — el agente llega PAUSADO, con su lista, su dueño y su revisor nuevos;
+        // la actividad lo sigue nombrando.
+        const newAgents = await pg.db.select().from(aiAgents).where(eq(aiAgents.tenantId, tenantB));
+        expect(newAgents).toHaveLength(1);
+        expect(newAgents[0]!.id).not.toBe(agentAId);
+        expect(newAgents[0]!.isActive).toBe(false);
+        expect(newAgents[0]!.pausedReason).toMatch(/otro servidor/);
+        expect(newAgents[0]!.ownerId).toBe(anaId);
+        expect(newActivity[0]!.agentId).toBe(newAgents[0]!.id);
+        const newAgentLists = await pg.db.select().from(aiAgentLists).where(eq(aiAgentLists.tenantId, tenantB));
+        expect(newAgentLists.map((l) => l.listId)).toEqual([newClientes.id]);
+        expect(res.warnings.some((w) => w.includes('agente(s) de IA llegaron PAUSADOS'))).toBe(true);
 
         // ── Automatizaciones ───────────────────────────────────────────
         const newAutos = await pg.db.select().from(automations).where(eq(automations.tenantId, tenantB));
@@ -925,6 +956,8 @@ describe('Migración de empresa (v0.1.197)', () => {
         // Los merge tags y los valores por slug no se tocan.
         expect(acciones[0]!.config.values).toEqual({ estado: 'pendiente' });
         const rama = (acciones[1]!.config.then_actions as Array<{ config: Record<string, unknown> }>)[0]!;
+        // E6 — «Pedirle a un agente» (dentro de una rama) apunta al agente nuevo.
+        expect((acciones[1]!.config.else_actions as Array<{ config: Record<string, unknown> }>)[0]!.config.agent_id).toBe(newAgents[0]!.id);
         const newConnections = await pg.db
             .select()
             .from(connections)
@@ -1056,6 +1089,8 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(newRoles.map((r) => [r.name, r.baseRole])).toEqual([['Coordinador', 'agent']]);
         expect(newRoles[0]!.id).not.toBe(roleAId);
         const newCarlos = newMentions[0]!.mentionedUserId;
+        // E6 — el revisor de las propuestas del agente es el Carlos nuevo.
+        expect((newAgents[0]!.settings as { reviewer_user_ids?: number[] }).reviewer_user_ids).toEqual([newCarlos]);
         const [carlosMember] = await pg.db
             .select()
             .from(memberships)

@@ -48,6 +48,11 @@ import {
     whatsappContacts,
     whatsappHooks,
     whatsappTemplates,
+    aiAgentLists,
+    aiAgentProposals,
+    aiAgentRuns,
+    aiAgentVersions,
+    aiAgents,
 } from '../src/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
@@ -418,6 +423,12 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
             .returning();
         await pg.db.insert(helpdeskMessages).values({ tenantId: id, listId: list!.id, mailboxId: mb!.id, recordId: record!.id, commentId: comment!.id, direction: 'in', status: 'reply' });
         await pg.db.insert(helpdeskTickets).values({ tenantId: id, listId: list!.id, recordId: record!.id, mailboxId: mb!.id });
+        // E6 — un agente de IA con su lista, una corrida, una propuesta y una versión.
+        const [agent] = await pg.db.insert(aiAgents).values({ tenantId: id, name: 'Agente', ownerId: owner!.id, createdBy: owner!.id }).returning();
+        await pg.db.insert(aiAgentLists).values({ tenantId: id, agentId: agent!.id, listId: list!.id });
+        const [agentRun] = await pg.db.insert(aiAgentRuns).values({ tenantId: id, agentId: agent!.id, listId: list!.id, recordId: record!.id }).returning();
+        await pg.db.insert(aiAgentProposals).values({ tenantId: id, agentId: agent!.id, runId: agentRun!.id, listId: list!.id, recordId: record!.id });
+        await pg.db.insert(aiAgentVersions).values({ tenantId: id, agentId: agent!.id, snapshot: {}, authorId: owner!.id });
 
         // D5 — una página de agenda con una cita.
         const [bpage] = await pg.db.insert(bookingPages).values({ tenantId: id, listId: list!.id, name: 'Agenda', token: `agenda-a-borrar-${id}-xyz`, config: {} }).returning();
@@ -438,6 +449,8 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(await pg.db.select().from(helpdeskMailboxes).where(eq(helpdeskMailboxes.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(helpdeskMessages).where(eq(helpdeskMessages.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(helpdeskTickets).where(eq(helpdeskTickets.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(aiAgents).where(eq(aiAgents.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(aiAgentProposals).where(eq(aiAgentProposals.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklistItems).where(eq(recordChecklistItems.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordChecklists).where(eq(recordChecklists.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(recordTemplates).where(eq(recordTemplates.tenantId, id))).toHaveLength(0);
