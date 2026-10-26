@@ -389,6 +389,14 @@ versión publicada: **v0.1.310** (checklists y plantillas de registro), en `main
   su propia cuenta de WhatsApp Business). Orden: (1) primero, (2) después y (3)
   al final. Se arranca cuando estén publicadas las tres entregas en curso
   (Equipos, Roles e invitados, Agenda). F3 quedó en `docs/ideas.md`.
+- 2026-10-26 — **Fase 6: sólo «Agentes de IA» (E6)** ("por el momento solo me
+  interesaría la de Agentes de IA, los otros por el momento ponlos en ideas").
+  Un agente con nombre y tarea que corre cuando pasa algo, con herramientas
+  limitadas, cada paso en la actividad y aprobación opcional antes de cambiar
+  algo (reusa las aprobaciones de la fase 3); tope de consumo de IA por agente.
+  Idioma inglés/portugués, modo agencia, importadores y Google Sheets en dos
+  sentidos quedaron en `docs/ideas.md` con sus decisiones pendientes. Va
+  después de la fase 5.
 - 2026-10-26 — **Fase 3 del estudio en marcha («arranca la siguiente fase
   completa de una»).** El usuario no respondió las tres preguntas pendientes,
   así que se tomaron decisiones por defecto (se le informan; se pueden cambiar):

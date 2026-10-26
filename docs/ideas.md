@@ -43,12 +43,28 @@ D3 (WhatsApp oficial) pasan a la fase 5 y salen de este banco al publicarse.
 dejaría en ideas"): subir o reenviar una factura, un RUT o una orden de
 compra y que la IA cree o actualice el registro, con pantalla de revisión.
 
-**Oleada 6 · Crecer**
-- I1 Interfaz en inglés y portugués.
-- I3 Modo agencia / revendedor.
-- G5 Importadores (Airtable primero).
-- G3 Google Sheets sincronizado en los dos sentidos.
-- E6 Agentes de IA.
+**Oleada 6 · Crecer** — el usuario eligió el 2026-10-26 SÓLO **E6 · Agentes de
+IA** para la fase 6 ("por el momento solo me interesaría la de Agentes de IA,
+los otros por el momento ponlos en ideas"). Quedan aquí, pospuestos:
+- **I1 · Interfaz en inglés y portugués.** La pieza de traducción ya existe
+  (`lib/i18n.ts`, ~7.000 textos marcados en la interfaz, hoy sólo español).
+  Falta traducir todo (también errores del API, correos, portal, páginas
+  públicas, PDF, plantillas y el asistente) e idioma por persona con default
+  por empresa. Costo que queda: cada texto nuevo en tres idiomas. Decisión
+  pendiente: quién revisa las traducciones (conviene un nativo para el
+  portugués).
+- **I3 · Modo agencia / revendedor** (estilo GoHighLevel). Un socio administra
+  varias empresas cliente con su marca, plantillas, planes y precios. Encaja
+  con el negocio del usuario. Base: consola de plataforma, white-label,
+  dominios propios, planes editables e impersonación. Decisiones pendientes:
+  quién le cobra al cliente final (el socio con su pasarela, o la plataforma
+  con comisión al socio) y si el socio entra a los datos de sus clientes y con
+  qué rastro.
+- **G5 · Importadores**, Airtable primero (base completa con vínculos y
+  adjuntos, por token de la persona); después Notion, ClickUp, Trello y monday.
+- **G3 · Google Sheets sincronizado en los dos sentidos.** La integración de
+  Sheets ya tiene el permiso `spreadsheets` (lectura y escritura): no hace falta
+  pedir uno nuevo a Google.
 
 ---
 
@@ -104,7 +120,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | E3 · Varias ramas («según el valor de…»), subflujos, manejo de errores por paso, reintento de webhooks | medio · M | |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
 | E5 · SLA y escalamiento | medio-alto · M | **En la fase 5** (con D2). |
-| E6 · Agentes de IA | alto · L-XL | Oleada 6. Base: el registro de herramientas y «propone → aplica». |
+| E6 · Agentes de IA | alto · L-XL | **En la fase 6** (aprobada 2026-10-26). Base: el registro de herramientas y «propone → aplica». |
 | E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |
 
 ### F. Inteligencia artificial
@@ -122,9 +138,9 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | G1, G2, G8 | — | Ver §1 (pospuestos). |
-| G3 · Google Sheets sincronizado en los dos sentidos | alto · M-L | Oleada 6. |
+| G3 · Google Sheets sincronizado en los dos sentidos | alto · M-L | Pospuesto por el usuario al armar la fase 6 (2026-10-26). El permiso `spreadsheets` ya está. |
 | G4 · Google Calendar / Outlook sincronizado en los dos sentidos | medio-alto · M | Hoy sólo se crean eventos. |
-| G5 · Importadores (Airtable, Notion, ClickUp, Trello, monday) | alto · M c/u | Oleada 6. Excel con varias hojas ya existe (v0.1.299). |
+| G5 · Importadores (Airtable, Notion, ClickUp, Trello, monday) | alto · M c/u | Pospuesto por el usuario al armar la fase 6. Excel con varias hojas ya existe (v0.1.299). |
 | G7 · Sincronizar PostgreSQL y MySQL | medio · M | Como la de SQL Server. |
 | G9 · Contabilidad (Siigo, Alegra, World Office, QuickBooks, Xero) | medio-alto · M c/u | |
 | G10 · Más pasarelas (ePayco, PayU, Bold, Stripe fuera de Colombia, Nequi directo) | medio · S-M c/u | Hoy: Mercado Pago, Wompi y PayPal. |
@@ -146,9 +162,9 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### I. Plataforma, administración y negocio
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| I1 · Interfaz en inglés y portugués | alto · L | Oleada 6. `lib/i18n.ts` ya existe. |
+| I1 · Interfaz en inglés y portugués | alto · L | Pospuesto por el usuario al armar la fase 6. `lib/i18n.ts` ya existe. |
 | I2 · SSO corporativo (Google Workspace, Entra, SAML, OIDC) y SCIM | medio · M | |
-| I3 · Modo agencia / revendedor | alto · L | Oleada 6. |
+| I3 · Modo agencia / revendedor | alto · L | Pospuesto por el usuario al armar la fase 6. Ver §2. |
 | I4 · Cobro por usuario y complementos (más IA, correos, almacenamiento) | medio · M | |
 | I5 · Cupones, pruebas gratis y referidos | medio · M | |
 | I6 · Copia automática de cada empresa a SU Drive o S3 | medio · S-M | Hoy existen el almacenamiento propio y la exportación de una empresa. |
