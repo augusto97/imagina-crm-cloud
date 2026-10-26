@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Calendar, Columns3, Copy, GanttChart, CopyPlus, Download, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Calendar, Columns3, Copy, GanttChart, CopyPlus, Download, Gauge, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +28,7 @@ import { EditCardsViewDialog } from './EditCardsViewDialog';
 import { CalendarSettingsDialog } from './calendar/CalendarSettingsDialog';
 import { EditKanbanViewDialog } from './EditKanbanViewDialog';
 import { GanttSettingsDialog } from './gantt/GanttSettingsDialog';
+import { WorkloadSettingsDialog } from './workload/WorkloadSettingsDialog';
 
 interface ViewsTabsProps {
     listId: number;
@@ -75,6 +76,7 @@ export function ViewsTabs({
     const [editingKanbanView, setEditingKanbanView] = useState<SavedViewEntity | null>(null);
     const [editingCalendarView, setEditingCalendarView] = useState<SavedViewEntity | null>(null);
     const [editingGanttView, setEditingGanttView] = useState<SavedViewEntity | null>(null);
+    const [editingWorkloadView, setEditingWorkloadView] = useState<SavedViewEntity | null>(null);
 
     const reorder = useReorderSavedViews(listId);
     const toast = useToast();
@@ -259,6 +261,8 @@ export function ViewsTabs({
                                 <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.type === 'gantt' ? (
                                 <GanttChart className="imcrm-h-3.5 imcrm-w-3.5" />
+                            ) : view.type === 'workload' ? (
+                                <Gauge className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.config.spreadsheet === true ? (
                                 // Hoja de cálculo: es una vista `table` con
                                 // otra presentación, pero para el usuario es
@@ -353,6 +357,12 @@ export function ViewsTabs({
                                         <DropdownMenuItem onSelect={() => setEditingGanttView(view)}>
                                             <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                             {__('Editar configuración')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {writable && view.type === 'workload' && (
+                                        <DropdownMenuItem onSelect={() => setEditingWorkloadView(view)}>
+                                            <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Configurar carga')}
                                         </DropdownMenuItem>
                                     )}
 
@@ -561,6 +571,17 @@ export function ViewsTabs({
                     open={editingKanbanView !== null}
                     onOpenChange={(open) => {
                         if (! open) setEditingKanbanView(null);
+                    }}
+                />
+            )}
+
+            {editingWorkloadView && (
+                <WorkloadSettingsDialog
+                    listId={listId}
+                    view={editingWorkloadView}
+                    open={editingWorkloadView !== null}
+                    onOpenChange={(open) => {
+                        if (! open) setEditingWorkloadView(null);
                     }}
                 />
             )}

@@ -86,6 +86,7 @@ import { CardsView } from './views/CardsView';
 import { pickPrimaryField } from '@/lib/recordCategorize';
 import { KanbanView } from './views/KanbanView';
 import { GanttView } from './views/gantt/GanttView';
+import { WorkloadView } from './views/workload/WorkloadView';
 import { GroupedTableView } from './views/GroupedTableView';
 import { useEventCallback } from '@/hooks/useEventCallback';
 
@@ -220,6 +221,7 @@ export function RecordsPage(): JSX.Element {
         && activeViewType !== 'calendar'
         && activeViewType !== 'cards'
         && activeViewType !== 'gantt'
+        && activeViewType !== 'workload'
         && state.groupByFieldId !== null
         && !state.spreadsheet;
     // v0.1.286 — el calendario pide los registros de SU rango (el mes visible):
@@ -241,6 +243,13 @@ export function RecordsPage(): JSX.Element {
     // listado plano no se usa ahí.
     const ganttMode = activeViewType === 'gantt';
     const [ganttStatus, setGanttStatus] = useState<{ total: number | null; fetching: boolean; ids: number[] }>({
+        total: null,
+        fetching: false,
+        ids: [],
+    });
+    // B2 — la carga de trabajo pide su propio bundle (personas × períodos).
+    const workloadMode = activeViewType === 'workload';
+    const [workloadStatus, setWorkloadStatus] = useState<{ total: number | null; fetching: boolean; ids: number[] }>({
         total: null,
         fetching: false,
         ids: [],
@@ -271,7 +280,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied && !groupedMode && !calendarMode && !kanbanMode && !ganttMode ? listSlug : undefined,
+        viewApplied && !groupedMode && !calendarMode && !kanbanMode && !ganttMode && !workloadMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -299,7 +308,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch && !groupedMode && !calendarMode && !kanbanMode && !ganttMode ? listSlug : undefined,
+        useServerSearch && !groupedMode && !calendarMode && !kanbanMode && !ganttMode && !workloadMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -327,7 +336,9 @@ export function RecordsPage(): JSX.Element {
           ? kanbanStatus.total
           : ganttMode
             ? ganttStatus.total
-            : records.data?.meta?.total ?? null;
+            : workloadMode
+              ? workloadStatus.total
+              : records.data?.meta?.total ?? null;
     const listFetching = groupedMode
         ? groupedStatus.fetching
         : kanbanMode
@@ -336,7 +347,9 @@ export function RecordsPage(): JSX.Element {
             ? calendarStatus.fetching
             : ganttMode
               ? ganttStatus.fetching
-              : records.isFetching;
+              : workloadMode
+                ? workloadStatus.fetching
+                : records.isFetching;
     const [createOpen, setCreateOpen] = useState(false);
     // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
     // dentro del grupo "Hecho" abre el form con estado=hecho seteado).
@@ -522,6 +535,7 @@ export function RecordsPage(): JSX.Element {
     const [kanbanSettingsOpen, setKanbanSettingsOpen] = useState(false);
     const [calendarSettingsOpen, setCalendarSettingsOpen] = useState(false);
     const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
+    const [workloadSettingsOpen, setWorkloadSettingsOpen] = useState(false);
     const onFrozenColumnsChange = useEventCallback((next: number | null) =>
         setState((s) => ({ ...s, frozenColumns: next })),
     );
@@ -780,7 +794,8 @@ const applyView = (view: SavedViewEntity | null): void => {
     const isCalendar = activeView?.type === 'calendar';
     const isCards = activeView?.type === 'cards';
     const isGantt = activeView?.type === 'gantt';
-    const isAlternativeView = isKanban || isCalendar || isCards || isGantt;
+    const isWorkload = activeView?.type === 'workload';
+    const isAlternativeView = isKanban || isCalendar || isCards || isGantt || isWorkload;
     // v0.1.137 — el modo hoja de cálculo ignora la agrupación a propósito:
     // una hoja de Excel no tiene bloques, tiene filas numeradas.
     const isTableGrouped = !isAlternativeView
@@ -797,7 +812,9 @@ const applyView = (view: SavedViewEntity | null): void => {
             ? calendarStatus.ids
             : ganttMode
               ? ganttStatus.ids
-              : (records.data?.data ?? []).map((r) => r.id);
+              : workloadMode
+                ? workloadStatus.ids
+                : (records.data?.data ?? []).map((r) => r.id);
     const navIndex = drawerRecordId !== null ? navIds.indexOf(drawerRecordId) : -1;
     const drawerNav = {
         prev: navIndex > 0 ? navIds[navIndex - 1]! : null,
@@ -1256,7 +1273,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onFrozenColumnsChange={onFrozenColumnsChange}
                     focusSection={viewSettingsFocus}
                     canGroup={!isAlternativeView}
-                    viewType={isKanban ? 'kanban' : isCalendar ? 'calendar' : isCards ? 'cards' : isGantt ? 'gantt' : 'table'}
+                    viewType={isKanban ? 'kanban' : isCalendar ? 'calendar' : isCards ? 'cards' : isGantt ? 'gantt' : isWorkload ? 'workload' : 'table'}
                     wrapText={state.wrapText}
                     onWrapTextChange={(next) => setState((s) => ({ ...s, wrapText: next }))}
                     spreadsheet={state.spreadsheet}
@@ -1296,7 +1313,12 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     setViewSettingsOpen(false);
                                     setGanttSettingsOpen(true);
                                 }
-                              : undefined
+                              : isWorkload && activeView && canManageViews && canWriteView(activeView)
+                                ? () => {
+                                      setViewSettingsOpen(false);
+                                      setWorkloadSettingsOpen(true);
+                                  }
+                                : undefined
                     }
                     onConfigureCalendar={
                         isCalendar && activeView && canManageViews && canWriteView(activeView)
@@ -1461,7 +1483,22 @@ const applyView = (view: SavedViewEntity | null): void => {
                         // cambio. Eliminar la abstracción lazy elimina
                         // toda esa familia de bugs.
                         <>
-                            {isGantt && activeView ? (
+                            {isWorkload && activeView ? (
+                                // B2 — la carga de trabajo pide su propio bundle (`workload-bundle`).
+                                <WorkloadView
+                                    key={activeView.id}
+                                    listId={list.data.id}
+                                    fields={fields.data}
+                                    view={activeView}
+                                    filterTree={state.filterTree}
+                                    search={debouncedSearch}
+                                    onOpenRecord={setDrawerRecordId}
+                                    canEditView={canManageViews && canWriteView(activeView)}
+                                    settingsOpen={workloadSettingsOpen}
+                                    onSettingsOpenChange={setWorkloadSettingsOpen}
+                                    onStatusChange={setWorkloadStatus}
+                                />
+                            ) : isGantt && activeView ? (
                                 <GanttView
                                     key={activeView.id}
                                     listId={list.data.id}

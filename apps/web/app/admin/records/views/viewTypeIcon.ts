@@ -1,4 +1,4 @@
-import { Calendar, Columns3, GanttChart, LayoutGrid, Table } from 'lucide-react';
+import { Calendar, Columns3, GanttChart, Gauge, LayoutGrid, Table } from 'lucide-react';
 
 import type { ListIconComponent } from '@/lib/listIcons';
 
@@ -8,5 +8,6 @@ export function viewTypeIcon(type: string): ListIconComponent {
     if (type === 'calendar') return Calendar as unknown as ListIconComponent;
     if (type === 'cards') return LayoutGrid as unknown as ListIconComponent;
     if (type === 'gantt') return GanttChart as unknown as ListIconComponent;
+    if (type === 'workload') return Gauge as unknown as ListIconComponent;
     return Table as unknown as ListIconComponent;
 }

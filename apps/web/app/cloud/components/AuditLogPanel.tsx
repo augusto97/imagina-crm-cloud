@@ -55,6 +55,8 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'member.add': { text: 'agregó al workspace a' },
     'member.invite_resend': { text: 'reenvió la invitación a' },
     'member.role_change': { text: 'cambió el rol de' },
+    // B2 — capacidad de una persona en la carga de trabajo.
+    'workload.capacity': { text: 'cambió la capacidad de trabajo de' },
     'member.remove': { text: 'quitó del workspace a', danger: true },
     'billing.plan_change': { text: 'cambió el plan' },
     'workspace.smtp_change': { text: 'cambió el correo (SMTP)' },

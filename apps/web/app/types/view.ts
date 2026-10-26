@@ -8,9 +8,12 @@ import type {
     KanbanMoveRule,
     KanbanWipLimit,
     ViewColorRule,
+    WorkloadEstimateUnit,
+    WorkloadMetric,
+    WorkloadZoom,
 } from '@imagina-base/shared';
 
-export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards' | 'gantt';
+export type SavedViewType = 'table' | 'kanban' | 'calendar' | 'cards' | 'gantt' | 'workload';
 
 export interface SavedViewConfig {
     visible_fields?: number[];
@@ -178,6 +181,18 @@ export interface SavedViewConfig {
     gantt_show_subtasks?: boolean;
     gantt_show_dependencies?: boolean;
     gantt_show_baseline?: boolean;
+    /** B2 — carga de trabajo: la persona (campo user), las fechas y qué se mide. */
+    workload_person_field_id?: number;
+    workload_start_field_id?: number | null;
+    workload_end_field_id?: number | null;
+    workload_metric?: WorkloadMetric;
+    workload_estimate_field_id?: number | null;
+    workload_estimate_unit?: WorkloadEstimateUnit;
+    workload_zoom?: WorkloadZoom;
+    /** B2 — personas visibles (ids); sin valor, todas las que ven la lista. */
+    workload_user_ids?: number[] | null;
+    workload_show_unassigned?: boolean;
+    workload_hide_done?: boolean;
 }
 
 export interface SavedViewEntity {
