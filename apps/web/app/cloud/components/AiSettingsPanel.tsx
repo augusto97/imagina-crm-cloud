@@ -1,23 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AI_MODELS, type AiModel, type TenantAiSettings } from '@imagina-base/shared';
+import type { TenantAiSettings } from '@imagina-base/shared';
 import { KeyRound, Sparkles } from 'lucide-react';
 
 import { api, useSession } from '@/cloud/session';
+import { AiModelSelect } from '@/cloud/components/AiModelSelect';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import { describeModelChoice } from '@/lib/aiModels';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
-
-export const AI_MODEL_LABELS: Record<AiModel, string> = {
-    'claude-opus-5': 'Claude Opus 5 — el más capaz',
-    'claude-sonnet-5': 'Claude Sonnet 5 — equilibrado',
-    'claude-haiku-4-5': 'Claude Haiku 4.5 — rápido y económico',
-};
 
 /**
  * Card "Asistente IA" de Ajustes del WORKSPACE (ADR-S21). Tres decisiones
@@ -33,9 +28,15 @@ export function AiSettingsPanel(): JSX.Element | null {
     const tenantId = useSession((s) => s.activeTenantId);
     const q = useQuery({ queryKey: ['ai-settings', tenantId], queryFn: () => api.aiSettingsGet(), retry: false });
     const status = useQuery({ queryKey: ['ai-status', tenantId], queryFn: () => api.aiStatus(), retry: false });
+    // v0.1.305 — los modelos salen de Anthropic (con la clave de la empresa o la de la plataforma).
+    const models = useQuery({ queryKey: ['ai-models', tenantId], queryFn: () => api.aiModels(), retry: false, enabled: q.isSuccess });
+    const refreshModels = useMutation({
+        mutationFn: () => api.aiModels(true),
+        onSuccess: (cat) => qc.setQueryData(['ai-models', tenantId], cat),
+    });
 
     const [enabled, setEnabled] = useState(false);
-    const [model, setModel] = useState<'' | AiModel>('');
+    const [model, setModel] = useState<string>('');
     const [apiKey, setApiKey] = useState('');
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
@@ -51,6 +52,7 @@ export function AiSettingsPanel(): JSX.Element | null {
         void qc.invalidateQueries({ queryKey: ['ai-settings', tenantId] });
         void qc.invalidateQueries({ queryKey: ['ai-status', tenantId] });
         void qc.invalidateQueries({ queryKey: ['billing', tenantId] });
+        void qc.invalidateQueries({ queryKey: ['ai-models', tenantId] });
     };
 
     const save = useMutation({
@@ -125,20 +127,20 @@ export function AiSettingsPanel(): JSX.Element | null {
                     </span>
                 </label>
 
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <Label htmlFor="ai-model" className="imcrm-text-xs">{__('Modelo')}</Label>
-                    <Select id="ai-model" value={model} onChange={(e) => setModel(e.target.value as '' | AiModel)}>
-                        <option value="">
-                            {__('El de la plataforma')}
-                            {s ? ` (${AI_MODEL_LABELS[s.platform.default_model].split(' — ')[0]})` : ''}
-                        </option>
-                        {AI_MODELS.map((m) => (
-                            <option key={m} value={m}>
-                                {AI_MODEL_LABELS[m]}
-                            </option>
-                        ))}
-                    </Select>
-                </div>
+                <AiModelSelect
+                    id="ai-model"
+                    label={__('Modelo')}
+                    value={model}
+                    onChange={setModel}
+                    catalog={models.data}
+                    refreshing={refreshModels.isPending}
+                    onRefresh={() => refreshModels.mutate()}
+                    inheritLabel={
+                        s ? `${__('El de la plataforma')} (${describeModelChoice(s.platform.default_model, models.data)})` : __('El de la plataforma')
+                    }
+                    hint={__('Con «el más reciente» el asistente pasa solo a cada modelo nuevo que publique Anthropic.')}
+                    testId="imcrm-ai-model"
+                />
 
                 <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-p-3">
                     <legend className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-px-1 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">

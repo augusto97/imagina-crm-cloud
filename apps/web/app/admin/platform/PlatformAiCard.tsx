@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AI_MODELS, type AiModel } from '@imagina-base/shared';
+import { DEFAULT_AI_MODEL_CHOICE } from '@imagina-base/shared';
 import { KeyRound, Sparkles } from 'lucide-react';
 
 import { api } from '@/cloud/session';
-import { AI_MODEL_LABELS } from '@/cloud/components/AiSettingsPanel';
+import { AiModelSelect } from '@/cloud/components/AiModelSelect';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
 
@@ -25,10 +24,16 @@ import { __ } from '@/lib/i18n';
 export function PlatformAiCard(): JSX.Element | null {
     const qc = useQueryClient();
     const q = useQuery({ queryKey: ['platform-ai'], queryFn: () => api.platformAiGet(), retry: false });
+    // v0.1.305 — los modelos que ve la clave de la plataforma, consultados a Anthropic.
+    const models = useQuery({ queryKey: ['platform-ai-models'], queryFn: () => api.platformAiModels(), retry: false, enabled: q.isSuccess });
+    const refreshModels = useMutation({
+        mutationFn: () => api.platformAiModels(true),
+        onSuccess: (cat) => qc.setQueryData(['platform-ai-models'], cat),
+    });
 
     const [enabled, setEnabled] = useState(false);
     const [apiKey, setApiKey] = useState('');
-    const [model, setModel] = useState<AiModel>('claude-opus-5');
+    const [model, setModel] = useState<string>(DEFAULT_AI_MODEL_CHOICE);
     const [share, setShare] = useState(true);
     const [allowOwn, setAllowOwn] = useState(true);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -55,6 +60,7 @@ export function PlatformAiCard(): JSX.Element | null {
         onSuccess: () => {
             setNotice({ kind: 'ok', text: __('Configuración guardada.') });
             void qc.invalidateQueries({ queryKey: ['platform-ai'] });
+            void qc.invalidateQueries({ queryKey: ['platform-ai-models'] });
         },
         onError: (err) => setNotice({ kind: 'err', text: err instanceof CloudApiError || err instanceof Error ? err.message : __('No se pudo guardar') }),
     });
@@ -63,11 +69,15 @@ export function PlatformAiCard(): JSX.Element | null {
         onSuccess: () => {
             setNotice({ kind: 'ok', text: __('Clave eliminada.') });
             void qc.invalidateQueries({ queryKey: ['platform-ai'] });
+            void qc.invalidateQueries({ queryKey: ['platform-ai-models'] });
         },
     });
     const test = useMutation({
         mutationFn: () => api.platformAiTest(apiKey.trim() || undefined),
-        onSuccess: (r) => setNotice({ kind: r.ok ? 'ok' : 'err', text: r.message }),
+        onSuccess: (r) => {
+            setNotice({ kind: r.ok ? 'ok' : 'err', text: r.message });
+            if (!apiKey.trim()) void qc.invalidateQueries({ queryKey: ['platform-ai-models'] });
+        },
         onError: (err) => setNotice({ kind: 'err', text: err instanceof Error ? err.message : __('No se pudo probar') }),
     });
 
@@ -148,17 +158,17 @@ export function PlatformAiCard(): JSX.Element | null {
                     </div>
                 </fieldset>
 
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <Label htmlFor="pai-model" className="imcrm-text-xs">{__('Modelo por defecto')}</Label>
-                    <Select id="pai-model" value={model} onChange={(e) => setModel(e.target.value as AiModel)} data-testid="imcrm-pai-model">
-                        {AI_MODELS.map((m) => (
-                            <option key={m} value={m}>
-                                {AI_MODEL_LABELS[m]}
-                            </option>
-                        ))}
-                    </Select>
-                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cada empresa puede elegir otro en sus Ajustes.')}</span>
-                </div>
+                <AiModelSelect
+                    id="pai-model"
+                    label={__('Modelo por defecto')}
+                    value={model}
+                    onChange={setModel}
+                    catalog={models.data}
+                    refreshing={refreshModels.isPending}
+                    onRefresh={() => refreshModels.mutate()}
+                    hint={__('Cada empresa puede elegir otro en sus Ajustes. Con «el más reciente» el asistente pasa solo a cada modelo nuevo que publique Anthropic.')}
+                    testId="imcrm-pai-model"
+                />
 
                 <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-2">
                     <legend className="imcrm-mb-1 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fieldTypeSchema } from './field';
 import { viewTypeSchema } from './view';
+import { aiModelChoiceSchema } from './ai-models';
 
 /**
  * Asistente IA (ADR-S21, v0.1.181).
@@ -15,11 +16,9 @@ import { viewTypeSchema } from './view';
  * de cada empresa (BYOK → sin cuota, mismo criterio que el SMTP propio).
  */
 
-/** Modelos habilitados. El default es el más capaz; Sonnet/Haiku son la palanca de costo. */
-export const AI_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
-export const aiModelSchema = z.enum(AI_MODELS);
-export type AiModel = z.infer<typeof aiModelSchema>;
-export const DEFAULT_AI_MODEL: AiModel = 'claude-opus-5';
+// v0.1.305 (ADR-S60): el modelo ya no es una lista fija — es una ELECCIÓN
+// (`auto:<familia>` o un id) que se resuelve contra el catálogo que devuelve el
+// proveedor. Ver `./ai-models`.
 
 /** Sólo se acepta el formato de clave de Anthropic (evita pegar cualquier cosa). */
 export const aiApiKeySchema = z.string().trim().min(20).max(400).regex(/^sk-ant-/, 'La clave debe empezar con sk-ant-');
@@ -36,7 +35,8 @@ export const platformAiSettingsSchema = z.object({
     key_hint: z.string().nullable(),
     /** La clave guardada no descifra con la SECRETS_KEY actual. */
     key_unreadable: z.boolean(),
-    model: aiModelSchema,
+    /** `auto:<familia>` (el más reciente, se actualiza solo) o un id fijo. */
+    model: aiModelChoiceSchema,
     /**
      * Las empresas pueden usar la clave de la PLATAFORMA (con la cuota de su
      * plan). Apagado = sólo empresas con clave propia.
@@ -54,7 +54,7 @@ export const updatePlatformAiSettingsSchema = z
         api_key: z.union([aiApiKeySchema, z.literal('')]),
         /** Borrar la clave guardada (vuelve al env, si hay). */
         clear_key: z.boolean(),
-        model: aiModelSchema,
+        model: aiModelChoiceSchema,
         share_platform_key: z.boolean(),
         allow_tenant_keys: z.boolean(),
     })
@@ -71,13 +71,13 @@ export const tenantAiSettingsSchema = z.object({
     key_hint: z.string().nullable(),
     key_unreadable: z.boolean(),
     /** `null` = el modelo por defecto de la plataforma. */
-    model: aiModelSchema.nullable(),
+    model: aiModelChoiceSchema.nullable(),
     /** Lo que la plataforma permite a esta empresa. */
     platform: z.object({
         enabled: z.boolean(),
         share_platform_key: z.boolean(),
         allow_tenant_keys: z.boolean(),
-        default_model: aiModelSchema,
+        default_model: aiModelChoiceSchema,
     }),
 });
 export type TenantAiSettings = z.infer<typeof tenantAiSettingsSchema>;
@@ -87,7 +87,7 @@ export const updateTenantAiSettingsSchema = z
         enabled: z.boolean(),
         api_key: z.union([aiApiKeySchema, z.literal('')]),
         clear_key: z.boolean(),
-        model: aiModelSchema.nullable(),
+        model: aiModelChoiceSchema.nullable(),
     })
     .partial()
     .refine((p) => Object.keys(p).length > 0, { message: 'El patch no puede estar vacío' });
@@ -106,7 +106,12 @@ export const aiStatusSchema = z.object({
     reason: z.string().nullable(),
     /** Con qué clave se hablaría. */
     source: aiKeySourceSchema.nullable(),
-    model: aiModelSchema.nullable(),
+    /** Id con el que se hablaría ahora (ya resuelto: «el más reciente» → un id concreto). */
+    model: z.string().nullable(),
+    /** Nombre legible de ese modelo. */
+    model_name: z.string().nullable().default(null),
+    /** Se eligió un modelo que esta clave ya no ve y se usa otro en su lugar. */
+    model_fallback_from: z.string().nullable().default(null),
     /** Cuota mensual (sólo con clave de plataforma). `limit: null` = ilimitado. */
     usage: z.object({ used: z.number().int().nonnegative(), limit: z.number().int().nullable() }),
     /** El admin del workspace puede configurarlo (para el link "Configurar"). */

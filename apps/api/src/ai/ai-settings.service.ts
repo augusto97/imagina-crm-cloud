@@ -1,9 +1,14 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
-    DEFAULT_AI_MODEL,
-    aiModelSchema,
+    DEFAULT_AI_MODEL_CHOICE,
+    FAST_AI_MODEL_FAMILY,
+    aiModelChoiceSchema,
+    inferAiModelCaps,
+    legacyModelToChoice,
     type AiKeySource,
-    type AiModel,
+    type AiModelCaps,
+    type AiModelCatalog,
+    type AiModelChoice,
     type PlatformAiSettings,
     type TenantAiSettings,
     type UpdatePlatformAiSettingsInput,
@@ -17,32 +22,68 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { tenants } from '../db/schema';
 import { REDIS } from '../redis/redis.module';
+import { AiModelCatalogService } from './ai-model-catalog.service';
 
 const PLATFORM_KEY = 'platform:ai';
 
+/**
+ * La elección de modelo guardada. v0.1.305: `model_choice` (`auto:<familia>`
+ * o un id). Lo que dejaron versiones anteriores en `model` (un id de la vieja
+ * lista fija) se lee como «el más reciente de esa familia». Todo tolerante:
+ * un valor raro NUNCA vacía el resto de la configuración (antes, un modelo
+ * fuera de la lista hacía caer la clave y los interruptores a los defaults).
+ */
+const lenientChoice = aiModelChoiceSchema.nullable().catch(null).default(null);
+const lenientLegacy = z.string().nullable().catch(null).default(null);
+
 /** Lo que se guarda en Redis (plataforma). La clave va cifrada (secret-box). */
 const storedPlatformSchema = z.object({
-    enabled: z.boolean().default(false),
-    api_key_enc: z.string().nullable().default(null),
-    model: aiModelSchema.default(DEFAULT_AI_MODEL),
-    share_platform_key: z.boolean().default(true),
-    allow_tenant_keys: z.boolean().default(true),
+    enabled: z.boolean().catch(false).default(false),
+    api_key_enc: z.string().nullable().catch(null).default(null),
+    model_choice: lenientChoice,
+    model: lenientLegacy,
+    share_platform_key: z.boolean().catch(true).default(true),
+    allow_tenant_keys: z.boolean().catch(true).default(true),
 });
 type StoredPlatform = z.infer<typeof storedPlatformSchema>;
 
 /** Lo que se guarda en `tenants.settings.ai`. */
 const storedTenantSchema = z.object({
-    enabled: z.boolean().default(false),
-    api_key_enc: z.string().nullable().default(null),
-    model: aiModelSchema.nullable().default(null),
+    enabled: z.boolean().catch(false).default(false),
+    api_key_enc: z.string().nullable().catch(null).default(null),
+    model_choice: lenientChoice,
+    model: lenientLegacy,
 });
 type StoredTenant = z.infer<typeof storedTenantSchema>;
+
+function platformChoice(s: StoredPlatform): AiModelChoice {
+    return s.model_choice ?? legacyModelToChoice(s.model) ?? DEFAULT_AI_MODEL_CHOICE;
+}
+function tenantChoice(s: StoredTenant): AiModelChoice | null {
+    return s.model_choice ?? legacyModelToChoice(s.model);
+}
 
 /** Con qué hablar con el proveedor para UN pedido (clave en claro). */
 export interface ResolvedAiAccess {
     apiKey: string;
-    model: AiModel;
+    /** Id concreto que se manda al proveedor (ya resuelto). */
+    model: string;
+    /** Nombre legible del modelo. */
+    modelName: string;
+    /** Lo que se eligió (`auto:<familia>` o un id). */
+    choice: AiModelChoice;
+    /** Se eligió algo que esta clave no ve y se usa `model` en su lugar. */
+    fallbackFrom: string | null;
+    /** Lo que el modelo soporta (para armar el pedido: pensamiento, esfuerzo). */
+    caps: AiModelCaps;
     source: AiKeySource;
+}
+
+/** Modelo para un pedido puntual (p. ej. los campos con IA en calidad «rápida»). */
+export interface ResolvedAiModel {
+    id: string;
+    name: string;
+    caps: AiModelCaps;
 }
 
 /** El asistente no está disponible para esta empresa; el motivo es legible. */
@@ -72,11 +113,17 @@ export class AiUnavailableError extends Error {
 export class AiSettingsService {
     private readonly logger = new Logger(AiSettingsService.name);
 
+    private readonly catalogs: AiModelCatalogService;
+
     constructor(
         @Inject(REDIS) private readonly redis: Redis,
         @Inject(DRIZZLE) private readonly db: Db,
         @Inject(ENV) private readonly env: Env,
-    ) {}
+        // v0.1.305 — catálogo de modelos del proveedor (por clave).
+        @Optional() catalogs?: AiModelCatalogService,
+    ) {
+        this.catalogs = catalogs ?? new AiModelCatalogService(redis);
+    }
 
     // ── Plataforma ───────────────────────────────────────────────────────
 
@@ -90,7 +137,7 @@ export class AiSettingsService {
             has_key: effective !== null,
             key_hint: effective ? hint(effective) : null,
             key_unreadable: key.state === 'unreadable',
-            model: stored.model,
+            model: platformChoice(stored),
             share_platform_key: stored.share_platform_key,
             allow_tenant_keys: stored.allow_tenant_keys,
         };
@@ -100,7 +147,10 @@ export class AiSettingsService {
         const stored = await this.readPlatform();
         const next: StoredPlatform = { ...stored };
         if (patch.enabled !== undefined) next.enabled = patch.enabled;
-        if (patch.model !== undefined) next.model = patch.model;
+        if (patch.model !== undefined) {
+            next.model_choice = patch.model;
+            next.model = null;
+        }
         if (patch.share_platform_key !== undefined) next.share_platform_key = patch.share_platform_key;
         if (patch.allow_tenant_keys !== undefined) next.allow_tenant_keys = patch.allow_tenant_keys;
         if (patch.clear_key) next.api_key_enc = null;
@@ -119,12 +169,12 @@ export class AiSettingsService {
             has_own_key: stored.api_key_enc !== null,
             key_hint: key.state === 'ok' && key.value ? hint(key.value) : null,
             key_unreadable: key.state === 'unreadable',
-            model: stored.model,
+            model: tenantChoice(stored),
             platform: {
                 enabled: platform.enabled,
                 share_platform_key: platform.share_platform_key,
                 allow_tenant_keys: platform.allow_tenant_keys,
-                default_model: platform.model,
+                default_model: platformChoice(platform),
             },
         };
     }
@@ -133,7 +183,10 @@ export class AiSettingsService {
         const stored = await this.readTenant(tenantId);
         const next: StoredTenant = { ...stored };
         if (patch.enabled !== undefined) next.enabled = patch.enabled;
-        if (patch.model !== undefined) next.model = patch.model;
+        if (patch.model !== undefined) {
+            next.model_choice = patch.model;
+            next.model = null;
+        }
         if (patch.clear_key) next.api_key_enc = null;
         if (patch.api_key) next.api_key_enc = encryptSecret(patch.api_key, this.env.SECRETS_KEY);
         await this.writeTenant(tenantId, next);
@@ -146,6 +199,50 @@ export class AiSettingsService {
         const key = this.decryptKey(stored.api_key_enc);
         if (key.state === 'ok' && key.value) return key.value;
         return this.env.AI_API_KEY || null;
+    }
+
+    // ── Catálogo de modelos (v0.1.305) ───────────────────────────────────
+
+    /** Modelos que ve la clave de la plataforma (guardada o del env). */
+    async platformCatalog(refresh = false): Promise<AiModelCatalog> {
+        return this.catalogs.catalog(await this.platformKey(), { refresh });
+    }
+
+    /**
+     * Modelos para elegir en los Ajustes de una empresa: los que ve SU clave
+     * si tiene una usable; si no, los de la plataforma (la lista es sólo de
+     * nombres — consultarla no gasta cuota).
+     */
+    async tenantCatalog(tenantId: number, refresh = false): Promise<AiModelCatalog> {
+        const [stored, platform] = await Promise.all([this.readTenant(tenantId), this.readPlatform()]);
+        if (platform.allow_tenant_keys && stored.api_key_enc) {
+            const key = this.decryptKey(stored.api_key_enc);
+            if (key.state === 'ok' && key.value) return this.catalogs.catalog(key.value, { refresh });
+        }
+        return this.platformCatalog(refresh);
+    }
+
+    /** Modelos que ve una clave cualquiera (el botón «Probar» antes de guardarla). */
+    catalogFor(apiKey: string, refresh = false): Promise<AiModelCatalog> {
+        return this.catalogs.catalog(apiKey, { refresh });
+    }
+
+    /** Resuelve una elección contra lo que ve una clave. Lanza si no se puede. */
+    async resolveModel(apiKey: string, choice: AiModelChoice): Promise<ResolvedAiModel & { fallbackFrom: string | null }> {
+        const { model, error } = await this.catalogs.resolve(apiKey, choice);
+        if (!model) {
+            throw new AiUnavailableError(
+                `No se pudo consultar qué modelos ofrece el proveedor${error ? `: ${error}` : ''}. Intenta de nuevo en un momento.`,
+                'models_unavailable',
+            );
+        }
+        return { id: model.id, name: model.display_name, caps: model.caps ?? inferAiModelCaps(model.id), fallbackFrom: model.fallback_from };
+    }
+
+    /** El modelo de calidad «rápida» de los campos con IA: el más reciente de la familia económica. */
+    async fastModel(apiKey: string): Promise<ResolvedAiModel> {
+        const m = await this.resolveModel(apiKey, `auto:${FAST_AI_MODEL_FAMILY}`);
+        return { id: m.id, name: m.name, caps: m.caps };
     }
 
     /** La empresa tiene clave propia USABLE → sus pedidos no consumen cuota. */
@@ -172,7 +269,7 @@ export class AiSettingsService {
                 'tenant_disabled',
             );
         }
-        const model = tenant.model ?? platform.model;
+        const choice = tenantChoice(tenant) ?? platformChoice(platform);
         if (platform.allow_tenant_keys && tenant.api_key_enc) {
             const key = this.decryptKey(tenant.api_key_enc);
             if (key.state === 'unreadable') {
@@ -181,7 +278,7 @@ export class AiSettingsService {
                     'tenant_key_unreadable',
                 );
             }
-            if (key.value) return { apiKey: key.value, model, source: 'tenant' };
+            if (key.value) return this.withModel(key.value, choice, 'tenant');
         }
         if (!platform.share_platform_key) {
             throw new AiUnavailableError(
@@ -203,7 +300,12 @@ export class AiSettingsService {
                 'platform_key_missing',
             );
         }
-        return { apiKey, model, source: 'platform' };
+        return this.withModel(apiKey, choice, 'platform');
+    }
+
+    private async withModel(apiKey: string, choice: AiModelChoice, source: AiKeySource): Promise<ResolvedAiAccess> {
+        const m = await this.resolveModel(apiKey, choice);
+        return { apiKey, model: m.id, modelName: m.name, choice, fallbackFrom: m.fallbackFrom, caps: m.caps, source };
     }
 
     // ── Internos ─────────────────────────────────────────────────────────

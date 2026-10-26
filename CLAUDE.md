@@ -8969,6 +8969,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         campos de sistema y validaciones, calendario, dependencias + Gantt,
         botón y fórmulas.**
 
+  - [x] **El asistente detecta solo los modelos nuevos (v0.1.305, ADR-S60,
+        pedido del usuario: "debería detectar los modelos recientes y no tener
+        que pedirte que actualices las versiones")**: la app traía una lista FIJA
+        de tres modelos en `shared` y el pensamiento se decidía por el nombre del
+        modelo, así que cada modelo que publicaba Anthropic exigía un release.
+        (a) **Catálogo del proveedor**: `AiModelCatalogService` consulta
+        `GET /v1/models` (SDK oficial, pagina solo) con la clave que se va a usar
+        —la de la plataforma o la propia de la empresa: cada clave puede ver
+        modelos distintos— y lo guarda en Redis bajo un hash de la clave (nunca la
+        clave), fresco 12 h y conservado un mes; si el proveedor no responde se
+        sigue con lo último que se supo (y no se reintenta en cada pedido), y
+        «Actualizar lista» vuelve a preguntar. (b) **Lo que se guarda es una
+        ELECCIÓN**: `auto:<familia>` —el más reciente de esa familia, resuelto en
+        cada pedido— o un id fijo. La familia y la versión salen del patrón del id,
+        así una familia nueva también aparece sola; «el más reciente» se ordena
+        por versión (no por fecha de alta, que el proveedor puede no informar).
+        Una versión fija retirada pasa a la más reciente de su familia y lo avisa
+        (`model_fallback_from` en el estado y en Ajustes). Lo que guardaban las
+        versiones anteriores (un id de la lista fija) se lee como «el más reciente
+        de esa familia», así cada instalación se pone al día sola; y un valor raro
+        ya no vacía la clave ni los interruptores (antes un modelo fuera de la
+        lista hacía caer toda la configuración a los defaults). (c) **El pedido se
+        arma por lo que el modelo DECLARA que soporta** (`model-params.ts`):
+        pensamiento adaptativo + `effort` donde existe, presupuesto fijo en los
+        anteriores —los modelos actuales rechazan el presupuesto fijo con un 400—
+        y una regla por versión sólo si el proveedor no informa capacidades.
+        (d) **Conversaciones robustas ante los modelos actuales**: atan cada
+        bloque de pensamiento al modelo, a la cuenta y al prefijo EXACTO de la
+        conversación, y en las cuentas nuevas reenviar uno cuyo prefijo cambió es
+        un 400; entre turnos cambian el sistema (la lista abierta), el recorte del
+        historial y ahora también el modelo. `prepareHistoryForNewTurn` manda los
+        turnos terminados sin su pensamiento (dentro del bucle de herramientas se
+        reenvía intacto, como pide la API) y cierra un turno cortado a medias (un
+        `tool_use` sin resultado se quita; un `tool_result` sin respuesta se cierra
+        con una nota). El tope de salida pasa de 4.096 a 16.000 tokens: el
+        pensamiento cuenta dentro y una propuesta grande (la ficha, un correo)
+        quedaba cortada; si igual se corta, se dice. (e) **Campos con IA**: la
+        calidad «rápida» es el más reciente de la familia económica (antes, un id
+        cableado); como en los modelos actuales el pensamiento no se apaga y cuenta
+        dentro del tope, se pide esfuerzo `low` y se dejan 3.000 tokens de margen —
+        con los 300 de un campo «corto» la respuesta habría quedado vacía.
+        (f) **Interfaz**: selector compartido (`AiModelSelect`) en Plataforma →
+        Asistente IA y en Ajustes de la empresa, con «Siempre el más reciente (se
+        actualiza solo)» por familia —«Opus más reciente — ahora <modelo>»— y las
+        versiones fijas agrupadas; «Actualizar lista», de cuándo es la lista y
+        cuántos modelos ve la clave, y avisos si la consulta falló o si la versión
+        elegida ya no está. «Probar» usa el modelo resuelto y dice cuántos modelos
+        ve la clave; el panel del asistente muestra con qué modelo habla.
+        Endpoints `GET /platform/ai/models` y `GET /ai/models` (`?refresh=1`). Sin
+        migración (`model_choice` en `platform:ai` y `tenants.settings.ai`). 11
+        tests de shared, 9 de integración del asistente + los de campos con IA
+        (con un catálogo falso: ningún test habla con la red) y 4 del front
+        (401 shared, 498 front en verde) + E2E navegador 26/26 contra un Anthropic
+        simulado (un modelo publicado a mitad de la prueba aparece al actualizar y
+        el chat lo usa, versión fija retirada con aviso y reemplazo, modelo con
+        presupuesto fijo sin `effort`, clave rechazada, celular y oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -91,3 +91,49 @@ function startsClean(m: ApiMessage): boolean {
     }
     return false;
 }
+
+/** Lo que se le dice al modelo cuando el turno anterior quedó a medias. */
+export const INTERRUPTED_TURN_NOTE = '(Este pedido quedó a medias: se cortó antes de terminar.)';
+
+const THINKING_TYPES = new Set(['thinking', 'redacted_thinking']);
+
+function blocks(m: ApiMessage | undefined): { type?: string }[] {
+    return m && Array.isArray(m.content) ? (m.content as { type?: string }[]) : [];
+}
+
+/**
+ * Deja el historial listo para un turno NUEVO (ADR-S60). Puro.
+ *
+ * 1. Un turno anterior cortado a mitad del bucle de herramientas (tope de
+ *    pasos, la persona cerró el panel) puede terminar en un `tool_use` sin su
+ *    resultado — se quita, la API lo rechazaría — o en un `tool_result` sin
+ *    respuesta del asistente — se cierra con una nota.
+ * 2. Los turnos terminados viajan SIN sus bloques de pensamiento. Los
+ *    modelos actuales atan cada bloque al modelo, a la cuenta y al prefijo
+ *    EXACTO de la conversación (sistema, herramientas y mensajes anteriores),
+ *    y en las cuentas nuevas del proveedor reenviar un bloque cuyo prefijo
+ *    cambió es un 400. Entre turnos cambian el sistema (la lista abierta),
+ *    el recorte del historial, el modelo («el más reciente») y la clave, así
+ *    que reenviarlos rompería la conversación. Dentro de un turno — el bucle
+ *    de herramientas — se reenvían intactos, como pide la API.
+ */
+export function prepareHistoryForNewTurn(messages: ApiMessage[]): ApiMessage[] {
+    const out = [...messages];
+    while (out.length > 0 && out[out.length - 1]!.role === 'assistant' && blocks(out[out.length - 1]).some((b) => b.type === 'tool_use')) {
+        out.pop();
+    }
+    const last = out[out.length - 1];
+    if (last?.role === 'user' && blocks(last).some((b) => b.type === 'tool_result')) {
+        out.push({ role: 'assistant', content: [{ type: 'text', text: INTERRUPTED_TURN_NOTE }] });
+    }
+    const cleaned: ApiMessage[] = [];
+    for (const m of out) {
+        if (m.role !== 'assistant' || !Array.isArray(m.content)) {
+            cleaned.push(m);
+            continue;
+        }
+        const content = (m.content as { type?: string }[]).filter((b) => !THINKING_TYPES.has(b.type ?? ''));
+        if (content.length > 0) cleaned.push({ role: 'assistant', content });
+    }
+    return cleaned;
+}

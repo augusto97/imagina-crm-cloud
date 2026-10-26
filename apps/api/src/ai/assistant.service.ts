@@ -8,20 +8,25 @@ import {
     type AiChatEvent,
     type AiChatRequest,
     type AiConversation,
-    type AiModel,
     type AiProposal,
     type AiStatus,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { AiQuotaExceededError, AiQuotaService } from './ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
-import { ConversationsStore, type ApiMessage, type StoredConversation } from './conversations.store';
+import { ConversationsStore, prepareHistoryForNewTurn, type ApiMessage, type StoredConversation } from './conversations.store';
+import { assistantModelParams } from './model-params';
 import { AiToolRegistry, type AiToolContext } from './tools/registry';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /** Vueltas máximas del bucle de herramientas por mensaje (cada una = 1 llamada al modelo). */
 export const MAX_TOOL_ITERATIONS = 8;
-const MAX_OUTPUT_TOKENS = 4096;
+/**
+ * Tope de salida por llamada. Incluye el pensamiento (cuenta dentro del tope
+ * aunque no se devuelva su texto): con un tope chico, una propuesta grande
+ * (el diseño de una ficha o de un correo) quedaba cortada a la mitad.
+ */
+const MAX_OUTPUT_TOKENS = 16_000;
 
 /**
  * Cliente del proveedor, inyectable para testear el bucle con un fake (los
@@ -66,6 +71,8 @@ export class AssistantService {
                     reason: new AiQuotaExceededError(usage.used, usage.limit).message,
                     source: access.source,
                     model: access.model,
+                    model_name: access.modelName,
+                    model_fallback_from: access.fallbackFrom,
                     usage,
                     can_configure: canConfigure,
                 };
@@ -75,12 +82,23 @@ export class AssistantService {
                 reason: null,
                 source: access.source,
                 model: access.model,
+                model_name: access.modelName,
+                model_fallback_from: access.fallbackFrom,
                 usage: access.source === 'platform' ? usage : { used: usage.used, limit: null },
                 can_configure: canConfigure,
             };
         } catch (err) {
             if (err instanceof AiUnavailableError) {
-                return { available: false, reason: err.message, source: null, model: null, usage, can_configure: canConfigure };
+                return {
+                    available: false,
+                    reason: err.message,
+                    source: null,
+                    model: null,
+                    model_name: null,
+                    model_fallback_from: null,
+                    usage,
+                    can_configure: canConfigure,
+                };
             }
             throw err;
         }
@@ -105,6 +123,10 @@ export class AssistantService {
             newConversation(ctx, req.conversation_id);
         const toolCtx: AiToolContext = { ...ctx, listSlug: req.context?.list_slug ?? ctx.listSlug, conversationId: conv.id };
         emit({ type: 'start', conversation_id: conv.id });
+        // Los turnos anteriores viajan sin su pensamiento y bien cerrados
+        // (ver `prepareHistoryForNewTurn`): entre turnos cambian el sistema,
+        // el recorte del historial y hasta el modelo.
+        conv.messages = prepareHistoryForNewTurn(conv.messages);
 
         conv.messages.push({ role: 'user', content: req.message });
         conv.transcript.push({ role: 'user', text: req.message, proposals: [], at: new Date().toISOString() });
@@ -128,7 +150,7 @@ export class AssistantService {
                         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
                         tools: tools.map((t, i) => (i === tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' as const } } : t)) as never,
                         messages: conv.messages as MessageParam[],
-                        ...thinkingFor(access.model),
+                        ...assistantModelParams(access.caps),
                     },
                     { signal },
                 );
@@ -192,6 +214,9 @@ export class AssistantService {
             }
         }
 
+        if (stoppedBy === 'max_tokens') {
+            emit({ type: 'error', code: 'max_tokens', message: 'La respuesta salió demasiado larga y se cortó. Pídelo por partes.' });
+        }
         if (stoppedBy === 'refusal') {
             emit({ type: 'error', code: 'refusal', message: 'El modelo declinó responder ese pedido.' });
         }
@@ -210,18 +235,6 @@ function newConversation(ctx: AiToolContext, requestedId?: string): StoredConver
         transcript: [],
         updated_at: new Date().toISOString(),
     };
-}
-
-/**
- * Pensamiento: adaptativo en la familia 5; Haiku 4.5 sólo acepta presupuesto
- * fijo. `effort` medium: el asistente resuelve pedidos de estructura, no
- * problemas abiertos — el tope de latencia importa más que exprimirlo.
- */
-function thinkingFor(model: AiModel): Record<string, unknown> {
-    if (model === 'claude-haiku-4-5') {
-        return { thinking: { type: 'enabled', budget_tokens: 2048 } };
-    }
-    return { thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } };
 }
 
 function summarizeResult(content: unknown, isError: boolean): string {

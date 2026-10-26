@@ -200,11 +200,15 @@ export function AssistantPanel(): JSX.Element | null {
                 </span>
                 <div className="imcrm-min-w-0 imcrm-flex-1">
                     <div className="imcrm-text-sm imcrm-font-semibold imcrm-leading-tight">{__('Asistente')}</div>
-                    <div className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
+                    <div
+                        className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground"
+                        title={st?.model_name ?? undefined}
+                        data-testid="imcrm-ai-subtitle"
+                    >
                         {st?.available
-                            ? st.usage.limit === null
-                                ? __('Pedidos ilimitados')
-                                : `${st.usage.used} / ${st.usage.limit} ${__('pedidos este mes')}`
+                            ? [st.model_name, st.usage.limit === null ? __('Pedidos ilimitados') : `${st.usage.used} / ${st.usage.limit} ${__('pedidos este mes')}`]
+                                  .filter(Boolean)
+                                  .join(' · ')
                             : __('Propón, revisa, aplica')}
                     </div>
                 </div>
