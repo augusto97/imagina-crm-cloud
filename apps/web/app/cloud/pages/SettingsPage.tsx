@@ -104,7 +104,7 @@ export function SettingsPage(): JSX.Element {
                     <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {isAdmin
-                            ? 'Plan y facturación, miembros del workspace y configuración del sistema.'
+                            ? 'Plan y facturación, miembros de la empresa y configuración del sistema.'
                             : 'Tu cuenta: seguridad, avisos, firma y apariencia.'}
                     </p>
                 </div>

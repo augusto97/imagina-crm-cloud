@@ -20,7 +20,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre **Ajustes** y entra a **Marca** (en el grupo Workspace).',
+                    'Abre **Ajustes** y entra a **Marca** (en el grupo Empresa).',
                     'En **Nombre de la app** escribe cómo quieres que se llame la herramienta para tu gente: «Aurora CRM», «Portal Ferretería El Sol» o simplemente el nombre de tu empresa. Aparece arriba del menú, en la pestaña del navegador y en el portal.',
                     'En **Color primario** elige el color de tu marca. Puedes usar el selector o pegar el código, por ejemplo `#7A3E1D` para un café. Es el color de los botones, los enlaces y los acentos.',
                     'Si quieres, elige también un **Color de la barra lateral** (el menú de la izquierda). Si lo dejas vacío, la barra se tiñe sola con el color primario.',

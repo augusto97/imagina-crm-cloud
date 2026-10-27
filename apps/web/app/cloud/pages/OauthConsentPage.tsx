@@ -155,7 +155,7 @@ function Consent({
                 )}
 
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                    <label htmlFor="oauth-ws" className="imcrm-text-xs imcrm-font-medium">{__('Workspace')}</label>
+                    <label htmlFor="oauth-ws" className="imcrm-text-xs imcrm-font-medium">{__('Empresa')}</label>
                     <Select id="oauth-ws" value={tenantId ?? ''} onChange={(e) => setTenantId(Number(e.target.value))} data-testid="imcrm-oauth-workspace">
                         {memberships.map((m) => (
                             <option key={m.tenant_id} value={m.tenant_id}>
