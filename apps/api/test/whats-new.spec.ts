@@ -32,6 +32,17 @@ function extra(version: string, over: Partial<WhatsNewCatalogEntry> = {}): Whats
     };
 }
 
+/**
+ * Cuántas de la primera llegada ve como nuevas una persona con ese rol. Se
+ * calcula del catálogo (no a mano): cada versión suma su novedad al final.
+ */
+function firstArrivalUnseenFor(role: string): number {
+    const now = new Date();
+    const { entries } = parseCatalog(WHATS_NEW_CATALOG, now);
+    const announced = new Set(planCatalogSync({ existing: [], catalog: entries, now }).announced);
+    return WHATS_NEW_CATALOG.filter((e) => announced.has(e.key) && (!e.audience?.roles?.length || e.audience.roles.includes(role as never))).length;
+}
+
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c30000000049454e44ae426082', 'hex');
 
 describe('Novedades — sincronización pura', () => {
@@ -144,7 +155,7 @@ describe('Novedades (Postgres real)', () => {
         // Un agente no ve lo que sólo configura un admin.
         expect(agentFeed.items.some((i) => i.key === 'v0.1.317-agentes-ia')).toBe(false);
         expect(agentFeed.items.every((i) => i.key !== 'v0.1.304-formulas-y-botones')).toBe(true);
-        expect(agentFeed.unseen_count).toBe(2);
+        expect(agentFeed.unseen_count).toBe(firstArrivalUnseenFor('agent'));
         expect(agentFeed.featured?.key).toBe('v0.1.314-app-instalable');
 
         // Un invitado no ve funciones nuevas (sólo avisos).
@@ -192,8 +203,8 @@ describe('Novedades (Postgres real)', () => {
 
         const r = await svc.markSeen(viewer(oldAdmin, 'admin'), { ids: [first.id] });
         expect(r.unseen_count).toBe(before.unseen_count - 1);
-        // Otra persona no cambia (sus 2 de la primera llegada + la de la actualización).
-        expect((await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 })).unseen_count).toBe(3);
+        // Otra persona no cambia (las suyas de la primera llegada + la de la actualización).
+        expect((await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 })).unseen_count).toBe(firstArrivalUnseenFor('agent') + 1);
 
         // RLS: dentro del scope de otra persona no se ven ni se escriben sus filas.
         const visibleToAgent = await withUser(pg.db, oldAgent, (tx) => tx.select().from(whatsNewViews));
@@ -219,7 +230,7 @@ describe('Novedades (Postgres real)', () => {
         const f2 = await svc.feed(viewer(oldAgent, 'agent'), { limit: 1 });
         expect(f2.featured).toBeNull();
         // Presentarla también la marca como vista.
-        expect(f2.unseen_count).toBe(2);
+        expect(f2.unseen_count).toBe(f1.unseen_count - 1);
     });
 
     it('avisos: franja hasta que se cierra o vence; un invitado los ve; público por rol y plan', async () => {

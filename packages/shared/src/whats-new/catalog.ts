@@ -242,4 +242,18 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         featured: true,
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.318-primeros-pasos',
+        version: '0.1.318',
+        date: '2026-10-27',
+        kind: 'feature',
+        title: 'Primeros pasos y listas armadas con IA',
+        summary:
+            'Una guía que se completa sola a medida que usas la app, y la opción de describir lo que necesitas para que la IA te arme las listas.',
+        body: [
+            'Abre **Primeros pasos** con el botón de abajo a la derecha o desde el menú de tu perfil. Cada paso se marca solo cuando lo haces y trae **Hacerlo** para ir directo.',
+            '',
+            'Si administras la empresa, en **Primeros pasos → Agrega más con IA** describes tu negocio y revisas la propuesta (listas, campos, vistas y un tablero) antes de crearla.',
+        ].join('\n'),
+    },
 ];
