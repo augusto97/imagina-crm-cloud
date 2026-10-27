@@ -132,8 +132,8 @@ export default function PlatConsole(): JSX.Element {
                                 color: C.mutedFg,
                             }}
                         >
-                            {icon}
-                            <T size={8.5} weight={600}>
+                            <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+                            <T size={8.5} weight={600} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {l}
                             </T>
                         </span>

@@ -100,7 +100,9 @@ export default [
         key: 'dia-avisos',
         title: 'Preferencias de avisos',
         steps: [
-            { go: '/settings?s=avisos', wait: 'text=Qué te llega, y por dónde', caption: 'En Ajustes → Avisos eliges qué te llega también por correo y al teléfono.' },
+            { go: '/settings?s=avisos', wait: 'text=Qué te llega, y por dónde', caption: null },
+            { wait: 1500 },
+            { shot: true, caption: 'En Ajustes → Avisos eliges qué te llega también por correo y al teléfono.' },
             { shot: 'text=Qué te llega, y por dónde', caption: 'Una fila por tipo de aviso, con su casilla de Correo y de Push. Se guarda al instante.' },
             { shot: 'text=Resumen diario por correo', caption: 'Más abajo, el resumen diario: un solo correo con lo vencido, lo de hoy y lo sin leer.' },
         ],
@@ -109,7 +111,9 @@ export default [
         key: 'dia-instalar',
         title: 'Instalar la app y las notificaciones',
         steps: [
-            { go: '/settings?s=avisos', wait: '[data-tour="install-card"]', caption: 'Arriba de tus avisos están la app y las notificaciones de este dispositivo.' },
+            { go: '/settings?s=avisos', wait: '[data-tour="install-card"]', caption: null },
+            { wait: 1500 },
+            { shot: true, caption: 'Arriba de tus avisos están la app y las notificaciones de este dispositivo.' },
             { shot: '[data-tour="install-card"]', caption: '«App en este dispositivo» la instala o te muestra los pasos para tu navegador.' },
             { shot: '[data-tour="push-card"]', caption: '«Notificaciones en este dispositivo» las activa y te deja enviarte una prueba.' },
         ],

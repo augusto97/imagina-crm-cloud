@@ -33,7 +33,7 @@ function UserCard({ y, initials, name, t, a }: { y: number; initials: string; na
                 }}
             >
                 <Avatar initials={initials} t={t} size={20} />
-                <T size={8.5} weight={600} style={{ flex: 1 }}>
+                <T size={8.5} weight={600} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {name}
                 </T>
                 <span
@@ -41,6 +41,7 @@ function UserCard({ y, initials, name, t, a }: { y: number; initials: string; na
                         position: 'relative',
                         color: primary(),
                         display: 'inline-flex',
+                        flexShrink: 0,
                     }}
                 >
                     <Megaphone size={13} />
@@ -64,7 +65,7 @@ function UserCard({ y, initials, name, t, a }: { y: number; initials: string; na
                         1
                     </span>
                 </span>
-                <Bell size={12} color={C.mutedFg} />
+                <Bell size={12} color={C.mutedFg} style={{ flexShrink: 0 }} />
             </div>
         </At>
     );

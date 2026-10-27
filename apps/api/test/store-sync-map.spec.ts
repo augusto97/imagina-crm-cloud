@@ -387,7 +387,7 @@ describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
         expect(mapProduct({ id: 3, name: 'X', slug: '%E0%A4%A' }).values.slug_url).toBe('%E0%A4%A');
         const r = wb({ resource: 'products', externalId: '3', parentExternalId: null, changed: { slug_url: ' taza-roja ' }, editable: ['slug_url'] })!;
         expect(r.body).toEqual({ slug: 'taza-roja' });
-        expect(r.fields).toEqual(['Slug (dirección)']);
+        expect(r.fields).toEqual(['Dirección del producto']);
         expect(wb({ resource: 'variations', externalId: '9', parentExternalId: '3', changed: { slug_url: 'x' }, editable: ['slug_url'] })).toBeNull();
         expect(wb({ resource: 'products', externalId: '3', parentExternalId: null, changed: { slug_url: 'x' } })).toBeNull();
     });

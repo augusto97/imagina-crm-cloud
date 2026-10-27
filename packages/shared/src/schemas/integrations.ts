@@ -724,7 +724,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             ],
             how_to: [
                 'En el panel de WordPress ve a WooCommerce → Ajustes → Avanzado → API REST.',
-                'Toca «Añadir clave», pon una descripción (por ejemplo «Imagina Base») y en Permisos elige «Lectura/Escritura».',
+                'Toca «Añadir clave», pon una descripción (por ejemplo «Conexión con la app») y en Permisos elige «Lectura/Escritura».',
                 'Toca «Generar clave API» y copia la clave del cliente (ck_…) y la clave secreta (cs_…) aquí. La secreta sólo se muestra esa vez.',
             ],
         },
@@ -887,7 +887,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             how_to: [
                 'Entra a mercadopago.com.co/developers → Tus integraciones y crea una aplicación (o abre la que ya tengas).',
                 'En «Credenciales de producción» copia el Access Token (empieza con APP_USR-) y pégalo aquí. Para probar sin dinero real, usa el de prueba (TEST-).',
-                'Listo: los pagos te llegan a TU cuenta de Mercado Pago, sin comisión de Imagina Base. Cada link le avisa a la app cuando se paga; no hay que configurar nada más.',
+                'Listo: los pagos te llegan a TU cuenta de Mercado Pago, sin comisiones de la app. Cada link le avisa a la app cuando se paga; no hay que configurar nada más.',
             ],
         },
         actions: [

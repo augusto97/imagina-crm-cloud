@@ -53,7 +53,7 @@ export default [
                     const res = await api.get(`/lists/${lists.Productos.id}/public`);
                     const pub = res.data ?? res;
                     if (!pub.public_path) throw new Error('la lista no quedó publicada');
-                    await page.goto(`${base}${pub.public_path}`);
+                    await page.goto(`${base}/api/v1${pub.public_path}`);
                     await page.locator('table, main, body').first().waitFor({ state: 'visible', timeout: 15000 });
                     await sleep(1800);
                 },
@@ -67,7 +67,7 @@ export default [
         title: 'Invitar a alguien de afuera',
         setup: removeGuest,
         steps: [
-            { go: '/lists/{list:Tareas}', wait: '[data-tour="records-share"]' },
+            { go: '/lists/{list:Tareas}/records', wait: '[data-tour="records-share"]' },
             { click: '[data-tour="records-share"]', then: '[data-testid="list-guest-access"]', caption: 'En la lista, toca «Compartir».' },
             {
                 run: async ({ page, sleep }) => {

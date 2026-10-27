@@ -188,6 +188,7 @@ export default function PlatUpdates(): JSX.Element {
                             width: '100%',
                             background: primary(),
                             animationName: 'pup-bar',
+                            animationTimingFunction: 'linear',
                         }}
                     />
                 </span>

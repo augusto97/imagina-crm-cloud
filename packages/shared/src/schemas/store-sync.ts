@@ -131,7 +131,7 @@ export const STORE_EDITABLE_CATALOG: Record<StoreListRole, readonly StoreEditabl
         { slug: 'sku', label: 'SKU', defaultOn: false, hint: 'WooCommerce lo rechaza si otro producto ya lo usa.' },
         {
             slug: 'slug_url',
-            label: 'Slug (dirección)',
+            label: 'Dirección del producto',
             defaultOn: false,
             hint: 'La parte final de la dirección del producto. WordPress la hace única y la dirección vieja redirige a la nueva.',
         },

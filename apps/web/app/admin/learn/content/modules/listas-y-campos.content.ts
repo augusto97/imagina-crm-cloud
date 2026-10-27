@@ -143,6 +143,16 @@ export const articles: LearnArticle[] = [
                 title: 'Colores que ayudan a ubicarse',
                 md: 'Una distribuidora usa azul para todo lo comercial (Clientes, Oportunidades), verde para lo financiero (Facturas, Pagos) y naranja para la operación (Pedidos, Inventario). Con un vistazo al menú, cada persona encuentra su lista.',
             },
+            { t: 'h', text: 'Antes de eliminar una lista' },
+            {
+                t: 'steps',
+                items: [
+                    'Revisa si otras listas se vinculan con ella: sus campos de relación quedarán sin destino y los resúmenes que dependen de ella dejarán de calcular.',
+                    'Mira si hay tableros, formularios públicos o automatizaciones que la usan: dejarán de funcionar mientras esté en la papelera.',
+                    'Si quieres una copia propia, exporta los registros a Excel.',
+                    'En **General**, toca **Eliminar esta lista** y confirma. Durante 30 días puedes restaurarla desde **Ajustes → Papelera**, con todo lo que tenía.',
+                ],
+            },
             {
                 t: 'faq',
                 items: [
@@ -374,6 +384,16 @@ export const articles: LearnArticle[] = [
                 t: 'example',
                 title: 'Una constructora',
                 md: '«Obras» tiene **Fecha** de inicio y **Fecha** de entrega con **Resaltar vencidas**, un **Usuario** como director de obra, un **Equipo** responsable y un campo **Archivo** con los planos y el acta de entrega. El calendario muestra las entregas del mes y cada director ve sus obras en Mi trabajo.',
+            },
+            { t: 'h', text: 'Dónde rinden las fechas y las personas' },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'CalendarDays', title: 'Calendario y Gantt', md: 'Una vista de calendario muestra cada registro en su fecha; un Gantt, de la fecha de inicio a la de fin. Arrastrar reprograma.', tone: 'blue' },
+                    { icon: 'ListTodo', title: 'Mi trabajo', md: 'Cada persona ve lo que tiene asignado, agrupado por Vencido, Hoy y los próximos 7 días.', tone: 'amber' },
+                    { icon: 'Zap', title: 'Automatizaciones', md: 'Una automatización por fecha manda recordatorios antes o después del vencimiento; y a cada persona le llega un aviso cuando le asignan un registro.', tone: 'violet' },
+                    { icon: 'Users', title: 'Carga de trabajo', md: 'La vista de carga de trabajo cruza persona y fechas para ver quién está sobrecargado.', tone: 'mint' },
+                ],
             },
             {
                 t: 'faq',

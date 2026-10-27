@@ -78,7 +78,7 @@ export function PersonalDataCard(): JSX.Element {
                     onClick={() => download.mutate()}
                 >
                     {download.isPending && <Loader2 className="imcrm-mr-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
-                    {__('Descargar JSON')}
+                    {__('Descargar mis datos')}
                 </Button>
             </section>
 

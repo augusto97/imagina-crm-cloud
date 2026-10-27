@@ -374,6 +374,11 @@ export const articles: LearnArticle[] = [
                 title: 'Una distribuidora que atiende por teléfono',
                 md: 'Cuando entra una llamada, la persona de servicio aprieta **Ctrl K**, escribe las primeras letras del cliente o los últimos números de su teléfono y abre su ficha en dos segundos, con sus pedidos y comentarios a la vista.',
             },
+            { t: 'h', text: 'Trucos para encontrar más rápido' },
+            {
+                t: 'p',
+                md: 'Escribe sólo una parte distintiva: «bahía» encuentra «Café Bahía S.A.S.». No importan las tildes ni las mayúsculas. Si ya tienes clara la lista, también puedes usar el buscador de la propia lista, que además filtra la tabla. Y antes de escribir nada, Ctrl K te muestra lo que abriste hace poco, que muchas veces es justo lo que buscas.',
+            },
             {
                 t: 'faq',
                 items: [
@@ -552,6 +557,11 @@ export const articles: LearnArticle[] = [
                 t: 'example',
                 title: 'Una contadora que carga facturas',
                 md: 'Abre la lista con **g l**, se para en la primera celda, pega con **Ctrl V** las 40 filas que copió de Excel, revisa y corrige con **Enter**, y si se equivoca vuelve atrás con **Ctrl Z**. Sin tocar el mouse.',
+            },
+            { t: 'h', text: 'Por dónde empezar' },
+            {
+                t: 'p',
+                md: 'No hace falta aprenderlos todos. Empieza por tres: **Ctrl K** para buscar, **g** y una letra para saltar de sección y **?** para ver la lista completa cuando te olvides de alguno. Cuando estés cómodo, suma los de la tabla (moverte con las flechas, Enter para editar, Ctrl C y Ctrl V para copiar y pegar como en una hoja de cálculo).',
             },
             {
                 t: 'faq',

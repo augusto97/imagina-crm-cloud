@@ -594,9 +594,9 @@ function IncomingWebhookConfig({
                 </p>
             )}
             <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Haz un POST con JSON a esa URL desde un formulario u otra plataforma. Las claves del payload que coincidan con slugs de esta lista')}
+                {__('Envía los datos (en formato JSON, por POST) a esa URL desde un formulario u otra plataforma. Los datos cuyo nombre coincida con el nombre interno de un campo de esta lista')}
                 {slugs !== '' ? ` (${slugs}…)` : ''}
-                {__(' se usan en las condiciones y como variables {{slug}}; el resto queda disponible como {{payload.clave}}.')}
+                {__(' se usan en las condiciones y como variables {{campo}}; el resto queda disponible como {{payload.nombre}}.')}
             </p>
             {token !== '' && <WebhookTestPanel fields={fields} />}
         </div>

@@ -125,6 +125,11 @@ export const articles: LearnArticle[] = [
                 title: 'Una inmobiliaria',
                 md: 'Cuando un asesor escribe «@Marta el cliente quiere visitar el apartamento el sábado» en la ficha del inmueble, a Marta le llega el aviso con el nombre del inmueble. Lo toca, ve el comentario y responde ahí mismo, con todo el contexto.',
             },
+            { t: 'h', text: 'Para que la campana no te abrume' },
+            {
+                t: 'p',
+                md: 'Si recibes demasiados avisos, ajusta qué te llega en **Ajustes → Cuenta → Avisos**: por ejemplo, deja de recibir los cambios de registros que sigues y quédate con menciones, asignaciones y recordatorios. También puedes **Dejar de seguir** los registros que ya no te interesan desde **Mi trabajo → Siguiendo**. Y si te ausentas unos días, al volver usa **Sin leer** para revisar sólo lo nuevo y **Marcar todo como leído** al terminar.',
+            },
             {
                 t: 'faq',
                 items: [
@@ -194,6 +199,11 @@ export const articles: LearnArticle[] = [
                 t: 'example',
                 title: 'Un vendedor de seguros',
                 md: 'Termina una llamada en la que el cliente le dice «llámame en quince días». Abre la ficha, toca **Recordarme → Otra fecha…**, pone la fecha y la nota «retomar cotización del seguro de hogar». Además sigue el registro, así se entera si su compañera de servicio le deja un comentario mientras tanto.',
+            },
+            { t: 'h', text: 'Seguir y recordar, juntos' },
+            {
+                t: 'p',
+                md: 'Las dos herramientas se complementan: **seguir** te mantiene al tanto de lo que hacen otros en un registro (comentarios, cambios de estado), y un **recordatorio** te avisa de algo que tienes que hacer tú en un momento puntual. Por ejemplo, en una oportunidad grande que maneja otro vendedor puedes seguirla para ver cómo avanza y, además, ponerte un recordatorio el día antes del cierre para llamar al cliente.',
             },
             {
                 t: 'faq',
@@ -266,6 +276,16 @@ export const articles: LearnArticle[] = [
                 t: 'example',
                 title: 'La dueña de una panadería',
                 md: 'No quiere correos durante el día. Apaga los correos de menciones y asignaciones, deja el **push** de sus recordatorios y enciende el **Resumen diario** a las 6:30 de lunes a sábado: lo lee con el primer café y sabe qué pedidos vencen hoy.',
+            },
+            { t: 'h', text: 'Una configuración que suele funcionar' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'En la campana', what: 'Todo. Es tu bandeja completa y no molesta.' },
+                    { name: 'Por correo', what: 'Menciones, asignaciones, aprobaciones y fallas. Lo que necesita una respuesta tuya.' },
+                    { name: 'Al teléfono (push)', what: 'Menciones, asignaciones y recordatorios. Lo urgente.' },
+                    { name: 'Resumen diario', what: 'Encendido, a primera hora de tus días laborales, si prefieres revisar todo de una vez en vez de recibir correos sueltos.' },
+                ],
             },
             {
                 t: 'faq',
@@ -420,6 +440,11 @@ export const articles: LearnArticle[] = [
                 title: 'La entrada de un evento',
                 md: 'Cada invitado tiene una boleta con un código QR guardado en el campo «Boleta». En la puerta, el equipo escanea en modo continuo: si el invitado aparece, lo abren y marcan «Asistió».',
             },
+            { t: 'h', text: 'Para que el escáner lea bien' },
+            {
+                t: 'p',
+                md: 'Buena luz y el código entero dentro del recuadro, sin reflejos: los códigos impresos en papel brillante se leen mejor inclinando un poco el teléfono. Un código QR se lee desde más lejos que uno de barras. Y si un código no se lee, siempre puedes escribirlo a mano: la búsqueda es la misma.',
+            },
             {
                 t: 'faq',
                 items: [
@@ -469,6 +494,21 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'La app recuerda lo último que abriste: registros, listas y tableros. Lo ves arriba del panel de Listas, en **Recientes**, y en la búsqueda global (Ctrl K) antes de escribir nada. Es la forma más rápida de volver al cliente que estabas atendiendo hace diez minutos.',
             },
+            { t: 'h', text: 'Ideas según tu trabajo' },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'TrendingUp', title: 'Si vendes', md: 'Ancla **Oportunidades** en su vista kanban «Mis oportunidades» y el tablero «Ventas del mes». Abres el día viendo tu embudo.', tone: 'blue' },
+                    { icon: 'Wallet', title: 'Si llevas la administración', md: 'Ancla la vista «Facturas vencidas», la lista **Proveedores** y el tablero «Cartera». Lo urgente queda a un clic.', tone: 'mint' },
+                    { icon: 'Headphones', title: 'Si atiendes clientes', md: 'Ancla la vista «Tickets abiertos — mi equipo» y la lista **Clientes**. Y sigue los tickets delicados para enterarte de cada comentario.', tone: 'amber' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Favoritos, recientes o carpetas',
+                md: 'Usa **Favoritos** para lo que abres todos los días, **Recientes** para volver a lo que abriste hace un rato y las **carpetas** del panel para ordenar todas las listas de la empresa. Las tres cosas conviven: anclar una lista no la saca de su carpeta.',
+            },
             {
                 t: 'example',
                 title: 'Un contador con varias empresas',
@@ -479,7 +519,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿Mis favoritos los ve el resto del equipo?', a: 'No, son personales y por empresa.' },
                     { q: '¿Puedo anclar un registro?', a: 'Se anclan listas, tableros y vistas. Para tener un registro a mano, síguelo (aparece en Mi trabajo → Siguiendo) o búscalo en Recientes.' },
-                    { q: 'Ancle una vista privada.', a: 'Funciona igual: sólo tú puedes verla, así que sólo tú la tienes en favoritos.' },
+                    { q: 'Anclé una vista privada, ¿pasa algo?', a: 'Funciona igual: sólo tú puedes verla, así que sólo tú la tienes en favoritos.' },
                 ],
             },
             {

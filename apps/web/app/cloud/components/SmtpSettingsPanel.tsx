@@ -173,7 +173,7 @@ export function SmtpSettingsPanel(): JSX.Element | null {
                         className={inputCls}
                         value={form.from}
                         onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
-                        placeholder="Imagina Base <no-reply@tu-dominio.com>"
+                        placeholder="Mi empresa <no-reply@tu-dominio.com>"
                     />
                 </Field>
                 <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-self-end imcrm-text-sm">

@@ -254,7 +254,7 @@ describe('Automatizaciones — auditoría del motor', () => {
         await engine.process({ tenantId, listId: await listId('facturas'), recordId: fact.id, trigger: 'record_created', after: fact.data });
         const [run] = await runsOf(auto.id);
         expect(run?.status).toBe('success');
-        const after = await recs.get(tenantId, admin, 'facturas', String(fact.id));
+        const after = await recs.get(tenantId, admin, 'facturas', fact.id);
         expect(String(after.data[fk('aviso')])).toBe('Para Cliente Aurora por 450000');
         // El valor de la búsqueda no se guarda: sigue calculándose al leer.
         const [raw] = await withTenant(pg.db, tenantId, (tx) => tx.select({ data: records.data }).from(records).where(eq(records.id, fact.id)));

@@ -73,8 +73,8 @@ export function ResetPasswordPage({ token }: { token: string }): JSX.Element {
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {invite
-                            ? 'Te invitaron a Imagina Base. Elige una contraseña para entrar; tu usuario es el email donde recibiste la invitación.'
-                            : 'Elige una contraseña para tu cuenta de Imagina Base.'}
+                            ? 'Te invitaron a la app. Elige una contraseña para entrar; tu usuario es el email donde recibiste la invitación.'
+                            : 'Elige una contraseña para tu cuenta.'}
                     </p>
                 </div>
 

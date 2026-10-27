@@ -61,8 +61,9 @@ export default [
         steps: [
             { go: '/lists/{list:Tareas}/records', wait: '[data-tour="records-table"]', caption: 'Desde cualquier pantalla, aprieta Ctrl K o toca el cuadro de búsqueda.' },
             { click: '[data-testid="topbar-search"]', caption: 'Toca «Buscar listas, registros, dashboards…».', then: 'input[placeholder="Buscar listas, registros, dashboards…"]' },
-            { fill: 'input[placeholder="Buscar listas, registros, dashboards…"]', text: 'hotel', caption: 'Escribe al menos dos letras de lo que buscas.' },
-            { wait: 1500 },
+            { fill: 'input[placeholder="Buscar listas, registros, dashboards…"]', text: 'clínica', caption: 'Escribe al menos dos letras de lo que buscas.' },
+            { wait: '[role="dialog"] >> text=Clínica Norte' },
+            { wait: 800 },
             { shot: '[role="dialog"]', caption: 'Aparecen los registros de todas tus listas, más listas, tableros y guías. Elige con las flechas y abre con Enter.' },
         ],
     },

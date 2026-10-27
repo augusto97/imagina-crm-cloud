@@ -175,7 +175,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     select('Tipo', 'tipo', PRODUCT_TYPE),
                     f('Atributos', 'atributos', 'text', { description: 'La talla, el color… de cada variación.' }),
                     f('SKU', 'sku', 'text'),
-                    f('Slug', 'slug_url', 'text', {
+                    f('Dirección del producto', 'slug_url', 'text', {
                         description: 'La última parte de la dirección del producto en la tienda (…/producto/<slug>/).',
                     }),
                     select('Publicación', 'estado', PRODUCT_STATUS),

@@ -23,6 +23,7 @@ function Swap({ a, b, w, strong }: { a: string; b: string; w: number; strong?: b
                 data-a=""
                 style={{
                     gridArea: '1 / 1',
+                    display: 'flex',
                     opacity: 0,
                     animationName: 'efm-a',
                 }}
@@ -35,6 +36,7 @@ function Swap({ a, b, w, strong }: { a: string; b: string; w: number; strong?: b
                 data-a=""
                 style={{
                     gridArea: '1 / 1',
+                    display: 'flex',
                     animationName: 'efm-b',
                 }}
             >

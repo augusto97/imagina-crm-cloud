@@ -175,8 +175,9 @@ function buildManifest(out) {
 // ── API de la app (con la sesión del navegador) ──────────────────────────
 
 function makeApi(request, base, tenantId) {
-    const headers = { 'x-tenant-id': String(tenantId), 'content-type': 'application/json' };
     async function call(method, url, body) {
+        // Sin cuerpo no va content-type: el API rechaza un JSON vacío (400).
+        const headers = { 'x-tenant-id': String(tenantId), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
         const res = await request.fetch(`${base}/api/v1${url}`, { method, headers, data: body === undefined ? undefined : JSON.stringify(body) });
         const text = await res.text();
         let json = null;

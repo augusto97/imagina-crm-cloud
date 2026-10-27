@@ -104,7 +104,7 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                                 </Link>
                             </li>
                         )}
-                        <li>{__('Puedes sumar columnas propias (una nota, un responsable): son sólo de Imagina y nunca viajan a la tienda.')}</li>
+                        <li>{__('Puedes sumar columnas propias (una nota, un responsable): son sólo de esta app y nunca viajan a la tienda.')}</li>
                     </ul>
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1" aria-label={__('Marcas de las columnas')}>
                         <li className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
@@ -114,7 +114,7 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                             <ArrowLeftRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-primary" aria-hidden /> {__('Se cambia desde aquí y viaja a la tienda.')}
                         </li>
                         <li className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                            <PencilLine className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-emerald-600 dark:imcrm-text-emerald-400" aria-hidden /> {__('Columna sólo de Imagina.')}
+                            <PencilLine className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-emerald-600 dark:imcrm-text-emerald-400" aria-hidden /> {__('Columna propia (sólo en esta app).')}
                         </li>
                     </ul>
                 </div>

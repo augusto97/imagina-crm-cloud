@@ -56,7 +56,7 @@ export const IMAP_PRESETS: Record<ImapPresetKey, ImapPreset> = {
         security: 'tls',
         steps: [
             'Activa la verificación en dos pasos en la cuenta de Google del buzón de soporte (myaccount.google.com → Seguridad).',
-            'Entra a myaccount.google.com/apppasswords y crea una contraseña de aplicación con el nombre «Imagina Base».',
+            'Entra a myaccount.google.com/apppasswords y crea una contraseña de aplicación con un nombre que reconozcas (por ejemplo «Mesa de ayuda»).',
             'Copia la contraseña de 16 letras que te muestra Google y pégala aquí (los espacios no importan).',
             'Usuario: la dirección completa del buzón (soporte@tuempresa.com).',
         ],
@@ -87,7 +87,7 @@ export const IMAP_PRESETS: Record<ImapPresetKey, ImapPreset> = {
         security: 'tls',
         steps: [
             'En Zoho Mail, ve a Configuración → Cuentas de correo → Acceso IMAP y actívalo.',
-            'En accounts.zoho.com → Seguridad → Contraseñas específicas de la aplicación, genera una con el nombre «Imagina Base».',
+            'En accounts.zoho.com → Seguridad → Contraseñas específicas de la aplicación, genera una con un nombre que reconozcas (por ejemplo «Mesa de ayuda»).',
             'Si tu cuenta es de una organización usa el servidor imappro.zoho.com; si está en Europa o India, imap.zoho.eu o imap.zoho.in.',
         ],
         app_password_url: 'https://accounts.zoho.com/home#security/app_password',

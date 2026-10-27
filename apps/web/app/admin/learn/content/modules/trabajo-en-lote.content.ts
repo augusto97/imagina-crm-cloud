@@ -463,7 +463,7 @@ export const articles: LearnArticle[] = [
                     'Toca **Deshacer** en la edición. La app revisa cómo están hoy esos registros.',
                     'Ves cuántos **Vuelven atrás**, cuántos **Cambiaron después** (alguien los tocó después de la edición) y cuántos **Ya no existen**.',
                     'Los que cambiaron después **se dejan como están**, salvo que marques **Volverlos atrás igual** (se pierde lo que se cambió después en esas columnas).',
-                    'Confirma. Se aplica en tandas con avance.',
+                    'Confirma con **Volver atrás N registros** (dice cuántos). Se aplica en tandas con avance y al final ves «Se volvieron atrás N registros».',
                 ],
             },
             {
