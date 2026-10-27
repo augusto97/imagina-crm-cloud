@@ -9647,6 +9647,54 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         crear. 16 tests de API (suite completa 1658 en verde), 6 del front y 10
         de shared + E2E navegador 66/66 y 14/14 con un proveedor de IA simulado
         (escritorio, celular y oscuro).
+  - [x] **Novedades: qué hay de nuevo en la app (v0.1.319, ADR-S73, con los
+        avisos de plataforma de la opción I9)**: la gente se entera de lo que
+        trae cada versión sin que el operador escriba nada en cada servidor.
+        (a) **Modelo**: la novedad es de la PLATAFORMA (`whats_new_entries`,
+        sin `tenant_id` y de sólo lectura para el rol de la app, como `plans`):
+        origen `release`/`operator`, tipo Nueva función · Mejora · Corrección ·
+        Aviso, cuerpo en formato sencillo dibujado con React (nunca HTML crudo;
+        un enlace sólo lo es si va a una pantalla de la app o a un https),
+        imagen, video (YouTube/Vimeo/Loom), botón (pantalla, enlace o un
+        recorrido con la pantalla de respaldo), público por roles base y
+        planes, programación, vencimiento, destacada y estado. Lo visto es por
+        PERSONA y global (`whats_new_views`: vista, abierta, clic, descartada,
+        presentada; RLS por `app.user_id`; borrar la cuenta lo limpia).
+        Migración 0092. (b) **Catálogo que viaja con cada versión**
+        (`packages/shared/src/whats-new/catalog.ts`, 16 entradas de v0.1.296 a
+        v0.1.318, con un README del paso del ritual): al arrancar, el API lo
+        sincroniza de forma idempotente (candado de la base + clave única),
+        actualiza el texto de lo que el operador no tocó y respeta lo editado
+        u oculto. **«Sin ver» por llegada** (`announce_from`): es nueva para
+        quien ya tenía cuenta cuando LLEGÓ al servidor, así un servidor que se
+        actualiza tarde igual la muestra, una persona nueva no recibe el
+        historial, la primera vez se anuncian 6 y cada actualización como
+        mucho 8; lo que publica el operador no es nuevo para él. (c) **Lo que
+        ve cada persona**, en un solo pedido (`GET /me/whats-new`): megáfono a
+        la izquierda de la campana con contador (en el celular, en el menú de
+        la persona y un punto en el avatar), panel por mes que marca como
+        vistas las que muestra (con «Ver más», «Pruébalo» —arranca el recorrido
+        si existe— y «Marcar todo como visto»), página `/novedades` con filtro
+        por tipo, **destacadas** en un diálogo «Nuevo: …» (una por sesión, una
+        vez por persona, sólo su primer mes, nunca a invitados ni
+        impersonando, y nunca encima de otro diálogo, un menú, un campo con
+        foco o una capa de ayuda marcada con `data-help-overlay`) y **avisos**
+        en una franja hasta que se cierran o vencen. Un invitado sólo recibe
+        avisos; el cliente del portal, nada. Registra `openWhatsNew({id})` en
+        el helpBus. (d) **Plataforma → Novedades** (superadmin con
+        contraseña): lista con estadísticas (vieron, abrieron, tocaron el
+        botón) y editor con vista previa en vivo hecha con los MISMOS
+        componentes que ve la persona; imagen reconocida por sus bytes (nunca
+        SVG) o https; programar, público, destacada, ocultar y mostrar;
+        editar una de versión la deja «Editada» y «Restaurar el texto
+        original» la devuelve al catálogo. **Regla nueva del ritual**: cada
+        versión con algo que la gente va a notar agrega su novedad al final del
+        catálogo (regla 8 del §6). Al integrar, el spec dejó de contar a mano
+        cuántas novedades ve cada rol (lo calcula del catálogo). 16 tests de
+        API + casos de borrado de cuenta e invitados, 11 de shared y 10 del
+        front + E2E navegador 59/59 (sincronización idempotente, «sin ver» por
+        llegada, destacada una sola vez, aviso que vence solo, invitado,
+        consola con imagen y estadísticas, celular y oscuro).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
@@ -9672,3 +9720,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    Cuando el usuario pida ideas, partir de ese documento (y sumar lo nuevo);
    al hacer una idea, sacarla de ahí; si la descarta, moverla a «Descartado
    por el usuario» y no volver a proponerla.
+8. **Cada versión trae su novedad** (pedido del usuario, 2026-10-26: que la
+   gente "sepa de las funcionalidades nuevas que acabo de implementar"): si la
+   versión trae algo que quien USA la app va a notar, agregar una entrada al
+   final de `packages/shared/src/whats-new/catalog.ts` (pasos en su
+   `README.md`: texto para el usuario final, español neutro, nunca el nombre
+   del producto, botón que lleve ahí) y correr el test de shared. Ver ADR-S73.

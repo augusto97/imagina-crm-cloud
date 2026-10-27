@@ -144,6 +144,9 @@ asignada en sus instrucciones, usar ésa (mismo flujo).
 Pasos (en este orden):
 1. Implementar + tests + typecheck + lint + E2E (ver §7).
 2. `VERSION` → `0.1.N`.
+   **2b. Novedad**: si la versión trae algo que quien USA la app va a notar,
+   agregar su entrada al final de `packages/shared/src/whats-new/catalog.ts`
+   (pasos en su `README.md`) y correr el test de shared (ADR-S73).
 3. `CLAUDE.md` §5: agregar el bullet `- [x] **Título (v0.1.N, contexto/reporte
    del usuario)**: …` al final de la fase en curso (mismo estilo de los
    anteriores: qué, por qué, cómo, bugs encontrados, tests y E2E).
@@ -364,7 +367,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.318** (empezar fácil, primera entrega de la fase 7), en `main`.
+versión publicada: **v0.1.319** (novedades, segunda entrega de la fase 7), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 7 en marcha: «hacer la app súper fácil de entender»**
@@ -395,9 +398,11 @@ versión publicada: **v0.1.318** (empezar fácil, primera entrega de la fase 7),
   rotas). Briefs en la carpeta temporal de la sesión (`brief-f7-*-full.md`).
   **Avance**: el contenedor se reinició a mitad de camino; el trabajo estaba en
   disco (se respaldó con commits `wip` en cada worktree) y las tres entregas se
-  retomaron. **Empezar fácil publicada en v0.1.318** (sin migración). Novedades
-  terminada (migración 0092, ADR que se numera al publicarla); guías y
-  recorridos en curso.
+  retomaron. **Empezar fácil publicada en v0.1.318** (sin migración, ADR-S72)
+  y **Novedades en v0.1.319** (migración 0092, ADR-S73); guías y recorridos
+  en curso (será ADR-S74). Al integrar Novedades se le agregó la novedad de
+  «Primeros pasos» al catálogo, y su spec pasó a calcular del catálogo cuántas
+  ve cada rol (contaba a mano y se rompía con cada entrada nueva).
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
   («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
   facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
@@ -764,6 +769,19 @@ versión publicada: **v0.1.318** (empezar fácil, primera entrega de la fase 7),
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.319** — **Novedades** (ADR-S73, segunda entrega de la
+  fase 7, con los avisos de plataforma de I9). Megáfono «Novedades» junto a la
+  campana, con panel, página `/novedades`, destacadas en un diálogo y avisos en
+  una franja. Las novedades de cada versión viajan en el código
+  (`packages/shared/src/whats-new/catalog.ts`) y el API las sincroniza al
+  arrancar; lo nuevo cuenta desde que LLEGA al servidor y sólo para quien ya
+  tenía cuenta (6 la primera vez y como mucho 8 por actualización). El operador
+  publica las suyas, oculta o edita las de versión y ve estadísticas en
+  Plataforma → Novedades. Migración 0092. **Regla nueva del ritual** (§4 paso
+  2b y regla 8 de `CLAUDE.md` §6): cada versión con algo visible agrega su
+  novedad. **Convención para las otras piezas de ayuda**: un recorrido o una
+  bienvenida en curso marcan su capa con `data-help-overlay` (o son
+  `role="dialog"`) para que la destacada espere.
 - **2026-10-27 · v0.1.318** — **Empezar fácil** (ADR-S72, opción F7; primera
   entrega de la fase 7). Una empresa sin listas ve «Armemos tu espacio»: la IA
   arma una propuesta con el blueprint de las plantillas, que se revisa y edita

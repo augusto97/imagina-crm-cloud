@@ -4354,4 +4354,65 @@ base: o valida o se ofrece el camino por plantillas.
 
 ---
 
-**Versión del documento:** 1.115.0 (empezar fácil)
+### ADR-S73 — Novedades: qué hay de nuevo en la app (v0.1.319)
+
+**Contexto.** El operador publica versiones muy seguido y cada servidor se
+actualiza solo (ADR-S13), pero nada en la app contaba qué cambió. Hacía falta un
+canal que viaje con el código, que no inunde a nadie y que respete el
+white-label, los roles y los invitados (fase 7).
+
+**Decisión.**
+1. **La novedad es de la plataforma** (`whats_new_entries`, sin `tenant_id` ni
+   RLS, como `plans`): el rol de la app sólo puede leerla; la escriben la
+   sincronización y la consola por la conexión base. Origen `release` u
+   `operator`; tipo Nueva función, Mejora, Corrección o Aviso; cuerpo en formato
+   sencillo (`markdownToRichDoc`) dibujado con React, nunca HTML crudo; imagen,
+   video (sólo YouTube, Vimeo o Loom con `resolveEmbed`) y botón (ruta interna,
+   https o recorrido con ruta de respaldo); público por roles base y planes,
+   programación, vencimiento, destacada y estado `draft`/`published`/`hidden`.
+2. **Catálogo en código** (`packages/shared/src/whats-new/catalog.ts`, clave
+   estable `v<versión>-<tema>`). Al arrancar se sincroniza de forma idempotente
+   (`pg_advisory_xact_lock` + UNIQUE): inserta lo nuevo, actualiza lo que el
+   operador no editó y respeta lo editado y el estado. Una entrada inválida se
+   descarta con su motivo en el log. **Agregar la novedad de una versión es
+   parte del ritual de publicación** (regla 8 de `CLAUDE.md` §6); el test del
+   catálogo revisa formato, rutas, voseo y que no aparezca el nombre del
+   producto.
+3. **«Sin ver» por llegada.** `announce_from` es el momento en que la novedad
+   llegó a este servidor (null = historial). Es nueva para quien ya tenía
+   cuenta en ese momento y no la vio: un servidor que se actualiza tarde igual
+   la muestra (la fecha visible sigue siendo la de la versión), una persona
+   nueva no recibe el historial, se anuncian 6 la primera vez y como mucho 8 por
+   actualización. Lo del operador se anuncia desde su publicación y no es nuevo
+   para quien lo escribió.
+4. **Lo visto es por persona y global** (`whats_new_views`: vista, abierta,
+   clic, descartada, presentada), con RLS por `app.user_id`: la novedad es de la
+   plataforma, así que no va por empresa; la empresa activa sólo decide quién
+   la ve. Impersonando no se marca nada; borrar la cuenta borra lo suyo.
+5. **Un pedido** (`GET /me/whats-new`) trae historial, contador, avisos y
+   destacada. Un invitado sólo recibe avisos y el cliente del portal no llega.
+6. **Destacadas**: una por sesión y como mucho una cada 12 h por navegador; una
+   vez por persona (`presented_at`), sólo durante su primer mes, nunca a
+   invitados ni impersonando, y nunca encima de otra cosa (un diálogo, un menú,
+   un campo con foco o una capa con `data-help-overlay`): esperan. Un aviso
+   nunca es destacado: va en la franja.
+7. **Consola**: lista con estadísticas y editor con vista previa hecha con los
+   componentes reales. Editar una de versión la marca `edited` y «Restaurar» la
+   devuelve al catálogo; las de versión no se borran, se ocultan. La autoría
+   queda en la fila y en el log (la consola no lleva bitácora de la
+   configuración de plataforma).
+8. **Imágenes**: el tipo se decide por los bytes (PNG, JPEG, WebP o GIF, nunca
+   SVG), hasta 5 MB, en el almacenamiento de la plataforma; se sirven sin sesión
+   con `nosniff`, `CSP: sandbox` y caché permanente, y se borran cuando ya nadie
+   las usa.
+9. **Contrato de la fase 7**: `openWhatsNew({id})` y
+   `data-tour="topbar-whats-new"`.
+
+**Consecuencias.** Cada versión trae su novedad sin trabajo extra en los
+servidores y el operador conserva la última palabra. Nadie se inunda y nadie se
+pierde lo que llegó con una actualización. Quedan afuera el aviso por correo o
+push, la traducción, pedir opinión y las novedades por empresa.
+
+---
+
+**Versión del documento:** 1.116.0 (novedades)
