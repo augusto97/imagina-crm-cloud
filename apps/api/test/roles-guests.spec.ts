@@ -159,6 +159,8 @@ describe('C3 — rutas abiertas a invitados', () => {
         'GET me/users',
         'GET me/users-search',
         'GET me/users/:id',
+        // Fase 7 — novedades: a un invitado sólo le llegan avisos (lo filtra el servicio).
+        'GET me/whats-new',
         'GET workspaces/current',
         'GET workspaces/current/branding',
         'GET workspaces/current/format',
@@ -172,6 +174,8 @@ describe('C3 — rutas abiertas a invitados', () => {
         'POST lists/:list/records/:recordId/comments',
         'POST lists/:list/records/:recordId/comments/:id/reactions',
         'POST me/notifications/read',
+        'POST me/whats-new/:id/events',
+        'POST me/whats-new/seen',
     ];
     const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
 
