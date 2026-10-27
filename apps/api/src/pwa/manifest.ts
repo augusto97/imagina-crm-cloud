@@ -75,6 +75,13 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
     const scheme = input.scheme ?? 'light';
     const theme = resolveAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null, scheme);
     const icon = { src: own?.icon_96 ?? '/pwa/icon-96.png', sizes: '96x96', type: 'image/png' };
+    // v0.1.329 — Android 12+ abre la app con el ícono maskable en un círculo
+    // sobre `background_color`: en oscuro va el juego con fondo oscuro (si el
+    // operador lo generó), así no aparece un disco claro alrededor del logo.
+    const darkMask =
+        scheme === 'dark' && own?.maskable_dark_192 && own.maskable_dark_512
+            ? { m192: own.maskable_dark_192, m512: own.maskable_dark_512 }
+            : null;
     return {
         // Estable: no cambia con el nombre ni el color (el navegador la usa
         // para reconocer la MISMA app instalada cuando el manifiesto cambia).
@@ -95,8 +102,8 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
             ? [
                   { src: own.icon_192, sizes: '192x192', type: 'image/png', purpose: 'any' },
                   { src: own.icon_512, sizes: '512x512', type: 'image/png', purpose: 'any' },
-                  { src: own.maskable_192, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-                  { src: own.maskable_512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+                  { src: darkMask?.m192 ?? own.maskable_192, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+                  { src: darkMask?.m512 ?? own.maskable_512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
               ]
             : [
                   { src: '/pwa/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

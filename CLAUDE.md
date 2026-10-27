@@ -10000,6 +10000,30 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         ícono genérico real en vez de iniciales. 1 test de API + 2 del front
         (679 front en verde) + E2E navegador 15/15.
 
+  - [x] **La app abre con su contorno, no con el logo (v0.1.329, addendum
+        ADR-S80, reporte del usuario: "se ve el logo en todo el centro con el
+        color circular, no se ve bonito")**: entre maquetas eligió «la app se
+        arma». (a) La pantalla de arranque del HTML deja de mostrar el logo: se
+        ve el **contorno de la app** —riel, panel, barra superior y filas grises
+        que laten— con una línea de carga arriba, con las medidas reales en
+        escritorio y celular (respeta el panel plegado) y los colores REALES del
+        riel y del primario de cada tema, recordados en el dispositivo
+        (`imcrm:splash`: `rememberShell` desde `BootSplashDone shell`,
+        `rememberSplashColors` desde `useBranding` con `resolveThemeColor`;
+        sólo `rgb()` validados). Sólo si la última apertura fue con sesión;
+        antes del login, fondo liso y la línea. (b) La primera pantalla la
+        dibuja Android (ícono maskable en círculo sobre el fondo del
+        manifiesto) y no se puede quitar: el círculo de color era el fondo del
+        ícono. Ahora es «Igual al de la app» por defecto
+        (`icon_background_auto`, blanco / #121212, `iconBackgrounds` en shared)
+        con un juego maskable oscuro opcional (`maskable_dark_192/512`) que usa
+        el manifiesto `?scheme=dark`; un color propio sigue disponible y avisa
+        que se verá como un círculo. Un juego viejo muestra «Actualizar ícono»
+        (regenera desde el original y guarda en un clic) y la vista previa suma
+        «Al abrir». 2 tests de API + 2 del front (680 front en verde) + E2E
+        navegador 17/17 y 6/6 contra el build de producción (CSP sin
+        violaciones).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

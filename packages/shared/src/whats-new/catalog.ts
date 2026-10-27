@@ -642,4 +642,15 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         media: { illustration: 'dia-push' },
         body: 'Si ya tenías la app instalada, el teléfono lo actualiza solo en unos días. Para verlo ya, quita la app y vuelve a instalarla desde el menú de tu perfil.',
     },
+    {
+        key: 'v0.1.329-apertura-limpia',
+        version: '0.1.329',
+        date: '2026-10-27',
+        kind: 'improvement',
+        title: 'La app se abre más rápido a la vista',
+        summary:
+            'Mientras carga ya ves la forma de la app, con una línea de avance arriba, en vez de una pantalla con el logo.',
+        media: { illustration: 'empresa-branding' },
+        body: 'Si usas la app instalada en el teléfono, quítala y vuelve a instalarla para ver también el ícono nuevo al abrirla.',
+    },
 ];

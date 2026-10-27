@@ -3,7 +3,15 @@ import { describe, expect, it, beforeEach } from 'vitest';
 
 import { brandInitials } from '@/hooks/useAppIdentity';
 import { fitRect, iconPadding, logoCanvasSize } from '@/lib/brandAssets';
-import { bootSplashVisible, hideBootSplash, rememberSplash, sameOriginPath, SPLASH_KEY } from '@/lib/bootSplash';
+import {
+    bootSplashVisible,
+    hideBootSplash,
+    readSplash,
+    rememberShell,
+    rememberSplashColors,
+    safeColor,
+    SPLASH_KEY,
+} from '@/lib/bootSplash';
 import { applyFavicon } from '@/lib/favicon';
 
 describe('v0.1.327 — marca: geometría de los íconos', () => {
@@ -42,13 +50,27 @@ describe('v0.1.327 — pantalla de arranque', () => {
         localStorage.clear();
     });
 
-    it('recuerda sólo rutas de la propia app', () => {
-        expect(sameOriginPath('/api/v1/public/brand/images/a.png')).toBe('/api/v1/public/brand/images/a.png');
-        expect(sameOriginPath('https://otro.com/x.png')).toBeNull();
-        expect(sameOriginPath('//otro.com/x.png')).toBeNull();
-        expect(sameOriginPath('/\\otro.com')).toBeNull();
-        rememberSplash({ name: '  Acme  ', logo: 'javascript:alert(1)', logoDark: '/a.png' });
-        expect(JSON.parse(localStorage.getItem(SPLASH_KEY)!)).toEqual({ name: 'Acme', logo: null, logoDark: '/a.png' });
+    it('v0.1.329 — recuerda si había sesión y los colores de cada tema', () => {
+        expect(readSplash()).toEqual({ shell: false, light: null, dark: null });
+        rememberShell(true);
+        rememberSplashColors('dark', { rail: 'rgb(20, 20, 20)', accent: 'rgb(35, 195, 230)' });
+        rememberSplashColors('light', { rail: 'url(javascript:alert(1))', accent: 'rgb(12, 126, 151)' });
+        expect(readSplash()).toEqual({
+            shell: true,
+            light: { rail: null, accent: 'rgb(12, 126, 151)' },
+            dark: { rail: 'rgb(20, 20, 20)', accent: 'rgb(35, 195, 230)' },
+        });
+        rememberShell(false);
+        expect(readSplash().shell).toBe(false);
+        expect(readSplash().dark?.rail).toBe('rgb(20, 20, 20)');
+    });
+
+    it('sólo deja pasar colores rgb() numéricos', () => {
+        expect(safeColor('rgba(0, 0, 0, 0.5)')).toBe('rgba(0, 0, 0, 0.5)');
+        expect(safeColor('red; background:url(x)')).toBeNull();
+        expect(safeColor('rgb(1,2,3)) ; x')).toBeNull();
+        localStorage.setItem(SPLASH_KEY, '{roto');
+        expect(readSplash()).toEqual({ shell: false, light: null, dark: null });
     });
 
     it('se desvanece y sale del DOM una sola vez', async () => {

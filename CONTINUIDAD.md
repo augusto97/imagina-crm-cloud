@@ -372,11 +372,19 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.328**
-(barra de abajo de la app instalada según el tema del dispositivo + ícono desde
-el logo), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.329**
+(la app abre con el contorno de la app en vez del logo + ícono sin disco de
+color), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-27 — **No le gusta cómo abre la app instalada** (logo en el centro
+  dentro de un círculo de color). Se le mostraron maquetas (hoy / A logo limpio
+  sin salto / B la app se arma) y eligió **B**. v0.1.329: la primera pantalla
+  es de Android (ícono en círculo, no se puede quitar) → el ícono pasa a tener
+  el fondo de la app (sin disco); la segunda pasa a ser el esqueleto de la app.
+  **Para el usuario**: actualizar; en Plataforma → Marca tocar «Actualizar
+  ícono»; quitar y volver a instalar la app del teléfono. Queda verificar en su
+  teléfono.
 - 2026-10-27 — **Barra de abajo blanca en modo oscuro + ícono raro en la app
   instalada** (reporte del usuario con capturas tras v0.1.327). La barra de
   Android sale del `background_color` del manifiesto (no de la meta): v0.1.328
@@ -825,6 +833,18 @@ el logo), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.329** — **La app abre con su contorno, no con el logo**
+  (addendum ADR-S80). Reporte del usuario: al abrir la app instalada se ve el
+  logo en el centro dentro de un círculo de color y no le gusta. Maquetas →
+  eligió «B · La app se arma». (1) Pantalla de arranque del HTML: esqueleto del
+  shell (riel, panel, barra superior, filas que laten) con línea de carga
+  arriba, con las medidas reales y los colores reales del riel y del primario
+  recordados por tema; sólo si la última apertura fue con sesión. (2) Ícono:
+  fondo «Igual al de la app» por defecto (blanco / #121212) + juego maskable
+  oscuro para el manifiesto `?scheme=dark` → Android muestra el logo solo, sin
+  disco; «Actualizar ícono» regenera un juego viejo en un clic; vista previa
+  «Al abrir». Tests: 2 de API + 2 del front; E2E navegador 17/17 y 6/6 contra el
+  build de producción (CSP sin violaciones).
 - **2026-10-27 · v0.1.328** — **Barra de abajo según el tema + ícono desde el
   logo** (addendum ADR-S80). Reporte del usuario: en modo oscuro la barra de
   abajo de la app instalada seguía blanca, y la app instalada mostraba un ícono
