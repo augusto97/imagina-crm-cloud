@@ -4,8 +4,9 @@
  * La cuenta de ejemplo no es superadmin, así que estas demos entran en un
  * contexto aparte con la cuenta de operador de desarrollo
  * (`HC_SUPERADMIN_EMAIL` / `HC_SUPERADMIN_PASSWORD`, por defecto la de los
- * E2E). Si esa cuenta no existe —como en la copia efímera del release—, la
- * demo falla rápido y el manual muestra su animación de respaldo.
+ * E2E). En el release, `ci.sh` la crea con `prepare-operator.mjs`. Si la
+ * cuenta no existe, la demo falla rápido y el manual muestra su animación de
+ * respaldo.
  *
  * Nada se guarda: sólo se navega y se abren paneles.
  */

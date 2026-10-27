@@ -34,6 +34,10 @@ export APP_BASE_URL=http://localhost:$WEB_PORT
 export MAIL_TRANSPORT=log
 export RATE_LIMIT_AUTH_MAX=500
 export UPLOADS_DIR=$LOGS/uploads
+# Operador de la plataforma para las capturas del módulo «Plataforma».
+export HC_SUPERADMIN_EMAIL=operador@ejemplo.test
+export HC_SUPERADMIN_PASSWORD=Operador-de-demo-$RANDOM-1
+export PLATFORM_SUPERADMINS=$HC_SUPERADMIN_EMAIL
 
 pnpm --filter @imagina-base/api db:migrate > "$LOGS/migrate.log" 2>&1
 node apps/api/dist/main.js > "$LOGS/api.log" 2>&1 &
@@ -55,6 +59,7 @@ curl -fsS "http://localhost:$API_PORT/api/v1/health/ready" >/dev/null
 EMAIL=demo@ejemplo.test
 PASS=Clave-de-demo-$RANDOM-1
 node scripts/help-captures/prepare.mjs --api "http://localhost:$API_PORT" --email "$EMAIL" --password "$PASS"
+node scripts/help-captures/prepare-operator.mjs --email "$HC_SUPERADMIN_EMAIL" --password "$HC_SUPERADMIN_PASSWORD"
 
 if [ -z "${PW_CHROMIUM:-}" ]; then
     pnpm exec playwright-core install --with-deps chromium > "$LOGS/playwright.log" 2>&1
