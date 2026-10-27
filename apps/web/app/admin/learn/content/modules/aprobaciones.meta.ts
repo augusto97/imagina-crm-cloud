@@ -1,0 +1,63 @@
+import type { LearnModuleMeta } from '../types';
+
+export const meta: LearnModuleMeta = {
+    id: 'aprobaciones',
+    group: 'automate',
+    order: 2,
+    title: 'Aprobaciones',
+    tagline: 'Que un gasto, un descuento o un contrato no avance sin el visto bueno de quien corresponde.',
+    icon: 'ClipboardCheck',
+    tone: 'amber',
+    hero: 'aprob-flujo',
+    highlights: [
+        'Flujos por lista con pasos en orden: jefe directo, gerencia, finanzas…',
+        'Quién aprueba: un campo Persona del registro, un rol, personas puntuales o un equipo',
+        'Aprobar, rechazar o devolver desde la ficha, desde «Mi trabajo» o desde el correo',
+        'Campos que se escriben solos al aprobar o rechazar, y una columna «Aprobación» para filtrar',
+        'Automatizaciones que piden la aprobación, la esperan y siguen según el resultado',
+    ],
+    articles: [
+        {
+            id: 'aprobaciones-que-son',
+            title: 'Qué es un flujo de aprobación y cuándo usarlo',
+            summary: 'Solicitudes, pasos en orden, quién decide y los cinco estados por los que pasa una aprobación, con ejemplos de negocio.',
+            minutes: 5,
+            level: 'basic',
+            keywords: 'aprobacion visto bueno autorizar flujo pasos gasto descuento contrato solicitud estados pendiente aprobada rechazada devuelta',
+        },
+        {
+            id: 'aprobaciones-configurar',
+            title: 'Crear un flujo: pasos, quién aprueba y qué pasa al decidir',
+            summary: 'Dónde se arman los flujos, cada ajuste del formulario y cómo elegir entre un campo Persona, un rol, personas puntuales o un equipo.',
+            minutes: 8,
+            level: 'intermediate',
+            keywords: 'nuevo flujo pasos en orden quien aprueba campo persona rol personas puntuales equipo cualquiera aprueba todos aprueban al aprobar poner al rechazar poner pedir otra vez propia solicitud',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'aprobaciones-pedir-decidir',
+            title: 'Pedir una aprobación y decidir',
+            summary: 'Pide desde la ficha con una nota y decide con «Aprobar», «Rechazar» o «Devolver» desde la ficha, desde «Mi trabajo» o desde el correo.',
+            minutes: 7,
+            level: 'basic',
+            keywords: 'pedir aprobacion nota aprobar rechazar devolver motivo mi trabajo correo confirmar decision cancelar solicitud',
+        },
+        {
+            id: 'aprobaciones-seguimiento',
+            title: 'Seguimiento: la columna «Aprobación», avisos e historial',
+            summary: 'Filtra y agrupa por el estado de la aprobación, entiende los avisos que llegan y dónde queda el historial de cada decisión.',
+            minutes: 5,
+            level: 'basic',
+            keywords: 'columna aprobacion filtrar agrupar tablero avisos campana correo notificacion historial actividad solicitudes anteriores',
+        },
+        {
+            id: 'aprobaciones-automatizaciones',
+            title: 'Aprobaciones en automatizaciones',
+            summary: 'Pide aprobaciones solas, espera la decisión con un tope de días y sigue por un camino distinto si se aprueba, se rechaza o se vence.',
+            minutes: 7,
+            level: 'advanced',
+            keywords: 'automatizacion pedir aprobacion esperar aprobacion cuando se aprueba o se rechaza resultado vencida variables aprobacion resultado motivo',
+            needs: 'manage_automations',
+        },
+    ],
+};
