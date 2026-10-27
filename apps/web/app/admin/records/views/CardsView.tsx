@@ -138,6 +138,7 @@ function Card({
         <button
             type="button"
             onClick={onClick}
+            data-tour="records-row"
             className="imcrm-group imcrm-flex imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-left imcrm-shadow-imcrm-sm imcrm-transition-[box-shadow,border-color] hover:imcrm-border-foreground/20 hover:imcrm-shadow-imcrm-md focus:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary focus-visible:imcrm-ring-offset-2"
         >
             {coverUrl && (

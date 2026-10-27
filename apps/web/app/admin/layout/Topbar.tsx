@@ -2,6 +2,7 @@ import { ActiveTimerChip } from '@/admin/layout/ActiveTimerChip';
 import { Menu, Search, Sparkles } from 'lucide-react';
 
 import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assistantPanelStore';
+import { HelpTopbarButton } from '@/admin/help/HelpTopbarButton';
 import { IncidentsPill } from '@/admin/layout/IncidentsPill';
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { UserMenu } from '@/admin/layout/UserMenu';
@@ -56,6 +57,7 @@ export function Topbar({
                     onClick={onMenuClick}
                     aria-label={__('Abrir menú')}
                     data-testid="imcrm-menu-button"
+                    data-tour="topbar-menu"
                     className="imcrm-inline-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-text-foreground/80 imcrm-transition-colors hover:imcrm-bg-accent lg:imcrm-hidden"
                 >
                     <Menu className="imcrm-h-5 imcrm-w-5" />
@@ -82,6 +84,7 @@ export function Topbar({
                         type="button"
                         onClick={onSearchClick}
                         data-testid="topbar-search"
+                        data-tour="topbar-search"
                         aria-label={__('Buscar')}
                         aria-keyshortcuts="Control+K Meta+K"
                         className="imcrm-hidden imcrm-h-7 imcrm-w-full imcrm-max-w-sm imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-2.5 imcrm-text-[13px] imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-border-foreground/20 hover:imcrm-text-foreground lg:imcrm-flex"
@@ -110,6 +113,7 @@ export function Topbar({
                         aria-label={__('Buscar')}
                         title={__('Buscar')}
                         data-testid="topbar-search-icon"
+                        data-tour="topbar-search"
                         className="lg:imcrm-hidden"
                         onClick={onSearchClick}
                     >
@@ -126,6 +130,7 @@ export function Topbar({
                     title={__('Asistente IA')}
                     aria-pressed={assistantOpen}
                     data-testid="imcrm-ai-toggle"
+                    data-tour="topbar-assistant"
                     className={assistantOpen ? 'imcrm-bg-accent imcrm-text-primary' : 'imcrm-text-primary'}
                     onClick={assistantPanel.toggle}
                 >
@@ -137,6 +142,9 @@ export function Topbar({
                 {!isGuest && <WhatsNewButton className="imcrm-hidden sm:imcrm-flex" />}
 
                 {moduleEnabled('mentions') && <NotificationBell />}
+
+                {/* Fase 7 — Ayuda (a la derecha de la campana; en el teléfono, en el menú). */}
+                {!isGuest && <HelpTopbarButton />}
 
                 {/* v0.1.112 — claro ⇄ oscuro (en el teléfono vive en el menú
                     de la persona: la barra no tiene lugar para todo). */}

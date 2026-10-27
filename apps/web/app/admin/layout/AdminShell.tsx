@@ -20,6 +20,8 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 import { CHORD_TIMEOUT_MS, isTypingTarget, resolveGoChord } from '@/lib/shortcuts';
 
 const GlobalScanDialog = lazyWithReload(() => import('@/admin/scan/GlobalScanDialog'));
+// Fase 7 — centro de ayuda y recorridos (chunk propio: no pesa en la carga inicial).
+const HelpCenter = lazyWithReload(() => import('@/admin/help/HelpCenter').then((m) => ({ default: m.HelpCenter })));
 
 export function AdminShell(): JSX.Element {
     const [paletteOpen, setPaletteOpen] = useState(false);
@@ -164,6 +166,9 @@ export function AdminShell(): JSX.Element {
             <GettingStarted onCreateList={openCreateList} />
             {/* Fase 7 — panel de Novedades y diálogo de destacadas. */}
             <WhatsNewHost />
+            <Suspense fallback={null}>
+                <HelpCenter onShowShortcuts={openShortcuts} />
+            </Suspense>
         </div>
     );
 }

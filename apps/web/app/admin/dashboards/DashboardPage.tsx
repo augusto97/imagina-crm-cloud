@@ -471,6 +471,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                         }}
                         className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
                         aria-label={__('Período global')}
+                        data-tour="dashboard-period"
                         title={__('Período para todo el tablero: pisa el período de cada widget con campo de fecha')}
                     >
                         <option value="">{__('Cada widget con su período')}</option>
@@ -541,6 +542,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                             onClick={() => setShareTab(canEdit ? 'link' : 'email')}
                             title={__('Enlace público o envío programado por correo')}
                             data-testid="imcrm-dashboard-share"
+                            data-tour="dashboard-share"
                         >
                             <Share2 className="imcrm-h-4 imcrm-w-4" />
                             {__('Compartir')}
@@ -598,7 +600,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 </DropdownMenuContent>
                             </DropdownMenu>
                             {canEdit && (
-                                <Button size="sm" onClick={handleAddWidget} className="imcrm-gap-1.5 imcrm-whitespace-nowrap">
+                                <Button size="sm" onClick={handleAddWidget} className="imcrm-gap-1.5 imcrm-whitespace-nowrap" data-tour="dashboard-add-widget">
                                     <Plus className="imcrm-h-4 imcrm-w-4" />
                                     {__('Añadir widget')}
                                 </Button>

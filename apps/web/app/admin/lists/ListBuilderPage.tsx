@@ -18,6 +18,7 @@ import { ApprovalFlowsPanel } from '../approvals/ApprovalFlowsPanel';
 import { HelpdeskMailboxPanel } from '../helpdesk/HelpdeskMailboxPanel';
 import { HelpdeskSettingsPanel } from '../helpdesk/HelpdeskSettingsPanel';
 import { SlaPolicyPanel } from '../helpdesk/SlaPolicyPanel';
+import { HowItWorksLink } from '../help/HowItWorksLink';
 import { RecordTemplatesPanel } from '../records/templates/RecordTemplatesPanel';
 import { AppearancePanel } from './AppearancePanel';
 import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
@@ -32,6 +33,17 @@ import {
     resolveListSettingsSection,
     type ListSettingsSectionId,
 } from './listSettingsSections';
+
+/** Fase 7 — la guía de Ayuda que explica cada sección («¿Cómo funciona?»). */
+const SECTION_GUIDES: Partial<Record<ListSettingsSectionId, string>> = {
+    permisos: 'list-permissions',
+    compartir: 'portal',
+    formularios: 'forms',
+    documentos: 'documents',
+    agenda: 'booking',
+    aprobaciones: 'approvals',
+    correo: 'helpdesk',
+};
 
 /**
  * Configuración de una lista (v0.1.126).
@@ -195,9 +207,12 @@ export function ListBuilderPage(): JSX.Element {
                 )}
             >
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                    <h2 className="imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">
-                        {activeSection.title}
-                    </h2>
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2">
+                        <h2 className="imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">
+                            {activeSection.title}
+                        </h2>
+                        {SECTION_GUIDES[active] && <HowItWorksLink guideId={SECTION_GUIDES[active]} />}
+                    </div>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {activeSection.description}
                     </p>

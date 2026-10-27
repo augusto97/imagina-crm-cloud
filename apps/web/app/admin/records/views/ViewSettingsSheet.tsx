@@ -651,6 +651,7 @@ export function ViewSettingsSheet({
                                 <RowButton
                                     icon={Download}
                                     label={__('Exportar registros')}
+                                    tour="view-settings-export"
                                     value={__('CSV o JSON')}
                                     onClick={() => {
                                         onOpenChange(false);
@@ -697,6 +698,7 @@ export function ViewSettingsSheet({
                                 <RowButton
                                     icon={Wand2}
                                     label={__('Edición masiva')}
+                                    tour="view-settings-bulk-edit"
                                     value={__('Todo lo que coincide')}
                                     onClick={() => {
                                         onOpenChange(false);
@@ -708,6 +710,7 @@ export function ViewSettingsSheet({
                                 <RowButton
                                     icon={FileSpreadsheet}
                                     label={__('Actualizar desde un archivo')}
+                                    tour="view-settings-update-file"
                                     value={__('Por ID o SKU')}
                                     onClick={() => {
                                         onOpenChange(false);
@@ -741,6 +744,7 @@ export function ViewSettingsSheet({
                                 <RowButton
                                     icon={FileUp}
                                     label={__('Importar registros')}
+                                    tour="view-settings-import"
                                     value={__('CSV o Excel')}
                                     onClick={() => {
                                         onOpenChange(false);
@@ -861,6 +865,7 @@ function RowButton({
     onClick,
     expanded,
     danger,
+    tour,
 }: {
     icon: typeof Columns3;
     label: string;
@@ -868,12 +873,15 @@ function RowButton({
     onClick: () => void;
     expanded?: boolean;
     danger?: boolean;
+    /** Fase 7 — ancla de los recorridos. */
+    tour?: string;
 }): JSX.Element {
     return (
         <button
             type="button"
             onClick={onClick}
             aria-expanded={expanded}
+            data-tour={tour}
             className={cn(
                 'imcrm-flex imcrm-w-full imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-md imcrm-px-1 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent/30',
                 danger && 'imcrm-text-destructive hover:imcrm-bg-destructive/10',

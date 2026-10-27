@@ -161,7 +161,7 @@ export function AutomationsPage(): JSX.Element {
                     </div>
                 </div>
                 {/* v0.1.168 — la plantilla es la opción principal; "En blanco" la segunda. */}
-                <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-gap-2 imcrm-self-start">
+                <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-gap-2 imcrm-self-start" data-tour="automations-new">
                     <Button className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
                         <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
                         {__('Desde plantilla')}

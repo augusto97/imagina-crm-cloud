@@ -175,7 +175,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     const dnsMeta = report ? DNS_STATUS_META[report.status] : null;
 
     return (
-        <Card>
+        <Card data-tour={isPortal ? 'branding-portal-domain' : 'branding-domain'}>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
                     <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">

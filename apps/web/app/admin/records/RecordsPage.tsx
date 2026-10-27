@@ -1008,6 +1008,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                             size="sm"
                             onClick={() => setShareOpen(true)}
                             className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
+                            data-tour="records-share"
                         >
                             <Share2 className="imcrm-h-3.5 imcrm-w-3.5" />
                             {__('Compartir')}
@@ -1025,7 +1026,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     size="sm"
                                     className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
-                                    <Link to={`/lists/${list.data.slug}/automations`}>
+                                    <Link to={`/lists/${list.data.slug}/automations`} data-tour="records-automations">
                                         <Zap className="imcrm-h-3.5 imcrm-w-3.5" />
                                         {__('Automatizaciones')}
                                     </Link>
@@ -1038,7 +1039,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     size="sm"
                                     className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
-                                    <Link to={`/lists/${list.data.slug}/edit`}>
+                                    <Link to={`/lists/${list.data.slug}/edit`} data-tour="records-settings">
                                         <Settings className="imcrm-h-3.5 imcrm-w-3.5" />
                                         {__('Configurar lista')}
                                     </Link>
@@ -1058,6 +1059,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         size="icon"
                                         aria-label={__('Más acciones')}
                                         className="imcrm-h-7 imcrm-w-7 imcrm-rounded-md"
+                                        data-tour="records-more"
                                     >
                                         <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
                                     </Button>
@@ -1155,7 +1157,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                                 <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
                             )}
                             {/* Búsqueda angosta (200px) que crece al enfocar. */}
-                            <div className="imcrm-relative imcrm-min-w-0 imcrm-flex-1 imcrm-transition-[width] imcrm-duration-150 sm:imcrm-w-[200px] sm:imcrm-flex-none sm:focus-within:imcrm-w-[240px]">
+                            <div
+                                className="imcrm-relative imcrm-min-w-0 imcrm-flex-1 imcrm-transition-[width] imcrm-duration-150 sm:imcrm-w-[200px] sm:imcrm-flex-none sm:focus-within:imcrm-w-[240px]"
+                                data-tour="records-search"
+                            >
                                 <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                                 <Input
                                     value={state.search}
@@ -1206,6 +1211,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
                                     aria-label={__('Personalizar vista')}
                                     title={__('Personalizar vista')}
+                                    data-tour="records-customize"
                                 >
                                     <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
                                 </Button>
@@ -1223,6 +1229,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         disabled={!fields.data || fields.data.length === 0}
                                         className={cn('imcrm-shrink-0 imcrm-gap-1.5', recordTemplates.length > 0 && 'imcrm-rounded-r-none')}
                                         aria-label={__('Nuevo registro')}
+                                        data-tour="records-new"
                                     >
                                         <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                                         <span className="imcrm-hidden sm:imcrm-inline">{__('Nuevo registro')}</span>

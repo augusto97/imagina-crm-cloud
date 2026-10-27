@@ -1311,7 +1311,7 @@ function GroupBucketSection({
                             {...grid.containerProps}
                         >
                         <GridEditContext.Provider value={grid.editStore}>
-                        <table className={tableClassName} style={tableStyle} aria-label={labelText}>
+                        <table className={tableClassName} style={tableStyle} aria-label={labelText} data-tour="records-table">
                             {colGroup}
                             <tbody>
                                 {windowed.paddingTop > 0 && (
@@ -1379,6 +1379,7 @@ function GroupBucketSection({
                                                         key={c.id}
                                                         data-cell={`${index}:${ci}`}
                                                         data-active={grid.active?.row === index && grid.active.col === ci ? 'true' : undefined}
+                                                        data-tour={ci === 0 && index === 0 && onRowClick ? 'records-row' : undefined}
                                                         style={{
                                                             width: w,
                                                             maxWidth: w,

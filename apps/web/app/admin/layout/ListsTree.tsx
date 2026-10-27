@@ -190,7 +190,7 @@ export const ListsTree = memo(function ListsTree({
     );
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-tour="panel-lists">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-px-2.5 imcrm-pb-1">
                 <h3 className="imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.1em] imcrm-text-muted-foreground">
                     {__('Espacio de trabajo')}
@@ -202,6 +202,7 @@ export const ListsTree = memo(function ListsTree({
                             title={__('Nueva lista')}
                             aria-label={__('Nueva lista')}
                             data-testid="panel-new-list"
+                            data-tour="panel-new-list"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setCreateListOpen(true);

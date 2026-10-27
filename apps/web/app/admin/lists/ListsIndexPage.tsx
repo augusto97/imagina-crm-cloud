@@ -172,7 +172,7 @@ export function ListsIndexPage(): JSX.Element {
                     </p>
                 </div>
                 {canCreateList && (
-                    <Button className="imcrm-gap-1.5" onClick={() => setDialog({})}>
+                    <Button className="imcrm-gap-1.5" onClick={() => setDialog({})} data-tour="lists-new">
                         <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Nueva lista')}
                     </Button>
@@ -380,7 +380,7 @@ function ListsEmpty({
             action={
                 canCreate ? (
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-2">
-                        <Button onClick={onCreate} className="imcrm-gap-2">
+                        <Button onClick={onCreate} className="imcrm-gap-2" data-tour="lists-new">
                             <Plus className="imcrm-h-4 imcrm-w-4" />
                             {__('Nueva lista')}
                         </Button>

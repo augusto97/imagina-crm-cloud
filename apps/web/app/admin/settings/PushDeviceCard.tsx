@@ -72,7 +72,7 @@ export function PushDeviceCard(): JSX.Element {
     };
 
     return (
-        <Card data-testid="push-device-card">
+        <Card data-testid="push-device-card" data-tour="push-card">
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-pt-4">
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
                     <span

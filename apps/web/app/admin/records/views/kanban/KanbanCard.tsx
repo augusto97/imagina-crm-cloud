@@ -106,6 +106,7 @@ function KanbanCardImpl({
             onClick={() => onOpen(record)}
             data-testid="imcrm-kanban-card"
             data-record-id={record.id}
+            data-tour="records-row"
             style={{ contentVisibility: 'auto', containIntrinsicSize: compact ? 'auto 64px' : 'auto 110px' }}
             className={cn(
                 'imcrm-group imcrm-relative imcrm-cursor-pointer imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm imcrm-transition-[box-shadow,border-color,opacity] imcrm-duration-150',

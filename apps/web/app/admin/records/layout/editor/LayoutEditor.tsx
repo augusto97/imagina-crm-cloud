@@ -4,6 +4,7 @@ import { ArrowLeft, Check, LayoutTemplate, Loader2, Monitor, Redo2, RotateCcw, S
 import type { RecordLayoutV3 } from '@imagina-base/shared';
 
 import { RecordSelector } from '@/admin/lists/template-editor/RecordSelector';
+import { HowItWorksLink } from '@/admin/help/HowItWorksLink';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -260,6 +261,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                                 </IconButton>
                             </div>
                             <div className="imcrm-ml-auto imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                                <HowItWorksLink guideId={portal ? 'portal' : 'record-design'} />
                                 <ThemeToggle compact />
                                 <div className="imcrm-flex imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-0.5" role="group" aria-label={__('Vista previa')}>
                                     <DeviceButton active={device === 'desktop'} onClick={() => setDevice('desktop')} label={__('Escritorio')}>

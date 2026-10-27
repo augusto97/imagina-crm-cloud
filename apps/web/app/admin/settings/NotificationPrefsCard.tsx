@@ -35,7 +35,7 @@ export function NotificationPrefsCard(): JSX.Element {
         });
 
     return (
-        <section className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="notification-prefs">
+        <section className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="notification-prefs" data-tour="notification-prefs">
             <div>
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Avisos')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">

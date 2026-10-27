@@ -197,7 +197,7 @@ export function ViewsTabs({
         // navegador dibujaba una barra vertical diminuta en el borde derecho
         // de esta fila (v0.1.124). La tira de pestañas sólo scrollea en
         // horizontal.
-        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border">
+        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border" data-tour="records-views">
             <ViewTab
                 label={__('Todos')}
                 active={activeViewId === null}
@@ -475,6 +475,7 @@ export function ViewsTabs({
                 title={__('Guardar filtros, ordenamiento y columnas como una vista nombrada')}
                 className="imcrm-flex imcrm-h-8 imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
                 aria-label={__('Crear vista nueva')}
+                data-tour="records-new-view"
             >
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                 {__('Vista')}
