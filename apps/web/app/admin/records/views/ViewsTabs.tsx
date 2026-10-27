@@ -483,7 +483,7 @@ export function ViewsTabs({
             )}
 
             {isDirty && activeView !== null && !(canManage && canWriteView(activeView)) && (
-                <div className="imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-pl-3">
+                <div className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-bg-background imcrm-pl-3">
                     <span className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground">
                         <ShieldCheck className="imcrm-h-3 imcrm-w-3" />
                         {__('Vista protegida: tus cambios no se guardan')}
@@ -512,7 +512,7 @@ export function ViewsTabs({
             )}
 
             {isDirty && activeView !== null && canManage && canWriteView(activeView) && (
-                <div className="imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-pl-3">
+                <div className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-bg-background imcrm-pl-3">
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cambios sin guardar')}</span>
                     <Button
                         size="sm"
@@ -537,7 +537,7 @@ export function ViewsTabs({
             )}
 
             {isDirty && activeView === null && !isGuest && (
-                <div className="imcrm-ml-auto imcrm-shrink-0 imcrm-pl-3">
+                <div className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-ml-auto imcrm-shrink-0 imcrm-bg-background imcrm-pl-3">
                     <Button
                         size="sm"
                         variant="outline"
