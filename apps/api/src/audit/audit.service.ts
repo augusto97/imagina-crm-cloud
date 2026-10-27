@@ -176,7 +176,13 @@ export type AuditAction =
     | 'ai_agent.create'
     | 'ai_agent.update'
     | 'ai_agent.delete'
-    | 'ai_agent.trigger_add';
+    | 'ai_agent.trigger_add'
+    // F7 (ADR-S72) — «Empezar fácil»: el pedido único a la IA (con su
+    // consentimiento en línea), lo que se creó con la bienvenida y el borrado
+    // de los datos de ejemplo.
+    | 'onboarding.ai_request'
+    | 'onboarding.apply'
+    | 'onboarding.samples_delete';
 
 export interface AuditEntryDto {
     id: number;

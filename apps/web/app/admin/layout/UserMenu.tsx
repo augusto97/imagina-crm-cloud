@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Download, Keyboard, LogOut, Moon, Settings, Sun, UserRound } from 'lucide-react';
+import { Download, Keyboard, ListChecks, LogOut, Moon, Settings, Sun, UserRound } from 'lucide-react';
 
 import { roleLabel, useWorkspaces } from '@/cloud/workspaceSwitch';
 import { useSession } from '@/cloud/session';
@@ -12,6 +12,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { help, useHelpAvailability } from '@/admin/help/helpBus';
 import { __ } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 import { InstallAppDialog } from '@/components/pwa/InstallAppDialog';
@@ -34,6 +35,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
     const theme = useTheme();
     const installMode = useInstallMode();
     const [iosHelp, setIosHelp] = useState(false);
+    const helpAvailable = useHelpAvailability();
     if (!user) return null;
     const displayName = user.name.trim() !== '' ? user.name : user.email;
     const isDark = theme.resolved === 'dark';
@@ -135,6 +137,16 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                     >
                         <Download className="imcrm-h-4 imcrm-w-4" />
                         {__('Instalar la app')}
+                    </DropdownMenuItem>
+                )}
+                {helpAvailable.gettingStarted && (
+                    <DropdownMenuItem
+                        // Después de que el menú suelte el foco: el panel se abre ya con el menú cerrado.
+                        onSelect={() => window.setTimeout(() => help.openGettingStarted(), 0)}
+                        data-testid="user-menu-getting-started"
+                    >
+                        <ListChecks className="imcrm-h-4 imcrm-w-4" />
+                        {__('Primeros pasos')}
                     </DropdownMenuItem>
                 )}
                 {onShowShortcuts && (

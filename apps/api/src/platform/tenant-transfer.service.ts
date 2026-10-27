@@ -2280,6 +2280,10 @@ export class TenantTransferService {
         // plataforma, y el id de la conexión de almacenamiento cambia al
         // importar: la empresa vuelve a elegirlo en Ajustes → Almacenamiento.
         delete out.storage;
+        // F7 (ADR-S72) — los datos de ejemplo y las automatizaciones que creó
+        // la bienvenida se recuerdan por id: al importar los ids cambian y
+        // «Borrar los datos de ejemplo» apuntaría a otras filas.
+        delete out.onboarding;
         if (sameKey) return out;
         const smtp = out.smtp;
         if (smtp !== null && typeof smtp === 'object') {

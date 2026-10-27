@@ -26,6 +26,10 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'template.create': { text: 'guardó la plantilla' },
     'template.delete': { text: 'borró la plantilla', danger: true },
     'template.apply': { text: 'creó desde una plantilla la lista' },
+    // F7 — bienvenida de una empresa nueva.
+    'onboarding.ai_request': { text: 'aceptó enviar la descripción de su negocio a la IA para armar el espacio' },
+    'onboarding.apply': { text: 'armó el espacio con la bienvenida:' },
+    'onboarding.samples_delete': { text: 'borró los datos de ejemplo de' },
     // C6 — plantillas de registro (y de checklist) de una lista.
     'record_template.create': { text: 'creó la plantilla de registro' },
     'record_template.update': { text: 'cambió la plantilla de registro' },

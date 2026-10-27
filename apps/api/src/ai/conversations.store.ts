@@ -58,6 +58,14 @@ export class ConversationsStore {
         conv.messages = trimHistory(conv.messages, MAX_HISTORY_MESSAGES);
         conv.updated_at = new Date().toISOString();
         await this.redis.set(this.key(conv.tenantId, conv.userId, conv.id), JSON.stringify(conv), 'EX', CONVERSATION_TTL_SECONDS);
+        // F7 — «Primeros pasos»: la persona ya le preguntó algo al asistente.
+        // Una marca sin vencimiento (las conversaciones duran 24 h).
+        await this.redis.set(usedKey(conv.tenantId, conv.userId), '1');
+    }
+
+    /** F7 — ¿Esta persona ya habló con el asistente en esta empresa? */
+    async hasUsed(tenantId: number, userId: number): Promise<boolean> {
+        return (await this.redis.exists(usedKey(tenantId, userId))) === 1;
     }
 
     /** Refleja en el transcript que una propuesta se aplicó (la tarjeta cambia de estado al recargar). */
@@ -69,6 +77,10 @@ export class ConversationsStore {
         }
         await this.save(conv);
     }
+}
+
+function usedKey(tenantId: number, userId: number): string {
+    return `aiconv:used:${tenantId}:${userId}`;
 }
 
 /**

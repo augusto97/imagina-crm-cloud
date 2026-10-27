@@ -9596,6 +9596,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto la fase 6 queda completa.**
 
+- [ ] **Fase 7 — que la app se entienda sola** (pedido del usuario: "quiero
+      que la app sea súper fácil de entender, usar y comprender"; tres entregas
+      publicables por separado, unidas por el contrato `helpBus`
+      (`apps/web/app/admin/help/helpBus.ts`): empezar fácil, guías y recorridos
+      interactivos, y novedades):
+  - [x] **Empezar fácil: bienvenida, datos de ejemplo y «Primeros pasos»
+        (v0.1.318, ADR-S72, opción F7 del estudio)**: una empresa sin listas ya
+        no cae en un estado vacío sino en **«Armemos tu espacio»**, con tres
+        caminos. (a) **«Cuéntanos de tu negocio»**: la persona describe su
+        negocio (ejemplos clicables, qué quiere organizar primero, tamaño del
+        equipo) y la IA arma una propuesta COMPLETA con el blueprint de las
+        plantillas —listas vinculadas, campos bien tipados, kanban y
+        calendario, un tablero, 1-3 automatizaciones y datos de ejemplo—. Se
+        revisa antes de crear: se quitan listas, campos, vistas,
+        automatizaciones o el tablero y lo que dependía de eso cae solo,
+        calculado con la MISMA función pura que usa el servidor
+        (`pruneBlueprint`, shared); se renombran listas, se nombra la carpeta y
+        se decide si van los ejemplos. Es UN pedido de la cuota con la misma
+        resolución que el asistente (clave de la plataforma con cuota del plan
+        o la propia; modelo y esfuerzo de siempre) y no exige el opt-in del
+        asistente porque trae su propio **consentimiento en línea**, que queda
+        en la bitácora sin el texto. Lo que escribe la persona viaja como dato
+        aislado; el modelo tiene una sola herramienta que entrega la propuesta
+        (nada escribe), validada con el constructor de `propose_create_list`
+        y el schema del blueprint, con un reintento con los errores; corre en
+        segundo plano y el navegador consulta su estado. Sin IA disponible, la
+        opción se ve deshabilitada con el motivo y el camino por plantillas
+        pasa a ser el recomendado. (b) **«Elegir por tipo de negocio»**: las
+        plantillas del sistema en 8 tipos, **combinables** (`combineBlueprints`
+        renombra lo que choca). (c) **«Empezar en blanco»**. Todo se crea con
+        `BlueprintService.materialize`, en una carpeta si hay más de una lista,
+        y lleva a la primera lista (arranca el recorrido de bienvenida si
+        existe; si no, «Primeros pasos»). Quien no puede crear listas ve a quién
+        pedírselo. **Datos de ejemplo** recordados en
+        `tenants.settings.onboarding`: una franja en la lista los manda a la
+        papelera con el borrado en lote de la app (con Deshacer) y se va sola.
+        **«Primeros pasos»**: botón flotante con anillo de avance
+        (`data-tour="getting-started"`, registra `openGettingStarted`) con
+        pasos de admin y del resto del equipo que se detectan SOLOS con datos
+        reales (la papelera no cuenta); cada paso con «Hacerlo», «Muéstrame»
+        (sólo si existe el recorrido) y «Saltar»; se oculta y vuelve desde el
+        menú de la persona, celebra al terminar y se oculta solo; estado por
+        persona en `memberships.settings.onboarding` con un PATCH que mezcla;
+        «Agrega más con IA» crea lo nuevo sin tocar lo existente. Invitados y
+        clientes del portal no ven nada de esto. La bienvenida se carga a
+        pedido. Sin migración. Bugs atrapados en el E2E: «Hacerlo» de la
+        primera lista no hacía nada con la bienvenida descartada, una creación
+        fallida dejaba una carpeta vacía y en el celular había dos botones de
+        crear. 16 tests de API (suite completa 1658 en verde), 6 del front y 10
+        de shared + E2E navegador 66/66 y 14/14 con un proveedor de IA simulado
+        (escritorio, celular y oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

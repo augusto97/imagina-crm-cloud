@@ -67,6 +67,13 @@ aquí, pospuestos:
   Sheets ya tiene el permiso `spreadsheets` (lectura y escritura): no hace falta
   pedir uno nuevo a Google.
 
+**Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
+con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
+I9 pasan a la fase 7 y salen de este banco al publicarse). Siguen aquí, sin
+elegir: E1 + E2 + E3 (automatizaciones completas), A14 (duplicados y
+fusionar), F1 + F2 + E7 + mejoras de agentes (IA en el día a día) y G4
+(calendario en dos sentidos).
+
 ---
 
 ## 3. Todas las ideas pendientes, por área
@@ -129,7 +136,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | F4 · Preguntas sobre los datos que arman el widget del tablero | medio · M | |
 | F5 · Notas de voz a texto | medio · M | |
 | F6 · Búsqueda por significado (embeddings, pgvector) | medio · L | |
-| F7 · «Describe tu negocio» al empezar (flujo guiado de bienvenida) | alto (activación) · M | |
 
 ### G. Integraciones y ecosistema
 | Idea | Valor · esfuerzo | Nota |
@@ -213,6 +219,10 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada
   (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
   administre push; llenar con la cámara otros campos además del «Código».
+- **Empezar fácil (v0.1.318)**: llevar el registro de datos de ejemplo en la
+  migración de empresa (hoy, tras migrar, quedan como datos normales); que los
+  toasts no tapen el botón flotante de «Primeros pasos»; reusar `TemplateCard`
+  en la galería por tipo de negocio.
 - **Agentes de IA (v0.1.317)**: un botón «Pedir al agente» en la ficha (hoy
   sólo trabaja cuando lo llama una automatización); correr un agente en lote
   sobre registros que ya existen; memoria entre corridas (hoy cada corrida

@@ -78,6 +78,6 @@ import { StructureTools } from './tools/structure-tools';
         McpService,
         OauthService,
     ],
-    exports: [AiSettingsService, AiQuotaService, AiToolRegistry, AssistantService, ProposalsService],
+    exports: [AiSettingsService, AiQuotaService, AiToolRegistry, AssistantService, ProposalsService, StructureTools, ConversationsStore],
 })
 export class AiModule {}

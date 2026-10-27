@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
     AlertCircle,
@@ -13,6 +13,7 @@ import {
     Pin,
     Plus,
     Search,
+    Sparkles,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,8 @@ import { ViewSwitch } from '@/components/ui/view-switch';
 import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
+import { useOnboardingStatus, useUpdateOnboardingPrefs } from '@/hooks/useOnboarding';
+import { useIsGuest } from '@/lib/guest';
 import { matchesListQuery, sectionsByFolder } from '@/lib/folderSections';
 import { __, sprintf } from '@/lib/i18n';
 import { DEFAULT_LIST_ICON } from '@/lib/listIcons';
@@ -32,9 +35,13 @@ import { usePersistedChoice } from '@/lib/usePersistedChoice';
 import { parseUtcDate } from '@/lib/utcDate';
 import type { ListGroup, ListSummary } from '@/types/list';
 import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { useFinishWelcome } from '@/admin/onboarding/useFinishWelcome';
 
 import { FolderSquare, IconSquare } from './FolderBadge';
 import { CardGrid, ListCard } from './ListCard';
+
+// F7 — la bienvenida sólo la ve una empresa sin listas: se baja a pedido.
+const WelcomeFlow = lazy(() => import('@/admin/onboarding/WelcomeFlow').then((m) => ({ default: m.WelcomeFlow })));
 
 type IndexView = 'folders' | 'all';
 const VIEW_KEY = 'imcrm:lists-index:view';
@@ -63,8 +70,12 @@ export function ListsIndexPage(): JSX.Element {
     const favorites = useFavorites();
     const updateFavorites = useUpdateFavorites();
     const canCreateList = useCan(CAP.MANAGE_LISTS);
+    const isGuest = useIsGuest();
+    const onboarding = useOnboardingStatus(!isGuest);
+    const updatePrefs = useUpdateOnboardingPrefs();
+    const finishWelcome = useFinishWelcome();
 
-    const [dialog, setDialog] = useState<{ group?: ListGroup } | null>(null);
+    const [dialog, setDialog] = useState<{ group?: ListGroup; blank?: boolean } | null>(null);
     const [query, setQuery] = useState('');
     const [view, setView] = usePersistedChoice<IndexView>(VIEW_KEY, ['folders', 'all'], 'folders');
     const [collapsed, setCollapsed] = useState<number[]>(readCollapsed);
@@ -112,6 +123,30 @@ export function ListsIndexPage(): JSX.Element {
 
     const togglePin = (id: number): void => updateFavorites.mutate(toggledFavorites(favs, 'lists', id));
     const searching = query.trim() !== '';
+
+    // F7 (ADR-S72) — una empresa sin listas, con alguien que puede crearlas:
+    // en vez del estado vacío, la bienvenida «Armemos tu espacio».
+    const noLists = !lists.isLoading && !lists.isError && allLists.length === 0;
+    if (noLists && canCreateList && onboarding.isLoading) {
+        return <SkeletonGrid />;
+    }
+    if (noLists && canCreateList && onboarding.data?.welcome) {
+        return (
+            <>
+                <Suspense fallback={<SkeletonGrid />}>
+                    <WelcomeFlow
+                        variant="page"
+                        onCreated={finishWelcome}
+                        onBlank={() => {
+                            updatePrefs.mutate({ welcome_dismissed: true });
+                            setDialog({ blank: true });
+                        }}
+                    />
+                </Suspense>
+                {dialog !== null && <ListCreateDialog open onOpenChange={(o) => !o && setDialog(null)} initialMode="blank" />}
+            </>
+        );
+    }
 
     const card = (l: ListSummary, showFolder: boolean): JSX.Element => (
         <ListCard
@@ -185,7 +220,11 @@ export function ListsIndexPage(): JSX.Element {
             {lists.isLoading ? (
                 <SkeletonGrid />
             ) : allLists.length === 0 ? (
-                <ListsEmpty onCreate={() => setDialog({})} />
+                <ListsEmpty
+                    onCreate={() => setDialog({})}
+                    adminName={onboarding.data?.admin_name ?? null}
+                    onShowWelcome={onboarding.data ? () => updatePrefs.mutate({ welcome_dismissed: false }) : undefined}
+                />
             ) : (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
@@ -300,6 +339,7 @@ export function ListsIndexPage(): JSX.Element {
                     onOpenChange={(o) => !o && setDialog(null)}
                     groupId={dialog.group?.id}
                     groupName={dialog.group?.name}
+                    initialMode={dialog.blank ? 'blank' : undefined}
                 />
             )}
         </div>
@@ -316,7 +356,15 @@ function SkeletonGrid(): JSX.Element {
     );
 }
 
-function ListsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
+function ListsEmpty({
+    onCreate,
+    adminName,
+    onShowWelcome,
+}: {
+    onCreate: () => void;
+    adminName: string | null;
+    onShowWelcome?: () => void;
+}): JSX.Element {
     const canCreate = useCan(CAP.MANAGE_LISTS);
     return (
         <EmptyState
@@ -325,14 +373,24 @@ function ListsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
             description={
                 canCreate
                     ? __('Crea tu primera lista para empezar a cargar registros.')
-                    : __('Tu rol no tiene listas asignadas todavía. Contacta al administrador.')
+                    : adminName
+                      ? sprintf(__('Pídele a %s que cree la primera lista. Cuando la cree, aparecerá aquí.'), adminName)
+                      : __('Pídele a quien administra tu empresa que cree la primera lista. Cuando la cree, aparecerá aquí.')
             }
             action={
                 canCreate ? (
-                    <Button onClick={onCreate} className="imcrm-gap-2">
-                        <Plus className="imcrm-h-4 imcrm-w-4" />
-                        {__('Nueva lista')}
-                    </Button>
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-2">
+                        <Button onClick={onCreate} className="imcrm-gap-2">
+                            <Plus className="imcrm-h-4 imcrm-w-4" />
+                            {__('Nueva lista')}
+                        </Button>
+                        {onShowWelcome && (
+                            <Button variant="outline" onClick={onShowWelcome} className="imcrm-gap-2" data-testid="lists-show-welcome">
+                                <Sparkles className="imcrm-h-4 imcrm-w-4" />
+                                {__('Armar mi espacio con ayuda')}
+                            </Button>
+                        )}
+                    </div>
                 ) : undefined
             }
         />

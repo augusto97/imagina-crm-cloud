@@ -26,6 +26,8 @@ interface ListCreateDialogProps {
      */
     groupId?: number;
     groupName?: string;
+    /** F7 — «Empezar en blanco» desde la bienvenida abre directo en blanco. */
+    initialMode?: Mode;
 }
 
 type Mode = 'blank' | 'template' | 'duplicate';
@@ -37,16 +39,16 @@ type Mode = 'blank' | 'template' | 'duplicate';
  * existe. El diálogo se ensancha en la galería: con dos columnas de
  * plantillas y la vista previa al lado, un modal angosto no sirve.
  */
-export function ListCreateDialog({ open, onOpenChange, groupId, groupName }: ListCreateDialogProps): JSX.Element {
+export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initialMode = 'template' }: ListCreateDialogProps): JSX.Element {
     // v0.1.168 — la plantilla es la PRIMERA opción y la que se abre por
     // defecto (pedido del usuario); "En blanco" queda segunda.
-    const [mode, setMode] = useState<Mode>('template');
+    const [mode, setMode] = useState<Mode>(initialMode);
     const navigate = useNavigate();
     const toast = useToast();
 
     useEffect(() => {
-        if (!open) setMode('template');
-    }, [open]);
+        if (!open) setMode(initialMode);
+    }, [open, initialMode]);
 
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>

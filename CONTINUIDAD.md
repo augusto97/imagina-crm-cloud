@@ -364,9 +364,40 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.317** (agentes de IA; con ellos la fase 6 queda completa), en `main`.
+versión publicada: **v0.1.318** (empezar fácil, primera entrega de la fase 7), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-26 — **Fase 7 en marcha: «hacer la app súper fácil de entender»**
+  ("por el momento me interesa el «empezar fácil»… tutoriales, guías
+  interactivas, un paso a paso… dándole un tour al usuario y guiando por toda
+  la app… que los usuarios sepan de las novedades… y de las funcionalidades
+  nuevas que acabo de implementar… tutoriales de acceso rápido"). Del resto de
+  la propuesta (automatizaciones completas, duplicados, IA en el día a día,
+  calendario en dos sentidos) no eligió nada por ahora: sigue en
+  `docs/ideas.md`. Tres entregas en paralelo sobre el contrato común
+  `apps/web/app/admin/help/helpBus.ts` (commit `ff47cbe`): (1) **Empezar
+  fácil** (F7: «Cuéntanos de tu negocio» con IA + por tipo de negocio + datos
+  de ejemplo borrables + «Primeros pasos» que se detectan solos; slot 1,
+  `imagina_slot_7a`); (2) **Guías y recorridos** (I7 ampliada: motor de
+  recorridos propio, recorrido de bienvenida por rol, recorridos por tarea,
+  panel «Ayuda» con 35-50 guías «¿Cómo hago…?», guías en Ctrl+K y Plataforma →
+  Ayuda con contacto de soporte, video por guía y guías propias del operador;
+  slot 2, `imagina_slot_7b`); (3) **Novedades** (catálogo en código que viaja
+  con cada versión + entradas del operador en Plataforma → Novedades, panel,
+  destacadas y franja de avisos, I9; migración 0092; slot 3,
+  `imagina_slot_7c`). Decisiones tomadas por defecto (se pueden cambiar): el
+  armado con IA cuenta como UN pedido de la cuota y lleva consentimiento en
+  línea (no activa el asistente de la empresa); los videos los pega el
+  operador (YouTube/Vimeo/Loom) porque no se pueden producir aquí; ningún
+  texto de ayuda dice «Imagina Base» (white-label). Al integrar: **regla nueva
+  del ritual** — cada versión con cambios visibles agrega su novedad al
+  catálogo, y las guías/recorridos se mantienen al día (un test detecta anclas
+  rotas). Briefs en la carpeta temporal de la sesión (`brief-f7-*-full.md`).
+  **Avance**: el contenedor se reinició a mitad de camino; el trabajo estaba en
+  disco (se respaldó con commits `wip` en cada worktree) y las tres entregas se
+  retomaron. **Empezar fácil publicada en v0.1.318** (sin migración). Novedades
+  terminada (migración 0092, ADR que se numera al publicarla); guías y
+  recorridos en curso.
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
   («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
   facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
@@ -733,6 +764,17 @@ versión publicada: **v0.1.317** (agentes de IA; con ellos la fase 6 queda compl
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.318** — **Empezar fácil** (ADR-S72, opción F7; primera
+  entrega de la fase 7). Una empresa sin listas ve «Armemos tu espacio»: la IA
+  arma una propuesta con el blueprint de las plantillas, que se revisa y edita
+  antes de crear (lo que depende de algo quitado cae solo, con la misma función
+  en el navegador y el servidor); o se combinan plantillas por tipo de negocio;
+  o se empieza en blanco. Los datos de ejemplo se borran con un clic (papelera
+  + Deshacer). «Primeros pasos» se marca solo con datos reales, por persona. Es
+  UN pedido de IA con consentimiento en línea (no activa el asistente de la
+  empresa). Sin migración. Pendientes: la migración de empresa no lleva el
+  registro de ejemplos (ids nuevos) y los toasts tapan el botón flotante
+  mientras se ven.
 - **2026-10-26 · v0.1.317** — **Agentes de IA** (ADR-S71, opción E6; única
   entrega de la fase 6 → **fase 6 completa**). Agentes con instrucciones,
   listas, herramientas curadas y modo «propone» (por defecto) o «hace».

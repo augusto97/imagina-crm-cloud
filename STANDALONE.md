@@ -4305,4 +4305,53 @@ agente.
 
 ---
 
-**Versión del documento:** 1.114.0 (agentes de IA)
+### ADR-S72 — Empezar fácil: bienvenida, datos de ejemplo y «Primeros pasos» (v0.1.318)
+
+**Contexto.** Una empresa nueva caía en un índice de listas vacío y tenía que
+entender sola qué es una lista, un campo y una vista. El usuario pidió que la
+app sea fácil de entender desde el primer minuto (fase 7).
+
+**Decisión.**
+1. **Bienvenida.** Una empresa sin listas, vista por alguien con `manage_lists`,
+   recibe tres caminos: descripción en lenguaje natural con IA, plantillas del
+   sistema combinables por tipo de negocio, o en blanco. Se vuelve a abrir
+   desde «Primeros pasos» («Agrega más») y crea lo nuevo aparte, sin tocar lo
+   existente.
+2. **Un solo motor.** Todo se crea con `BlueprintService.materialize`. La IA no
+   inventa otro formato: devuelve un vocabulario reducido que pasa por
+   `StructureTools.buildCreateListBlueprint` (el de `propose_create_list`) y por
+   `listBlueprintSchema`. Quitar algo en la vista previa usa `pruneBlueprint`
+   (shared, puro), la misma función en el navegador y en el servidor, con
+   cascada (relación hacia una lista quitada, lookup/rollup, vista agrupada,
+   automatización, widget, valores de ejemplo).
+3. **IA: datos, costo y consentimiento.** Misma resolución que el asistente
+   (ADR-S21/S60/S61), UN pedido de la cuota aunque haya reintento, tope de
+   salida acotado. El asistente exige el opt-in de la empresa; este pedido
+   único no (`resolve(…, { requireOptIn: false })`) porque lleva consentimiento
+   en línea («Lo que escribas aquí se envía al proveedor de IA… No se envían
+   registros. No activa el asistente para la empresa.»), registrado en la
+   bitácora sin el texto. Lo que escribe la persona es DATO (delimitado y
+   neutralizado, como ADR-S41). El modelo tiene una sola herramienta que
+   entrega la propuesta y no escribe nada; la propuesta se valida y, si falla,
+   hay un reintento con los errores. Corre en segundo plano con estado en Redis
+   (2 h) y candado contra la doble creación.
+4. **Datos de ejemplo.** Se recuerdan por id en `tenants.settings.onboarding`
+   (lista → ids, más las automatizaciones sembradas, que no cuentan como
+   «tuyas»). Borrarlos es el borrado en lote de la app (papelera, historial,
+   Deshacer). No viajan en la migración de empresa: los ids cambian.
+5. **«Primeros pasos».** El servidor calcula cada paso con datos reales de la
+   empresa y la persona (la papelera no cuenta). Sólo «Mi trabajo» y «usar la
+   app instalada» se marcan a mano, porque no dejan datos. Preferencias en
+   `memberships.settings.onboarding` con un PATCH que mezcla. Invitados y
+   clientes no los ven; `/onboarding/*` no lleva `@AllowGuest`.
+6. **Contrato de la fase 7.** Registra `openGettingStarted` en el `helpBus`,
+   ancla `data-tour="getting-started"` y sólo ofrece «Muéstrame» si
+   `hasTour(id)`. Funciona sola.
+
+**Consecuencias.** Sin migración ni dependencias nuevas, y sin cambios en el
+MCP. La bienvenida se carga a pedido. Una propuesta mal armada nunca llega a la
+base: o valida o se ofrece el camino por plantillas.
+
+---
+
+**Versión del documento:** 1.115.0 (empezar fácil)

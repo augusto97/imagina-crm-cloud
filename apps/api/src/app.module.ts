@@ -4,6 +4,7 @@ import { AggregateModule } from './aggregate/aggregate.module';
 import { AiModule } from './ai/ai.module';
 import { AgentHubModule } from './ai-agents/agent-hub';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { HelpdeskModule } from './helpdesk/helpdesk.module';
@@ -164,6 +165,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         HelpdeskModule,
         // E6 — agentes de IA.
         AiAgentsModule,
+        // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.
+        OnboardingModule,
     ],
 })
 export class AppModule {}

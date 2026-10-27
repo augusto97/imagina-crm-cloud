@@ -46,6 +46,6 @@ import { DependenciesService } from './dependencies.service';
         DependenciesRepository,
         DependenciesService,
     ],
-    exports: [RecordsService, BulkHistoryService, BulkEditService, DependenciesService, DependenciesRepository, RecordsRepository],
+    exports: [RecordsService, BulkHistoryService, BulkEditService, BulkStructureService, DependenciesService, DependenciesRepository, RecordsRepository],
 })
 export class RecordsModule {}

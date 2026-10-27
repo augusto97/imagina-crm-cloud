@@ -476,7 +476,7 @@ const viewSpec = z.object({
 });
 type ViewSpec = z.infer<typeof viewSpec>;
 
-const listSpec = z.object({
+export const listSpec = z.object({
     key: z.string().min(1).max(63).optional().describe('Clave para referenciar esta lista desde otra del mismo pedido (relation_to). Default: el slug del nombre.'),
     name: z.string().min(1).max(190),
     icon: z.string().max(64).optional().describe('Icono del catálogo (briefcase, receipt, users, calendar, rocket, clipboard, building, wallet, flag, star…)'),
@@ -504,7 +504,7 @@ const listSpec = z.object({
         .optional()
         .describe('Registros de ejemplo como {slug: valor}. Sólo si la persona los pidió.'),
 });
-type ListSpec = z.infer<typeof listSpec>;
+export type ListSpec = z.infer<typeof listSpec>;
 
 const AI_WIDGET_TYPES = ['kpi', 'gauge', 'stat_delta', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'heading', 'text'] as const;
 
@@ -1394,6 +1394,46 @@ export class StructureTools implements AiProposalApplier {
     // ── Propuestas ───────────────────────────────────────────────────────
 
     private async proposeCreateList(ctx: AiToolContext, input: { lists: ListSpec[] }): Promise<AiToolResult> {
+        const blueprint = await this.buildCreateListBlueprint(ctx, input.lists);
+        const packLists = blueprint.lists;
+        const includeRecords = packLists.some((l) => l.records.length > 0);
+        const preview: Partial<AiProposalPreview> = {
+            lists: packLists.map((l) => ({
+                name: l.name,
+                fields: l.fields.map((f) => ({ label: f.label, type: f.type })),
+                views: l.views.map((v) => ({ name: v.name, type: v.type })),
+                automations: l.automations.map((a) => a.name),
+                records_count: l.records.length,
+            })),
+            fields: [],
+            widgets: [],
+            automation: null,
+            changes: [],
+        };
+        const names = packLists.map((l) => `«${l.name}»`).join(' y ');
+        return this.saveProposal(ctx, {
+            kind: 'create_list',
+            title: packLists.length === 1 ? `Crear la lista ${names}` : `Crear ${packLists.length} listas: ${names}`,
+            summary: `Se crean ${packLists.length === 1 ? 'la lista' : 'las listas'} ${names} con ${packLists.reduce((n, l) => n + l.fields.length, 0)} campos${
+                packLists.some((l) => l.views.length) ? ', sus vistas' : ''
+            }${packLists.some((l) => l.automations.length) ? ' y automatizaciones' : ''}${includeRecords ? ', más registros de ejemplo' : ''}.`,
+            destructive: false,
+            listSlug: null,
+            preview,
+            payload: { kind: 'create_list', blueprint, includeRecords },
+        });
+    }
+
+    /**
+     * F7 (ADR-S72) — Lo que arma `propose_create_list`, sin guardar la
+     * propuesta: valida campos, vistas y automatizaciones contra las mismas
+     * reglas y devuelve el blueprint. Lo comparte la bienvenida de una empresa
+     * nueva («Cuéntanos de tu negocio»), así la salida del modelo pasa por el
+     * MISMO control que en el asistente. Lanza `AiToolError` con un mensaje
+     * que el modelo puede corregir.
+     */
+    async buildCreateListBlueprint(ctx: AiToolContext, specs: ListSpec[]): Promise<ListBlueprint> {
+        const input = { lists: specs };
         await this.assertWorkloadPeople(ctx, input.lists.flatMap((l) => l.views ?? []));
         const existing = await this.lists.list(ctx.tenantId);
         const existingBySlug = new Map(existing.map((l) => [l.slug, l]));
@@ -1527,33 +1567,7 @@ export class StructureTools implements AiProposalApplier {
             });
         }
 
-        const blueprint: ListBlueprint = { version: BLUEPRINT_VERSION, lists: packLists, dashboards: [] };
-        const includeRecords = packLists.some((l) => l.records.length > 0);
-        const preview: Partial<AiProposalPreview> = {
-            lists: packLists.map((l) => ({
-                name: l.name,
-                fields: l.fields.map((f) => ({ label: f.label, type: f.type })),
-                views: l.views.map((v) => ({ name: v.name, type: v.type })),
-                automations: l.automations.map((a) => a.name),
-                records_count: l.records.length,
-            })),
-            fields: [],
-            widgets: [],
-            automation: null,
-            changes: [],
-        };
-        const names = packLists.map((l) => `«${l.name}»`).join(' y ');
-        return this.saveProposal(ctx, {
-            kind: 'create_list',
-            title: packLists.length === 1 ? `Crear la lista ${names}` : `Crear ${packLists.length} listas: ${names}`,
-            summary: `Se crean ${packLists.length === 1 ? 'la lista' : 'las listas'} ${names} con ${packLists.reduce((n, l) => n + l.fields.length, 0)} campos${
-                packLists.some((l) => l.views.length) ? ', sus vistas' : ''
-            }${packLists.some((l) => l.automations.length) ? ' y automatizaciones' : ''}${includeRecords ? ', más registros de ejemplo' : ''}.`,
-            destructive: false,
-            listSlug: null,
-            preview,
-            payload: { kind: 'create_list', blueprint, includeRecords },
-        });
+        return { version: BLUEPRINT_VERSION, lists: packLists, dashboards: [] };
     }
 
     /**

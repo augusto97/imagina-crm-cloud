@@ -52,6 +52,7 @@ import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { useBulkButtons } from './buttons/ButtonFieldControl';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
 import { StoreListBanner } from './StoreListBanner';
+import { SampleDataBanner } from '@/admin/onboarding/SampleDataBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
 import { visibleExportFieldIds } from './exportFields';
@@ -1282,6 +1283,8 @@ const applyView = (view: SavedViewEntity | null): void => {
             </div>
 
             {storeMarker && <StoreListBanner marker={storeMarker} />}
+            {/* F7 — datos de ejemplo de la bienvenida, con su botón para borrarlos. */}
+            {!storeMarker && <SampleDataBanner listId={list.data?.id} />}
 
             {/*
               Dialog de export sin trigger propio — lo abren los botones
