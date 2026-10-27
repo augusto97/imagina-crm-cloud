@@ -1,6 +1,6 @@
 import { Columns2, Heading, Image, Minus, MousePointerClick, PenLine, Smartphone, Table, Type } from 'lucide-react';
 
-import { At, C, Keyframes, Stage, T, primary, tone } from '../kit';
+import { At, C, Keyframes, Stage, T, primary } from '../kit';
 
 /**
  * Portada de «Correos»: un correo se arma con bloques (banda con el logo,

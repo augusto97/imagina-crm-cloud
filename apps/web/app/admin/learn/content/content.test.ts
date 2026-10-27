@@ -39,7 +39,8 @@ async function allContent(): Promise<Map<string, LearnArticle>> {
 /**
  * Límites de palabra que entienden las letras con tilde (`\b` de JS no:
  * «escribía» contaba como «escribí»). El voseo se reconoce por la tilde
- * («podés»), así «puedes» o «sabes» (tuteo) no se marcan. Voseo y jerga no
+ * («podés»), así «puedes» o «sabes» (tuteo) no se marcan; «elegí» o
+ * «escribí» no se listan porque también son el pasado de «yo». Voseo y jerga no
  * van en textos para el usuario (ADR-S42).
  */
 const word = (w: string, flags = 'iu'): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])(?:${w})(?![\\p{L}\\p{N}])`, flags);
@@ -51,10 +52,8 @@ const FORBIDDEN = [
     word('sos'),
     word('vos'),
     word('acá', 'u'),
-    word('elegí'),
     word('hacé'),
     word('tocá'),
-    word('escribí'),
     word('fijate'),
     word('imagina base'),
     word('slug'),

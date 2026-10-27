@@ -115,7 +115,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Mensaje simple', what: 'Título, texto y la firma. El correo de todos los días.' },
                     { name: 'Aviso con botón', what: 'Banda de color con el título, el mensaje y un botón de acción.' },
                     { name: 'Notificación con datos', what: 'Un resumen con los datos del registro en una tabla prolija.' },
-                    { name: 'Recordatorio de pago', what: 'Monto destacado, fecha de vencimiento y el botón para pagar con {{pago.link}}.', tip: 'Cambia los «—» del texto por las variables de tu lista.' },
+                    { name: 'Recordatorio de pago', what: 'Concepto, monto y el botón para pagar con {{pago.link}}.', tip: 'Va después de la acción «Crear link de pago», que es la que llena {{pago.concepto}}, {{pago.monto}} y {{pago.link}}.' },
                     { name: 'Bienvenida', what: 'Imagen de cabecera, saludo, tres pasos en columnas y un botón.' },
                     { name: 'Novedades', what: 'Título, una imagen y dos noticias lado a lado.' },
                 ],

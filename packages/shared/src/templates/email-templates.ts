@@ -137,7 +137,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
     {
         key: 'payment',
         name: 'Recordatorio de pago',
-        description: 'Monto destacado, fecha de vencimiento y el botón para pagar.',
+        description: 'Concepto, monto y el botón para pagar (después de «Crear link de pago»).',
         design: {
             version: EMAIL_DESIGN_VERSION,
             theme: theme({ accent: '#15803d' }),
@@ -150,8 +150,8 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                         type: 'doc',
                         content: [
                             para(txt('Hola, te recordamos que tienes un pago pendiente.')),
-                            para(bold('Monto: '), txt('$ —')),
-                            para(bold('Vence: '), txt('—')),
+                            para(bold('Concepto: '), txt('{{pago.concepto}}')),
+                            para(bold('Monto: '), txt('{{pago.monto|moneda}}')),
                         ],
                     },
                     align: 'left',
