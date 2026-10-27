@@ -4611,4 +4611,42 @@ mirando las automatizaciones de la lista por nombre).
 
 ---
 
-**Versión del documento:** 1.119.0 (galería de ideas)
+### ADR-S77 — Recorridos visuales e interactivos: portada, ilustración por paso, «hazlo tú» y cierre (v0.1.324)
+
+**Contexto.** Los recorridos de ADR-S74 eran un globo de texto con «2 de 8» y
+una barra: el usuario los encontró poco vistosos, poco interactivos y
+cortos. El centro de aprendizaje (ADR-S75) ya tenía 207 ilustraciones
+animadas con los tokens del tema que los recorridos no usaban.
+
+**Decisión.** El motor (`help/tour/`) arma cada corrida como **portada →
+pasos → cierre** (`buildRun`): la portada muestra la ilustración del
+recorrido, cuánto dura, cuántos pasos y «Vas a ver»; el cierre celebra
+(papel picado, check animado), lista «Lo que viste», ofrece los recorridos
+sugeridos (`next`) y la guía completa de Aprende (`learn`). El progreso
+(`stepProgress`) no cuenta la portada ni el cierre, y quien acepta el
+ofrecimiento de bienvenida entra sin portada (`skipIntro`). Cada paso puede
+llevar una ilustración del registro de Aprende (`art`) y un consejo (`tip`);
+el globo tiene una flecha hacia lo resaltado y puntos de avance. Pasos
+**interactivos**: `appear` (avanza cuando aparece `waitFor` —la ficha, un
+diálogo— sea por el clic de la persona o por «Hacerlo por mí») e `input`
+(invita a escribir y celebra al hacerlo); lo que hay que tocar «late» y una
+mano lo señala. Dos recorridos nuevos («Tu día a día», «Aprende, ideas y
+novedades») y una **galería** por tema en la portada de Aprende
+(`#recorridos`) con su ilustración, minutos y «Hecho». Las piezas pesadas
+(portada, cierre, ilustración) van en un chunk aparte (`TourCards`) que se
+baja al empezar un recorrido.
+
+**Consecuencias.** Un recorrido sin ningún paso a la vista no se marca como
+hecho y el cierre lo explica (antes, un aviso). Si hay un diálogo modal
+debajo (la ficha), la capa corta su `focusout` para que no le robe el foco al
+globo. El test de recorridos verifica que cada portada, ilustración, guía de
+Aprende, recorrido sugerido y `waitFor` exista.
+
+**Alternativas descartadas.** GIFs o videos por paso (pesan, no siguen la
+marca ni el modo oscuro y quedan viejos con cada cambio de pantalla).
+Bloquear «Siguiente» hasta que la persona escriba (frustra: se invita y se
+celebra, no se obliga).
+
+---
+
+**Versión del documento:** 1.120.0 (recorridos visuales)

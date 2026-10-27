@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock, Graduation
 
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useHelpViewer } from '@/admin/help/useHelpData';
+import { TourGallery } from '@/admin/help/tours/TourGallery';
 import { help } from '@/admin/help/helpBus';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { __, sprintf } from '@/lib/i18n';
@@ -205,6 +206,8 @@ function Home({ visible }: { visible: (m: LearnModuleMeta, a?: LearnArticleMeta)
                     <Illustration name="cobro-automatizar" />
                 </span>
             </Link>
+
+            <TourGallery />
 
             {start && (
                 <section className="imcrm-flex imcrm-flex-col imcrm-gap-4" aria-labelledby="learn-start">

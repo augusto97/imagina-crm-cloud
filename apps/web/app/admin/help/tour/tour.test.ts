@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { holeBox, isFullyVisible, mobileCardEdge, placeBalloon } from './geometry';
-import { fillAppName, resolveSteps, routeMatches, touchWording } from './resolve';
+import { buildRun, fillAppName, resolveSteps, routeMatches, stepProgress, touchWording } from './resolve';
 import { tourStore } from './tourStore';
-import type { TourContext, TourDef } from './tourTypes';
+import type { ResolvedStep, TourContext, TourDef } from './tourTypes';
 
 const VIEW = { width: 1280, height: 800 };
 const BALLOON = { width: 340, height: 190 };
@@ -79,7 +79,12 @@ function ctx(over: Partial<TourContext> = {}): TourContext {
 const DEF: TourDef = {
     id: 'prueba',
     title: 'Prueba',
-    description: '',
+    description: 'Qué muestra {app}',
+    cover: 'pp-piezas',
+    minutes: 2,
+    category: 'start',
+    learn: 'primeros-pasos/primeros-pasos-piezas',
+    next: ['otro'],
     available: () => true,
     steps: [
         { id: 'intro', title: 'Hola', body: 'Bienvenida a {app}' },
@@ -145,10 +150,11 @@ describe('¿ya estoy en la pantalla del paso?', () => {
 });
 
 describe('un paso cuyo elemento no aparece', () => {
-    const step = (id: string) => ({ id, target: id, route: null, title: id, body: id, advanceOn: 'next' as const, waitMs: 1 });
+    const step = (id: string): ResolvedStep => ({ kind: 'step', id, target: id, route: null, title: id, body: id, advanceOn: 'next', waitFor: null, art: null, tip: null, waitMs: 1 });
+    const meta = { description: '', cover: 'x', minutes: 1, outcomes: [], learn: null, next: [] };
 
     it('sale del recorrido, el total se recalcula y se sigue hacia adelante', () => {
-        tourStore.start({ tourId: 't', title: 'T', steps: ['a', 'b', 'c', 'd'].map(step) });
+        tourStore.start({ tourId: 't', title: 'T', meta, steps: ['a', 'b', 'c', 'd'].map(step) });
         tourStore.goto(1, 1);
         expect(tourStore.drop(1, 1)).toBe(true);
         const r = tourStore.get()!;
@@ -158,7 +164,7 @@ describe('un paso cuyo elemento no aparece', () => {
     });
 
     it('hacia atrás vuelve al anterior; sin nada hacia adelante, el recorrido termina', () => {
-        tourStore.start({ tourId: 't', title: 'T', steps: ['a', 'b', 'c'].map(step) });
+        tourStore.start({ tourId: 't', title: 'T', meta, steps: ['a', 'b', 'c'].map(step) });
         tourStore.goto(1, -1);
         expect(tourStore.drop(1, -1)).toBe(true);
         expect(tourStore.get()!.steps[tourStore.get()!.index]!.id).toBe('a');
@@ -166,6 +172,52 @@ describe('un paso cuyo elemento no aparece', () => {
         expect(tourStore.drop(1, 1)).toBe(false);
         tourStore.stop();
         expect(tourStore.get()).toBeNull();
+    });
+});
+
+describe('portada y cierre', () => {
+    it('la corrida empieza con la portada y termina con el cierre; el progreso no los cuenta', () => {
+        const { steps, meta } = buildRun(DEF, ctx());
+        expect(steps[0]!.kind).toBe('intro');
+        expect(steps.at(-1)!.kind).toBe('outro');
+        expect(steps.filter((s) => s.kind === 'step').length).toBe(resolveSteps(DEF, ctx()).length);
+        expect(stepProgress(steps, 0)).toEqual({ current: 0, total: 7 });
+        expect(stepProgress(steps, 3)).toEqual({ current: 3, total: 7 });
+        expect(meta.outcomes[0]).toBe('Hola');
+        expect(meta.description).toBe('Qué muestra Acme CRM');
+        expect(meta.learn).toBe('primeros-pasos/primeros-pasos-piezas');
+    });
+
+    it('quien ya aceptó el ofrecimiento entra directo al primer paso', () => {
+        const { steps } = buildRun(DEF, ctx(), { skipIntro: true });
+        expect(steps[0]!.kind).toBe('step');
+        expect(steps.at(-1)!.kind).toBe('outro');
+    });
+
+    it('los pasos de «aparece» llevan lo que esperan; un paso sin elemento siempre avanza con Siguiente', () => {
+        const def: TourDef = {
+            ...DEF,
+            steps: [
+                { id: 'a', target: 'records-row', advanceOn: 'appear', waitFor: 'record-title', title: 'a', body: 'a', art: 'ficha-abrir', tip: 'Haz clic en el nombre.' },
+                { id: 'b', advanceOn: 'input', title: 'b', body: 'b' },
+            ],
+        };
+        const [a, b] = resolveSteps(def, ctx({ isMobile: true }));
+        expect(a).toMatchObject({ advanceOn: 'appear', waitFor: 'record-title', art: 'ficha-abrir', tip: 'Toca el nombre.' });
+        expect(b).toMatchObject({ advanceOn: 'next', waitFor: null });
+    });
+
+    it('el cierre recuerda lo que se vio (sin la portada)', () => {
+        const { steps, meta } = buildRun(DEF, ctx());
+        tourStore.start({ tourId: 'p', title: 'P', meta, steps });
+        tourStore.markShown();
+        expect(tourStore.get()!.shown).toBe(0);
+        tourStore.goto(1, 1);
+        tourStore.markShown();
+        tourStore.goto(2, 1);
+        tourStore.markShown();
+        expect(tourStore.get()!.seen).toEqual(['Hola', 'Riel']);
+        tourStore.stop();
     });
 });
 

@@ -293,11 +293,23 @@ export function HelpPanel({
                                                                 <PlayCircle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" aria-hidden />
                                                                 <span className="imcrm-min-w-0">
                                                                     <span className="imcrm-block imcrm-text-[13px] imcrm-font-medium">{__(t.title)}</span>
-                                                                    <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">{__(t.description)}</span>
+                                                                    <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">{__(t.description).replace(/\{app\}/g, appName)}</span>
+                                                                    <span className="imcrm-mt-0.5 imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground/80">{sprintf(__('%d min'), t.minutes)}</span>
                                                                 </span>
                                                             </button>
                                                         </li>
                                                     ))}
+                                                    <li>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => goTo('/aprende#recorridos')}
+                                                            data-testid="help-tours-gallery"
+                                                            className="imcrm-mt-1 imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                                                        >
+                                                            {__('Ver todos con sus ilustraciones')}
+                                                            <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                                        </button>
+                                                    </li>
                                                 </ul>
                                             )}
                                         </li>

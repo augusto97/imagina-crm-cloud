@@ -9858,6 +9858,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         validada, ilustración y artículo que existen, español neutro) — 546
         shared y 659 front en verde — + E2E navegador 28/28.
 
+  - [x] **Recorridos rediseñados: visuales e interactivos (v0.1.324, ADR-S77,
+        tercera entrega del pedido "la ayuda es muy básica": "esos tours no me
+        gustaron, casi no se ven bonitos, no son muy interactivos o
+        visuales")**: el motor arma cada corrida como **portada → pasos →
+        cierre** (`buildRun`). La portada muestra la ilustración animada del
+        recorrido, minutos, pasos y «Vas a ver»; el cierre celebra (papel picado
+        y check animado), lista «Lo que viste», ofrece los recorridos sugeridos
+        (`next`) y la guía completa en Aprende (`learn`), con «Repetir». Cada
+        paso trae una ilustración del registro de Aprende (`art`), un consejo
+        (`tip`), una flecha hacia lo resaltado y puntos de avance (el progreso
+        no cuenta portada ni cierre). Pasos **interactivos**: `appear` avanza
+        cuando aparece `waitFor` (la ficha, un diálogo), haya sido por el clic
+        de la persona o por «Hacerlo por mí»; `input` invita a escribir y
+        celebra al hacerlo; lo que hay que tocar late y una mano lo señala. Los
+        17 recorridos se reescribieron con más pasos y consejos, más dos nuevos
+        («Tu día a día» y «Aprende, ideas y novedades»), y hay una **galería**
+        por tema en la portada de Aprende (`#recorridos`, también desde Ayuda)
+        con la ilustración, los minutos y «Hecho». Quien acepta el ofrecimiento
+        de bienvenida entra sin portada (`skipIntro`); un recorrido sin ningún
+        paso a la vista no se marca como hecho y el cierre lo explica. Las piezas
+        pesadas (portada, cierre, ilustración) van en un chunk aparte
+        (`TourCards`). **Bug encontrado en la prueba**: con la ficha abierta, su
+        diálogo modal le robaba el foco a la portada (Enter caía en un botón de
+        la ficha) — la capa corta ese `focusout`. Tests de portada/cierre,
+        progreso, pasos `appear`/`input` y de que cada portada, ilustración,
+        guía, sugerido y `waitFor` exista (665 front en verde) + E2E navegador
+        38/38 (escritorio claro y celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

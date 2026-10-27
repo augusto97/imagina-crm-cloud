@@ -372,9 +372,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.323**
-(galería «Ideas para tu negocio»: casos de uso que se activan con un clic), en
-`main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.324**
+(recorridos guiados rediseñados: portada, animación por paso, «hazlo tú» y
+cierre), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-27 — **«La ayuda es muy básica y poco ilustrativa»** (feedback del
@@ -384,7 +384,7 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.323**
   capturas reales que se regeneran solas) y **la ayuda completa primero**.
   Plan en cuatro versiones: **v0.1.322** centro de aprendizaje (HECHA);
   **v0.1.323** galería de ideas y recetas que se activan con un clic (HECHA);
-  **v0.1.324** recorridos rediseñados (visuales e interactivos); **v0.1.325**
+  **v0.1.324** recorridos rediseñados (visuales e interactivos) (HECHA); **v0.1.325**
   novedades con imagen o animación (también las ya publicadas, carrusel estilo
   ClickUp). Pendientes menores que salieron al escribir el manual: no hay
   pantalla para cambiar el nombre o el correo propio; el export JSON de una
@@ -799,6 +799,22 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.323**
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-27 · v0.1.324** — **Recorridos rediseñados** (ADR-S77), tercera de
+  las cuatro versiones del pedido "la ayuda es muy básica" ("esos tours no me
+  gustaron, casi no se ven bonitos, no son muy interactivos o visuales"). Cada
+  recorrido empieza con una **portada** (ilustración animada, minutos, pasos y
+  «Vas a ver») y termina con un **cierre** (papel picado, «Lo que viste», el
+  recorrido que sigue y la guía de Aprende). Los pasos traen una **animación**
+  del centro de aprendizaje, un consejo, una flecha hacia lo resaltado y puntos
+  de avance; donde conviene, **lo hace la persona**: abrir un registro, abrir
+  «+ Vista», escribir en el buscador (lo resaltado late, una mano lo señala, y
+  el globo celebra al escribir). Dos recorridos nuevos (**Tu día a día**,
+  **Aprende, ideas y novedades**; 17 en total) y una **galería** por tema en
+  Aprende (`#recorridos`) con «Hecho». Bug encontrado en la prueba: con la
+  ficha abierta, su diálogo le robaba el foco a la portada (Enter caía en un
+  botón de la ficha). E2E navegador 38/38 (escritorio claro, celular oscuro).
+  Queda: v0.1.325 (novedades con imagen o animación).
 
 - **2026-10-27 · v0.1.323** — **Galería «Ideas para tu negocio»** (ADR-S76),
   segunda de las cuatro versiones del pedido "la ayuda es muy básica". 39 casos
