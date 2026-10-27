@@ -26,6 +26,7 @@ import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformTransfersCard } from './PlatformTransfersCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
+import { PlatformWhatsNewCard } from './PlatformWhatsNewCard';
 import { CaptchaKeysCard } from '@/cloud/components/CaptchaKeysCard';
 import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
@@ -188,6 +189,7 @@ export function PlatformPage(): JSX.Element {
             {tab === 'users' && <PlatformUsersCard />}
             {tab === 'plans' && <PlatformPlansCard />}
             {tab === 'audit' && <PlatformImpersonationsCard />}
+            {tab === 'novedades' && <PlatformWhatsNewCard />}
             {/* Ajustes GLOBALES de la app (antes vivían en Ajustes del workspace). */}
             {tab === 'correo' && <SmtpSettingsPanel />}
             {tab === 'diagnostico' && <PlatformDiagnosticsCard />}

@@ -1,4 +1,4 @@
-import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, Mail, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, Mail, Megaphone, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -14,6 +14,7 @@ export type PlatformTabId =
     | 'plans'
     | 'cobros'
     | 'audit'
+    | 'novedades'
     | 'correo'
     | 'diagnostico'
     | 'dominios'
@@ -30,6 +31,8 @@ export const PLATFORM_TABS: ReadonlyArray<{ id: PlatformTabId; label: string; ic
     // v0.1.250 — credenciales de Mercado Pago para cobrar los planes + pagos recientes.
     { id: 'cobros', label: 'Cobros', icon: Wallet },
     { id: 'audit', label: 'Auditoría', icon: History },
+    // Fase 7 — lo que ven las personas en «Novedades» (versiones + lo que publica el operador).
+    { id: 'novedades', label: 'Novedades', icon: Megaphone },
     { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
     // v0.1.238 — correos recientes y errores del servidor, sin entrar al servidor.
     { id: 'diagnostico', label: 'Diagnóstico', icon: Activity },
