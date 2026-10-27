@@ -9982,6 +9982,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         y 549 shared en verde) + E2E navegador 26/26 y 10/10 contra el build de
         producción con su CSP (el script nuevo hasheado, cero violaciones).
 
+  - [x] **La barra de abajo sigue el tema + el logo como ícono (v0.1.328,
+        addendum ADR-S80, reporte del usuario con capturas: "se sigue viendo
+        abajo blanco pese a que estoy en modo oscuro… y un ícono extraño en la
+        app instalada")**: (a) en Android la barra de navegación de la app
+        instalada y el fondo de su pantalla de inicio salen del
+        `background_color` del MANIFIESTO (la meta `theme-color` sólo pinta la
+        de arriba), y un manifiesto tiene un color fijo: ahora acepta
+        `?scheme=dark` (#121212; el color elegido por la empresa se respeta) y
+        el `<link rel="manifest">` lleva el tema de ese dispositivo — lo pone el
+        pre-pintado del HTML y `applyManifestScheme` al cambiar de tema; el `id`
+        no cambia, así que es la misma app instalada; (b) el ícono raro era el
+        genérico: se había subido el logo pero no el ícono. Un logo casi
+        cuadrado (`isSquarish`) pasa a ser también el ícono al subirlo si no
+        hay ícono, hay «Usar el logo como ícono» para los ya subidos, el logo se
+        guarda hasta 512 px de alto (antes 160) y la vista previa muestra el
+        ícono genérico real en vez de iniciales. 1 test de API + 2 del front
+        (679 front en verde) + E2E navegador 15/15.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -37,6 +37,9 @@
                         document.documentElement.setAttribute('data-imcrm-theme', 'dark');
                         var bar = document.querySelector('meta[name="theme-color"]');
                         if (bar) bar.setAttribute('content', '#121212');
+                        /* v0.1.328: la barra de abajo de Android sale del manifiesto. */
+                        var man = document.querySelector('link[rel="manifest"]');
+                        if (man) man.setAttribute('href', '/api/v1/public/manifest.webmanifest?scheme=dark');
                     }
                 } catch (e) {
                     /* storage bloqueado: arranca en claro */

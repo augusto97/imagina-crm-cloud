@@ -31,6 +31,13 @@ export interface ManifestInput {
      * nunca (white-label): ahí van su nombre y el ícono neutro.
      */
     platform?: Pick<PlatformBrand, 'app_name' | 'icons'> | null;
+    /**
+     * v0.1.328 — tema del dispositivo que pide el manifiesto (`?scheme=dark`).
+     * En Android la barra de abajo de la app instalada y el fondo de su
+     * pantalla de inicio salen del `background_color`, no de la meta de la
+     * página: sin esto quedaban blancos en modo oscuro.
+     */
+    scheme?: 'light' | 'dark';
 }
 
 export interface WebAppManifest {
@@ -65,7 +72,8 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
     const platformName = input.platform?.app_name?.trim() || DEFAULT_APP_NAME;
     const name = (t ? t.app_name?.trim() || t.name?.trim() || DEFAULT_APP_NAME : platformName).slice(0, 60);
     const own = t === null ? (input.platform?.icons ?? null) : null;
-    const theme = resolveAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null, 'light');
+    const scheme = input.scheme ?? 'light';
+    const theme = resolveAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null, scheme);
     const icon = { src: own?.icon_96 ?? '/pwa/icon-96.png', sizes: '96x96', type: 'image/png' };
     return {
         // Estable: no cambia con el nombre ni el color (el navegador la usa
@@ -80,7 +88,7 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
         scope: '/',
         display: 'standalone',
         orientation: 'any',
-        background_color: APP_BAR_NEUTRAL.light,
+        background_color: APP_BAR_NEUTRAL[scheme],
         theme_color: theme,
         categories: ['business', 'productivity'],
         icons: own

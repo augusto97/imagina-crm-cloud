@@ -42,10 +42,13 @@ export function iconPadding(key: PlatformIconKey): number {
     return PLATFORM_ICON_SIZES[key].maskable ? 0.2 : 0.06;
 }
 
-/** Tamaño del logo que se guarda: alto de 2× lo que se muestra (≈ 64 px). */
+/**
+ * Tamaño del logo que se guarda. v0.1.328: hasta 512 de alto (antes 160) para
+ * que un isotipo también sirva de ícono del teléfono sin verse borroso.
+ */
 export function logoCanvasSize(srcW: number, srcH: number): { w: number; h: number } {
-    const maxH = 160;
-    const maxW = 640;
+    const maxH = 512;
+    const maxW = 1280;
     const scale = Math.min(maxH / srcH, maxW / srcW, 4);
     return { w: Math.max(1, Math.round(srcW * scale)), h: Math.max(1, Math.round(srcH * scale)) };
 }

@@ -67,6 +67,14 @@ describe('H1 — manifiesto (puro)', () => {
         expect(shortAppName('Supercalifragilístico')).toBe('Supercalifr…');
     });
 
+    it('v0.1.328: con ?scheme=dark la barra de abajo y el fondo de inicio son oscuros (el id no cambia)', () => {
+        const dark = buildManifest({ tenant: null, scheme: 'dark' });
+        expect(dark).toMatchObject({ id: '/', theme_color: '#121212', background_color: '#121212' });
+        // Un color elegido por la empresa se respeta; el fondo de inicio sigue el tema.
+        const custom = buildManifest({ tenant: { name: 'Acme', app_name: null, primary_color: '#AA2200', app_bar_color: '#1F2937' }, scheme: 'dark' });
+        expect(custom).toMatchObject({ theme_color: '#1f2937', background_color: '#121212' });
+    });
+
     it('endpoints: sólo https (http sólo en desarrollo con salida privada habilitada)', () => {
         expect(() => assertPushEndpoint('https://fcm.googleapis.com/fcm/send/x')).not.toThrow();
         expect(() => assertPushEndpoint('http://127.0.0.1:9/x')).toThrow(/https/);

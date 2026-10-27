@@ -7,11 +7,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
-import { brandInitials } from '@/hooks/useAppIdentity';
 import {
+    iconSetFromSavedImage,
     regenerateIconSet,
     uploadIconSet,
     uploadLogo,
+    uploadLogoMaybeIcon,
     usePlatformBrandAdmin,
     useUpdatePlatformBrand,
 } from '@/hooks/usePlatformBrand';
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils';
  * instalada). En el dominio propio de una empresa nunca aparecen.
  */
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
+const FACTORY_ICON = '/pwa/icon-maskable-192.png';
 const BG_PRESETS = ['#ffffff', '#f4f4f5', '#18181b', '#000000'];
 
 function errorText(err: unknown): string {
@@ -126,8 +128,11 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                             testId="brand-logo"
                             onPick={(file) =>
                                 run('logo', async () => {
-                                    const url = await uploadLogo(file);
-                                    setDraft((d) => ({ ...d, logo_url: url }));
+                                    // v0.1.328 — sin ícono propio, un logo casi cuadrado también
+                                    // pasa a ser el ícono (si no, la app instalada sale con el genérico).
+                                    const res = await uploadLogoMaybeIcon(file, draft.icons ? null : draft.icon_background);
+                                    setDraft((d) => ({ ...d, logo_url: res.logo_url, ...(res.icon ?? {}) }));
+                                    if (res.icon) toast.success('Usamos tu logo también como ícono de la app. Puedes cambiarlo abajo.');
                                 })
                             }
                             onClear={() => setDraft((d) => ({ ...d, logo_url: null }))}
@@ -222,6 +227,32 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                             </div>
                         </div>
                     </div>
+                    {!draft.icons && draft.logo_url && (
+                        <div
+                            className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-p-3 imcrm-text-xs"
+                            data-testid="brand-icon-missing"
+                        >
+                            <span className="imcrm-min-w-[200px] imcrm-flex-1">
+                                Todavía no hay ícono: la app instalada y la pestaña muestran el genérico. Puedes usar tu
+                                logo como ícono (para la mejor calidad, sube el archivo original con «Subir ícono»).
+                            </span>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={busy !== null}
+                                data-testid="brand-icon-from-logo"
+                                onClick={() =>
+                                    run('icon', async () => {
+                                        const set = await iconSetFromSavedImage(draft.logo_url!, draft.icon_background);
+                                        setDraft((d) => ({ ...d, ...set }));
+                                    })
+                                }
+                            >
+                                Usar el logo como ícono
+                            </Button>
+                        </div>
+                    )}
                     <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-bg-muted/60 imcrm-p-3 imcrm-text-xs imcrm-text-muted-foreground">
                         <Smartphone className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
                         <span>
@@ -338,34 +369,19 @@ function IconPreview({ brand }: { brand: PlatformBrand }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-items-end imcrm-gap-6 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-4" data-testid="brand-icon-preview">
             <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5">
-                {icon ? (
-                    <img src={icon} alt="" className="imcrm-h-16 imcrm-w-16 imcrm-rounded-full imcrm-shadow-imcrm-md" />
-                ) : (
-                    <span className="imcrm-flex imcrm-h-16 imcrm-w-16 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-foreground imcrm-text-lg imcrm-font-semibold imcrm-text-background imcrm-shadow-imcrm-md">
-                        {brandInitials(brand.app_name || DEFAULT_PLATFORM_APP_NAME)}
-                    </span>
-                )}
+                {/* Sin ícono, el genérico de fábrica: el mismo que sale en el teléfono. */}
+                <img src={icon ?? FACTORY_ICON} alt="" className="imcrm-h-16 imcrm-w-16 imcrm-rounded-full imcrm-shadow-imcrm-md" />
                 <span className="imcrm-max-w-[80px] imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
                     {brand.app_name}
                 </span>
             </div>
             <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5">
-                {icon ? (
-                    <img src={icon} alt="" className="imcrm-h-12 imcrm-w-12 imcrm-rounded-xl imcrm-shadow-imcrm-sm" />
-                ) : (
-                    <span className="imcrm-flex imcrm-h-12 imcrm-w-12 imcrm-items-center imcrm-justify-center imcrm-rounded-xl imcrm-bg-foreground imcrm-text-sm imcrm-font-semibold imcrm-text-background">
-                        {brandInitials(brand.app_name || DEFAULT_PLATFORM_APP_NAME)}
-                    </span>
-                )}
+                <img src={brand.icons?.apple_180 ?? '/apple-touch-icon.png'} alt="" className="imcrm-h-12 imcrm-w-12 imcrm-rounded-xl imcrm-shadow-imcrm-sm" />
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">iPhone</span>
             </div>
             <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5">
                 <span className="imcrm-flex imcrm-h-8 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-t-lg imcrm-border imcrm-border-b-0 imcrm-border-border imcrm-bg-card imcrm-px-2.5 imcrm-text-[11px]">
-                    {fav ? (
-                        <img src={fav} alt="" className="imcrm-h-4 imcrm-w-4" />
-                    ) : (
-                        <span className="imcrm-h-4 imcrm-w-4 imcrm-rounded-sm imcrm-bg-foreground/80" />
-                    )}
+                    <img src={fav ?? '/favicon-32.png'} alt="" className="imcrm-h-4 imcrm-w-4" />
                     <span className="imcrm-max-w-[90px] imcrm-truncate">{brand.app_name}</span>
                 </span>
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">Pestaña</span>

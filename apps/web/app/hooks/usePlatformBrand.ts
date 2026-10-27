@@ -76,9 +76,47 @@ export async function uploadIconSet(
     file: File,
     background: string,
 ): Promise<{ icon_source_url: string; icons: PlatformIconSet }> {
-    const img = await loadImageFile(file);
+    return uploadIconSetFromImage(await loadImageFile(file), background);
+}
+
+async function uploadIconSetFromImage(
+    img: HTMLImageElement,
+    background: string,
+): Promise<{ icon_source_url: string; icons: PlatformIconSet }> {
     const source = await uploadBrandPng(await renderIconSourcePng(img), 'icon-source.png');
     return { icon_source_url: source.url, icons: await uploadSizes(img, background) };
+}
+
+/**
+ * v0.1.328 — Un logo casi cuadrado (un isotipo) también sirve de ícono: al
+ * subirlo sin ícono propio, la app instalada deja de salir con el genérico.
+ * Un logo apaisado no: dentro del cuadrado quedaría diminuto.
+ */
+export function isSquarish(img: HTMLImageElement): boolean {
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return false;
+    const ratio = w / h;
+    return ratio >= 0.75 && ratio <= 1.34;
+}
+
+/** Sube el logo y, si es casi cuadrado y se pide, también lo usa como ícono. */
+export async function uploadLogoMaybeIcon(
+    file: File,
+    iconBackground: string | null,
+): Promise<{ logo_url: string; icon: { icon_source_url: string; icons: PlatformIconSet } | null }> {
+    const img = await loadImageFile(file);
+    const logo = (await uploadBrandPng(await renderLogoPng(img), 'logo.png')).url;
+    const icon = iconBackground && isSquarish(img) ? await uploadIconSetFromImage(img, iconBackground) : null;
+    return { logo_url: logo, icon };
+}
+
+/** El logo ya guardado como ícono (para quien lo subió antes de v0.1.328). */
+export async function iconSetFromSavedImage(
+    url: string,
+    background: string,
+): Promise<{ icon_source_url: string; icons: PlatformIconSet }> {
+    return uploadIconSetFromImage(await loadImageUrl(url), background);
 }
 
 /** Vuelve a generar los tamaños desde el original guardado (cambió el color de fondo). */

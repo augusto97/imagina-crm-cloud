@@ -5,7 +5,8 @@ import { resolveAppBarColor } from '@imagina-base/shared';
 import { describeDevice } from '@/lib/deviceLabel';
 import { codeForField, parseRecordLinkCode } from '@/lib/scan/codeSearch';
 
-import { applyAppMeta, currentAppName } from './appMeta';
+import { applyAppMeta, applyManifestScheme, currentAppName, manifestHref } from './appMeta';
+import { isSquarish } from '@/hooks/usePlatformBrand';
 import { canOfferInstall, INSTALL_OFFER_RETRY_MS, offerDue, readOfferMemory, rememberOffer } from './installOffer';
 import { boldSegments, installGuide } from './installGuide';
 import { deviceInfo, pushSupport } from './platform';
@@ -83,6 +84,28 @@ describe('H1 — puente con el service worker', () => {
         applyAppMeta('rojo', null);
         expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#ffffff');
         expect(currentAppName()).toBe('Imagina Base');
+    });
+
+    it('v0.1.328 — el manifiesto sigue el tema del dispositivo (la barra de abajo de Android sale de ahí)', () => {
+        expect(manifestHref('light')).toBe('/api/v1/public/manifest.webmanifest');
+        expect(manifestHref('dark')).toBe('/api/v1/public/manifest.webmanifest?scheme=dark');
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = '/api/v1/public/manifest.webmanifest';
+        document.head.appendChild(link);
+        applyManifestScheme('dark');
+        expect(link.getAttribute('href')).toBe('/api/v1/public/manifest.webmanifest?scheme=dark');
+        applyManifestScheme('light');
+        expect(link.getAttribute('href')).toBe('/api/v1/public/manifest.webmanifest');
+        link.remove();
+    });
+
+    it('v0.1.328 — sólo un logo casi cuadrado sirve de ícono', () => {
+        const img = (w: number, h: number) => ({ naturalWidth: w, naturalHeight: h }) as HTMLImageElement;
+        expect(isSquarish(img(160, 160))).toBe(true);
+        expect(isSquarish(img(500, 420))).toBe(true);
+        expect(isSquarish(img(800, 200))).toBe(false);
+        expect(isSquarish(img(0, 0))).toBe(false);
     });
 
     it('v0.1.326 — barras del sistema: neutras por defecto, siguen el tema; la marca u otro color si se elige', () => {
