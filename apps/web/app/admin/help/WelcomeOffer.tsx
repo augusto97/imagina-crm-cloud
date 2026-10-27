@@ -38,6 +38,19 @@ function otherDialogOpen(): boolean {
 }
 
 /**
+ * Cuánto subir la tarjeta para no tapar el botón flotante de «Primeros pasos»
+ * (vive en la misma esquina). Sin el botón, `null` y queda la posición de
+ * siempre.
+ */
+function offsetAboveGettingStarted(): number | null {
+    const pill = document.querySelector('[data-tour="getting-started"]');
+    if (!(pill instanceof HTMLElement)) return null;
+    const rect = pill.getBoundingClientRect();
+    if (rect.height === 0) return null;
+    return Math.max(0, Math.round(window.innerHeight - rect.top + 12));
+}
+
+/**
  * «¿Te muestro la app en 2 minutos?» — se ofrece UNA vez a cada persona en
  * cada empresa. «Ahora no» la deja en Ayuda. No aparece:
  *  - a invitados ni durante una impersonación (el operador no gasta el
@@ -70,6 +83,7 @@ export function WelcomeOffer({
     const [ready, setReady] = useState(false);
     const [closed, setClosed] = useState(false);
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [bottom, setBottom] = useState<number | null>(null);
 
     // Un respiro antes de ofrecerlo: que la pantalla termine de cargar.
     useEffect(() => {
@@ -81,7 +95,10 @@ export function WelcomeOffer({
     // un querySelector, y sólo re-dibuja si cambia).
     useEffect(() => {
         if (!enabled || closed) return;
-        const check = (): void => setDialogOpen(otherDialogOpen());
+        const check = (): void => {
+            setDialogOpen(otherDialogOpen());
+            setBottom(offsetAboveGettingStarted());
+        };
         check();
         const t = window.setInterval(check, 1000);
         return () => window.clearInterval(t);
@@ -119,6 +136,7 @@ export function WelcomeOffer({
             aria-describedby="imcrm-welcome-offer-body"
             data-testid="welcome-offer"
             data-help-overlay=""
+            style={bottom !== null ? { bottom } : undefined}
             className={cn(
                 'imcrm-fixed imcrm-z-[45] imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
                 narrow ? 'imcrm-inset-x-3 imcrm-bottom-3' : 'imcrm-bottom-5 imcrm-right-5 imcrm-w-[340px]',

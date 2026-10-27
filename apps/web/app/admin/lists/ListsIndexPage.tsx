@@ -168,7 +168,7 @@ export function ListsIndexPage(): JSX.Element {
                     <p className="imcrm-text-[13px] imcrm-text-muted-foreground">
                         {hasFolders
                             ? __('Tus listas, ordenadas por carpeta como en el menú. Cada una es un contenedor de registros con campos y vistas.')
-                            : __('Click en una lista para abrirla. Cada una es un contenedor de registros con campos y vistas configurables.')}
+                            : __('Haz clic en una lista para abrirla. Cada una guarda registros con sus campos y vistas.')}
                     </p>
                 </div>
                 {canCreateList && (
