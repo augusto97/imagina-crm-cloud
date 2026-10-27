@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { platformBrandSchema } from './platform-brand';
 
 /**
  * Dominio personalizado por workspace (ADR-S17, white-label completo):
@@ -151,5 +152,10 @@ export const publicBootSchema = z.object({
             surface: z.enum(['app', 'portal']).default('app'),
         })
         .nullable(),
+    /**
+     * v0.1.327 — la marca de la plataforma (Plataforma → Marca). En el dominio
+     * de una empresa no se usa (white-label); viaja igual porque es pública.
+     */
+    platform: platformBrandSchema.default({}),
 });
 export type PublicBoot = z.infer<typeof publicBootSchema>;

@@ -12,6 +12,7 @@ import { promptInstall, useInstallMode } from '@/lib/pwa/install';
 import { canOfferInstall, offerDue, readOfferMemory, rememberOffer } from '@/lib/pwa/installOffer';
 import { browserName, deviceInfo } from '@/lib/pwa/platform';
 import { cn } from '@/lib/utils';
+import { useSession } from '@/cloud/session';
 
 /** Cuánto esperar antes de ofrecerla: que la pantalla cargue y el navegador avise si puede instalar. */
 export const INSTALL_OFFER_DELAY_MS = 6000;
@@ -48,6 +49,8 @@ function offsetAboveGettingStarted(): number | null {
  */
 export function InstallOffer({ disabled = false }: { disabled?: boolean }): JSX.Element | null {
     const mode = useInstallMode();
+    // v0.1.327 — el ícono con el que se instala aquí (el de la plataforma si lo subió).
+    const appIcon = useSession((s) => (s.domainTenant ? null : s.platformBrand.icons?.icon_96)) ?? '/pwa/icon-96.png';
     const { pathname } = useLocation();
     const narrow = useMediaQuery('(max-width: 639px)');
     const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -137,7 +140,7 @@ export function InstallOffer({ disabled = false }: { disabled?: boolean }): JSX.
                         )}
                     >
                         <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                            <img src="/pwa/icon-96.png" alt="" aria-hidden className="imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-rounded-xl" />
+                            <img src={appIcon} alt="" aria-hidden className="imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-rounded-xl" />
                             <div className="imcrm-min-w-0 imcrm-flex-1">
                                 <h2 id="imcrm-install-offer-title" className="imcrm-text-[15px] imcrm-font-semibold imcrm-leading-snug">
                                     {narrow ? __('Instala la app en tu teléfono') : __('Instala la app en este equipo')}

@@ -11,6 +11,8 @@ import { useSession } from '@/cloud/session';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useBrandingData } from '@/hooks/useBranding';
+import { useAppIdentity } from '@/hooks/useAppIdentity';
+import { BrandMark } from '@/components/BrandMark';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { PALETTE_SHORTCUT_LABEL } from '@/lib/shortcuts';
@@ -42,8 +44,8 @@ export function Topbar({
     const activeTenantId = useSession((s) => s.activeTenantId);
     const memberships = useSession((s) => s.memberships);
     const membership = memberships.find((m) => m.tenant_id === activeTenantId);
-    const workspaceTitle = branding.data?.app_name ?? membership?.tenant_name ?? 'Imagina Base';
-    const logoUrl = branding.data?.logo_url ?? null;
+    const identity = useAppIdentity({ workspaceName: membership?.tenant_name ?? null });
+    const workspaceTitle = branding.data?.app_name ?? membership?.tenant_name ?? identity.name;
     // C2 — «Usar el asistente IA» (rol propio); C3 — un invitado no lo usa.
     const canUseAssistant = useCan(CAP.USE_AI_ASSISTANT);
     const isGuest = useIsGuest();
@@ -67,13 +69,7 @@ export function Topbar({
                     className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 lg:imcrm-hidden"
                     data-testid="imcrm-topbar-brand"
                 >
-                    {logoUrl ? (
-                        <img src={logoUrl} alt="" className="imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-rounded-md imcrm-object-contain" />
-                    ) : (
-                        <span className="imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-sidebar imcrm-text-sidebar-accent-foreground">
-                            <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" />
-                        </span>
-                    )}
+                    <BrandMark url={identity.markUrl} name={workspaceTitle} className="imcrm-h-7 imcrm-w-7 imcrm-text-[11px]" />
                     <span className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground">
                         {workspaceTitle}
                     </span>

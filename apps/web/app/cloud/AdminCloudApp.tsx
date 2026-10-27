@@ -10,6 +10,8 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 import { Button } from '@/components/ui/button';
 import { SuperadminWorkspaceSetup } from '@/cloud/components/SuperadminWorkspaceSetup';
+import { BootSplashDone } from '@/components/BootSplashDone';
+import { bootSplashVisible } from '@/lib/bootSplash';
 
 /**
  * v0.1.256 — La app (shell, listas, registros, realtime) se carga DESPUÉS del
@@ -32,7 +34,11 @@ void loadApp().catch(() => undefined);
  * activo, capabilities por rol) y recién ahí renderiza `<App/>` con HashRouter
  * (`#/lists/...`), igual que Imagina CRM original.
  */
-function LoadingScreen(): JSX.Element {
+function LoadingScreen(): JSX.Element | null {
+    // v0.1.327 — mientras la pantalla de arranque del HTML siga a la vista, ella
+    // es la que se ve (sin un segundo "cargando" distinto debajo). Después (al
+    // cambiar de empresa, por ejemplo) queda la ruedita discreta.
+    if (bootSplashVisible()) return null;
     return (
         <div className="imcrm-flex imcrm-h-screen imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground">
             <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin" />
@@ -141,9 +147,18 @@ export function AdminCloudApp(): JSX.Element {
     }, [user, activeTenantId, memberships]);
 
     if (!ready) return <LoadingScreen />;
-    if (!user) return <LoginPage />;
+    if (!user) {
+        return (
+            <>
+                <LoginPage />
+                <BootSplashDone />
+            </>
+        );
+    }
     if (membershipCount === 0) {
         return (
+            <>
+            <BootSplashDone />
             <NoWorkspaceScreen
                 email={user.email}
                 name={user.name}
@@ -153,6 +168,7 @@ export function AdminCloudApp(): JSX.Element {
                 needsReauth={platformReauth}
                 onJoined={() => void me.refetch()}
             />
+            </>
         );
     }
     if (!booted) return <LoadingScreen />;
@@ -164,6 +180,7 @@ export function AdminCloudApp(): JSX.Element {
         <HashRouter key={activeTenantId ?? 0}>
             <Suspense fallback={<LoadingScreen />}>
                 <App />
+                <BootSplashDone />
             </Suspense>
         </HashRouter>
     );

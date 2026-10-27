@@ -349,6 +349,12 @@ export function BrandingPanel(): JSX.Element {
                         </div>
                         <PhonePreview bar={previewBar} appBg={APP_BAR_NEUTRAL.light} />
                     </div>
+                    {/* v0.1.327 — el teléfono guarda los colores con los que se instaló la app. */}
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="app-bar-installed-note">
+                        Si la app ya está instalada en un teléfono, este guarda los colores de cuando se instaló y los
+                        actualiza por su cuenta (Android puede tardar hasta un par de días). Para ver el cambio de
+                        inmediato, quita la app del teléfono y vuelve a instalarla.
+                    </p>
                 </fieldset>
 
                 <div className="imcrm-space-y-1">

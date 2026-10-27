@@ -27,6 +27,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type Redis from 'ioredis';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { PlatformBrandService } from '../brand/platform-brand.service';
 import { DomainsService } from '../domains/domains.service';
 import { REDIS } from '../redis/redis.module';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
@@ -46,12 +47,17 @@ function hostOf(req: FastifyRequest): string | undefined {
  */
 @Controller('public')
 export class PwaManifestController {
-    constructor(private readonly domains: DomainsService) {}
+    constructor(
+        private readonly domains: DomainsService,
+        private readonly brand: PlatformBrandService,
+    ) {}
 
     @Get('manifest.webmanifest')
     async manifest(@Req() req: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
         const boot = await this.domains.resolveHost(hostOf(req)).catch(() => ({ tenant: null }));
+        const platform = boot.tenant ? null : await this.brand.get();
         const manifest = buildManifest({
+            platform,
             tenant: boot.tenant ? { name: boot.tenant.name, app_name: boot.tenant.app_name, primary_color: boot.tenant.primary_color, app_bar_color: boot.tenant.app_bar_color ?? null } : null,
         });
         void reply

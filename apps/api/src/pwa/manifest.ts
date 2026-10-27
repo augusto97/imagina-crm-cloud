@@ -16,15 +16,21 @@
  * su marca u otro (`branding.app_bar_color`). En modo oscuro la app ajusta la
  * meta `theme-color` al cargar; el manifiesto no sabe del tema de la persona.
  */
-import { APP_BAR_NEUTRAL, resolveAppBarColor } from '@imagina-base/shared';
+import { APP_BAR_NEUTRAL, DEFAULT_PLATFORM_APP_NAME, resolveAppBarColor, type PlatformBrand } from '@imagina-base/shared';
 
 
-export const DEFAULT_APP_NAME = 'Imagina Base';
+export const DEFAULT_APP_NAME = DEFAULT_PLATFORM_APP_NAME;
 export const DEFAULT_THEME_COLOR = APP_BAR_NEUTRAL.light;
 
 export interface ManifestInput {
     /** Empresa del Host (null = dominio de la plataforma). */
     tenant: { name: string; app_name: string | null; primary_color: string | null; app_bar_color?: string | null } | null;
+    /**
+     * v0.1.327 — la marca de la plataforma (Plataforma → Marca): su nombre e
+     * ícono valen en el dominio de la PLATAFORMA. En el dominio de una empresa
+     * nunca (white-label): ahí van su nombre y el ícono neutro.
+     */
+    platform?: Pick<PlatformBrand, 'app_name' | 'icons'> | null;
 }
 
 export interface WebAppManifest {
@@ -56,9 +62,11 @@ export function shortAppName(name: string): string {
 
 export function buildManifest(input: ManifestInput): WebAppManifest {
     const t = input.tenant;
-    const name = (t?.app_name?.trim() || t?.name?.trim() || DEFAULT_APP_NAME).slice(0, 60);
+    const platformName = input.platform?.app_name?.trim() || DEFAULT_APP_NAME;
+    const name = (t ? t.app_name?.trim() || t.name?.trim() || DEFAULT_APP_NAME : platformName).slice(0, 60);
+    const own = t === null ? (input.platform?.icons ?? null) : null;
     const theme = resolveAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null, 'light');
-    const icon = { src: '/pwa/icon-96.png', sizes: '96x96', type: 'image/png' };
+    const icon = { src: own?.icon_96 ?? '/pwa/icon-96.png', sizes: '96x96', type: 'image/png' };
     return {
         // Estable: no cambia con el nombre ni el color (el navegador la usa
         // para reconocer la MISMA app instalada cuando el manifiesto cambia).
@@ -75,12 +83,19 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
         background_color: APP_BAR_NEUTRAL.light,
         theme_color: theme,
         categories: ['business', 'productivity'],
-        icons: [
-            { src: '/pwa/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-            { src: '/pwa/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-            { src: '/pwa/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-            { src: '/pwa/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
+        icons: own
+            ? [
+                  { src: own.icon_192, sizes: '192x192', type: 'image/png', purpose: 'any' },
+                  { src: own.icon_512, sizes: '512x512', type: 'image/png', purpose: 'any' },
+                  { src: own.maskable_192, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+                  { src: own.maskable_512, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+              ]
+            : [
+                  { src: '/pwa/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+                  { src: '/pwa/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+                  { src: '/pwa/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+                  { src: '/pwa/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+              ],
         shortcuts: [
             { name: 'Mi trabajo', short_name: 'Mi trabajo', url: '/#/my-work', icons: [icon] },
             { name: 'Todas las listas', short_name: 'Listas', url: '/#/lists', icons: [icon] },

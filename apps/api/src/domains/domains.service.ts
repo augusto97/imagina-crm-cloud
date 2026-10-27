@@ -37,6 +37,9 @@ import { domainOperatorNotice, type DomainOperatorEvent } from './domain-notice'
  * La resolución Host→tenant corre SIN sesión (boot público) sobre la conexión
  * base: `tenants` no tiene RLS por tenant y sólo exponemos datos de marca.
  */
+/** El tenant del Host (el boot público le suma la marca de la plataforma). */
+export type HostBoot = Pick<PublicBoot, 'tenant'>;
+
 @Injectable()
 export class DomainsService {
     constructor(
@@ -68,7 +71,7 @@ export class DomainsService {
      * Host de la request → tenant white-label (boot público, sin sesión).
      * `tenant: null` = dominio de la plataforma (o desconocido): marca default.
      */
-    async resolveHost(rawHost: string | undefined): Promise<PublicBoot> {
+    async resolveHost(rawHost: string | undefined): Promise<HostBoot> {
         const host = this.normalizeHost(rawHost);
         if (!host || host === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return { tenant: null };
 
@@ -107,7 +110,7 @@ export class DomainsService {
      * la del parámetro `?empresa=` del enlace de entrada. El dominio SIEMPRE
      * gana: en el dominio de Acme un `?empresa=otra` no cambia de empresa.
      */
-    async resolvePortalTenant(rawHost: string | undefined, slug?: string | null): Promise<PublicBoot> {
+    async resolvePortalTenant(rawHost: string | undefined, slug?: string | null): Promise<HostBoot> {
         const byHost = await this.resolveHost(rawHost);
         if (byHost.tenant || !slug) return byHost;
         // En el dominio propio de una empresa que no se resolvió (archivada,

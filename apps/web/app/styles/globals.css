@@ -1544,3 +1544,27 @@ body.imcrm-grid-selecting {
     .imcrm-tour-pulse, .imcrm-tour-hand, .imcrm-tour-pop, .imcrm-tour-check, .imcrm-tour-ring, .imcrm-tour-caret { animation: none; }
     .imcrm-tour-confetti { display: none; }
 }
+
+/* v0.1.327 — login: entrada suave y la mitad derecha con las ilustraciones. */
+.imcrm-login-card {
+    animation: imcrm-login-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.imcrm-login-slide {
+    animation: imcrm-login-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes imcrm-login-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .imcrm-login-card,
+    .imcrm-login-slide {
+        animation: none;
+    }
+}

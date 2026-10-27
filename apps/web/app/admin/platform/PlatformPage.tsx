@@ -1,3 +1,4 @@
+import { PlatformBrandCard } from './PlatformBrandCard';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
@@ -191,6 +192,7 @@ export function PlatformPage(): JSX.Element {
             {tab === 'plans' && <PlatformPlansCard />}
             {tab === 'audit' && <PlatformImpersonationsCard />}
             {tab === 'novedades' && <PlatformWhatsNewCard />}
+            {tab === 'marca' && <PlatformBrandCard />}
             {/* Ajustes GLOBALES de la app (antes vivían en Ajustes del workspace). */}
             {tab === 'correo' && <SmtpSettingsPanel />}
             {tab === 'diagnostico' && <PlatformDiagnosticsCard />}

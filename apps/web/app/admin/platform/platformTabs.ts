@@ -1,4 +1,4 @@
-import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, LifeBuoy, Mail, Megaphone, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, LifeBuoy, Mail, Megaphone, Palette, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -15,6 +15,7 @@ export type PlatformTabId =
     | 'cobros'
     | 'audit'
     | 'novedades'
+    | 'marca'
     | 'correo'
     | 'diagnostico'
     | 'dominios'
@@ -34,6 +35,8 @@ export const PLATFORM_TABS: ReadonlyArray<{ id: PlatformTabId; label: string; ic
     { id: 'audit', label: 'Auditoría', icon: History },
     // Fase 7 — lo que ven las personas en «Novedades» (versiones + lo que publica el operador).
     { id: 'novedades', label: 'Novedades', icon: Megaphone },
+    // v0.1.327 — nombre, logo e ícono con los que se presenta la app.
+    { id: 'marca', label: 'Marca', icon: Palette },
     { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
     // v0.1.238 — correos recientes y errores del servidor, sin entrar al servidor.
     { id: 'diagnostico', label: 'Diagnóstico', icon: Activity },

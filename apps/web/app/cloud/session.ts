@@ -1,4 +1,4 @@
-import type { AuthSession, MembershipSummary, PublicBoot, SessionUser } from '@imagina-base/shared';
+import { parsePlatformBrand, type AuthSession, type MembershipSummary, type PlatformBrand, type PublicBoot, type SessionUser } from '@imagina-base/shared';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { CloudClient } from '@/lib/cloud/client';
@@ -27,6 +27,11 @@ interface SessionState {
      */
     domainTenant: DomainTenant | null;
     /**
+     * v0.1.327 — la marca de la plataforma (Plataforma → Marca), del mismo
+     * `GET /public/boot`. Arranca con la de fábrica (sólo el nombre).
+     */
+    platformBrand: PlatformBrand;
+    /**
      * Superadmin de plataforma con la consola utilizable (`/auth/me` →
      * `is_superadmin`). Antes se averiguaba sondeando `/platform/stats`.
      */
@@ -36,6 +41,7 @@ interface SessionState {
     setSession: (session: AuthSession) => void;
     setActiveTenant: (tenantId: number) => void;
     setDomainTenant: (tenant: DomainTenant | null) => void;
+    setPlatformBrand: (brand: PlatformBrand) => void;
     clear: () => void;
     markReady: () => void;
 }
@@ -49,6 +55,7 @@ export const useSession = create<SessionState>()(
             ready: false,
             impersonating: undefined,
             domainTenant: null,
+            platformBrand: parsePlatformBrand({}),
             isSuperadmin: false,
             platformReauth: false,
             setSession: (session) => {
@@ -98,6 +105,7 @@ export const useSession = create<SessionState>()(
                         : { domainTenant: tenant },
                 );
             },
+            setPlatformBrand: (brand) => set({ platformBrand: brand }),
             clear: () =>
                 // `domainTenant` se conserva: depende del Host, no de la sesión.
                 set({

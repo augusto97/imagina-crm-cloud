@@ -23,6 +23,7 @@ export function initDomainBoot(): void {
                 window.location.replace('/portal');
                 return;
             }
+            useSession.getState().setPlatformBrand(boot.platform);
             useSession.getState().setDomainTenant(boot.tenant);
         })
         .catch(() => {
