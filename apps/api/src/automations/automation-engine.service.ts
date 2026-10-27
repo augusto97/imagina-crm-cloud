@@ -405,6 +405,12 @@ const ACTION_NAMES: Record<string, string> = {
 /** Cuánto de la respuesta de un webhook fallido se muestra en el historial. */
 const RESPONSE_SNIPPET = 200;
 
+/** Tipos que no viven en `data` y se calculan al leer (v0.1.322). */
+const DERIVED_TYPES = new Set(['lookup', 'rollup', 'computed', 'formula', 'time_tracked']);
+function isDerivedForVariables(type: string): boolean {
+    return DERIVED_TYPES.has(type) || isSystemField(type as never);
+}
+
 @Injectable()
 export class AutomationEngine {
     private readonly logger = new Logger(AutomationEngine.name);
@@ -579,7 +585,7 @@ export class AutomationEngine {
         const runs: EventRunRef[] = [];
         // v0.1.300 — «Creado por», «Fecha de creación»…: las columnas de sistema no
         // viven en `data`; se leen UNA vez para las condiciones y variables.
-        const sysData = await this.systemData(event.tenantId, event.recordId, prep.maps);
+        const sysData = await this.derivedData(event.tenantId, event.listId, event.recordId, prep.maps);
         for (const auto of prep.autos) {
             const ctx: RunContext = {
                 tenantId: event.tenantId,
@@ -1297,6 +1303,31 @@ export class AutomationEngine {
         return out;
     }
 
+    /**
+     * v0.1.322 — Todo lo que se calcula al leer el registro (búsquedas,
+     * resúmenes, calculados, fórmulas, tiempo y columnas de sistema), para las
+     * variables y condiciones. Sin el servicio de registros (specs que arman el
+     * motor a mano) quedan sólo las columnas de sistema, como antes.
+     */
+    private async derivedData(
+        tenantId: number,
+        listId: number,
+        recordId: number | null,
+        maps: Pick<RunContext, 'slugToKey' | 'fieldsBySlug'>,
+    ): Promise<Record<string, unknown>> {
+        if (recordId === null) return {};
+        const svc = this.records();
+        const needsMore = [...maps.fieldsBySlug.values()].some((f) => isDerivedForVariables(f.type) && !isSystemField(f.type));
+        if (svc && needsMore) {
+            try {
+                return await svc.derivedValues(tenantId, listId, recordId);
+            } catch (e) {
+                this.logger.warn(`No se pudieron leer los valores calculados del registro ${recordId}: ${(e as Error).message}`);
+            }
+        }
+        return this.systemData(tenantId, recordId, maps);
+    }
+
     /** slug → f{id}, slug → {type, config}, zona y formato regional de la empresa. */
     private async fieldMaps(
         tx: Tx,
@@ -1631,8 +1662,9 @@ export class AutomationEngine {
     private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<number | null> {
         ctx.automation = { id: auto.id, name: auto.name, trigger: auto.triggerType };
         // v0.1.300 — las columnas de sistema para las variables (`{{creado_por}}`).
-        if (ctx.recordId !== null && [...ctx.fieldsBySlug.entries()].some(([slug, f]) => isSystemField(f.type) && !(ctx.slugToKey.get(slug)! in ctx.data))) {
-            ctx.data = { ...ctx.data, ...(await this.systemData(ctx.tenantId, ctx.recordId, ctx)) };
+        // v0.1.322 — y las búsquedas, resúmenes, calculados y fórmulas (`{{email_cliente}}`).
+        if (ctx.recordId !== null && [...ctx.fieldsBySlug.entries()].some(([slug, f]) => isDerivedForVariables(f.type) && !(ctx.slugToKey.get(slug)! in ctx.data))) {
+            ctx.data = { ...ctx.data, ...(await this.derivedData(ctx.tenantId, ctx.listId, ctx.recordId, ctx)) };
         }
         const startedAt = new Date();
         let runId: number | null = null;

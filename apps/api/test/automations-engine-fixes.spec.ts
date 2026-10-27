@@ -222,6 +222,45 @@ describe('Automatizaciones — auditoría del motor', () => {
         ...extra,
     });
 
+    it('v0.1.322 — las variables y condiciones ven los campos de búsqueda, resumen y calculados', async () => {
+        const ticketsId = await listId('tickets');
+        const rel = await fieldsService.create(tenantId, 'facturas', { label: 'Ticket', type: 'relation', slug: 'ticket', config: { target_list_id: ticketsId } });
+        const look = await fieldsService.create(tenantId, 'facturas', {
+            label: 'Nombre del ticket',
+            type: 'lookup',
+            slug: 'nombre_ticket',
+            config: { relation_field_id: rel.id, target_field_id: f.nombre!.id },
+        });
+        await fieldsService.create(tenantId, 'facturas', {
+            label: 'Monto del ticket',
+            type: 'rollup',
+            slug: 'monto_ticket',
+            config: { relation_field_id: rel.id, target_field_id: f.monto!.id, operation: 'sum' },
+        });
+        const t = await recs.create(tenantId, admin, 'tickets', { data: { [k('nombre')]: 'Cliente Aurora', [k('monto')]: 450000 } });
+        const auto = await autos.create(tenantId, 'facturas', {
+            name: 'Aviso con datos del ticket',
+            trigger_type: 'record_created',
+            actions: [
+                {
+                    type: 'update_field',
+                    // Sólo si el resumen (rollup) supera el monto: la condición también lo ve.
+                    condition: [{ slug: 'monto_ticket', op: 'gt', value: 100000 }],
+                    config: { values: { aviso: 'Para {{nombre_ticket}} por {{monto_ticket}}' } },
+                },
+            ],
+        });
+        const fact = await recs.create(tenantId, admin, 'facturas', { data: { [fk('concepto')]: 'Plan anual', [`f${rel.id}`]: [t.id] } });
+        await engine.process({ tenantId, listId: await listId('facturas'), recordId: fact.id, trigger: 'record_created', after: fact.data });
+        const [run] = await runsOf(auto.id);
+        expect(run?.status).toBe('success');
+        const after = await recs.get(tenantId, admin, 'facturas', String(fact.id));
+        expect(String(after.data[fk('aviso')])).toBe('Para Cliente Aurora por 450000');
+        // El valor de la búsqueda no se guarda: sigue calculándose al leer.
+        const [raw] = await withTenant(pg.db, tenantId, (tx) => tx.select({ data: records.data }).from(records).where(eq(records.id, fact.id)));
+        expect((raw!.data as Record<string, unknown>)[`f${look.id}`]).toBeUndefined();
+    });
+
     it('update_field valida y convierte cada valor (número, opciones, sí/no, fechas) y saltea lo inválido con el motivo', async () => {
         const rec = await recs.create(tenantId, admin, 'tickets', { data: { [k('nombre')]: 'T1', [k('activo')]: true, [k('vence')]: '2026-01-01' } });
         const auto = await autos.create(tenantId, 'tickets', {
