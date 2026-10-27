@@ -15,12 +15,15 @@ import {
     deleteAccountSchema,
     updateEmailSignatureSchema,
     updateFavoritesSchema,
+    updateGuideProgressSchema,
     type DeleteAccountInput,
     type FavoriteView,
     type Favorites,
+    type GuideProgress,
     type MeUserSummary,
     type UpdateEmailSignatureInput,
     type UpdateFavoritesInput,
+    type UpdateGuideProgressInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -116,6 +119,29 @@ export class MeController {
         @Body(new ZodValidationPipe(updateFavoritesSchema)) patch: UpdateFavoritesInput,
     ): Promise<Favorites> {
         return this.me.setFavorites(tenantId(req), req.authUserId!, patch);
+    }
+
+    // ── Fase 7 — recorridos y guías (progreso por persona y empresa) ──────
+
+    @Get('guides')
+    @UseGuards(SessionGuard, TenantGuard)
+    getGuides(@Req() req: FastifyRequest): Promise<GuideProgress> {
+        return this.me.getGuideProgress(tenantId(req), req.authUserId!);
+    }
+
+    /**
+     * Mezcla lo recibido con lo guardado. Durante una impersonación no se
+     * escribe nada: el operador mirando la app como esta persona no debe
+     * gastarle el ofrecimiento de bienvenida ni marcarle recorridos.
+     */
+    @Patch('guides')
+    @UseGuards(SessionGuard, TenantGuard)
+    updateGuides(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(updateGuideProgressSchema)) patch: UpdateGuideProgressInput,
+    ): Promise<GuideProgress> {
+        if (req.impersonatedBy !== undefined) return this.me.getGuideProgress(tenantId(req), req.authUserId!);
+        return this.me.updateGuideProgress(tenantId(req), req.authUserId!, patch);
     }
 
     // ── Datos personales (v0.1.121, GDPR art. 15 y 17) ──────────────────

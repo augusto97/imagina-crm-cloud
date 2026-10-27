@@ -1,12 +1,16 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
     favoritesSchema,
+    mergeGuideProgress,
+    parseGuideProgress,
     type FavoriteView,
     type Favorites,
+    type GuideProgress,
     type MeUserSummary,
     type UpdateFavoritesInput,
+    type UpdateGuideProgressInput,
 } from '@imagina-base/shared';
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { lists, memberships, mentions, savedViews } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -170,6 +174,48 @@ export class MeService {
             await tx
                 .update(memberships)
                 .set({ settings, updatedAt: new Date() })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+            return merged;
+        });
+    }
+
+    /**
+     * Fase 7 — progreso de los recorridos y guías de la persona en esta
+     * empresa (`memberships.settings.guides`): qué terminó, qué saltó y si ya
+     * se le ofreció el recorrido de bienvenida.
+     */
+    async getGuideProgress(tenantId: number, userId: number): Promise<GuideProgress> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1),
+        );
+        return parseGuideProgress((row?.settings as Record<string, unknown> | undefined)?.guides);
+    }
+
+    /**
+     * PATCH que MEZCLA. Se escribe SÓLO la clave `guides` (`settings || {…}`)
+     * con la fila bloqueada: otra pieza que guarda en `settings` a la vez
+     * (favoritos, primeros pasos) no se pisa.
+     */
+    async updateGuideProgress(tenantId: number, userId: number, patch: UpdateGuideProgressInput): Promise<GuideProgress> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1)
+                .for('update');
+            if (!row) throw new NotFoundException({ code: 'not_found', message: 'No eres miembro de esta empresa', data: { status: 404 } });
+            const merged = mergeGuideProgress(parseGuideProgress((row.settings as Record<string, unknown> | null)?.guides), patch);
+            await tx
+                .update(memberships)
+                .set({
+                    settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('guides', ${JSON.stringify(merged)}::jsonb)`,
+                    updatedAt: new Date(),
+                })
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
             return merged;
         });
