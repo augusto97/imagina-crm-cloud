@@ -131,7 +131,7 @@ export function AiSettingsPanel(): JSX.Element | null {
                     <span>
                         <span className="imcrm-font-medium">{__('Activar el asistente para esta empresa')}</span>
                         <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Para responder, el asistente envía al proveedor de IA la ESTRUCTURA de tus listas (nombres de campos, tipos, opciones) y lo que escriban tus miembros en el chat. No envía los registros.')}
+                            {__('Para responder, el asistente envía al proveedor de IA la estructura de tus listas (nombres de campos, tipos, opciones), lo que escriban tus miembros en el chat y, cuando le piden consultar o cambiar datos, los registros que hacen falta para esa respuesta (con los permisos de quien pregunta). Los campos con IA y los agentes también envían los datos del registro con el que trabajan.')}
                         </span>
                     </span>
                 </label>

@@ -33,6 +33,8 @@ function renderInline(nodes: RichNode[] | undefined, onInternal?: InternalLinkHa
             if (m.type === 'bold') el = <strong className="imcrm-font-semibold imcrm-text-foreground">{el}</strong>;
             else if (m.type === 'italic') el = <em>{el}</em>;
             else if (m.type === 'strike') el = <s>{el}</s>;
+            else if (m.type === 'code')
+                el = <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-0.5 imcrm-font-mono imcrm-text-[0.88em] imcrm-text-foreground">{el}</code>;
         }
         const link = marks.find((m) => m.type === 'link');
         if (link) {
