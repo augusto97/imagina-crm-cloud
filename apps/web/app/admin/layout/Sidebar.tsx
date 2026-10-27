@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
@@ -8,6 +8,7 @@ import {
     ChevronsRight,
     AlarmClock,
     FileText,
+    GraduationCap,
     LayoutGrid,
     ListChecks,
     List as ListIcon,
@@ -74,13 +75,17 @@ function readCollapsedPref(): boolean {
 }
 
 /** Sección del riel activa — derivada de la RUTA (no estado aparte). */
-type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'agents' | 'settings' | 'platform';
+type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'agents' | 'learn' | 'settings' | 'platform';
+
+// v0.1.322 — el índice del manual se baja sólo al abrir el centro de aprendizaje.
+const LearnPanelNav = lazy(() => import('@/admin/learn/LearnNav'));
 
 function railSectionFromPath(pathname: string): RailSection {
     if (pathname.startsWith('/my-work')) return 'mywork';
     if (pathname.startsWith('/favorites')) return 'favorites';
     if (pathname.startsWith('/dashboards')) return 'dashboards';
     if (pathname.startsWith('/agents')) return 'agents';
+    if (pathname.startsWith('/aprende')) return 'learn';
     if (pathname.startsWith('/settings')) return 'settings';
     if (pathname.startsWith('/platform')) return 'platform';
     return 'home';
@@ -278,7 +283,9 @@ export function Sidebar({
                   ? __('Mi trabajo')
                   : sec === 'agents'
                     ? __('Agentes de IA')
-                    : workspaceTitle;
+                    : sec === 'learn'
+                      ? __('Aprende')
+                      : workspaceTitle;
 
     /**
      * El CONTENIDO del panel para una sección. Lo usan las dos superficies
@@ -343,6 +350,12 @@ export function Sidebar({
             {sec === 'mywork' && <MyWorkPanelSummary />}
 
             {sec === 'agents' && <AgentsPanel pathname={pathname} />}
+
+            {sec === 'learn' && (
+                <Suspense fallback={null}>
+                    <LearnPanelNav pathname={pathname} />
+                </Suspense>
+            )}
 
             {sec === 'favorites' && (
                 <>
@@ -557,6 +570,17 @@ export function Sidebar({
                         onSelect={(e) => handleRailSelect(e, 'agents')}
                     />
                 )}
+                <RailItem
+                    to="/aprende"
+                    tour="rail-learn"
+                    active={section === 'learn'}
+                    icon={GraduationCap}
+                    label={__('Aprende')}
+                    hint={__('Centro de aprendizaje')}
+                    onPeek={() => peek('learn')}
+                    onUnpeek={unpeek}
+                    onSelect={(e) => handleRailSelect(e, 'learn')}
+                />
                 <RailItem
                     to="/settings"
                     tour="rail-settings"

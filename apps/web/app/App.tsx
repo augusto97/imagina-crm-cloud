@@ -38,6 +38,9 @@ const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/Appro
 const AgentsPage = lazyWithReload(() => import('@/admin/agents/AgentsPage').then(m => ({ default: m.AgentsPage })));
 const AgentEditorPage = lazyWithReload(() => import('@/admin/agents/AgentEditorPage').then(m => ({ default: m.AgentEditorPage })));
 // Fase 7 — historial de novedades.
+// v0.1.322 — centro de aprendizaje (manual con animaciones y capturas reales).
+const LearnCenter = lazyWithReload(() => import('@/admin/learn/LearnCenter').then(m => ({ default: m.LearnCenter })));
+const LearnLab = lazyWithReload(() => import('@/admin/learn/LearnLab').then(m => ({ default: m.LearnLab })));
 const WhatsNewPage = lazyWithReload(() => import('@/admin/whats-new/WhatsNewPage').then(m => ({ default: m.WhatsNewPage })));
 const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -153,6 +156,20 @@ export function App(): JSX.Element {
                 } />
                 <Route path="agents/:agentId" element={
                     <Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense>
+                } />
+                {import.meta.env.DEV && (
+                    <Route path="aprende/lab" element={
+                        <Suspense fallback={<RouteFallback />}><LearnLab /></Suspense>
+                    } />
+                )}
+                <Route path="aprende" element={
+                    <Suspense fallback={<RouteFallback />}><LearnCenter /></Suspense>
+                } />
+                <Route path="aprende/:moduleId" element={
+                    <Suspense fallback={<RouteFallback />}><LearnCenter /></Suspense>
+                } />
+                <Route path="aprende/:moduleId/:articleId" element={
+                    <Suspense fallback={<RouteFallback />}><LearnCenter /></Suspense>
                 } />
                 <Route path="novedades" element={
                     <Suspense fallback={<RouteFallback />}><WhatsNewPage /></Suspense>
