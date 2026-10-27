@@ -32,19 +32,20 @@ function status(partial: Partial<OnboardingStatus> = {}): OnboardingStatus {
 describe('Primeros pasos', () => {
     it('lleva cada paso al lugar exacto', () => {
         const s = status();
-        expect(stepAction('add_records', s, { canPromptInstall: false })).toEqual({ kind: 'navigate', to: '/lists/clientes/records?import=1' });
-        expect(stepAction('invite_team', s, { canPromptInstall: false })).toEqual({ kind: 'navigate', to: '/settings?s=miembros' });
-        expect(stepAction('automation', s, { canPromptInstall: false })).toEqual({ kind: 'navigate', to: '/lists/clientes/automations' });
-        expect(stepAction('assistant', s, { canPromptInstall: false })).toEqual({ kind: 'open-assistant' });
-        expect(stepAction('install_app', s, { canPromptInstall: true })).toEqual({ kind: 'install' });
-        expect(stepAction('install_app', s, { canPromptInstall: false })).toEqual({ kind: 'navigate', to: '/settings?s=seguridad' });
+        expect(stepAction('add_records', s, { appInstalled: false })).toEqual({ kind: 'navigate', to: '/lists/clientes/records?import=1' });
+        expect(stepAction('invite_team', s, { appInstalled: false })).toEqual({ kind: 'navigate', to: '/settings?s=miembros' });
+        expect(stepAction('automation', s, { appInstalled: false })).toEqual({ kind: 'navigate', to: '/lists/clientes/automations' });
+        expect(stepAction('assistant', s, { appInstalled: false })).toEqual({ kind: 'open-assistant' });
+        // v0.1.321 — instalar siempre se ofrece (ventana del navegador o pasos); ya instalada, a activar los avisos.
+        expect(stepAction('install_app', s, { appInstalled: false })).toEqual({ kind: 'install' });
+        expect(stepAction('install_app', s, { appInstalled: true })).toEqual({ kind: 'navigate', to: '/settings?s=avisos' });
         // Ya hay listas: «Crea una lista» abre el diálogo; sin listas, va a la bienvenida
         // (y si la descartó con «Empezar en blanco», directo al diálogo).
-        expect(stepAction('create_list', s, { canPromptInstall: false })).toEqual({ kind: 'create-list' });
-        expect(stepAction('create_list', status({ has_lists: false, first_list: null, welcome: true }), { canPromptInstall: false })).toEqual({ kind: 'navigate', to: '/lists' });
-        expect(stepAction('create_list', status({ has_lists: false, first_list: null, welcome: false }), { canPromptInstall: false })).toEqual({ kind: 'create-list' });
+        expect(stepAction('create_list', s, { appInstalled: false })).toEqual({ kind: 'create-list' });
+        expect(stepAction('create_list', status({ has_lists: false, first_list: null, welcome: true }), { appInstalled: false })).toEqual({ kind: 'navigate', to: '/lists' });
+        expect(stepAction('create_list', status({ has_lists: false, first_list: null, welcome: false }), { appInstalled: false })).toEqual({ kind: 'create-list' });
         // Sin una lista a la que llevar, los pasos de registros van al índice.
-        expect(stepAction('comment_record', status({ first_list: null }), { canPromptInstall: false })).toEqual({ kind: 'navigate', to: '/lists' });
+        expect(stepAction('comment_record', status({ first_list: null }), { appInstalled: false })).toEqual({ kind: 'navigate', to: '/lists' });
     });
 
     it('cuenta los hechos sobre los que no se saltaron', () => {

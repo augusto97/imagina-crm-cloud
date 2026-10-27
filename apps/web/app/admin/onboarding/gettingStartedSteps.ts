@@ -117,7 +117,7 @@ export type StepAction =
 export function stepAction(
     id: OnboardingStepId,
     status: Pick<OnboardingStatus, 'first_list' | 'has_lists' | 'welcome'>,
-    opts: { canPromptInstall: boolean },
+    opts: { appInstalled: boolean },
 ): StepAction {
     const list = status.first_list;
     const records = (suffix = ''): StepAction => (list ? { kind: 'navigate', to: `/lists/${list.slug}/records${suffix}` } : { kind: 'navigate', to: '/lists' });
@@ -140,7 +140,8 @@ export function stepAction(
         case 'company_mail':
             return { kind: 'navigate', to: '/settings?s=correo' };
         case 'install_app':
-            return opts.canPromptInstall ? { kind: 'install' } : { kind: 'navigate', to: '/settings?s=seguridad' };
+            // Ya instalada (abierta desde su ícono): queda activar las notificaciones.
+            return opts.appInstalled ? { kind: 'navigate', to: '/settings?s=avisos' } : { kind: 'install' };
         case 'assistant':
             return { kind: 'open-assistant' };
         case 'my_work':

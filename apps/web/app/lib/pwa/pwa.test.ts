@@ -5,6 +5,7 @@ import { describeDevice } from '@/lib/deviceLabel';
 import { codeForField, parseRecordLinkCode } from '@/lib/scan/codeSearch';
 
 import { applyAppMeta, currentAppName } from './appMeta';
+import { boldSegments, installGuide } from './installGuide';
 import { deviceInfo, pushSupport } from './platform';
 import { base64UrlToBytes } from './push';
 import { isOpenMessage, safeAppPath, takeTenantParam } from './serviceWorker';
@@ -96,5 +97,53 @@ describe('H3 — códigos escaneados', () => {
         expect(codeForField('TZ-001', 'text')).toEqual({ ok: true, value: 'TZ-001' });
         expect(codeForField('0123', 'number')).toEqual({ ok: true, value: 123 });
         expect(codeForField('TZ-001', 'number').ok).toBe(false);
+    });
+});
+
+describe('v0.1.321 — pasos para instalar según el navegador', () => {
+    const DESKTOP = { ios: false, android: false, standalone: false, iosSafari: false, iosVersion: null };
+
+    it('Chrome y Edge en el computador: el ícono de la barra y el camino por el menú', () => {
+        const chrome = installGuide(DESKTOP, 'chrome');
+        expect(chrome.unsupported).toBe(false);
+        expect(chrome.steps.join(' ')).toMatch(/Instalar página como app/);
+        expect(installGuide(DESKTOP, 'edge').steps.join(' ')).toMatch(/Instalar este sitio como una aplicación/);
+    });
+
+    it('Firefox en el computador no instala: lo dice y sugiere otro navegador', () => {
+        const g = installGuide(DESKTOP, 'firefox');
+        expect(g.unsupported).toBe(true);
+        expect(g.steps).toEqual([]);
+        expect(g.note).toMatch(/Chrome, Edge o Safari/);
+    });
+
+    it('Safari en el Mac: Agregar al Dock', () => {
+        expect(installGuide(DESKTOP, 'safari').steps.join(' ')).toMatch(/Agregar al Dock/);
+    });
+
+    it('iPhone: Compartir → Agregar a inicio, y fuera de Safari sugiere Safari', () => {
+        const safari = installGuide(deviceInfo(fakeNav(IPHONE_17), fakeWin(false)), 'safari');
+        expect(safari.where).toMatch(/Safari/);
+        expect(safari.steps.join(' ')).toMatch(/Agregar a inicio/);
+        const chromeIos = installGuide({ ...DESKTOP, ios: true, iosSafari: false }, 'chrome');
+        expect(chromeIos.where).toMatch(/^Chrome/);
+        expect(chromeIos.note).toMatch(/Safari/);
+    });
+
+    it('Android: Chrome por el menú ⋮ y Samsung Internet por su menú', () => {
+        const info = deviceInfo(fakeNav(ANDROID), fakeWin(false));
+        expect(installGuide(info, 'chrome').steps.join(' ')).toMatch(/Instalar app/);
+        expect(installGuide(info, 'samsung').steps.join(' ')).toMatch(/Pantalla de inicio/);
+    });
+
+    it('la negrita se dibuja por tramos, sin HTML', () => {
+        expect(boldSegments('Toca **Compartir** y luego **Agregar**.')).toEqual([
+            { text: 'Toca ', bold: false },
+            { text: 'Compartir', bold: true },
+            { text: ' y luego ', bold: false },
+            { text: 'Agregar', bold: true },
+            { text: '.', bold: false },
+        ]);
+        expect(boldSegments('<b>x</b>')).toEqual([{ text: '<b>x</b>', bold: false }]);
     });
 });
