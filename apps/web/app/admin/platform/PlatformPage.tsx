@@ -19,6 +19,7 @@ import { isPlatformTab, PLATFORM_TABS, type PlatformTabId } from './platformTabs
 import { PlatformAiCard } from './PlatformAiCard';
 import { PlatformDiagnosticsCard } from './PlatformDiagnosticsCard';
 import { PlatformDomainsCard } from './PlatformDomainsCard';
+import { PlatformHelpCard } from './PlatformHelpCard';
 import { PlatformPaymentsCard } from './PlatformPaymentsCard';
 import { PlatformIntegrationsCard } from './PlatformIntegrationsCard';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
@@ -203,6 +204,7 @@ export function PlatformPage(): JSX.Element {
                     <CaptchaKeysCard scope="platform" />
                 </div>
             )}
+            {tab === 'ayuda' && <PlatformHelpCard />}
             {tab === 'updates' && <SystemUpdatesPanel />}
             {tab === 'backups' && <BackupsPanel />}
             {tab === 'transfers' && <PlatformTransfersCard />}
