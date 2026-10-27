@@ -81,7 +81,7 @@ jobs:
       # (la ayuda se ve con sus ilustraciones) y queda el aviso en el log.
       - name: Capturas del centro de aprendizaje
         continue-on-error: true
-        timeout-minutes: 25
+        timeout-minutes: 75
         run: |
           bash scripts/help-captures/ci.sh apps/web/dist-cloud/help-media || {
             echo "::warning::No se pudieron generar las capturas del centro de aprendizaje; el release sale sin ellas."

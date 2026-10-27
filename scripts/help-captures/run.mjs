@@ -141,6 +141,9 @@ async function main() {
                 }),
             };
             writeFileSync(path.join(keyDir, 'demo.json'), JSON.stringify(demo));
+            // El índice se rehace tras cada demo: si la corrida se corta (tope de
+            // tiempo del release), lo grabado hasta ahí igual sirve.
+            writeFileSync(manifestPath, JSON.stringify(buildManifest(OUT)));
             console.log(`✓ ${s.key} · ${frames.length} cuadros · ${((Date.now() - t0) / 1000).toFixed(1)} s`);
         } catch (e) {
             failed.push(s.key);
