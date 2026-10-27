@@ -6,6 +6,7 @@ import {
     ChevronRight,
     Compass,
     ExternalLink,
+    GraduationCap,
     Keyboard,
     LifeBuoy,
     Mail,
@@ -193,6 +194,25 @@ export function HelpPanel({
                         </section>
                     ) : (
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
+                            <button
+                                type="button"
+                                onClick={() => goTo('/aprende')}
+                                data-testid="help-learn-center"
+                                className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-primary/25 imcrm-p-3.5 imcrm-text-left hover:imcrm-border-primary/50 focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                                style={{ background: 'linear-gradient(120deg, hsl(var(--imcrm-primary) / .12), hsl(var(--imcrm-tone-violet) / .1))' }}
+                            >
+                                <span className="imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-primary imcrm-text-primary-foreground">
+                                    <GraduationCap className="imcrm-h-5 imcrm-w-5" aria-hidden />
+                                </span>
+                                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
+                                    <span className="imcrm-text-sm imcrm-font-semibold">{__('Centro de aprendizaje')}</span>
+                                    <span className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
+                                        {__('Guías completas de cada parte de la app, con animaciones y capturas paso a paso.')}
+                                    </span>
+                                </span>
+                                <ChevronRight className="imcrm-ml-auto imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                            </button>
+
                             {here.length > 0 && (
                                 <Section title={__('En esta pantalla')} testId="help-here">
                                     <GuideList items={here} onOpen={openGuide} />

@@ -191,7 +191,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
     return (
         <section className="imcrm-space-y-5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-sync-setup">
             <div>
-                <h2 className="imcrm-text-base imcrm-font-semibold">{__('Trae tu tienda a Imagina Base')}</h2>
+                <h2 className="imcrm-text-base imcrm-font-semibold">{__('Trae tu tienda a la app')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
                         'Creamos una carpeta con tres listas —Clientes, Productos (cada variación, como talla o color, va adentro de su producto) y Pedidos (lo que se compró va adentro de cada pedido)— y dos tableros: ventas e inventario. Después se mantienen al día solas. Cuánto compró cada cliente, cuánto vendió cada producto (y cada talla o color), qué está agotado o por agotarse y para cuántos meses alcanza el stock se calcula solo. Los productos, pedidos y clientes se siguen creando en WooCommerce: la app los refleja.',
@@ -528,7 +528,7 @@ function Configured({
             <section className="imcrm-space-y-2 imcrm-rounded-lg imcrm-border imcrm-border-destructive/30 imcrm-p-5">
                 <h2 className="imcrm-text-sm imcrm-font-semibold">{__('Dejar de sincronizar')}</h2>
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Las listas y todo lo que se trajo quedan en tu workspace; sólo deja de actualizarse.')}
+                    {__('Las listas y todo lo que se trajo quedan en tu empresa; sólo deja de actualizarse.')}
                 </p>
                 <Button
                     variant="outline"

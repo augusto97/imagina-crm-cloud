@@ -198,7 +198,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                                 </p>
                                 <ol className="imcrm-flex imcrm-list-decimal imcrm-flex-col imcrm-gap-0.5 imcrm-pl-4 imcrm-text-xs imcrm-text-muted-foreground">
                                     <li>{__('Abre el registro del cliente (desde la tabla de la lista).')}</li>
-                                    <li>{__('En la ficha, usa "Emitir acceso al portal" — se le envía el enlace por email.')}</li>
+                                    <li>{__('En la ficha, en la tarjeta «Acceso al portal del cliente» toca «Dar acceso»: se le envía el enlace por correo.')}</li>
                                     <li>{__('El cliente abre el enlace y ve su portal, sin registrarse.')}</li>
                                 </ol>
                             </div>

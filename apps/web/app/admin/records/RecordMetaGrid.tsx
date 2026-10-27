@@ -30,10 +30,10 @@ export function RecordMetaGrid({ record, twoCols = true, className }: RecordMeta
             )}
         >
             <MetaCell icon={CalendarPlus} label={__('Creado')}>
-                <span className="imcrm-tabular-nums">{formatTimestamp(record.created_at)}</span>
+                <span className="imcrm-whitespace-nowrap imcrm-tabular-nums">{formatTimestamp(record.created_at)}</span>
             </MetaCell>
             <MetaCell icon={Clock} label={__('Actualizado')}>
-                <span className="imcrm-tabular-nums">{formatTimestamp(record.updated_at)}</span>
+                <span className="imcrm-whitespace-nowrap imcrm-tabular-nums">{formatTimestamp(record.updated_at)}</span>
             </MetaCell>
         </div>
     );

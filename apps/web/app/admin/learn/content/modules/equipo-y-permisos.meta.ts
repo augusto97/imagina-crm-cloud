@@ -1,0 +1,92 @@
+import type { LearnModuleMeta } from '../types';
+
+export const meta: LearnModuleMeta = {
+    id: 'equipo-y-permisos',
+    group: 'admin',
+    order: 1,
+    title: 'Equipo y permisos',
+    tagline: 'Suma a tu gente, agrúpala en equipos y decide quién ve y quién cambia cada cosa.',
+    icon: 'Users',
+    tone: 'violet',
+    hero: 'equipo-own-scope',
+    highlights: [
+        'Invitar por correo y elegir el rol de cada persona',
+        'Equipos para asignar trabajo y avisar a varios a la vez',
+        'Roles propios con capacidades por módulo',
+        'Permisos por lista: quién ve, crea, edita o borra, y qué campos no ve',
+        'Invitados de afuera que ven sólo lo que les compartes',
+    ],
+    articles: [
+        {
+            id: 'equipo-y-permisos-invitar',
+            title: 'Invitar a tu equipo y elegir su rol',
+            summary: 'Suma personas por correo, entiende qué hace cada rol, reenvía invitaciones, cambia roles y quita accesos sin perder nada.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'miembros usuarios invitar agregar persona rol admin manager agente lector invitacion pendiente reenviar quitar limite plan',
+        },
+        {
+            id: 'equipo-y-permisos-roles-propios',
+            title: 'Roles propios: un «Supervisor» o un «Contador» a tu medida',
+            summary: 'Crea roles basados en Manager, Agente o Lector y prende o apaga lo que cada uno puede hacer en cada parte de la app.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'rol personalizado capacidades permisos supervisor contador basado en modulo',
+        },
+        {
+            id: 'equipo-y-permisos-equipos',
+            title: 'Equipos: Ventas, Soporte, Bodega…',
+            summary: 'Agrupa personas, asígnales registros con un campo Equipo, avísales a todas con @equipo y dales acceso a una lista de una vez.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'equipo grupo departamento area lider campo equipo mencion arroba asignar carga de trabajo',
+            needs: 'manage_teams',
+        },
+        {
+            id: 'equipo-y-permisos-permisos-lista',
+            title: 'Permisos de una lista: quién ve y quién cambia',
+            summary:
+                'Los cinco niveles listos (Sin acceso, Solo mirar, Solo lo suyo, Colaborar, Control total), el ajuste fino y los campos que un rol no debe ver.',
+            minutes: 8,
+            level: 'intermediate',
+            keywords: 'permisos acceso nivel ver editar eliminar crear ocultar campos privacidad solo lo suyo asignados responsable',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'equipo-y-permisos-personas-equipos',
+            title: 'Dar acceso a una persona o a un equipo en una lista',
+            summary: 'Compartir una lista con alguien puntual o con un equipo sin cambiarle el rol en toda la app, y qué acceso manda cuando hay varios.',
+            minutes: 5,
+            level: 'intermediate',
+            keywords: 'compartir con tu equipo personas con acceso equipos con acceso prioridad manda persona equipo rol',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'equipo-y-permisos-asignados',
+            title: 'Que cada uno vea lo que tiene asignado',
+            summary:
+                'El alcance «Los asignados a la persona»: cómo elegir el campo responsable (persona o equipo) y armar un CRM donde cada vendedor ve su cartera.',
+            minutes: 5,
+            level: 'advanced',
+            keywords: 'asignados responsable campo persona usuario cartera vendedor alcance scope asignado equipo',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'equipo-y-permisos-invitados',
+            title: 'Invitados: compartir con gente de afuera',
+            summary:
+                'Comparte una lista o un solo registro con un proveedor, un contador o un cliente, con nivel ver, comentar o editar, sin ocupar un usuario de tu plan.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'invitado externo proveedor contador freelancer compartir registro compartido conmigo puede ver comentar editar',
+        },
+        {
+            id: 'equipo-y-permisos-recetas',
+            title: 'Recetas de permisos para casos comunes',
+            summary: 'Configuraciones listas para copiar: vendedores con su cartera, un contador que sólo mira facturas, costos ocultos, practicantes y más.',
+            minutes: 7,
+            level: 'advanced',
+            keywords: 'ejemplos casos receta configuracion vendedores contador costos ocultos practicante sucursal',
+        },
+    ],
+};

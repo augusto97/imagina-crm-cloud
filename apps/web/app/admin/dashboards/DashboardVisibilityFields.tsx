@@ -50,7 +50,7 @@ export function DashboardVisibilityFields({
                 value={visibility}
                 onChange={(e) => onVisibilityChange(e.target.value as DashboardVisibility)}
             >
-                <option value="workspace">{__('Todo el workspace')}</option>
+                <option value="workspace">{__('Toda la empresa')}</option>
                 <option value="private">{__('Sólo yo')}</option>
                 <option value="roles">{__('Roles específicos')}</option>
             </Select>

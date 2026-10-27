@@ -10,7 +10,7 @@ import type { RichMark, RichNode } from './rich-text';
  * Lo que entiende:
  *  - párrafos separados por una línea en blanco; un salto simple = salto de línea;
  *  - `#`, `##`, `###` títulos; `- ` / `* ` viñetas; `1. ` numeradas; `> ` cita; `---` línea;
- *  - en línea: `**negrita**`, `*cursiva*`, `~~tachado~~`, `[texto](https://…)`.
+ *  - en línea: `**negrita**`, `*cursiva*`, `~~tachado~~`, `` `código` ``, `[texto](https://…)`.
  * Las variables `{{campo}}` son texto LITERAL (un `_` o un `*` adentro no
  * abre una marca): se reconocen antes que cualquier otra cosa.
  *
@@ -21,7 +21,7 @@ import type { RichMark, RichNode } from './rich-text';
 
 type Inline = RichNode;
 
-const INLINE_RE = /\{\{[^}]*\}\}|\*\*(.+?)\*\*|~~(.+?)~~|\*(?!\s)(.+?)\*|\[([^\]]+)\]\(([^)\s]+)\)/;
+const INLINE_RE = /\{\{[^}]*\}\}|\*\*(.+?)\*\*|~~(.+?)~~|\*(?!\s)(.+?)\*|\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`/;
 
 function withMark(nodes: Inline[], mark: RichMark): Inline[] {
     return nodes.map((n) => (n.type === 'text' ? { ...n, marks: [...(n.marks ?? []), mark] } : n));
@@ -43,6 +43,8 @@ function parseInline(src: string): Inline[] {
         else if (m[2] !== undefined) out.push(...withMark(parseInline(m[2]), { type: 'strike' }));
         else if (m[3] !== undefined) out.push(...withMark(parseInline(m[3]), { type: 'italic' }));
         else if (m[4] !== undefined) out.push(...withMark(parseInline(m[4]), { type: 'link', attrs: { href: m[5] } }));
+        // Código en línea: el texto va tal cual (adentro no se interpreta nada).
+        else if (m[6] !== undefined) out.push({ type: 'text', text: m[6], marks: [{ type: 'code' }] });
         rest = rest.slice(m.index + whole.length);
     }
     // Junta tramos de texto vecinos con las mismas marcas.
@@ -149,6 +151,7 @@ function inlineToMarkdown(nodes: RichNode[] | undefined): string {
         let t = n.text ?? '';
         const marks = n.marks ?? [];
         const has = (type: string): RichMark | undefined => marks.find((m) => m.type === type);
+        if (has('code')) t = `\`${t}\``;
         if (has('bold')) t = `**${t}**`;
         if (has('italic')) t = `*${t}*`;
         if (has('strike')) t = `~~${t}~~`;

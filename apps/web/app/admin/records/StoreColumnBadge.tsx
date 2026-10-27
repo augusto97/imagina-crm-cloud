@@ -29,8 +29,8 @@ export function StoreColumnBadge({ fieldId }: { fieldId: number }): JSX.Element 
         );
     }
     return (
-        <span title={__('Columna sólo de Imagina: nunca viaja a WooCommerce.')} data-testid="store-col-own" className="imcrm-text-emerald-600 dark:imcrm-text-emerald-400">
-            <PencilLine className={cls} aria-label={__('Sólo en Imagina')} />
+        <span title={__('Columna propia: sólo vive en esta app y nunca viaja a WooCommerce.')} data-testid="store-col-own" className="imcrm-text-emerald-600 dark:imcrm-text-emerald-400">
+            <PencilLine className={cls} aria-label={__('Columna propia')} />
         </span>
     );
 }

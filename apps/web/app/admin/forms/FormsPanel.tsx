@@ -28,6 +28,9 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     const confirm = useConfirm();
     const toast = useToast();
     const [editingId, setEditingId] = useState<number | null>(null);
+    // El recién creado puede no estar todavía en la lista (llega con el
+    // refetch): se abre con lo que devolvió el alta, así no queda cerrado.
+    const [created, setCreated] = useState<NonNullable<typeof forms.data>[number] | null>(null);
 
     // Las listas que llenan una tienda no aceptan altas desde la app.
     if (readStoreListMarker(listSettings)) {
@@ -41,13 +44,16 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     }
 
     const list = forms.data ?? [];
-    const editing = editingId !== null ? list.find((f) => f.id === editingId) ?? null : null;
+    const editing = editingId !== null ? list.find((f) => f.id === editingId) ?? (created?.id === editingId ? created : null) : null;
 
     const createNew = (): void => {
         create.mutate(
             { name: list.length === 0 ? `${__('Formulario de')} ${listName}` : `${__('Formulario')} ${list.length + 1}` },
             {
-                onSuccess: (form) => setEditingId(form.id),
+                onSuccess: (form) => {
+                    setCreated(form);
+                    setEditingId(form.id);
+                },
                 onError: (err) => toast.error(__('No se pudo crear'), err instanceof Error ? err.message : String(err)),
             },
         );

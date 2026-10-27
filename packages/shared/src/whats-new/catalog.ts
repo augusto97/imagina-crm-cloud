@@ -286,4 +286,20 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ver cómo instalarla', href: '/settings?s=avisos' },
     },
+    {
+        key: 'v0.1.322-centro-de-aprendizaje',
+        version: '0.1.322',
+        date: '2026-10-27',
+        kind: 'feature',
+        featured: true,
+        title: 'Centro de aprendizaje',
+        summary:
+            'Guías completas de cada parte de la app, con animaciones y capturas paso a paso: qué hace cada ajuste, para qué sirve y cómo lo usan otras empresas.',
+        body: [
+            'Encuéntralo en **Aprende**, en el menú de la izquierda. Está organizado por módulos: listas y campos, vistas, automatizaciones, tableros, formularios, portal de clientes, integraciones y más.',
+            '',
+            'Cada guía trae una animación que explica la idea, una captura real que muestra dónde tocar, ejemplos de negocios y preguntas frecuentes. También puedes buscar con **Ctrl+K**.',
+        ].join('\n'),
+        action: { label: 'Abrir el centro', href: '/aprende' },
+    },
 ];

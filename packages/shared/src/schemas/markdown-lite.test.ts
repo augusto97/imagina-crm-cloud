@@ -41,3 +41,18 @@ describe('v0.1.281 — texto con formato sencillo ⇄ árbol del editor', () => 
         expect(markdownToRichDoc('')).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
     });
 });
+
+describe('v0.1.322 — código en línea', () => {
+    it('`texto` es una marca de código y adentro no se interpreta nada', () => {
+        const doc = markdownToRichDoc('Escribe `{{cliente|label}}` o `**no negrita**` en el campo.');
+        const inline = doc.content?.[0]?.content ?? [];
+        expect(inline).toEqual([
+            { type: 'text', text: 'Escribe ' },
+            { type: 'text', text: '{{cliente|label}}', marks: [{ type: 'code' }] },
+            { type: 'text', text: ' o ' },
+            { type: 'text', text: '**no negrita**', marks: [{ type: 'code' }] },
+            { type: 'text', text: ' en el campo.' },
+        ]);
+        expect(richDocToMarkdown(doc)).toBe('Escribe `{{cliente|label}}` o `**no negrita**` en el campo.');
+    });
+});

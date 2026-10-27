@@ -14,3 +14,6 @@ coverage/
 
 # Uploads locales del driver de archivos (ADR-S16)
 apps/api/data/
+
+# v0.1.322 — capturas del centro de aprendizaje (las genera scripts/help-captures en cada release)
+apps/web/public/help-media/

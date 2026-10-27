@@ -1,0 +1,80 @@
+import type { LearnModuleMeta } from '../types';
+
+export const meta: LearnModuleMeta = {
+    id: 'cuenta-y-seguridad',
+    group: 'admin',
+    order: 3,
+    title: 'Tu cuenta y seguridad',
+    tagline: 'Protege tu cuenta, decide qué avisos te llegan y lleva tus datos contigo.',
+    icon: 'ShieldCheck',
+    tone: 'mint',
+    hero: 'cuenta-2fa',
+    highlights: [
+        'Contraseña, dispositivos conectados y verificación en dos pasos',
+        'Qué avisos te llegan por correo o al teléfono, y un resumen diario',
+        'Modo claro u oscuro y la app instalada en tu teléfono',
+        'Tu firma para los correos que salen con tu nombre',
+        'Conectar Claude u otro asistente con tus mismos permisos',
+        'Descargar tus datos o borrar tu cuenta',
+    ],
+    articles: [
+        {
+            id: 'cuenta-y-seguridad-menu',
+            title: 'Tu menú de cuenta, el modo oscuro y la app instalada',
+            summary: 'Qué hay en el menú de tu avatar: cambiar de empresa, Ajustes, el modo claro u oscuro, instalar la app en tu teléfono y cerrar sesión.',
+            minutes: 4,
+            level: 'basic',
+            keywords: 'menu avatar cuenta perfil modo oscuro claro apariencia tema cambiar empresa cerrar sesion instalar app telefono',
+        },
+        {
+            id: 'cuenta-y-seguridad-contrasena',
+            title: 'Contraseña, dispositivos conectados y correo verificado',
+            summary:
+                'Cambia tu contraseña, revisa dónde está abierta tu cuenta y cierra lo que no reconozcas, recupera el acceso si olvidas la clave y confirma tu correo.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'contraseña clave cambiar olvide recuperar sesiones dispositivos conectados cerrar verificar correo seguridad bloqueo intentos',
+        },
+        {
+            id: 'cuenta-y-seguridad-2fa',
+            title: 'Verificación en dos pasos',
+            summary: 'Agrega un código de tu teléfono al entrar, guarda tus códigos de respaldo y qué hacer si cambias o pierdes el celular.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'verificacion dos pasos 2fa autenticador google authenticator codigo respaldo qr seguridad telefono perdido',
+        },
+        {
+            id: 'cuenta-y-seguridad-avisos',
+            title: 'Qué avisos te llegan y por dónde',
+            summary:
+                'Elige qué te llega por correo o como notificación del teléfono, activa las notificaciones en cada dispositivo y recibe un resumen diario.',
+            minutes: 5,
+            level: 'basic',
+            keywords: 'avisos notificaciones campana correo push telefono resumen diario menciones asignaciones recordatorios silenciar',
+        },
+        {
+            id: 'cuenta-y-seguridad-firma',
+            title: 'Tu firma de email',
+            summary: 'Arma tu firma con formato, logo y enlaces para que aparezca al final de los correos que las automatizaciones mandan con tu nombre.',
+            minutes: 3,
+            level: 'basic',
+            keywords: 'firma email correo automatizacion logo cargo telefono html',
+        },
+        {
+            id: 'cuenta-y-seguridad-conexiones',
+            title: 'Conectar Claude u otro asistente a tu cuenta',
+            summary: 'Deja que Claude, Cursor u otro asistente consulte tus listas y te proponga cambios, con tus mismos permisos, y cómo revocar el acceso.',
+            minutes: 5,
+            level: 'advanced',
+            keywords: 'mcp claude cursor asistente ia token conexion conector autorizar revocar acceso externo',
+        },
+        {
+            id: 'cuenta-y-seguridad-tus-datos',
+            title: 'Tus datos: descargarlos o borrar tu cuenta',
+            summary: 'Descarga todo lo que la app guarda sobre ti y entiende qué pasa con lo que escribiste si decides borrar tu cuenta.',
+            minutes: 4,
+            level: 'basic',
+            keywords: 'mis datos descargar exportar borrar cuenta eliminar privacidad derecho usuario eliminado',
+        },
+    ],
+};

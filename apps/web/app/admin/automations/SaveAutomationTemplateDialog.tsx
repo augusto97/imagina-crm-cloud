@@ -81,7 +81,7 @@ export function SaveAutomationTemplateDialog({
                         <div>
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Guardar como plantilla')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Queda entre las recetas del workspace. Al usarla en otra lista se indica qué campo cumple cada rol.')}
+                                {__('Queda entre las recetas de la empresa. Al usarla en otra lista se indica qué campo cumple cada rol.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>

@@ -57,7 +57,7 @@ export function PortalPageSettingsButton({
                     <div className="imcrm-fixed imcrm-inset-0 imcrm-z-30" onClick={() => setOpen(false)} />
                     <div className="imcrm-absolute imcrm-right-0 imcrm-top-full imcrm-z-40 imcrm-mt-1 imcrm-w-72 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3 imcrm-shadow-imcrm-md">
                         <p className="imcrm-mb-2 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">
-                            {__('Ajustes de la página del portal')}
+                            {__('Ajustes de la página')}
                         </p>
 
                         <div className="imcrm-mb-3 imcrm-flex imcrm-flex-col imcrm-gap-1.5">

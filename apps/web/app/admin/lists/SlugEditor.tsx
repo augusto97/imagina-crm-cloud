@@ -108,7 +108,7 @@ export function SlugEditor({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-            <Label htmlFor={`slug-${type}`}>{label ?? __('Slug')}</Label>
+            <Label htmlFor={`slug-${type}`}>{label ?? __('Nombre interno')}</Label>
             <div className="imcrm-flex imcrm-items-stretch imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-overflow-hidden focus-within:imcrm-ring-2 focus-within:imcrm-ring-ring focus-within:imcrm-ring-offset-2">
                 {prefix !== undefined && (
                     <span className="imcrm-flex imcrm-items-center imcrm-bg-muted imcrm-px-3 imcrm-text-xs imcrm-font-mono imcrm-text-muted-foreground">

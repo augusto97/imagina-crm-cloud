@@ -1482,6 +1482,33 @@ export class RecordsService {
      * v0.1.170 — adjunta lookups/rollups a las filas (dentro del tx de la
      * lectura). Camino rápido: sin campos through no consulta nada.
      */
+    /**
+     * v0.1.322 — Los valores DERIVADOS de un registro (búsqueda, resumen,
+     * calculado, fórmula, tiempo registrado, columnas de sistema) tal como se
+     * ven al leerlo, por clave `f{id}`. Para las variables y condiciones de las
+     * automatizaciones: el motor ve los datos guardados y estos se calculan en
+     * cada lectura. Lectura del sistema (sin permisos de persona); `{}` si el
+     * registro no existe o la lista no tiene campos derivados.
+     */
+    async derivedValues(tenantId: number, listId: number, recordId: number): Promise<Record<string, unknown>> {
+        const fields = await this.fields.listByListId(tenantId, listId);
+        const derived = fields.filter((f) => DERIVED_FOR_VARIABLES.has(f.type));
+        if (derived.length === 0) return {};
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const found = await this.repo.findById(tx, tenantId, listId, recordId);
+            if (!found) return {};
+            const enriched = (await this.withThrough(tx, tenantId, listId, fields, [found]))[0] ?? found;
+            const rt = await this.formulaRuntime(tx, tenantId, listId, fields);
+            const row = withComputed(fields, enriched, rt);
+            const out: Record<string, unknown> = {};
+            for (const f of derived) {
+                const key = jsonbKeyForField(f.id);
+                if (key in row.data) out[key] = row.data[key];
+            }
+            return out;
+        });
+    }
+
     private async withThrough<T extends { id: number; data: Record<string, unknown> }>(
         tx: Tx,
         tenantId: number,
@@ -2536,6 +2563,19 @@ function pickWhere(tenantId: number, fields: Field[], query: ListRecordsQuery): 
  * lazy en cada lectura — paridad con el hydrate del plugin; jamás se
  * persisten). Devuelve un row con `data` clonado; sin computeds es no-op.
  */
+/** Tipos que se calculan al leer y que las automatizaciones necesitan ver. */
+const DERIVED_FOR_VARIABLES = new Set<string>([
+    'lookup',
+    'rollup',
+    'computed',
+    'formula',
+    'time_tracked',
+    'created_at',
+    'updated_at',
+    'created_by',
+    'updated_by',
+]);
+
 function withComputed<T extends { data: Record<string, unknown> }>(
     fields: Field[],
     row: T,

@@ -75,6 +75,20 @@ jobs:
           pnpm --filter @imagina-base/api build
           pnpm --filter @imagina-base/web build:cloud
 
+      # v0.1.322 — capturas reales del centro de aprendizaje (ADR-S75): una
+      # copia efímera de la app sobre una empresa de ejemplo graba cada demo y
+      # deja los cuadros en el build del SPA. Si falla, el release sale igual
+      # (la ayuda se ve con sus ilustraciones) y queda el aviso en el log.
+      - name: Capturas del centro de aprendizaje
+        continue-on-error: true
+        timeout-minutes: 75
+        run: |
+          bash scripts/help-captures/ci.sh apps/web/dist-cloud/help-media || {
+            echo "::warning::No se pudieron generar las capturas del centro de aprendizaje; el release sale sin ellas."
+            rm -rf apps/web/dist-cloud/help-media
+          }
+          rm -f apps/web/dist-cloud/help-media/fallo-*.png
+
       - name: Armar bundle autocontenido
         run: |
           set -euo pipefail

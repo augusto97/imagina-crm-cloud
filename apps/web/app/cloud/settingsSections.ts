@@ -86,7 +86,7 @@ export function settingsSectionGroups({
     }
     const groups: SettingsSectionGroup[] = [
         {
-            label: 'Workspace',
+            label: 'Empresa',
             items: [
                 ...(isAdmin
                     ? ([

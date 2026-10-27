@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
  */
 
 export function PaymentStatusChip({ status, className }: { status: PaymentLinkStatus; className?: string }): JSX.Element {
-    const opt = PAYMENT_STATUS_OPTIONS[status];
+    // Un estado desconocido (dato viejo o de otro proveedor) no tumba la pantalla.
+    const opt = PAYMENT_STATUS_OPTIONS[status] ?? { label: String(status), color: '#64748b' };
     return (
         <span
             data-testid="imcrm-payment-status"

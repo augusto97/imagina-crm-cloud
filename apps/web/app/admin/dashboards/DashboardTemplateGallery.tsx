@@ -190,7 +190,7 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
                                 icon={listIcon(t.icon) ?? PieChart}
                                 color={listColor(t.color) ?? TEMPLATE_CATEGORY_COLORS[t.category]}
                                 name={t.name}
-                                subtitle={t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
+                                subtitle={t.source === 'workspace' ? __('De la empresa') : CATEGORY_LABELS[t.category]}
                                 description={t.description}
                                 meta={`${sprintf(_n('%d widget', '%d widgets', t.widgets.length), t.widgets.length)} · ${sprintf(
                                     _n('%d campo a mapear', '%d campos a mapear', t.lists[0]?.fields.length ?? 0),

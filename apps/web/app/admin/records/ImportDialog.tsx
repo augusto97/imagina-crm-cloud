@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { CAP, useCan } from '@/lib/permissions';
 
 import { formatNumber } from '@/lib/tenantFormat';
+import { fieldTypeLabel } from '@/lib/fieldTypeCatalog';
 
 import { SheetChooser, XlsxNotesBanner } from './import/SheetChooser';
 import {
@@ -106,10 +107,10 @@ const CREATABLE_TYPES: Array<{ slug: string; label: string }> = [
     { slug: 'number', label: __('Número') },
     { slug: 'currency', label: __('Moneda') },
     { slug: 'select', label: __('Selección') },
-    { slug: 'multi_select', label: __('Multi-selección') },
+    { slug: 'multi_select', label: __('Selección múltiple') },
     { slug: 'date', label: __('Fecha') },
     { slug: 'datetime', label: __('Fecha y hora') },
-    { slug: 'checkbox', label: __('Checkbox') },
+    { slug: 'checkbox', label: __('Casilla') },
     { slug: 'url', label: __('URL') },
     { slug: 'email', label: __('Email') },
     { slug: 'phone', label: __('Teléfono') },
@@ -619,7 +620,7 @@ function MapStep({
                                 key={f.slug}
                                 className="imcrm-rounded imcrm-border imcrm-border-warning/40 imcrm-bg-card imcrm-px-1.5 imcrm-py-0.5"
                             >
-                                {f.label} <span className="imcrm-text-muted-foreground">({f.type})</span>
+                                {f.label} <span className="imcrm-text-muted-foreground">({fieldTypeLabel(f.type)})</span>
                             </li>
                         ))}
                     </ul>
@@ -663,7 +664,7 @@ function MapStep({
                                             <optgroup label={__('Campos existentes')}>
                                                 {preview.fields.map((f) => (
                                                     <option key={f.id} value={f.slug}>
-                                                        {f.label} ({f.type})
+                                                        {f.label} ({fieldTypeLabel(f.type)})
                                                     </option>
                                                 ))}
                                             </optgroup>
@@ -707,7 +708,7 @@ function MapStep({
                                                 <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
                                                     <Plus className="imcrm-inline imcrm-h-2.5 imcrm-w-2.5" />
                                                     {' '}
-                                                    {__('Tipo sugerido por los datos:')} <span className="imcrm-font-medium">{suggestedType}</span>
+                                                    {__('Tipo sugerido por los datos:')} <span className="imcrm-font-medium">{fieldTypeLabel(suggestedType)}</span>
                                                 </p>
                                             </div>
                                         )}
@@ -723,7 +724,7 @@ function MapStep({
             </div>
 
             <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                {__('Las columnas no mapeadas se ignoran. Filas con errores de validación se reportan al final; el resto se importa igual. Los campos nuevos se crean en la lista antes de empezar el insert.')}
+                {__('Las columnas no mapeadas se ignoran. Filas con errores de validación se reportan al final; el resto se importa igual. Los campos nuevos se crean en la lista antes de empezar a importar.')}
             </p>
         </div>
     );
@@ -849,7 +850,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                                 key={f.slug}
                                 className="imcrm-rounded imcrm-border imcrm-border-primary/30 imcrm-bg-card imcrm-px-1.5 imcrm-py-0.5 imcrm-text-foreground"
                             >
-                                {f.label} <span className="imcrm-text-muted-foreground">({f.type})</span>
+                                {f.label} <span className="imcrm-text-muted-foreground">({fieldTypeLabel(f.type)})</span>
                             </li>
                         ))}
                     </ul>

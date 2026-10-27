@@ -146,10 +146,10 @@ export function CollectionsPage(): JSX.Element {
                                 {d.links.map((l) => (
                                     <tr key={l.id} className="imcrm-border-t imcrm-border-border">
                                         <td className="imcrm-px-4 imcrm-py-2">
-                                            <Link to={`/lists/${l.list_slug}/records/${l.record_id}`} className="imcrm-font-medium hover:imcrm-underline">
+                                            <Link to={`/lists/${l.list_slug}/records/${l.record_id}`} className="imcrm-whitespace-nowrap imcrm-font-medium hover:imcrm-underline">
                                                 {l.record_title}
                                             </Link>
-                                            <div className="imcrm-text-xs imcrm-text-muted-foreground">{l.list_name}</div>
+                                            <div className="imcrm-whitespace-nowrap imcrm-text-xs imcrm-text-muted-foreground">{l.list_name}</div>
                                         </td>
                                         <td className="imcrm-max-w-[16rem] imcrm-truncate imcrm-px-4 imcrm-py-2">{l.title}</td>
                                         <td className="imcrm-whitespace-nowrap imcrm-px-4 imcrm-py-2 imcrm-text-right imcrm-tabular-nums">{formatMoney(l.amount, l.currency)}</td>

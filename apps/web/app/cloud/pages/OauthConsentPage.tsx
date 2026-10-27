@@ -155,7 +155,7 @@ function Consent({
                 )}
 
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                    <label htmlFor="oauth-ws" className="imcrm-text-xs imcrm-font-medium">{__('Workspace')}</label>
+                    <label htmlFor="oauth-ws" className="imcrm-text-xs imcrm-font-medium">{__('Empresa')}</label>
                     <Select id="oauth-ws" value={tenantId ?? ''} onChange={(e) => setTenantId(Number(e.target.value))} data-testid="imcrm-oauth-workspace">
                         {memberships.map((m) => (
                             <option key={m.tenant_id} value={m.tenant_id}>
@@ -164,7 +164,7 @@ function Consent({
                         ))}
                     </Select>
                     <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                        {__('El cliente actúa con TU rol en ese workspace, nunca con más permisos. Cambiarte de rol o salir del workspace lo desconecta al instante.')}
+                        {__('El cliente actúa con TU rol en esa empresa, nunca con más permisos. Cambiarte de rol o salir de la empresa lo desconecta al instante.')}
                     </p>
                 </div>
 

@@ -66,6 +66,22 @@ interface TicketCtx {
     title: string;
 }
 
+/**
+ * El cliente del ticket: el del correo que lo abrió y, si el ticket se creó a
+ * mano (o por un formulario), el de los campos mapeados como «correo» y
+ * «nombre» del remitente en la configuración de la mesa de ayuda.
+ */
+function customerOf(ctx: TicketCtx): { email: string | null; name: string | null } {
+    const read = (id: number | null): string | null => {
+        if (id === null) return null;
+        const v = ctx.record.data[`f${id}`];
+        return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+    };
+    const email = ctx.ticket?.customerEmail || read(ctx.settings.from_email_field_id);
+    const name = ctx.ticket?.customerName || read(ctx.settings.from_name_field_id);
+    return { email: email && /^[^\s@]+@[^\s@]+$/.test(email) ? email : null, name: name ?? null };
+}
+
 function replyError(code: string, message: string, status = 400): HttpException {
     return new HttpException({ code, message, data: { status } }, status);
 }
@@ -119,8 +135,8 @@ export class HelpdeskReplyService {
         return {
             record_id: recordId,
             support_address: ctx.marker?.support_address ?? null,
-            customer_email: ctx.ticket?.customerEmail ?? null,
-            customer_name: ctx.ticket?.customerName ?? null,
+            customer_email: customerOf(ctx).email,
+            customer_name: customerOf(ctx).name,
             subject: ctx.ticket?.subject ?? null,
             token: ctx.token,
             messages: messages.reverse().map(messageDto),
@@ -309,8 +325,8 @@ export class HelpdeskReplyService {
         return {
             'ticket.numero': ctx.token,
             'ticket.asunto': ctx.ticket?.subject ?? ctx.title,
-            'cliente.nombre': ctx.ticket?.customerName || (ctx.ticket?.customerEmail ?? ''),
-            'cliente.correo': ctx.ticket?.customerEmail ?? '',
+            'cliente.nombre': customerOf(ctx).name || (customerOf(ctx).email ?? ''),
+            'cliente.correo': customerOf(ctx).email ?? '',
             'agente.nombre': agent,
         };
     }
@@ -332,7 +348,7 @@ export class HelpdeskReplyService {
         ctx: TicketCtx,
         p: { body: string; to?: string; cc?: string; subject?: string; signature: string | null },
     ): Promise<ComposedReply> {
-        const to = emailList(p.to && p.to.trim() !== '' ? p.to : (ctx.ticket?.customerEmail ?? ''));
+        const to = emailList(p.to && p.to.trim() !== '' ? p.to : (customerOf(ctx).email ?? ''));
         if (to.length === 0) {
             throw replyError('helpdesk_no_recipient', 'El ticket no tiene a quién responder: escribe la dirección del cliente en «Para».');
         }

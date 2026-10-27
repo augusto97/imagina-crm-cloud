@@ -72,7 +72,7 @@ export function PersonalTokensCard(): JSX.Element {
                         {__('Conexión MCP (Claude, Cursor y otros)')}
                     </h2>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Deja que tu asistente de IA favorito lea este workspace y te proponga cambios, con tu mismo rol y permisos. Dos formas: "Autorizar" desde la app de Claude (sin copiar nada) o un token para pegar a mano.')}
+                        {__('Deja que tu asistente de IA favorito lea esta empresa y te proponga cambios, con tu mismo rol y permisos. Dos formas: "Autorizar" desde la app de Claude (sin copiar nada) o un token para pegar a mano.')}
                     </p>
                 </div>
                 {!creating && !created && (
@@ -85,7 +85,7 @@ export function PersonalTokensCard(): JSX.Element {
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-oauth-howto">
                 <p className="imcrm-text-sm imcrm-font-medium">{__('Conectar desde claude.ai, Claude Desktop o el celular (sin token)')}</p>
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('En Claude: Ajustes → Conectores → "Agregar conector personalizado", pega esta URL y toca Conectar. Claude te trae a una pantalla de esta app donde eliges el workspace y el alcance, y listo — el acceso se renueva solo y aparece abajo como una conexión, con el mismo botón Revocar.')}
+                    {__('En Claude: Ajustes → Conectores → "Agregar conector personalizado", pega esta URL y toca Conectar. Claude te trae a una pantalla de esta app donde eliges la empresa y el alcance, y listo — el acceso se renueva solo y aparece abajo como una conexión, con el mismo botón Revocar.')}
                 </p>
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                     <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-select-all imcrm-overflow-x-auto imcrm-rounded-md imcrm-bg-background imcrm-px-2 imcrm-py-1.5 imcrm-font-mono imcrm-text-xs imcrm-ring-1 imcrm-ring-border" data-testid="imcrm-oauth-url">
@@ -181,7 +181,7 @@ export function PersonalTokensCard(): JSX.Element {
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">{__('Cargando…')}</p>
             ) : list.length === 0 ? (
                 <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-tokens-empty">
-                    {__('Todavía no tienes tokens en este workspace.')}
+                    {__('Todavía no tienes tokens en esta empresa.')}
                 </p>
             ) : (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
