@@ -296,12 +296,15 @@ export class AiSettingsService {
      * Decide con qué clave y modelo se habla. Lanza `AiUnavailableError` con
      * un motivo accionable cuando no se puede.
      */
-    async resolve(tenantId: number): Promise<ResolvedAiAccess> {
+    async resolve(tenantId: number, opts: { requireOptIn?: boolean } = {}): Promise<ResolvedAiAccess> {
         const [tenant, platform] = await Promise.all([this.readTenant(tenantId), this.readPlatform()]);
         if (!platform.enabled) {
             throw new AiUnavailableError('El asistente está desactivado en la plataforma.', 'platform_disabled');
         }
-        if (!tenant.enabled) {
+        // F7 (ADR-S72) — la bienvenida de una empresa nueva hace UN pedido con
+        // su propio consentimiento en línea (la empresa todavía no activó el
+        // asistente): pasa `requireOptIn: false`. Todo lo demás exige el opt-in.
+        if (opts.requireOptIn !== false && !tenant.enabled) {
             throw new AiUnavailableError(
                 'El asistente no está activado para esta empresa. Un administrador puede activarlo en Ajustes → Asistente IA.',
                 'tenant_disabled',
