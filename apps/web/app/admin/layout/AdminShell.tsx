@@ -6,6 +6,7 @@ import { EmailVerifyBanner } from '@/admin/layout/EmailVerifyBanner';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
 import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { GettingStarted } from '@/admin/onboarding/GettingStarted';
 import { ActivePathSync } from './activePath';
 import { RouteTracker } from './RouteTracker';
 import { ShortcutsDialog } from './ShortcutsDialog';
@@ -155,6 +156,8 @@ export function AdminShell(): JSX.Element {
             {createListOpen && <ListCreateDialog open={createListOpen} onOpenChange={setCreateListOpen} />}
             {/* v0.1.181 — asistente IA (ADR-S21): drawer a la derecha, se abre desde el Topbar. */}
             <AssistantPanel />
+            {/* F7 (ADR-S72) — «Primeros pasos»: widget flotante abajo a la derecha. */}
+            <GettingStarted onCreateList={openCreateList} />
         </div>
     );
 }
