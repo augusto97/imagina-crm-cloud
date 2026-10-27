@@ -1,4 +1,4 @@
-import type { ResolvedStep, TourContext, TourDef } from './tourTypes';
+import type { ResolvedStep, TourContext, TourDef, TourMeta } from './tourTypes';
 
 /** `{app}` → el nombre de la app (white-label) o «la app». */
 export function fillAppName(text: string, appName: string): string {
@@ -47,14 +47,19 @@ export function resolveSteps(def: TourDef, ctx: TourContext): ResolvedStep[] {
         } else if (typeof step.route === 'string') {
             route = step.route;
         }
+        const advanceOn = target === null ? 'next' : (step.advanceOn ?? 'next');
         out.push({
+            kind: 'step',
             id: step.id,
             target,
             route,
             title: fillAppName(title, ctx.appName),
             body: fillAppName(ctx.isMobile ? touchWording(body) : body, ctx.appName),
             placement,
-            advanceOn: target === null ? 'next' : (step.advanceOn ?? 'next'),
+            advanceOn,
+            waitFor: advanceOn === 'appear' ? (step.waitFor ?? null) : null,
+            art: step.art ?? null,
+            tip: step.tip ? fillAppName(ctx.isMobile ? touchWording(step.tip) : step.tip, ctx.appName) : null,
             waitMs: step.waitMs ?? (route !== null ? 7000 : 3500),
         });
     }
@@ -74,4 +79,52 @@ export function routeMatches(route: string, pathname: string, search: string): b
     const wanted = new URLSearchParams(rQuery);
     for (const [k, v] of wanted) if (current.get(k) !== v) return false;
     return true;
+}
+
+/**
+ * El recorrido completo como se reproduce: la portada (qué vas a ver, cuánto
+ * dura), los pasos que aplican y el cierre (lo que viste y qué seguir).
+ * `skipIntro`: quien acaba de aceptar «¿Te muestro la app?» no necesita otra
+ * portada que le pregunte lo mismo.
+ */
+export function buildRun(
+    def: TourDef,
+    ctx: TourContext,
+    opts: { skipIntro?: boolean } = {},
+): { steps: ResolvedStep[]; meta: TourMeta } {
+    const steps = resolveSteps(def, ctx);
+    const meta: TourMeta = {
+        description: fillAppName(def.description, ctx.appName),
+        cover: def.cover,
+        minutes: def.minutes,
+        outcomes: (def.outcomes ?? steps.map((s) => s.title)).map((o) => fillAppName(o, ctx.appName)),
+        learn: def.learn ?? null,
+        next: def.next ?? [],
+    };
+    const card = (kind: 'intro' | 'outro'): ResolvedStep => ({
+        kind,
+        id: kind,
+        target: null,
+        route: null,
+        title: fillAppName(def.title, ctx.appName),
+        body: meta.description,
+        advanceOn: 'next',
+        waitFor: null,
+        art: def.cover,
+        tip: null,
+        waitMs: 0,
+    });
+    return { steps: [...(opts.skipIntro ? [] : [card('intro')]), ...steps, card('outro')], meta };
+}
+
+/** Cuántos pasos «de verdad» tiene la corrida y en cuál va (sin portada ni cierre). */
+export function stepProgress(steps: ResolvedStep[], index: number): { current: number; total: number } {
+    let current = 0;
+    let total = 0;
+    steps.forEach((s, i) => {
+        if (s.kind !== 'step') return;
+        total += 1;
+        if (i <= index) current += 1;
+    });
+    return { current, total };
 }

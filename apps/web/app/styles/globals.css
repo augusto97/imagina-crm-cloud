@@ -1484,3 +1484,63 @@ body.imcrm-grid-selecting {
 @media (prefers-reduced-motion: reduce) {
     .imcrm-ideas-arrow svg { animation: none; }
 }
+
+/* ── Recorridos (v0.1.324) ─────────────────────────────────────────────── */
+@keyframes imcrm-tour-pulse {
+    0% { box-shadow: 0 0 0 0 hsl(var(--imcrm-primary) / 0.55); }
+    70% { box-shadow: 0 0 0 14px hsl(var(--imcrm-primary) / 0); }
+    100% { box-shadow: 0 0 0 0 hsl(var(--imcrm-primary) / 0); }
+}
+.imcrm-tour-pulse { animation: imcrm-tour-pulse 1.6s ease-out infinite; }
+
+@keyframes imcrm-tour-hand {
+    0%, 100% { transform: translate(0, 0) rotate(-12deg); }
+    45% { transform: translate(-7px, -7px) rotate(-12deg) scale(0.92); }
+    55% { transform: translate(-7px, -7px) rotate(-12deg) scale(0.86); }
+}
+.imcrm-tour-hand { animation: imcrm-tour-hand 1.4s ease-in-out infinite; transform-origin: 30% 20%; }
+
+@keyframes imcrm-tour-pop {
+    0% { transform: scale(0.94) translateY(6px); opacity: 0; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.imcrm-tour-pop { animation: imcrm-tour-pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+
+@keyframes imcrm-tour-check {
+    0% { transform: scale(0.3); opacity: 0; }
+    60% { transform: scale(1.12); opacity: 1; }
+    100% { transform: scale(1); }
+}
+.imcrm-tour-check { animation: imcrm-tour-check 520ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both 120ms; }
+
+@keyframes imcrm-tour-ring {
+    0% { transform: scale(0.6); opacity: 0.7; }
+    100% { transform: scale(1.9); opacity: 0; }
+}
+.imcrm-tour-ring { animation: imcrm-tour-ring 1.4s ease-out 2 both 200ms; }
+
+@keyframes imcrm-tour-confetti {
+    0% { transform: translate3d(0, -20px, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate3d(var(--dx, 0px), 420px, 0) rotate(var(--rot, 540deg)); opacity: 0; }
+}
+.imcrm-tour-confetti > i {
+    position: absolute;
+    top: 0;
+    display: block;
+    width: 8px;
+    height: 12px;
+    border-radius: 2px;
+    animation: imcrm-tour-confetti var(--dur, 1.9s) cubic-bezier(0.25, 0.6, 0.4, 1) both;
+    animation-delay: var(--delay, 0s);
+}
+
+@keyframes imcrm-tour-typing {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 1; }
+}
+.imcrm-tour-caret { animation: imcrm-tour-typing 1s steps(2) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+    .imcrm-tour-pulse, .imcrm-tour-hand, .imcrm-tour-pop, .imcrm-tour-check, .imcrm-tour-ring, .imcrm-tour-caret { animation: none; }
+    .imcrm-tour-confetti { display: none; }
+}

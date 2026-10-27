@@ -5,7 +5,9 @@ import { TOUR_IDS, type Capability } from '@imagina-base/shared';
 
 import { resolveSteps } from '../tour/resolve';
 import type { TourContext } from '../tour/tourTypes';
-import { TOURS, tourById } from './tours';
+import { hasIllustration } from '../../learn/illustrations/registry';
+import { moduleById } from '../../learn/content/registry';
+import { TOUR_CATEGORIES, TOURS, tourById } from './tours';
 
 /**
  * Contra la rotura: cada elemento que señala un recorrido tiene que existir
@@ -112,8 +114,13 @@ describe('recorridos', () => {
                     expect(/imagina/i.test(t), `${tour.id}/${s.id}`).toBe(false);
                 }
                 expect(s.body.length, `${tour.id}/${s.id}`).toBeLessThanOrEqual(240);
-                // Un paso de «haz clic» necesita algo para hacer clic.
-                if (s.advanceOn === 'click') expect(s.target, `${tour.id}/${s.id}`).toBeTruthy();
+                if (s.tip) {
+                    expect(voseo.test(s.tip), `${tour.id}/${s.id}: ${s.tip}`).toBe(false);
+                    expect(s.tip.length, `${tour.id}/${s.id}`).toBeLessThanOrEqual(160);
+                }
+                // Un paso de «haz clic», «aparece» o «escribe» necesita algo que tocar.
+                if (s.advanceOn && s.advanceOn !== 'next') expect(s.target, `${tour.id}/${s.id}`).toBeTruthy();
+                if (s.advanceOn === 'appear') expect(anchors.has(s.waitFor ?? ''), `${tour.id}/${s.id} espera ${s.waitFor}`).toBe(true);
             }
         }
     });
@@ -144,5 +151,30 @@ describe('recorridos', () => {
         }
         // El de bienvenida igual existe (centrado donde no hay qué señalar).
         expect(tourById('welcome')!.available(none)).toBe(true);
+    });
+
+    it('portada, ilustraciones, guía de Aprende y recorridos sugeridos existen', () => {
+        const cats = new Set(TOUR_CATEGORIES.map((c) => c.id));
+        for (const tour of TOURS) {
+            expect(hasIllustration(tour.cover), `${tour.id}: portada ${tour.cover}`).toBe(true);
+            expect(tour.minutes, tour.id).toBeGreaterThanOrEqual(1);
+            expect(tour.minutes, tour.id).toBeLessThanOrEqual(5);
+            expect(cats.has(tour.category), tour.id).toBe(true);
+            for (const s of tour.steps) if (s.art) expect(hasIllustration(s.art), `${tour.id}/${s.id}: ${s.art}`).toBe(true);
+            if (tour.learn) {
+                const [m, a] = tour.learn.split('/');
+                expect(moduleById(m ?? '')?.articles.some((x) => x.id === a), `${tour.id}: ${tour.learn}`).toBe(true);
+            }
+            for (const n of tour.next ?? []) {
+                expect(n, tour.id).not.toBe(tour.id);
+                expect(tourById(n), `${tour.id} → ${n}`).toBeDefined();
+            }
+        }
+    });
+
+    it('la mayoría de los pasos lleva una ilustración (los recorridos son visuales)', () => {
+        const steps = TOURS.flatMap((t) => t.steps);
+        const withArt = steps.filter((s) => s.art).length;
+        expect(withArt / steps.length).toBeGreaterThan(0.7);
     });
 });

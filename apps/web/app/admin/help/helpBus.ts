@@ -16,7 +16,7 @@ import { useSyncExternalStore } from 'react';
  */
 export interface HelpHandlers {
     /** Arranca un recorrido. Devuelve false si no existe o no aplica a esta persona. */
-    startTour?: (tourId: string) => boolean;
+    startTour?: (tourId: string, opts?: { skipIntro?: boolean }) => boolean;
     /** Si el recorrido existe y aplica a esta persona (rol, pantalla, permisos). */
     hasTour?: (tourId: string) => boolean;
     /** Abre el panel de ayuda, opcionalmente en una guía o con una búsqueda. */
@@ -62,8 +62,8 @@ export function registerHelpHandlers(partial: HelpHandlers): () => void {
 }
 
 export const help = {
-    startTour(tourId: string): boolean {
-        return handlers.startTour ? handlers.startTour(tourId) : false;
+    startTour(tourId: string, opts?: { skipIntro?: boolean }): boolean {
+        return handlers.startTour ? handlers.startTour(tourId, opts) : false;
     },
     hasTour(tourId: string): boolean {
         return handlers.hasTour ? handlers.hasTour(tourId) : false;

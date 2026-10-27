@@ -1,17 +1,20 @@
 import { useSyncExternalStore } from 'react';
 
-import type { ResolvedStep } from './tourTypes';
+import type { ResolvedStep, TourMeta } from './tourTypes';
 
 /** El recorrido en curso (uno a la vez en toda la app). */
 export interface TourRun {
     tourId: string;
     title: string;
+    meta: TourMeta;
     steps: ResolvedStep[];
     index: number;
     /** Hacia dónde se movió por última vez (para saltar pasos ausentes). */
     direction: 1 | -1;
     /** Cuántos pasos se llegaron a mostrar (un recorrido sin ninguno avisa). */
     shown: number;
+    /** Los títulos de los pasos que se mostraron (para el cierre). */
+    seen: string[];
     /** Sube en cada cambio de paso: el que lo pidió puede re-armarse. */
     seq: number;
 }
@@ -27,8 +30,8 @@ export const tourStore = {
     get(): TourRun | null {
         return run;
     },
-    start(next: Omit<TourRun, 'index' | 'direction' | 'shown' | 'seq'>): void {
-        run = { ...next, index: 0, direction: 1, shown: 0, seq: (run?.seq ?? 0) + 1 };
+    start(next: Omit<TourRun, 'index' | 'direction' | 'shown' | 'seen' | 'seq'>): void {
+        run = { ...next, index: 0, direction: 1, shown: 0, seen: [], seq: (run?.seq ?? 0) + 1 };
         emit();
     },
     goto(index: number, direction: 1 | -1): void {
@@ -58,9 +61,13 @@ export const tourStore = {
         emit();
         return true;
     },
+    /** Un paso real quedó a la vista (la portada y el cierre no cuentan). */
     markShown(): void {
         if (!run) return;
-        run = { ...run, shown: run.shown + 1 };
+        const step = run.steps[run.index];
+        if (!step || step.kind !== 'step') return;
+        const seen = run.seen.includes(step.title) ? run.seen : [...run.seen, step.title];
+        run = { ...run, shown: run.shown + 1, seen };
         emit();
     },
     stop(): void {

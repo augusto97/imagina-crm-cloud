@@ -46,6 +46,8 @@ export const TOUR_IDS = [
     'install-app',
     'search-and-shortcuts',
     'assistant',
+    'my-day',
+    'discover',
 ] as const;
 export type TourId = (typeof TOUR_IDS)[number];
 

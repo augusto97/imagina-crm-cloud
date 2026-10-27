@@ -317,4 +317,19 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ver las ideas', href: '/ideas' },
     },
+    {
+        key: 'v0.1.324-recorridos-guiados',
+        version: '0.1.324',
+        date: '2026-10-27',
+        kind: 'improvement',
+        title: 'Recorridos guiados, ahora con animaciones',
+        summary:
+            'Los recorridos te muestran cada pantalla con una animación, te invitan a probarlo tú y al final te dicen qué seguir aprendiendo.',
+        body: [
+            'Cada recorrido empieza con lo que vas a ver y cuánto dura. En cada paso, una animación explica la idea, una flecha señala dónde está y, cuando conviene, **lo haces tú**: abrir un registro, escribir en el buscador, crear una vista.',
+            '',
+            'Al terminar ves lo que aprendiste, el recorrido que sigue y la guía completa. Encuéntralos todos en **Aprende → Recorridos guiados**, incluidos dos nuevos: **Tu día a día** y **Aprende, ideas y novedades**.',
+        ].join('\n'),
+        action: { label: 'Ver los recorridos', href: '/aprende#recorridos' },
+    },
 ];

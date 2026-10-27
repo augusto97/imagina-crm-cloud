@@ -542,6 +542,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         screens: ['automations', 'lists-index'],
         keywords: 'ideas recetas ejemplos inspiracion casos de uso que puedo automatizar plantillas',
         route: '/ideas',
+        tour: 'discover',
         related: ['automation-basics', 'integrations'],
     },
     {
@@ -898,6 +899,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         screens: ['my-work'],
         keywords: 'mi trabajo asignado tareas pendientes vencido hoy',
         route: '/my-work',
+        tour: 'my-day',
         related: ['follow-reminders', 'notifications', 'approvals'],
     },
     {

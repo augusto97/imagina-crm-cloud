@@ -1,6 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 
-import { useToastOptional } from '@/components/ui/toast';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -10,7 +9,7 @@ import { useInstallMode } from '@/lib/pwa/install';
 
 import { registerHelpHandlers } from './helpBus';
 import { helpPanel, useHelpPanel } from './helpPanelStore';
-import { resolveSteps } from './tour/resolve';
+import { buildRun, fillAppName, resolveSteps } from './tour/resolve';
 import { tourStore } from './tour/tourStore';
 import type { TourContext } from './tour/tourTypes';
 import { TourLayer, type TourOutcome } from './tour/TourLayer';
@@ -36,7 +35,6 @@ export function HelpCenter({ onShowShortcuts }: { onShowShortcuts?: () => void }
     const installMode = useInstallMode();
     const panel = useHelpPanel();
     const updateProgress = useUpdateGuideProgress();
-    const toast = useToastOptional();
 
     const ctx = useMemo<TourContext>(() => {
         const first = lists.data?.[0] ?? null;
@@ -76,16 +74,16 @@ export function HelpCenter({ onShowShortcuts }: { onShowShortcuts?: () => void }
     }, [viewer.isGuest]);
 
     const startTour = useCallback(
-        (id: string): boolean => {
+        (id: string, opts?: { skipIntro?: boolean }): boolean => {
             if (!hasTour(id)) return false;
             const def = tourById(id)!;
-            const steps = resolveSteps(def, ctxRef.current);
+            const { steps, meta } = buildRun(def, ctxRef.current, opts);
             const wasOpen = panelOpenRef.current;
             helpPanel.close();
             if (id === 'welcome') persist({ welcome_offered: true });
             // Con el panel abierto, se espera a que termine de cerrarse (si no,
             // su velo queda un instante debajo del primer paso).
-            window.setTimeout(() => tourStore.start({ tourId: id, title: def.title, steps }), wasOpen ? 220 : 0);
+            window.setTimeout(() => tourStore.start({ tourId: id, title: fillAppName(def.title, ctxRef.current.appName), meta, steps }), wasOpen ? 220 : 0);
             return true;
         },
         [hasTour, persist],
@@ -112,24 +110,20 @@ export function HelpCenter({ onShowShortcuts }: { onShowShortcuts?: () => void }
     const onFinish = useCallback(
         (tourId: string, outcome: TourOutcome, shown: number) => {
             if (outcome === 'completed') {
-                persist({ completed: [tourId] });
-                if (shown === 0) {
-                    toast?.info(
-                        __('No había nada para mostrar aquí'),
-                        __('Este recorrido necesita algo en pantalla (por ejemplo, una lista con registros). Vuelve a probar desde Ayuda cuando lo tengas.'),
-                    );
-                }
+                // Sin ningún paso a la vista no se marca como hecho (el cierre ya
+                // lo explicó): queda para cuando haya algo que mostrar.
+                if (shown > 0) persist({ completed: [tourId] });
             } else {
                 persist({ dismissed: [tourId] });
             }
         },
-        [persist, toast],
+        [persist],
     );
 
     return (
         <>
             <TourLayer onFinish={onFinish} />
-            {!viewer.isGuest && <WelcomeOffer listsReady={lists.isSuccess} listCount={lists.data?.length ?? 0} onStart={() => startTour('welcome')} />}
+            {!viewer.isGuest && <WelcomeOffer listsReady={lists.isSuccess} listCount={lists.data?.length ?? 0} onStart={() => startTour('welcome', { skipIntro: true })} />}
             {panel.open && (
                 <Suspense fallback={null}>
                     <HelpPanel onShowShortcuts={onShowShortcuts} firstListSlug={ctx.firstList?.slug ?? null} appName={ctx.appName} />
