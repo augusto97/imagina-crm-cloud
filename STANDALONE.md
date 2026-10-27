@@ -4773,6 +4773,24 @@ transparente se ve peor que el neutro; queda pendiente un ícono propio por
 empresa). Dibujar el logo con un filtro blanco en modo oscuro (rompe los logos
 de color).
 
+**Addendum (v0.1.328) — la barra de abajo en modo oscuro y el ícono desde el
+logo.** Seguía blanca en oscuro aun con la app reinstalada: en Android la barra
+de navegación de la app instalada (y el fondo de su pantalla de inicio) los
+pinta el `background_color` del **manifiesto**, no la meta `theme-color`, y un
+manifiesto tiene un solo color. Ahora el manifiesto acepta `?scheme=dark`
+(`background_color` y `theme_color` neutros en #121212; un color de barras
+elegido por la empresa se respeta) y el enlace `<link rel="manifest">` lleva el
+tema de ESE dispositivo: lo fija el pre-pintado del HTML y lo actualiza la app
+al cambiar de tema (`applyManifestScheme`). El teléfono lo lee al instalar y,
+en sus revisiones periódicas, se entera del cambio de tema; el `id` no cambia,
+así que es la misma app. Segundo reporte: la app instalada salía con el ícono
+genérico porque se subió el logo pero no el ícono. Un logo casi cuadrado (un
+isotipo, proporción 0,75–1,34) pasa a ser también el ícono al subirlo si no hay
+ícono propio, y para los logos ya subidos hay «Usar el logo como ícono»; el
+logo se guarda ahora hasta 512 px de alto (antes 160) para que sirva de ícono
+sin verse borroso, y la vista previa muestra el ícono genérico real (antes,
+unas iniciales que no eran lo que se instalaba).
+
 ---
 
-**Versión del documento:** 1.123.0 (marca de la plataforma + login + arranque)
+**Versión del documento:** 1.124.0 (barra de abajo por tema + ícono desde el logo)

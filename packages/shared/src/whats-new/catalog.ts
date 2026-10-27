@@ -631,4 +631,15 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Si tu empresa sube su logo en **Ajustes → Marca**, se usa en el menú, en la pestaña del navegador y al abrir la app.',
         action: { label: 'Ver la marca', href: '/settings?s=marca' },
     },
+    {
+        key: 'v0.1.328-barra-oscura',
+        version: '0.1.328',
+        date: '2026-10-27',
+        kind: 'fix',
+        title: 'La app instalada respeta el modo oscuro abajo',
+        summary:
+            'En Android, la barra de abajo de la app instalada ahora es oscura cuando usas el modo oscuro, como el resto de la app.',
+        media: { illustration: 'dia-push' },
+        body: 'Si ya tenías la app instalada, el teléfono lo actualiza solo en unos días. Para verlo ya, quita la app y vuelve a instalarla desde el menú de tu perfil.',
+    },
 ];

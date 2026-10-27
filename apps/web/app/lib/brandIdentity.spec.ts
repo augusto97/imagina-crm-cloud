@@ -22,8 +22,10 @@ describe('v0.1.327 — marca: geometría de los íconos', () => {
     });
 
     it('el logo se guarda a 2× sin pasarse de ancho', () => {
-        expect(logoCanvasSize(320, 80)).toEqual({ w: 640, h: 160 });
-        expect(logoCanvasSize(4000, 400)).toEqual({ w: 640, h: 64 });
+        expect(logoCanvasSize(320, 80)).toEqual({ w: 1280, h: 320 });
+        expect(logoCanvasSize(4000, 400)).toEqual({ w: 1280, h: 128 });
+        // v0.1.328: un isotipo se guarda a 512 (sirve de ícono sin verse borroso).
+        expect(logoCanvasSize(160, 160)).toEqual({ w: 512, h: 512 });
     });
 
     it('iniciales cuando no hay imagen', () => {

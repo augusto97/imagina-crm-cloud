@@ -28,6 +28,28 @@ export function applyAppMeta(barColor: string | null, appName: string | null, do
     setMeta('apple-mobile-web-app-title', (appName ?? '').trim() || DEFAULT_APP_NAME, doc);
 }
 
+/**
+ * v0.1.328 — En Android la barra de ABAJO de la app instalada (y el fondo de
+ * su pantalla de inicio) los pinta el `background_color` del MANIFIESTO, no la
+ * meta `theme-color` de la página, y un manifiesto tiene un solo color fijo.
+ * Por eso el enlace al manifiesto lleva el tema de ESTE dispositivo
+ * (`?scheme=dark`): el teléfono lo lee al instalar y, en sus revisiones
+ * periódicas, se entera si la persona cambió de tema. El `id` del manifiesto
+ * no cambia, así que sigue siendo la misma app instalada.
+ */
+export const MANIFEST_PATH = '/api/v1/public/manifest.webmanifest';
+
+export function manifestHref(theme: 'light' | 'dark'): string {
+    return theme === 'dark' ? `${MANIFEST_PATH}?scheme=dark` : MANIFEST_PATH;
+}
+
+export function applyManifestScheme(theme: 'light' | 'dark', doc: Document = document): void {
+    const link = doc.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (!link) return;
+    const href = manifestHref(theme);
+    if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+}
+
 /** El nombre con el que la app se instala aquí. */
 export function currentAppName(doc: Document = document): string {
     return doc.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]')?.content?.trim() || DEFAULT_APP_NAME;

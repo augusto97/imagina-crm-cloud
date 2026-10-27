@@ -5,7 +5,7 @@ import { resolveAppBarColor, type BrandingResponse } from '@imagina-base/shared'
 import { api, useSession } from '@/cloud/session';
 import { applyFavicon } from '@/lib/favicon';
 import { setTitleAppName } from '@/lib/documentTitle';
-import { applyAppMeta } from '@/lib/pwa/appMeta';
+import { applyAppMeta, applyManifestScheme } from '@/lib/pwa/appMeta';
 import { rememberSplash } from '@/lib/bootSplash';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { useTheme, type ResolvedTheme } from '@/lib/theme';
@@ -295,6 +295,7 @@ export function useBranding() {
         // sistema. v0.1.326: neutro por defecto (sigue el tema), o el que
         // eligió la empresa en Ajustes → Marca.
         applyAppMeta(resolveAppBarColor(appBarSetting, primaryColor, resolved), baseName);
+        applyManifestScheme(resolved);
         // v0.1.327 — la próxima vez, la pantalla de arranque sale con esta marca.
         rememberSplash({
             name: baseName,

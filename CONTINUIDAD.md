@@ -372,11 +372,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.327**
-(marca de la plataforma en Plataforma → Marca, login nuevo y pantalla de
-arranque), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.328**
+(barra de abajo de la app instalada según el tema del dispositivo + ícono desde
+el logo), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-27 — **Barra de abajo blanca en modo oscuro + ícono raro en la app
+  instalada** (reporte del usuario con capturas tras v0.1.327). La barra de
+  Android sale del `background_color` del manifiesto (no de la meta): v0.1.328
+  la hace seguir el tema del dispositivo. El ícono: el usuario subió el logo
+  pero no el ícono, así que salía el genérico; v0.1.328 usa un logo cuadrado
+  como ícono. **Para el usuario**: actualizar, en Plataforma → Marca tocar
+  «Usar el logo como ícono» (o subir de nuevo el logo original, mejor calidad)
+  y guardar; en el teléfono quitar la app y volver a instalarla. Queda
+  verificar en su teléfono.
 - 2026-10-27 — **Barra de abajo con el color de marca + logo inventado + login
   y arranque feos** (reporte del usuario tras v0.1.326). La barra: el servidor
   ya entrega todo neutro (verificado en base.imagina.cloud); el teléfono guarda
@@ -816,6 +825,17 @@ arranque), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.328** — **Barra de abajo según el tema + ícono desde el
+  logo** (addendum ADR-S80). Reporte del usuario: en modo oscuro la barra de
+  abajo de la app instalada seguía blanca, y la app instalada mostraba un ícono
+  raro (el genérico: subió el logo pero no el ícono). (1) En Android esa barra
+  sale del `background_color` del manifiesto: el manifiesto acepta
+  `?scheme=dark` y el enlace lleva el tema del dispositivo (pre-pintado del
+  HTML + `applyManifestScheme` al cambiar de tema). (2) Un logo casi cuadrado
+  pasa a ser también el ícono si no hay uno; «Usar el logo como ícono» para los
+  ya subidos; el logo se guarda hasta 512 px; la vista previa muestra el
+  genérico real. Tests: 1 de API (manifiesto oscuro) + 2 del front + E2E
+  navegador 15/15.
 - **2026-10-27 · v0.1.327** — **Marca de la plataforma, login nuevo y pantalla
   de arranque** (ADR-S80). Reporte del usuario: la barra de abajo de la app
   instalada seguía con el color de la marca, el login "no me gusta", un logo
