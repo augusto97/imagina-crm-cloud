@@ -45,9 +45,9 @@ export async function seedCobros(tenantId) {
         const recs = (await c.query(`select id from records where tenant_id = $1 and list_id = $2 and deleted_at is null and parent_id is null order by id limit 6`, [tenantId, list])).rows.map((r) => r.id);
         if (!recs.length) return false;
         const rows = [
-            { title: 'Factura F-0001', amount: 250000, status: 'paid', paid: 250000, method: 'PSE', days: -6 },
+            { title: 'Factura F-0001', amount: 250000, status: 'approved', paid: 250000, method: 'PSE', days: -6 },
             { title: 'Factura F-0002', amount: 1250000, status: 'pending', days: -2 },
-            { title: 'Factura F-0003', amount: 480000, status: 'paid', paid: 480000, method: 'Tarjeta de crédito', days: -4 },
+            { title: 'Factura F-0003', amount: 480000, status: 'approved', paid: 480000, method: 'Tarjeta de crédito', days: -4 },
             { title: 'Factura F-0004', amount: 320000, status: 'expired', days: -20 },
             { title: 'Factura F-0005', amount: 760000, status: 'mismatch', paid: 700000, method: 'Nequi', days: -3 },
         ];

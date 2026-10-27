@@ -17,6 +17,7 @@ WEB_PORT=${HC_WEB_PORT:-5401}
 LOGS=${HC_LOGS:-/tmp/help-captures}
 mkdir -p "$LOGS"
 
+# HC_ONLY=clave1,clave2: grabar sólo esas demos.
 # HC_DATABASE_URL / HC_REDIS_URL: usar una base y un Redis que ya existen
 # (para probarlo en una máquina de desarrollo sin pisar sus puertos).
 if [ -z "${HC_DATABASE_URL:-}" ]; then
@@ -64,5 +65,5 @@ node scripts/help-captures/prepare-operator.mjs --email "$HC_SUPERADMIN_EMAIL" -
 if [ -z "${PW_CHROMIUM:-}" ]; then
     pnpm exec playwright-core install --with-deps chromium > "$LOGS/playwright.log" 2>&1
 fi
-node scripts/help-captures/run.mjs --base "http://localhost:$WEB_PORT" --email "$EMAIL" --password "$PASS" --out "$OUT"
+node scripts/help-captures/run.mjs --base "http://localhost:$WEB_PORT" --email "$EMAIL" --password "$PASS" --out "$OUT" ${HC_ONLY:+--only "$HC_ONLY"}
 echo "capturas en $OUT ($(du -sh "$OUT" | cut -f1))"
