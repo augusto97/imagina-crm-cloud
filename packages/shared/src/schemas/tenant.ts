@@ -34,6 +34,36 @@ export const hexColorSchema = z
     .trim()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Color hex inválido (formato #RRGGBB)');
 
+/**
+ * v0.1.326 — color de las barras del sistema en la app instalada y en el
+ * navegador del teléfono (la de arriba con la hora y la de abajo en Android).
+ * `null` = neutro: blanco en modo claro y #121212 en oscuro, el mismo fondo de
+ * la barra superior de la app (antes se pintaban SIEMPRE con el primario y un
+ * color vistoso hacía ver rara toda la interfaz). `'brand'` = el primario,
+ * como antes; un hex = ese color.
+ */
+export const APP_BAR_BRAND = 'brand';
+export const appBarColorSchema = z.union([z.literal(APP_BAR_BRAND), hexColorSchema]).nullable();
+export type AppBarColor = z.infer<typeof appBarColorSchema>;
+
+/** Fondo neutro de las barras del sistema: el de la barra superior de la app. */
+export const APP_BAR_NEUTRAL = { light: '#ffffff', dark: '#121212' } as const;
+
+/**
+ * El color que van a tener las barras del sistema. Lectura tolerante: un
+ * valor raro (o un primario inválido con `'brand'`) cae al neutro.
+ */
+export function resolveAppBarColor(
+    setting: string | null | undefined,
+    primaryColor: string | null | undefined,
+    theme: 'light' | 'dark' = 'light',
+): string {
+    const hex = /^#[0-9a-fA-F]{6}$/;
+    if (setting === APP_BAR_BRAND && primaryColor && hex.test(primaryColor)) return primaryColor.toLowerCase();
+    if (setting && hex.test(setting)) return setting.toLowerCase();
+    return APP_BAR_NEUTRAL[theme];
+}
+
 export const brandingSchema = z.object({
     primary_color: hexColorSchema.nullable().default(null),
     /**
@@ -43,6 +73,8 @@ export const brandingSchema = z.object({
      * cual y el front deriva la tinta (clara u oscura) de su luminancia.
      */
     sidebar_color: hexColorSchema.nullable().default(null),
+    /** v0.1.326 — barras del sistema en el teléfono (ver `appBarColorSchema`). */
+    app_bar_color: appBarColorSchema.default(null),
     logo_file_id: idSchema.nullable().default(null),
     app_name: z.string().trim().min(1).max(60).nullable().default(null),
 });
@@ -53,6 +85,7 @@ export const updateBrandingSchema = z
     .object({
         primary_color: hexColorSchema.nullable(),
         sidebar_color: hexColorSchema.nullable(),
+        app_bar_color: appBarColorSchema,
         logo_file_id: idSchema.nullable(),
         app_name: z.string().trim().min(1).max(60).nullable(),
     })

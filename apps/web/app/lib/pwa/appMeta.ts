@@ -1,11 +1,16 @@
+import { APP_BAR_NEUTRAL } from '@imagina-base/shared';
+
 /**
- * H1 — Las metas de la app instalada con la marca del tenant: el color de la
- * barra del navegador/ventana (`theme-color`) y el nombre bajo el icono en
- * iOS (`apple-mobile-web-app-title`). El manifiesto ya los trae por Host;
- * esto cubre el workspace activo en el dominio de la plataforma.
+ * H1 — Las metas de la app instalada: el color de las barras del sistema
+ * (`theme-color`: la de arriba con la hora y, en Android, la de abajo) y el
+ * nombre bajo el icono en iOS (`apple-mobile-web-app-title`). El manifiesto
+ * ya los trae por Host; esto cubre el workspace activo y el modo oscuro.
+ *
+ * v0.1.326 — el color llega YA resuelto (`resolveAppBarColor`): por defecto
+ * neutro, del mismo fondo que la barra superior de la app.
  */
 export const DEFAULT_APP_NAME = 'Imagina Base';
-export const DEFAULT_THEME_COLOR = '#0c7e97';
+export const DEFAULT_THEME_COLOR = APP_BAR_NEUTRAL.light;
 
 function setMeta(name: string, content: string, doc: Document): void {
     let el = doc.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
@@ -17,8 +22,8 @@ function setMeta(name: string, content: string, doc: Document): void {
     el.content = content;
 }
 
-export function applyAppMeta(primaryColor: string | null, appName: string | null, doc: Document = document): void {
-    const color = primaryColor && /^#[0-9a-fA-F]{6}$/.test(primaryColor) ? primaryColor : DEFAULT_THEME_COLOR;
+export function applyAppMeta(barColor: string | null, appName: string | null, doc: Document = document): void {
+    const color = barColor && /^#[0-9a-fA-F]{6}$/.test(barColor) ? barColor : DEFAULT_THEME_COLOR;
     setMeta('theme-color', color, doc);
     setMeta('apple-mobile-web-app-title', (appName ?? '').trim() || DEFAULT_APP_NAME, doc);
 }

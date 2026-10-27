@@ -372,11 +372,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.325**
-(novedades con ilustración animada, captura real y carrusel, también las ya
-publicadas), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.326**
+(barras del teléfono neutras y ajustables + ofrecer la instalación la primera
+vez en cada dispositivo), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-27 — **PWA: barras del teléfono y ofrecer instalación** (pedido del
+  usuario: "toma los colores de la marca arriba y abajo y se ve muy raro…
+  deberían poderse ajustar, por defecto blancos o negros… y la primera vez en
+  un dispositivo debería ofrecer la instalación"). Hecho en v0.1.326: neutras
+  por defecto, ajuste en Ajustes → Marca, ofrecimiento automático. Queda
+  verificar en un teléfono real (el navegador sin interfaz del entorno simula
+  el aviso de instalación).
 - 2026-10-27 — **«La ayuda es muy básica y poco ilustrativa»** (feedback del
   usuario sobre la fase 7: "esos tours no me gustaron… en ClickUp las novedades
   traen imágenes o una pequeña animación… lo que hiciste es muy básico, muy
@@ -800,6 +807,20 @@ publicadas), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.326** — **Barras del teléfono neutras + ofrecer la
+  instalación** (ADR-S79). Pedido del usuario: las barras del sistema de la app
+  instalada (la de la hora y la de abajo en Android) se pintaban con el primario
+  y con colores vivos se veía rara. Ahora salen **blancas en claro y #121212 en
+  oscuro** (el fondo de la barra superior de la app) y en **Ajustes → Marca →
+  Barras del teléfono** se elige «Neutras» (recomendado), «Color de la marca» u
+  «Otro color», con vista previa de un teléfono (`branding.app_bar_color`, sin
+  migración; manifiesto, meta y boot público). Y la **primera vez en cada
+  dispositivo** la app ofrece instalarse sola (con la ventana del navegador o
+  con los pasos en iPhone/Android/Mac; no insiste en Chrome/Edge sin aviso, y
+  una segunda vez a los 30 días si se descartó). Tests: shared, front (reglas
+  del ofrecimiento y del color, 18 en el spec de PWA), API (manifiesto, boot y
+  branding) + E2E navegador 24/24 (escritorio con la ventana simulada, oscuro,
+  Marca con las tres opciones, Chrome sin aviso, iPhone con los pasos).
 - **2026-10-27 · v0.1.325** — **Novedades con animaciones** (ADR-S78), última
   de las cuatro versiones del pedido "la ayuda es muy básica" ("en ClickUp las
   novedades traen imágenes o una pequeña animación"). Cada novedad puede traer

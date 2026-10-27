@@ -4687,4 +4687,41 @@ validado alcanza y no obliga a otra migración para la próxima pieza).
 
 ---
 
-**Versión del documento:** 1.121.0 (novedades animadas)
+### ADR-S79 — Barras del sistema neutras y ofrecimiento de instalación (v0.1.326)
+
+**Contexto.** La app instalada (ADR-S68) pintaba las barras del sistema
+—la de arriba con la hora y, en Android, la de abajo— con el color PRIMARIO
+de la empresa (`theme-color` del manifiesto y de la meta). Con un primario
+vistoso (fucsia, naranja) toda la interfaz se veía rara, y no había forma de
+cambiarlo sin cambiar el primario. Además instalar exigía encontrar «Instalar
+la app» en el menú de la persona (v0.1.321).
+
+**Decisión.** (a) `branding.app_bar_color` (sin migración, en
+`tenants.settings.branding`; `appBarColorSchema`): `null` = **neutro**, el
+fondo de la barra superior de la app (#ffffff en claro, #121212 en oscuro);
+`'brand'` = el primario, como antes; un hex = ese color. `resolveAppBarColor`
+(shared) es la única regla: la usan el manifiesto (siempre en claro: no sabe
+del tema de la persona; `background_color` del arranque queda blanco) y la
+meta que pinta `useBranding`, que sigue al tema de la app; el HTML arranca en
+#ffffff y el pre-pintado del tema la pasa a #121212 antes de montar React. El
+boot público (`/public/boot`) lo trae para el dominio de una empresa. Ajuste en
+Ajustes → Marca → «Barras del teléfono» con vista previa de un teléfono.
+(b) **Ofrecimiento automático** (`InstallOffer`, reglas puras en
+`lib/pwa/installOffer.ts`): la primera vez en cada dispositivo, a los 6 s y en
+una pantalla tranquila, nunca encima de otro diálogo, recorrido o bienvenida ni
+impersonando. Con `beforeinstallprompt` se ofrece «Instalar» (la ventana del
+navegador); sin él, sólo donde instalar es con pasos y no hay otra señal
+—iPhone/iPad, Android con Samsung Internet o Firefox, Safari del Mac— con «Ver
+cómo». En Chrome/Edge sin el evento la app suele estar ya instalada: no se
+insiste. Memoria por dispositivo en `localStorage` (`imcrm:install-offer`):
+una vez, una segunda a los 30 días si se descartó, y nunca más al instalarla.
+
+**Alternativas descartadas.** Derivar un tono suave del primario por defecto
+(un tinte de un color vivo sigue llamando la atención y no combina con la
+barra superior blanca/negra de la app). Mostrar el aviso nativo del navegador
+(`beforeinstallprompt` sin `preventDefault`): no existe en Safari ni Firefox y
+en Chrome es una barra genérica que no explica para qué sirve instalarla.
+
+---
+
+**Versión del documento:** 1.122.0 (barras del sistema neutras + ofrecer instalación)

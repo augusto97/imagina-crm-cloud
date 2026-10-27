@@ -15,7 +15,9 @@
              no cambia. `lib/pwa` actualiza theme-color y el título de iOS con
              la marca. -->
         <link rel="manifest" href="/api/v1/public/manifest.webmanifest" />
-        <meta name="theme-color" content="#0c7e97" />
+        <!-- v0.1.326: barras del sistema NEUTRAS (el fondo de la barra superior
+             de la app); la empresa puede elegir otro en Ajustes → Marca. -->
+        <meta name="theme-color" content="#ffffff" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -31,7 +33,11 @@
                         mode === 'dark' ||
                         (mode === 'system' &&
                             window.matchMedia('(prefers-color-scheme: dark)').matches);
-                    if (dark) document.documentElement.setAttribute('data-imcrm-theme', 'dark');
+                    if (dark) {
+                        document.documentElement.setAttribute('data-imcrm-theme', 'dark');
+                        var bar = document.querySelector('meta[name="theme-color"]');
+                        if (bar) bar.setAttribute('content', '#121212');
+                    }
                 } catch (e) {
                     /* storage bloqueado: arranca en claro */
                 }

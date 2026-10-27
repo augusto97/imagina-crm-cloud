@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
+import { resolveAppBarColor } from '@imagina-base/shared';
 
 import { describeDevice } from '@/lib/deviceLabel';
 import { codeForField, parseRecordLinkCode } from '@/lib/scan/codeSearch';
 
 import { applyAppMeta, currentAppName } from './appMeta';
+import { canOfferInstall, INSTALL_OFFER_RETRY_MS, offerDue, readOfferMemory, rememberOffer } from './installOffer';
 import { boldSegments, installGuide } from './installGuide';
 import { deviceInfo, pushSupport } from './platform';
 import { base64UrlToBytes } from './push';
@@ -79,8 +81,51 @@ describe('H1 — puente con el service worker', () => {
         expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#aa2200');
         expect(currentAppName()).toBe('Acme CRM');
         applyAppMeta('rojo', null);
-        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#0c7e97');
+        expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe('#ffffff');
         expect(currentAppName()).toBe('Imagina Base');
+    });
+
+    it('v0.1.326 — barras del sistema: neutras por defecto, siguen el tema; la marca u otro color si se elige', () => {
+        expect(resolveAppBarColor(null, '#FF00AA', 'light')).toBe('#ffffff');
+        expect(resolveAppBarColor(null, '#FF00AA', 'dark')).toBe('#121212');
+        expect(resolveAppBarColor('brand', '#FF00AA', 'dark')).toBe('#ff00aa');
+        expect(resolveAppBarColor('brand', null, 'light')).toBe('#ffffff');
+        expect(resolveAppBarColor('#1F2937', '#FF00AA', 'light')).toBe('#1f2937');
+        expect(resolveAppBarColor('rojo', '#FF00AA', 'light')).toBe('#ffffff');
+    });
+});
+
+describe('v0.1.326 — ofrecer la instalación la primera vez', () => {
+    const base = { ios: false, android: false, standalone: false, iosSafari: false, iosVersion: null };
+    it('dónde se ofrece', () => {
+        expect(canOfferInstall('prompt', base, 'chrome')).toBe(true);
+        expect(canOfferInstall(null, base, 'chrome')).toBe(false);
+        expect(canOfferInstall('prompt', { ...base, standalone: true }, 'chrome')).toBe(false);
+        // Chrome/Edge sin la ventana del navegador: casi siempre ya instalada.
+        expect(canOfferInstall('help', base, 'chrome')).toBe(false);
+        expect(canOfferInstall('help', { ...base, android: true }, 'chrome')).toBe(false);
+        expect(canOfferInstall('help', base, 'firefox')).toBe(false);
+        expect(canOfferInstall('help', { ...base, ios: true, iosSafari: true }, 'safari')).toBe(true);
+        expect(canOfferInstall('help', { ...base, ios: true }, 'chrome')).toBe(true);
+        expect(canOfferInstall('help', { ...base, android: true }, 'samsung')).toBe(true);
+        expect(canOfferInstall('help', base, 'safari')).toBe(true);
+    });
+
+    it('una vez por dispositivo y una segunda a los 30 días; instalada, nunca más', () => {
+        const store = new Map<string, string>();
+        const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+        const t0 = 1_000_000;
+        let m = readOfferMemory(storage);
+        expect(offerDue(m, t0)).toBe(true);
+        m = rememberOffer(m, t0, 'shown', storage);
+        expect(offerDue(readOfferMemory(storage), t0 + 1000)).toBe(false);
+        expect(offerDue(readOfferMemory(storage), t0 + INSTALL_OFFER_RETRY_MS)).toBe(true);
+        m = rememberOffer(m, t0 + INSTALL_OFFER_RETRY_MS, 'shown', storage);
+        expect(offerDue(readOfferMemory(storage), t0 + 10 * INSTALL_OFFER_RETRY_MS)).toBe(false);
+        rememberOffer({ count: 0, at: 0 }, t0, 'installed', storage);
+        expect(offerDue(readOfferMemory(storage), t0)).toBe(false);
+        store.set('imcrm:install-offer', '{roto');
+        expect(readOfferMemory(storage)).toEqual({ count: 0, at: 0 });
     });
 });
 

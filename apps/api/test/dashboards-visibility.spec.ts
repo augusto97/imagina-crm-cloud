@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BrandingService } from '../src/workspaces/branding.service';
+import { updateBrandingSchema } from '@imagina-base/shared';
 import { DashboardsService, type DashboardViewer } from '../src/dashboards/dashboards.service';
 import { attachments, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -204,5 +205,17 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
         const cleared = await branding.update(tenantId, { sidebar_color: null });
         expect(cleared.sidebar_color).toBeNull();
         expect(cleared.primary_color).toBe('#0f766e');
+    });
+
+    it('app_bar_color (v0.1.326): neutro por defecto, «brand» u otro hex; inválido rebota', async () => {
+        expect((await branding.get(tenantId)).app_bar_color).toBeNull();
+        expect((await branding.update(tenantId, { app_bar_color: 'brand' })).app_bar_color).toBe('brand');
+        // PATCH parcial de otra clave no lo toca.
+        await branding.update(tenantId, { app_name: 'Acme' });
+        expect((await branding.get(tenantId)).app_bar_color).toBe('brand');
+        expect((await branding.update(tenantId, { app_bar_color: '#1f2937' })).app_bar_color).toBe('#1f2937');
+        expect((await branding.update(tenantId, { app_bar_color: null })).app_bar_color).toBeNull();
+        expect(updateBrandingSchema.safeParse({ app_bar_color: 'rojo' }).success).toBe(false);
+        expect(updateBrandingSchema.safeParse({ app_bar_color: 'brand' }).success).toBe(true);
     });
 });

@@ -1,5 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 
+import { InstallOffer } from '@/components/pwa/InstallOffer';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -15,6 +16,7 @@ import type { TourContext } from './tour/tourTypes';
 import { TourLayer, type TourOutcome } from './tour/TourLayer';
 import { tourById } from './tours/tours';
 import { useHelpViewer, useUpdateGuideProgress } from './useHelpData';
+
 import { WelcomeOffer } from './WelcomeOffer';
 
 const HelpPanel = lazyWithReload(() => import('./HelpPanel').then((m) => ({ default: m.HelpPanel })));
@@ -124,6 +126,7 @@ export function HelpCenter({ onShowShortcuts }: { onShowShortcuts?: () => void }
         <>
             <TourLayer onFinish={onFinish} />
             {!viewer.isGuest && <WelcomeOffer listsReady={lists.isSuccess} listCount={lists.data?.length ?? 0} onStart={() => startTour('welcome', { skipIntro: true })} />}
+            {!viewer.isGuest && <InstallOffer disabled={viewer.impersonating} />}
             {panel.open && (
                 <Suspense fallback={null}>
                     <HelpPanel onShowShortcuts={onShowShortcuts} firstListSlug={ctx.firstList?.slug ?? null} appName={ctx.appName} />

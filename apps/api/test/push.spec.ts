@@ -50,15 +50,20 @@ function browserKeys() {
 }
 
 describe('H1 — manifiesto (puro)', () => {
-    it('plataforma: Imagina Base; empresa: su nombre de app y su color; iconos genéricos', () => {
+    it('plataforma: Imagina Base; empresa: su nombre de app; barras neutras salvo que elija; iconos genéricos', () => {
         const base = buildManifest({ tenant: null });
-        expect(base).toMatchObject({ id: '/', name: 'Imagina Base', short_name: 'Imagina Base', start_url: '/', scope: '/', display: 'standalone', theme_color: '#0c7e97', lang: 'es' });
+        expect(base).toMatchObject({ id: '/', name: 'Imagina Base', short_name: 'Imagina Base', start_url: '/', scope: '/', display: 'standalone', theme_color: '#ffffff', background_color: '#ffffff', lang: 'es' });
         expect(base.icons.map((i) => `${i.sizes}:${i.purpose}`)).toEqual(['192x192:any', '512x512:any', '192x192:maskable', '512x512:maskable']);
         const acme = buildManifest({ tenant: { name: 'Acme S.A.S.', app_name: 'Acme Gestión Comercial', primary_color: '#AA2200' } });
-        expect(acme).toMatchObject({ name: 'Acme Gestión Comercial', short_name: 'Acme', theme_color: '#aa2200' });
+        // v0.1.326 — el primario ya no pinta las barras del sistema por defecto.
+        expect(acme).toMatchObject({ name: 'Acme Gestión Comercial', short_name: 'Acme', theme_color: '#ffffff' });
+        const brand = buildManifest({ tenant: { name: 'Acme', app_name: null, primary_color: '#AA2200', app_bar_color: 'brand' } });
+        expect(brand.theme_color).toBe('#aa2200');
+        const custom = buildManifest({ tenant: { name: 'Acme', app_name: null, primary_color: '#AA2200', app_bar_color: '#1F2937' } });
+        expect(custom).toMatchObject({ theme_color: '#1f2937', background_color: '#ffffff' });
         // El id no cambia con la marca: el navegador reconoce la MISMA app.
         expect(acme.id).toBe(base.id);
-        expect(buildManifest({ tenant: { name: 'Beta', app_name: null, primary_color: 'rojo' } })).toMatchObject({ name: 'Beta', theme_color: '#0c7e97' });
+        expect(buildManifest({ tenant: { name: 'Beta', app_name: null, primary_color: 'rojo', app_bar_color: 'brand' } })).toMatchObject({ name: 'Beta', theme_color: '#ffffff' });
         expect(shortAppName('Supercalifragilístico')).toBe('Supercalifr…');
     });
 
