@@ -9921,6 +9921,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         aprendizaje, ideas que se activan, recorridos visuales y novedades
         animadas.**
 
+  - [x] **Barras del teléfono neutras + ofrecer la instalación (v0.1.326,
+        ADR-S79, pedido del usuario: "toma los colores de la marca arriba y
+        abajo de la app y se ve muy raro… por defecto blancos o negros… y la
+        primera vez en un dispositivo debería ofrecer la instalación")**:
+        (a) las barras del sistema de la app instalada y del navegador del
+        teléfono (`theme-color`) ya no son el primario: `branding.app_bar_color`
+        (sin migración) con `null` = **neutras** —#ffffff en claro, #121212 en
+        oscuro, el fondo de la barra superior de la app—, `'brand'` = el
+        primario o un hex propio; `resolveAppBarColor` (shared) lo decide para
+        el manifiesto (en claro; `background_color` blanco) y para la meta, que
+        `useBranding` actualiza con el tema; el HTML arranca en blanco y el
+        pre-pintado del tema la pasa a #121212; `/public/boot` lo trae para el
+        dominio de una empresa. Ajustes → Marca → **«Barras del teléfono»**:
+        Neutras (recomendado) / Color de la marca / Otro color, con vista previa
+        de un teléfono. (b) **`InstallOffer`**: la primera vez en cada
+        dispositivo, a los 6 s, en una pantalla tranquila y nunca encima de otro
+        diálogo, recorrido o bienvenida ni impersonando, una tarjeta ofrece
+        «Instalar» (la ventana del navegador) o «Ver cómo» (los pasos en iPhone/
+        iPad, Android con Samsung Internet o Firefox y Safari del Mac); en
+        Chrome/Edge sin `beforeinstallprompt` no insiste (suele estar ya
+        instalada). Reglas puras en `lib/pwa/installOffer.ts`, memoria por
+        dispositivo (`imcrm:install-offer`): una vez, otra a los 30 días si se
+        descartó, nunca al instalarla. Guía de ayuda y novedad al día. Tests:
+        PWA del front (18), shared, API (manifiesto, boot, branding) + E2E
+        navegador 24/24 (escritorio con la ventana simulada, oscuro, Marca con
+        las tres opciones, Chrome sin aviso, iPhone en oscuro con los pasos).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

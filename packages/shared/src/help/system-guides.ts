@@ -853,7 +853,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         category: 'mobile',
         minutes: 1,
         body: [
-            '1. Abre tu menú (tu inicial, arriba a la derecha) y elige **Instalar la app**. También está en **Ajustes → Cuenta → Avisos**, en la tarjeta **App en este dispositivo**.',
+            '1. La primera vez que usas la app en un dispositivo, te la ofrece sola abajo a la derecha. Si dijiste **Ahora no**, abre tu menú (tu inicial, arriba a la derecha) y elige **Instalar la app**. También está en **Ajustes → Cuenta → Avisos**, en la tarjeta **App en este dispositivo**.',
             '2. Si tu navegador la instala con un clic, confirma con **Instalar**. Si no, verás los pasos para tu navegador:',
             '- **Chrome o Edge en el computador:** el ícono de instalar a la derecha de la barra de direcciones.',
             '- **Android:** menú **⋮** → **Instalar app** (o **Agregar a la pantalla principal**).',
@@ -861,7 +861,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
             '- **Mac:** en Safari, **Archivo** → **Agregar al Dock**.',
             'Queda con su ícono, como cualquier aplicación, y se actualiza sola. Firefox en el computador no instala apps: usa Chrome, Edge o Safari.',
         ].join('\n'),
-        tip: 'Desde ese mismo lugar puedes ver los pasos para otro dispositivo, por ejemplo para explicarle a tu equipo cómo instalarla en el teléfono.',
+        tip: 'Desde ese mismo lugar puedes ver los pasos para otro dispositivo. Las barras del teléfono (la de la hora y la de abajo) salen blancas o negras según el tema; un administrador puede cambiarlas en **Ajustes → Marca → Barras del teléfono**.',
         screens: ['settings:avisos'],
         keywords: 'instalar app aplicacion celular telefono iphone ipad android escritorio computador icono pwa chrome edge safari mac dock pantalla de inicio',
         tour: 'install-app',

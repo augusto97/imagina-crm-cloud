@@ -136,6 +136,7 @@ export class DomainsService {
             name: row.name,
             app_name: b.app_name,
             primary_color: b.primary_color,
+            app_bar_color: b.app_bar_color,
             // URL firmada: el visitante todavía no tiene sesión.
             logo_url: b.logo_file_id !== null ? this.files.signedUrl(row.id, b.logo_file_id, 3600) : null,
             surface,

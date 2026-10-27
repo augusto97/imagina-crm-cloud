@@ -52,7 +52,7 @@ export class PwaManifestController {
     async manifest(@Req() req: FastifyRequest, @Res() reply: FastifyReply): Promise<void> {
         const boot = await this.domains.resolveHost(hostOf(req)).catch(() => ({ tenant: null }));
         const manifest = buildManifest({
-            tenant: boot.tenant ? { name: boot.tenant.name, app_name: boot.tenant.app_name, primary_color: boot.tenant.primary_color } : null,
+            tenant: boot.tenant ? { name: boot.tenant.name, app_name: boot.tenant.app_name, primary_color: boot.tenant.primary_color, app_bar_color: boot.tenant.app_bar_color ?? null } : null,
         });
         void reply
             .header('content-type', 'application/manifest+json; charset=utf-8')

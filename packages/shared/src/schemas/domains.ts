@@ -140,6 +140,8 @@ export const publicBootSchema = z.object({
             name: z.string().default(''),
             app_name: z.string().nullable(),
             primary_color: z.string().nullable(),
+            /** v0.1.326 — barras del sistema del teléfono (null = neutro). */
+            app_bar_color: z.string().nullable().default(null),
             logo_url: z.string().nullable(),
             /**
              * v0.1.245 — por qué dominio se entró: `app` (el del equipo o el

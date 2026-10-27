@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { BrandingResponse } from '@imagina-base/shared';
+import { resolveAppBarColor, type BrandingResponse } from '@imagina-base/shared';
 
 import { api, useSession } from '@/cloud/session';
 import { applyFavicon } from '@/lib/favicon';
@@ -270,6 +270,8 @@ export function useBranding() {
     // app (así cambiar de workspace nunca deja el logo del anterior).
     const domainLogo = useSession((s) => s.domainTenant?.logo_url ?? null);
     const domainName = useSession((s) => s.domainTenant?.app_name ?? null);
+    const domainAppBar = useSession((s) => s.domainTenant?.app_bar_color ?? null);
+    const appBarSetting = query.data !== undefined ? (query.data.app_bar_color ?? null) : domainAppBar;
     const logoUrl = query.data !== undefined ? (query.data.logo_url ?? null) : domainLogo;
     const appName = query.data !== undefined ? (query.data.app_name ?? null) : domainName;
     useEffect(() => {
@@ -277,9 +279,11 @@ export function useBranding() {
         // v0.1.286 — el nombre de la app es la base; la pantalla (lista,
         // registro, tablero) la antepone `RouteTracker`.
         setTitleAppName(appName);
-        // H1 — color de la barra y nombre de la app instalada (iOS).
-        applyAppMeta(primaryColor, appName);
-    }, [logoUrl, appName, primaryColor]);
+        // H1 — nombre de la app instalada (iOS) y color de las barras del
+        // sistema. v0.1.326: neutro por defecto (sigue el tema), o el que
+        // eligió la empresa en Ajustes → Marca.
+        applyAppMeta(resolveAppBarColor(appBarSetting, primaryColor, resolved), appName);
+    }, [logoUrl, appName, primaryColor, appBarSetting, resolved]);
 
     return query;
 }

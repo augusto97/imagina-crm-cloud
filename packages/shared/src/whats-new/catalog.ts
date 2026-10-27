@@ -581,4 +581,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Ábrelas desde el megáfono, junto a la campana. Las de versiones anteriores también tienen su animación.',
         action: { label: 'Ver las novedades', href: '/novedades' },
     },
+    {
+        key: 'v0.1.326-app-instalada-neutra',
+        version: '0.1.326',
+        date: '2026-10-27',
+        kind: 'improvement',
+        title: 'La app instalada, más sobria y más fácil de instalar',
+        summary:
+            'Las barras del teléfono ya no se pintan con el color de la marca: salen blancas o negras, y la app te ofrece instalarla la primera vez.',
+        media: {
+            slides: [
+                {
+                    title: 'Barras neutras',
+                    text: 'La barra de la hora y la de abajo salen blancas en modo claro y negras en oscuro, como la barra de la app.',
+                    illustration: 'empresa-branding',
+                },
+                {
+                    title: 'Te la ofrece sola',
+                    text: 'La primera vez que entras desde un dispositivo, te propone instalarla con un clic o te muestra los pasos.',
+                    illustration: 'dia-push',
+                },
+            ],
+        },
+        body: 'Si prefieres el color de tu marca u otro, un administrador lo elige en **Ajustes → Marca → Barras del teléfono**.',
+        action: { label: 'Ver la marca', href: '/settings?s=marca' },
+    },
 ];

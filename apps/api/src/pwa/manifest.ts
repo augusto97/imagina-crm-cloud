@@ -9,14 +9,22 @@
  * 512 con margen de seguridad (maskable). Recortarlo o rellenarlo bien exige
  * una librería de imágenes nativa (sharp/libvips, decenas de MB) para un
  * resultado que, con un logo apaisado, se ve peor que un icono neutro.
+ *
+ * v0.1.326 — el color de las barras del sistema (`theme_color`) ya no es el
+ * primario de la empresa: por defecto es NEUTRO (blanco, como la barra
+ * superior de la app) y la empresa elige en Ajustes → Marca si quiere el de
+ * su marca u otro (`branding.app_bar_color`). En modo oscuro la app ajusta la
+ * meta `theme-color` al cargar; el manifiesto no sabe del tema de la persona.
  */
+import { APP_BAR_NEUTRAL, resolveAppBarColor } from '@imagina-base/shared';
+
 
 export const DEFAULT_APP_NAME = 'Imagina Base';
-export const DEFAULT_THEME_COLOR = '#0c7e97';
+export const DEFAULT_THEME_COLOR = APP_BAR_NEUTRAL.light;
 
 export interface ManifestInput {
     /** Empresa del Host (null = dominio de la plataforma). */
-    tenant: { name: string; app_name: string | null; primary_color: string | null } | null;
+    tenant: { name: string; app_name: string | null; primary_color: string | null; app_bar_color?: string | null } | null;
 }
 
 export interface WebAppManifest {
@@ -37,7 +45,6 @@ export interface WebAppManifest {
     shortcuts: Array<{ name: string; short_name: string; url: string; icons: Array<{ src: string; sizes: string; type: string }> }>;
 }
 
-const HEX = /^#[0-9a-fA-F]{6}$/;
 
 /** «Acme Gestión Comercial» → «Acme» si no entra (el lanzador corta en ~12). */
 export function shortAppName(name: string): string {
@@ -50,7 +57,7 @@ export function shortAppName(name: string): string {
 export function buildManifest(input: ManifestInput): WebAppManifest {
     const t = input.tenant;
     const name = (t?.app_name?.trim() || t?.name?.trim() || DEFAULT_APP_NAME).slice(0, 60);
-    const theme = t?.primary_color && HEX.test(t.primary_color) ? t.primary_color.toLowerCase() : DEFAULT_THEME_COLOR;
+    const theme = resolveAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null, 'light');
     const icon = { src: '/pwa/icon-96.png', sizes: '96x96', type: 'image/png' };
     return {
         // Estable: no cambia con el nombre ni el color (el navegador la usa
@@ -65,7 +72,7 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
         scope: '/',
         display: 'standalone',
         orientation: 'any',
-        background_color: '#ffffff',
+        background_color: APP_BAR_NEUTRAL.light,
         theme_color: theme,
         categories: ['business', 'productivity'],
         icons: [
