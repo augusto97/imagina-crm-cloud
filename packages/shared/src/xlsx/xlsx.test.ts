@@ -338,13 +338,15 @@ describe('lector: archivos hostiles o equivocados', () => {
         }
     });
 
+    // 16 MB alcanzan para pasar 16 veces el tope y comprimen rápido: con 60 MB a
+    // nivel 9 el runner de CI se pasaba de los 5 s por defecto (sólo comprimir).
     it('corta una bomba de compresión sin reservar lo que el zip dice que mide', () => {
-        // 60 MB de ceros comprimen a ~60 KB; el tope por parte es 1 MB.
-        const huge = new Uint8Array(60 * 1024 * 1024).fill(32);
-        const bytes = zipSync({ '_rels/.rels': strToU8('<Relationships/>'), 'xl/workbook.xml': huge }, { level: 9 });
+        // 16 MB de espacios comprimen a ~16 KB; el tope por parte es 1 MB.
+        const huge = new Uint8Array(16 * 1024 * 1024).fill(32);
+        const bytes = zipSync({ '_rels/.rels': strToU8('<Relationships/>'), 'xl/workbook.xml': huge }, { level: 6 });
         expect(bytes.length).toBeLessThan(1024 * 1024);
         expect(() => openXlsx(bytes, { maxPartBytes: 1024 * 1024 })).toThrowError(/demasiado grande/);
-    });
+    }, 30_000);
 
     it('explica un .xls viejo / cifrado, un archivo que no es zip y uno demasiado grande', () => {
         const cfb = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0]);

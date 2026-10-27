@@ -66,6 +66,7 @@ export function RouteTracker(): null {
         if (folder) return groups.data?.find((g) => g.id === Number(folder[1]))?.name ?? __('Carpeta');
         if (pathname.startsWith('/my-work')) return __('Mi trabajo');
         if (pathname.startsWith('/favorites')) return __('Favoritos');
+        if (pathname.startsWith('/novedades')) return __('Novedades');
         if (pathname === '/dashboards') return __('Dashboards');
         if (dashMatch) return dashboard?.name ?? __('Dashboard');
         if (pathname.startsWith('/settings/stores/')) return `${__('Tienda')} · ${__('Ajustes')}`;

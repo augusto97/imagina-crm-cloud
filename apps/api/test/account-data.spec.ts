@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
 import { SessionService } from '../src/auth/session.service';
 import { loadEnv } from '../src/config/env';
-import { comments, lists, memberships, records, savedFilters, users } from '../src/db/schema';
+import { comments, lists, memberships, records, savedFilters, users, whatsNewEntries, whatsNewViews } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { MailService } from '../src/mail/mail.service';
 import { AccountDataService } from '../src/me/account-data.service';
@@ -146,10 +146,19 @@ describe('AccountDataService (export + borrado de cuenta)', () => {
             });
             await tx.insert(savedFilters).values({ tenantId, userId, listId, name: 'Personal', filterTree: {} });
         });
+        // Fase 7 — lo que vio de las novedades (por persona, no por empresa).
+        const [entry] = await pg.db
+            .insert(whatsNewEntries)
+            .values({ key: 'op-borra', origin: 'operator', kind: 'feature', title: 'Algo', summary: 'Nuevo', publishedAt: new Date() })
+            .returning();
+        await pg.db.insert(whatsNewViews).values({ userId, entryId: entry!.id, seenAt: new Date() });
+        await pg.db.insert(whatsNewViews).values({ userId: socio.userId, entryId: entry!.id, seenAt: new Date() });
         const session = await loginOk(auth, { email, password: 'password123' });
         expect(await sessions.get(session.token as string)).not.toBeNull();
 
         await account.deleteAccount(userId, 'password123');
+        expect(await pg.db.select().from(whatsNewViews).where(eq(whatsNewViews.userId, userId))).toHaveLength(0);
+        expect(await pg.db.select().from(whatsNewViews).where(eq(whatsNewViews.userId, socio.userId))).toHaveLength(1);
 
         // Identidad borrada.
         const [row] = await pg.db.select().from(users).where(eq(users.id, userId)).limit(1);

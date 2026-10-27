@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Download, Keyboard, ListChecks, LogOut, Moon, Settings, Sun, UserRound } from 'lucide-react';
+import { Download, Keyboard, ListChecks, LogOut, Megaphone, Moon, Settings, Sun, UserRound } from 'lucide-react';
 
 import { roleLabel, useWorkspaces } from '@/cloud/workspaceSwitch';
 import { useSession } from '@/cloud/session';
@@ -13,12 +13,15 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { help, useHelpAvailability } from '@/admin/help/helpBus';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 import { InstallAppDialog } from '@/components/pwa/InstallAppDialog';
 import { currentAppName } from '@/lib/pwa/appMeta';
 import { promptInstall, useInstallMode } from '@/lib/pwa/install';
 import { forgetPushOnLogout } from '@/lib/pwa/push';
+import { whatsNewPanel } from '@/admin/whats-new/whatsNewStore';
+import { useWhatsNewFeed } from '@/hooks/useWhatsNew';
+import { useIsGuest } from '@/lib/guest';
 
 import { initials, WorkspaceMenuItems } from './WorkspaceSwitcher';
 
@@ -36,6 +39,10 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
     const installMode = useInstallMode();
     const [iosHelp, setIosHelp] = useState(false);
     const helpAvailable = useHelpAvailability();
+    // Fase 7 — en el teléfono «Novedades» vive aquí (la barra no tiene lugar).
+    const isGuest = useIsGuest();
+    const whatsNew = useWhatsNewFeed(!isGuest);
+    const unseenNews = isGuest ? 0 : whatsNew.data?.unseen_count ?? 0;
     if (!user) return null;
     const displayName = user.name.trim() !== '' ? user.name : user.email;
     const isDark = theme.resolved === 'dark';
@@ -61,9 +68,9 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                 <button
                     type="button"
                     data-testid="user-menu"
-                    aria-label={`${__('Tu cuenta')}: ${displayName}`}
+                    aria-label={`${__('Tu cuenta')}: ${displayName}${unseenNews > 0 ? ` · ${sprintf(__('%d novedades sin ver'), unseenNews)}` : ''}`}
                     title={displayName}
-                    className="imcrm-inline-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-transition-colors hover:imcrm-bg-accent data-[state=open]:imcrm-bg-accent"
+                    className="imcrm-relative imcrm-inline-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-transition-colors hover:imcrm-bg-accent data-[state=open]:imcrm-bg-accent"
                 >
                     <span
                         aria-hidden
@@ -71,6 +78,13 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                     >
                         {initials(displayName)}
                     </span>
+                    {unseenNews > 0 && (
+                        <span
+                            aria-hidden
+                            data-testid="user-menu-news-dot"
+                            className="imcrm-absolute imcrm-right-0.5 imcrm-top-0.5 imcrm-h-2.5 imcrm-w-2.5 imcrm-rounded-full imcrm-bg-primary imcrm-ring-2 imcrm-ring-background sm:imcrm-hidden"
+                        />
+                    )}
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="imcrm-w-72">
@@ -116,6 +130,22 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                     <Settings className="imcrm-h-4 imcrm-w-4" />
                     {__('Ajustes')}
                 </DropdownMenuItem>
+                {!isGuest && (
+                    <DropdownMenuItem
+                        // En escritorio está el megáfono de la barra.
+                        className="sm:imcrm-hidden"
+                        onSelect={() => window.setTimeout(() => whatsNewPanel.open(), 0)}
+                        data-testid="user-menu-whats-new"
+                    >
+                        <Megaphone className="imcrm-h-4 imcrm-w-4" />
+                        <span className="imcrm-flex-1">{__('Novedades')}</span>
+                        {unseenNews > 0 && (
+                            <span className="imcrm-rounded-full imcrm-bg-primary imcrm-px-1.5 imcrm-text-[10px] imcrm-font-semibold imcrm-text-primary-foreground">
+                                {unseenNews > 9 ? '9+' : unseenNews}
+                            </span>
+                        )}
+                    </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                     onSelect={(e) => {
                         // Cambiar el tema no cierra el menú: se ve el cambio al instante.

@@ -74,6 +74,7 @@ import { ChecklistsModule } from './checklists/checklists.module';
 import { RecordTemplatesModule } from './record-templates/record-templates.module';
 import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { WhatsNewModule } from './whats-new/whats-new.module';
 
 @Module({
     imports: [
@@ -167,6 +168,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AiAgentsModule,
         // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.
         OnboardingModule,
+        // Fase 7 — novedades (catálogo de cada versión + lo que publica el operador).
+        WhatsNewModule,
     ],
 })
 export class AppModule {}

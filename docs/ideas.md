@@ -171,7 +171,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | I6 · Copia automática de cada empresa a SU Drive o S3 | medio · S-M | Hoy existen el almacenamiento propio y la exportación de una empresa. |
 | I7 · Ayuda dentro de la app (recorridos, primeros pasos, centro de ayuda) | medio-alto · M | |
 | I8 · Métricas de uso para el operador | medio · M | |
-| I9 · Avisos de plataforma (franja de mantenimiento, página de estado) | bajo-medio · S | |
+| I9 · Página de estado pública (la franja de avisos ya existe desde v0.1.319) | bajo-medio · S | |
 
 ### J. Reportes
 | Idea | Valor · esfuerzo | Nota |
@@ -219,6 +219,11 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada
   (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
   administre push; llenar con la cámara otros campos además del «Código».
+- **Novedades (v0.1.319)**: avisarlas por correo o push; traducirlas; pedir
+  opinión («¿te sirvió?»); novedades por empresa (que una empresa le cuente
+  algo a su equipo); incluir lo visto en la descarga de datos de la cuenta;
+  limpiar imágenes subidas que nunca se guardaron; volver a enfocar una
+  novedad con el panel ya abierto.
 - **Empezar fácil (v0.1.318)**: llevar el registro de datos de ejemplo en la
   migración de empresa (hoy, tras migrar, quedan como datos normales); que los
   toasts no tapen el botón flotante de «Primeros pasos»; reusar `TemplateCard`

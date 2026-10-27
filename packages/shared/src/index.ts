@@ -122,3 +122,6 @@ export * from './schemas/booking-slots';
 export * from './schemas/ai-agents';
 // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.
 export * from './schemas/onboarding';
+// Fase 7 — novedades (catálogo que viaja con cada versión + lo que publica el operador).
+export * from './schemas/whats-new';
+export * from './whats-new';

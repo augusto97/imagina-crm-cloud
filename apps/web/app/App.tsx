@@ -37,6 +37,8 @@ const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/Appro
 // E6 — agentes de IA (índice con plantillas y el editor con sus pestañas).
 const AgentsPage = lazyWithReload(() => import('@/admin/agents/AgentsPage').then(m => ({ default: m.AgentsPage })));
 const AgentEditorPage = lazyWithReload(() => import('@/admin/agents/AgentEditorPage').then(m => ({ default: m.AgentEditorPage })));
+// Fase 7 — historial de novedades.
+const WhatsNewPage = lazyWithReload(() => import('@/admin/whats-new/WhatsNewPage').then(m => ({ default: m.WhatsNewPage })));
 const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
@@ -151,6 +153,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="agents/:agentId" element={
                     <Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense>
+                } />
+                <Route path="novedades" element={
+                    <Suspense fallback={<RouteFallback />}><WhatsNewPage /></Suspense>
                 } />
                 <Route path="favorites" element={
                     <Suspense fallback={<RouteFallback />}><FavoritesPage /></Suspense>

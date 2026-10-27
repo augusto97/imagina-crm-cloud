@@ -5,6 +5,7 @@ import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assista
 import { IncidentsPill } from '@/admin/layout/IncidentsPill';
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { UserMenu } from '@/admin/layout/UserMenu';
+import { WhatsNewButton } from '@/admin/whats-new/WhatsNewButton';
 import { useSession } from '@/cloud/session';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
@@ -131,6 +132,9 @@ export function Topbar({
                     <Sparkles className="imcrm-h-4 imcrm-w-4" />
                 </Button>
                 )}
+
+                {/* Fase 7 — novedades (en el teléfono van en el menú de la persona). */}
+                {!isGuest && <WhatsNewButton className="imcrm-hidden sm:imcrm-flex" />}
 
                 {moduleEnabled('mentions') && <NotificationBell />}
 

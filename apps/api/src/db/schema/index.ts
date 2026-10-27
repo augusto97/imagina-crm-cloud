@@ -52,3 +52,5 @@ export * from './push-subscriptions';
 export * from './whatsapp';
 export * from './helpdesk';
 export * from './ai-agents';
+// Fase 7 — novedades de la plataforma (0092).
+export * from './whats-new';
