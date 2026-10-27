@@ -372,11 +372,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.326**
-(barras del teléfono neutras y ajustables + ofrecer la instalación la primera
-vez en cada dispositivo), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.327**
+(marca de la plataforma en Plataforma → Marca, login nuevo y pantalla de
+arranque), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-27 — **Barra de abajo con el color de marca + logo inventado + login
+  y arranque feos** (reporte del usuario tras v0.1.326). La barra: el servidor
+  ya entrega todo neutro (verificado en base.imagina.cloud); el teléfono guarda
+  los colores de cuando se instaló la app → quitarla y volver a instalarla (o
+  esperar a que Android la actualice). El logo: era un ícono de fábrica (una
+  chispa) — se quitó; ahora el operador sube **su** logo e ícono en
+  **Plataforma → Marca** (v0.1.327). Pendiente: que el usuario suba su logo y,
+  si quiere, nos pase el archivo para dejarlo como el de fábrica; ícono propio
+  de la app instalada por empresa (en su dominio) queda para otra versión.
 - 2026-10-27 — **PWA: barras del teléfono y ofrecer instalación** (pedido del
   usuario: "toma los colores de la marca arriba y abajo y se ve muy raro…
   deberían poderse ajustar, por defecto blancos o negros… y la primera vez en
@@ -807,6 +816,25 @@ vez en cada dispositivo), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.327** — **Marca de la plataforma, login nuevo y pantalla
+  de arranque** (ADR-S80). Reporte del usuario: la barra de abajo de la app
+  instalada seguía con el color de la marca, el login "no me gusta", un logo
+  "que te inventaste" que no es el de su marca, y el arranque "muy feo". (1) La
+  barra: el servidor ya era neutro; el teléfono guarda los colores de cuando se
+  instaló — se explica en Ajustes → Marca y Plataforma → Marca (quitar y volver
+  a instalar). (2) **Plataforma → Marca**: nombre, logo (claro y oscuro) e
+  ícono; el navegador los convierte a PNG y genera los siete tamaños; el
+  manifiesto, la pestaña, el riel, el login y la tarjeta de instalar los usan
+  en el dominio de la plataforma (en el de una empresa, nunca). Se quitó la
+  chispa: sin nada subido, iniciales del nombre y un ícono neutro. (3) **Login
+  rediseñado** con ilustraciones animadas a la derecha. (4) **Pantalla de
+  arranque** en el HTML con el logo o nombre recordado, que se desvanece al
+  aparecer el login o la app. Tests: 5 de API (PNG por bytes, subida/guardado/
+  borrado de imágenes, lectura tolerante, boot, manifiesto), 7 del front +
+  E2E navegador 26/26 (login, Marca con SVG convertido, manifiesto con los
+  tamaños reales sin sesión, arranque con el logo recordado, celular oscuro) y
+  10/10 contra el build de producción (CSP con el script nuevo hasheado, cero
+  violaciones).
 - **2026-10-27 · v0.1.326** — **Barras del teléfono neutras + ofrecer la
   instalación** (ADR-S79). Pedido del usuario: las barras del sistema de la app
   instalada (la de la hora y la de abajo en Android) se pintaban con el primario

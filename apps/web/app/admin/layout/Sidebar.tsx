@@ -17,7 +17,6 @@ import {
     ShieldAlert,
     Pin,
     PinOff,
-    Sparkles,
     X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -26,6 +25,8 @@ import { useSession } from '@/cloud/session';
 import { DEFAULT_DASHBOARD_ICON, DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { resolveSettingsSection, settingsSectionGroups } from '@/cloud/settingsSections';
 import { useBrandingData } from '@/hooks/useBranding';
+import { useAppIdentity } from '@/hooks/useAppIdentity';
+import { BrandMark } from '@/components/BrandMark';
 import { useDashboards } from '@/hooks/useDashboards';
 import { EMPTY_FAVORITES, favoriteViewPath, toggledFavorites, useFavoriteViews, useFavorites, useUpdateFavorites, type Favorites } from '@/hooks/useFavorites';
 import { viewTypeIcon } from '@/admin/records/views/viewTypeIcon';
@@ -240,7 +241,6 @@ export function Sidebar({
     // Branding white-label del tenant (logo + nombre). Lee del query cache
     // que puebla `useBranding` en AdminCloudApp; nulls → marca por defecto.
     const branding = useBrandingData();
-    const brandLogoUrl = branding.data?.logo_url ?? null;
     const brandAppName = branding.data?.app_name ?? null;
 
     // Workspace activo de la sesión (nombre del tenant para el header del
@@ -250,7 +250,8 @@ export function Sidebar({
     const membership = memberships.find((m) => m.tenant_id === activeTenantId);
     const workspaceName = membership?.tenant_name ?? null;
     const isAdmin = membership?.role === 'admin';
-    const workspaceTitle = brandAppName ?? workspaceName ?? 'Imagina Base';
+    const identity = useAppIdentity({ workspaceName });
+    const workspaceTitle = brandAppName ?? workspaceName ?? identity.name;
 
     // Gating por capability (Fase 7 — 1.E). El backend ya filtra GET /lists
     // a las visibles para el user, así que "Tus listas" se auto-recorta.
@@ -472,17 +473,7 @@ export function Sidebar({
             >
                 {/* Marca: sólo el cuadrado/logo (el nombre vive en el panel). */}
                 <div className="imcrm-mb-1 imcrm-flex imcrm-shrink-0 imcrm-justify-center">
-                    {brandLogoUrl ? (
-                        <img
-                            src={brandLogoUrl}
-                            alt=""
-                            className="imcrm-h-9 imcrm-w-9 imcrm-rounded-md imcrm-object-contain"
-                        />
-                    ) : (
-                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-sidebar-foreground/15 imcrm-text-sidebar-accent-foreground imcrm-ring-1 imcrm-ring-sidebar-foreground/20">
-                            <Sparkles className="imcrm-h-4 imcrm-w-4" />
-                        </span>
-                    )}
+                    <BrandMark url={identity.markUrl} name={workspaceTitle} tone="rail" className="imcrm-h-9 imcrm-w-9" />
                 </div>
 
                 {/* Con el panel CERRADO, el botón de abrirlo vive arriba del

@@ -44,7 +44,7 @@ function ensureLink(doc: Document, rel: string, extra: Record<string, string> = 
  * png/jpeg/webp — el navegador lo detecta) y el apple-touch-icon apunta al
  * mismo logo. Con `null` se restauran los tres links del HTML original.
  */
-export function applyFavicon(logoUrl: string | null, doc: Document = document): void {
+export function applyFavicon(logoUrl: string | null, doc: Document = document, appleUrl: string | null = null): void {
     const links = Array.from(doc.head.querySelectorAll<HTMLLinkElement>(LINK_SELECTOR));
     if (logoUrl !== null && logoUrl !== '') {
         // Sacar los defaults (SVG+PNG) para que no compitan con el logo.
@@ -56,7 +56,9 @@ export function applyFavicon(logoUrl: string | null, doc: Document = document): 
         icon.removeAttribute('sizes');
         icon.href = logoUrl;
         const touch = ensureLink(doc, 'apple-touch-icon', { 'data-imcrm-brand': '1' });
-        touch.href = logoUrl;
+        // v0.1.327 — el ícono de la plataforma trae su propio tamaño de Apple
+        // (180, con fondo); el logo de una empresa se usa tal cual.
+        touch.href = appleUrl ?? logoUrl;
         return;
     }
     for (const l of links) {

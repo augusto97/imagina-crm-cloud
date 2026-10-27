@@ -43,8 +43,91 @@
                 }
             })();
         </script>
+        <style>
+            /* v0.1.327 — pantalla de arranque (ver app/lib/bootSplash.ts). */
+            #imcrm-boot {
+                position: fixed; inset: 0; z-index: 2147483000;
+                display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+                background: #ffffff; color: #18181b;
+                font-family: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+                transition: opacity 240ms ease;
+            }
+            html[data-imcrm-theme='dark'] #imcrm-boot { background: #121212; color: #ededed; }
+            #imcrm-boot[data-leaving='1'] { opacity: 0; pointer-events: none; }
+            .imcrm-boot__brand {
+                display: flex; align-items: center; justify-content: center; min-height: 56px;
+                opacity: 0; transform: translateY(4px);
+                animation: imcrm-boot-in 420ms 120ms ease forwards;
+            }
+            .imcrm-boot__brand img { display: block; max-height: 56px; max-width: 220px; object-fit: contain; }
+            .imcrm-boot__name { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+            .imcrm-boot__bar {
+                position: relative; width: 132px; height: 3px; border-radius: 999px; overflow: hidden;
+                background: rgba(24, 24, 27, 0.08);
+                opacity: 0; animation: imcrm-boot-in 300ms 260ms ease forwards;
+            }
+            html[data-imcrm-theme='dark'] .imcrm-boot__bar { background: rgba(237, 237, 237, 0.12); }
+            .imcrm-boot__bar span {
+                position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 999px;
+                background: currentColor; opacity: 0.55;
+                animation: imcrm-boot-slide 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+            }
+            @keyframes imcrm-boot-in { to { opacity: 1; transform: none; } }
+            @keyframes imcrm-boot-slide { to { left: 100%; } }
+            @media (prefers-reduced-motion: reduce) {
+                .imcrm-boot__brand, .imcrm-boot__bar { animation: none; opacity: 1; transform: none; }
+                .imcrm-boot__bar span { animation: none; left: 30%; }
+            }
+        </style>
     </head>
     <body>
+        <div id="imcrm-boot" role="status" aria-busy="true" aria-label="Cargando">
+            <div class="imcrm-boot__brand" id="imcrm-boot-brand"></div>
+            <div class="imcrm-boot__bar"><span></span></div>
+        </div>
+        <script>
+            /* La marca que la app recordó en la última visita (bootSplash.ts).
+             * La primera vez no hay nada: sólo la barra. */
+            (function () {
+                var box = document.getElementById('imcrm-boot-brand');
+                var boot = document.getElementById('imcrm-boot');
+                var brand = null;
+                try {
+                    brand = JSON.parse(localStorage.getItem('imcrm:splash') || 'null');
+                } catch (e) {
+                    brand = null;
+                }
+                var ok = function (u) {
+                    return typeof u === 'string' && u.charAt(0) === '/' && u.charAt(1) !== '/' && u.charAt(1) !== '\\';
+                };
+                var name = brand && typeof brand.name === 'string' ? brand.name : '';
+                var showName = function () {
+                    box.textContent = '';
+                    if (!name) return;
+                    var t = document.createElement('span');
+                    t.className = 'imcrm-boot__name';
+                    t.textContent = name;
+                    box.appendChild(t);
+                };
+                var dark = document.documentElement.getAttribute('data-imcrm-theme') === 'dark';
+                /* En modo oscuro sólo un logo pensado para fondo oscuro; si no, el nombre. */
+                var pick = brand ? (dark ? brand.logoDark : brand.logo) : null;
+                var logo = ok(pick) ? pick : null;
+                if (logo) {
+                    var img = document.createElement('img');
+                    img.alt = name;
+                    img.onerror = showName;
+                    img.src = logo;
+                    box.appendChild(img);
+                } else {
+                    showName();
+                }
+                /* Red de seguridad: si algo impidió arrancar, no queda tapando la pantalla. */
+                setTimeout(function () {
+                    if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+                }, 20000);
+            })();
+        </script>
         <div id="root"></div>
         <script type="module" src="/app/cloud/admin-main.tsx"></script>
     </body>

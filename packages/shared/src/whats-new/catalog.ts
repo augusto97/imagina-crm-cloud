@@ -606,4 +606,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Si prefieres el color de tu marca u otro, un administrador lo elige en **Ajustes → Marca → Barras del teléfono**.',
         action: { label: 'Ver la marca', href: '/settings?s=marca' },
     },
+    {
+        key: 'v0.1.327-inicio-de-sesion-nuevo',
+        version: '0.1.327',
+        date: '2026-10-27',
+        kind: 'improvement',
+        title: 'Un inicio de sesión y una carga más limpios',
+        summary:
+            'La pantalla para entrar es nueva, la app arranca con una pantalla de carga sobria y ya no muestra un ícono genérico como si fuera un logo.',
+        media: {
+            slides: [
+                {
+                    title: 'Entrar, sin ruido',
+                    text: 'Un formulario claro, con la opción de ver la contraseña y la ayuda para recuperarla a la vista.',
+                    illustration: 'cuenta-sessions',
+                },
+                {
+                    title: 'Tu marca al abrir la app',
+                    text: 'Mientras carga se ve el logo o el nombre de tu empresa, sin pantallas en blanco.',
+                    illustration: 'empresa-branding',
+                },
+            ],
+        },
+        body: 'Si tu empresa sube su logo en **Ajustes → Marca**, se usa en el menú, en la pestaña del navegador y al abrir la app.',
+        action: { label: 'Ver la marca', href: '/settings?s=marca' },
+    },
 ];

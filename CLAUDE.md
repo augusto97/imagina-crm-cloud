@@ -9947,6 +9947,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         PWA del front (18), shared, API (manifiesto, boot, branding) + E2E
         navegador 24/24 (escritorio con la ventana simulada, oscuro, Marca con
         las tres opciones, Chrome sin aviso, iPhone en oscuro con los pasos).
+  - [x] **Marca de la plataforma, login nuevo y pantalla de arranque (v0.1.327,
+        ADR-S80, reporte del usuario: "sigo viendo la parte de abajo con el
+        color de la marca… el login no me gusta… ese logo que te inventaste no
+        es el de mi marca… y el arranque es muy feo")**: (a) la barra de abajo:
+        el servidor ya entregaba todo neutro (verificado en producción); el
+        teléfono guarda los colores e íconos de cuando se instaló la app y los
+        actualiza solo, días después — se explica en Ajustes → Marca y en
+        Plataforma → Marca (quitar y volver a instalar lo muestra al toque).
+        (b) **Plataforma → Marca** (superadmin): nombre de la app, logo (y uno
+        opcional para modo oscuro) e ícono, en Redis `platform:brand`
+        (`platformBrandSchema`, viaja en el snapshot). El navegador convierte
+        lo que sube el operador (SVG/JPG/WebP) a PNG con un canvas y genera los
+        siete tamaños del ícono (`lib/brandAssets.ts`); el servidor sólo acepta
+        PNG reconocido por su cabecera (`pngSize`) y los sirve sin sesión desde
+        `/api/v1/public/brand/images/` (`nosniff`, `CSP: sandbox`, cache
+        inmutable); cambiar el fondo los regenera desde el original guardado.
+        El boot público trae la marca; el manifiesto usa su nombre e íconos
+        sólo en el dominio de la plataforma (en el de una empresa, nunca); la
+        pestaña, el riel, la barra del celular, el login y la tarjeta de
+        instalar la usan cuando la empresa no tiene logo propio. (c) **Se fue
+        el logo inventado** (la chispa teal): sin nada subido, las iniciales
+        del nombre (`BrandMark`) y un ícono neutro de fábrica (cuadrícula 2×2
+        en gris carbón). (d) **Login rediseñado**: formulario limpio con logo o
+        nombre arriba, mostrar la contraseña, «¿La olvidaste?» junto a la
+        etiqueta, errores con ícono y estados de 2FA y recuperación; en
+        pantallas anchas una mitad con ilustraciones animadas que rotan; en
+        oscuro sin logo para fondos oscuros, el nombre. (e) **Pantalla de
+        arranque en el HTML** (`#imcrm-boot`, `lib/bootSplash.ts`): visible
+        desde el primer cuadro con el logo o el nombre recordado de la última
+        visita (sólo rutas del propio origen), barra fina animada, y se
+        desvanece cuando aparece el login o la app (`BootSplashDone`) — sin
+        pantalla en blanco ni ruedita. 5 tests de API + 7 del front (677 front
+        y 549 shared en verde) + E2E navegador 26/26 y 10/10 contra el build de
+        producción con su CSP (el script nuevo hasheado, cero violaciones).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

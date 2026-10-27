@@ -4724,4 +4724,55 @@ en Chrome es una barra genérica que no explica para qué sirve instalarla.
 
 ---
 
-**Versión del documento:** 1.122.0 (barras del sistema neutras + ofrecer instalación)
+### ADR-S80 — Marca de la plataforma, inicio de sesión y pantalla de arranque (v0.1.327)
+
+**Contexto.** Tres reportes del usuario sobre v0.1.326. (1) La barra de abajo de
+la app instalada seguía con el color de la marca aunque el servidor ya servía
+el manifiesto neutro: el teléfono **guarda** los colores e íconos con los que
+se instaló la app (en Android, en la WebAPK) y los actualiza por su cuenta,
+días después; la meta `theme-color` sólo cambia la barra de arriba. (2) La app
+traía un ícono "de fábrica" (una chispa en un cuadrado teal) en el favicon, los
+íconos de la app instalada y el riel, que se leía como el logo de la marca sin
+serlo, y el login era una tarjeta mínima. (3) El arranque mostraba una pantalla
+en blanco y después una ruedita.
+
+**Decisión.** (a) **Marca de la plataforma** (Plataforma → Marca, superadmin):
+nombre de la app, logo (y opcional para modo oscuro) e ícono, en Redis
+`platform:brand` (`platformBrandSchema`, lectura tolerante campo por campo;
+viaja en el snapshot). Las imágenes van al almacenamiento de la plataforma
+(`platform/brand/<hex>.png`) y se sirven sin sesión desde
+`/api/v1/public/brand/images/` con `nosniff`, `CSP: sandbox` y cache inmutable.
+El **navegador** convierte lo que sube el operador (SVG, JPG, WebP) a PNG con un
+canvas y genera los siete tamaños del ícono (any 192/512, maskable 192/512 con
+zona segura, Apple 180 con fondo, 96 y el favicon de 32), más el original de
+512 para regenerarlos si cambia el color de fondo: el servidor sólo acepta PNG
+reconocido por la cabecera IHDR (≤4096 px, ≤2 MB) y no necesita una librería
+de imágenes nativa. El boot público trae la marca (`platform`); el manifiesto
+usa su nombre e íconos **sólo en el dominio de la plataforma** — en el dominio
+de una empresa nunca (white-label). Dentro de la app manda el logo de la
+empresa (Ajustes → Marca) y, si no tiene, el ícono de la plataforma; sin nada
+subido, las **iniciales** del nombre (`BrandMark`) y un ícono neutro de fábrica
+(cuadrícula 2×2 en gris carbón, que no pretende ser un logo). (b) **Login
+nuevo**: formulario limpio a la izquierda (logo o nombre arriba, mostrar la
+contraseña, «¿La olvidaste?» junto a la etiqueta, errores con ícono, 2FA y
+recuperación con su estado) y, en pantallas anchas, una mitad con las
+ilustraciones animadas del centro de aprendizaje que rotan; en modo oscuro sin
+un logo para fondos oscuros se muestra el nombre. (c) **Pantalla de arranque
+en el HTML** (`#imcrm-boot`): visible desde el primer cuadro, con el logo o el
+nombre que la app recordó en la última visita (`imcrm:splash` en localStorage;
+sólo rutas del propio origen; la primera vez sólo la barra) y una barra fina
+animada; React no la reemplaza: se desvanece cuando aparece el login o la app
+(`BootSplashDone`), con una red de seguridad de 20 s. (d) La **actualización
+diferida del teléfono** se explica donde se toca (Ajustes → Marca y Plataforma
+→ Marca): para verlo ya, quitar la app y volver a instalarla.
+
+**Alternativas descartadas.** Generar los íconos en el servidor con sharp
+(decenas de MB nativos para algo que el navegador hace igual). Usar el logo de
+la empresa como ícono de la app instalada en su dominio (un logo apaisado o
+transparente se ve peor que el neutro; queda pendiente un ícono propio por
+empresa). Dibujar el logo con un filtro blanco en modo oscuro (rompe los logos
+de color).
+
+---
+
+**Versión del documento:** 1.123.0 (marca de la plataforma + login + arranque)

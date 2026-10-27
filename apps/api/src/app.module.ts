@@ -14,6 +14,7 @@ import { DashboardsModule } from './dashboards/dashboards.module';
 import { DashboardSharingModule } from './dashboard-sharing/dashboard-sharing.module';
 import { LegalModule } from './legal/legal.module';
 import { HelpModule } from './help/help.module';
+import { BrandModule } from './brand/brand.module';
 import { DomainsModule } from './domains/domains.module';
 import { BillingModule } from './billing/billing.module';
 import { ExportModule } from './export/export.module';
@@ -147,6 +148,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         LegalModule,
         // Fase 7 · entrega 2 — centro de ayuda (Plataforma → Ayuda).
         HelpModule,
+        BrandModule,
         PortalModule,
         PublicListsModule,
         PlatformModule,

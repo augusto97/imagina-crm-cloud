@@ -9,6 +9,8 @@ import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPag
 import { getVerifyToken, VerifyEmailPage } from '@/cloud/pages/VerifyEmailPage';
 import { isRecoveryPath, RecoveryPage } from '@/cloud/pages/RecoveryPage';
 import { FilePreviewHost } from '@/components/files/FilePreviewHost';
+import { BootSplashDone } from '@/components/BootSplashDone';
+import { hideBootSplash } from '@/lib/bootSplash';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
@@ -65,7 +67,9 @@ installUnsavedChangesGuard();
  */
 const container = document.getElementById('root');
 // v0.1.227 — encuadrada por otro sitio (clickjacking) la app no se monta.
-if (container && !blockCrossOriginFraming(container)) {
+const framedByOther = container !== null && blockCrossOriginFraming(container);
+if (framedByOther) hideBootSplash();
+if (container && !framedByOther) {
     // H1 — app instalable: el aviso de «se puede instalar» llega temprano;
     // el service worker se registra después de la carga. Una notificación que
     // abre una ventana nueva trae `?t=<empresa>`: se arranca en esa empresa.
@@ -82,13 +86,25 @@ if (container && !blockCrossOriginFraming(container)) {
                 <ToastProvider>
                     <ConfirmProvider>
                         {isRecoveryPath() ? (
-                            <RecoveryPage />
+                            <>
+                                <RecoveryPage />
+                                <BootSplashDone />
+                            </>
                         ) : resetToken ? (
-                            <ResetPasswordPage token={resetToken} />
+                            <>
+                                <ResetPasswordPage token={resetToken} />
+                                <BootSplashDone />
+                            </>
                         ) : verifyToken ? (
-                            <VerifyEmailPage token={verifyToken} />
+                            <>
+                                <VerifyEmailPage token={verifyToken} />
+                                <BootSplashDone />
+                            </>
                         ) : oauthRequestId ? (
-                            <OauthConsentPage requestId={oauthRequestId} />
+                            <>
+                                <OauthConsentPage requestId={oauthRequestId} />
+                                <BootSplashDone />
+                            </>
                         ) : (
                             <AdminCloudApp />
                         )}

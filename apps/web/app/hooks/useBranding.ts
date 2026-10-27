@@ -6,6 +6,7 @@ import { api, useSession } from '@/cloud/session';
 import { applyFavicon } from '@/lib/favicon';
 import { setTitleAppName } from '@/lib/documentTitle';
 import { applyAppMeta } from '@/lib/pwa/appMeta';
+import { rememberSplash } from '@/lib/bootSplash';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { useTheme, type ResolvedTheme } from '@/lib/theme';
 
@@ -270,20 +271,37 @@ export function useBranding() {
     // app (así cambiar de workspace nunca deja el logo del anterior).
     const domainLogo = useSession((s) => s.domainTenant?.logo_url ?? null);
     const domainName = useSession((s) => s.domainTenant?.app_name ?? null);
+    const domainTenantName = useSession((s) => s.domainTenant?.name ?? null);
+    const whiteLabel = useSession((s) => s.domainTenant !== null);
     const domainAppBar = useSession((s) => s.domainTenant?.app_bar_color ?? null);
+    // v0.1.327 — la marca de la plataforma (Plataforma → Marca): vale fuera del
+    // dominio de una empresa y cuando la empresa no subió la suya.
+    const platform = useSession((s) => s.platformBrand);
     const appBarSetting = query.data !== undefined ? (query.data.app_bar_color ?? null) : domainAppBar;
     const logoUrl = query.data !== undefined ? (query.data.logo_url ?? null) : domainLogo;
     const appName = query.data !== undefined ? (query.data.app_name ?? null) : domainName;
+    const baseName = appName ?? (whiteLabel ? domainTenantName : null) ?? platform.app_name;
+    const platformIcons = whiteLabel ? null : platform.icons;
+    const platformLogo = whiteLabel ? null : platform.logo_url;
+    const platformLogoDark = whiteLabel ? null : platform.logo_dark_url;
     useEffect(() => {
-        applyFavicon(logoUrl);
+        if (logoUrl) applyFavicon(logoUrl);
+        else if (platformIcons) applyFavicon(platformIcons.favicon_32, document, platformIcons.apple_180);
+        else applyFavicon(null);
         // v0.1.286 — el nombre de la app es la base; la pantalla (lista,
         // registro, tablero) la antepone `RouteTracker`.
-        setTitleAppName(appName);
+        setTitleAppName(baseName);
         // H1 — nombre de la app instalada (iOS) y color de las barras del
         // sistema. v0.1.326: neutro por defecto (sigue el tema), o el que
         // eligió la empresa en Ajustes → Marca.
-        applyAppMeta(resolveAppBarColor(appBarSetting, primaryColor, resolved), appName);
-    }, [logoUrl, appName, primaryColor, appBarSetting, resolved]);
+        applyAppMeta(resolveAppBarColor(appBarSetting, primaryColor, resolved), baseName);
+        // v0.1.327 — la próxima vez, la pantalla de arranque sale con esta marca.
+        rememberSplash({
+            name: baseName,
+            logo: logoUrl ?? platformLogo,
+            logoDark: logoUrl ?? platformLogoDark,
+        });
+    }, [logoUrl, baseName, primaryColor, appBarSetting, resolved, platformIcons, platformLogo, platformLogoDark]);
 
     return query;
 }

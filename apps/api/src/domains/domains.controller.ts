@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, NotFoundException, Query, Req } from '@nestjs/common';
 import type { PublicBoot } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
+import { PlatformBrandService } from '../brand/platform-brand.service';
 import { DomainsService } from './domains.service';
 
 /**
@@ -15,13 +16,17 @@ import { DomainsService } from './domains.service';
  */
 @Controller('public')
 export class PublicDomainsController {
-    constructor(private readonly domains: DomainsService) {}
+    constructor(
+        private readonly domains: DomainsService,
+        private readonly brand: PlatformBrandService,
+    ) {}
 
     @Get('boot')
-    boot(@Req() req: FastifyRequest): Promise<PublicBoot> {
+    async boot(@Req() req: FastifyRequest): Promise<PublicBoot> {
         const fwd = req.headers['x-forwarded-host'];
         const host = (Array.isArray(fwd) ? fwd[0] : fwd) ?? req.headers.host;
-        return this.domains.resolveHost(host);
+        const [hostBoot, platform] = await Promise.all([this.domains.resolveHost(host), this.brand.get()]);
+        return { ...hostBoot, platform };
     }
 
     @Get('domains/check')
