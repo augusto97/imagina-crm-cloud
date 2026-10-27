@@ -43,6 +43,7 @@ export function ListCard({
 }): JSX.Element {
     return (
         <div
+            data-tour="lists-card"
             className="imcrm-group/card imcrm-relative imcrm-flex imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm imcrm-transition-all imcrm-duration-200 hover:imcrm--translate-y-0.5 hover:imcrm-border-primary/30 hover:imcrm-shadow-imcrm-md"
             data-testid="lists-index-card"
             data-list={list.slug}

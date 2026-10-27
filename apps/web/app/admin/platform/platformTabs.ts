@@ -1,4 +1,4 @@
-import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, Mail, Megaphone, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, LifeBuoy, Mail, Megaphone, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -20,6 +20,7 @@ export type PlatformTabId =
     | 'dominios'
     | 'ai'
     | 'integraciones'
+    | 'ayuda'
     | 'updates'
     | 'backups'
     | 'transfers';
@@ -42,6 +43,8 @@ export const PLATFORM_TABS: ReadonlyArray<{ id: PlatformTabId; label: string; ic
     { id: 'ai', label: 'Asistente IA', icon: Sparkles },
     // v0.1.203 — apps OAuth registradas por el operador (Google, Microsoft, Slack).
     { id: 'integraciones', label: 'Integraciones', icon: Plug },
+    // Fase 7 — contacto de soporte, videos y guías propias del centro de ayuda.
+    { id: 'ayuda', label: 'Ayuda', icon: LifeBuoy },
     { id: 'updates', label: 'Actualizaciones', icon: RefreshCw },
     { id: 'backups', label: 'Copias de seguridad', icon: DatabaseBackup },
     // v0.1.197 — mover UNA empresa a otra instancia (ADR-S23).

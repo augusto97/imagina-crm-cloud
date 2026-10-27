@@ -69,7 +69,7 @@ aquí, pospuestos:
 
 **Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
 con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
-I9 pasan a la fase 7 y salen de este banco al publicarse). Siguen aquí, sin
+I9 se publicaron en v0.1.318-v0.1.320 y salieron de este banco). Siguen aquí, sin
 elegir: E1 + E2 + E3 (automatizaciones completas), A14 (duplicados y
 fusionar), F1 + F2 + E7 + mejoras de agentes (IA en el día a día) y G4
 (calendario en dos sentidos).
@@ -169,7 +169,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | I4 · Cobro por usuario y complementos (más IA, correos, almacenamiento) | medio · M | |
 | I5 · Cupones, pruebas gratis y referidos | medio · M | |
 | I6 · Copia automática de cada empresa a SU Drive o S3 | medio · S-M | Hoy existen el almacenamiento propio y la exportación de una empresa. |
-| I7 · Ayuda dentro de la app (recorridos, primeros pasos, centro de ayuda) | medio-alto · M | |
 | I8 · Métricas de uso para el operador | medio · M | |
 | I9 · Página de estado pública (la franja de avisos ya existe desde v0.1.319) | bajo-medio · S | |
 
@@ -219,6 +218,12 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada
   (`pushsubscriptionchange`); bitácora de dispositivos; que el asistente/MCP
   administre push; llenar con la cámara otros campos además del «Código».
+- **Guías y recorridos (v0.1.320)**: que el operador edite el texto de una
+  guía del sistema (hoy la oculta o le pone video y escribe la suya);
+  recorridos dentro del constructor de formularios y del flujo de dar acceso
+  al portal (hoy «forms» tiene 2 pasos y «portal» 3); guías en otros idiomas;
+  métricas de qué guías se abren y qué recorridos se terminan; que el
+  asistente IA busque en las guías para responder «¿cómo hago…?».
 - **Novedades (v0.1.319)**: avisarlas por correo o push; traducirlas; pedir
   opinión («¿te sirvió?»); novedades por empresa (que una empresa le cuente
   algo a su equipo); incluir lo visto en la descarga de datos de la cuenta;

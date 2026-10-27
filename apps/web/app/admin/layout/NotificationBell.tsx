@@ -76,7 +76,7 @@ export function NotificationBell(): JSX.Element {
     };
 
     return (
-        <div ref={containerRef} className="imcrm-relative" data-testid="notification-bell">
+        <div ref={containerRef} className="imcrm-relative" data-testid="notification-bell" data-tour="topbar-notifications">
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}

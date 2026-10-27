@@ -56,7 +56,7 @@ export function DashboardsIndexPage(): JSX.Element {
                     </p>
                 </div>
                 {canManage && (
-                    <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setCreateOpen(true)}>
+                    <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setCreateOpen(true)} data-tour="dashboards-new">
                         <Plus className="imcrm-h-4 imcrm-w-4" />
                         {__('Nuevo dashboard')}
                     </Button>
@@ -78,6 +78,7 @@ export function DashboardsIndexPage(): JSX.Element {
                         <Link
                             key={d.id}
                             to={`/dashboards/${d.id}`}
+                            data-tour="dashboard-card"
                             className="imcrm-block imcrm-rounded-lg imcrm-transition-colors hover:imcrm-bg-accent/30"
                         >
                             <Card>

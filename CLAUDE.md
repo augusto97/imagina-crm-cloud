@@ -9416,7 +9416,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         hora (el resto queda en la campana), cola BullMQ propia. El clic enfoca
         la pestaña abierta y abre el registro, cambiando de empresa si hace
         falta. (d) **«Notificaciones en este dispositivo»** en Ajustes →
-        Seguridad: activar, «Enviarme una prueba», desactivar, la lista de
+        Cuenta → Avisos: activar, «Enviarme una prueba», desactivar, la lista de
         dispositivos con quitar, cómo desbloquear el permiso según el navegador
         y el aviso de iPhone (necesita la app instalada, iOS 16.4+).
         `/me/push/*` cerrado a invitados e impersonaciones. (e) **Escáner**
@@ -9596,7 +9596,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto la fase 6 queda completa.**
 
-- [ ] **Fase 7 — que la app se entienda sola** (pedido del usuario: "quiero
+- [x] **Fase 7 — que la app se entienda sola** (pedido del usuario: "quiero
       que la app sea súper fácil de entender, usar y comprender"; tres entregas
       publicables por separado, unidas por el contrato `helpBus`
       (`apps/web/app/admin/help/helpBus.ts`): empezar fácil, guías y recorridos
@@ -9695,6 +9695,66 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         front + E2E navegador 59/59 (sincronización idempotente, «sin ver» por
         llegada, destacada una sola vez, aviso que vence solo, invitado,
         consola con imagen y estadísticas, celular y oscuro).
+  - [x] **Guías y recorridos interactivos + centro de ayuda (v0.1.320,
+        ADR-S74, opción I7 del estudio ampliada)**: la app se explica sola.
+        (a) **Recorridos interactivos** con un motor propio, sin
+        dependencias: una capa oscurece todo menos lo que se explica (anclas
+        `data-tour`) y un globo muestra «3 de 13», Anterior, Siguiente y
+        «Saltar recorrido». Cada paso navega a su pantalla, espera a que el
+        elemento aparezca y quede quieto (paneles que se deslizan, scroll
+        suave), lo trae a la vista y lo vuelve a medir con ResizeObserver y
+        con el scroll del `<main>`; si el elemento no está, el paso sale del
+        total. Hay pasos de «haz clic» que esperan a la persona, o «Hacerlo
+        por mí». Convive con los diálogos y menús de Radix; se maneja con
+        ← → y Esc, con el Tab encerrado en el globo, aria, movimiento
+        reducido, claro y oscuro. En el celular el globo es una tarjeta, los
+        pasos del riel apuntan al menú y «haz clic» se lee «toca». Son 15
+        recorridos: «welcome» por toda la app (13 pasos para un admin, 11
+        para el resto, 10 en el celular) y 14 de tareas (listas y registros,
+        crear lista, importar, vistas, ficha, invitar, automatizaciones,
+        tableros, formularios, portal, marca, instalar la app, búsqueda y
+        atajos, asistente). El de bienvenida se ofrece UNA vez por persona y
+        empresa («¿Te muestro la app en 2 minutos?»; «Ahora no» lo deja en
+        Ayuda) — no a invitados, al impersonar, con otro diálogo abierto, ni si
+        la empresa no tiene listas y la persona puede crearlas: ahí manda
+        «Empezar fácil», que al terminar arranca el mismo recorrido. Progreso
+        en `memberships.settings.guides` (`GET/PATCH /me/guides`, un PATCH
+        que mezcla; al impersonar no se escribe).
+        (b) **Centro de ayuda**: botón «Ayuda» a la derecha de la campana (en
+        el celular, en el menú de la persona). Panel con buscador sin acentos
+        y por raíz de palabra, «En esta pantalla» según la ruta, «Empieza
+        aquí» (recorrido, «Primeros pasos», atajos y Novedades si existen), 12
+        categorías con **50 guías «¿Cómo hago…?»** (título en pregunta,
+        minutos, pasos numerados, consejo, video, «Muéstrame», «Ir ahí» y
+        relacionadas; filtradas por capacidad, con «Lo hace un administrador»
+        en lo que no le toca) y el contacto de soporte del operador. Las guías
+        también salen en Ctrl+K, y hay enlaces «¿Cómo funciona?» en el editor
+        de automatizaciones, las secciones de la lista y el editor de la ficha
+        y del portal. Las guías son DATOS en shared (`HelpGuide`), dibujadas
+        sin innerHTML y con enlaces seguros; el catálogo va en su propio chunk
+        (el principal bajó 40 KB).
+        (c) **Plataforma → Ayuda** (superadmin con contraseña): contacto de
+        soporte (correo, WhatsApp, centro de ayuda externo y una nota), video
+        de YouTube, Vimeo o Loom por guía, ocultar guías y crear guías propias
+        (título, categoría, texto con vista previa, video, pantallas y roles).
+        Vive en Redis `platform:help` (viaja en el snapshot) y se lee con
+        tolerancia; `GET /help` sirve a cualquier miembro, cerrado a
+        invitados. (d) **Las tres piezas juntas**: la capa del recorrido, el
+        panel y el ofrecimiento llevan `data-help-overlay` (una novedad
+        destacada no se abre encima, y el ofrecimiento espera a que se cierre
+        otro diálogo), el ofrecimiento sube por encima del botón «Primeros
+        pasos» (los dos viven abajo a la derecha), y «Muéstrame» de Primeros
+        pasos y «Pruébalo» de Novedades arrancan los recorridos. Novedad
+        «Ayuda dentro de la app» en el catálogo. Sin migración ni dependencias
+        nuevas. 13 tests de shared, 34 del front (incluido el test estático de
+        que cada ancla de cada recorrido existe en el código) y 6 de API (117
+        en los specs del área) + E2E navegador 75/75 de la entrega y 21/21 de
+        las tres piezas juntas (registro → bienvenida → recorrido automático
+        → Ayuda con Primeros pasos y Novedades → «Muéstrame» → agente con el
+        ofrecimiento sin tapar nada → celular y oscuro).
+
+        **Con esto la fase 7 queda completa: empezar fácil, novedades y la
+        ayuda dentro de la app.**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
@@ -9726,3 +9786,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    final de `packages/shared/src/whats-new/catalog.ts` (pasos en su
    `README.md`: texto para el usuario final, español neutro, nunca el nombre
    del producto, botón que lleve ahí) y correr el test de shared. Ver ADR-S73.
+9. **Guías y recorridos al día** (ADR-S74): un botón o una pantalla importante
+   nueva lleva su `data-tour="<area>-<cosa>"`; si cambia cómo se hace una
+   tarea, se actualiza su guía en `packages/shared/src/help/system-guides.ts`
+   (y su recorrido en `apps/web/app/admin/help/tours/tours.ts`). El test
+   `tours/tours.test.ts` falla si un recorrido apunta a un ancla que ya no
+   existe: correrlo tras cada merge.

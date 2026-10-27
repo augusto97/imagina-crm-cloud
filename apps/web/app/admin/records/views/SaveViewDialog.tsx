@@ -201,7 +201,7 @@ export function SaveViewDialog({
                     </div>
 
                     <form onSubmit={handleSubmit} className="imcrm-mt-4 imcrm-flex imcrm-flex-col imcrm-gap-4">
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-tour="view-create-name">
                             <Label htmlFor="view-name">{__('Nombre')}</Label>
                             <Input
                                 id="view-name"
@@ -212,7 +212,7 @@ export function SaveViewDialog({
                             />
                         </div>
 
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-tour="view-create-types">
                             <Label htmlFor="view-type">{__('Tipo de vista')}</Label>
                             <Select
                                 id="view-type"

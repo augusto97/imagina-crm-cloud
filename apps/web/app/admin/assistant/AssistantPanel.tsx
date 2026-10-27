@@ -191,6 +191,7 @@ export function AssistantPanel(): JSX.Element | null {
     return (
         <aside
             data-testid="imcrm-ai-panel"
+            data-tour="assistant-panel"
             role="dialog"
             aria-label={__('Asistente IA')}
             className="imcrm-fixed imcrm-inset-y-0 imcrm-right-0 imcrm-z-40 imcrm-flex imcrm-w-full imcrm-flex-col imcrm-border-l imcrm-border-border imcrm-bg-background imcrm-shadow-xl sm:imcrm-w-[440px]"
@@ -298,6 +299,7 @@ export function AssistantPanel(): JSX.Element | null {
             </div>
 
             <form
+                data-tour="assistant-input"
                 className="imcrm-shrink-0 imcrm-border-t imcrm-border-border imcrm-p-3"
                 onSubmit={(e) => {
                     e.preventDefault();

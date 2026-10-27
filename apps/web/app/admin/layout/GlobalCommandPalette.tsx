@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
+import { usePaletteHelpCommands } from '@/admin/help/usePaletteHelpCommands';
 import { useSession } from '@/cloud/session';
 import { useDashboards } from '@/hooks/useDashboards';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -108,6 +109,8 @@ export function GlobalCommandPalette({
     const listRef = useRef<HTMLDivElement | null>(null);
     const debounced = useDebouncedValue(query, 220);
     const records = useGlobalSearch(debounced, open && (canViewRecords || canViewOwnRecords));
+    // Fase 7 — las guías de Ayuda y sus dos accesos («Abrir la ayuda», recorrido).
+    const helpCommands = usePaletteHelpCommands(query, open);
     const typing = query.trim() !== '';
 
     const folderName = useMemo(() => {
@@ -206,6 +209,9 @@ export function GlobalCommandPalette({
             }
         }
 
+        // Fase 7 — guías que coinciden con lo escrito.
+        if (typing) out.push(...helpCommands.guides);
+
         const nav: GlobalCommand[] = [
             { id: 'nav-lists', label: __('Todas las listas'), icon: DEFAULT_LIST_ICON, section: __('Ir a'), keywords: 'listas lists inicio', href: '/lists' },
             { id: 'nav-mywork', label: __('Mi trabajo'), icon: ListChecks, section: __('Ir a'), keywords: 'asignado tareas recordatorios', href: '/my-work' },
@@ -229,6 +235,7 @@ export function GlobalCommandPalette({
             ...(onScan && (canViewRecords || canViewOwnRecords)
                 ? [{ id: 'scan', label: __('Escanear un código'), description: __('QR o código de barras, con la cámara'), icon: ScanLine, section: __('Acciones'), keywords: 'escanear qr barras camara codigo sku inventario', action: onScan }]
                 : []),
+            ...helpCommands.actions,
         ];
         for (const c of [...nav, ...actions]) {
             if (!typing || paletteMatches(`${c.label} ${c.keywords ?? ''}`, q)) out.push(c);
@@ -251,6 +258,7 @@ export function GlobalCommandPalette({
         onScan,
         canViewRecords,
         canViewOwnRecords,
+        helpCommands,
     ]);
 
     useEffect(() => {

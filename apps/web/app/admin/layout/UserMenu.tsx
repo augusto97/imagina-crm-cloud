@@ -23,6 +23,8 @@ import { whatsNewPanel } from '@/admin/whats-new/whatsNewStore';
 import { useWhatsNewFeed } from '@/hooks/useWhatsNew';
 import { useIsGuest } from '@/lib/guest';
 
+import { HelpMenuItem } from '@/admin/help/HelpTopbarButton';
+
 import { initials, WorkspaceMenuItems } from './WorkspaceSwitcher';
 
 /**
@@ -68,6 +70,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                 <button
                     type="button"
                     data-testid="user-menu"
+                    data-tour="topbar-user"
                     aria-label={`${__('Tu cuenta')}: ${displayName}${unseenNews > 0 ? ` · ${sprintf(__('%d novedades sin ver'), unseenNews)}` : ''}`}
                     title={displayName}
                     className="imcrm-relative imcrm-inline-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-transition-colors hover:imcrm-bg-accent data-[state=open]:imcrm-bg-accent"
@@ -179,6 +182,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                         {__('Primeros pasos')}
                     </DropdownMenuItem>
                 )}
+                <HelpMenuItem />
                 {onShowShortcuts && (
                     <DropdownMenuItem onSelect={onShowShortcuts}>
                         <Keyboard className="imcrm-h-4 imcrm-w-4" />

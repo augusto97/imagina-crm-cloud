@@ -458,7 +458,7 @@ export function RecordDetailDrawer({
                                 )}
                             </span>
                             {view.ready && (
-                                <>
+                                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2" data-tour="record-toolbar">
                                     {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
                                     {!isGuest && (
                                         <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
@@ -469,7 +469,7 @@ export function RecordDetailDrawer({
                                         <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />
                                     )}
                                     <RecordShareButton listId={listId} recordId={record.id} compact />
-                                </>
+                                </div>
                             )}
                             {listSlug !== undefined && (
                                 <Button
@@ -491,6 +491,7 @@ export function RecordDetailDrawer({
                                 aria-label={__('Vista del registro')}
                                 className="imcrm-flex imcrm-shrink-0 imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-3"
                                 data-testid="imcrm-record-mobile-tabs"
+                                data-tour="record-side"
                             >
                                 <TabButton active={mobileTab === 'details'} onClick={() => setMobileTab('details')}>
                                     <FileText className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -526,7 +527,7 @@ export function RecordDetailDrawer({
                                         se edita aquí (y no se repite como fila en
                                         "Campos"). */}
                                     <SheetTitle asChild>
-                                        <div className="imcrm-mt-2">
+                                        <div className="imcrm-mt-2" data-tour="record-title">
                                             <RecordTitleInput
                                                 field={titleField}
                                                 value={titleField ? values[titleField.slug] : undefined}
@@ -568,12 +569,14 @@ export function RecordDetailDrawer({
                                         documento de la ficha, arriba de los campos
                                         (mismo lugar que en ClickUp). */}
                                     {view.ready ? (
-                                        <RecordDescription
-                                            listKey={listSlug ?? listId}
-                                            recordId={record.id}
-                                            editable={canEditRecords}
-                                            className="imcrm-mb-5"
-                                        />
+                                        <div data-tour="record-description">
+                                            <RecordDescription
+                                                listKey={listSlug ?? listId}
+                                                recordId={record.id}
+                                                editable={canEditRecords}
+                                                className="imcrm-mb-5"
+                                            />
+                                        </div>
                                     ) : (
                                         skeleton('imcrm-mb-5 imcrm-h-16')
                                     )}
@@ -583,6 +586,7 @@ export function RecordDetailDrawer({
                                         type="button"
                                         onClick={() => setFieldsOpen((v) => !v)}
                                         aria-expanded={fieldsOpen}
+                                        data-tour="record-fields"
                                         className="imcrm-mb-2 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-py-1 imcrm-pr-2 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground hover:imcrm-text-foreground imcrm-transition-colors"
                                     >
                                         {fieldsOpen ? (
@@ -752,6 +756,7 @@ export function RecordDetailDrawer({
                                     aria-expanded={false}
                                     aria-label={__('Ampliar')}
                                     title={__('Ampliar')}
+                                    data-tour="record-side"
                                     className="imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground imcrm-transition-colors"
                                 >
                                     <ChevronsLeft className="imcrm-h-4 imcrm-w-4" aria-hidden />
@@ -772,7 +777,7 @@ export function RecordDetailDrawer({
                             >
                                 {/* Ancho interno fijo en lg: el contenido no se aplasta
                                  * mientras el width del aside anima. */}
-                                <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col lg:imcrm-w-[380px]">
+                                <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col lg:imcrm-w-[380px]" data-tour={asideOpen ? 'record-side' : undefined}>
                                     <div className="imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-border-b imcrm-border-border imcrm-px-2">
                                         <button
                                             type="button"

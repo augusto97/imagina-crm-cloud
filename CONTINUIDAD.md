@@ -147,6 +147,11 @@ Pasos (en este orden):
    **2b. Novedad**: si la versión trae algo que quien USA la app va a notar,
    agregar su entrada al final de `packages/shared/src/whats-new/catalog.ts`
    (pasos en su `README.md`) y correr el test de shared (ADR-S73).
+   **2c. Ayuda al día**: un botón o pantalla importante nueva lleva su
+   `data-tour`; si cambia cómo se hace una tarea, actualizar su guía en
+   `packages/shared/src/help/system-guides.ts` (y su recorrido en
+   `apps/web/app/admin/help/tours/tours.ts`). Correr `tours/tours.test.ts`
+   del front: falla si un recorrido apunta a un ancla que ya no existe (ADR-S74).
 3. `CLAUDE.md` §5: agregar el bullet `- [x] **Título (v0.1.N, contexto/reporte
    del usuario)**: …` al final de la fase en curso (mismo estilo de los
    anteriores: qué, por qué, cómo, bugs encontrados, tests y E2E).
@@ -366,11 +371,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 
 ## 10. Estado actual e hilos abiertos
 
-**Estado**: todas las fases F0–F12 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.319** (novedades, segunda entrega de la fase 7), en `main`.
+**Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.320**
+(guías, recorridos y centro de ayuda; con esto la fase 7 queda completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-10-26 — **Fase 7 en marcha: «hacer la app súper fácil de entender»**
+- 2026-10-26 — **Fase 7 completa: «hacer la app súper fácil de entender»**
   ("por el momento me interesa el «empezar fácil»… tutoriales, guías
   interactivas, un paso a paso… dándole un tour al usuario y guiando por toda
   la app… que los usuarios sepan de las novedades… y de las funcionalidades
@@ -399,10 +405,19 @@ versión publicada: **v0.1.319** (novedades, segunda entrega de la fase 7), en `
   **Avance**: el contenedor se reinició a mitad de camino; el trabajo estaba en
   disco (se respaldó con commits `wip` en cada worktree) y las tres entregas se
   retomaron. **Empezar fácil publicada en v0.1.318** (sin migración, ADR-S72)
-  y **Novedades en v0.1.319** (migración 0092, ADR-S73); guías y recorridos
-  en curso (será ADR-S74). Al integrar Novedades se le agregó la novedad de
-  «Primeros pasos» al catálogo, y su spec pasó a calcular del catálogo cuántas
-  ve cada rol (contaba a mano y se rompía con cada entrada nueva).
+  y **Novedades en v0.1.319** (migración 0092, ADR-S73) y **guías,
+  recorridos y centro de ayuda en v0.1.320** (sin migración, ADR-S74). Al
+  integrar Novedades se le agregó la novedad de «Primeros pasos» al catálogo, y
+  su spec pasó a calcular del catálogo cuántas ve cada rol (contaba a mano y se
+  rompía con cada entrada nueva). Al integrar las guías: el ofrecimiento del
+  recorrido sube por encima del botón «Primeros pasos» (los dos estaban abajo a
+  la derecha y se tapaban) y se verificaron las tres piezas juntas (21/21).
+  **Queda fuera** (anotado en `docs/ideas.md` §5): editar el texto de las
+  guías del sistema (el operador sólo las oculta o les pone video), recorridos
+  dentro del constructor de formularios y del acceso al portal, guías en otros
+  idiomas, métricas de qué guías se usan y que el asistente IA consulte las
+  guías. **Esperando al usuario**: decidir qué sigue (el banco de ideas tiene
+  las opciones que no eligió).
 - 2026-10-26 — **Fase 4: sólo la agenda de citas.** De la fase 4 propuesta
   («Hacia afuera»: API pública + n8n/Make/Zapier, firma electrónica,
   facturación DIAN y agenda de citas) el usuario eligió SÓLO la **agenda de
@@ -769,6 +784,28 @@ versión publicada: **v0.1.319** (novedades, segunda entrega de la fase 7), en `
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.320** — **Guías, recorridos interactivos y centro de
+  ayuda** (ADR-S74, opción I7 ampliada; tercera y última entrega de la fase 7).
+  Recorridos con motor propio: «welcome» adaptado al rol (13 pasos para un
+  admin, 11 para el resto, 10 en el celular) y 14 de tareas; se ofrece una vez
+  por persona y empresa («¿Te muestro la app en 2 minutos?»), no a invitados,
+  al impersonar, con otro diálogo abierto ni cuando manda «Empezar fácil» (que
+  arranca el recorrido al terminar). Botón **Ayuda** a la derecha de la campana
+  (en el celular, en el menú) con 50 guías «¿Cómo hago…?» como datos en shared,
+  búsqueda sin acentos, «En esta pantalla», Ctrl+K y enlaces «¿Cómo funciona?».
+  **Plataforma → Ayuda**: contacto de soporte, video por guía, ocultar guías y
+  guías propias por rol y pantalla (Redis `platform:help`, viaja en el
+  snapshot). Progreso en `memberships.settings.guides` (`/me/guides`, PATCH
+  que mezcla). Sin migración ni dependencias nuevas. Al integrar: el
+  ofrecimiento sube por encima de «Primeros pasos», novedad «Ayuda dentro de
+  la app» en el catálogo, «Haz clic en una lista» (decía «Click en…») y se
+  corrigió `CLAUDE.md` (las notificaciones del dispositivo están en Ajustes →
+  Cuenta → **Avisos**, no en Seguridad). **Regla nueva del ritual** (§4 paso 2c
+  y regla 9 de `CLAUDE.md` §6): anclas `data-tour` y guías al día. De paso, en
+  el PR de v0.1.319 el CI cortó un test de shared que comprimía 60 MB (la
+  «bomba de compresión» del lector de Excel) y pasaba de los 5 s en el runner:
+  ahora usa 16 MB y tope de 30 s. Verificación: shared 545, front 626, specs
+  del área 117/117 y E2E 75/75 + 21/21 con las tres piezas juntas.
 - **2026-10-27 · v0.1.319** — **Novedades** (ADR-S73, segunda entrega de la
   fase 7, con los avisos de plataforma de I9). Megáfono «Novedades» junto a la
   campana, con panel, página `/novedades`, destacadas en un diálogo y avisos en

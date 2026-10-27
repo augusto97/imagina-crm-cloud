@@ -47,17 +47,19 @@ export function MembersPanel(): JSX.Element {
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
-                <MemberInviteForm
-                    idPrefix="member"
-                    customRoles={customRoles}
-                    onSubmit={async (input) => {
-                        const r = await api.addMember(input);
-                        await invalidate();
-                        return r;
-                    }}
-                />
+                <div data-tour="members-invite">
+                    <MemberInviteForm
+                        idPrefix="member"
+                        customRoles={customRoles}
+                        onSubmit={async (input) => {
+                            const r = await api.addMember(input);
+                            await invalidate();
+                            return r;
+                        }}
+                    />
+                </div>
 
-                <div className="imcrm-border-t imcrm-border-border imcrm-pt-3">
+                <div className="imcrm-border-t imcrm-border-border imcrm-pt-3" data-tour="members-list">
                     <p className="imcrm-mb-1 imcrm-text-xs imcrm-text-muted-foreground">
                         {membersQ.data
                             ? `${membersQ.data.length} ${membersQ.data.length === 1 ? 'persona' : 'personas'}${pending > 0 ? ` · ${pending} con invitación pendiente` : ''}`

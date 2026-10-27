@@ -256,4 +256,19 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             'Si administras la empresa, en **Primeros pasos → Agrega más con IA** describes tu negocio y revisas la propuesta (listas, campos, vistas y un tablero) antes de crearla.',
         ].join('\n'),
     },
+    {
+        key: 'v0.1.320-ayuda-y-recorridos',
+        version: '0.1.320',
+        date: '2026-10-27',
+        kind: 'feature',
+        title: 'Ayuda dentro de la app',
+        summary:
+            'Toca Ayuda, junto a la campana: guías rápidas de cada tarea y recorridos que te muestran la app paso a paso.',
+        body: [
+            'En **Ayuda** buscas «¿Cómo hago…?» y ves las guías de la pantalla en la que estás. Cada guía trae **Muéstrame** para recorrerla en la app e **Ir ahí** para ir directo.',
+            '',
+            'También las encuentras con **Ctrl+K**, y en el celular, desde el menú de tu perfil.',
+        ].join('\n'),
+        action: { label: 'Ver el recorrido', href: '/lists', tour: 'welcome' },
+    },
 ];

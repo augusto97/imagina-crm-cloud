@@ -4413,6 +4413,67 @@ servidores y el operador conserva la última palabra. Nadie se inunda y nadie se
 pierde lo que llegó con una actualización. Quedan afuera el aviso por correo o
 push, la traducción, pedir opinión y las novedades por empresa.
 
+### ADR-S74 — Ayuda dentro de la app: recorridos propios, guías como datos y ayuda del operador (v0.1.320)
+
+**Contexto.** El usuario pidió que la app «se entienda sola». Con decenas de
+módulos, el estado vacío y la bienvenida de «Empezar fácil» (ADR-S72) no
+alcanzan: hace falta mostrar DÓNDE está cada cosa y responder «¿cómo hago X?»
+sin salir de la app. Además, como la app es white-label, el texto no puede
+nombrar el producto y el contacto de soporte es del operador.
+
+**Decisión.**
+1. **Motor de recorridos propio**, sin librerías (driver.js, shepherd,
+   intro.js): ninguna convive bien con los portales y el foco de Radix, con el
+   scroll del `<main>` en vez de la ventana ni con un layout que cambia por
+   ruta y dispositivo, y sumaban una dependencia con su propio CSS. El motor
+   es una capa por portal al `<body>` con velo de cuatro bloques y un recorte
+   con anillo. Antes de mostrar un paso espera a que el elemento aparezca,
+   esté quieto y se vea bien, con un tope; si no aparece, el paso sale del
+   total. Atrapa ←, → y Esc en fase de captura, encierra el Tab en el globo y
+   quita el `aria-hidden` que pone Radix. Los pasos son datos: `target`
+   (`data-tour`), `route`, `advanceOn: 'next' | 'click'`, ubicación, y
+   filtros por capacidad, rol y dispositivo. Un test estático exige que cada
+   `target` exista en el código.
+2. **Guías como DATOS** en `packages/shared`: formato `HelpGuide` con título
+   en pregunta, categoría, pantallas, pasos en formato sencillo, consejo,
+   recorrido y relacionadas; el mismo formato para las 50 del sistema y las
+   del operador. Se dibujan sin innerHTML y los enlaces sólo pueden ser https,
+   mailto o rutas internas. El catálogo va en un chunk aparte, marcado como
+   expresión pura.
+3. **Progreso por persona y empresa** en `memberships.settings.guides`, con
+   un PATCH que mezcla y sólo toca su clave (convive con `onboarding` y con
+   Novedades). Al impersonar no se escribe nada.
+4. **Ayuda del operador** en Redis `platform:help` (soporte, video por guía
+   validado con `resolveEmbed`, guías ocultas y guías propias por rol y
+   pantalla), igual que otras configuraciones de plataforma; viaja en el
+   snapshot. Lectura tolerante: con un valor corrupto o Redis caído quedan las
+   guías del sistema. El operador no edita el texto de las guías del sistema
+   (mejoran con cada versión): las oculta y escribe las suyas.
+5. **Acceso**: miembros sí; invitados y clientes del portal no. Escribir en la
+   plataforma exige superadmin con sesión de contraseña.
+6. **Convivencia con las otras entregas** por el helpBus: este módulo registra
+   `startTour`, `hasTour` y `openHelp`. Toda capa de ayuda lleva
+   `data-help-overlay`, el ofrecimiento de bienvenida espera mientras haya
+   otro diálogo abierto, y como vive en la misma esquina que el botón de
+   «Primeros pasos», sube por encima de él.
+7. **Mantenimiento** (regla 9 de `CLAUDE.md` §6): un botón o pantalla
+   importante nueva lleva su `data-tour`, y si cambia cómo se hace una tarea
+   se actualiza su guía y su recorrido.
+
+**Consecuencias.** Agregar un recorrido o una guía es agregar datos y anclas,
+no un release de infraestructura. Una pantalla que cambia puede romper un
+recorrido, y el test de anclas lo detecta en CI. El texto de las guías del
+sistema mejora con cada versión para todas las instalaciones. Quedan afuera
+editar las guías del sistema, recorridos dentro del constructor de formularios
+y del acceso al portal, otros idiomas, métricas de uso y que el asistente IA
+consulte las guías.
+
+**Alternativas descartadas.** Una librería de recorridos (dependencia y
+choques con Radix y el scroll del `<main>`). Guardar las guías en Postgres
+(son de la plataforma y versionadas con el código; lo editable del operador
+es poco y vive en Redis). Dejar que el operador edite las guías del sistema
+(se perderían las mejoras de cada versión).
+
 ---
 
-**Versión del documento:** 1.116.0 (novedades)
+**Versión del documento:** 1.117.0 (ayuda dentro de la app)

@@ -500,6 +500,7 @@ export function Sidebar({
 
                 <RailItem
                     to="/lists"
+                    tour="rail-lists"
                     active={section === 'home'}
                     icon={ListIcon}
                     label={__('Listas')}
@@ -509,6 +510,7 @@ export function Sidebar({
                 />
                 <RailItem
                     to="/my-work"
+                    tour="rail-mywork"
                     active={section === 'mywork'}
                     icon={ListChecks}
                     label={__('Mi trabajo')}
@@ -518,6 +520,7 @@ export function Sidebar({
                 />
                 <RailItem
                     to="/favorites"
+                    tour="rail-favorites"
                     active={section === 'favorites'}
                     icon={Pin}
                     label={__('Favoritos')}
@@ -528,6 +531,7 @@ export function Sidebar({
                 {canSeeDashboards && (
                     <RailItem
                         to="/dashboards"
+                        tour="rail-dashboards"
                         active={section === 'dashboards'}
                         icon={BarChart3}
                         // v0.1.286 — en el riel (68px) «Dashboards» no entra
@@ -543,6 +547,7 @@ export function Sidebar({
                 {canManageAgents && (
                     <RailItem
                         to="/agents"
+                        tour="rail-agents"
                         active={section === 'agents'}
                         icon={Bot}
                         label={__('Agentes')}
@@ -554,6 +559,7 @@ export function Sidebar({
                 )}
                 <RailItem
                     to="/settings"
+                    tour="rail-settings"
                     active={section === 'settings'}
                     icon={Settings}
                     label={__('Ajustes')}
@@ -564,6 +570,7 @@ export function Sidebar({
                 {isSuperadmin && (
                     <RailItem
                         to="/platform"
+                        tour="rail-platform"
                         active={section === 'platform'}
                         icon={ShieldAlert}
                         label={__('Plataforma')}
@@ -767,10 +774,13 @@ function RailItem({
     onPeek,
     onUnpeek,
     onSelect,
+    tour,
 }: {
     to: string;
     icon: LucideIcon;
     label: string;
+    /** Fase 7 — ancla de los recorridos (`data-tour`). */
+    tour?: string;
     /** Tooltip / nombre accesible cuando la etiqueta del riel es abreviada. */
     hint?: string;
     active: boolean;
@@ -785,6 +795,7 @@ function RailItem({
             to={to}
             title={hint ?? label}
             aria-label={hint}
+            data-tour={tour}
             onMouseEnter={onPeek}
             onMouseLeave={onUnpeek}
             onClick={onSelect}

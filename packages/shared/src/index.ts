@@ -125,3 +125,6 @@ export * from './schemas/onboarding';
 // Fase 7 — novedades (catálogo que viaja con cada versión + lo que publica el operador).
 export * from './schemas/whats-new';
 export * from './whats-new';
+// Fase 7 · entrega 2 — guías rápidas, recorridos y centro de ayuda.
+export * from './schemas/help';
+export * from './help/system-guides';

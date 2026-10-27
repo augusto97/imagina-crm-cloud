@@ -931,7 +931,7 @@ export function TableView({
                 {...grid.containerProps}
             >
             <GridEditContext.Provider value={grid.editStore}>
-            <table className={tableClassName} style={tableStyle} aria-label={__('Registros de la lista')}>
+            <table className={tableClassName} style={tableStyle} aria-label={__('Registros de la lista')} data-tour="records-table">
                 {colGroup}
                 <tbody>
                     {rows.length === 0 ? (
@@ -1055,6 +1055,7 @@ export function TableView({
                                                 key={cell.id}
                                                 data-cell={`${rowIndex}:${cellIndex}`}
                                                 data-active={grid.active?.row === rowIndex && grid.active.col === cellIndex ? 'true' : undefined}
+                                                data-tour={isOpenerCell && rowIndex === 0 && onRowClick ? 'records-row' : undefined}
                                                 style={{
                                                     width: cell.column.getSize(),
                                                     maxWidth: cell.column.getSize(),

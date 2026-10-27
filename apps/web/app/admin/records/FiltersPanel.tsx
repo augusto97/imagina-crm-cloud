@@ -105,6 +105,7 @@ export function FiltersPanel({
                 <Button
                     variant="outline"
                     size="sm"
+                    data-tour="records-filter"
                     className={cn(
                         'imcrm-gap-1.5',
                         count > 0 &&

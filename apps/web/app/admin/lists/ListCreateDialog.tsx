@@ -92,13 +92,13 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                     </div>
 
                     {/* Selector de camino */}
-                    <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-3 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1">
+                    <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-3 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1" data-tour="list-create-modes">
                         <ModeButton active={mode === 'template'} onClick={() => setMode('template')} icon={LayoutTemplate} label={__('Plantilla')} />
                         <ModeButton active={mode === 'blank'} onClick={() => setMode('blank')} icon={FilePlus2} label={__('En blanco')} />
                         <ModeButton active={mode === 'duplicate'} onClick={() => setMode('duplicate')} icon={Copy} label={__('Duplicar')} />
                     </div>
 
-                    <div className="imcrm-mt-4 imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col">
+                    <div className="imcrm-mt-4 imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col" data-tour="list-create-body">
                         {mode === 'blank' && <BlankForm open={open} groupId={groupId} onDone={() => onOpenChange(false)} />}
                         {mode === 'template' && (
                             <TemplateGallery

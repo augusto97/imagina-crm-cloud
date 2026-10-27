@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { HowItWorksLink } from '@/admin/help/HowItWorksLink';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
@@ -563,6 +564,7 @@ function EditorBody({
                         <Link to={`/lists/${list.slug}/automations`} className="hover:imcrm-underline">
                             {__('Automatizaciones')}
                         </Link>
+                        <HowItWorksLink guideId="automation-basics" className="imcrm-ml-auto" />
                     </div>
 
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
@@ -615,6 +617,7 @@ function EditorBody({
                                 aria-label={__('Probar')}
                                 title={__('Probar paso a paso con un registro real, sin enviar ni cambiar nada')}
                                 data-testid="imcrm-automation-test"
+                                data-tour="automation-test"
                             >
                                 <FlaskConical className="imcrm-h-3.5 imcrm-w-3.5" />
                                 <span className="imcrm-hidden sm:imcrm-inline">{__('Probar')}</span>
@@ -661,7 +664,7 @@ function EditorBody({
                                     <span className="imcrm-hidden lg:imcrm-inline">{__('Duplicar')}</span>
                                 </Button>
                             )}
-                            <Button size="sm" onClick={handleSave} disabled={isPending} className="imcrm-gap-1.5">
+                            <Button size="sm" onClick={handleSave} disabled={isPending} className="imcrm-gap-1.5" data-tour="automation-save">
                                 {isPending && <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" />}
                                 {isPending ? __('Guardando…') : __('Guardar')}
                             </Button>
@@ -751,6 +754,7 @@ function EditorBody({
                     {/* Trigger */}
                     <FlowCard
                         tone="primary"
+                        tour="automation-trigger"
                         overline={__('Cuando')}
                         icon={<triggerMeta.icon className="imcrm-h-4 imcrm-w-4" />}
                         title={summarizeTrigger(state.triggerType, state.triggerConfig, fields)}
@@ -953,9 +957,12 @@ function FlowCard({
     onToggle,
     issues = [],
     children,
+    tour,
 }: {
     /** Lo que le falta a este paso para poder correr (se ve aunque esté plegado). */
     issues?: string[];
+    /** Fase 7 — ancla de los recorridos. */
+    tour?: string;
     tone: 'primary' | 'neutral';
     overline: string;
     icon: React.ReactNode;
@@ -968,6 +975,7 @@ function FlowCard({
 }): JSX.Element {
     return (
         <section
+            data-tour={tour}
             className={cn(
                 'imcrm-rounded-2xl imcrm-border imcrm-bg-card imcrm-shadow-imcrm-sm imcrm-transition-shadow',
                 tone === 'primary' ? 'imcrm-border-primary/25' : 'imcrm-border-border',
@@ -1115,6 +1123,7 @@ function ModeSwitcher({
             className="imcrm-inline-flex imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-0.5"
             role="tablist"
             aria-label={__('Vista del editor')}
+            data-tour="automation-mode"
         >
             <button
                 type="button"
@@ -1163,6 +1172,7 @@ function AddActionCard({
         <ActionTypeMenu actionsCatalog={actionsCatalog} onPick={onInsert}>
             <button
                 type="button"
+                data-tour="automation-add-action"
                 className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-rounded-2xl imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-canvas imcrm-px-4 imcrm-py-4 imcrm-text-sm imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-border-primary/40 hover:imcrm-text-primary"
             >
                 <Plus className="imcrm-h-4 imcrm-w-4" />
@@ -1214,6 +1224,7 @@ function ActiveTogglePill({
             role="switch"
             aria-checked={active}
             onClick={() => onChange(!active)}
+            data-tour="automation-active"
             className={cn(
                 'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-full imcrm-border imcrm-py-1 imcrm-pl-1.5 imcrm-pr-3 imcrm-text-[12px] imcrm-font-medium imcrm-transition-colors',
                 active

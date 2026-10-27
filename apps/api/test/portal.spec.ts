@@ -1085,7 +1085,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             costoId = (await fieldsService.create(tenantId, 'contratos', { label: 'Costo interno', type: 'number', slug: 'costo_c' })).id;
             mine = (
                 await recordsService.create(tenantId, admin, 'contratos', {
-                    data: { [`f${nombreId}`]: 'Mi contrato', [`f${emailId}`]: 'yo@cliente.test', [`f${costoId}`]: 777 },
+                    data: { [`f${nombreId}`]: 'Mi contrato', [`f${emailId}`]: 'yo@cliente.test', [`f${costoId}`]: 482917 },
                 })
             ).id;
             other = (await recordsService.create(tenantId, admin, 'contratos', { data: { [`f${nombreId}`]: 'Otro' } })).id;
@@ -1108,7 +1108,8 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect(boot.fields.map((f) => f.id).sort()).toEqual([nombreId, emailId].sort());
             expect(boot.record.data[`f${costoId}`]).toBeUndefined();
             expect(boot.record.data[`f${emailId}`]).toBe('yo@cliente.test');
-            expect(JSON.stringify(boot)).not.toContain('777');
+            // Seis dígitos seguidos: no pueden aparecer por casualidad en un timestamp.
+            expect(JSON.stringify(boot)).not.toContain('482917');
             // Cuentas y primera página de la conversación en el MISMO request.
             expect(boot.accounts?.accounts.some((a) => a.record_id === mine)).toBe(true);
             expect(boot.comments).toEqual([]);
@@ -1116,12 +1117,12 @@ describe('PortalService (Postgres + Redis reales)', () => {
 
         it('la actividad sólo muestra cambios de campos que el cliente ve', async () => {
             const uid = await contratoSession('vis2@cliente.test');
-            await recordsService.update(tenantId, admin, 'contratos', mine, { data: { [`f${costoId}`]: 900 } });
+            await recordsService.update(tenantId, admin, 'contratos', mine, { data: { [`f${costoId}`]: 913827 } });
             await recordsService.update(tenantId, admin, 'contratos', mine, { data: { [`f${emailId}`]: 'nuevo@cliente.test' } });
             const items = await portal.myActivity(actor(uid), 50);
             const all = JSON.stringify(items);
             expect(all).not.toContain(`f${costoId}`);
-            expect(all).not.toContain('900');
+            expect(all).not.toContain('913827');
             const updates = items.filter((a) => a.action === 'record_updated');
             expect(updates).toHaveLength(1);
             expect(Object.keys(updates[0]!.diff as Record<string, unknown>)).toEqual([`f${emailId}`]);
@@ -1200,7 +1201,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect(changeEvents[0]).toMatchObject({ recordId: mine, actorId: uid, viaPortal: true });
             expect(changeEvents[0]!.after[`f${emailId}`]).toBe('otra@cliente.test');
             // La escritura es parcial: lo que el cliente no tocó queda igual.
-            expect(changeEvents[0]!.after[`f${costoId}`]).toBe(900);
+            expect(changeEvents[0]!.after[`f${costoId}`]).toBe(913827);
         });
 
         it('comentar exige conversación escribible en el diseño y la empresa activa', async () => {

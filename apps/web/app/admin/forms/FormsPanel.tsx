@@ -67,7 +67,7 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                     <p className="imcrm-max-w-xl imcrm-text-sm imcrm-text-muted-foreground">
                         {__('Comparte el enlace o insértalo en tu sitio. Cada respuesta crea un registro, y una automatización puede avisarte o responderle a quien lo llenó.')}
                     </p>
-                    <Button size="sm" className="imcrm-gap-1.5" onClick={createNew} disabled={create.isPending} data-testid="form-new">
+                    <Button size="sm" className="imcrm-gap-1.5" onClick={createNew} disabled={create.isPending} data-testid="form-new" data-tour="forms-new">
                         {create.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Plus className="imcrm-h-3.5 imcrm-w-3.5" />}
                         {__('Nuevo formulario')}
                     </Button>
