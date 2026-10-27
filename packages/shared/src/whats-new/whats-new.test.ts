@@ -6,6 +6,9 @@ import {
     createWhatsNewSchema,
     isSafeAppRoute,
     isWhatsNewImageUrl,
+    readWhatsNewMedia,
+    whatsNewHasVisual,
+    whatsNewMediaSchema,
     whatsNewActionSchema,
     whatsNewCatalogEntrySchema,
     whatsNewVideo,
@@ -18,10 +21,21 @@ import { WHATS_NEW_CATALOG } from './catalog';
 const VOSEO = /(?<![\p{L}])(podés|podes|tenés|tenes|querés|sabés|sos|vos|acá|elegí|hacé|probá|mirá|andá|tocá|armá|cargá|configurá|activá|creá|agregá|buscá|abrí|escribí|usá|poné|vení|fijate|avisanos|contanos|decinos)(?![\p{L}])/iu;
 
 function allText(e: (typeof WHATS_NEW_CATALOG)[number]): string {
-    return [e.title, e.summary, e.body ?? '', e.action?.label ?? ''].join('\n');
+    const slides = (e.media?.slides ?? []).flatMap((sl) => [sl.title, sl.text ?? '']);
+    return [e.title, e.summary, e.body ?? '', e.action?.label ?? '', ...slides].join('\n');
 }
 
 describe('catálogo de novedades', () => {
+    it('cada novedad se ve, no sólo se lee: trae ilustración, captura o carrusel (v0.1.325)', () => {
+        for (const e of WHATS_NEW_CATALOG) {
+            const media = readWhatsNewMedia(e.media ?? {});
+            expect(whatsNewHasVisual({ image_url: e.image_url ?? null, video_url: e.video_url ?? null, media }), `${e.key} sin nada visual`).toBe(true);
+            // Un carrusel de una sola diapositiva no es un carrusel.
+            expect(media.slides.length === 0 || media.slides.length >= 2, `${e.key}: carrusel de una diapositiva`).toBe(true);
+            for (const sl of media.slides) expect(sl.illustration ?? sl.image_url ?? sl.demo, `${e.key}: diapositiva «${sl.title}» sin imagen`).toBeTruthy();
+        }
+    });
+
     it('cada entrada es válida y la clave es única', () => {
         const keys = new Set<string>();
         for (const e of WHATS_NEW_CATALOG) {
@@ -129,5 +143,27 @@ describe('reglas de una novedad', () => {
         expect(whatsNewVisibleTo(admins, { role: 'admin', plan: 'pro' })).toBe(true);
         expect(whatsNewVisibleTo(admins, { role: 'agent', plan: 'pro' })).toBe(false);
         expect(whatsNewVisibleTo(admins, { role: 'admin', plan: 'trial' })).toBe(false);
+    });
+});
+
+describe('lo visual de una novedad', () => {
+    it('se lee con tolerancia: lo que no valida se descarta sin romper el resto', () => {
+        expect(readWhatsNewMedia(null)).toEqual({ illustration: null, demo: null, slides: [] });
+        expect(readWhatsNewMedia({})).toEqual({ illustration: null, demo: null, slides: [] });
+        const odd = readWhatsNewMedia({
+            illustration: 'vistas-kanban',
+            demo: '../../etc/passwd',
+            slides: [{ title: 'Uno', illustration: 'kanban-drag' }, { title: '' }, 'basura', { title: 'Dos', image_url: 'javascript:alert(1)' }],
+        });
+        expect(odd.illustration).toBe('vistas-kanban');
+        expect(odd.demo).toBeNull();
+        expect(odd.slides.map((s) => s.title)).toEqual(['Uno']);
+    });
+
+    it('a lo sumo 6 diapositivas y claves con forma de clave', () => {
+        const seven = Array.from({ length: 7 }, (_, i) => ({ title: `D${i}` }));
+        expect(whatsNewMediaSchema.safeParse({ slides: seven }).success).toBe(false);
+        expect(whatsNewMediaSchema.safeParse({ illustration: 'Vistas Kanban' }).success).toBe(false);
+        expect(whatsNewMediaSchema.safeParse({ illustration: 'vistas-kanban', slides: [{ title: 'Uno', image_url: 'https://x.test/a.png' }] }).success).toBe(true);
     });
 });

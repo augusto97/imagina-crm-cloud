@@ -9886,6 +9886,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         guía, sugerido y `waitFor` exista (665 front en verde) + E2E navegador
         38/38 (escritorio claro y celular oscuro).
 
+  - [x] **Novedades con ilustración animada, captura real y carrusel
+        (v0.1.325, ADR-S78, cuarta y última entrega del pedido "la ayuda es muy
+        básica": "en ClickUp para las novedades también colocan imágenes o una
+        pequeña animación")**: cada novedad gana `media` (jsonb en
+        `whats_new_entries`, migración 0093, `whatsNewMediaSchema` en shared):
+        `illustration` (una de las 207 ilustraciones animadas de Aprende, que
+        se pintan con el tema y la marca), `demo` (una captura real paso a paso;
+        sin capturas en el servidor, la ilustración) y `slides` (carrusel de
+        hasta 6 diapositivas con título, texto e ilustración, captura o imagen).
+        Se guardan CLAVES: lo que una versión futura ya no traiga se ignora
+        (`readWhatsNewMedia`, lectura tolerante). `WhatsNewVisual` (chunk propio,
+        pedido sólo si hay algo visual): carrusel con flechas, puntos, ← →,
+        deslizar con el dedo (en táctil sin flechas sobre el dibujo), pausa y
+        avance solo cada 7 s mientras se ve y no se apunta; en el panel, la
+        página y el diálogo de destacadas. **Las 21 novedades ya publicadas
+        traen la suya** (12 como carrusel) y la sincronización se la pone en
+        cada servidor; las que el operador editó antes (`media = '{}'`) la
+        reciben sin tocar su texto (`mediaBackfills`), y lo que el operador
+        quita después ya no vuelve. Consola: sección «Animación y carrusel» del
+        editor (selector de ilustraciones con vista previa, captura, diapositivas
+        con subir/bajar/quitar e imagen propia, aviso de diapositiva sin título)
+        y la vista previa en vivo; una imagen subida a una diapositiva no se
+        borra mientras otra novedad la use. Tests: shared (cada novedad del
+        catálogo con algo visual, carrusel de ≥2, lectura tolerante, topes),
+        front (cada ilustración y captura existe; vuelta del carrusel) y API
+        (plan de sincronización, relleno de editadas, feed con `media`, imagen
+        de diapositiva; 19/19) + E2E navegador 19/19 (destacada con carrusel y
+        avance solo, panel con 22/22 visuales, página, ← →, consola con
+        ilustración y diapositivas guardadas, celular oscuro con deslizar, cero
+        errores de JS).
+
+        **Con esto queda completo el pedido "la ayuda es muy básica": centro de
+        aprendizaje, ideas que se activan, recorridos visuales y novedades
+        animadas.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

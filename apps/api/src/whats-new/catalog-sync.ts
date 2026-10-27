@@ -1,9 +1,11 @@
 import {
     compareVersions,
+    readWhatsNewMedia,
     whatsNewCatalogEntrySchema,
     type WhatsNewAction,
     type WhatsNewCatalogEntry,
     type WhatsNewKind,
+    type WhatsNewMedia,
 } from '@imagina-base/shared';
 
 /**
@@ -27,6 +29,7 @@ export interface ReleaseContent {
     body: string;
     imageUrl: string | null;
     videoUrl: string | null;
+    media: WhatsNewMedia;
     action: WhatsNewAction | null;
     version: string;
     featured: boolean;
@@ -46,12 +49,20 @@ export interface ExistingRelease {
     id: number;
     key: string;
     edited: boolean;
+    /** Lo visual nunca se eligió (`{}`): ver `mediaBackfills`. */
+    mediaUnset?: boolean;
     content: ReleaseContent;
 }
 
 export interface CatalogSyncPlan {
     inserts: Array<ReleaseContent & { key: string; announceFrom: Date | null }>;
     updates: Array<{ id: number; key: string; content: ReleaseContent }>;
+    /**
+     * Novedades que el operador editó ANTES de que existiera lo visual
+     * (v0.1.325): su texto no se toca, pero reciben la ilustración del
+     * catálogo — nunca pudo haberla elegido ni quitado.
+     */
+    mediaBackfills: Array<{ id: number; key: string; media: WhatsNewMedia }>;
     announced: string[];
 }
 
@@ -100,6 +111,7 @@ export function parseCatalog(
             body: e.body ?? '',
             imageUrl: e.image_url ?? null,
             videoUrl: e.video_url ?? null,
+            media: readWhatsNewMedia(e.media ?? {}),
             action: e.action ?? null,
             version: e.version,
             featured: e.featured ?? false,
@@ -125,6 +137,7 @@ export function contentSignature(c: ReleaseContent): string {
         c.body,
         c.imageUrl,
         c.videoUrl,
+        mediaSignature(c.media),
         c.action ? [c.action.label, c.action.href ?? null, c.action.tour ?? null] : null,
         c.version,
         c.featured,
@@ -132,6 +145,20 @@ export function contentSignature(c: ReleaseContent): string {
         [...c.audiencePlans].sort(),
         c.expiresAt ? c.expiresAt.toISOString() : null,
     ]);
+}
+
+function hasMedia(m: WhatsNewMedia): boolean {
+    return Boolean(m.illustration || m.demo || m.slides.length > 0);
+}
+
+/** Forma estable de lo visual (el jsonb de Postgres reordena claves). */
+function mediaSignature(m: WhatsNewMedia): unknown {
+    const media = readWhatsNewMedia(m);
+    return [
+        media.illustration,
+        media.demo,
+        media.slides.map((s) => [s.title, s.text, s.illustration, s.demo, s.image_url]),
+    ];
 }
 
 /** Más nuevo primero: versión, después fecha, después posición en el catálogo. */
@@ -173,11 +200,16 @@ export function planCatalogSync(input: {
     });
 
     const updates: CatalogSyncPlan['updates'] = [];
+    const mediaBackfills: CatalogSyncPlan['mediaBackfills'] = [];
     for (const e of input.catalog) {
         const row = byKey.get(e.key);
-        if (!row || row.edited) continue;
+        if (!row) continue;
+        if (row.edited) {
+            if (row.mediaUnset && hasMedia(e.media)) mediaBackfills.push({ id: row.id, key: e.key, media: e.media });
+            continue;
+        }
         const { key, index: _index, ...content } = e;
         if (contentSignature(content) !== contentSignature(row.content)) updates.push({ id: row.id, key, content });
     }
-    return { inserts, updates, announced: fresh.filter((e) => announcedKeys.has(e.key)).map((e) => e.key) };
+    return { inserts, updates, mediaBackfills, announced: fresh.filter((e) => announcedKeys.has(e.key)).map((e) => e.key) };
 }

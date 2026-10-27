@@ -23,6 +23,8 @@ export const whatsNewEntries = pgTable(
         body: text('body').notNull().default(''),
         imageUrl: text('image_url'),
         videoUrl: text('video_url'),
+        /** `{ illustration, demo, slides[] }` (validado con `whatsNewMediaSchema`, v0.1.325). */
+        media: jsonb('media').notNull().default({}),
         /** `{ label, href?, tour? }` (validado con `whatsNewActionSchema`). */
         action: jsonb('action'),
         version: varchar('version', { length: 32 }),

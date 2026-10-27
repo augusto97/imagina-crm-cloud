@@ -652,6 +652,13 @@
       "when": 1784200000260,
       "tag": "0092_whats_new",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1784200000270,
+      "tag": "0093_whats_new_media",
+      "breakpoints": true
     }
   ]
 }

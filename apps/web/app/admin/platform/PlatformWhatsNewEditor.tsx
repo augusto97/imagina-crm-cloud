@@ -3,6 +3,8 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { ImagePlus, Info, Loader2, Megaphone, RotateCcw, Star, Trash2, X } from 'lucide-react';
 import {
     createWhatsNewSchema,
+    EMPTY_WHATS_NEW_MEDIA,
+    type WhatsNewMedia,
     updateWhatsNewSchema,
     whatsNewVideo,
     WHATS_NEW_AUDIENCE_ROLES,
@@ -30,6 +32,8 @@ import { uploadWhatsNewImage, useCreateWhatsNew, useRestoreWhatsNew, useUpdateWh
 import { __, sprintf } from '@/lib/i18n';
 import { parseUtcDate } from '@/lib/utcDate';
 import { cn } from '@/lib/utils';
+
+import { WhatsNewMediaEditor } from './WhatsNewMediaEditor';
 
 export const AUDIENCE_ROLE_LABELS: Record<WhatsNewAudienceRole, string> = {
     admin: 'Administradores',
@@ -65,6 +69,7 @@ interface Draft {
     body: string;
     imageUrl: string;
     videoUrl: string;
+    media: WhatsNewMedia;
     actionMode: ActionMode;
     actionLabel: string;
     actionRoute: string;
@@ -101,6 +106,7 @@ const EMPTY: Draft = {
     body: '',
     imageUrl: '',
     videoUrl: '',
+    media: EMPTY_WHATS_NEW_MEDIA,
     actionMode: 'none',
     actionLabel: '',
     actionRoute: '',
@@ -129,6 +135,7 @@ function draftFrom(entry: PlatformWhatsNewEntry | null): Draft {
         body: entry.body,
         imageUrl: entry.image_url ?? '',
         videoUrl: entry.video_url ?? '',
+        media: entry.media,
         actionMode,
         actionLabel: a?.label ?? '',
         actionRoute: actionMode === 'route' ? a?.href ?? '' : '',
@@ -167,6 +174,11 @@ function contentOf(d: Draft) {
         body: d.body,
         image_url: d.imageUrl.trim() || null,
         video_url: d.videoUrl.trim() || null,
+        media: {
+            illustration: d.media.illustration,
+            demo: d.media.demo,
+            slides: d.media.slides.map((sl) => ({ ...sl, title: sl.title.trim(), text: sl.text.trim() })),
+        },
         action: actionOf(d),
         version: d.version.trim() || null,
         featured: d.kind === 'notice' ? false : d.featured,
@@ -181,6 +193,15 @@ const REQUIRED_MESSAGES: Record<string, string> = {
     summary: 'Escribe un resumen de una o dos líneas',
     'action.label': 'Escribe el texto del botón',
 };
+
+/** El primer problema de lo visual, dicho en claro. */
+function mediaProblem(errors: Record<string, string>): string | null {
+    const key = Object.keys(errors).find((k) => k.startsWith('media'));
+    if (!key) return null;
+    const m = /^media\.slides\.(\d+)\.(\w+)/.exec(key);
+    if (m && m[2] === 'title') return sprintf(__('Escribe el título de la diapositiva %d'), Number(m[1]) + 1);
+    return errors[key] ?? null;
+}
 
 /** Mensaje del primer error de validación por campo (para pintarlo junto al campo). */
 function fieldErrors(issues: Array<{ path: Array<string | number>; message: string; code: string }>): Record<string, string> {
@@ -249,6 +270,10 @@ export function PlatformWhatsNewEditor({
         body: d.body,
         image_url: d.imageUrl.trim() && !errors.image_url ? d.imageUrl.trim() : null,
         video_url: d.videoUrl.trim() && whatsNewVideo(d.videoUrl.trim()) ? d.videoUrl.trim() : null,
+        media: {
+            ...d.media,
+            slides: d.media.slides.map((sl, i) => ({ ...sl, title: sl.title.trim() || sprintf(__('Diapositiva %d'), i + 1) })),
+        },
         action: errors['action.label'] || errors['action.href'] || errors['action.tour'] || errors.action ? null : actionOf(d),
         published_at:
             d.publishMode === 'schedule' && fromLocalInput(d.publishAt)
@@ -453,6 +478,13 @@ export function PlatformWhatsNewEditor({
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('PNG, JPG, WebP o GIF de hasta 5 MB.')}</p>
                                 {showErr('image_url') && <p className="imcrm-text-xs imcrm-text-destructive">{showErr('image_url')}</p>}
                             </div>
+
+                            <WhatsNewMediaEditor
+                                media={d.media}
+                                onChange={(m) => set('media', m)}
+                                upload={uploadWhatsNewImage}
+                                problem={touched ? mediaProblem(errors) : null}
+                            />
 
                             <Field id="wn-video" label={__('Video (opcional)')} error={d.videoUrl.trim() ? errors.video_url ?? null : null} hint={__('Un enlace de YouTube, Vimeo o Loom.')}>
                                 <Input id="wn-video" value={d.videoUrl} onChange={(e) => set('videoUrl', e.target.value)} placeholder="https://www.youtube.com/watch?v=…" />

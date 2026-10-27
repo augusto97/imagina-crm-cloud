@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { EMBED_PROVIDER_LABELS, whatsNewVideo, type WhatsNewAction, type WhatsNewKind } from '@imagina-base/shared';
+import { EMBED_PROVIDER_LABELS, whatsNewVideo, type WhatsNewAction, type WhatsNewKind, type WhatsNewMedia } from '@imagina-base/shared';
 
 import { Badge } from '@/components/ui/badge';
 import { __ } from '@/lib/i18n';
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { WhatsNewActionButton } from './WhatsNewActionButton';
 import { dayLabel, kindLabel, WHATS_NEW_KIND_META } from './whatsNewMeta';
 import { WhatsNewRichText } from './WhatsNewRichText';
+import { WhatsNewVisualSlot } from './WhatsNewVisualSlot';
 
 /** Lo que hace falta para dibujar una novedad (la de la persona o la vista previa del operador). */
 export interface WhatsNewCardItem {
@@ -20,6 +21,8 @@ export interface WhatsNewCardItem {
     body: string;
     image_url: string | null;
     video_url: string | null;
+    /** Ilustración animada, captura real o carrusel (v0.1.325). */
+    media?: WhatsNewMedia | null;
     action: WhatsNewAction | null;
     published_at: string | null;
     is_new?: boolean;
@@ -144,7 +147,7 @@ export const WhatsNewCard = forwardRef<HTMLElement, WhatsNewCardProps>(function 
                 {item.title}
             </h3>
             <p className="imcrm-text-[13px] imcrm-leading-relaxed imcrm-text-muted-foreground">{item.summary}</p>
-            {item.image_url && <WhatsNewImage src={item.image_url} className="imcrm-max-h-60" />}
+            <WhatsNewVisualSlot item={item} variant="card" />
             {expanded && hasDetail && (
                 <div id={detailId} className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-pt-1">
                     <WhatsNewRichText text={item.body} />
