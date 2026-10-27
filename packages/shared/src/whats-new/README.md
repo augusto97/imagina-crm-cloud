@@ -18,6 +18,12 @@ Al arrancar, el API la copia a la tabla `whats_new_entries` (idempotente:
      app»).
    - `body` opcional, con formato sencillo: `**negrita**`, `*cursiva*`,
      `- viñeta`, `1. paso`, `[texto](https://…)`.
+   - `media` (v0.1.325): **cada novedad trae algo visual** (lo exige el test).
+     `illustration` es la clave de una ilustración animada de Aprende
+     (`apps/web/app/admin/learn/illustrations/items/<clave>.tsx`), `demo` la
+     de una captura real (las que nombra el contenido de Aprende) y `slides`
+     un carrusel de 2 a 6 diapositivas `{ title, text, illustration }` cuando
+     la novedad trae varias partes. Español neutro también en las diapositivas.
    - `action` opcional: `{ label, href?, tour? }`. `href` es una ruta de la
      app (`/lists`, `/settings?s=…`) o un enlace https; `tour` es el id de un
      recorrido (si existe para la persona, el botón lo arranca).

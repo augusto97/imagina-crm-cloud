@@ -5,6 +5,7 @@ import {
     WHATS_NEW_CATALOG,
     WHATS_NEW_IMAGE_NAME_RE,
     WHATS_NEW_IMAGE_PATH,
+    readWhatsNewMedia,
     type CreateWhatsNewInput,
     type PlatformWhatsNewEntry,
     type PlatformWhatsNewList,
@@ -14,7 +15,7 @@ import {
     type WhatsNewKind,
     type WhatsNewStatus,
 } from '@imagina-base/shared';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Db } from '../db/client';
 import { memberships, users, whatsNewEntries, whatsNewViews, type WhatsNewEntryRow } from '../db/schema';
@@ -32,7 +33,12 @@ const bad = (code: string, message: string): BadRequestException =>
     new BadRequestException({ code, message, data: { status: 400 } });
 
 /** El nombre del archivo de una imagen subida, si la URL es nuestra. */
-export function ownImageName(url: string | null | undefined): string | null {
+export /** Las imágenes que referencia una novedad (principal + diapositivas). */
+function imagesOf(row: WhatsNewEntryRow): Array<string | null> {
+    return [row.imageUrl, ...readWhatsNewMedia(row.media).slides.map((sl) => sl.image_url)];
+}
+
+function ownImageName(url: string | null | undefined): string | null {
     if (!url || !url.startsWith(WHATS_NEW_IMAGE_PATH)) return null;
     const name = url.slice(WHATS_NEW_IMAGE_PATH.length);
     return WHATS_NEW_IMAGE_NAME_RE.test(name) ? name : null;
@@ -115,6 +121,7 @@ export class WhatsNewAdminService {
             body: r.body,
             image_url: r.imageUrl,
             video_url: r.videoUrl,
+            media: readWhatsNewMedia(r.media),
             action: (r.action as WhatsNewAction | null) ?? null,
             version: r.version,
             featured: r.featured,
@@ -155,6 +162,7 @@ export class WhatsNewAdminService {
                 body: input.body,
                 imageUrl: input.image_url,
                 videoUrl: input.video_url,
+                media: input.media,
                 action: input.action,
                 version: input.version,
                 // Un aviso va en la franja de arriba: no sale en el diálogo de destacadas.
@@ -187,6 +195,7 @@ export class WhatsNewAdminService {
         if (input.body !== undefined) changes.body = input.body;
         if (input.image_url !== undefined) changes.imageUrl = input.image_url;
         if (input.video_url !== undefined) changes.videoUrl = input.video_url;
+        if (input.media !== undefined) changes.media = input.media;
         if (input.action !== undefined) changes.action = input.action;
         if (input.version !== undefined) changes.version = input.version;
         if (input.featured !== undefined) changes.featured = input.featured;
@@ -215,7 +224,7 @@ export class WhatsNewAdminService {
         this.checkDates(changes.publishedAt ?? row.publishedAt, changes.expiresAt !== undefined ? changes.expiresAt : row.expiresAt);
 
         await this.db.update(whatsNewEntries).set(changes).where(eq(whatsNewEntries.id, id));
-        if (input.image_url !== undefined && row.imageUrl !== input.image_url) await this.dropImageIfUnused(row.imageUrl);
+        if (input.image_url !== undefined || input.media !== undefined) await this.dropImagesIfUnused(imagesOf(row));
         this.logger.log(`Novedad ${id} editada por el usuario ${actorId} (${Object.keys(input).join(', ')})`);
         return this.one(id);
     }
@@ -242,6 +251,7 @@ export class WhatsNewAdminService {
                 body: entry.body,
                 imageUrl: entry.imageUrl,
                 videoUrl: entry.videoUrl,
+                media: entry.media,
                 action: entry.action,
                 version: entry.version,
                 featured: entry.featured,
@@ -254,7 +264,7 @@ export class WhatsNewAdminService {
                 updatedAt: new Date(),
             })
             .where(eq(whatsNewEntries.id, id));
-        await this.dropImageIfUnused(row.imageUrl);
+        await this.dropImagesIfUnused(imagesOf(row));
         this.logger.log(`Novedad ${id} restaurada al texto de la versión por el usuario ${actorId}`);
         return this.one(id);
     }
@@ -266,21 +276,27 @@ export class WhatsNewAdminService {
             throw bad('whats_new_release_delete', 'Una novedad de versión no se borra: ocúltala');
         }
         await this.db.delete(whatsNewEntries).where(eq(whatsNewEntries.id, id));
-        await this.dropImageIfUnused(row.imageUrl);
+        await this.dropImagesIfUnused(imagesOf(row));
         this.logger.log(`Novedad ${id} borrada por el usuario ${actorId} («${row.title}»)`);
     }
 
-    /** Borra el archivo de una imagen subida si ya ninguna novedad la usa. */
-    private async dropImageIfUnused(url: string | null): Promise<void> {
-        const name = ownImageName(url);
-        if (name === null) return;
-        const [used] = await this.db
-            .select({ id: whatsNewEntries.id })
-            .from(whatsNewEntries)
-            .where(eq(whatsNewEntries.imageUrl, `${WHATS_NEW_IMAGE_PATH}${name}`))
-            .limit(1);
-        if (used) return;
-        await this.storage.delete(`${IMAGE_KEY_PREFIX}${name}`).catch(() => undefined);
+    /**
+     * Borra los archivos de imágenes subidas que ya ninguna novedad usa (ni
+     * como imagen principal ni en una diapositiva del carrusel).
+     */
+    private async dropImagesIfUnused(urls: readonly (string | null)[]): Promise<void> {
+        const names = [...new Set(urls.map(ownImageName).filter((n): n is string => n !== null))];
+        for (const name of names) {
+            const url = `${WHATS_NEW_IMAGE_PATH}${name}`;
+            const [used] = await this.db
+                .select({ id: whatsNewEntries.id })
+                .from(whatsNewEntries)
+                // El nombre es hex aleatorio: buscarlo como texto en el jsonb es exacto.
+                .where(or(eq(whatsNewEntries.imageUrl, url), sql`${whatsNewEntries.media}::text LIKE ${`%${url}%`}`))
+                .limit(1);
+            if (used) continue;
+            await this.storage.delete(`${IMAGE_KEY_PREFIX}${name}`).catch(() => undefined);
+        }
     }
 
     /**

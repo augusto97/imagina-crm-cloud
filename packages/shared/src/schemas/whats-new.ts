@@ -177,6 +177,65 @@ const videoUrlSchema = z
     .trim()
     .max(2000)
     .refine((v) => whatsNewVideo(v) !== null, 'Pega un enlace de YouTube, Vimeo o Loom');
+/**
+ * v0.1.325 — Lo visual de una novedad, además de la imagen y el video:
+ *  - `illustration`: una ilustración ANIMADA de la app (las del centro de
+ *    aprendizaje, `apps/web/app/admin/learn/illustrations/items/<clave>.tsx`):
+ *    se dibuja con los colores del tema y de la marca, en claro y en oscuro;
+ *  - `demo`: una captura real paso a paso (las que graba el release en
+ *    `/help-media/`); si en este servidor no hay capturas, se ve la
+ *    ilustración;
+ *  - `slides`: un carrusel de hasta 6 diapositivas (título, texto y su propia
+ *    ilustración, captura o imagen), como el «Qué hay de nuevo» de ClickUp.
+ * Las claves se guardan como texto: si una ilustración deja de existir en una
+ * versión futura, la novedad se ve igual sin ella (nunca un hueco).
+ */
+export const WHATS_NEW_MEDIA_KEY_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
+export const WHATS_NEW_SLIDE_LIMITS = { max: 6, title: 80, text: 280 } as const;
+const mediaKeySchema = z.string().trim().regex(WHATS_NEW_MEDIA_KEY_RE, 'Clave de ilustración no válida');
+
+export const whatsNewSlideSchema = z.object({
+    title: z.string().trim().min(1).max(WHATS_NEW_SLIDE_LIMITS.title),
+    text: z.string().trim().max(WHATS_NEW_SLIDE_LIMITS.text).default(''),
+    illustration: mediaKeySchema.nullable().default(null),
+    demo: mediaKeySchema.nullable().default(null),
+    image_url: imageUrlSchema.nullable().default(null),
+});
+export type WhatsNewSlide = z.infer<typeof whatsNewSlideSchema>;
+
+export const whatsNewMediaSchema = z.object({
+    illustration: mediaKeySchema.nullable().default(null),
+    demo: mediaKeySchema.nullable().default(null),
+    slides: z.array(whatsNewSlideSchema).max(WHATS_NEW_SLIDE_LIMITS.max).default([]),
+});
+export type WhatsNewMedia = z.infer<typeof whatsNewMediaSchema>;
+
+export const EMPTY_WHATS_NEW_MEDIA: WhatsNewMedia = { illustration: null, demo: null, slides: [] };
+
+/**
+ * Lee lo visual guardado (jsonb) con tolerancia: un valor raro o de una
+ * versión vieja nunca rompe el feed, sólo se descarta lo que no valida.
+ */
+export function readWhatsNewMedia(raw: unknown): WhatsNewMedia {
+    const r = whatsNewMediaSchema.safeParse(raw ?? {});
+    if (r.success) return r.data;
+    if (raw === null || typeof raw !== 'object') return EMPTY_WHATS_NEW_MEDIA;
+    const o = raw as Record<string, unknown>;
+    const key = (v: unknown): string | null => (typeof v === 'string' && WHATS_NEW_MEDIA_KEY_RE.test(v) ? v : null);
+    const slides = Array.isArray(o.slides)
+        ? o.slides.flatMap((s) => {
+              const p = whatsNewSlideSchema.safeParse(s);
+              return p.success ? [p.data] : [];
+          })
+        : [];
+    return { illustration: key(o.illustration), demo: key(o.demo), slides: slides.slice(0, WHATS_NEW_SLIDE_LIMITS.max) };
+}
+
+/** ¿Tiene algo para mostrar además del texto? */
+export function whatsNewHasVisual(e: { image_url: string | null; video_url: string | null; media: WhatsNewMedia }): boolean {
+    return Boolean(e.image_url || e.video_url || e.media.illustration || e.media.demo || e.media.slides.length > 0);
+}
+
 const versionSchema = z.string().trim().regex(/^\d{1,4}\.\d{1,4}\.\d{1,5}$/, 'Usa el formato 0.1.300');
 const isoDateTime = z.string().datetime({ offset: true });
 
@@ -188,6 +247,7 @@ const contentShape = {
     body: z.string().max(WHATS_NEW_LIMITS.body).default(''),
     image_url: imageUrlSchema.nullable().default(null),
     video_url: videoUrlSchema.nullable().default(null),
+    media: whatsNewMediaSchema.default(EMPTY_WHATS_NEW_MEDIA),
     action: whatsNewActionSchema.nullable().default(null),
     version: versionSchema.nullable().default(null),
     featured: z.boolean().default(false),
@@ -208,6 +268,7 @@ export const whatsNewItemSchema = z.object({
     body: z.string(),
     image_url: z.string().nullable(),
     video_url: z.string().nullable(),
+    media: whatsNewMediaSchema,
     action: whatsNewActionSchema.nullable(),
     version: z.string().nullable(),
     published_at: z.string(),
@@ -275,6 +336,7 @@ export const platformWhatsNewEntrySchema = z.object({
     body: z.string(),
     image_url: z.string().nullable(),
     video_url: z.string().nullable(),
+    media: whatsNewMediaSchema,
     action: whatsNewActionSchema.nullable(),
     version: z.string().nullable(),
     featured: z.boolean(),
@@ -319,6 +381,7 @@ export const updateWhatsNewSchema = z
         body: z.string().max(WHATS_NEW_LIMITS.body),
         image_url: imageUrlSchema.nullable(),
         video_url: videoUrlSchema.nullable(),
+        media: whatsNewMediaSchema,
         action: whatsNewActionSchema.nullable(),
         version: versionSchema.nullable(),
         featured: z.boolean(),
@@ -348,6 +411,8 @@ export const whatsNewCatalogEntrySchema = z.object({
     body: z.string().max(WHATS_NEW_LIMITS.body).optional(),
     image_url: imageUrlSchema.optional(),
     video_url: videoUrlSchema.optional(),
+    /** Ilustración animada, captura real y/o carrusel (v0.1.325). */
+    media: whatsNewMediaSchema.partial().optional(),
     action: whatsNewActionSchema.optional(),
     featured: z.boolean().optional(),
     audience: whatsNewAudienceSchema.partial().optional(),

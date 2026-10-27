@@ -27,6 +27,10 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.296',
         date: '2026-10-22',
         kind: 'feature',
+        media: {
+            illustration: 'empresa-trash',
+            demo: 'lote-papelera-abrir',
+        },
         title: 'Papelera: lo que borras se puede recuperar',
         summary:
             'Registros, listas, campos, vistas, automatizaciones y tableros borrados se guardan 30 días y vuelven tal cual estaban.',
@@ -43,6 +47,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.297',
         date: '2026-10-22',
         kind: 'improvement',
+        media: {
+            slides: [
+                {
+                    title: 'Totales en cada columna',
+                    text: 'Suma o promedia el valor de las tarjetas de cada etapa y de todo el embudo.',
+                    illustration: 'vistas-kanban',
+                },
+                {
+                    title: 'Arrastra y se guarda',
+                    text: 'Mueve una tarjeta a otra columna o carril y el registro cambia al instante.',
+                    illustration: 'kanban-drag',
+                },
+                {
+                    title: 'Límites por columna',
+                    text: 'Marca cuántas tarjetas caben en una etapa y la columna avisa cuando se pasa.',
+                    illustration: 'vistas-personalizar',
+                },
+            ],
+        },
         title: 'Kanban con totales, carriles y límites',
         summary: 'Cada columna del tablero suma el valor de sus tarjetas, se puede dividir en carriles y avisa cuando pasa su límite.',
         body: [
@@ -60,6 +83,20 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.299',
         date: '2026-10-23',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Exporta la vista a Excel',
+                    text: 'Montos, fechas y opciones salen con su formato, respetando filtros, orden y columnas.',
+                    illustration: 'ie-exportar',
+                },
+                {
+                    title: 'Importa un .xlsx',
+                    text: 'Arrastra el archivo, elige la hoja y revisa cómo se llena cada campo antes de crear.',
+                    illustration: 'ie-importar',
+                },
+            ],
+        },
         title: 'Exporta e importa archivos de Excel',
         summary: 'Descarga la vista en Excel con montos, fechas y opciones en su formato, e importa un .xlsx eligiendo la hoja.',
         body: [
@@ -74,6 +111,10 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.301',
         date: '2026-10-23',
         kind: 'improvement',
+        media: {
+            illustration: 'vistas-calendario',
+            demo: 'vistas-calendario-semana',
+        },
         title: 'Calendario por mes, semana, día y agenda',
         summary: 'Arrastra un evento para reprogramarlo, estíralo para cambiar su fin y crea un registro con un clic en un hueco.',
         body: [
@@ -88,6 +129,20 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.302',
         date: '2026-10-23',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Tu plan en una línea de tiempo',
+                    text: 'Arrastra las barras para mover o estirar las fechas de cada registro.',
+                    illustration: 'vistas-gantt',
+                },
+                {
+                    title: 'Dependencias que se respetan',
+                    text: 'Une dos barras: al correr una, lo que depende de ella se corre sola.',
+                    illustration: 'ficha-dependencias',
+                },
+            ],
+        },
         title: 'Vista Gantt y dependencias entre registros',
         summary: 'Planifica en una línea de tiempo y marca qué registro bloquea a otro: al correr uno, lo que depende de él se corre solo.',
         body: [
@@ -105,6 +160,20 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.304',
         date: '2026-10-23',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Fórmulas como en una hoja de cálculo',
+                    text: 'Escribe {Precio} * {Cantidad} y elige si el resultado es moneda, fecha o porcentaje.',
+                    illustration: 'lc-formula',
+                },
+                {
+                    title: 'Botones con una acción a un clic',
+                    text: 'Abre WhatsApp, cambia campos o genera un PDF desde cada registro.',
+                    illustration: 'lc-especiales',
+                },
+            ],
+        },
         title: 'Fórmulas y botones en tus listas',
         summary:
             'Calcula como en una hoja de cálculo —SI, días hábiles y más de 40 funciones— y agrega botones que abren WhatsApp, cambian campos o generan un PDF.',
@@ -121,6 +190,9 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.307',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            illustration: 'vistas-carga',
+        },
         title: 'Carga de trabajo por persona',
         summary: 'Mira cuánto tiene asignado cada persona por día o por semana, compáralo con su capacidad y reasigna arrastrando.',
         action: { label: 'Ir a mis listas', href: '/lists', tour: 'views' },
@@ -131,6 +203,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.309',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Arma el flujo una vez',
+                    text: 'Elige quién aprueba en cada paso: una persona, un rol o un equipo.',
+                    illustration: 'aprob-flujo',
+                },
+                {
+                    title: 'Aprueba desde donde estés',
+                    text: 'Desde la ficha, desde Mi trabajo o con los botones del correo.',
+                    illustration: 'aprob-decidir',
+                },
+                {
+                    title: 'Todo queda registrado',
+                    text: 'Cada decisión deja quién, cuándo y el motivo en la actividad del registro.',
+                    illustration: 'aprob-columna',
+                },
+            ],
+        },
         title: 'Aprobaciones de uno o varios pasos',
         summary: 'Pide que alguien apruebe un registro antes de seguir. Se aprueba desde la ficha, desde Mi trabajo o desde el correo.',
         body: [
@@ -145,6 +236,9 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.310',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            illustration: 'ficha-checklist',
+        },
         title: 'Checklists dentro de cada registro',
         summary: 'Divide el trabajo en pasos con responsable y fecha, y crea registros desde plantillas con sus subtareas y checklists listos.',
         body: [
@@ -159,6 +253,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.312',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Equipos',
+                    text: 'Agrupa a las personas y dale acceso a una lista a todo el equipo de una vez.',
+                    illustration: 'equipo-teams',
+                },
+                {
+                    title: 'Roles a tu medida',
+                    text: 'Parte de Gerente, Agente o Lector y enciende sólo lo que hace falta.',
+                    illustration: 'equipo-roles-custom',
+                },
+                {
+                    title: 'Invitados de afuera',
+                    text: 'Comparte una lista o un registro con un proveedor sin ocupar un usuario.',
+                    illustration: 'equipo-guest',
+                },
+            ],
+        },
         title: 'Equipos, roles a tu medida e invitados',
         summary:
             'Agrupa a las personas en equipos, crea roles con los permisos justos y comparte una lista o un registro con alguien de afuera.',
@@ -175,6 +288,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.313',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Tu página de citas',
+                    text: 'Tus clientes eligen el servicio y con quién, desde el enlace o insertada en tu sitio.',
+                    illustration: 'citas-hero',
+                },
+                {
+                    title: 'Sólo horarios libres',
+                    text: 'Respeta los horarios de cada persona, los festivos y lo que ya está ocupado.',
+                    illustration: 'citas-slots',
+                },
+                {
+                    title: 'Cambiar o cancelar',
+                    text: 'Cada cita llega por correo con enlaces para reprogramarla o cancelarla.',
+                    illustration: 'citas-reschedule',
+                },
+            ],
+        },
         title: 'Agenda de citas en línea',
         summary: 'Publica una página donde tus clientes eligen el servicio, el día y la hora libres. Cada cita llega como un registro de la lista.',
         body: [
@@ -190,6 +322,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.314',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'En tu pantalla de inicio',
+                    text: 'Instala la app desde el menú de tu cuenta y ábrela como cualquier otra.',
+                    illustration: 'dia-push',
+                },
+                {
+                    title: 'Avisos aunque esté cerrada',
+                    text: 'Menciones, asignaciones y aprobaciones llegan como notificación al teléfono.',
+                    illustration: 'cuenta-avisos',
+                },
+                {
+                    title: 'Escanea códigos',
+                    text: 'Lee un QR o un código de barras con la cámara y abre el registro al instante.',
+                    illustration: 'dia-escaner',
+                },
+            ],
+        },
         title: 'Instala la app y recibe avisos en tu teléfono',
         summary: 'Agrégala a la pantalla de inicio, recibe notificaciones aunque esté cerrada y lee códigos QR o de barras con la cámara.',
         body: [
@@ -205,6 +356,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.315',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Conecta tu número',
+                    text: 'Con la cuenta oficial de WhatsApp Business de tu empresa, en unos minutos.',
+                    illustration: 'wab-setup',
+                },
+                {
+                    title: 'Mensajes que llegan solos',
+                    text: 'Cada mensaje crea o actualiza el contacto y puede disparar una automatización.',
+                    illustration: 'wab-inbound',
+                },
+                {
+                    title: 'Plantillas desde la ficha',
+                    text: 'Envía plantillas aprobadas con los datos del registro, a un clic.',
+                    illustration: 'wab-template-send',
+                },
+            ],
+        },
         title: 'WhatsApp Business oficial',
         summary: 'Conecta el número de tu empresa: los mensajes que llegan crean o actualizan contactos, y desde la ficha envías plantillas aprobadas.',
         action: { label: 'Conectar WhatsApp', href: '/settings?s=conectores' },
@@ -215,6 +385,25 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.316',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Cada correo, un ticket',
+                    text: 'Lo que llega al buzón de soporte se vuelve un registro con su hilo completo.',
+                    illustration: 'mesa-hero',
+                },
+                {
+                    title: 'Responde desde la ficha',
+                    text: 'Con respuestas guardadas y tu firma; la respuesta del cliente vuelve al mismo ticket.',
+                    illustration: 'mesa-reply',
+                },
+                {
+                    title: 'Tiempos de respuesta',
+                    text: 'El SLA avisa antes de vencer y escala si nadie responde.',
+                    illustration: 'mesa-sla',
+                },
+            ],
+        },
         title: 'Mesa de ayuda por correo',
         summary:
             'Cada correo que llega al buzón de soporte crea un ticket, las respuestas se suman al mismo hilo y el tiempo de respuesta avisa antes de vencer.',
@@ -230,6 +419,20 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.317',
         date: '2026-10-26',
         kind: 'feature',
+        media: {
+            slides: [
+                {
+                    title: 'Un compañero que trabaja solo',
+                    text: 'Clasifica, resume, completa datos y sugiere respuestas con tus instrucciones.',
+                    illustration: 'ia-agente',
+                },
+                {
+                    title: 'Tú decides cuándo trabaja',
+                    text: 'Al crear un registro, al cambiar un campo o en un horario, como cualquier automatización.',
+                    illustration: 'ia-agente-cuando',
+                },
+            ],
+        },
         title: 'Agentes de IA que trabajan contigo',
         summary:
             'Crea compañeros que clasifican, resumen, completan datos y sugieren respuestas. Tú decides si aplican los cambios o sólo los proponen.',
@@ -247,6 +450,10 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.318',
         date: '2026-10-27',
         kind: 'feature',
+        media: {
+            illustration: 'pp-empezar',
+            demo: 'pp-primeros-pasos',
+        },
         title: 'Primeros pasos y listas armadas con IA',
         summary:
             'Una guía que se completa sola a medida que usas la app, y la opción de describir lo que necesitas para que la IA te arme las listas.',
@@ -261,6 +468,10 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.320',
         date: '2026-10-27',
         kind: 'feature',
+        media: {
+            illustration: 'pp-ayuda',
+            demo: 'pp-ayuda',
+        },
         title: 'Ayuda dentro de la app',
         summary:
             'Toca Ayuda, junto a la campana: guías rápidas de cada tarea y recorridos que te muestran la app paso a paso.',
@@ -276,6 +487,10 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.321',
         date: '2026-10-27',
         kind: 'improvement',
+        media: {
+            illustration: 'dia-push',
+            demo: 'dia-instalar',
+        },
         title: 'Instalar la app, en cualquier navegador',
         summary:
             '«Instalar la app» ahora está siempre en el menú de tu perfil y en Ajustes → Cuenta → Avisos, con los pasos para tu navegador.',
@@ -291,6 +506,9 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.322',
         date: '2026-10-27',
         kind: 'feature',
+        media: {
+            illustration: 'learn-hero',
+        },
         featured: true,
         title: 'Centro de aprendizaje',
         summary:
@@ -307,6 +525,9 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.323',
         date: '2026-10-27',
         kind: 'feature',
+        media: {
+            illustration: 'auto-flujo',
+        },
         title: 'Ideas para tu negocio, listas para activar',
         summary:
             'Casi 40 casos de uso reales —recordatorios de pago, avisos por WhatsApp, agendas, tableros— que se activan sobre tus listas con un clic.',
@@ -322,6 +543,9 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.324',
         date: '2026-10-27',
         kind: 'improvement',
+        media: {
+            illustration: 'pp-piezas',
+        },
         title: 'Recorridos guiados, ahora con animaciones',
         summary:
             'Los recorridos te muestran cada pantalla con una animación, te invitan a probarlo tú y al final te dicen qué seguir aprendiendo.',
@@ -331,5 +555,30 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             'Al terminar ves lo que aprendiste, el recorrido que sigue y la guía completa. Encuéntralos todos en **Aprende → Recorridos guiados**, incluidos dos nuevos: **Tu día a día** y **Aprende, ideas y novedades**.',
         ].join('\n'),
         action: { label: 'Ver los recorridos', href: '/aprende#recorridos' },
+    },
+    {
+        key: 'v0.1.325-novedades-animadas',
+        version: '0.1.325',
+        date: '2026-10-27',
+        kind: 'improvement',
+        title: 'Novedades con animaciones',
+        summary:
+            'Cada novedad te muestra cómo funciona con una animación o un carrusel de diapositivas, también las que ya habías visto.',
+        media: {
+            slides: [
+                {
+                    title: 'Mira antes de leer',
+                    text: 'Una animación con los colores de tu empresa explica la novedad en segundos.',
+                    illustration: 'plat-novedades',
+                },
+                {
+                    title: 'Varias cosas, un carrusel',
+                    text: 'Si la novedad trae varias partes, pasa de una a otra con las flechas o los puntos.',
+                    illustration: 'learn-hero',
+                },
+            ],
+        },
+        body: 'Ábrelas desde el megáfono, junto a la campana. Las de versiones anteriores también tienen su animación.',
+        action: { label: 'Ver las novedades', href: '/novedades' },
     },
 ];

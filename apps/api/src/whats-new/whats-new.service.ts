@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { readWhatsNewMedia } from '@imagina-base/shared';
 import type {
     MarkWhatsNewSeenInput,
     WhatsNewAction,
@@ -74,6 +75,7 @@ const itemColumns = {
     body: E.body,
     imageUrl: E.imageUrl,
     videoUrl: E.videoUrl,
+    media: E.media,
     action: E.action,
     version: E.version,
     publishedAt: E.publishedAt,
@@ -91,6 +93,7 @@ type ItemRow = {
     body: string;
     imageUrl: string | null;
     videoUrl: string | null;
+    media: unknown;
     action: unknown;
     version: string | null;
     publishedAt: Date | null;
@@ -110,6 +113,7 @@ function toItem(r: ItemRow): WhatsNewItem {
         body: r.body,
         image_url: r.imageUrl,
         video_url: r.videoUrl,
+        media: readWhatsNewMedia(r.media),
         action: (r.action as WhatsNewAction | null) ?? null,
         version: r.version,
         published_at: (r.publishedAt ?? new Date(0)).toISOString(),

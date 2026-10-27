@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
-import { WHATS_NEW_CATALOG, type WhatsNewAction, type WhatsNewCatalogEntry, type WhatsNewKind } from '@imagina-base/shared';
+import { WHATS_NEW_CATALOG, readWhatsNewMedia, type WhatsNewAction, type WhatsNewCatalogEntry, type WhatsNewKind } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { whatsNewEntries } from '../db/schema';
@@ -13,6 +13,15 @@ export interface CatalogSyncResult {
     invalid: Array<{ key: string; reason: string }>;
 }
 
+/**
+ * `{}` = nunca se eligió nada visual (la columna nació así en v0.1.325). Lo
+ * que guarda el editor de la consola siempre trae sus tres claves, así que
+ * «el operador lo quitó a propósito» no se confunde con «nunca se eligió».
+ */
+function isUnsetMedia(raw: unknown): boolean {
+    return raw === null || raw === undefined || (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0);
+}
+
 /** Candado de la sincronización: varios nodos arrancando a la vez no se pisan. */
 const SYNC_LOCK = sql`select pg_advisory_xact_lock(hashtext('imagina:whats-new-catalog-sync'))`;
 
@@ -24,6 +33,7 @@ function toColumns(c: ReleaseContent) {
         body: c.body,
         imageUrl: c.imageUrl,
         videoUrl: c.videoUrl,
+        media: c.media,
         action: c.action,
         version: c.version,
         featured: c.featured,
@@ -68,6 +78,7 @@ export class WhatsNewSyncService implements OnApplicationBootstrap {
                 id: r.id,
                 key: r.key,
                 edited: r.edited,
+                mediaUnset: isUnsetMedia(r.media),
                 content: {
                     kind: r.kind as WhatsNewKind,
                     title: r.title,
@@ -75,6 +86,7 @@ export class WhatsNewSyncService implements OnApplicationBootstrap {
                     body: r.body,
                     imageUrl: r.imageUrl,
                     videoUrl: r.videoUrl,
+                    media: readWhatsNewMedia(r.media),
                     action: (r.action as WhatsNewAction | null) ?? null,
                     version: r.version ?? '',
                     featured: r.featured,
@@ -111,6 +123,16 @@ export class WhatsNewSyncService implements OnApplicationBootstrap {
                     // `edited = false` también aquí: si el operador la editó
                     // entre la lectura y la escritura, gana su texto.
                     .where(and(eq(whatsNewEntries.id, u.id), eq(whatsNewEntries.edited, false)))
+                    .returning({ id: whatsNewEntries.id });
+                updated += res.length;
+            }
+            for (const b of plan.mediaBackfills) {
+                const res = await tx
+                    .update(whatsNewEntries)
+                    .set({ media: b.media })
+                    // Sólo si sigue sin tocar: el operador puede haberle puesto
+                    // (o quitado) lo visual entre la lectura y la escritura.
+                    .where(and(eq(whatsNewEntries.id, b.id), sql`${whatsNewEntries.media} = '{}'::jsonb`))
                     .returning({ id: whatsNewEntries.id });
                 updated += res.length;
             }

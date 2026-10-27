@@ -372,9 +372,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.324**
-(recorridos guiados rediseñados: portada, animación por paso, «hazlo tú» y
-cierre), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.325**
+(novedades con ilustración animada, captura real y carrusel, también las ya
+publicadas), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-27 — **«La ayuda es muy básica y poco ilustrativa»** (feedback del
@@ -386,7 +386,7 @@ cierre), en `main`.
   **v0.1.323** galería de ideas y recetas que se activan con un clic (HECHA);
   **v0.1.324** recorridos rediseñados (visuales e interactivos) (HECHA); **v0.1.325**
   novedades con imagen o animación (también las ya publicadas, carrusel estilo
-  ClickUp). Pendientes menores que salieron al escribir el manual: no hay
+  ClickUp) (HECHA — el plan quedó completo). Pendientes menores que salieron al escribir el manual: no hay
   pantalla para cambiar el nombre o el correo propio; el export JSON de una
   lista (`exportList`) no tiene botón; la cuenta de cobro en PDF no muestra el
   nombre del cliente cuando el campo es una relación y el diálogo «Cobrar» toma
@@ -799,6 +799,22 @@ cierre), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-27 · v0.1.325** — **Novedades con animaciones** (ADR-S78), última
+  de las cuatro versiones del pedido "la ayuda es muy básica" ("en ClickUp las
+  novedades traen imágenes o una pequeña animación"). Cada novedad puede traer
+  una **ilustración animada** de la app (con los colores de la empresa, claro y
+  oscuro), una **captura real** paso a paso o un **carrusel** de hasta 6
+  diapositivas (flechas, puntos, ← →, deslizar en el celular, avance solo cada
+  7 s). **Las 21 ya publicadas** tienen la suya —12 como carrusel— y la
+  sincronización se la pone en cada servidor, incluso a las que el operador
+  editó antes (sin tocar su texto). Consola: «Animación y carrusel» en el editor
+  con vista previa en vivo. Migración 0093 (`whats_new_entries.media`). Tests de
+  shared (todas con algo visual, lectura tolerante), del front (cada clave
+  existe), de la API (sincronización y relleno, imagen de diapositiva que no se
+  borra mientras se usa; 19/19) + E2E navegador 19/19 (destacada con carrusel,
+  avance solo, panel, página, consola, celular oscuro con deslizar). Con esto
+  queda completo el plan de cuatro versiones.
 
 - **2026-10-27 · v0.1.324** — **Recorridos rediseñados** (ADR-S77), tercera de
   las cuatro versiones del pedido "la ayuda es muy básica" ("esos tours no me

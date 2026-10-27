@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import { whatsNewVideo, type WhatsNewItem } from '@imagina-base/shared';
+import { whatsNewHasVisual, whatsNewVideo, type WhatsNewItem } from '@imagina-base/shared';
 
 import { useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,9 @@ import { useIsGuest } from '@/lib/guest';
 import { __ } from '@/lib/i18n';
 
 import { WhatsNewActionButton } from './WhatsNewActionButton';
-import { WhatsNewImage, WhatsNewKindChip, WhatsNewVideo, type WhatsNewCardItem } from './WhatsNewCard';
+import { WhatsNewKindChip, WhatsNewVideo, type WhatsNewCardItem } from './WhatsNewCard';
 import { WhatsNewRichText } from './WhatsNewRichText';
+import { WhatsNewVisualSlot } from './WhatsNewVisualSlot';
 import { canPresentNow, isOnWhatsNewPage, rememberPresented, screenIsBusy } from './featuredGate';
 import { whatsNewPanel } from './whatsNewStore';
 
@@ -125,14 +126,17 @@ export function FeaturedWhatsNewContent({
     onAction?: () => void;
     onSeeAll?: () => void;
 }): JSX.Element {
-    const hasVideo = !item.image_url && item.video_url !== null && whatsNewVideo(item.video_url) !== null;
+    const media = item.media ?? null;
+    const hasSlides = (media?.slides.length ?? 0) > 0;
+    const hasHero = !hasSlides && whatsNewHasVisual({ image_url: item.image_url, video_url: null, media: media ?? { illustration: null, demo: null, slides: [] } });
+    const hasVideo = item.video_url !== null && whatsNewVideo(item.video_url) !== null;
     return (
         <>
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto">
-                {item.image_url ? (
-                    <WhatsNewImage src={item.image_url} className="imcrm-max-h-64 imcrm-rounded-none imcrm-border-0 imcrm-border-b" />
+                {hasHero ? (
+                    <WhatsNewVisualSlot item={item} variant="dialog" className="imcrm-border-b imcrm-border-border" />
                 ) : (
-                    !hasVideo && <div aria-hidden className="imcrm-h-2 imcrm-bg-gradient-to-r imcrm-from-primary/70 imcrm-via-primary/40 imcrm-to-primary/10" />
+                    !hasVideo && !hasSlides && <div aria-hidden className="imcrm-h-2 imcrm-bg-gradient-to-r imcrm-from-primary/70 imcrm-via-primary/40 imcrm-to-primary/10" />
                 )}
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-5 sm:imcrm-p-6">
                     <WhatsNewKindChip kind={item.kind} className="imcrm-self-start" />
@@ -142,6 +146,13 @@ export function FeaturedWhatsNewContent({
                         </>,
                     )}
                     {renderSummary(item.summary)}
+                    {hasSlides && (
+                        <WhatsNewVisualSlot
+                            item={item}
+                            variant="card"
+                            className="imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2 imcrm-pb-3"
+                        />
+                    )}
                     {hasVideo && item.video_url && <WhatsNewVideo url={item.video_url} title={item.title} />}
                     <WhatsNewRichText text={item.body} />
                 </div>

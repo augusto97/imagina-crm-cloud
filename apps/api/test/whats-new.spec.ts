@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { WHATS_NEW_CATALOG, type WhatsNewCatalogEntry } from '@imagina-base/shared';
+import { EMPTY_WHATS_NEW_MEDIA, WHATS_NEW_CATALOG, type WhatsNewCatalogEntry } from '@imagina-base/shared';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { memberships, tenants, users, whatsNewEntries, whatsNewViews } from '../src/db/schema';
@@ -86,6 +86,33 @@ describe('Novedades — sincronización pura', () => {
         expect(plan.announced).toHaveLength(MAX_NEW_PER_SYNC);
         expect(plan.announced[0]).toBe('v0.3.11-prueba');
         expect(plan.updates).toHaveLength(0);
+    });
+
+    it('lo visual llega también a lo ya publicado (v0.1.325): editadas sólo si nunca se eligió nada', () => {
+        const now = new Date();
+        const media = { illustration: 'vistas-kanban', demo: null, slides: [] };
+        const { entries } = parseCatalog([extra('0.5.0', { media }), extra('0.5.1', { key: 'v0.5.1-prueba', media }), extra('0.5.2', { media })], now);
+        const plain = parseCatalog([extra('0.5.0'), extra('0.5.1'), extra('0.5.2')], now).entries;
+        const existing = [
+            // Publicada sin animación y sin tocar: se actualiza entera.
+            { id: 1, key: 'v0.5.0-prueba', edited: false, content: { ...plain[0]! } },
+            // Editada antes de que existiera lo visual: recibe la animación, el texto no se toca.
+            { id: 2, key: 'v0.5.1-prueba', edited: true, mediaUnset: true, content: { ...plain[1]!, title: 'Del operador' } },
+            // Editada y el operador ya eligió (o quitó) lo visual: no se toca nada.
+            { id: 3, key: 'v0.5.2-prueba', edited: true, mediaUnset: false, content: { ...plain[2]! } },
+        ];
+        const plan = planCatalogSync({ existing, catalog: entries, now });
+        expect(plan.updates.map((u) => u.id)).toEqual([1]);
+        expect(plan.updates[0]!.content.media.illustration).toBe('vistas-kanban');
+        expect(plan.mediaBackfills.map((b) => b.id)).toEqual([2]);
+        // Sin cambios, una segunda sincronización no hace nada.
+        const again = planCatalogSync({
+            existing: [{ ...existing[0]!, content: { ...entries[0]! } }, { ...existing[1]!, mediaUnset: false }, existing[2]!],
+            catalog: entries,
+            now,
+        });
+        expect(again.updates).toHaveLength(0);
+        expect(again.mediaBackfills).toHaveLength(0);
     });
 
     it('una entrada inválida se descarta con su motivo (no tumba el arranque)', () => {
@@ -270,6 +297,7 @@ describe('Novedades (Postgres real)', () => {
                 body: '',
                 image_url: null,
                 video_url: null,
+                media: EMPTY_WHATS_NEW_MEDIA,
                 action: null,
                 version: null,
                 featured: true,
@@ -309,6 +337,7 @@ describe('Novedades (Postgres real)', () => {
                 body: '',
                 image_url: null,
                 video_url: null,
+                media: EMPTY_WHATS_NEW_MEDIA,
                 action: { label: 'Ver', href: '/lists' },
                 version: null,
                 featured: false,
@@ -332,6 +361,7 @@ describe('Novedades (Postgres real)', () => {
             body: '',
             image_url: null,
             video_url: null,
+            media: EMPTY_WHATS_NEW_MEDIA,
             action: null,
             version: null,
             featured: false,
@@ -384,6 +414,62 @@ describe('Novedades (Postgres real)', () => {
         await expect(admin.update(row!.id, { status: 'draft' }, operator)).rejects.toThrow();
     });
 
+    it('lo visual: viaja en el feed, llega a una editada que nunca lo eligió y respeta lo que quitó el operador', async () => {
+        const feed = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 });
+        const kanban = feed.items.find((i) => i.key === 'v0.1.297-kanban-ventas')!;
+        expect(kanban.media.slides.length).toBeGreaterThanOrEqual(2);
+        const trash = feed.items.find((i) => i.key === 'v0.1.296-papelera');
+        if (trash) expect(trash.media.illustration).toBe('empresa-trash');
+
+        // Un servidor que ya tenía la novedad editada antes de v0.1.325 (media = {}).
+        const [row] = await pg.db.select().from(whatsNewEntries).where(eq(whatsNewEntries.key, 'v0.1.316-mesa-de-ayuda'));
+        await pg.db.update(whatsNewEntries).set({ edited: true, title: 'Mesa (del operador)', media: {} }).where(eq(whatsNewEntries.id, row!.id));
+        await sync.sync(WHATS_NEW_CATALOG, daysAgo(1));
+        let [after] = await pg.db.select().from(whatsNewEntries).where(eq(whatsNewEntries.id, row!.id));
+        expect(after!.title).toBe('Mesa (del operador)');
+        expect((after!.media as { slides: unknown[] }).slides.length).toBeGreaterThan(0);
+
+        // El operador le quita lo visual: la sincronización ya no se lo vuelve a poner.
+        await admin.update(row!.id, { media: EMPTY_WHATS_NEW_MEDIA }, operator);
+        await sync.sync(WHATS_NEW_CATALOG, daysAgo(1));
+        [after] = await pg.db.select().from(whatsNewEntries).where(eq(whatsNewEntries.id, row!.id));
+        expect(after!.media).toEqual(EMPTY_WHATS_NEW_MEDIA);
+        await admin.restore(row!.id, operator);
+        [after] = await pg.db.select().from(whatsNewEntries).where(eq(whatsNewEntries.id, row!.id));
+        expect((after!.media as { slides: unknown[] }).slides.length).toBeGreaterThan(0);
+    });
+
+    it('una imagen de diapositiva subida no se borra mientras otra novedad la use', async () => {
+        const { url } = await admin.uploadImage(Readable.from(PNG));
+        const name = url.split('/').pop()!;
+        const base = {
+            kind: 'feature' as const,
+            summary: 'Mira.',
+            body: '',
+            image_url: null,
+            video_url: null,
+            action: null,
+            version: null,
+            featured: false,
+            audience: { roles: [], plans: [] },
+            expires_at: null,
+            status: 'draft' as const,
+            publish_at: null,
+        };
+        const slides = [
+            { title: 'Con imagen', text: '', illustration: null, demo: null, image_url: url },
+            { title: 'Con ilustración', text: '', illustration: 'vistas-kanban', demo: null, image_url: null },
+        ];
+        const a = await admin.create({ ...base, title: 'A', media: { illustration: null, demo: null, slides } }, operator);
+        const b = await admin.create({ ...base, title: 'B', media: { illustration: null, demo: null, slides } }, operator);
+        expect(a.media.slides[0]!.image_url).toBe(url);
+        await admin.remove(a.id, operator);
+        expect(await admin.openImage(name)).not.toBeNull();
+        await admin.update(b.id, { media: { illustration: 'vistas-kanban', demo: null, slides: [] } }, operator);
+        expect(await admin.openImage(name)).toBeNull();
+        await admin.remove(b.id, operator);
+    });
+
     it('estadísticas: vistas, abiertas y clics por novedad', async () => {
         const [row] = await pg.db.select().from(whatsNewEntries).where(eq(whatsNewEntries.key, 'v0.1.316-mesa-de-ayuda'));
         await svc.event(viewer(oldAgent, 'agent'), row!.id, 'opened');
@@ -419,6 +505,7 @@ describe('Novedades (Postgres real)', () => {
                 body: '',
                 image_url: url,
                 video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                media: EMPTY_WHATS_NEW_MEDIA,
                 action: null,
                 version: null,
                 featured: false,

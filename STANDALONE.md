@@ -4649,4 +4649,42 @@ celebra, no se obliga).
 
 ---
 
-**Versión del documento:** 1.120.0 (recorridos visuales)
+### ADR-S78 — Novedades con ilustración animada, captura real y carrusel (v0.1.325)
+
+**Contexto.** Las novedades de ADR-S73 eran texto con una imagen opcional que
+casi nadie sube: el usuario las comparó con las de ClickUp, que traen una
+imagen o una pequeña animación, y pidió que también las ya publicadas se
+vieran así. La app ya tenía 207 ilustraciones animadas (ADR-S75) que se
+dibujan con los colores del tema y de la marca, y las capturas reales que
+graba el release.
+
+**Decisión.** Una novedad gana `media` (una sola columna jsonb en
+`whats_new_entries`, migración 0093, validada con `whatsNewMediaSchema` en
+shared): `illustration` (clave de una ilustración de Aprende), `demo` (clave
+de una captura real; sin capturas en el servidor se ve la ilustración) y
+`slides` (hasta 6 diapositivas con título, texto e ilustración, captura o
+imagen). Se guardan CLAVES, nunca HTML ni archivos: una ilustración que una
+versión futura ya no trae se ignora (`readWhatsNewMedia` lee con tolerancia).
+El orden de lo que se muestra es carrusel → imagen → captura → ilustración.
+El componente (`WhatsNewVisual`, carrusel con flechas, puntos, ← →, deslizar
+con el dedo, pausa y avance solo cada 7 s mientras se ve) vive en su propio
+chunk y se pide sólo cuando una novedad trae algo visual. Todas las novedades
+del catálogo traen su animación o su carrusel (lo exige el test de shared, y
+el del front verifica que cada clave exista), y la sincronización se la pone a
+las ya publicadas. Una novedad que el operador editó ANTES de esta versión
+(`media = '{}'`, nunca eligió nada) recibe lo visual del catálogo sin tocar su
+texto (`mediaBackfills`); lo que guarda la consola siempre trae sus tres
+claves, así «lo quitó a propósito» no se confunde con «nunca lo eligió». La
+consola suma «Animación y carrusel» al editor (selector de ilustraciones con
+vista previa, captura, diapositivas con subir/bajar/quitar e imagen propia) y
+la vista previa lo muestra en vivo. Una imagen subida para una diapositiva no
+se borra mientras otra novedad la use.
+
+**Alternativas descartadas.** GIFs o videos por novedad (pesan, no siguen la
+marca ni el modo oscuro y hay que regenerarlos con cada cambio de pantalla).
+Columnas separadas por cada pieza visual (el carrusel es una lista; jsonb
+validado alcanza y no obliga a otra migración para la próxima pieza).
+
+---
+
+**Versión del documento:** 1.121.0 (novedades animadas)
