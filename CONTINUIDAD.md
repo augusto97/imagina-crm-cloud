@@ -372,9 +372,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.322**
-(centro de aprendizaje «Aprende»: manual por módulo con animaciones y capturas
-reales), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.323**
+(galería «Ideas para tu negocio»: casos de uso que se activan con un clic), en
+`main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-27 — **«La ayuda es muy básica y poco ilustrativa»** (feedback del
@@ -383,7 +383,7 @@ reales), en `main`.
   poco ilustrativo, muy corto"). Eligió **las dos cosas** (animaciones +
   capturas reales que se regeneran solas) y **la ayuda completa primero**.
   Plan en cuatro versiones: **v0.1.322** centro de aprendizaje (HECHA);
-  **v0.1.323** galería de ideas y recetas que se activan con un clic;
+  **v0.1.323** galería de ideas y recetas que se activan con un clic (HECHA);
   **v0.1.324** recorridos rediseñados (visuales e interactivos); **v0.1.325**
   novedades con imagen o animación (también las ya publicadas, carrusel estilo
   ClickUp). Pendientes menores que salieron al escribir el manual: no hay
@@ -800,6 +800,28 @@ reales), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.323** — **Galería «Ideas para tu negocio»** (ADR-S76),
+  segunda de las cuatro versiones del pedido "la ayuda es muy básica". 39 casos
+  de uso en ocho categorías (ventas, cobros, clientes y soporte, proyectos,
+  agenda, tienda, equipo, conectar apps), cada uno con su ilustración, el
+  problema que resuelve, cómo funciona y un panel **«Actívala»**: la lista se
+  sugiere por nombre, los campos por nombre y tipo, y las preguntas traen
+  valores por defecto, así el caso común es un clic y la automatización queda
+  guardada y funcionando (o se abre antes en el editor). También crea listas y
+  tableros desde plantillas, o lleva a configurar formularios, agenda, portal y
+  agentes. Con el tope de automatizaciones activas del plan lleno, ofrece
+  guardarla en pausa (lo atrapó el E2E: el tenant de prueba es trial). Al
+  probar con datos reales salió otro detalle: el rol «Teléfono» se sugería con
+  el campo «Ciudad» por ser el primer texto — ahora un texto de respaldo exige
+  que el nombre se parezca, y el «título» usa el campo de título de la lista.
+  Aparece en Aprende (panel y banner), Ayuda, Ctrl+K, las automatizaciones de
+  cada lista («Ideas para esta lista») y el artículo de recetas. Sin backend
+  nuevo. Tests: 14 de las ideas (cada una se arma y valida con el schema del
+  servidor) + E2E navegador 28/28 (galería, búsqueda, categorías, activar con
+  lista preseleccionada, guardar en pausa, opción que falta marcada, activa con
+  plan con lugar, aviso de duplicado, app sin conectar, ideas por lista,
+  plantilla de lista, tablero, celular). Sigue: v0.1.324 (recorridos
+  rediseñados).
 - **2026-10-27 · v0.1.322** — **Centro de aprendizaje «Aprende»** (ADR-S75).
   Feedback del usuario: la ayuda de la fase 7 era "muy básica, muy poco
   ilustrativa, muy corta… casi no se explica nada ni cómo usar tantas cosas";

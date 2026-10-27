@@ -105,9 +105,9 @@ describe('catálogo de guías del sistema', () => {
     const categories = new Set<string>(HELP_CATEGORIES.map((c) => c.id));
     const caps = new Set<string>(CAPABILITIES);
 
-    it('entre 35 y 50 guías, ids únicos y válidos', () => {
+    it('entre 35 y 60 guías, ids únicos y válidos', () => {
         expect(SYSTEM_GUIDES.length).toBeGreaterThanOrEqual(35);
-        expect(SYSTEM_GUIDES.length).toBeLessThanOrEqual(50);
+        expect(SYSTEM_GUIDES.length).toBeLessThanOrEqual(60);
         expect(new Set(SYSTEM_GUIDE_IDS).size).toBe(SYSTEM_GUIDE_IDS.length);
         for (const id of SYSTEM_GUIDE_IDS) expect(id).toMatch(HELP_ID_RE);
     });

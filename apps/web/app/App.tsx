@@ -41,6 +41,7 @@ const AgentEditorPage = lazyWithReload(() => import('@/admin/agents/AgentEditorP
 // v0.1.322 — centro de aprendizaje (manual con animaciones y capturas reales).
 const LearnCenter = lazyWithReload(() => import('@/admin/learn/LearnCenter').then(m => ({ default: m.LearnCenter })));
 const LearnLab = lazyWithReload(() => import('@/admin/learn/LearnLab').then(m => ({ default: m.LearnLab })));
+const IdeasPage = lazyWithReload(() => import('@/admin/ideas/IdeasPage').then(m => ({ default: m.IdeasPage })));
 const WhatsNewPage = lazyWithReload(() => import('@/admin/whats-new/WhatsNewPage').then(m => ({ default: m.WhatsNewPage })));
 const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -170,6 +171,12 @@ export function App(): JSX.Element {
                 } />
                 <Route path="aprende/:moduleId/:articleId" element={
                     <Suspense fallback={<RouteFallback />}><LearnCenter /></Suspense>
+                } />
+                <Route path="ideas" element={
+                    <Suspense fallback={<RouteFallback />}><IdeasPage /></Suspense>
+                } />
+                <Route path="ideas/:ideaId" element={
+                    <Suspense fallback={<RouteFallback />}><IdeasPage /></Suspense>
                 } />
                 <Route path="novedades" element={
                     <Suspense fallback={<RouteFallback />}><WhatsNewPage /></Suspense>

@@ -1472,3 +1472,15 @@ body.imcrm-grid-selecting {
 [data-imcrm-theme='dark'] .imcrm-text-muted-foreground\/70 {
     color: hsl(var(--imcrm-muted-foreground) / 0.85);
 }
+
+/* v0.1.323 — galería de ideas: la flecha del flujo «empuja» hacia el paso siguiente. */
+@keyframes imcrm-ideas-nudge {
+    0%, 100% { transform: translateX(-2px); opacity: 0.55; }
+    50% { transform: translateX(2px); opacity: 1; }
+}
+.imcrm-ideas-arrow svg {
+    animation: imcrm-ideas-nudge 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .imcrm-ideas-arrow svg { animation: none; }
+}

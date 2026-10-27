@@ -4549,4 +4549,66 @@ de la app).
 
 ---
 
-**Versión del documento:** 1.118.0 (centro de aprendizaje)
+### ADR-S76 — Galería de ideas: casos de uso como datos que se ACTIVAN sobre las listas de la empresa (v0.1.323)
+
+**Contexto.** El centro de aprendizaje (ADR-S75) explica cada pantalla, pero
+la persona que recién llega todavía no sabe QUÉ hacer con tantas piezas
+(automatizaciones, integraciones, cobros, agendas, tableros). Las recetas de
+automatización de v0.1.167 existían, pero pedían abrir el editor, completar
+destinatarios y valores a mano, y estaban escondidas en «Desde plantilla».
+
+**Decisión.** Una galería **«Ideas para tu negocio»** (`/ideas`, dentro de la
+sección Aprende del riel) con ~40 casos de uso reales en ocho categorías. Cada
+idea es un DATO (`apps/web/app/admin/ideas/catalog.ts`): el problema que
+resuelve, cómo funciona en pasos, una ilustración del manual, las apps que
+necesita y un **plan de activación**, de cuatro tipos:
+
+- `automations`: una o varias automatizaciones escritas con ROLES (la key del
+  rol ocupa el lugar del slug, como las recetas) y respuestas
+  `{ $q: 'pregunta' }` / `[[q:pregunta]]`. La activación es PURA
+  (`activate.ts`): respuestas → `$message` (acción neutra que se convierte en
+  la de la app de mensajería de la conexión elegida: WhatsApp, WhatsApp
+  oficial, Telegram o Slack) → roles a campos con `remapAutomationSlugs` →
+  validación con `createAutomationSchema` y con lo que el servidor rechazaría
+  ACTIVO (correo sin destinatario, webhook sin dirección, condición sin valor).
+  Las automatizaciones se GUARDAN por el endpoint de siempre — un clic en el
+  caso común — y también se pueden abrir en el editor antes.
+- `list` / `dashboard`: aplican las plantillas del sistema existentes.
+- `go`: llevan a la pantalla donde se configura (formulario, agenda, portal,
+  agente de IA), porque piden decisiones sin un buen valor por defecto.
+
+La sugerencia es la clave del «un clic»: la lista por nombre (`listHints`, o la
+de `?lista=` cuando se llega desde una lista), los campos con
+`suggestRoleMapping` endurecido (`suggestIdeaMapping`: un rol que acepta
+`text` sólo como respaldo —un teléfono— no se lleva cualquier texto, y el
+«título» es el campo de título de la lista) y las respuestas por defecto (el
+correo de quien activa o «al responsable», la opción adivinada por su
+etiqueta, días, la primera conexión de la app). Lo que falta se marca con su
+explicación y el botón se deshabilita.
+
+Con el tope de automatizaciones activas del plan lleno, «Activar» ofrece
+**guardarla en pausa** (la misma idea, activable después). Una idea ya
+activada en esa lista avisa antes de duplicarla.
+
+**Dónde aparece.** Aprende (enlace en el panel y banner en la portada), Ayuda,
+Ctrl+K (las ideas salen al buscar), las automatizaciones de cada lista
+(«Ideas para esta lista»: las que encajan por tipo de campo, primero las que
+se parecen por nombre) y el artículo de recetas del manual.
+
+**Consecuencias.** Sin backend nuevo: todo pasa por endpoints existentes, con
+los permisos de siempre (quien no puede crear automatizaciones, listas o
+tableros ve «Lo activa un administrador»). `ideas.test.ts` arma CADA idea con
+datos de prueba y la valida con el schema del servidor, comprueba que su
+ilustración y su artículo existan y revisa el lenguaje visible (español
+neutro, sin el nombre del producto ni jerga): una idea mal escrita rompe el
+test, no a la persona.
+
+**Alternativas descartadas.** Guardar las ideas en el servidor (no aportan
+nada que el catálogo en código no tenga, y viajan con cada versión). Abrir
+SIEMPRE el editor (era el flujo de las recetas: demasiados pasos para quien
+no sabe automatizar). Marcar «ya activada» en el servidor (se resuelve
+mirando las automatizaciones de la lista por nombre).
+
+---
+
+**Versión del documento:** 1.119.0 (galería de ideas)

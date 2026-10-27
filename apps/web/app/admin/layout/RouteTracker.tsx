@@ -68,6 +68,7 @@ export function RouteTracker(): null {
         if (pathname.startsWith('/favorites')) return __('Favoritos');
         if (pathname.startsWith('/novedades')) return __('Novedades');
         if (pathname.startsWith('/aprende')) return __('Centro de aprendizaje');
+        if (pathname.startsWith('/ideas')) return __('Ideas para tu negocio');
         if (pathname === '/dashboards') return __('Dashboards');
         if (dashMatch) return dashboard?.name ?? __('Dashboard');
         if (pathname.startsWith('/settings/stores/')) return `${__('Tienda')} · ${__('Ajustes')}`;

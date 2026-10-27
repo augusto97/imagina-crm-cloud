@@ -9826,6 +9826,37 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sencillo. Novedad en el catálogo. Queda: galería de ideas y recetas
         (v0.1.323), recorridos rediseñados (v0.1.324) y novedades con imagen
         (v0.1.325).
+  - [x] **Galería «Ideas para tu negocio» (v0.1.323, ADR-S76, segunda entrega
+        del pedido "la ayuda es muy básica")**: 39 casos de uso reales en ocho
+        categorías (ventas, cobros, clientes y soporte, proyectos, agenda,
+        tienda, equipo, conectar apps) en `/ideas`, dentro de la sección
+        Aprende del riel. Cada idea es un DATO (`admin/ideas/catalog.ts`): el
+        problema, cómo funciona en pasos, una ilustración del manual, las apps
+        que necesita y su plan de activación — automatizaciones escritas con
+        ROLES y respuestas `{ $q }` / `[[q:…]]`, una plantilla de lista o de
+        tablero del sistema, o «ir a configurar» (formulario, agenda, portal,
+        agente). Panel **«Actívala»**: la lista sugerida por nombre (o la de
+        `?lista=`), los campos por nombre y tipo (`suggestIdeaMapping`: un
+        texto que sólo es respaldo de un teléfono exige un nombre parecido —
+        el E2E encontró un WhatsApp que iba a salir a «Ciudad»— y el título usa
+        el campo de título de la lista) y preguntas con valores por defecto
+        (tu correo o «al responsable», la opción adivinada por su etiqueta,
+        días, la primera conexión de la app), así el caso común es un clic y
+        las automatizaciones quedan GUARDADAS y activas por el endpoint de
+        siempre; o se abren antes en el editor. La activación es pura y
+        probada (`activate.ts`: respuestas → `$message` a la acción de
+        WhatsApp/Telegram/Slack de la conexión elegida → roles a campos →
+        validación con el schema del servidor y lo que rechazaría activo). Con
+        el tope de automatizaciones activas lleno ofrece **guardarla en
+        pausa**; avisa si esa lista ya la tiene; sin la app conectada, lleva a
+        Integraciones; quien no tiene permiso ve «Lo activa un administrador».
+        Entradas: panel y portada de Aprende, Ayuda, Ctrl+K, «Ideas para esta
+        lista» en las automatizaciones (las que encajan por tipo de campo) y
+        el artículo de recetas; botón fijo «Actívala» en el celular. Guía de
+        ayuda y novedad nuevas (el tope de guías del test pasa a 60). Sin
+        backend nuevo. 14 tests (cada idea armada con datos de prueba y
+        validada, ilustración y artículo que existen, español neutro) — 546
+        shared y 659 front en verde — + E2E navegador 28/28.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

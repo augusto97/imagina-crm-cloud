@@ -528,6 +528,23 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         if_restricted: 'note',
     },
     {
+        id: 'ideas-gallery',
+        title: '¿De dónde saco ideas de qué automatizar?',
+        category: 'automations',
+        minutes: 2,
+        body: [
+            '1. Abre **Aprende** en el menú de la izquierda y toca **Ideas para tu negocio** (o búscalas con **Ctrl+K**).',
+            '2. Elige una idea: recordatorios de pago, avisos por WhatsApp, agendas, tableros de ventas… Cada una explica qué resuelve y cómo funciona.',
+            '3. En **Actívala**, revisa la lista y los campos que se sugieren solos y contesta las preguntas (a quién avisar, cuántos días antes…).',
+            '4. Toca **Activar**: la automatización queda guardada y funcionando. Si prefieres revisarla antes, toca **Revisarla antes en el editor**.',
+        ].join('\n'),
+        tip: 'En las **Automatizaciones** de cada lista aparecen las ideas que encajan con sus campos.',
+        screens: ['automations', 'lists-index'],
+        keywords: 'ideas recetas ejemplos inspiracion casos de uso que puedo automatizar plantillas',
+        route: '/ideas',
+        related: ['automation-basics', 'integrations'],
+    },
+    {
         id: 'automation-wait-branch',
         title: '¿Cómo hago que una automatización espere o decida?',
         category: 'automations',

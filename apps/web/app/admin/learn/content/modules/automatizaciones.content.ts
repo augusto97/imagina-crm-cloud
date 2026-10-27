@@ -839,6 +839,12 @@ export const articles: LearnArticle[] = [
             },
             { t: 'demo', key: 'auto-plantilla', caption: 'Elegir una receta, asignar los campos y abrirla en el editor.', fallback: 'auto-flujo' },
             {
+                t: 'callout',
+                tone: 'tip',
+                md: '¿Quieres algo todavía más directo? En **Aprende → Ideas para tu negocio** hay casi 40 casos de uso (recordatorios de pago, avisos por WhatsApp, agendas, tableros) que se **activan con un clic**: la app elige la lista y los campos, te pregunta lo justo y la automatización queda funcionando, sin pasar por el editor.',
+            },
+            { t: 'actions', items: [{ label: 'Ver las ideas para tu negocio', to: '/ideas' }] },
+            {
                 t: 'settings',
                 title: 'Las recetas incluidas',
                 rows: [
