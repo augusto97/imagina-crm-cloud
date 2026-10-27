@@ -40,8 +40,8 @@ async function ensureTemplate(ctx) {
     await sleep(2500);
     await page.locator('[data-testid="doc-save"]').click();
     await sleep(2500);
-    await page.keyboard.press('Escape');
-    await sleep(800);
+    // Escape no cierra el editor a pantalla completa: se usa su botón.
+    await closeEditor(ctx);
 }
 
 /** Abre la plantilla guardada en el editor y espera a que el PDF se dibuje. */
