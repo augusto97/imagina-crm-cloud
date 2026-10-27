@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { parsePlatformBrand, PLATFORM_ICON_KEYS } from '@imagina-base/shared';
+import { iconBackgrounds, parsePlatformBrand, PLATFORM_ICON_BASE_KEYS, PLATFORM_ICON_KEYS } from '@imagina-base/shared';
 import { PlatformBrandService, pngSize, type BrandStore } from '../src/brand/platform-brand.service';
 import { PublicDomainsController } from '../src/domains/domains.controller';
 import type { DomainsService } from '../src/domains/domains.service';
@@ -129,5 +129,29 @@ describe('v0.1.327 — marca de la plataforma', () => {
         expect(tenant.icons[0]!.src).toBe('/pwa/icon-192.png');
         // Sin nada subido: el ícono neutro de fábrica.
         expect(buildManifest({ tenant: null }).icons[0]!.src).toBe('/pwa/icon-192.png');
+    });
+
+    it('v0.1.329: en oscuro el manifiesto usa los íconos con fondo oscuro; un juego viejo sin ellos sigue valiendo', () => {
+        const url = (k: string) => `/api/v1/public/brand/images/${k.padEnd(32, '0').slice(0, 32).replace(/[^a-f0-9]/g, 'a')}.png`;
+        const full = Object.fromEntries(PLATFORM_ICON_KEYS.map((k) => [k, url(k)])) as never;
+        const dark = buildManifest({ tenant: null, platform: { app_name: 'Acme', icons: full }, scheme: 'dark' });
+        expect(dark.icons.filter((i) => i.purpose === 'maskable').map((i) => i.src)).toEqual([
+            url('maskable_dark_192'),
+            url('maskable_dark_512'),
+        ]);
+        const light = buildManifest({ tenant: null, platform: { app_name: 'Acme', icons: full } });
+        expect(light.icons.map((i) => i.src)).not.toContain(url('maskable_dark_192'));
+        // Guardado antes de v0.1.329: sin los oscuros, se lee igual y cae a los claros.
+        const old = Object.fromEntries(PLATFORM_ICON_BASE_KEYS.map((k) => [k, url(k)]));
+        const parsed = parsePlatformBrand({ icons: old, icon_background: '#f4f4f5' });
+        expect(parsed.icons?.maskable_512).toBe(url('maskable_512'));
+        expect(parsed.icon_background_auto).toBe(true);
+        const oldDark = buildManifest({ tenant: null, platform: { app_name: 'Acme', icons: parsed.icons }, scheme: 'dark' });
+        expect(oldDark.icons[3]!.src).toBe(url('maskable_512'));
+    });
+
+    it('v0.1.329: fondo del ícono igual al de la app (blanco / #121212) o el color elegido', () => {
+        expect(iconBackgrounds({ icon_background: '#f4f4f5', icon_background_auto: true })).toEqual({ light: '#ffffff', dark: '#121212' });
+        expect(iconBackgrounds({ icon_background: '#00c2d8', icon_background_auto: false })).toEqual({ light: '#00c2d8', dark: '#00c2d8' });
     });
 });

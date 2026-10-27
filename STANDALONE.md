@@ -4791,6 +4791,31 @@ logo se guarda ahora hasta 512 px de alto (antes 160) para que sirva de ícono
 sin verse borroso, y la vista previa muestra el ícono genérico real (antes,
 unas iniciales que no eran lo que se instalaba).
 
+**Addendum (v0.1.329) — la apertura de la app: esqueleto en vez de logo, e
+ícono sin disco.** Al usuario no le gustó cómo abría la app instalada: el logo
+grande en el centro dentro de un círculo de color, y después otra pantalla con
+el logo más chico. Son dos pantallas distintas. La PRIMERA la dibuja Android
+12+, no la app: el ícono maskable recortado en círculo sobre el
+`background_color` del manifiesto; ninguna app web la puede quitar. Lo que se
+controla es su contenido, y el círculo de color era el fondo del ícono (#f4f4f5,
+distinto del blanco de la app). Ahora el fondo del ícono es, por defecto, **el
+mismo que el de la app** (`icon_background_auto`: blanco en claro, #121212 en
+oscuro), así Android muestra el logo solo; se genera un juego maskable oscuro
+(`maskable_dark_192/512`, opcional: los juegos viejos siguen valiendo) y el
+manifiesto `?scheme=dark` lo usa. Elegir un color propio sigue siendo posible
+(y Plataforma → Marca explica que se verá como un círculo de ese color); un
+juego guardado antes muestra «Actualizar ícono», que lo regenera desde el
+original y guarda en un clic, y la vista previa suma «Al abrir». La SEGUNDA
+pantalla (la del HTML, ADR-S80) deja de repetir el logo: el usuario eligió,
+entre maquetas, que **la app se arme al instante**: mientras baja el JavaScript
+se ve el contorno de la app —riel, panel, barra superior y filas grises que
+laten— con una línea de carga arriba, como Notion o ClickUp. Calza con las
+medidas reales (escritorio y celular, panel plegado respetado) y usa los colores
+REALES del riel y de la línea en cada tema, recordados en el dispositivo
+(`imcrm:splash`, sólo `rgb()` validados; el riel lleva el color de la marca y
+uno gris que de golpe se vuelve verde sería otro salto). Sólo aparece si la
+última apertura fue con sesión; antes del login, fondo liso con la línea.
+
 ---
 
-**Versión del documento:** 1.124.0 (barra de abajo por tema + ícono desde el logo)
+**Versión del documento:** 1.125.0 (apertura con esqueleto + ícono sin disco)

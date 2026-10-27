@@ -6,7 +6,7 @@ import { api, useSession } from '@/cloud/session';
 import { applyFavicon } from '@/lib/favicon';
 import { setTitleAppName } from '@/lib/documentTitle';
 import { applyAppMeta, applyManifestScheme } from '@/lib/pwa/appMeta';
-import { rememberSplash } from '@/lib/bootSplash';
+import { rememberSplashColors, resolveThemeColor } from '@/lib/bootSplash';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { useTheme, type ResolvedTheme } from '@/lib/theme';
 
@@ -282,8 +282,6 @@ export function useBranding() {
     const appName = query.data !== undefined ? (query.data.app_name ?? null) : domainName;
     const baseName = appName ?? (whiteLabel ? domainTenantName : null) ?? platform.app_name;
     const platformIcons = whiteLabel ? null : platform.icons;
-    const platformLogo = whiteLabel ? null : platform.logo_url;
-    const platformLogoDark = whiteLabel ? null : platform.logo_dark_url;
     useEffect(() => {
         if (logoUrl) applyFavicon(logoUrl);
         else if (platformIcons) applyFavicon(platformIcons.favicon_32, document, platformIcons.apple_180);
@@ -296,13 +294,13 @@ export function useBranding() {
         // eligió la empresa en Ajustes → Marca.
         applyAppMeta(resolveAppBarColor(appBarSetting, primaryColor, resolved), baseName);
         applyManifestScheme(resolved);
-        // v0.1.327 — la próxima vez, la pantalla de arranque sale con esta marca.
-        rememberSplash({
-            name: baseName,
-            logo: logoUrl ?? platformLogo,
-            logoDark: logoUrl ?? platformLogoDark,
+        // v0.1.329 — la próxima apertura arma el contorno de la app con los
+        // colores reales del riel y de la línea de carga en este tema.
+        rememberSplashColors(resolved, {
+            rail: resolveThemeColor('--imcrm-sidebar'),
+            accent: resolveThemeColor('--imcrm-primary'),
         });
-    }, [logoUrl, baseName, primaryColor, appBarSetting, resolved, platformIcons, platformLogo, platformLogoDark]);
+    }, [logoUrl, baseName, primaryColor, sidebarColor, appBarSetting, resolved, platformIcons]);
 
     return query;
 }

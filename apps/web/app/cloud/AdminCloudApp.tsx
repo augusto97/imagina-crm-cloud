@@ -151,7 +151,7 @@ export function AdminCloudApp(): JSX.Element {
         return (
             <>
                 <LoginPage />
-                <BootSplashDone />
+                <BootSplashDone shell={false} />
             </>
         );
     }
@@ -180,7 +180,7 @@ export function AdminCloudApp(): JSX.Element {
         <HashRouter key={activeTenantId ?? 0}>
             <Suspense fallback={<LoadingScreen />}>
                 <App />
-                <BootSplashDone />
+                <BootSplashDone shell />
             </Suspense>
         </HashRouter>
     );

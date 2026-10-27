@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { hexColorSchema } from './tenant';
+import { APP_BAR_NEUTRAL, hexColorSchema } from './tenant';
 
 /**
  * v0.1.327 — La marca de la PLATAFORMA (Plataforma → Marca): el nombre de la
@@ -27,22 +27,43 @@ export const DEFAULT_PLATFORM_APP_NAME = 'Imagina Base';
 export const PLATFORM_BRAND_IMAGE_RE = /^\/api\/v1\/public\/brand\/images\/[a-f0-9]{32}\.png$/;
 const brandImageUrl = z.string().regex(PLATFORM_BRAND_IMAGE_RE, 'Imagen de marca inválida');
 
-/** Tamaños del ícono que arma el navegador del operador al subirlo. */
+/**
+ * Tamaños del ícono que arma el navegador del operador al subirlo.
+ *
+ * v0.1.329 — `maskable_dark_*`: el mismo ícono con el fondo del modo oscuro.
+ * En Android 12+ la pantalla con la que abre la app instalada es el ícono
+ * recortado en CÍRCULO sobre el color de fondo del manifiesto; si el fondo
+ * del ícono no es el mismo, se ve un disco alrededor del logo. El manifiesto
+ * oscuro (`?scheme=dark`) usa estos. Son opcionales: los íconos guardados
+ * antes no los tienen (el manifiesto cae a los claros).
+ */
 export const PLATFORM_ICON_SIZES = {
-    icon_192: { size: 192, maskable: false },
-    icon_512: { size: 512, maskable: false },
-    maskable_192: { size: 192, maskable: true },
-    maskable_512: { size: 512, maskable: true },
-    apple_180: { size: 180, maskable: true },
-    icon_96: { size: 96, maskable: false },
-    favicon_32: { size: 32, maskable: false },
+    icon_192: { size: 192, maskable: false, dark: false },
+    icon_512: { size: 512, maskable: false, dark: false },
+    maskable_192: { size: 192, maskable: true, dark: false },
+    maskable_512: { size: 512, maskable: true, dark: false },
+    apple_180: { size: 180, maskable: true, dark: false },
+    icon_96: { size: 96, maskable: false, dark: false },
+    favicon_32: { size: 32, maskable: false, dark: false },
+    maskable_dark_192: { size: 192, maskable: true, dark: true },
+    maskable_dark_512: { size: 512, maskable: true, dark: true },
 } as const;
 export type PlatformIconKey = keyof typeof PLATFORM_ICON_SIZES;
 export const PLATFORM_ICON_KEYS = Object.keys(PLATFORM_ICON_SIZES) as PlatformIconKey[];
+/** Las que existían desde v0.1.327 (obligatorias en un juego guardado). */
+export const PLATFORM_ICON_BASE_KEYS = PLATFORM_ICON_KEYS.filter((k) => !PLATFORM_ICON_SIZES[k].dark);
 
-export const platformIconSetSchema = z.object(
-    Object.fromEntries(PLATFORM_ICON_KEYS.map((k) => [k, brandImageUrl])) as Record<PlatformIconKey, typeof brandImageUrl>,
-);
+export const platformIconSetSchema = z.object({
+    icon_192: brandImageUrl,
+    icon_512: brandImageUrl,
+    maskable_192: brandImageUrl,
+    maskable_512: brandImageUrl,
+    apple_180: brandImageUrl,
+    icon_96: brandImageUrl,
+    favicon_32: brandImageUrl,
+    maskable_dark_192: brandImageUrl.optional(),
+    maskable_dark_512: brandImageUrl.optional(),
+});
 export type PlatformIconSet = z.infer<typeof platformIconSetSchema>;
 
 export const platformBrandSchema = z.object({
@@ -60,6 +81,13 @@ export const platformBrandSchema = z.object({
     icons: platformIconSetSchema.nullable().default(null),
     /** Fondo del ícono (el teléfono recorta el ícono en círculo o cuadrado). */
     icon_background: hexColorSchema.default('#ffffff'),
+    /**
+     * v0.1.329 — true = el fondo del ícono es el MISMO que el de la app
+     * (blanco en claro, #121212 en oscuro): al abrir la app instalada, Android
+     * muestra el logo solo, sin un disco de otro color alrededor. false = el
+     * color de `icon_background` (útil si el logo necesita un fondo propio).
+     */
+    icon_background_auto: z.boolean().default(true),
 });
 export type PlatformBrand = z.infer<typeof platformBrandSchema>;
 
@@ -90,6 +118,19 @@ export function platformBrandImageUrls(brand: PlatformBrand): string[] {
     if (brand.logo_url) urls.push(brand.logo_url);
     if (brand.logo_dark_url) urls.push(brand.logo_dark_url);
     if (brand.icon_source_url) urls.push(brand.icon_source_url);
-    if (brand.icons) urls.push(...Object.values(brand.icons));
+    if (brand.icons) urls.push(...Object.values(brand.icons).filter((u): u is string => typeof u === 'string'));
     return urls;
+}
+
+/**
+ * El fondo con que se pinta cada juego de íconos (claro y oscuro). En modo
+ * automático es el `background_color` del manifiesto de cada tema.
+ */
+export function iconBackgrounds(brand: Pick<PlatformBrand, 'icon_background' | 'icon_background_auto'>): {
+    light: string;
+    dark: string;
+} {
+    return brand.icon_background_auto
+        ? { light: APP_BAR_NEUTRAL.light, dark: APP_BAR_NEUTRAL.dark }
+        : { light: brand.icon_background, dark: brand.icon_background };
 }

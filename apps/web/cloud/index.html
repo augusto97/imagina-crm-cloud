@@ -47,83 +47,135 @@
             })();
         </script>
         <style>
-            /* v0.1.327 — pantalla de arranque (ver app/lib/bootSplash.ts). */
+            /* v0.1.329 — pantalla de arranque: el contorno de la app con una
+             * línea de carga arriba (ver app/lib/bootSplash.ts). */
             #imcrm-boot {
-                position: fixed; inset: 0; z-index: 2147483000;
-                display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-                background: #ffffff; color: #18181b;
-                font-family: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-                transition: opacity 240ms ease;
+                position: fixed; inset: 0; z-index: 2147483000; overflow: hidden;
+                background: #ffffff; transition: opacity 240ms ease;
+                --ib-block: #eceef1; --ib-canvas: #f6f7f9; --ib-surface: #ffffff; --ib-border: #e5e7eb;
+                --ib-rail: #1e5867; --ib-accent: #0c7e97;
             }
-            html[data-imcrm-theme='dark'] #imcrm-boot { background: #121212; color: #ededed; }
+            html[data-imcrm-theme='dark'] #imcrm-boot {
+                background: #121212;
+                --ib-block: #232323; --ib-canvas: #0d0d0d; --ib-surface: #121212; --ib-border: #2b2b2b;
+                --ib-rail: #141414; --ib-accent: #23c3e6;
+            }
+            #imcrm-boot, #imcrm-boot * { box-sizing: border-box; }
+            #imcrm-boot[data-shell='1'] { background: var(--ib-canvas); }
             #imcrm-boot[data-leaving='1'] { opacity: 0; pointer-events: none; }
-            .imcrm-boot__brand {
-                display: flex; align-items: center; justify-content: center; min-height: 56px;
-                opacity: 0; transform: translateY(4px);
-                animation: imcrm-boot-in 420ms 120ms ease forwards;
+            .ib-line { position: absolute; top: 0; left: 0; right: 0; height: 2px; z-index: 2; overflow: hidden; }
+            .ib-line span {
+                position: absolute; top: 0; bottom: 0; left: -35%; width: 35%; border-radius: 0 2px 2px 0;
+                background: var(--ib-accent); animation: ib-slide 1.2s cubic-bezier(0.45, 0, 0.25, 1) infinite;
             }
-            .imcrm-boot__brand img { display: block; max-height: 56px; max-width: 220px; object-fit: contain; }
-            .imcrm-boot__name { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
-            .imcrm-boot__bar {
-                position: relative; width: 132px; height: 3px; border-radius: 999px; overflow: hidden;
-                background: rgba(24, 24, 27, 0.08);
-                opacity: 0; animation: imcrm-boot-in 300ms 260ms ease forwards;
+            .ib-shell { position: absolute; inset: 0; display: flex; }
+            .ib-shell[hidden] { display: none; }
+            .ib-shell b { display: block; background: var(--ib-block); border-radius: 6px; animation: ib-pulse 1.4s ease-in-out infinite; }
+            .ib-rail, .ib-panel { display: none; }
+            .ib-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--ib-surface); }
+            .ib-top {
+                height: 48px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 16px;
+                border-bottom: 1px solid var(--ib-border); background: var(--ib-surface);
             }
-            html[data-imcrm-theme='dark'] .imcrm-boot__bar { background: rgba(237, 237, 237, 0.12); }
-            .imcrm-boot__bar span {
-                position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; border-radius: 999px;
-                background: currentColor; opacity: 0.55;
-                animation: imcrm-boot-slide 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+            .ib-top .ib-menu { width: 22px; height: 18px; }
+            .ib-top .ib-name { width: 110px; height: 12px; }
+            .ib-top .ib-search { display: none; width: 384px; max-width: 40%; height: 28px; border-radius: 5px; background: var(--ib-canvas); animation: none; }
+            .ib-top i { flex: 1; }
+            .ib-top .ib-dot { width: 28px; height: 28px; border-radius: 999px; }
+            .ib-body { padding: 18px 16px; }
+            .ib-h1 { width: 150px; height: 20px; margin-bottom: 12px; }
+            .ib-h2 { width: 62%; max-width: 360px; height: 10px; margin-bottom: 26px; }
+            .ib-row { display: flex; align-items: center; gap: 12px; height: 44px; border-bottom: 1px solid var(--ib-border); }
+            .ib-row b:nth-child(1) { width: 16px; height: 16px; border-radius: 4px; flex: none; }
+            .ib-row b:nth-child(2) { flex: 1; height: 10px; max-width: 420px; }
+            .ib-row b:nth-child(3) { width: 64px; height: 10px; margin-left: auto; flex: none; }
+            .ib-row:nth-child(2n) b:nth-child(2) { max-width: 300px; }
+            .ib-row:nth-child(3n) b:nth-child(2) { max-width: 360px; }
+            @media (min-width: 1024px) {
+                .ib-rail {
+                    display: flex; flex-direction: column; align-items: center; gap: 19px; flex: none;
+                    width: 68px; margin: 6px; padding-top: 12px; border-radius: 8px; background: var(--ib-rail);
+                }
+                .ib-rail b { width: 30px; height: 30px; background: rgba(255, 255, 255, 0.14); }
+                .ib-rail b:first-child { width: 36px; height: 36px; border-radius: 8px; margin-bottom: 6px; background: rgba(255, 255, 255, 0.22); }
+                .ib-panel { display: block; width: 240px; flex: none; padding: 14px 16px; }
+                .ib-panel[hidden] { display: none; }
+                .ib-panel .ib-p-title { width: 120px; height: 14px; margin: 0 0 30px; }
+                .ib-panel .ib-p-head { width: 110px; height: 8px; margin-bottom: 22px; }
+                .ib-p-row { display: flex; align-items: center; gap: 10px; height: 34px; }
+                .ib-p-row b:first-child { width: 14px; height: 14px; border-radius: 3px; }
+                .ib-p-row b:last-child { width: 130px; height: 10px; }
+                .ib-p-row:nth-child(2n) b:last-child { width: 104px; }
+                .ib-main { border-left: 1px solid var(--ib-border); }
+                .ib-top { height: 40px; gap: 14px; }
+                .ib-top .ib-menu, .ib-top .ib-name { display: none; }
+                .ib-top .ib-search { display: block; }
+                .ib-body { padding: 20px 16px; }
             }
-            @keyframes imcrm-boot-in { to { opacity: 1; transform: none; } }
-            @keyframes imcrm-boot-slide { to { left: 100%; } }
+            @keyframes ib-slide { to { left: 100%; } }
+            @keyframes ib-pulse { 50% { opacity: 0.55; } }
             @media (prefers-reduced-motion: reduce) {
-                .imcrm-boot__brand, .imcrm-boot__bar { animation: none; opacity: 1; transform: none; }
-                .imcrm-boot__bar span { animation: none; left: 30%; }
+                .ib-line span { animation: none; left: 0; width: 30%; }
+                .ib-shell b { animation: none; }
             }
         </style>
     </head>
     <body>
         <div id="imcrm-boot" role="status" aria-busy="true" aria-label="Cargando">
-            <div class="imcrm-boot__brand" id="imcrm-boot-brand"></div>
-            <div class="imcrm-boot__bar"><span></span></div>
+            <div class="ib-line"><span></span></div>
+            <div class="ib-shell" id="imcrm-boot-shell" aria-hidden="true" hidden>
+                <div class="ib-rail"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+                <div class="ib-panel" id="imcrm-boot-panel">
+                    <b class="ib-p-title"></b><b class="ib-p-head"></b>
+                    <div class="ib-p-row"><b></b><b></b></div><div class="ib-p-row"><b></b><b></b></div>
+                    <div class="ib-p-row"><b></b><b></b></div><div class="ib-p-row"><b></b><b></b></div>
+                    <div class="ib-p-row"><b></b><b></b></div><div class="ib-p-row"><b></b><b></b></div>
+                    <div class="ib-p-row"><b></b><b></b></div><div class="ib-p-row"><b></b><b></b></div>
+                </div>
+                <div class="ib-main">
+                    <div class="ib-top">
+                        <b class="ib-menu"></b><b class="ib-name"></b><b class="ib-search"></b><i></i>
+                        <b class="ib-dot"></b><b class="ib-dot"></b><b class="ib-dot"></b>
+                    </div>
+                    <div class="ib-body">
+                        <b class="ib-h1"></b><b class="ib-h2"></b>
+                        <div class="ib-row"><b></b><b></b><b></b></div><div class="ib-row"><b></b><b></b><b></b></div>
+                        <div class="ib-row"><b></b><b></b><b></b></div><div class="ib-row"><b></b><b></b><b></b></div>
+                        <div class="ib-row"><b></b><b></b><b></b></div><div class="ib-row"><b></b><b></b><b></b></div>
+                        <div class="ib-row"><b></b><b></b><b></b></div><div class="ib-row"><b></b><b></b><b></b></div>
+                    </div>
+                </div>
+            </div>
         </div>
         <script>
-            /* La marca que la app recordó en la última visita (bootSplash.ts).
-             * La primera vez no hay nada: sólo la barra. */
+            /* Lo que la app recordó en este dispositivo (bootSplash.ts): si la
+             * última vez había sesión, el contorno de la app con los colores
+             * reales del riel y de la línea en este tema. Si no, fondo liso. */
             (function () {
-                var box = document.getElementById('imcrm-boot-brand');
                 var boot = document.getElementById('imcrm-boot');
-                var brand = null;
+                var mem = null;
                 try {
-                    brand = JSON.parse(localStorage.getItem('imcrm:splash') || 'null');
+                    mem = JSON.parse(localStorage.getItem('imcrm:splash') || 'null');
                 } catch (e) {
-                    brand = null;
+                    mem = null;
                 }
-                var ok = function (u) {
-                    return typeof u === 'string' && u.charAt(0) === '/' && u.charAt(1) !== '/' && u.charAt(1) !== '\\';
-                };
-                var name = brand && typeof brand.name === 'string' ? brand.name : '';
-                var showName = function () {
-                    box.textContent = '';
-                    if (!name) return;
-                    var t = document.createElement('span');
-                    t.className = 'imcrm-boot__name';
-                    t.textContent = name;
-                    box.appendChild(t);
-                };
                 var dark = document.documentElement.getAttribute('data-imcrm-theme') === 'dark';
-                /* En modo oscuro sólo un logo pensado para fondo oscuro; si no, el nombre. */
-                var pick = brand ? (dark ? brand.logoDark : brand.logo) : null;
-                var logo = ok(pick) ? pick : null;
-                if (logo) {
-                    var img = document.createElement('img');
-                    img.alt = name;
-                    img.onerror = showName;
-                    img.src = logo;
-                    box.appendChild(img);
-                } else {
-                    showName();
+                var colors = mem && mem[dark ? 'dark' : 'light'];
+                var ok = function (c) {
+                    return typeof c === 'string' && /^rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\)$/.test(c);
+                };
+                if (colors && ok(colors.accent)) boot.style.setProperty('--ib-accent', colors.accent);
+                if (mem && mem.shell === true) {
+                    if (colors && ok(colors.rail)) boot.style.setProperty('--ib-rail', colors.rail);
+                    var collapsed = false;
+                    try {
+                        collapsed = localStorage.getItem('imcrm-panel-collapsed') === '1';
+                    } catch (e) {
+                        collapsed = false;
+                    }
+                    if (collapsed) document.getElementById('imcrm-boot-panel').hidden = true;
+                    document.getElementById('imcrm-boot-shell').hidden = false;
+                    boot.setAttribute('data-shell', '1');
                 }
                 /* Red de seguridad: si algo impidió arrancar, no queda tapando la pantalla. */
                 setTimeout(function () {

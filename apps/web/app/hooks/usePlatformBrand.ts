@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     PLATFORM_ICON_KEYS,
+    PLATFORM_ICON_SIZES,
     platformBrandImageSchema,
     type PlatformBrand,
     type PlatformBrandImage,
@@ -62,26 +63,29 @@ export async function uploadLogo(file: File): Promise<string> {
     return (await uploadBrandPng(await renderLogoPng(img), 'logo.png')).url;
 }
 
-async function uploadSizes(img: HTMLImageElement, background: string): Promise<PlatformIconSet> {
+/** El fondo de los íconos claros y de los oscuros (`iconBackgrounds` de shared). */
+export type IconBackgrounds = { light: string; dark: string };
+
+async function uploadSizes(img: HTMLImageElement, background: IconBackgrounds): Promise<PlatformIconSet> {
     const out: Partial<PlatformIconSet> = {};
     for (const key of PLATFORM_ICON_KEYS) {
-        const blob = await renderIconPng(img, key, background);
+        const blob = await renderIconPng(img, key, PLATFORM_ICON_SIZES[key].dark ? background.dark : background.light);
         out[key] = (await uploadBrandPng(blob, `${key}.png`)).url;
     }
     return out as PlatformIconSet;
 }
 
-/** El ícono (cualquier formato) → el original de 512 y los siete tamaños subidos. */
+/** El ícono (cualquier formato) → el original de 512 y todos los tamaños subidos. */
 export async function uploadIconSet(
     file: File,
-    background: string,
+    background: IconBackgrounds,
 ): Promise<{ icon_source_url: string; icons: PlatformIconSet }> {
     return uploadIconSetFromImage(await loadImageFile(file), background);
 }
 
 async function uploadIconSetFromImage(
     img: HTMLImageElement,
-    background: string,
+    background: IconBackgrounds,
 ): Promise<{ icon_source_url: string; icons: PlatformIconSet }> {
     const source = await uploadBrandPng(await renderIconSourcePng(img), 'icon-source.png');
     return { icon_source_url: source.url, icons: await uploadSizes(img, background) };
@@ -103,7 +107,7 @@ export function isSquarish(img: HTMLImageElement): boolean {
 /** Sube el logo y, si es casi cuadrado y se pide, también lo usa como ícono. */
 export async function uploadLogoMaybeIcon(
     file: File,
-    iconBackground: string | null,
+    iconBackground: IconBackgrounds | null,
 ): Promise<{ logo_url: string; icon: { icon_source_url: string; icons: PlatformIconSet } | null }> {
     const img = await loadImageFile(file);
     const logo = (await uploadBrandPng(await renderLogoPng(img), 'logo.png')).url;
@@ -114,12 +118,12 @@ export async function uploadLogoMaybeIcon(
 /** El logo ya guardado como ícono (para quien lo subió antes de v0.1.328). */
 export async function iconSetFromSavedImage(
     url: string,
-    background: string,
+    background: IconBackgrounds,
 ): Promise<{ icon_source_url: string; icons: PlatformIconSet }> {
     return uploadIconSetFromImage(await loadImageUrl(url), background);
 }
 
 /** Vuelve a generar los tamaños desde el original guardado (cambió el color de fondo). */
-export async function regenerateIconSet(sourceUrl: string, background: string): Promise<PlatformIconSet> {
+export async function regenerateIconSet(sourceUrl: string, background: IconBackgrounds): Promise<PlatformIconSet> {
     return uploadSizes(await loadImageUrl(sourceUrl), background);
 }

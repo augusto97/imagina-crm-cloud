@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { DEFAULT_PLATFORM_APP_NAME, type PlatformBrand } from '@imagina-base/shared';
+import { APP_BAR_NEUTRAL, DEFAULT_PLATFORM_APP_NAME, iconBackgrounds, type PlatformBrand } from '@imagina-base/shared';
 import { ImageUp, Loader2, Palette, Smartphone, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -20,9 +20,9 @@ import { cn } from '@/lib/utils';
 
 /**
  * v0.1.327 — Plataforma → Marca: cómo se presenta la app ante las empresas
- * que no tienen marca propia. El logo va en el login y en la pantalla de
- * arranque; el ícono, en la pestaña, en el menú y en el teléfono (app
- * instalada). En el dominio propio de una empresa nunca aparecen.
+ * que no tienen marca propia. El logo va en el login; el ícono, en la
+ * pestaña, en el menú y en el teléfono (app instalada). En el dominio propio
+ * de una empresa nunca aparecen.
  */
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
 const FACTORY_ICON = '/pwa/icon-maskable-192.png';
@@ -70,9 +70,12 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
     const onSave = (): Promise<void> =>
         run('save', async () => {
             let next = draft;
-            // Cambió el color de fondo: los tamaños se vuelven a generar desde el original.
-            if (next.icon_source_url && next.icons && next.icon_background !== initial.icon_background) {
-                next = { ...next, icons: await regenerateIconSet(next.icon_source_url, next.icon_background) };
+            // Cambió el fondo: los tamaños se vuelven a generar desde el original.
+            const bgChanged =
+                next.icon_background !== initial.icon_background ||
+                next.icon_background_auto !== initial.icon_background_auto;
+            if (next.icon_source_url && next.icons && bgChanged) {
+                next = { ...next, icons: await regenerateIconSet(next.icon_source_url, iconBackgrounds(next)) };
             }
             await save.mutateAsync(next);
             toast.success('Marca guardada');
@@ -89,7 +92,7 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                 </div>
                 <CardDescription>
                     El nombre, el logo y el ícono con los que se presenta la app: en el inicio de sesión, en la
-                    pantalla de arranque, en la pestaña del navegador y en el teléfono cuando se instala. Las empresas
+                    pestaña del navegador y en el teléfono cuando se instala. Las empresas
                     que suben su propio logo (Ajustes → Marca) siguen viendo el suyo, y en el dominio propio de una
                     empresa esta marca nunca aparece. Sin logo, la app muestra el nombre en texto.
                 </CardDescription>
@@ -114,8 +117,8 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                     <div>
                         <h3 className="imcrm-text-sm imcrm-font-semibold">Logo</h3>
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                            Horizontal, idealmente con fondo transparente (PNG o SVG). Se muestra en el inicio de sesión
-                            y en la pantalla de arranque.
+                            Horizontal, idealmente con fondo transparente (PNG o SVG). Se muestra en el inicio de
+                            sesión.
                         </p>
                     </div>
                     <div className="imcrm-grid imcrm-gap-4 sm:imcrm-grid-cols-2">
@@ -130,7 +133,7 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                                 run('logo', async () => {
                                     // v0.1.328 — sin ícono propio, un logo casi cuadrado también
                                     // pasa a ser el ícono (si no, la app instalada sale con el genérico).
-                                    const res = await uploadLogoMaybeIcon(file, draft.icons ? null : draft.icon_background);
+                                    const res = await uploadLogoMaybeIcon(file, draft.icons ? null : iconBackgrounds(draft));
                                     setDraft((d) => ({ ...d, logo_url: res.logo_url, ...(res.icon ?? {}) }));
                                     if (res.icon) toast.success('Usamos tu logo también como ícono de la app. Puedes cambiarlo abajo.');
                                 })
@@ -180,7 +183,7 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                                     label={draft.icons ? 'Cambiar ícono' : 'Subir ícono'}
                                     onPick={(file) =>
                                         run('icon', async () => {
-                                            const set = await uploadIconSet(file, draft.icon_background);
+                                            const set = await uploadIconSet(file, iconBackgrounds(draft));
                                             setDraft((d) => ({ ...d, ...set }));
                                         })
                                     }
@@ -198,35 +201,92 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                             </div>
                             <div className="imcrm-space-y-1.5">
                                 <Label htmlFor="brand-icon-bg">Fondo del ícono</Label>
-                                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                    {BG_PRESETS.map((c) => (
-                                        <button
-                                            key={c}
-                                            type="button"
-                                            aria-label={`Fondo ${c}`}
-                                            aria-pressed={draft.icon_background === c}
-                                            onClick={() => setDraft((d) => ({ ...d, icon_background: c }))}
-                                            className={cn(
-                                                'imcrm-h-7 imcrm-w-7 imcrm-rounded-full imcrm-border imcrm-border-border',
-                                                draft.icon_background === c && 'imcrm-ring-2 imcrm-ring-primary imcrm-ring-offset-2 imcrm-ring-offset-background',
-                                            )}
-                                            style={{ background: c }}
+                                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                                    <button
+                                        type="button"
+                                        aria-pressed={draft.icon_background_auto}
+                                        data-testid="brand-icon-bg-auto"
+                                        onClick={() => setDraft((d) => ({ ...d, icon_background_auto: true }))}
+                                        className={cn(
+                                            'imcrm-inline-flex imcrm-h-7 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-px-2.5 imcrm-text-xs',
+                                            draft.icon_background_auto && 'imcrm-ring-2 imcrm-ring-primary imcrm-ring-offset-2 imcrm-ring-offset-background',
+                                        )}
+                                    >
+                                        <span
+                                            aria-hidden
+                                            className="imcrm-h-3.5 imcrm-w-3.5 imcrm-rounded-full imcrm-border imcrm-border-border"
+                                            style={{
+                                                background: `linear-gradient(135deg, ${APP_BAR_NEUTRAL.light} 50%, ${APP_BAR_NEUTRAL.dark} 50%)`,
+                                            }}
                                         />
-                                    ))}
+                                        Igual al de la app
+                                    </button>
+                                    {BG_PRESETS.map((c) => {
+                                        const on = !draft.icon_background_auto && draft.icon_background === c;
+                                        return (
+                                            <button
+                                                key={c}
+                                                type="button"
+                                                aria-label={`Fondo ${c}`}
+                                                aria-pressed={on}
+                                                onClick={() =>
+                                                    setDraft((d) => ({ ...d, icon_background: c, icon_background_auto: false }))
+                                                }
+                                                className={cn(
+                                                    'imcrm-h-7 imcrm-w-7 imcrm-rounded-full imcrm-border imcrm-border-border',
+                                                    on && 'imcrm-ring-2 imcrm-ring-primary imcrm-ring-offset-2 imcrm-ring-offset-background',
+                                                )}
+                                                style={{ background: c }}
+                                            />
+                                        );
+                                    })}
                                     <input
                                         id="brand-icon-bg"
                                         type="color"
+                                        aria-label="Otro color de fondo"
                                         value={draft.icon_background}
-                                        onChange={(e) => setDraft((d) => ({ ...d, icon_background: e.target.value }))}
+                                        onChange={(e) =>
+                                            setDraft((d) => ({ ...d, icon_background: e.target.value, icon_background_auto: false }))
+                                        }
                                         className="imcrm-h-7 imcrm-w-10 imcrm-cursor-pointer imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-transparent"
                                     />
                                 </div>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    Rellena el cuadrado del ícono en el teléfono. Usa el mismo fondo de tu logo.
+                                    {draft.icon_background_auto
+                                        ? 'Blanco en modo claro y gris oscuro en modo oscuro, como el fondo de la app: al abrir la app, Android muestra tu logo solo, sin un círculo de otro color alrededor.'
+                                        : 'Rellena el ícono en el teléfono. Al abrir la app, Android lo muestra como un círculo de este color: elige «Igual al de la app» si no quieres verlo.'}
                                 </p>
                             </div>
                         </div>
                     </div>
+                    {initial.icons && initial.icon_source_url && !initial.icons.maskable_dark_512 && (
+                        <div
+                            className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-p-3 imcrm-text-xs"
+                            data-testid="brand-icon-refresh"
+                        >
+                            <span className="imcrm-min-w-[200px] imcrm-flex-1">
+                                Actualiza el ícono para que la app se abra con tu logo limpio (sin un círculo de color
+                                alrededor) y con su versión para el modo oscuro.
+                            </span>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={busy !== null}
+                                data-testid="brand-icon-refresh-btn"
+                                onClick={() =>
+                                    run('icon', async () => {
+                                        const icons = await regenerateIconSet(initial.icon_source_url!, iconBackgrounds(draft));
+                                        await save.mutateAsync({ ...draft, icons });
+                                        toast.success('Ícono actualizado');
+                                    })
+                                }
+                            >
+                                {busy === 'icon' && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
+                                Actualizar ícono
+                            </Button>
+                        </div>
+                    )}
                     {!draft.icons && draft.logo_url && (
                         <div
                             className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-p-3 imcrm-text-xs"
@@ -244,7 +304,7 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                                 data-testid="brand-icon-from-logo"
                                 onClick={() =>
                                     run('icon', async () => {
-                                        const set = await iconSetFromSavedImage(draft.logo_url!, draft.icon_background);
+                                        const set = await iconSetFromSavedImage(draft.logo_url!, iconBackgrounds(draft));
                                         setDraft((d) => ({ ...d, ...set }));
                                     })
                                 }
@@ -376,6 +436,10 @@ function IconPreview({ brand }: { brand: PlatformBrand }): JSX.Element {
                 </span>
             </div>
             <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5">
+                <OpenPreview icon={icon ?? FACTORY_ICON} />
+                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">Al abrir</span>
+            </div>
+            <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5">
                 <img src={brand.icons?.apple_180 ?? '/apple-touch-icon.png'} alt="" className="imcrm-h-12 imcrm-w-12 imcrm-rounded-xl imcrm-shadow-imcrm-sm" />
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">iPhone</span>
             </div>
@@ -386,6 +450,24 @@ function IconPreview({ brand }: { brand: PlatformBrand }): JSX.Element {
                 </span>
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">Pestaña</span>
             </div>
+        </div>
+    );
+}
+
+/**
+ * v0.1.329 — Cómo abre Android 12+ la app instalada: el ícono recortado en
+ * círculo (se ve el 2/3 central) sobre el fondo de la app.
+ */
+function OpenPreview({ icon }: { icon: string }): JSX.Element {
+    return (
+        <div
+            className="imcrm-flex imcrm-h-24 imcrm-w-14 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-shadow-imcrm-sm"
+            style={{ background: APP_BAR_NEUTRAL.light }}
+            data-testid="brand-open-preview"
+        >
+            <span className="imcrm-relative imcrm-h-8 imcrm-w-8 imcrm-overflow-hidden imcrm-rounded-full">
+                <img src={icon} alt="" className="imcrm-absolute imcrm-left-1/2 imcrm-top-1/2 imcrm-h-12 imcrm-w-12 imcrm-max-w-none -imcrm-translate-x-1/2 -imcrm-translate-y-1/2" />
+            </span>
         </div>
     );
 }
