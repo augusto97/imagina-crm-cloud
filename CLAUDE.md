@@ -9783,6 +9783,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         tests nuevos del front (632 en verde) + E2E navegador 23/23 (Chrome con
         y sin aviso, Firefox, iPhone en oscuro, ya instalada).
 
+  - [x] **Centro de aprendizaje «Aprende» (v0.1.322, ADR-S75, feedback del
+        usuario: "la ayuda es muy básica, muy poco ilustrativa, muy corta…
+        casi no se explica nada")**: un manual de la app por módulo, con
+        animaciones y capturas reales. (a) **Dónde**: ítem «Aprende» en el riel
+        (el panel muestra el índice del manual), botón «Centro de aprendizaje»
+        en la Ayuda y resultados en Ctrl+K; inicio con buscador sin acentos,
+        «Empieza aquí» y los módulos por grupo con su portada animada; página
+        de módulo; artículo con «En esta página», progreso de lectura,
+        anterior/siguiente, relacionados y el aviso «Lo hace un administrador»
+        cuando el rol no puede; los del operador sólo para el superadmin.
+        (b) **Contenido como DATOS** (`apps/web/app/admin/learn/content/`): por
+        módulo un `.meta.ts` (índice, siempre cargado) y un `.content.ts` (a
+        pedido), descubiertos con `import.meta.glob`; bloques de vocabulario
+        cerrado (pasos, tabla «Ajuste · Qué hace», aviso, ejemplo de un negocio,
+        animación, captura con respaldo, tarjetas, preguntas, botones, atajos).
+        **27 módulos y 191 artículos (~120.000 palabras)** que explican cada
+        pantalla con todos sus ajustes y ejemplos de negocios
+        latinoamericanos. (c) **207 ilustraciones animadas** en React + CSS
+        (escenario 480×300 escalable, sólo tokens del tema → marca de la empresa
+        y modo oscuro; con «reducir movimiento» se ve el cuadro final; pausadas
+        fuera de pantalla; un chunk por ilustración). (d) **110 capturas
+        reales** paso a paso (cursor animado, zoom a la zona, texto que se
+        escribe, pantalla completa) grabadas en el release:
+        `scripts/help-captures/ci.sh` levanta una copia efímera, crea la empresa
+        de ejemplo «Café Aurora» con plantillas y datos creíbles (`fill.mjs`,
+        cobros de prueba `seed-cobros.mjs`), corre un escenario por módulo con
+        Playwright y deja WebP en `dist-cloud/help-media`; el paso del workflow
+        es `continue-on-error` (sin capturas, cada artículo muestra su
+        animación). (e) **El test hace de editor**: referencias que existen,
+        al menos una imagen por artículo, español neutro (límites de palabra con
+        tildes), sin el nombre del producto ni jerga; guía de redacción en
+        `docs/learn-authoring.md`. (f) **Bugs que salieron al escribirlo**: las
+        variables y condiciones de las automatizaciones ahora ven búsquedas,
+        resúmenes y calculados (`RecordsService.derivedValues`); un ticket
+        creado a mano toma correo y nombre del cliente de sus campos; «Nuevo
+        formulario» siempre abre el editor; fuera el nombre del producto y la
+        jerga de varias pantallas («empresa» en vez de «workspace», tipos de
+        campo legibles en el importador, «Dirección del producto», «Nombre
+        interno»); «Guardar» de la vista siempre visible; recordatorio de pago
+        del editor de correos con variables; código en línea en el formato
+        sencillo. Novedad en el catálogo. Queda: galería de ideas y recetas
+        (v0.1.323), recorridos rediseñados (v0.1.324) y novedades con imagen
+        (v0.1.325).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

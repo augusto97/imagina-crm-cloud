@@ -372,10 +372,26 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.321**
-(«Instalar la app» siempre visible, con los pasos para cada navegador), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.322**
+(centro de aprendizaje «Aprende»: manual por módulo con animaciones y capturas
+reales), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-27 — **«La ayuda es muy básica y poco ilustrativa»** (feedback del
+  usuario sobre la fase 7: "esos tours no me gustaron… en ClickUp las novedades
+  traen imágenes o una pequeña animación… lo que hiciste es muy básico, muy
+  poco ilustrativo, muy corto"). Eligió **las dos cosas** (animaciones +
+  capturas reales que se regeneran solas) y **la ayuda completa primero**.
+  Plan en cuatro versiones: **v0.1.322** centro de aprendizaje (HECHA);
+  **v0.1.323** galería de ideas y recetas que se activan con un clic;
+  **v0.1.324** recorridos rediseñados (visuales e interactivos); **v0.1.325**
+  novedades con imagen o animación (también las ya publicadas, carrusel estilo
+  ClickUp). Pendientes menores que salieron al escribir el manual: no hay
+  pantalla para cambiar el nombre o el correo propio; el export JSON de una
+  lista (`exportList`) no tiene botón; la cuenta de cobro en PDF no muestra el
+  nombre del cliente cuando el campo es una relación y el diálogo «Cobrar» toma
+  la moneda del registro aunque la cuenta de Mercado Pago sea en COP; la
+  carpeta de Google Drive se sigue llamando con el nombre del producto.
 - 2026-10-26 — **Fase 7 completa: «hacer la app súper fácil de entender»**
   ("por el momento me interesa el «empezar fácil»… tutoriales, guías
   interactivas, un paso a paso… dándole un tour al usuario y guiando por toda
@@ -784,6 +800,33 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.321**
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.322** — **Centro de aprendizaje «Aprende»** (ADR-S75).
+  Feedback del usuario: la ayuda de la fase 7 era "muy básica, muy poco
+  ilustrativa, muy corta… casi no se explica nada ni cómo usar tantas cosas";
+  pidió imágenes o animaciones como ClickUp y eligió animaciones + capturas
+  reales que se regeneren solas. Ítem «Aprende» en el riel (índice del manual
+  en el panel), botón en Ayuda y resultados en Ctrl+K. **27 módulos, 191
+  artículos (~120.000 palabras)**: cada pantalla con TODOS sus ajustes en
+  tablas «Ajuste · Qué hace», pasos, ejemplos de negocios latinoamericanos,
+  avisos, preguntas frecuentes y botones para ir; **207 ilustraciones
+  animadas** (React + CSS con los tokens del tema: toman la marca y el modo
+  oscuro, con «reducir movimiento» se ve la escena quieta) y **110 capturas
+  reales** paso a paso con cursor animado y zoom, grabadas en el release por
+  `scripts/help-captures/ci.sh` sobre la empresa de ejemplo «Café Aurora» (si
+  fallan, la versión sale igual y cada artículo muestra su animación). Escrito
+  por seis agentes en paralelo con una guía de redacción
+  (`docs/learn-authoring.md`) y un test que hace de editor (referencias,
+  español neutro con tildes, sin el nombre del producto ni jerga). Bugs reales
+  que destapó y se arreglaron: las variables y condiciones de automatizaciones
+  no veían búsquedas/resúmenes/calculados; un ticket creado a mano salía «Sin
+  cliente por correo» y «Hola ,»; «Nuevo formulario» a veces no abría el
+  editor; textos con el nombre del producto (columnas de la tienda, invitación,
+  pasos de WooCommerce/Mercado Pago/IMAP) y jerga («slug», «workspace»,
+  `text`/`phone` en el importador, «POST con JSON»); la portada de Aprende con
+  ancho cero; «Guardar» de la vista cortado; fechas de la ficha partidas; el
+  recordatorio de pago del editor de correos con guiones en vez de variables;
+  código en línea en el formato sencillo; aviso de privacidad del asistente
+  IA al día. Sigue: v0.1.323 (galería de ideas y recetas).
 - **2026-10-27 · v0.1.321** — **«Instalar la app» siempre visible** (addendum
   de ADR-S68). Pregunta del usuario: "¿cómo se activa lo del PWA? No hay ningún
   lado que lo indique". Se verificó `base.imagina.cloud` con Chromium: manifiesto,

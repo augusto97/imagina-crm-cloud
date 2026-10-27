@@ -4487,4 +4487,66 @@ es poco y vive en Redis). Dejar que el operador edite las guías del sistema
 
 ---
 
-**Versión del documento:** 1.117.1 (instalar la app desde cualquier navegador)
+### ADR-S75 — Centro de aprendizaje: manual como datos, ilustraciones animadas y capturas reales en el release (v0.1.322)
+
+**Contexto.** La ayuda de la fase 7 (ADR-S74) quedó corta: el usuario la
+calificó de «muy básica, poco ilustrativa y corta», sin explicar los ajustes
+de cada pantalla ni dar ideas de qué se puede armar, y pidió imágenes o
+animaciones como las de ClickUp. Eligió las dos cosas a la vez: animaciones que
+explican la idea y capturas reales que se regeneran solas en cada versión.
+
+**Decisión.**
+1. **Un manual por módulo como DATOS** (`apps/web/app/admin/learn/content/`):
+   cada módulo son dos archivos, `<id>.meta.ts` (título, grupo, portada,
+   artículos con resumen, minutos, nivel, `needs` y `operatorOnly`; se carga
+   siempre para el índice y el buscador) y `<id>.content.ts` (los bloques de
+   cada artículo; se carga a pedido). Se descubren con `import.meta.glob`:
+   agregar un módulo es agregar archivos, sin índices a mano. Los bloques son
+   un vocabulario cerrado (párrafo en formato sencillo, título, pasos, tabla de
+   ajustes, aviso, ejemplo de un negocio, animación, captura con su animación
+   de respaldo, tarjetas, preguntas, botones y atajos) que se dibuja sin
+   innerHTML.
+2. **Ilustraciones animadas en React + CSS** (`illustrations/items/<clave>.tsx`,
+   un chunk por ilustración): escenario fijo de 480×300 que se escala al
+   ancho, colores SÓLO de los tokens del tema (toman la marca de cada empresa
+   y funcionan en oscuro), animación con keyframes cuyo estilo base es el
+   cuadro final (con «reducir movimiento» se ve la escena completa), pausadas
+   fuera de pantalla. Sin Lottie ni video: nada que diseñar aparte, nada que
+   pese megas y todo se adapta al tema y a la marca.
+3. **Capturas reales grabadas en el release** (`scripts/help-captures/`): un
+   escenario por módulo describe pasos (ir, tocar, escribir, arrastrar,
+   foto); `ci.sh` levanta una copia efímera de la app, crea la empresa de
+   ejemplo «Café Aurora» con plantillas y datos creíbles, graba cada demo con
+   Playwright y guarda los cuadros en WebP con la zona que se toca. Corre en el
+   workflow de release con `continue-on-error`: si falla, la versión sale sin
+   capturas y cada artículo muestra su animación de respaldo. El reproductor
+   anima el cursor, acerca la zona, muestra el texto que se escribe y se
+   amplía a pantalla completa.
+4. **Puerta de entrada**: ítem «Aprende» en el riel (panel con el índice del
+   manual), botón en la Ayuda y resultados en Ctrl+K. Artículos con lo que
+   hace falta por rol («Lo hace un administrador»), los del operador sólo para
+   el superadmin, progreso de lectura por dispositivo.
+5. **El test es el editor**: `content.test.ts` exige que cada artículo exista
+   en los dos archivos, tenga al menos una imagen, apunte a animaciones,
+   capturas, íconos, recorridos y artículos que existen, y que el texto sea
+   español neutro (límites de palabra con tildes), sin el nombre del producto
+   ni jerga. La guía de redacción está en `docs/learn-authoring.md`.
+
+**Consecuencias.** 27 módulos y 191 artículos (~120.000 palabras) con 207
+ilustraciones y 110 capturas reales: cada pantalla con sus ajustes explicados y
+ejemplos de negocios reales. Las capturas se mantienen solas con cada versión;
+una pantalla que cambia mucho puede dejar un escenario fallando, y ese artículo
+cae a su animación. El manual creció la carga del primer acceso a «Aprende»,
+no la de la app (todo es a pedido). Escribirlo destapó y corrigió bugs reales
+(variables de búsquedas en automatizaciones, cliente del ticket creado a mano,
+textos con el nombre del producto o jerga).
+
+**Alternativas descartadas.** Videos grabados a mano (se desactualizan con cada
+versión y pesan). GIFs (pesados, sin tema oscuro ni marca). Lottie (otra
+herramienta de diseño y otra dependencia). Un sitio de documentación aparte
+(no conoce el rol de quien lee ni la marca de su empresa, y saca a la persona
+de la app).
+
+---
+
+**Versión del documento:** 1.118.0 (centro de aprendizaje)
