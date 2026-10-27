@@ -799,6 +799,11 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.321**
   Guía y recorrido «Instalar la app» corregidos (el recorrido apunta a la
   tarjeta), novedad en el catálogo. 6 tests nuevos del front + E2E navegador
   23/23 (Chrome con y sin aviso, Firefox, iPhone oscuro, ya instalada).
+  El CI atrapó que `whats-new.spec` tenía cableada la destacada de cada rol:
+  la novedad nueva sacó a la de v0.1.314 de las seis anunciadas. Ahora la
+  esperada se calcula del catálogo (como el «sin ver») y la prueba de «se
+  presenta una sola vez» usa una destacada propia — sumar novedades ya no la
+  rompe.
 - **2026-10-27 · v0.1.320** — **Guías, recorridos interactivos y centro de
   ayuda** (ADR-S74, opción I7 ampliada; tercera y última entrega de la fase 7).
   Recorridos con motor propio: «welcome» adaptado al rol (13 pasos para un
