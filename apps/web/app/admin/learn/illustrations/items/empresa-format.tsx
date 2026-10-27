@@ -18,13 +18,11 @@ const CSS = `
 
 function Swap({ a, b, w, strong }: { a: string; b: string; w: number; strong?: boolean }): JSX.Element {
     return (
-        <span style={{ position: 'relative', display: 'block', width: w, height: 13 }}>
+        <span style={{ display: 'grid', width: w }}>
             <span
                 data-a=""
                 style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
+                    gridArea: '1 / 1',
                     opacity: 0,
                     animationName: 'efm-a',
                 }}
@@ -36,9 +34,7 @@ function Swap({ a, b, w, strong }: { a: string; b: string; w: number; strong?: b
             <span
                 data-a=""
                 style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
+                    gridArea: '1 / 1',
                     animationName: 'efm-b',
                 }}
             >

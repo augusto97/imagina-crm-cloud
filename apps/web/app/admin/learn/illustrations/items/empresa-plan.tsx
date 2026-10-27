@@ -220,7 +220,8 @@ export default function EmpresaPlan(): JSX.Element {
                             width: 402,
                             height: 18,
                             borderRadius: 99,
-                            background: tone('mint', 0.55),
+                            // Opaco: al extenderse tapa la gracia y el solo-lectura.
+                            background: `color-mix(in srgb, ${tone('mint')} 55%, ${C.card})`,
                             animationName: 'epl-paid',
                         }}
                     />

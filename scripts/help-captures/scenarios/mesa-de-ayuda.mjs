@@ -68,7 +68,7 @@ export default [
                     await ctx.page.waitForTimeout(800);
                 },
             },
-            { shot: '[data-testid="imcrm-ticket-mail"]', caption: 'En la ficha de un ticket ves su número, el cliente y cómo va el SLA: cuándo vence la primera respuesta y la resolución.' },
+            { shot: '[data-testid="imcrm-ticket-mail"]', caption: 'En la ficha de un ticket, junto a los comentarios, ves su número y cómo va el SLA.' },
             { click: '[data-testid="imcrm-ticket-reply-open"]', then: '[data-testid="imcrm-ticket-composer"]', caption: 'Toca «Responder por correo».' },
             { fill: '#hd-reply-to', text: 'carlos21@ejemplo.com', caption: 'Revisa a quién va. El asunto ya lleva el número del ticket: así la respuesta del cliente vuelve a este mismo registro.' },
             {

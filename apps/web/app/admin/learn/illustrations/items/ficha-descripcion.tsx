@@ -35,7 +35,7 @@ export default function FichaDescripcion(): JSX.Element {
     return (
         <Stage label="El editor de la descripción de un registro: al escribir una barra diagonal se abre el menú de bloques, se elige «Lista de control» y aparecen tres casillas; la primera se marca y la descripción se guarda sola." tint="violet">
             <Keyframes css={CSS} />
-            <At x={24} y={20} w={432} h={262} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: '0 18px 40px -18px rgba(15,23,42,.45)' }}>
+            <At x={24} y={14} w={432} h={272} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: '0 18px 40px -18px rgba(15,23,42,.45)' }}>
                 <At x={18} y={14} w={396} style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <T size={8.5} weight={700} color={C.mutedFg} style={{ letterSpacing: '.06em' }}>
                         DESCRIPCIÓN
@@ -58,12 +58,12 @@ export default function FichaDescripcion(): JSX.Element {
                     </T>
                 </At>
                 {/* La barra que abre el menú */}
-                <At x={18} y={124} a="fd-slash" style={{ opacity: 0, display: 'flex', alignItems: 'center' }}>
+                <At x={18} y={118} a="fd-slash" style={{ opacity: 0, display: 'flex', alignItems: 'center' }}>
                     <T size={11}>/</T>
                     <span style={{ width: 1.5, height: 13, background: primary(), marginLeft: 1 }} />
                 </At>
                 {/* La lista de control resultante */}
-                <At x={18} y={124} w={396} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <At x={18} y={118} w={396} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     {items.map((it, i) => (
                         <span key={it} data-a="" style={{ display: 'flex', alignItems: 'center', gap: 7, animationName: `fd-i${i}` }}>
                             <span
@@ -82,7 +82,7 @@ export default function FichaDescripcion(): JSX.Element {
                         </span>
                     ))}
                 </At>
-                <At x={18} y={226} w={396} style={{ display: 'flex', gap: 10, color: C.mutedFg }}>
+                <At x={18} y={240} w={396} style={{ display: 'flex', gap: 10, color: C.mutedFg }}>
                     {[<Image key="i" size={11} />, <Youtube key="y" size={11} />, <Columns2 key="c" size={11} />].map((ic, i) => (
                         <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             {ic}
@@ -94,7 +94,7 @@ export default function FichaDescripcion(): JSX.Element {
                 </At>
 
                 {/* Menú «/» */}
-                <At x={30} y={142} w={196} a="fd-menu" style={{ opacity: 0, zIndex: 5, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 16px 36px -14px rgba(15,23,42,.55)', height: itemY(MENU.length - 1) + ITEM_H + 6, overflow: 'hidden' }}>
+                <At x={30} y={136} w={196} a="fd-menu" style={{ opacity: 0, zIndex: 5, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: '0 16px 36px -14px rgba(15,23,42,.55)', height: itemY(MENU.length - 1) + ITEM_H + 6, overflow: 'hidden' }}>
                     <span data-a="" style={{ position: 'absolute', left: 4, right: 4, top: 0, height: ITEM_H, borderRadius: 6, background: primary(0.12), transform: `translateY(${itemY(2)}px)`, animationName: 'fd-hl' }} />
                     {MENU.map((m, i) => (
                         <span key={m.l}>

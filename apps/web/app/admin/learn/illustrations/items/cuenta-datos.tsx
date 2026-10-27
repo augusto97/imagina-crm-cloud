@@ -212,13 +212,11 @@ export default function CuentaDatos(): JSX.Element {
                                 flex: 1,
                             }}
                         >
-                            <span style={{ position: 'relative', height: 12, display: 'block' }}>
+                            <span style={{ display: 'grid' }}>
                                 <span
                                     data-a=""
                                     style={{
-                                        position: 'absolute',
-                                        left: 0,
-                                        top: 0,
+                                        gridArea: '1 / 1',
                                         opacity: 0,
                                         animationName: 'cdt-name1',
                                     }}
@@ -230,9 +228,7 @@ export default function CuentaDatos(): JSX.Element {
                                 <span
                                     data-a=""
                                     style={{
-                                        position: 'absolute',
-                                        left: 0,
-                                        top: 0,
+                                        gridArea: '1 / 1',
                                         animationName: 'cdt-name2',
                                     }}
                                 >
