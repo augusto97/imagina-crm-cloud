@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { BookOpen, CircleHelp, Compass, type LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { BookOpen, CircleHelp, Compass, GraduationCap, type LucideIcon } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 
@@ -19,6 +20,9 @@ export interface PaletteHelpCommand {
 }
 
 const MAX_GUIDES = 4;
+const MAX_ARTICLES = 4;
+
+type LearnRegistry = typeof import('@/admin/learn/content/registry');
 
 /** Se ejecuta cuando la paleta terminó de cerrarse (si no, le devuelve el foco a su botón). */
 function afterClose(fn: () => void): () => void {
@@ -37,7 +41,35 @@ export function usePaletteHelpCommands(
 ): { guides: PaletteHelpCommand[]; actions: PaletteHelpCommand[] } {
     const availability = useHelpAvailability();
     const guides = useHelpGuides(open && availability.help);
+    const navigate = useNavigate();
     const q = query.trim();
+
+    // v0.1.322 — el índice del centro de aprendizaje se baja recién al abrir
+    // la paleta (no viaja en la carga inicial).
+    const [learn, setLearn] = useState<LearnRegistry | null>(null);
+    useEffect(() => {
+        if (!open || learn) return;
+        let alive = true;
+        void import('@/admin/learn/content/registry').then((m) => alive && setLearn(m));
+        return () => {
+            alive = false;
+        };
+    }, [open, learn]);
+
+    const learnCommands = useMemo<PaletteHelpCommand[]>(() => {
+        if (!learn || q.length < 2) return [];
+        return learn
+            .searchManual(q, null, (m, a) => !m.operatorOnly && !a?.operatorOnly)
+            .slice(0, MAX_ARTICLES)
+            .map((h) => ({
+                id: `learn-${h.article.id}`,
+                label: h.article.title,
+                description: sprintf(__('Centro de aprendizaje · %s'), h.module.title),
+                icon: GraduationCap,
+                section: __('Ayuda'),
+                action: afterClose(() => navigate(`/aprende/${h.module.id}/${h.article.id}`)),
+            }));
+    }, [learn, q, navigate]);
 
     const guideCommands = useMemo<PaletteHelpCommand[]>(() => {
         if (!availability.help || !guides || q.length < 2) return [];
@@ -54,6 +86,15 @@ export function usePaletteHelpCommands(
     const actions = useMemo<PaletteHelpCommand[]>(() => {
         if (!availability.help) return [];
         const out: PaletteHelpCommand[] = [
+            {
+                id: 'help-learn-center',
+                label: __('Centro de aprendizaje'),
+                description: __('Guías completas con animaciones y capturas'),
+                icon: GraduationCap,
+                section: __('Acciones'),
+                keywords: 'aprender aprende manual curso tutorial guias completas capacitacion',
+                action: afterClose(() => navigate('/aprende')),
+            },
             {
                 id: 'help-open',
                 label: __('Abrir la ayuda'),
@@ -76,7 +117,7 @@ export function usePaletteHelpCommands(
             });
         }
         return out;
-    }, [availability]);
+    }, [availability, navigate]);
 
-    return useMemo(() => ({ guides: guideCommands, actions }), [guideCommands, actions]);
+    return useMemo(() => ({ guides: [...learnCommands, ...guideCommands], actions }), [learnCommands, guideCommands, actions]);
 }
