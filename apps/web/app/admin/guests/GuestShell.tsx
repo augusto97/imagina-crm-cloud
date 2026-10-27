@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { FileText, Inbox, Info, Settings, X } from 'lucide-react';
 
 import { Topbar } from '@/admin/layout/Topbar';
+import { WhatsNewNoticeBanner } from '@/admin/whats-new/WhatsNewNoticeBanner';
 import { useSession } from '@/cloud/session';
 import { useSharedWithMe } from '@/hooks/useGuests';
 import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
@@ -93,6 +94,8 @@ export function GuestShell(): JSX.Element {
             )}
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                 <Topbar onMenuClick={() => setMobileOpen(true)} />
+                {/* Fase 7 — un invitado sólo recibe los avisos de la plataforma. */}
+                <WhatsNewNoticeBanner />
                 <div
                     role="status"
                     data-testid="guest-banner"

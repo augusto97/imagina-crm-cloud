@@ -13,6 +13,8 @@ import { ShortcutsDialog } from './ShortcutsDialog';
 import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
 import { Topbar } from '@/admin/layout/Topbar';
+import { WhatsNewHost } from '@/admin/whats-new/WhatsNewHost';
+import { WhatsNewNoticeBanner } from '@/admin/whats-new/WhatsNewNoticeBanner';
 import { __ } from '@/lib/i18n';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { CHORD_TIMEOUT_MS, isTypingTarget, resolveGoChord } from '@/lib/shortcuts';
@@ -113,6 +115,8 @@ export function AdminShell(): JSX.Element {
                     onShowShortcuts={openShortcuts}
                 />
                 <EmailVerifyBanner />
+                {/* Fase 7 — avisos de la plataforma (mantenimiento, etc.). */}
+                <WhatsNewNoticeBanner />
                 <main
                     id="imcrm-main"
                     aria-label={__('Contenido principal')}
@@ -158,6 +162,8 @@ export function AdminShell(): JSX.Element {
             <AssistantPanel />
             {/* F7 (ADR-S72) — «Primeros pasos»: widget flotante abajo a la derecha. */}
             <GettingStarted onCreateList={openCreateList} />
+            {/* Fase 7 — panel de Novedades y diálogo de destacadas. */}
+            <WhatsNewHost />
         </div>
     );
 }
