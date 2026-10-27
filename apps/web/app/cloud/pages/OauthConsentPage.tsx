@@ -164,7 +164,7 @@ function Consent({
                         ))}
                     </Select>
                     <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                        {__('El cliente actúa con TU rol en ese workspace, nunca con más permisos. Cambiarte de rol o salir del workspace lo desconecta al instante.')}
+                        {__('El cliente actúa con TU rol en esa empresa, nunca con más permisos. Cambiarte de rol o salir de la empresa lo desconecta al instante.')}
                     </p>
                 </div>
 

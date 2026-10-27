@@ -701,7 +701,7 @@ export function Sidebar({
                 </div>
 
                 <nav
-                    aria-label={__('Contenido del workspace')}
+                    aria-label={__('Contenido de la empresa')}
                     onClick={closeOnLinkActivation}
                     className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
                 >

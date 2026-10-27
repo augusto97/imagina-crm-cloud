@@ -220,7 +220,7 @@ export function PlatformTenantsCard(): JSX.Element {
                         <div className="imcrm-min-w-0">
                             <CardTitle>{__('Empresas (clientes)')}</CardTitle>
                             <CardDescription>
-                                {__('Cada fila es un workspace. Cambiar el estado a "Impaga/Cancelada" deja la cuenta en solo-lectura (los datos nunca se secuestran).')}
+                                {__('Cada fila es una empresa. Cambiar el estado a "Impaga/Cancelada" deja la cuenta en solo-lectura (los datos nunca se secuestran).')}
                             </CardDescription>
                         </div>
                     </div>

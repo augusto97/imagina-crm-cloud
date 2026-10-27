@@ -126,7 +126,7 @@ export function IntegrationsPanel(): JSX.Element | null {
             // Una tienda sincronizada deja de actualizarse, pero lo que se trajo queda.
             description:
                 c.integration_key === 'woocommerce'
-                    ? `${usage} ${__('Si la tienda se sincroniza, deja de actualizarse; las listas y sus datos quedan en tu workspace.')}`
+                    ? `${usage} ${__('Si la tienda se sincroniza, deja de actualizarse; las listas y sus datos quedan en tu empresa.')}`
                     : c.integration_key === 'sqlserver'
                       ? `${usage} ${__('Sus sincronizaciones se borran y dejan de traer datos; lo que ya se cargó en tus listas queda.')}`
                       : usage,
@@ -160,7 +160,7 @@ export function IntegrationsPanel(): JSX.Element | null {
 
             {info && !canConnect && (
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Las apps las conecta el administrador del workspace. Las que ya estén conectadas las puedes usar en tus automatizaciones.')}
+                    {__('Las apps las conecta el administrador de la empresa. Las que ya estén conectadas las puedes usar en tus automatizaciones.')}
                 </p>
             )}
 

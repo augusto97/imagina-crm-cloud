@@ -148,7 +148,7 @@ export function AuditLogPanel(): JSX.Element | null {
                     {__('Registro de actividad')}
                 </h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Quién cambió la configuración del workspace o borró datos. Los cambios de registros se ven en la actividad de cada ficha.')}
+                    {__('Quién cambió la configuración de la empresa o borró datos. Los cambios de registros se ven en la actividad de cada ficha.')}
                 </p>
             </div>
 

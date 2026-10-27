@@ -201,7 +201,7 @@ export function TemplateGallery({ onCreated, groupId }: Props): JSX.Element {
                                         <span className="imcrm-min-w-0 imcrm-flex-1">
                                             <span className="imcrm-block imcrm-truncate imcrm-text-sm imcrm-font-semibold">{t.name}</span>
                                             <span className="imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground">
-                                                {t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
+                                                {t.source === 'workspace' ? __('De la empresa') : CATEGORY_LABELS[t.category]}
                                                 {t.lists.length > 1 && ` · ${sprintf(
                                                     /* translators: %d: cantidad de listas del pack */
                                                     __('%d listas'),

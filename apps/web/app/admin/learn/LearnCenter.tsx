@@ -175,7 +175,7 @@ function Home({ visible }: { visible: (m: LearnModuleMeta, a?: LearnArticleMeta)
                             )}
                         </div>
                     </div>
-                    <div className="imcrm-hidden imcrm-max-w-[520px] lg:imcrm-block lg:imcrm-justify-self-end">
+                    <div className="imcrm-hidden imcrm-w-full imcrm-max-w-[520px] lg:imcrm-block lg:imcrm-justify-self-end">
                         <Illustration name="learn-hero" />
                     </div>
                 </div>

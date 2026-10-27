@@ -187,7 +187,7 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
                                                 icon={triggerMetaFor(t.template.trigger_type).icon}
                                                 color={TEMPLATE_CATEGORY_COLORS[t.category]}
                                                 name={t.name}
-                                                subtitle={t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
+                                                subtitle={t.source === 'workspace' ? __('De la empresa') : CATEGORY_LABELS[t.category]}
                                                 description={t.description}
                                                 meta={`${triggerMetaFor(t.template.trigger_type).title} · ${sprintf(
                                                     _n('%d acción', '%d acciones', actions.length),

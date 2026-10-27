@@ -58,11 +58,11 @@ export default function LotePapelera(): JSX.Element {
             </Win>
 
             {/* Lo que vuela a la papelera */}
-                <At x={28} y={46 + LY + RH + 4} a="lpa-fly" style={{ opacity: 0, zIndex: 9, background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, padding: '5px 9px', boxShadow: '0 12px 22px -10px rgba(15,23,42,.55)' }}>
-                    <T size={9.5} weight={600}>
-                        Hotel Brisas
-                    </T>
-                </At>
+            <At x={28} y={46 + LY + RH + 4} a="lpa-fly" style={{ opacity: 0, zIndex: 9, background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, padding: '5px 9px', boxShadow: '0 12px 22px -10px rgba(15,23,42,.55)' }}>
+                <T size={9.5} weight={600}>
+                    Hotel Brisas
+                </T>
+            </At>
             {/* La papelera */}
             <Win x={228} y={20} w={240} h={262} title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Trash2 size={10} />Ajustes · Papelera</span>}>
                 <At x={10} y={8} w={220} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

@@ -528,7 +528,7 @@ function Configured({
             <section className="imcrm-space-y-2 imcrm-rounded-lg imcrm-border imcrm-border-destructive/30 imcrm-p-5">
                 <h2 className="imcrm-text-sm imcrm-font-semibold">{__('Dejar de sincronizar')}</h2>
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Las listas y todo lo que se trajo quedan en tu workspace; sólo deja de actualizarse.')}
+                    {__('Las listas y todo lo que se trajo quedan en tu empresa; sólo deja de actualizarse.')}
                 </p>
                 <Button
                     variant="outline"

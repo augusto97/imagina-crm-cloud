@@ -652,7 +652,7 @@ export function ViewSettingsSheet({
                                     icon={Download}
                                     label={__('Exportar registros')}
                                     tour="view-settings-export"
-                                    value={__('CSV o JSON')}
+                                    value={__('Excel o CSV')}
                                     onClick={() => {
                                         onOpenChange(false);
                                         onExport();

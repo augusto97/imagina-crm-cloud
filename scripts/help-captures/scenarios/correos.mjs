@@ -66,9 +66,9 @@ export default [
             { wait: 1500 },
             { click: 'button:has-text("Recordatorio de pago")', then: FRAME, caption: 'Se abre el editor con las plantillas. Elige una para empezar, por ejemplo «Recordatorio de pago».' },
             { wait: 2500 },
-            { click: 'button[aria-label="Ver con datos de un registro"]', caption: 'A la izquierda están los bloques; al centro, el correo real. Toca el ícono de datos para verlo con una factura de verdad.' },
+            { click: 'button[aria-label="Ver con datos de un registro"]', caption: 'La plantilla llega armada: a la izquierda los bloques, al centro el correo. Los «—» los cambias por variables (Monto, Vencimiento). Toca el ícono de datos para verlo con una factura real.' },
             { wait: 3000 },
-            { click: 'button[aria-label="Celular"]', caption: 'Así le llega a ese cliente. Toca el ícono del celular para revisarlo en una pantalla chica.' },
+            { click: 'button[aria-label="Celular"]', caption: 'Así se ve con los datos de esa factura. Toca el ícono del celular para revisarlo en una pantalla chica.' },
             { wait: 2500 },
             { shot: FRAME, caption: 'En el celular el correo se acomoda solo. Cuando te guste, toca «Listo» y guarda la automatización.' },
             { run: closeDesigner },
@@ -117,6 +117,8 @@ export default [
             {
                 run: async ({ page, sleep }) => {
                     const ed = page.locator('[data-testid="signature-editor"]').first();
+                    // Sin el subrayado rojo del corrector ortográfico en la captura.
+                    await page.evaluate(() => document.querySelectorAll('[contenteditable]').forEach((el) => el.setAttribute('spellcheck', 'false')));
                     await ed.click();
                     await page.keyboard.press('Control+A');
                     await page.keyboard.press('Delete');

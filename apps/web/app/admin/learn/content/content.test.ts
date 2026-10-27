@@ -36,25 +36,31 @@ async function allContent(): Promise<Map<string, LearnArticle>> {
     return map;
 }
 
-/** Voseo y jerga que no van en textos para el usuario (ADR-S42). */
+/**
+ * Límites de palabra que entienden las letras con tilde (`\b` de JS no:
+ * «escribía» contaba como «escribí»). El voseo se reconoce por la tilde
+ * («podés»), así «puedes» o «sabes» (tuteo) no se marcan. Voseo y jerga no
+ * van en textos para el usuario (ADR-S42).
+ */
+const word = (w: string, flags = 'iu'): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])(?:${w})(?![\\p{L}\\p{N}])`, flags);
 const FORBIDDEN = [
-    /\bpod[eé]s\b/i,
-    /\bten[eé]s\b/i,
-    /\bquer[eé]s\b/i,
-    /\bsab[eé]s\b/i,
-    /\bsos\b/i,
-    /\bvos\b/i,
-    /\bac[aá]\b/,
-    /\belegí\b/i,
-    /\bhacé\b/i,
-    /\btocá\b/i,
-    /\bescribí\b/i,
-    /\bfijate\b/i,
-    /\bimagina base\b/i,
-    /\bslug\b/i,
-    /\bendpoint\b/i,
-    /\bJSON\b/,
-    /\bJSONB\b/,
+    word('podés'),
+    word('tenés'),
+    word('querés'),
+    word('sabés'),
+    word('sos'),
+    word('vos'),
+    word('acá', 'u'),
+    word('elegí'),
+    word('hacé'),
+    word('tocá'),
+    word('escribí'),
+    word('fijate'),
+    word('imagina base'),
+    word('slug'),
+    word('endpoint'),
+    word('JSON', 'u'),
+    word('JSONB', 'u'),
 ];
 
 function blockTexts(b: LearnBlock): string[] {

@@ -166,6 +166,11 @@ export const FIELD_TYPE_CATALOG: FieldTypeMeta[] = ENTRIES.map((e) => ({
     config_schema: {},
 }));
 
+/** El nombre del tipo de campo como lo ve la persona («Casilla», no `checkbox`). */
+export function fieldTypeLabel(type: string): string {
+    return FIELD_TYPE_CATALOG.find((t) => t.slug === type)?.label ?? type;
+}
+
 /**
  * Shape para catálogos VISUALES de tipos (grid con icono + label +
  * descripción — modal de creación de campos). Deriva de las mismas

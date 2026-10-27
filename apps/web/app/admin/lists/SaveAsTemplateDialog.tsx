@@ -95,7 +95,7 @@ export function SaveAsTemplateDialog({ list, open, onOpenChange }: Props): JSX.E
                         <div>
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Guardar como plantilla')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Queda en la galería del workspace para crear listas iguales a ésta.')}
+                                {__('Queda en la galería de la empresa para crear listas iguales a ésta.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
