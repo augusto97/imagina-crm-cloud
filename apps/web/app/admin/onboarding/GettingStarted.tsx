@@ -54,7 +54,7 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
     /** Abierto a pedido (menú de la persona): se muestra aunque esté oculto o completo. */
     const [forced, setForced] = useState(false);
     const [addMore, setAddMore] = useState(false);
-    const [iosHelp, setIosHelp] = useState(false);
+    const [installHelp, setInstallHelp] = useState(false);
     const [celebrating, setCelebrating] = useState(false);
     const pillRef = useRef<HTMLButtonElement>(null);
     /** Cerrar con Escape o la X devuelve el foco al botón; «Hacerlo» lo deja donde lleva. */
@@ -153,7 +153,7 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
     const samplesLeft = data.samples.reduce((n, s) => n + s.count, 0);
 
     const doStep = (step: OnboardingStep): void => {
-        const action = stepAction(step.id, data, { canPromptInstall: installMode !== null });
+        const action = stepAction(step.id, data, { appInstalled: installMode === null });
         setOpen(false);
         setForced(false);
         switch (action.kind) {
@@ -172,7 +172,7 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
                         if (ok) prefs.mutate({ mark: 'install_app' });
                     });
                 } else {
-                    setIosHelp(true);
+                    setInstallHelp(true);
                 }
         }
     };
@@ -277,7 +277,14 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
                     <WelcomeDialog open={addMore} onOpenChange={setAddMore} initialPath={aiReady ? 'ai' : 'choose'} onCreated={finishWelcome} />
                 </Suspense>
             )}
-            {iosHelp && <InstallAppDialog open={iosHelp} onOpenChange={setIosHelp} appName={currentAppName()} />}
+            {installHelp && (
+                <InstallAppDialog
+                    open={installHelp}
+                    onOpenChange={setInstallHelp}
+                    appName={currentAppName()}
+                    onInstalled={() => prefs.mutate({ mark: 'install_app' })}
+                />
+            )}
         </>
     );
 }

@@ -4141,6 +4141,17 @@ las llaves VAPID de la instalación). Un navegador que cambia la suscripción co
 la app cerrada se re-vincula recién al volver a abrirla. Quedan fuera el modo
 offline (H2), el push al portal del cliente y el logo de la empresa como ícono.
 
+**Addendum v0.1.321 — instalar sin depender del aviso del navegador.** «Instalar
+la app» sólo aparecía cuando el navegador disparaba `beforeinstallprompt`, y eso
+no pasa en Firefox ni en Safari, ni en Chrome/Edge si la persona cerró el aviso
+o la app ya está instalada en el equipo: en esos casos no había ningún lugar que
+explicara cómo instalarla. Ahora la opción está SIEMPRE (menú de la persona y la
+tarjeta «App en este dispositivo» en Ajustes → Cuenta → Avisos) salvo cuando la
+app ya corre instalada: con el aviso del navegador abre su ventana, y sin él
+muestra los pasos para ese navegador y sistema (`installGuide`, puro y
+testeado; selector para ver los de otro dispositivo). En Firefox de escritorio
+dice que no instala y sugiere Chrome, Edge o Safari. Sin cambios de servidor.
+
 ---
 
 ### ADR-S69 — WhatsApp Business oficial (Meta Cloud API), sin bandeja de chat (v0.1.315)
@@ -4476,4 +4487,4 @@ es poco y vive en Redis). Dejar que el operador edite las guías del sistema
 
 ---
 
-**Versión del documento:** 1.117.0 (ayuda dentro de la app)
+**Versión del documento:** 1.117.1 (instalar la app desde cualquier navegador)

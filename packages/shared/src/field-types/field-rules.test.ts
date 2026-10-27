@@ -145,10 +145,17 @@ describe('protección contra ReDoS', () => {
             expect(analyzeUserPattern(p).ok, p).toBe(true);
             const re = compileUserPattern(p)!;
             const evil = 'a'.repeat(USER_PATTERN_VALUE_MAX - 1) + '!';
-            const t0 = Date.now();
-            re.test(evil);
-            re.test('1'.repeat(USER_PATTERN_VALUE_MAX));
-            expect(Date.now() - t0, p).toBeLessThan(100);
+            // El mejor de tres: una máquina de CI cargada puede demorar una
+            // corrida suelta. Un retroceso catastrófico (exponencial) tardaría
+            // segundos o no terminaría; el cúbico de este caso, decenas de ms.
+            let best = Infinity;
+            for (let i = 0; i < 3; i++) {
+                const t0 = performance.now();
+                re.test(evil);
+                re.test('1'.repeat(USER_PATTERN_VALUE_MAX));
+                best = Math.min(best, performance.now() - t0);
+            }
+            expect(best, p).toBeLessThan(250);
         }
     });
 

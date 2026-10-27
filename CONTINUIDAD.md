@@ -372,8 +372,8 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.320**
-(guías, recorridos y centro de ayuda; con esto la fase 7 queda completa), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.321**
+(«Instalar la app» siempre visible, con los pasos para cada navegador), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-26 — **Fase 7 completa: «hacer la app súper fácil de entender»**
@@ -784,6 +784,26 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.320**
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-27 · v0.1.321** — **«Instalar la app» siempre visible** (addendum
+  de ADR-S68). Pregunta del usuario: "¿cómo se activa lo del PWA? No hay ningún
+  lado que lo indique". Se verificó `base.imagina.cloud` con Chromium: manifiesto,
+  íconos y service worker correctos, cero errores de instalabilidad; el problema
+  era sólo de interfaz: la opción del menú dependía de `beforeinstallprompt`,
+  que Firefox y Safari nunca disparan y Chrome/Edge dejan de disparar si se
+  cerró el aviso o ya está instalada. Ahora está siempre en el menú y en la
+  tarjeta nueva **«App en este dispositivo»** (Ajustes → Cuenta → Avisos, arriba
+  de las notificaciones): con el aviso del navegador, un clic; sin él, los pasos
+  para Chrome/Edge/Safari en el Mac/Android/iPhone (Firefox: no instala, sugiere
+  otro), con selector para ver los de otro dispositivo; ya instalada, lo dice.
+  «Primeros pasos → Instala la app» abre lo mismo (antes llevaba a Seguridad).
+  Guía y recorrido «Instalar la app» corregidos (el recorrido apunta a la
+  tarjeta), novedad en el catálogo. 6 tests nuevos del front + E2E navegador
+  23/23 (Chrome con y sin aviso, Firefox, iPhone oscuro, ya instalada).
+  El CI atrapó que `whats-new.spec` tenía cableada la destacada de cada rol:
+  la novedad nueva sacó a la de v0.1.314 de las seis anunciadas. Ahora la
+  esperada se calcula del catálogo (como el «sin ver») y la prueba de «se
+  presenta una sola vez» usa una destacada propia — sumar novedades ya no la
+  rompe.
 - **2026-10-27 · v0.1.320** — **Guías, recorridos interactivos y centro de
   ayuda** (ADR-S74, opción I7 ampliada; tercera y última entrega de la fase 7).
   Recorridos con motor propio: «welcome» adaptado al rol (13 pasos para un
@@ -805,7 +825,10 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.320**
   el PR de v0.1.319 el CI cortó un test de shared que comprimía 60 MB (la
   «bomba de compresión» del lector de Excel) y pasaba de los 5 s en el runner:
   ahora usa 16 MB y tope de 30 s. Verificación: shared 545, front 626, specs
-  del área 117/117 y E2E 75/75 + 21/21 con las tres piezas juntas.
+  del área 117/117 y E2E 75/75 + 21/21 con las tres piezas juntas. En el CI
+  de este PR falló al azar un test del portal: el `created_at` de una fila
+  terminó en `.900Z` y la prueba buscaba `'900'` (el valor oculto) en el JSON;
+  ahora usa valores de seis dígitos, que no pueden aparecer en una hora.
 - **2026-10-27 · v0.1.319** — **Novedades** (ADR-S73, segunda entrega de la
   fase 7, con los avisos de plataforma de I9). Megáfono «Novedades» junto a la
   campana, con panel, página `/novedades`, destacadas en un diálogo y avisos en

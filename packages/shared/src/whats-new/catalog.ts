@@ -271,4 +271,19 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ver el recorrido', href: '/lists', tour: 'welcome' },
     },
+    {
+        key: 'v0.1.321-instalar-la-app',
+        version: '0.1.321',
+        date: '2026-10-27',
+        kind: 'improvement',
+        title: 'Instalar la app, en cualquier navegador',
+        summary:
+            '«Instalar la app» ahora está siempre en el menú de tu perfil y en Ajustes → Cuenta → Avisos, con los pasos para tu navegador.',
+        body: [
+            'Si tu navegador la instala con un clic, verás **Instalar ahora**. Si no, te mostramos los pasos exactos para tu navegador: Chrome, Edge, Safari en el Mac, Android, iPhone o iPad.',
+            '',
+            'También puedes ver los pasos para otro dispositivo, por ejemplo para explicarle a tu equipo cómo instalarla en el teléfono.',
+        ].join('\n'),
+        action: { label: 'Ver cómo instalarla', href: '/settings?s=avisos' },
+    },
 ];

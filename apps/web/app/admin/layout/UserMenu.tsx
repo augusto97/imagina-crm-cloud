@@ -39,7 +39,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
     const { memberships, active, locked } = useWorkspaces();
     const theme = useTheme();
     const installMode = useInstallMode();
-    const [iosHelp, setIosHelp] = useState(false);
+    const [installHelp, setInstallHelp] = useState(false);
     const helpAvailable = useHelpAvailability();
     // Fase 7 — en el teléfono «Novedades» vive aquí (la barra no tiene lugar).
     const isGuest = useIsGuest();
@@ -163,8 +163,9 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                 {installMode !== null && (
                     <DropdownMenuItem
                         onSelect={() => {
+                            // v0.1.321 — con la ventana del navegador si la ofrece; si no, los pasos de este navegador.
                             if (installMode === 'prompt') void promptInstall();
-                            else window.setTimeout(() => setIosHelp(true), 0);
+                            else window.setTimeout(() => setInstallHelp(true), 0);
                         }}
                         data-testid="user-menu-install"
                     >
@@ -197,7 +198,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
-        {iosHelp && <InstallAppDialog open={iosHelp} onOpenChange={setIosHelp} appName={currentAppName()} />}
+        {installHelp && <InstallAppDialog open={installHelp} onOpenChange={setInstallHelp} appName={currentAppName()} />}
         </>
     );
 }

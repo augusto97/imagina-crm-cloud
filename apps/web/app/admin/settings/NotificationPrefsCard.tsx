@@ -1,6 +1,7 @@
 import { Bell, BellRing, Mail } from 'lucide-react';
 import { NOTIFICATION_KIND_LABELS, NOTIFICATION_KINDS, type NotificationKind } from '@imagina-base/shared';
 
+import { InstallAppCard } from '@/admin/settings/InstallAppCard';
 import { PushDeviceCard } from '@/admin/settings/PushDeviceCard';
 import { activeMembership } from '@/cloud/session';
 import { Card, CardContent } from '@/components/ui/card';
@@ -47,6 +48,8 @@ export function NotificationPrefsCard(): JSX.Element {
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">{__('Cargando…')}</p>
             ) : (
                 <>
+                    {/* v0.1.321 — instalar la app aquí (en el iPhone, condición para los avisos push). */}
+                    <InstallAppCard />
                     {/* H1 — las notificaciones push de este dispositivo. */}
                     <PushDeviceCard />
 

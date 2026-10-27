@@ -9756,6 +9756,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto la fase 7 queda completa: empezar fácil, novedades y la
         ayuda dentro de la app.**
 
+  - [x] **«Instalar la app» siempre visible (v0.1.321, addendum de ADR-S68,
+        pregunta del usuario: "¿cómo se activa lo del PWA? No hay ningún lado
+        que lo indique")**: la app ya era instalable —verificado contra
+        `base.imagina.cloud` con Chromium: manifiesto, íconos y service worker
+        correctos, cero errores de instalabilidad—, pero la opción del menú sólo
+        aparecía cuando el navegador disparaba `beforeinstallprompt`, que
+        Firefox y Safari nunca disparan y Chrome/Edge dejan de disparar si se
+        cerró el aviso o la app ya está en el equipo. Ahora (a) **«Instalar la
+        app» está siempre en el menú de la persona** salvo que la app ya corra
+        instalada (`useInstallMode`: `prompt` | `help` | null): con el aviso
+        del navegador abre su ventana; sin él, un diálogo con los pasos para ESE
+        navegador y sistema (`lib/pwa/installGuide.ts`, puro: Chrome y Edge en
+        el computador, Safari en el Mac —Agregar al Dock—, Android con Chrome,
+        Samsung Internet, Firefox y Edge, iPhone/iPad en Safari o en otro
+        navegador; Firefox de escritorio dice que no instala y sugiere otro),
+        con selector para ver los de otro dispositivo, y «Instalar ahora» si el
+        aviso llega con el diálogo abierto; (b) **tarjeta «App en este
+        dispositivo»** en Ajustes → Cuenta → Avisos, arriba de las
+        notificaciones (`data-tour="install-card"`): botón de un clic, los
+        pasos, o «Estás usando la app instalada» con los pasos para otro
+        dispositivo; (c) «Primeros pasos → Instala la app» abre lo mismo (antes
+        llevaba a Seguridad) y, ya instalada, lleva a activar los avisos; (d) la
+        guía y el recorrido «Instalar la app» corregidos (el recorrido apunta a
+        la tarjeta) y la novedad en el catálogo. Sin cambios de servidor. 6
+        tests nuevos del front (632 en verde) + E2E navegador 23/23 (Chrome con
+        y sin aviso, Firefox, iPhone en oscuro, ya instalada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

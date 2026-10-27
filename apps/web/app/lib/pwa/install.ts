@@ -7,9 +7,12 @@ import { deviceInfo } from './platform';
  *
  * Chrome/Edge/Android avisan que la app se puede instalar con
  * `beforeinstallprompt`: se guarda el evento (hay que escucharlo ANTES de
- * montar React — llega temprano) y el menú de la persona ofrece «Instalar la
- * app». En iPhone/iPad no hay evento: se muestran las instrucciones de
- * Safari (Compartir → Agregar a inicio).
+ * montar React — llega temprano) y «Instalar la app» abre esa ventana.
+ *
+ * v0.1.321 — cuando el navegador NO avisa (Firefox, Safari, o Chrome/Edge
+ * con el aviso ya cerrado o la app ya instalada en el equipo), la opción se
+ * muestra IGUAL y abre los pasos para ese navegador (`installGuide`): antes
+ * no aparecía en ningún lado. Sólo se oculta si la app ya corre instalada.
  */
 interface BeforeInstallPromptEvent extends Event {
     prompt: () => Promise<void>;
@@ -36,17 +39,15 @@ export function captureInstallPrompt(win: Window = window): void {
     });
 }
 
-export type InstallMode = 'prompt' | 'ios' | null;
+/** `prompt`: la ventana del navegador; `help`: los pasos para este navegador; null: ya corre instalada. */
+export type InstallMode = 'prompt' | 'help' | null;
 
 function snapshot(): string {
-    const info = deviceInfo();
-    if (installed || info.standalone) return 'none';
-    if (deferred) return 'prompt';
-    if (info.ios) return 'ios';
-    return 'none';
+    if (installed || deviceInfo().standalone) return 'none';
+    return deferred ? 'prompt' : 'help';
 }
 
-/** Cómo se instala aquí: con el diálogo del navegador, con instrucciones de iOS, o no se puede/ya está. */
+/** Cómo se instala aquí: con la ventana del navegador, con los pasos de este navegador, o ya está instalada. */
 export function useInstallMode(): InstallMode {
     const v = useSyncExternalStore(
         (cb) => {

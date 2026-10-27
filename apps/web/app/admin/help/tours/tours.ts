@@ -580,10 +580,10 @@ export const TOURS: TourDef[] = [
         steps: [
             {
                 id: 'install',
-                target: 'topbar-user',
-                placement: 'bottom',
+                route: '/settings?s=avisos',
+                target: 'install-card',
                 title: 'Instala la app',
-                body: 'Abre tu menú y elige **Instalar la app**: queda como una aplicación más. En iPhone se instala desde Safari con **Compartir → Agregar a inicio**.',
+                body: 'Aquí la instalas en este dispositivo: con un clic si tu navegador lo permite, o con los pasos para tu navegador. También está en tu menú → **Instalar la app**.',
             },
             {
                 id: 'push',

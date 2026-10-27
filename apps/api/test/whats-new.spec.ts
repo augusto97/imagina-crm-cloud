@@ -43,6 +43,22 @@ function firstArrivalUnseenFor(role: string): number {
     return WHATS_NEW_CATALOG.filter((e) => announced.has(e.key) && (!e.audience?.roles?.length || e.audience.roles.includes(role as never))).length;
 }
 
+/**
+ * La destacada que le toca a ese rol en la primera llegada (o null): la más
+ * reciente entre las anunciadas, como la elige el servicio. Se calcula del
+ * catálogo para que sumar una novedad no rompa la prueba.
+ */
+function firstArrivalFeaturedFor(role: string): string | null {
+    const now = new Date();
+    const { entries } = parseCatalog(WHATS_NEW_CATALOG, now);
+    const announced = new Set(planCatalogSync({ existing: [], catalog: entries, now }).announced);
+    const candidates = WHATS_NEW_CATALOG.map((e, index) => ({ e, index })).filter(
+        ({ e }) => e.featured && e.kind !== 'notice' && announced.has(e.key) && (!e.audience?.roles?.length || e.audience.roles.includes(role as never)),
+    );
+    candidates.sort((a, b) => (a.e.date === b.e.date ? b.index - a.index : a.e.date < b.e.date ? 1 : -1));
+    return candidates[0]?.e.key ?? null;
+}
+
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c30000000049454e44ae426082', 'hex');
 
 describe('Novedades — sincronización pura', () => {
@@ -148,15 +164,15 @@ describe('Novedades (Postgres real)', () => {
         expect(adminFeed.items).toHaveLength(WHATS_NEW_CATALOG.length);
         expect(adminFeed.unseen_count).toBe(FIRST_ARRIVAL_NEW);
         expect(adminFeed.items.filter((i) => i.is_new)).toHaveLength(FIRST_ARRIVAL_NEW);
-        // La destacada más reciente para un admin: los agentes de IA.
-        expect(adminFeed.featured?.key).toBe('v0.1.317-agentes-ia');
+        // La destacada: la más reciente de las anunciadas que el rol puede ver.
+        expect(adminFeed.featured?.key ?? null).toBe(firstArrivalFeaturedFor('admin'));
 
         const agentFeed = await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 });
         // Un agente no ve lo que sólo configura un admin.
         expect(agentFeed.items.some((i) => i.key === 'v0.1.317-agentes-ia')).toBe(false);
         expect(agentFeed.items.every((i) => i.key !== 'v0.1.304-formulas-y-botones')).toBe(true);
         expect(agentFeed.unseen_count).toBe(firstArrivalUnseenFor('agent'));
-        expect(agentFeed.featured?.key).toBe('v0.1.314-app-instalable');
+        expect(agentFeed.featured?.key ?? null).toBe(firstArrivalFeaturedFor('agent'));
 
         // Un invitado no ve funciones nuevas (sólo avisos).
         const guestFeed = await svc.feed(viewer(guest, 'guest'), { limit: 100 });
@@ -173,7 +189,8 @@ describe('Novedades (Postgres real)', () => {
     });
 
     it('una actualización trae su novedad como nueva, aunque la versión haya salido hace semanas', async () => {
-        const res = await sync.sync([...WHATS_NEW_CATALOG, extra('9.0.0', { date: '2026-01-15' })], daysAgo(5));
+        // Destacada: la prueba de «se presenta una sola vez» la usa (no depende del catálogo).
+        const res = await sync.sync([...WHATS_NEW_CATALOG, extra('9.0.0', { date: '2026-01-15', featured: true })], daysAgo(5));
         expect(res).toMatchObject({ inserted: 1, announced: ['v9.0.0-prueba'] });
         const feed = await svc.feed(viewer(lateUser, 'admin'), { limit: 5 });
         // La fecha que se muestra es la de la versión; «nueva» cuenta desde que llegó.
@@ -225,7 +242,8 @@ describe('Novedades (Postgres real)', () => {
 
     it('la destacada se presenta una sola vez a cada persona', async () => {
         const f1 = await svc.feed(viewer(oldAgent, 'agent'), { limit: 1 });
-        expect(f1.featured?.key).toBe('v0.1.314-app-instalable');
+        // La que llegó con la última actualización va primero.
+        expect(f1.featured?.key).toBe('v9.0.0-prueba');
         await svc.event(viewer(oldAgent, 'agent'), f1.featured!.id, 'presented');
         const f2 = await svc.feed(viewer(oldAgent, 'agent'), { limit: 1 });
         expect(f2.featured).toBeNull();
