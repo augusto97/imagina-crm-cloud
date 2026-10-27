@@ -246,9 +246,19 @@ describe('Novedades (Postgres real)', () => {
         expect(f1.featured?.key).toBe('v9.0.0-prueba');
         await svc.event(viewer(oldAgent, 'agent'), f1.featured!.id, 'presented');
         const f2 = await svc.feed(viewer(oldAgent, 'agent'), { limit: 1 });
-        expect(f2.featured).toBeNull();
+        // Si el catálogo trae otras destacadas, aparece la siguiente, nunca la misma.
+        expect(f2.featured?.key ?? null).not.toBe('v9.0.0-prueba');
         // Presentarla también la marca como vista.
         expect(f2.unseen_count).toBe(f1.unseen_count - 1);
+        // Presentando todas, cada una sale una sola vez y al final no queda ninguna.
+        const shown = new Set<string>(['v9.0.0-prueba']);
+        let next = f2.featured;
+        while (next) {
+            expect(shown.has(next.key)).toBe(false);
+            shown.add(next.key);
+            await svc.event(viewer(oldAgent, 'agent'), next.id, 'presented');
+            next = (await svc.feed(viewer(oldAgent, 'agent'), { limit: 1 })).featured;
+        }
     });
 
     it('avisos: franja hasta que se cierra o vence; un invitado los ve; público por rol y plan', async () => {
