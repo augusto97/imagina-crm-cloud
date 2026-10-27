@@ -302,4 +302,19 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Abrir el centro', href: '/aprende' },
     },
+    {
+        key: 'v0.1.323-ideas-para-tu-negocio',
+        version: '0.1.323',
+        date: '2026-10-27',
+        kind: 'feature',
+        title: 'Ideas para tu negocio, listas para activar',
+        summary:
+            'Casi 40 casos de uso reales —recordatorios de pago, avisos por WhatsApp, agendas, tableros— que se activan sobre tus listas con un clic.',
+        body: [
+            'Encuéntralas en **Aprende → Ideas para tu negocio**. Cada idea te cuenta qué resuelve, cómo funciona paso a paso y qué se crea.',
+            '',
+            'Al activarla, elegimos la lista y los campos por ti (los puedes cambiar) y te preguntamos lo justo: a quién avisar, cuántos días antes. En las **Automatizaciones** de cada lista verás las ideas que encajan con ella.',
+        ].join('\n'),
+        action: { label: 'Ver las ideas', href: '/ideas' },
+    },
 ];

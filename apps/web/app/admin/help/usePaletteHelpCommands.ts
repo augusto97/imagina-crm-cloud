@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { BookOpen, CircleHelp, Compass, GraduationCap, type LucideIcon } from 'lucide-react';
+import { BookOpen, CircleHelp, Compass, GraduationCap, Lightbulb, type LucideIcon } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 
@@ -23,6 +23,8 @@ const MAX_GUIDES = 4;
 const MAX_ARTICLES = 4;
 
 type LearnRegistry = typeof import('@/admin/learn/content/registry');
+type IdeasCatalog = typeof import('@/admin/ideas/catalog');
+const MAX_IDEAS = 3;
 
 /** Se ejecuta cuando la paleta terminó de cerrarse (si no, le devuelve el foco a su botón). */
 function afterClose(fn: () => void): () => void {
@@ -55,6 +57,32 @@ export function usePaletteHelpCommands(
             alive = false;
         };
     }, [open, learn]);
+
+    // v0.1.323 — las ideas también aparecen al buscar («cobrar», «whatsapp»…).
+    const [ideas, setIdeas] = useState<IdeasCatalog | null>(null);
+    useEffect(() => {
+        if (!open || ideas) return;
+        let alive = true;
+        void import('@/admin/ideas/catalog').then((m) => alive && setIdeas(m));
+        return () => {
+            alive = false;
+        };
+    }, [open, ideas]);
+
+    const ideaCommands = useMemo<PaletteHelpCommand[]>(() => {
+        if (!ideas || q.length < 3) return [];
+        return ideas
+            .searchIdeas(q)
+            .slice(0, MAX_IDEAS)
+            .map((i) => ({
+                id: `idea-${i.id}`,
+                label: i.title,
+                description: __('Idea para tu negocio · se activa con un clic'),
+                icon: Lightbulb,
+                section: __('Ayuda'),
+                action: afterClose(() => navigate(`/ideas/${i.id}`)),
+            }));
+    }, [ideas, q, navigate]);
 
     const learnCommands = useMemo<PaletteHelpCommand[]>(() => {
         if (!learn || q.length < 2) return [];
@@ -96,6 +124,15 @@ export function usePaletteHelpCommands(
                 action: afterClose(() => navigate('/aprende')),
             },
             {
+                id: 'help-ideas',
+                label: __('Ideas para tu negocio'),
+                description: __('Casos de uso listos para activar'),
+                icon: Lightbulb,
+                section: __('Acciones'),
+                keywords: 'ideas recetas ejemplos casos de uso inspiracion automatizar que puedo hacer',
+                action: afterClose(() => navigate('/ideas')),
+            },
+            {
                 id: 'help-open',
                 label: __('Abrir la ayuda'),
                 description: __('Guías rápidas, recorridos y soporte'),
@@ -119,5 +156,5 @@ export function usePaletteHelpCommands(
         return out;
     }, [availability, navigate]);
 
-    return useMemo(() => ({ guides: [...learnCommands, ...guideCommands], actions }), [learnCommands, guideCommands, actions]);
+    return useMemo(() => ({ guides: [...ideaCommands, ...learnCommands, ...guideCommands], actions }), [ideaCommands, learnCommands, guideCommands, actions]);
 }

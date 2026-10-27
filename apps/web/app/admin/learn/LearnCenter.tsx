@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock, GraduationCap, Lock, Menu, Megaphone, PlayCircle, Search, ShieldAlert, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock, GraduationCap, Lightbulb, Lock, Menu, Megaphone, PlayCircle, Search, ShieldAlert, Sparkles, X } from 'lucide-react';
 
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useHelpViewer } from '@/admin/help/useHelpData';
@@ -180,6 +180,31 @@ function Home({ visible }: { visible: (m: LearnModuleMeta, a?: LearnArticleMeta)
                     </div>
                 </div>
             </section>
+
+            <Link
+                to="/ideas"
+                className="imcrm-group imcrm-grid imcrm-items-center imcrm-gap-4 imcrm-overflow-hidden imcrm-rounded-2xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 hover:imcrm-border-primary/40 hover:imcrm-shadow-imcrm-lg sm:imcrm-grid-cols-[1fr_260px] sm:imcrm-p-6"
+                style={{ background: `radial-gradient(70% 140% at 0% 0%, ${toneColor('amber', 0.16)}, transparent 60%), hsl(var(--imcrm-card))` }}
+                data-testid="learn-ideas-banner"
+            >
+                <span className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                    <span className="imcrm-inline-flex imcrm-w-fit imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-bg-amber-500/15 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-semibold imcrm-text-amber-700 dark:imcrm-text-amber-300">
+                        <Lightbulb className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Ideas para tu negocio')}
+                    </span>
+                    <span className="imcrm-text-lg imcrm-font-semibold">{__('¿No sabes qué automatizar? Mira lo que otras empresas ya hacen')}</span>
+                    <span className="imcrm-text-sm imcrm-text-muted-foreground">
+                        {__('Recordatorios de pago, avisos por WhatsApp, agendas, tableros de ventas y más: cada idea se activa sobre tus listas con un clic.')}
+                    </span>
+                    <span className="imcrm-mt-1 imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-sm imcrm-font-medium imcrm-text-primary">
+                        {__('Ver las ideas')}
+                        <ArrowRight className="imcrm-h-4 imcrm-w-4 imcrm-transition-transform group-hover:imcrm-translate-x-0.5" aria-hidden />
+                    </span>
+                </span>
+                <span className="imcrm-pointer-events-none imcrm-hidden sm:imcrm-block">
+                    <Illustration name="cobro-automatizar" />
+                </span>
+            </Link>
 
             {start && (
                 <section className="imcrm-flex imcrm-flex-col imcrm-gap-4" aria-labelledby="learn-start">

@@ -85,7 +85,7 @@ function railSectionFromPath(pathname: string): RailSection {
     if (pathname.startsWith('/favorites')) return 'favorites';
     if (pathname.startsWith('/dashboards')) return 'dashboards';
     if (pathname.startsWith('/agents')) return 'agents';
-    if (pathname.startsWith('/aprende')) return 'learn';
+    if (pathname.startsWith('/aprende') || pathname.startsWith('/ideas')) return 'learn';
     if (pathname.startsWith('/settings')) return 'settings';
     if (pathname.startsWith('/platform')) return 'platform';
     return 'home';

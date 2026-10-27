@@ -1,22 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import {
-    BookOpen,
-    ChevronDown,
-    ChevronRight,
-    Compass,
-    ExternalLink,
-    GraduationCap,
-    Keyboard,
-    LifeBuoy,
-    Mail,
-    Megaphone,
-    MessageCircle,
-    PlayCircle,
-    Rocket,
-    Search,
-    X,
-} from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, Compass, ExternalLink, GraduationCap, Keyboard, LifeBuoy, Lightbulb, Mail, Megaphone, MessageCircle, PlayCircle, Rocket, Search, X } from 'lucide-react';
 import { helpScreensFor, whatsappDigits, type HelpSupport } from '@imagina-base/shared';
 
 import { Sheet, SheetCloseButton, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
@@ -208,6 +192,24 @@ export function HelpPanel({
                                     <span className="imcrm-text-sm imcrm-font-semibold">{__('Centro de aprendizaje')}</span>
                                     <span className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
                                         {__('Guías completas de cada parte de la app, con animaciones y capturas paso a paso.')}
+                                    </span>
+                                </span>
+                                <ChevronRight className="imcrm-ml-auto imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => goTo('/ideas')}
+                                data-testid="help-ideas"
+                                className="-imcrm-mt-4 imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-amber-500/30 imcrm-p-3.5 imcrm-text-left hover:imcrm-border-amber-500/60 focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                                style={{ background: 'linear-gradient(120deg, hsl(var(--imcrm-tone-amber) / .14), hsl(var(--imcrm-primary) / .06))' }}
+                            >
+                                <span className="imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-amber-500 imcrm-text-white">
+                                    <Lightbulb className="imcrm-h-5 imcrm-w-5" aria-hidden />
+                                </span>
+                                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
+                                    <span className="imcrm-text-sm imcrm-font-semibold">{__('Ideas para tu negocio')}</span>
+                                    <span className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
+                                        {__('Casos de uso listos: recordatorios de pago, avisos por WhatsApp, agendas… y se activan con un clic.')}
                                     </span>
                                 </span>
                                 <ChevronRight className="imcrm-ml-auto imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />

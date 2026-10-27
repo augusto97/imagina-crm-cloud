@@ -1,24 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import {
-    AlertCircle,
-    ArrowLeft,
-    ArrowRight,
-    CopyPlus,
-    History,
-    Hourglass,
-    LayoutTemplate,
-    MoreHorizontal,
-    Plus,
-    Trash2,
-    Zap,
-} from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, CopyPlus, History, Hourglass, LayoutTemplate, Lightbulb, MoreHorizontal, Plus, Trash2, Zap } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { IdeasForList } from '@/admin/ideas/IdeasForList';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -172,6 +161,12 @@ export function AutomationsPage(): JSX.Element {
                             {__('En blanco')}
                         </Link>
                     </Button>
+                    <Button asChild variant="ghost" className="imcrm-gap-2" data-testid="automations-ideas-btn">
+                        <Link to="/ideas">
+                            <Lightbulb className="imcrm-h-4 imcrm-w-4 imcrm-text-amber-500" />
+                            {__('Ideas')}
+                        </Link>
+                    </Button>
                 </div>
             </header>
 
@@ -229,6 +224,8 @@ export function AutomationsPage(): JSX.Element {
                     }
                 />
             )}
+
+            {!automations.isLoading && <IdeasForList list={list.data} fields={fields.data ?? []} />}
 
             <AutomationTemplateDialog
                 open={templatesOpen}

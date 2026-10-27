@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { Check, GraduationCap } from 'lucide-react';
+import { Check, GraduationCap, Lightbulb } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -16,10 +16,13 @@ export function LearnNav({
     current,
     currentArticle,
     visible,
+    ideasActive = false,
 }: {
     current?: string;
     currentArticle?: string;
     visible: (m: LearnModuleMeta, a?: LearnArticleMeta) => boolean;
+    /** v0.1.323 — la galería de ideas vive en la misma sección del riel. */
+    ideasActive?: boolean;
 }): JSX.Element {
     const { isRead } = useLearnProgress();
     return (
@@ -28,12 +31,24 @@ export function LearnNav({
                 to="/aprende"
                 className={cn(
                     'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-px-2 imcrm-py-1.5 imcrm-text-sm imcrm-font-semibold hover:imcrm-bg-accent',
-                    !current && 'imcrm-bg-accent',
+                    !current && !ideasActive && 'imcrm-bg-accent',
                 )}
                 data-testid="learn-nav-home"
             >
                 <GraduationCap className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" aria-hidden />
                 {__('Centro de aprendizaje')}
+            </Link>
+            <Link
+                to="/ideas"
+                className={cn(
+                    '-imcrm-mt-3 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-px-2 imcrm-py-1.5 imcrm-text-sm imcrm-font-semibold hover:imcrm-bg-accent',
+                    ideasActive && 'imcrm-bg-accent',
+                )}
+                data-testid="learn-nav-ideas"
+                data-tour="learn-ideas-link"
+            >
+                <Lightbulb className="imcrm-h-4 imcrm-w-4 imcrm-text-amber-500" aria-hidden />
+                {__('Ideas para tu negocio')}
             </Link>
             {LEARN_GROUPS.map((g) => {
                 const mods = LEARN_MODULES.filter((m) => m.group === g.id && visible(m));
@@ -93,6 +108,7 @@ export function LearnNav({
 /** El índice del manual dentro del panel lateral de la app (sección «Aprende» del riel). */
 export default function LearnPanelNav({ pathname }: { pathname: string }): JSX.Element {
     const visible = useLearnVisibility();
+    if (pathname.startsWith('/ideas')) return <LearnNav visible={visible} ideasActive />;
     const [, , moduleId, articleId] = pathname.split('/');
     return <LearnNav current={moduleId} currentArticle={articleId} visible={visible} />;
 }
