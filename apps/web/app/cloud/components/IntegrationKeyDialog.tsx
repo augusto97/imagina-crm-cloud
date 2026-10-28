@@ -327,7 +327,7 @@ export function IntegrationKeyDialog({
                             <p className="imcrm-text-xs imcrm-text-warning">{check.warning}</p>
                         )}
                         {error && (
-                            <p className="imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-integration-error">
+                            <p className="imcrm-whitespace-pre-wrap imcrm-break-words imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-integration-error">
                                 {error}
                             </p>
                         )}

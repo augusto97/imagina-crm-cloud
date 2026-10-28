@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { explainSqlError, resolveProcedureParams, sqlConnParams } from '../src/connectors/sqlserver/sql-runner';
-import { MssqlRunner } from '../src/connectors/sqlserver/mssql-runner';
+import { createServer, type Server } from 'node:net';
+import { explainSqlError, isTransientConnectError, resolveProcedureParams, sqlConnParams } from '../src/connectors/sqlserver/sql-runner';
+import { MssqlRunner, probeTcp } from '../src/connectors/sqlserver/mssql-runner';
 import { findColumn, sqlCellToText, suggestFieldType } from '../src/connectors/sqlserver/sql-values';
 
 /** Un `datetime` sin zona como lo entrega el driver con useUTC: la hora de pared en los campos UTC. */
@@ -147,5 +148,110 @@ describe('SQL Server — datos de la conexión (v0.1.243)', () => {
         await expect(runner.run(conn, { kind: 'query', sql: 'SELECT * FROM t WHERE' }, { maxRows: 10, timeoutMs: 1000, lastSync: null })).rejects.toThrow(/sintaxis/);
         expect(rolledBackEarly).toBe(false);
         expect(Date.now() - started).toBeLessThan(2000);
+    });
+});
+
+describe('SQL Server — diagnóstico de una conexión que falla (v0.1.330)', () => {
+    const conn = sqlConnParams({ server: '127.0.0.1', database: 'db', user: 'u' }, 'p');
+    const timeoutErr = () => Object.assign(new Error('Failed to connect to 127.0.0.1:1433 in 30000ms'), { code: 'ETIMEOUT' });
+
+    /** Un driver falso cuyo `connect` falla con lo que se le pase (por intento). */
+    function fakeDriver(failures: unknown[]) {
+        let n = 0;
+        const fake = {
+            ConnectionPool: class {
+                async connect() {
+                    const f = failures[n++];
+                    if (f) throw f;
+                }
+                async close() {}
+            },
+            Transaction: class { async begin() {} async rollback() {} },
+            Request: class {
+                stream = false;
+                private h: Record<string, (x?: unknown) => void> = {};
+                input(): this { return this; }
+                on(ev: string, cb: (x?: unknown) => void): this { this.h[ev] = cb; return this; }
+                cancel(): void {}
+                query(): void { setTimeout(() => this.h.done?.(), 1); }
+                execute(): void {}
+            },
+            DateTime2: 'DateTime2',
+        };
+        return { fake, attempts: () => n };
+    }
+
+    it('la base no responde nada: lo dice, con los intentos, y aclara que no es la consulta', async () => {
+        const { fake, attempts } = fakeDriver([timeoutErr(), timeoutErr(), timeoutErr()]);
+        const runner = new MssqlRunner({
+            allowPrivate: true,
+            load: async () => fake as never,
+            probe: async () => ({ status: 'timeout', ms: 6000 }),
+            retryDelaysMs: [1, 1],
+            connectTimeoutMs: 30_000,
+        });
+        const err = await runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null }).then(
+            () => { throw new Error('no falló'); },
+            (e: Error) => e,
+        );
+        expect(attempts()).toBe(3);
+        expect((err as unknown as { code: string }).code).toBe('connect');
+        expect(err.message).toContain('la base de datos no respondió nada');
+        expect(err.message).toContain('El puerto 1433: no respondió en 6 s');
+        expect(err.message).toContain('Intentos: 3');
+        expect(err.message).toContain('Respuesta del servidor: ninguna');
+        expect(err.message).toContain('no es un problema de la consulta');
+        expect(err.message).toContain('Detalle técnico: ETIMEOUT · Failed to connect');
+    });
+
+    it('la red llega pero SQL Server no abre la sesión: el problema es de la base', async () => {
+        const { fake } = fakeDriver([timeoutErr(), timeoutErr(), timeoutErr()]);
+        const runner = new MssqlRunner({ allowPrivate: true, load: async () => fake as never, probe: async () => ({ status: 'open', ms: 35 }), retryDelaysMs: [1, 1] });
+        const err = await runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null }).then(
+            () => { throw new Error('no falló'); },
+            (e: Error) => e,
+        );
+        expect(err.message).toContain('la red sí llega');
+        expect(err.message).toContain('El puerto 1433: abrió en 35 ms');
+        expect(err.message).toContain('del lado de la base de datos, no en la app');
+    });
+
+    it('una falla pasajera se reintenta y la corrida sigue', async () => {
+        const { fake, attempts } = fakeDriver([timeoutErr()]);
+        const runner = new MssqlRunner({ allowPrivate: true, load: async () => fake as never, retryDelaysMs: [1, 1] });
+        const res = await runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null });
+        expect(attempts()).toBe(2);
+        expect(res.rows).toEqual([]);
+    });
+
+    it('usuario o contraseña no se reintentan, y la respuesta de SQL Server va literal', async () => {
+        const login = Object.assign(new Error("Login failed for user 'u'."), { code: 'ELOGIN', number: 18456 });
+        const { fake, attempts } = fakeDriver([login, login, login]);
+        const runner = new MssqlRunner({ allowPrivate: true, load: async () => fake as never, retryDelaysMs: [1, 1] });
+        const err = await runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null }).then(
+            () => { throw new Error('no falló'); },
+            (e: Error) => e,
+        );
+        expect(attempts()).toBe(1);
+        expect(err.message).toContain("Respuesta de SQL Server (error 18456): «Login failed for user 'u'.»");
+    });
+
+    it('la base en pausa de Azure (40613) se explica como algo de la base', () => {
+        const e = { number: 40613, message: "Database 'db' on server 'x' is not currently available. Please retry the connection later." };
+        expect(isTransientConnectError(e)).toBe(true);
+        const out = explainSqlError(e, { server: 'x.database.windows.net', database: 'db', user: 'u' });
+        expect(out.code).toBe('unavailable');
+        expect(out.message).toContain('error 40613');
+        expect(isTransientConnectError({ number: 18456, message: 'Login failed' })).toBe(false);
+        expect(isTransientConnectError({ code: 'ESOCKET', message: 'self-signed certificate' })).toBe(false);
+    });
+
+    it('probeTcp distingue un puerto abierto de uno cerrado (sockets reales)', async () => {
+        const server: Server = createServer((s) => s.end());
+        await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+        const port = (server.address() as { port: number }).port;
+        expect((await probeTcp('127.0.0.1', port)).status).toBe('open');
+        await new Promise<void>((r) => server.close(() => r()));
+        expect((await probeTcp('127.0.0.1', port)).status).toBe('refused');
     });
 });

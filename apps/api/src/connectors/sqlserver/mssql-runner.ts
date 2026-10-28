@@ -1,3 +1,4 @@
+import { createConnection } from 'node:net';
 import type { SqlSource } from '@imagina-base/shared';
 import { SQL_LAST_SYNC_PARAM } from '@imagina-base/shared';
 import { resolvePublicHost } from '../../common/safe-fetch';
@@ -5,7 +6,9 @@ import {
     SQL_VERIFY_QUERY,
     SqlRunError,
     explainSqlError,
+    isTransientConnectError,
     resolveProcedureParams,
+    type ConnectDiagnosis,
     type SqlColumnMeta,
     type SqlConnParams,
     type SqlQueryResult,
@@ -57,6 +60,66 @@ export interface MssqlLike {
 
 let loaded: Promise<MssqlLike> | null = null;
 
+/**
+ * Cuánto se espera a que SQL Server abra la sesión. Eran 15 s (el default del
+ * driver); Microsoft recomienda 30 s para Azure SQL: una base en pausa
+ * (serverless) tarda en despertar y con 15 s la primera conexión fallaba.
+ */
+const CONNECT_TIMEOUT_MS = 30_000;
+/** Esperas entre intentos de conexión ante una falla pasajera. */
+const CONNECT_RETRY_DELAYS_MS = [2_000, 5_000];
+/** Tope para abrir el puerto en el diagnóstico (sólo cuando la conexión ya falló). */
+const TCP_PROBE_TIMEOUT_MS = 6_000;
+
+export type TcpProbe = NonNullable<ConnectDiagnosis['tcp']>;
+
+/**
+ * Abre el puerto y cierra, sin hablar SQL: separa «la red no llega» de «la
+ * red llega pero la base no contesta». Va contra la IP ya validada por el
+ * guard anti-SSRF. Nunca lanza.
+ */
+export function probeTcp(host: string, port: number, timeoutMs = TCP_PROBE_TIMEOUT_MS): Promise<TcpProbe> {
+    return new Promise((resolve) => {
+        const started = Date.now();
+        let settled = false;
+        const socket = createConnection({ host, port });
+        const finish = (r: Omit<TcpProbe, 'ms'>): void => {
+            if (settled) return;
+            settled = true;
+            socket.destroy();
+            resolve({ ...r, ms: Date.now() - started });
+        };
+        socket.setTimeout(timeoutMs);
+        socket.on('connect', () => finish({ status: 'open' }));
+        socket.on('timeout', () => finish({ status: 'timeout' }));
+        socket.on('error', (err: NodeJS.ErrnoException) => {
+            const code = err.code ?? '';
+            finish(
+                code === 'ECONNREFUSED'
+                    ? { status: 'refused' }
+                    : code === 'EHOSTUNREACH' || code === 'ENETUNREACH'
+                      ? { status: 'unreachable', error: code }
+                      : code === 'ETIMEDOUT'
+                        ? { status: 'timeout' }
+                        : { status: 'error', error: code || err.message },
+            );
+        });
+    });
+}
+
+/**
+ * La IP con la que la última base vio a este servidor (`client_net_address`).
+ * Por proceso: alcanza para decirle a la persona qué IP agregar al firewall
+ * cuando algo falla.
+ */
+let knownEgressIp: string | null = null;
+
+function rememberEgressIp(value: unknown): void {
+    const ip = typeof value === 'string' ? value.trim() : '';
+    // `<local machine>` cuando la conexión es por memoria compartida.
+    if (ip && /^[0-9a-f.:]+$/i.test(ip)) knownEgressIp = ip;
+}
+
 /** Espera una limpieza sin dejar que un error o una espera eterna la frenen. */
 async function withDeadline(p: Promise<unknown>, ms: number): Promise<void> {
     let timer: NodeJS.Timeout | undefined;
@@ -87,17 +150,27 @@ async function loadMssql(): Promise<MssqlLike> {
 }
 
 export class MssqlRunner implements SqlRunner {
-    /** `load` sólo lo cambian los tests (un driver de mentira con el orden de eventos real). */
-    constructor(private readonly opts: { allowPrivate: boolean; load?: () => Promise<MssqlLike> }) {}
+    /** `load`, `probe`, los tiempos y las esperas sólo los cambian los tests. */
+    constructor(
+        private readonly opts: {
+            allowPrivate: boolean;
+            load?: () => Promise<MssqlLike>;
+            probe?: (host: string, port: number) => Promise<TcpProbe>;
+            connectTimeoutMs?: number;
+            retryDelaysMs?: number[];
+        },
+    ) {}
 
     async verify(conn: SqlConnParams): Promise<SqlVerifyResult> {
-        const res = await this.run(conn, { kind: 'query', sql: SQL_VERIFY_QUERY }, { maxRows: 1, timeoutMs: 15_000, lastSync: null });
+        const res = await this.run(conn, { kind: 'query', sql: SQL_VERIFY_QUERY }, { maxRows: 1, timeoutMs: 15_000, lastSync: null, connectAttempts: 1 });
         const row = res.rows[0] ?? {};
+        rememberEgressIp(row.client_ip);
         return {
             login: String(row.login ?? conn.user),
             database: String(row.db ?? conn.database),
             version: String(row.version ?? ''),
             canWrite: row.can_write === true || row.can_write === 1,
+            clientIp: typeof row.client_ip === 'string' && row.client_ip.trim() ? row.client_ip.trim() : null,
         };
     }
 
@@ -115,14 +188,15 @@ export class MssqlRunner implements SqlRunner {
         }
         const sql = await (this.opts.load ?? loadMssql)();
         const started = Date.now();
-        const pool = new sql.ConnectionPool({
+        const connectTimeoutMs = this.opts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
+        const config = {
             server: conn.server,
             // Con instancia con nombre el puerto lo resuelve SQL Browser.
             ...(conn.instanceName ? {} : { port: conn.port }),
             database: conn.database,
             user: conn.user,
             password: conn.password,
-            connectionTimeout: 15_000,
+            connectionTimeout: connectTimeoutMs,
             requestTimeout: opts.timeoutMs,
             pool: { max: 1, min: 0, idleTimeoutMillis: 1_000 },
             options: {
@@ -134,16 +208,44 @@ export class MssqlRunner implements SqlRunner {
                 // campos UTC del Date: la zona la aplica el motor.
                 useUTC: true,
             },
-        });
-        try {
-            await pool.connect();
-        } catch (err) {
-            throw explainSqlError(err, conn);
+        };
+        // Conectar, reintentando lo pasajero (la red que no contesta, Azure
+        // despertando una base en pausa). Usuario/contraseña, firewall o
+        // certificado no se reintentan: fallarían igual.
+        const maxAttempts = Math.max(1, opts.connectAttempts ?? 3);
+        const delays = this.opts.retryDelaysMs ?? CONNECT_RETRY_DELAYS_MS;
+        let pool: MssqlPool | null = null;
+        let attempts = 0;
+        for (;;) {
+            attempts++;
+            const candidate = new sql.ConnectionPool(config);
+            try {
+                await candidate.connect();
+                pool = candidate;
+                break;
+            } catch (err) {
+                await withDeadline(candidate.close(), 5_000);
+                if (attempts < maxAttempts && isTransientConnectError(err)) {
+                    await new Promise((r) => setTimeout(r, delays[Math.min(attempts - 1, delays.length - 1)] ?? 2_000));
+                    continue;
+                }
+                const diag: ConnectDiagnosis = {
+                    attempts,
+                    elapsedMs: Date.now() - started,
+                    timeoutMs: connectTimeoutMs,
+                    addresses: target.addresses,
+                    port: conn.instanceName ? null : conn.port,
+                    tcp: conn.instanceName ? null : await (this.opts.probe ?? probeTcp)(target.address, conn.port),
+                    egressIp: knownEgressIp,
+                };
+                throw explainSqlError(err, conn, diag);
+            }
         }
         try {
             const tx = new sql.Transaction(pool);
             await tx.begin();
             try {
+                if (!knownEgressIp) await this.learnEgressIp(sql, tx);
                 return await this.stream(sql, tx, source, opts, started);
             } finally {
                 // SIEMPRE se deshace: lo que haya intentado escribir no queda.
@@ -155,6 +257,16 @@ export class MssqlRunner implements SqlRunner {
             throw explainSqlError(err, conn);
         } finally {
             await withDeadline(pool.close(), 10_000);
+        }
+    }
+
+    /** Una vez por proceso: qué IP ve la base (para el mensaje de un fallo futuro). Nunca lanza. */
+    private async learnEgressIp(sql: MssqlLike, tx: MssqlTransaction): Promise<void> {
+        try {
+            const res = await this.stream(sql, tx, { kind: 'query', sql: "SELECT CAST(CONNECTIONPROPERTY('client_net_address') AS nvarchar(64)) AS client_ip" }, { maxRows: 1, timeoutMs: 5_000, lastSync: null }, Date.now());
+            rememberEgressIp(res.rows[0]?.client_ip);
+        } catch {
+            /* sin el dato, el mensaje de un fallo simplemente no lo muestra */
         }
     }
 

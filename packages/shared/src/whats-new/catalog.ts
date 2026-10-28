@@ -653,4 +653,16 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         media: { illustration: 'empresa-branding' },
         body: 'Si usas la app instalada en el teléfono, quítala y vuelve a instalarla para ver también el ícono nuevo al abrirla.',
     },
+    {
+        key: 'v0.1.330-sql-diagnostico',
+        version: '0.1.330',
+        date: '2026-10-28',
+        kind: 'improvement',
+        title: 'Cuando falla una conexión a SQL Server, sabes por qué',
+        summary:
+            'Si la base de datos no responde, el aviso dice en qué paso se cortó y qué contestó el servidor, y la app vuelve a intentar sola ante un corte pasajero.',
+        media: { illustration: 'empresa-problems' },
+        body: 'En **Ajustes → Problemas** verás si la red llega hasta el servidor, si el puerto abre y qué respondió la base, para saber si el problema está en la base, en la red o en la configuración.',
+        action: { label: 'Ver problemas', href: '/settings?s=problemas' },
+    },
 ];
