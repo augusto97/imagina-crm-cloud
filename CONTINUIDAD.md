@@ -372,11 +372,19 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.329**
-(la app abre con el contorno de la app en vez del logo + ícono sin disco de
-color), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.330**
+(una conexión SQL que falla dice en qué paso se cortó y qué respondió la base,
+con reintentos), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-28 — **Un cliente con la sincronización SQL que falla y se arregla
+  sola** («Failed to connect to sqlserver-erpbinapps.database.windows.net:1433
+  in 15000ms», 3 veces en 3 días, cada una resuelta sola en la corrida
+  siguiente). Ese texto es el timeout del driver: la base NO contestó nada en
+  15 s — no es un error de la consulta ni de la app. Probable: Azure SQL en
+  pausa (serverless) o saturada, o un corte de red. v0.1.330 reintenta, espera
+  30 s y explica en qué paso se cortó. **Para el usuario**: actualizar; si
+  vuelve a pasar, el mensaje dirá si el puerto abría (→ base) o no (→ red).
 - 2026-10-27 — **No le gusta cómo abre la app instalada** (logo en el centro
   dentro de un círculo de color). Se le mostraron maquetas (hoy / A logo limpio
   sin salto / B la app se arma) y eligió **B**. v0.1.329: la primera pantalla
@@ -833,6 +841,19 @@ color), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-28 · v0.1.330** — **Diagnóstico claro de una conexión SQL que
+  falla** (addendum ADR-S27). Reporte del usuario con captura: un cliente veía
+  «No se pudo conectar… (Failed to connect … in 15000ms)» y no se sabía si
+  había respondido la base o si fallaba la app. (1) Reintentos de la conexión
+  ante lo pasajero (3 intentos, 2 s y 5 s; nunca credenciales/firewall/
+  certificado), espera de 30 s por intento. (2) Al fallar: qué IP resolvió, si
+  el puerto abre (prueba TCP), intentos, «Respuesta del servidor: ninguna» o la
+  de SQL Server literal con su número, la IP de este servidor y la conclusión
+  (red / puerto / base). (3) Errores de Azure en pausa (40613…) explicados como
+  del lado de la base. Mensajes en varios renglones en Problemas, la
+  sincronización y el diálogo de conexión. Tests: 6 nuevos (driver falso +
+  sockets reales) y verificado con el driver real contra un puerto mudo, una IP
+  que descarta y un puerto cerrado.
 - **2026-10-27 · v0.1.329** — **La app abre con su contorno, no con el logo**
   (addendum ADR-S80). Reporte del usuario: al abrir la app instalada se ve el
   logo en el centro dentro de un círculo de color y no le gusta. Maquetas →

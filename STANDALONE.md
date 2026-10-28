@@ -2156,6 +2156,28 @@ programado.
   **no se bloquean**: la base es la fuente, así que un valor editado a mano
   vuelve al de SQL en la próxima corrida.
 
+**Addendum v0.1.330 — una conexión que falla dice en qué paso se cortó.** El
+reporte de un cliente («Failed to connect … in 15000ms», que se resolvía solo
+al rato) no dejaba saber si había contestado la base o si fallaba la app: ese
+texto es el timeout del driver y significa que SQL Server NO respondió nada.
+Ahora:
+- **Reintentos de la conexión** ante lo pasajero (red que no contesta, error
+  40613/40501/49918… de Azure SQL con la base en pausa o cambiando de nodo): 3
+  intentos con 2 s y 5 s de espera; usuario/contraseña, firewall y certificado
+  no se reintentan. La verificación de la pantalla hace 1 solo intento.
+- **Espera de 30 s** para abrir la sesión (era 15 s, el default del driver; es
+  lo que recomienda Microsoft para Azure SQL).
+- **Diagnóstico al fallar** (`ConnectDiagnosis`): a qué IP resolvió el nombre,
+  si el puerto abre (`probeTcp`: un connect sin hablar SQL, contra la IP ya
+  validada por el guard anti-SSRF), los intentos y el tiempo, «Respuesta del
+  servidor: ninguna» o lo que contestó SQL Server literal con su número, la IP
+  con la que la base ve a este servidor (`client_net_address`, aprendida en la
+  verificación o en una corrida buena) y la conclusión: la red no llega / el
+  puerto rechaza / la red llega pero la base no abre la sesión (del lado de la
+  base) / la conexión se cortó a mitad. Lo arma `explainConnectFailure` (puro).
+- Todo error que vino de SQL Server muestra «Respuesta de SQL Server (error N):
+  «…»» en vez del texto crudo entre paréntesis.
+
 ### ADR-S28 — Portal del cliente white-label + dominio del portal aparte (v0.1.245)
 
 **Contexto.** El portal del cliente es de CADA empresa: su cliente final no
@@ -4818,4 +4840,4 @@ uno gris que de golpe se vuelve verde sería otro salto). Sólo aparece si la
 
 ---
 
-**Versión del documento:** 1.125.0 (apertura con esqueleto + ícono sin disco)
+**Versión del documento:** 1.126.0 (diagnóstico de conexiones SQL)

@@ -60,7 +60,7 @@ class FakeSql implements SqlRunner {
 
     async verify(conn: SqlConnParams): Promise<SqlVerifyResult> {
         if (conn.password !== 'secreta') throw new SqlRunError("SQL Server rechazó el usuario o la contraseña de «lector».", 'login');
-        return { login: conn.user, database: conn.database, version: '16.0', canWrite: this.canWrite };
+        return { login: conn.user, database: conn.database, version: '16.0', canWrite: this.canWrite, clientIp: null };
     }
 
     async run(conn: SqlConnParams, source: SqlSource, opts: SqlRunOptions): Promise<SqlQueryResult> {

@@ -254,7 +254,7 @@ function SyncCard({ sync: s, connectionId, onEdit }: { sync: SqlSync; connection
             {st.last_error && (
                 <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-border-t imcrm-border-border imcrm-px-4 imcrm-py-3 imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-sql-sync-error">
                     <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
-                    {st.last_error}
+                    <span className="imcrm-min-w-0 imcrm-whitespace-pre-wrap imcrm-break-words">{st.last_error}</span>
                 </p>
             )}
             {st.errors.length > 0 && (

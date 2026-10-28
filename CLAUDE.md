@@ -10024,6 +10024,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 17/17 y 6/6 contra el build de producción (CSP sin
         violaciones).
 
+  - [x] **Una conexión SQL que falla dice en qué paso se cortó (v0.1.330,
+        addendum ADR-S27, reporte del usuario: "no me dice qué respuesta le dio
+        el servidor, no sé si es la base o la app")**: «Failed to connect … in
+        15000ms» es el timeout del driver — la base no contestó nada — y se
+        mostraba sin más. Ahora (a) la conexión se **reintenta** ante lo
+        pasajero (3 intentos con 2 s y 5 s; la red que no contesta o Azure con
+        40613/40501/49918… por una base en pausa o cambiando de nodo; nunca
+        usuario/contraseña, firewall ni certificado) y espera **30 s** por
+        intento (era 15, el default del driver; lo recomendado para Azure SQL);
+        la verificación de la pantalla hace un intento. (b) Al fallar,
+        `ConnectDiagnosis` + `explainConnectFailure` (puro): a qué IP resolvió
+        el nombre, si el puerto abre (`probeTcp`, sin hablar SQL, contra la IP
+        validada por el guard anti-SSRF), intentos y tiempo, «Respuesta del
+        servidor: ninguna» o la de SQL Server literal con su número, la IP con
+        la que la base ve a este servidor (`client_net_address`, aprendida en la
+        verificación o en una corrida buena) y la conclusión — la red no llega /
+        el puerto rechaza / la red llega pero la base no abre la sesión / se
+        cortó a mitad. (c) Todo error de SQL Server muestra «Respuesta de SQL
+        Server (error N): «…»». Mensajes en varios renglones en Problemas, la
+        sincronización y el diálogo de conexión. 6 tests nuevos y verificado con
+        el driver real (puerto mudo, IP que descarta, puerto cerrado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
