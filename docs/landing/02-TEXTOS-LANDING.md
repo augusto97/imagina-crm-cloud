@@ -1,7 +1,7 @@
 # Imagina Base — Textos de la landing (imagina.cloud/base)
 
 > Español neutro, tuteando. Todo lo que dice este documento es verdad hoy en la app
-> (versión 0.1.331), con estas decisiones comerciales: **prueba gratis de 15 días sin
+> (versión 0.1.337), con estas decisiones comerciales: **prueba gratis de 15 días sin
 > tarjeta**, precios Starter $59.000 y Pro $199.000 (los puedes cambiar después), y
 > **asistente IA y soporte solo en los planes de pago**. Lo que sigue marcado con
 > **[CONFIRMAR]** (medios de pago activos, redes) revísalo antes de publicar.
@@ -21,8 +21,8 @@ sitio NO llevan `utm`.
 
 - Logo: Imagina Base (archivo `marca/logo.png`; sobre fondo oscuro, `marca/logo-oscuro.png`).
 - Menú:
-  - **Producto ▾** — Vistas · Automatizaciones · Tableros · Portal y formularios · Cobros y documentos · Inteligencia artificial · Integraciones · App en el celular
-  - **Soluciones ▾** — Ventas y CRM · Cobros y cartera · Proyectos y tareas · Agenda de citas · Mesa de ayuda · Tienda online e inventario
+  - **Producto ▾** — Vistas · Automatizaciones · Tableros · Portal y formularios · Cobros y documentos · Inteligencia artificial · Integraciones · WordPress y SEO · SMS · App en el celular
+  - **Soluciones ▾** — Ventas y CRM · Cobros y cartera · Proyectos y tareas · Agenda de citas · Mesa de ayuda · Tienda online e inventario · Agencias y sitios web
   - **Precios**
   - **Aprende**
 - A la derecha: **Entrar** (texto) · **Prueba gratis** (botón principal; lleva a /registro)
@@ -146,7 +146,17 @@ Captura: `09-mesa-de-ayuda-sla.png`, `05-tablero-soporte.png` · Botón: Usar la
 - Cambia precios o estados desde aquí y viajan a tu tienda.
 Animación: `motion/animaciones/tienda-sync.mp4` (no hay captura de una tienda real en el kit) · Botón: Conectar mi tienda
 
-### Pestaña 7 · A tu medida
+### Pestaña 7 · Tu sitio WordPress
+**Título:** Tu sitio WordPress, en una tabla que se edita
+- Entradas, páginas, tus tipos de contenido y sus campos (ACF, Meta Box, JetEngine) como
+  listas que se filtran, se ordenan y se editan.
+- El SEO de todo el sitio a la vista: títulos y descripciones tal como los ve Google, con
+  los demasiado largos y los vacíos marcados.
+- Cambias aquí y llega a WordPress en segundos; edita cientos a la vez y deshazlo si te
+  equivocaste.
+Capturas: `32-wordpress-revision-seo.png`, `35-wordpress-recetas-campos-acf.png` · Botón: Conectar mi sitio
+
+### Pestaña 8 · A tu medida
 **Título:** ¿Tu negocio es distinto? Ármalo como es
 - Más de 30 tipos de campo: moneda, fechas, personas, archivos, fórmulas, relaciones…
 - Vincula listas entre sí (clientes ↔ facturas ↔ proyectos) y resume lo de una en la otra.
@@ -208,7 +218,9 @@ Ejemplo animado (el flujo se dibuja):
 
 Viñetas:
 - Esperas, condiciones, ramas sí/no y pasos que se repiten por cada registro vinculado.
-- Correos con diseño, mensajes de WhatsApp, webhooks, PDF y edición en lote.
+- Correos con diseño, mensajes de WhatsApp, SMS, webhooks, PDF y edición en lote.
+- SMS de cobranza que respetan el horario de la Ley 2300: lo que cae fuera de hora queda
+  programado para el siguiente momento permitido.
 - **Pruébala paso a paso** antes de activarla, con un registro real y sin enviar nada.
 - Historial de cada corrida y versiones para volver atrás.
 - **39 ideas listas para activar con un clic**: recordatorios de pago, bienvenida a
@@ -258,7 +270,7 @@ la DIAN.
 ## 10. Cobros (bloque destacado, fondo de color)
 
 **H2:** Cobra más rápido, sin perseguir a nadie
-**Texto:** Genera la cuenta de cobro, envía el link de pago por WhatsApp y deja que la app
+**Texto:** Genera la cuenta de cobro, envía el link de pago por WhatsApp o SMS y deja que la app
 marque la factura como pagada cuando entre el dinero. Con Mercado Pago o Wompi, a tu
 propia cuenta y sin comisión de la plataforma.
 
@@ -280,7 +292,8 @@ Tres columnas:
 2. **Agentes** — Compañeros que trabajan solos sobre tus registros: clasifican tickets,
    resumen casos cerrados o completan datos faltantes. Proponen y una persona aprueba.
 3. **Campos con IA** — Una columna que resume, clasifica, extrae datos o traduce a partir
-   de otros campos, incluso de PDF e imágenes.
+   de otros campos, incluso de PDF e imágenes. Por ejemplo: la meta descripción que le falta
+   a cada entrada de tu blog o el texto alternativo de cada imagen de tu sitio.
 
 Línea extra: ¿Usas Claude? Conéctalo a tu negocio y pregúntale por tus ventas, tus
 clientes o tus cobros directamente desde el chat.
@@ -297,16 +310,89 @@ Captura: `16-agentes-de-ia.png` · Videos: `motion/animaciones/ia-asistente.mp4`
 **Bajada:** Conéctalas una vez y úsalas en todas tus automatizaciones.
 
 Logos en movimiento (marquee): WhatsApp Business · Telegram · Slack · Gmail · Google
-Calendar · Google Sheets · Google Drive · Outlook · WooCommerce · Mercado Pago · Wompi ·
+Calendar · Google Sheets · Google Drive · Outlook · WordPress · WooCommerce · Rank Math ·
+Yoast SEO · ACF · Twilio · Infobip · BulkGate · LabsMobile · Onurix · Mercado Pago · Wompi ·
 SQL Server · Amazon S3 · Claude
 
 Viñetas:
 - **WhatsApp Business oficial** (API de Meta): plantillas aprobadas, respuestas de tus
   clientes y estado de cada envío.
+- **Tu sitio WordPress** en tiempo real: entradas, páginas, campos personalizados, medios y
+  SEO (ver el bloque siguiente).
+- **SMS con tu propia cuenta**: Twilio, Infobip, BulkGate, LabsMobile u Onurix.
 - **Tu base de datos SQL Server** sincronizada con una lista, cada hora o cada día.
 - **¿Tu sistema no está?** Conéctalo con su API o con webhooks.
 
-Captura: `14-integraciones.png`
+Captura: `14-integraciones.png` (arriba se ven las conexiones activas: SMS y WordPress)
+
+---
+
+## 12-A. Tu sitio WordPress (bloque destacado)
+
+**H2:** Tu sitio WordPress, en una tabla que se edita
+**Bajada:** Trae las entradas, páginas, tipos de contenido y el SEO de tu sitio. Edítalos
+como en una hoja de cálculo y el cambio llega a WordPress en segundos.
+
+Tres pasos en línea (con flecha entre cada uno):
+1. **Escribe la dirección de tu sitio** y aprueba la conexión en tu propio WordPress. No
+   copias ninguna clave. (`28-wordpress-conectar-un-clic.png` → `29-wordpress-autorizar-en-wordpress.png`)
+2. **Elige qué traer**: entradas, páginas, tus tipos de contenido con sus campos, la
+   biblioteca de medios y el SEO. Tú decides qué columnas se pueden cambiar desde aquí.
+   (`30-wordpress-elegir-que-traer.png`)
+3. **Edita aquí, se guarda allá.** Lo que cambies viaja a WordPress; lo que cambien en
+   WordPress llega al instante. (`31-wordpress-pagina-del-sitio.png`)
+
+Cuatro tarjetas:
+1. **Auditoría SEO lista** — Con Rank Math, Yoast SEO, SEOPress o All in One SEO. Ve el
+   título y la descripción tal como los muestra Google y encuentra en un clic los que pasan
+   de 60 o 160 caracteres, los que no tienen descripción y los que no tienen palabra clave.
+   (`32-wordpress-revision-seo.png`)
+2. **La IA escribe lo que falta** — Meta descripciones y textos alternativos sugeridos para
+   cada entrada e imagen. Los revisas, los aplicas en lote y, si no te convencen, lo
+   deshaces. (`33-wordpress-sin-descripcion-sugerida-con-ia.png`,
+   `34-wordpress-medios-texto-alternativo.png`)
+3. **Tus campos personalizados, con su tipo** — Los campos de ACF, Meta Box y JetEngine
+   llegan como columnas de número, fecha, opción o sí/no: se filtran, se ordenan y se
+   suman. (`35-wordpress-recetas-campos-acf.png`)
+4. **Siempre al día** — Si alguien agrega un campo o un tipo de contenido en WordPress, la
+   app te avisa y lo traes con un clic. Lo que se borra allá se marca o sale de la lista,
+   como prefieras. (`31-wordpress-pagina-del-sitio.png`)
+
+Franja de confianza (íconos pequeños): Un complemento liviano · No carga nada en las páginas
+de tus visitantes · Respeta los permisos de cada usuario de WordPress · Puedes conectarlo
+con un usuario Editor · Sin el complemento también funciona con lo básico.
+(`36-wordpress-complemento-en-el-sitio.png`)
+
+Ideal para: agencias que administran los sitios de sus clientes, equipos de marketing y
+empresas con un blog o un catálogo en WordPress.
+
+Botón: Conectar mi sitio WordPress
+
+---
+
+## 12-B. Mensajes de texto (SMS)
+
+**H2:** Mensajes de texto que llegan, con tu propia cuenta
+**Bajada:** Para cuando un correo no se abre: recordatorios de pago, confirmaciones de cita
+y avisos que se leen aunque el cliente no tenga internet.
+
+Viñetas (con la captura `37-sms-desde-la-ficha.png` al lado):
+- **Con el proveedor que elijas**: Twilio, Infobip, BulkGate, LabsMobile u Onurix. Usas tu
+  cuenta y tu precio; la app no cobra por mensaje.
+- **Cuenta lo que vas a pagar**: te dice cuántos SMS ocupa el mensaje y quita las tildes
+  para que entre en uno en vez de dos.
+- **Con los datos de cada cliente**: «Hola Panadería La Espiga, tu cobro de $1.610.000 vence
+  mañana». Desde la ficha, a una selección o en una automatización.
+  (`38-sms-envio-masivo.png`, `39-sms-automatizacion.png`)
+- **Respeta el horario de la Ley 2300 («Dejen de fregar»)**: lo que caiga fuera de lunes a
+  viernes de 7 a. m. a 7 p. m. o de sábados de 8 a. m. a 3 p. m. queda programado; nunca
+  domingos ni festivos.
+- **Sabes si llegó**: entregado o fallido en cada registro, y cuántos SMS pagaste en el mes.
+  (`41-sms-pagina-de-la-conexion.png`)
+- **También en la agenda**: recordatorios de citas por SMS, además del correo.
+
+Nota pequeña: La app te ayuda a cumplir el horario; el contenido y la responsabilidad del
+envío son de tu empresa.
 
 ---
 
@@ -326,7 +412,8 @@ Capturas: `capturas/celular/*.png` (mostrar 3 teléfonos en abanico: kanban, fic
 **H2:** Con tu marca, en tu dominio
 **Texto:** Pon tu logo, tus colores y tu propio dominio. Tus clientes ven tu marca en el
 portal, los formularios, la agenda y los correos. Ideal para agencias y consultores que
-implementan para sus clientes.
+implementan para sus clientes, y que además pueden administrar desde aquí el contenido y el
+SEO de los sitios WordPress de esos clientes.
 
 Demo: el portal cambiando de color al tocar muestras de color (`04-MOTION.md`, idea 10).
 Video: `motion/animaciones/empresa-branding.mp4`
@@ -336,7 +423,7 @@ Video: `motion/animaciones/empresa-branding.mp4`
 ## 15. Hecho para Latinoamérica
 
 **H2:** Hecho para cómo trabajamos aquí
-Seis tarjetas:
+Siete tarjetas:
 1. **Precio por empresa, no por usuario.** Tu plan incluye a tu equipo; los clientes del
    portal no cuentan como usuarios.
 2. **Pagas en pesos.** Con PSE, Nequi, tarjeta o efectivo, por meses o con renovación
@@ -348,6 +435,9 @@ Seis tarjetas:
 5. **Todo en español.** La app, la ayuda, los correos y el soporte.
 6. **Días hábiles y festivos de Colombia.** En la agenda, los tiempos de soporte y los
    vencimientos.
+7. **SMS con el horario de la Ley 2300.** Los mensajes de cobranza fuera de hora quedan
+   programados solos, y puedes usar proveedores con presencia local como Onurix o
+   LabsMobile.
 
 ---
 
@@ -376,6 +466,8 @@ Seis tarjetas:
 | Cómo se cobra | Por empresa, con el equipo incluido | Licencia de Office / gratis | Por usuario, al mes |
 | Medios de pago | PSE, Nequi, tarjeta, efectivo **[CONFIRMAR]** | — | Tarjeta internacional o PayPal |
 | WhatsApp | API oficial de Meta, en automatizaciones | No | Integración aparte o de terceros |
+| SMS | Con tu cuenta de Twilio, Infobip, BulkGate, LabsMobile u Onurix; horario de la Ley 2300 | No | Integración aparte o de terceros |
+| Tu sitio WordPress | Entradas, páginas, campos y SEO editables en una tabla, en tiempo real | Exportar e importar a mano | Generalmente con plugins o apps de terceros |
 | Cuentas de cobro y cotizaciones en PDF | Incluidas | Plantillas manuales | Generalmente con apps externas |
 | Portal y agenda para tus clientes | Incluidos, sin usuario extra | No | Según plan o con apps aparte |
 | Ley 1581 (autorización con prueba) | Incluida | No | No mencionada |
@@ -472,6 +564,27 @@ Captura: `21-centro-de-aprendizaje.png`
 15. **¿Tienen soporte?**
     Sí, en español, para los planes de pago. Durante la prueba tienes el centro de
     aprendizaje, los recorridos guiados y las ideas listas para activar.
+16. **¿Puedo enviar SMS desde la app?**
+    Sí, con tu propia cuenta de Twilio, Infobip, BulkGate, LabsMobile u Onurix: desde la
+    ficha de un cliente, a una selección de registros, en automatizaciones y en los
+    recordatorios de la agenda. Cada SMS lo cobra tu proveedor; la app no suma un costo por
+    mensaje.
+17. **¿Los SMS de cobranza respetan la Ley 2300 («Dejen de fregar»)?**
+    Puedes activar el horario de la ley en cada envío: lo que caiga fuera de lunes a viernes
+    de 7 a. m. a 7 p. m. o de sábados de 8 a. m. a 3 p. m. queda programado, y nunca sale
+    en domingos ni festivos. Confirma con tu abogado cómo aplica a tu caso.
+18. **¿Se conecta con mi sitio WordPress?**
+    Sí. Escribes la dirección del sitio, apruebas la conexión en tu WordPress y eliges qué
+    traer: entradas, páginas, tipos de contenido, campos personalizados, medios y SEO. Lo
+    que cambies en la app llega al sitio, y lo que cambien en el sitio llega a la app.
+19. **¿El complemento pone lento mi sitio o lo hace inseguro?**
+    No carga nada en las páginas que ven tus visitantes: solo le responde a la app, con los
+    permisos del usuario de WordPress que conectaste (puede ser un Editor creado solo para
+    esto). Sin el complemento también funciona con entradas, páginas, categorías y
+    etiquetas.
+20. **¿Qué plugins de SEO y de campos reconoce?**
+    De SEO: Rank Math, Yoast SEO, SEOPress y All in One SEO. De campos: ACF, Meta Box y
+    JetEngine.
 
 ---
 
@@ -503,3 +616,5 @@ Captura: `21-centro-de-aprendizaje.png`
 - Etiqueta de captura: «Así se ve la app real, con datos de ejemplo»
 - Al pasar sobre una vista: «Mismos datos, otra forma de verlos»
 - Insignia en precios: «El más elegido» (en Starter) **[CUANDO EXISTA el dato]**
+- Bajo la captura de WordPress: «Un sitio de ejemplo conectado a la app»
+- Junto al contador de SMS: «Sin tildes: 1 SMS en vez de 2»

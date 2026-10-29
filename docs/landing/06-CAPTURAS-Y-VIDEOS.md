@@ -1,6 +1,6 @@
 # Índice de capturas y videos
 
-Todo sale de la app real (versión 0.1.331) con la empresa de ejemplo **«Distribuidora
+Todo sale de la app real (versión 0.1.337) con la empresa de ejemplo **«Distribuidora
 Andina»** (datos ficticios: nombres, montos en pesos colombianos, correos @ejemplo.com).
 Formato regional de Colombia: punto para miles, fechas DD/MM/AAAA, zona horaria de Bogotá.
 
@@ -25,7 +25,7 @@ Formato regional de Colombia: punto para miles, fechas DD/MM/AAAA, zona horaria 
 | `11-automatizacion-flujo.png` | Editor de automatizaciones (vista de pasos): recordatorio de cobro → espera 3 días → condición | Automatizaciones |
 | `12-automatizacion-lienzo.png` | El mismo flujo en el lienzo con ramas Sí/No | Automatizaciones (**recomendada**) |
 | `13-ideas-para-tu-negocio.png` | Galería de 39 ideas listas para activar | Automatizaciones, Aprende |
-| `14-integraciones.png` | Galería de integraciones: WhatsApp, Telegram, Slack, Gmail, Google Calendar/Sheets/Drive, Outlook, WooCommerce, Mercado Pago, Wompi, SQL Server, S3 | Integraciones |
+| `14-integraciones.png` | Integraciones: arriba las **conectadas** (Onurix y Twilio para SMS, el sitio WordPress con «Sincronizar sitio») y abajo la galería (WhatsApp, Telegram, Slack, Gmail, Google Calendar/Sheets/Drive, Outlook, SMS, WordPress, WooCommerce, Mercado Pago, Wompi, SQL Server, S3) | Integraciones |
 | `15-mi-trabajo.png` | «Mi trabajo»: lo asignado a la persona, agrupado en Vencido / Hoy / Próximos 7 días | Proyectos, En el celular |
 | `16-agentes-de-ia.png` | Agentes de IA con plantillas (clasificar tickets, resumir, completar datos, sugerir respuesta, asignar por tema) | Inteligencia artificial |
 | `17-busqueda-global.png` | Búsqueda global (Ctrl+K) encontrando registros en varias listas | Detalle de usabilidad |
@@ -40,11 +40,41 @@ Formato regional de Colombia: punto para miles, fechas DD/MM/AAAA, zona horaria 
 | `26-facturas-tabla.png` | Tabla de facturas con estados de pago en color | Cobros |
 | `27-tareas-kanban.png` | Tareas en tablero por estado | Proyectos |
 
+### Sitio WordPress (versión 0.1.333 a 0.1.336)
+
+El sitio de ejemplo es **distribuidoraandina.co**, un WordPress real con Rank Math, ACF y
+el complemento de la app: blog, páginas y un tipo de contenido «Recetas» con campos ACF.
+
+| Archivo | Qué se ve | Úsala en |
+|---|---|---|
+| `28-wordpress-conectar-un-clic.png` | «Conectar un sitio WordPress»: solo la dirección del sitio y «Continuar en WordPress» | WordPress, paso 1 |
+| `29-wordpress-autorizar-en-wordpress.png` | La pantalla «Autorizar aplicación» del propio WordPress («Sí, apruebo esta conexión») | WordPress, paso 2 (muestra que no se copia ninguna clave) |
+| `30-wordpress-elegir-que-traer.png` | El asistente: campos ACF de las recetas con su tipo, cuáles se editan desde la app, «Al instante» y qué hacer con lo que se borra | WordPress, paso 3 |
+| `30b-wordpress-columnas-seo.png` | El mismo asistente en las columnas de SEO de Rank Math (título, descripción, palabra clave, lo que ve Google) | Bloque SEO |
+| `31-wordpress-pagina-del-sitio.png` | La página del sitio: complemento activo con Rank Math, **«Novedades en tu sitio»** (un campo ACF nuevo con «Traer»), «Al día», «Al instante · Escuchando al sitio» con los avisos recibidos | WordPress (**recomendada**) |
+| `32-wordpress-revision-seo.png` | Las entradas del blog como tabla: palabra clave, largo del título que ve Google (en rojo los de más de 60) y el título en Google | Bloque SEO (**recomendada**) |
+| `33-wordpress-sin-descripcion-sugerida-con-ia.png` | La vista «Sin descripción» con la columna «Meta descripción sugerida» escrita por la IA | Bloque SEO, Inteligencia artificial |
+| `34-wordpress-medios-texto-alternativo.png` | La biblioteca de medios con miniaturas: «Sin texto alternativo», la sugerencia de la IA y dónde se usa cada imagen | Bloque SEO / accesibilidad |
+| `35-wordpress-recetas-campos-acf.png` | Un tipo de contenido propio (Recetas) con sus campos ACF como columnas editables, y el aviso de la columna nueva | WordPress, campos personalizados |
+| `36-wordpress-complemento-en-el-sitio.png` | El complemento dentro de WordPress (Herramientas → Imagina Base): versión, Rank Math, ACF y avisos en tiempo real | Confianza: «un complemento liviano» |
+
+### Mensajes de texto (SMS) (versión 0.1.332)
+
+| Archivo | Qué se ve | Úsala en |
+|---|---|---|
+| `37-sms-desde-la-ficha.png` | «Enviar SMS» desde un cliente: el mensaje con variables, el contador («1 SMS · quitar tildes: 1 SMS en vez de 2»), cómo le llega y el horario de la Ley 2300 marcado | SMS (**recomendada**) |
+| `38-sms-envio-masivo.png` | «Enviar SMS a 32 registros»: cada uno con sus datos, revisión antes de enviar («Salen 32 SMS a 32 destinatarios») | SMS, Cobros |
+| `39-sms-automatizacion.png` | Automatización «Aviso de cobro por SMS»: la víspera del cobro, con el formulario del SMS y el contador | SMS, Automatizaciones |
+| `40-sms-automatizacion-lienzo.png` | La misma automatización en el lienzo (cuando → SMS → correo) | Automatizaciones |
+| `41-sms-pagina-de-la-conexion.png` | La conexión de Twilio: enviados, entregados, fallidos y SMS cobrados del mes, estado de entrega y columnas en la lista | SMS (control de costos) |
+
 ## Modo oscuro — `capturas/oscuro/`
 
 `01-ventas-pipeline-kanban-oscuro.png`, `02-clientes-tabla-tipo-excel-oscuro.png`,
 `03-tablero-ventas-oscuro.png`, `07-gantt-cronograma-oscuro.png`,
-`10-ficha-del-cliente-oscuro.png`, `12-automatizacion-lienzo-oscuro.png`.
+`10-ficha-del-cliente-oscuro.png`, `12-automatizacion-lienzo-oscuro.png`,
+`31-wordpress-pagina-del-sitio-oscuro.png`, `32-wordpress-revision-seo-oscuro.png`,
+`37-sms-desde-la-ficha-oscuro.png`.
 Úsalas en la sección oscura (automatizaciones / IA) y en el botón claro/oscuro de la demo.
 
 ## Celular — `capturas/celular/`
@@ -52,7 +82,9 @@ Formato regional de Colombia: punto para miles, fechas DD/MM/AAAA, zona horaria 
 `01-ventas-pipeline-kanban-celular.png`, `02-clientes-tabla-tipo-excel-celular.png`,
 `03-tablero-ventas-celular.png`, `06-calendario-citas-semana-celular.png`,
 `10-ficha-del-cliente-celular.png`, `15-mi-trabajo-celular.png`,
-`18-formulario-publico-celular.png`, `20-agenda-publica-horario-celular.png`.
+`18-formulario-publico-celular.png`, `20-agenda-publica-horario-celular.png`,
+`31-wordpress-pagina-del-sitio-celular.png`, `32-wordpress-revision-seo-celular.png`,
+`37-sms-desde-la-ficha-celular.png`.
 Para «En el celular»: tres teléfonos en abanico con kanban, ficha y Mi trabajo.
 
 ## Animaciones de la marca — `motion/animaciones/`
@@ -78,3 +110,6 @@ Interacciones reales con cursor visible (MP4 + WebM, 1440×900). Detalle en `04-
 - Soporte: 32 tickets · canales email, WhatsApp, teléfono, formulario web.
 - Equipo: Laura Gómez (admin), Carlos Ruiz, Valentina Ríos, Andrés Mejía, Camila Torres,
   Mateo Castro.
+- Sitio WordPress: 10 entradas del blog, 7 páginas, 8 recetas, 10 imágenes; 5 entradas sin
+  meta descripción y 8 imágenes sin texto alternativo.
+- SMS: 33 enviados a los clientes en el mes: 32 entregados y 1 fallido.

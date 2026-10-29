@@ -17,6 +17,9 @@
    - `capturas/escritorio/20-agenda-publica-horario.png`
    - `capturas/escritorio/22-documento-pdf-editor.png`
    - `capturas/escritorio/24-portal-editor.png`
+   - `capturas/escritorio/31-wordpress-pagina-del-sitio.png`, `32-wordpress-revision-seo.png`,
+     `34-wordpress-medios-texto-alternativo.png`
+   - `capturas/escritorio/37-sms-desde-la-ficha.png`, `38-sms-envio-masivo.png`
    - `capturas/oscuro/03-tablero-ventas-oscuro.png`
    - `capturas/celular/01-ventas-pipeline-kanban-celular.png`, `10-ficha-del-cliente-celular.png`, `15-mi-trabajo-celular.png`
    - Los documentos `02-TEXTOS-LANDING.md`, `03-SEO.md` y `04-MOTION.md`
@@ -50,8 +53,13 @@ inventario. Incluye: más de 30 tipos de campo; vistas de tabla tipo Excel, kanb
 totales, calendario, cronograma (Gantt) y carga de trabajo; tableros con indicadores;
 automatizaciones visuales con esperas y condiciones; formularios públicos; portal para
 los clientes; agenda de citas pública; cotizaciones y cuentas de cobro en PDF; links de
-pago con Mercado Pago y Wompi; WhatsApp Business oficial; integraciones con Gmail,
-Google Calendar/Sheets/Drive, Outlook, Slack, Telegram, WooCommerce y SQL Server;
+pago con Mercado Pago y Wompi; WhatsApp Business oficial; SMS con la cuenta propia de
+cada empresa (Twilio, Infobip, BulkGate, LabsMobile, Onurix), que respetan el horario de
+cobranza de la Ley 2300; el sitio WordPress de la empresa sincronizado en tiempo real
+(entradas, páginas, tipos de contenido, campos de ACF/Meta Box/JetEngine, medios y el SEO
+de Rank Math, Yoast, SEOPress o All in One SEO, editables en una tabla y con auditoría
+SEO); integraciones con Gmail, Google Calendar/Sheets/Drive, Outlook, Slack, Telegram,
+WooCommerce y SQL Server;
 inteligencia artificial (asistente que arma listas y tableros en lenguaje natural,
 agentes que trabajan sobre los registros, campos con IA, conexión con Claude); marca
 blanca con dominio propio; app instalable en el celular con notificaciones; importador
@@ -68,7 +76,9 @@ Dueños, gerentes y coordinadores de pymes de 3 a 50 personas en Colombia y el r
 Latinoamérica (distribuidoras, agencias, inmobiliarias, clínicas y consultorios,
 academias, tiendas online, empresas de servicios). No son técnicos. Hoy trabajan con
 Excel, WhatsApp y varias apps sueltas. Segundo público: agencias y consultores que
-implementan sistemas para sus clientes (les interesa la marca blanca).
+implementan sistemas para sus clientes (les interesa la marca blanca) y agencias que
+administran sitios WordPress (les interesa editar el contenido y el SEO de muchos sitios
+desde una tabla).
 
 MENSAJE CENTRAL
 «Una base. Todo tu negocio.» No listes 30 funciones: muestra UN MISMO conjunto de datos
@@ -147,10 +157,17 @@ ESTRUCTURA (en este orden; los textos exactos están en 02-TEXTOS-LANDING.md)
     por WhatsApp, animado.
 11. Inteligencia artificial: asistente, agentes y campos con IA (tres columnas), con
     la etiqueta «Incluida en los planes de pago».
-12. Integraciones: marquee de logos + tres viñetas.
+12. Integraciones: marquee de logos + cuatro viñetas.
+12-A. Tu sitio WordPress (bloque destacado, fondo claro con un acento del degradado):
+    tres pasos en línea (escribe la dirección → apruebas en tu WordPress → editas aquí y
+    se guarda allá) con las capturas 28-30, y cuatro tarjetas (auditoría SEO, la IA
+    escribe lo que falta, campos personalizados con su tipo, siempre al día) con las
+    capturas 31-35. Una franja de confianza sobre el complemento liviano.
+12-B. Mensajes de texto (SMS): la captura 37 grande a un lado y seis viñetas; el
+    contador «Sin tildes: 1 SMS en vez de 2» puede animarse (el número baja de 2 a 1).
 13. En el celular: tres teléfonos en abanico con las capturas de celular.
 14. Tu marca: demo de marca blanca (el portal cambia de color al tocar muestras).
-15. Hecho para Latinoamérica: seis tarjetas.
+15. Hecho para Latinoamérica: siete tarjetas.
 16. Seguridad: cinco viñetas con íconos.
 17. Comparativa en tabla HTML (no imagen), con texto en lugar de ✓/✗ para la
     competencia.
@@ -159,7 +176,7 @@ ESTRUCTURA (en este orden; los textos exactos están en 02-TEXTOS-LANDING.md)
     incluye una mini calculadora «¿Cuántas personas son?» que compara contra
     herramientas que cobran por usuario.
 19. Aprende y soporte (soporte en español en los planes de pago).
-20. Preguntas frecuentes en acordeón (15 preguntas, visibles en el HTML).
+20. Preguntas frecuentes en acordeón (20 preguntas, visibles en el HTML).
 21. Llamado final con el degradado de marca y el botón «Probar gratis 15 días».
 22. Pie de página.
 
@@ -225,7 +242,13 @@ sección de pestañas y precios también en celular (390 px). Usa los textos de
 6. **Comparativa «alternativa a»:** «Diseña la plantilla de página /base/alternativas/airtable/
    con una tabla comparativa honesta (ventajas y desventajas), la ayuda para migrar y un
    llamado a la acción.»
-7. **Entrega para WordPress:** «Prepara la entrega para implementarla en WordPress: HTML
+7. **WordPress y SMS:** «Diseña el bloque 12-A (Tu sitio WordPress) y el 12-B (SMS)
+   con las capturas 28 a 41. En el de WordPress, anima los tres pasos como una línea que
+   avanza y haz que una celda de la tabla cambie («Largo del título: 73» en rojo → 58 en
+   verde) y aparezca un aviso «Guardado en WordPress». En el de SMS, anima el contador: al
+   marcar «Quitar tildes», el número de SMS baja de 2 a 1.» Después, con el mismo sistema,
+   diseña la página `/base/integraciones/wordpress/` pensada para agencias.
+8. **Entrega para WordPress:** «Prepara la entrega para implementarla en WordPress: HTML
    semántico por sección (cada sección como un bloque independiente), CSS con variables
    para los colores y tiempos de animación, JavaScript sin frameworks y solo para lo
    interactivo (demo del hero, pestañas, contadores, calculadora, acordeón), con

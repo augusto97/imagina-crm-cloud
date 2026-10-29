@@ -64,6 +64,17 @@ Mercado Pago, COP o «pesos».
 8. **Casi no hay casos latinoamericanos.** → Casos locales con su cifra (cuando existan).
 9. **Nadie vende marca blanca en la home.** → Dominio, logo y colores propios para
    agencias y consultores.
+10. **El sitio web queda afuera.** En las páginas revisadas ninguna herramienta general
+    trae el sitio WordPress de la empresa como datos editables; eso se resuelve hoy con
+    plugins sueltos dentro de WordPress (exportar e importar, edición masiva, columnas de
+    administración) o con paneles para varios sitios (MainWP, ManageWP) que no editan el
+    contenido como tabla. → «Tu sitio WordPress, en una tabla que se edita», con la
+    auditoría SEO y la IA para lo que falta. *Verificar antes de usarlo en la comparativa
+    pública.*
+11. **Los SMS se compran en otra plataforma.** En las páginas revisadas no aparece el SMS
+    como parte del producto, y menos el horario de cobranza de la Ley 2300 («Dejen de
+    fregar»), que la gente busca por su apodo. → SMS con la cuenta propia de cada empresa
+    y el horario de la ley incluido.
 
 ## 4. Lo que tomamos para Imagina Base
 
