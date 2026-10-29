@@ -10292,6 +10292,109 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contraseña de la app en WordPress; escritorio
         claro y oscuro, celular 390×844 en oscuro).
 
+  - [x] **El complemento para WordPress: SEO, campos con tipo, medios y
+        tiempo real (v0.1.334, ADR-S84, segunda mitad del pedido del conector de
+        WordPress)**. Un plugin propio, **«Imagina Base Connector»**
+        (`integrations/wordpress-plugin/imagina-base-connector/`, GPL, PHP ≥ 7.4,
+        español neutro, sin llamadas a terceros salvo la app), que se instala
+        una vez en el sitio y le abre a la app lo que la API de WordPress no
+        muestra.
+        (a) **Rutas propias** `imagina-base/v1` con la MISMA contraseña de
+        aplicación de la conexión y los permisos del usuario conectado
+        (`edit_posts` para leer y escribir, más `edit_post`/`edit_term` por
+        objeto; `manage_options` para los avisos): `info`, `schema` (columnas
+        con su tipo por objeto), `items/read` (hasta 100 objetos × 150 campos,
+        SÓLO los pedidos) y `items/write` (hasta 50, saneado por tipo, con
+        errores por campo).
+        (b) **SEO normalizado** de **Rank Math, Yoast SEO, SEOPress y All in One
+        SEO** (un adaptador por plugin, uno activo por vez, en ese orden de
+        prioridad): título y descripción SEO, palabra clave, canónica y «no
+        indexar» (editables), y **lo que ve Google de verdad** (título y
+        descripción con las variables del plugin resueltas) y el puntaje, sólo
+        para mirar. También el SEO de categorías y taxonomías donde el plugin lo
+        guarda (AIOSEO gratis no lo tiene: sólo lo que ve Google). La canónica
+        se valida como dirección completa; un backslash en un título no se
+        pierde (`wp_slash`).
+        (c) **Campos con su tipo**: ACF completo (aunque el grupo NO tenga
+        «Mostrar en la API REST»; selección con sus opciones, fecha, sí/no,
+        número…), Meta Box, JetEngine y la meta suelta de otros plugins (las
+        internas plegadas); **palabras** de cada página sin traer el contenido;
+        y la **biblioteca de medios** como recurso, con **dónde se usa cada
+        imagen** (imagen destacada + bloques del contenido).
+        (d) **Avisos en tiempo real firmados**: guardar, mandar a la papelera o
+        borrar entradas, términos y medios (y los cambios de sus metas) se anota
+        en una cola dentro del sitio y se manda a la app SIN frenar el guardado
+        (un pedido en segundo plano al terminar, con WP-Cron de respaldo),
+        firmado `HMAC-SHA256(secreto, "timestamp.cuerpo")` con ±5 minutos de
+        tolerancia, con reintentos (1/2/5/10/30/60 min, se descarta a las 48 h)
+        y sin ecos (lo que escribe la app viaja con `X-Imagina-Source: app`). Un
+        404 de la app apaga el aviso y un 401 lo marca; página de estado en
+        **Herramientas**. Desinstalarlo borra sus opciones y tareas.
+        (e) **Distribución**: la app reparte el complemento desde su propio
+        servidor (`GET /public/wordpress-plugin/download`, zip armado en memoria
+        con `includes/update-source.php` = la dirección de ESA app) y WordPress
+        lo actualiza como cualquier plugin preguntando a
+        `GET /public/wordpress-plugin/info`. El release copia el complemento al
+        bundle (revisado con `php -l`); el actualizador ahora elige el bundle
+        **por su nombre** (`imagina-base-<versión>.zip`) y no «el primer .zip».
+        (f) **En la app**: la página del sitio **detecta el complemento** y, si
+        falta, ofrece instalarlo (qué suma, «Descargar el complemento», abrir
+        «Subir plugin» del sitio, los pasos, «Ya lo instalé», y **«¿Y sin el
+        complemento?»** con lo que sí y lo que no); si está, versión, plugin de
+        SEO y si hay una más nueva. **Modo «Al instante»** (recomendado, el de
+        alta cuando se puede) o «Cada cierto tiempo»: al instante registra el
+        aviso en el sitio (secreto cifrado), muestra «Escuchando al sitio · N
+        avisos» y hace una **revisión completa cada hora** que vuelve a
+        registrar el aviso si el sitio lo perdió o cambió de secreto
+        (`POST /public/site-hooks/:token`: token desconocido 404, firma mala o
+        vencida 401, el procesamiento va a la cola). Columnas agrupadas por
+        origen (**SEO · <plugin>**, ACF, Meta Box, JetEngine, campos
+        personalizados, datos del complemento) con dedup de ACF (API vs
+        complemento) y la biblioteca de **Medios** (miniatura, texto
+        alternativo, leyenda, peso, medidas, uso). Lo del complemento se lee en
+        lote por página y se escribe por su ruta; tras escribir se relee (lo que
+        ve Google se recalcula). **Sin el complemento** (desactivado o
+        desinstalado) sus columnas quedan con lo último que llegó, **bloqueadas
+        con el motivo** (`needs_plugin` en la marca de la lista, también en el
+        aviso de la lista), el modo vuelve a intervalos y se abre un Problema;
+        al volver, todo se desbloquea solo.
+        (g) **Kits listos para vender** (`POST /connections/:id/site-sync/kits`):
+        **Auditoría SEO** (fórmulas `LARGO()` del título y la descripción que ve
+        Google, vistas «Sin descripción», «Título de más de 60 caracteres»,
+        «Descripción de más de 160 caracteres» y «Sin palabra clave», y la
+        columna con IA «Meta descripción sugerida») y **Texto alternativo con
+        IA** (vistas «Sin texto alternativo» e «Imágenes de más de 300 KB», y
+        una columna con IA que MIRA la imagen: un campo URL mostrado como imagen
+        le llega al modelo como imagen, por el proxy con guard anti-SSRF). Se
+        aplican con «Editar en lote → Copiar de otra columna» y se deshacen;
+        «Calcular las sugerencias» desde la misma tarjeta.
+        **Bug real atrapado por el test**: una opción de un select que llega por
+        el complemento con su valor (`disponible`) pisaba la etiqueta
+        («Disponible») como si el término se hubiera renombrado. Ayuda al día:
+        3 artículos nuevos en Aprende → Sitio WordPress (el complemento, el SEO,
+        la biblioteca de medios) con 3 ilustraciones animadas, guía
+        «¿Cómo reviso el SEO y el texto alternativo de mi sitio WordPress?»,
+        novedad con carrusel, dos ideas («Revisa y mejora el SEO…», «Pon texto
+        alternativo…») y anclas `site-plugin-card`, `site-sync-mode`,
+        `site-kit-seo`, `site-kit-alt`. **Entorno**: `wordpress-up.sh` suma
+        `extras` (Rank Math, Yoast SEO, SEOPress y All in One SEO de
+        wordpress.org apagados, Meta Box con un cuadro «Catastro», un grupo de
+        ACF «Ficha interna» SIN «Mostrar en la API REST», 4 imágenes, el
+        complemento del repo), `seo <cual>` (deja UNO activo) y `plugin
+        repo|zip|off|on|remove`. Tests: API `site-plugin.spec` (13: firma,
+        cuerpo, versión/zip/bundle, descubrimiento con dedup, alta al instante
+        con secreto cifrado, escritura por el complemento con eco evitado y
+        rechazo que vuelve al sitio, avisos firmados/falsos/vencidos/
+        desconocidos, red de seguridad, kits, sin complemento, sitio que no
+        llega a la app, dejar de sincronizar), `ai-fields` (+1, imagen), shared
+        (+6), front (+3) — API 1760, front 691, shared 583 en verde — + E2E
+        navegador **59/59 contra un WordPress real** con los cuatro plugins de
+        SEO uno por uno (título y descripción en el `<head>` con cada uno), ACF
+        fuera de la API, Meta Box, texto alternativo, un cambio en WordPress que
+        llega solo por el aviso, firma falsa 401, desinstalar → bloqueado con el
+        motivo → reinstalar desde el zip de la app → vuelve el tiempo real;
+        escritorio claro y oscuro y celular 390×844 en oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
