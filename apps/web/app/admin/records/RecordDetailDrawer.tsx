@@ -68,7 +68,7 @@ import { RecordChecklists } from './checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from './templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
-import { lockedReasonsFor, useStoreRules } from './storeRules';
+import { lockedReasonsFor, mirrorSourceOf, recordGoneInSource, useStoreRules } from './storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from './RecordMetaGrid';
 import { parseUtcDate } from '@/lib/utcDate';
@@ -175,6 +175,7 @@ export function RecordDetailDrawer({
     const qc = useQueryClient();
     // v0.1.213 — lista de una tienda: qué campos se editan en WooCommerce.
     const storeRules = useStoreRules();
+    const goneInSource = recordGoneInSource(storeRules, record);
 
     const draft = useRecordDraft(record);
     const { values, setValues, dirty } = draft;
@@ -318,18 +319,30 @@ export function RecordDetailDrawer({
     };
 
     const handleDelete = async (): Promise<void> => {
-        const ok = await confirm({
-            title: sprintf(
-                /* translators: %s: record title */
-                __('¿Eliminar «%s»?'),
-                title,
-            ),
-            description: record.subtask_count > 0
-                ? __('Va a la papelera junto con sus subtareas: puedes recuperarlo durante 30 días.')
-                : __('Va a la papelera: puedes recuperarlo durante 30 días.'),
-            destructive: true,
-            confirmLabel: __('Eliminar'),
-        });
+        const ok = await confirm(
+            goneInSource
+                ? {
+                      title: sprintf(__('¿Quitar «%s» de la app?'), title),
+                      description: sprintf(
+                          __('Ya se borró en %s. Va a la papelera de la app (puedes recuperarlo durante 30 días) y deja de contar para tu plan. Si vuelve a aparecer allá, vuelve solo.'),
+                          mirrorSourceOf(storeRules) ?? '',
+                      ),
+                      destructive: true,
+                      confirmLabel: __('Quitar de la app'),
+                  }
+                : {
+                      title: sprintf(
+                          /* translators: %s: record title */
+                          __('¿Eliminar «%s»?'),
+                          title,
+                      ),
+                      description: record.subtask_count > 0
+                          ? __('Va a la papelera junto con sus subtareas: puedes recuperarlo durante 30 días.')
+                          : __('Va a la papelera: puedes recuperarlo durante 30 días.'),
+                      destructive: true,
+                      confirmLabel: __('Eliminar'),
+                  },
+        );
         if (!ok) return;
         // Se cierra ANTES de borrar: con la ficha montada, la invalidación de
         // la lista y el aviso del socket volvían a pedir el registro, su
@@ -699,8 +712,9 @@ export function RecordDetailDrawer({
                                 </div>
 
                                 <SheetFooter>
-                                    {storeRules || isGuest ? (
-                                        // Los registros de una tienda se borran en WooCommerce;
+                                    {(storeRules && !goneInSource) || isGuest ? (
+                                        // Los registros de una tienda (o un sitio) se borran allá
+                                        // —lo que ya se borró allá sí se quita, v0.1.336—;
                                         // un invitado de afuera nunca borra.
                                         <span className="imcrm-mr-auto" />
                                     ) : (
@@ -709,11 +723,12 @@ export function RecordDetailDrawer({
                                             className="imcrm-mr-auto imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
                                             onClick={() => void handleDelete()}
                                             disabled={remove.isPending}
-                                            aria-label={__('Eliminar')}
-                                            title={__('Eliminar')}
+                                            aria-label={goneInSource ? __('Quitar de la app') : __('Eliminar')}
+                                            title={goneInSource ? __('Quitar de la app') : __('Eliminar')}
+                                            data-testid="imcrm-record-delete"
                                         >
                                             <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                            <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
+                                            <span className="imcrm-hidden sm:imcrm-inline">{goneInSource ? __('Quitar de la app') : __('Eliminar')}</span>
                                         </Button>
                                     )}
                                     <Button variant="outline" onClick={() => void requestClose()}>

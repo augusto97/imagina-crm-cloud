@@ -212,7 +212,8 @@ export function TableView({
     // y cada celda dice si se puede editar (mismas reglas que el backend).
     const storeRules = useStoreRules();
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
-    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS) && storeRules === null;
+    // En una lista de la tienda o del sitio, el menú sólo ofrece quitar lo que la fuente ya borró (v0.1.336).
+    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
     // Menú contextual de fila (click derecho) — v0.1.129.
     const [rowMenu, setRowMenu] = useState<RowMenuTarget | null>(null);
     // Subtareas (v0.1.132): qué padres están abiertos y sus hijos ya traídos.

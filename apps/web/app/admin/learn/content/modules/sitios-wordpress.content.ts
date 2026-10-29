@@ -220,8 +220,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'warn',
-                title: 'No se crean ni se borran entradas desde aquí',
-                md: 'En las listas del sitio no se crean, borran ni importan registros: ni a mano, ni con automatizaciones, ni con el asistente. Eso se hace en WordPress y llega solo; el aviso de la lista tiene el enlace **Crear en WordPress**. Una entrada que está en la papelera de WordPress tampoco se edita aquí: hay que restaurarla allá.',
+                title: 'Las entradas se crean y se borran en WordPress',
+                md: 'En las listas del sitio no se crean ni se importan registros: ni a mano, ni con automatizaciones, ni con el asistente. Eso se hace en WordPress y llega solo; el aviso de la lista tiene el enlace **Crear en WordPress**. Lo que **ya se borró en WordPress** sí se puede quitar de la app (mira **Lo que se borra en tu sitio y lo nuevo que aparece**); lo que sigue vivo allá, no. Una entrada que está en la papelera de WordPress tampoco se edita aquí: hay que restaurarla allá.',
             },
             {
                 t: 'example',
@@ -515,7 +515,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Puedo borrar entradas en lote?', a: 'No: en las listas del sitio no se borra desde la app. Mándalas a la papelera en WordPress y llegan solas con ese estado.' },
+                    { q: '¿Puedo borrar entradas en lote?', a: 'Se borran en WordPress: mándalas a la papelera allá y llegan solas con ese estado. Después, si ya no te sirven en la app, quítalas de una vez con **Quitarlos de la app** en la barra de la lista.' },
                     { q: '¿Dispara automatizaciones?', a: 'Sí: cada cambio es un cambio real del registro y dispara las automatizaciones de la lista.' },
                     { q: '¿Qué pasa si WordPress rechaza algunas?', a: 'Las rechazadas vuelven al valor del sitio y la página del sitio cuenta cuántos cambios no llegaron y por qué.' },
                 ],
@@ -525,6 +525,96 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'La edición en lote en cualquier lista', article: 'lote-editar-en-lote' },
+                ],
+            },
+        ],
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'sitio-borrado-y-novedades',
+        route: '/lists',
+        related: ['sitio-el-sitio-manda', 'sitio-sincronizar', 'tienda-lo-que-se-borra', 'ajustes-empresa-papelera'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Tu sitio cambia: se borran entradas que ya no van, alguien crea un campo nuevo con ACF o un plugin suma un tipo de contenido. La app se entera sola de las dos cosas: lo que **se borra** en WordPress queda marcado en su lista (y si quieres, sale de la app), y lo **nuevo** aparece como novedad en la página del sitio para que decidas si traerlo.',
+            },
+            { t: 'anim', key: 'fuente-borrado', caption: 'Lo que se borró en WordPress queda marcado «Papelera»; con un toque sale de la lista y pasa a la papelera de la app.' },
+            { t: 'h', text: 'Lo que se borra en WordPress' },
+            {
+                t: 'p',
+                md: 'Cuando mandas una entrada a la papelera de WordPress (o la borras del todo), su registro queda en la lista con el estado **Papelera** y todos sus datos. Arriba de la lista aparece una barra que lo cuenta: **1 registro ya se borró en WordPress**.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'En la lista, toca **Quitarlos de la app** en la barra. Para uno solo, abre el menú de su fila (clic derecho) o su ficha y toca **Quitar de la app**.',
+                    'Revisa cuántos se quitan y toca **Quitar N registros de la app**.',
+                    'Listo: salen de la lista, van a la **papelera de la app** por 30 días y **dejan de contar para tu plan**. Al terminar puedes **Deshacer**.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Lo que sigue en WordPress no se quita',
+                md: 'Sólo se quita lo que ya se borró en el sitio. Si intentas quitar algo que sigue vivo allá, la app te dice **Sigue en WordPress: se borra allá**: si lo quitaras aquí, volvería en la próxima sincronización.',
+            },
+            { t: 'h', text: 'Que salga solo' },
+            {
+                t: 'p',
+                md: 'Si nunca quieres conservar lo que se borra, en la página del sitio, en **Lo que se borra en WordPress**, elige **Quitarlo de la app**. Desde ese momento lo que se borre en WordPress sale solo de la lista, y lo que ya estaba marcado se quita al elegirlo (la app te pide confirmar y dice cuántos son). **Conservarlo marcado** es lo de siempre: queda en la lista con el estado **Papelera**.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Conservarlo marcado', what: 'Queda en la lista con el estado «Papelera» y todos sus datos. Lo quitas cuando quieras.' },
+                    { name: 'Quitarlo de la app', what: 'Sale de la lista solo, va a la papelera de la app 30 días y deja de contar para tu plan.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Si vuelve en WordPress, vuelve aquí',
+                md: 'Si alguien restaura la entrada en WordPress, en la próxima sincronización vuelve **el mismo registro**, con su historial, sus comentarios y sus columnas propias. También puedes recuperarlo a mano desde **Ajustes → Papelera** durante 30 días: vuelve marcado, porque sigue borrado en el sitio.',
+            },
+            { t: 'h', text: 'Lo nuevo de tu sitio' },
+            { t: 'anim', key: 'sitio-novedades', caption: 'Un campo nuevo de ACF aparece como novedad; al tocar Traer, la columna llega llena con lo que tiene el sitio.' },
+            {
+                t: 'p',
+                md: 'Una vez por día la app revisa tu sitio. Si aparece un **tipo de contenido nuevo** (por ejemplo, «Proyectos») o una **columna nueva** en algo que ya traes (un campo de ACF, un campo personalizado, el SEO de un plugin recién instalado), la página del sitio muestra la tarjeta **Novedades en tu sitio**, y la lista afectada lo avisa en su barra de arriba.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Traer / Traerlo', what: 'Suma la columna a su lista (se llena sola con lo que tiene el sitio) o crea la lista del tipo de contenido nuevo con sus columnas de siempre.' },
+                    { name: 'Ya lo vi', what: 'Deja de mostrarlo. Si después lo quieres, lo traes desde **Traer otra columna** o **Traer otro tipo de contenido**.' },
+                    { name: 'Buscar novedades ahora', what: 'Revisa el sitio en el momento, sin esperar a la revisión del día.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Lo que ya estaba en el sitio cuando lo conectaste y elegiste no traer **no aparece como novedad**: la app sólo avisa lo que apareció después. Los campos internos de los plugins (los que empiezan con guion bajo) tampoco.',
+            },
+            {
+                t: 'example',
+                title: 'Una colección que no vuelve',
+                md: 'Una tienda de ropa publicaba su colección de invierno como entradas. Termina la temporada y las manda a la papelera de WordPress: en la app aparecen marcadas. Como esas prendas no vuelven, toca **Quitarlos de la app**: la lista queda limpia y esos registros dejan de contar para el plan. En marzo crean con ACF un campo **Temporada**: la página del sitio lo avisa y con **Traer** ya tienen la columna llena.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Quitar de la app borra algo en WordPress?', a: 'No. Sólo saca el registro de la app; en WordPress no se toca nada.' },
+                    { q: '¿Qué pasa después de los 30 días?', a: 'El registro se borra de la papelera de la app para siempre. Si la entrada vuelve a estar en WordPress después, llega como registro nuevo.' },
+                    { q: '¿Quién puede quitar registros?', a: 'Quien puede borrar registros en la lista. Para quitar varios de una vez hace falta poder hacer acciones en lote.' },
+                    { q: '¿Las novedades se revisan solas?', a: 'Sí, una vez por día y cada vez que abres **Traer otra columna** o **Traer otro tipo de contenido**.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Recuperar algo de la papelera', article: 'ajustes-empresa-papelera' },
                 ],
             },
         ],

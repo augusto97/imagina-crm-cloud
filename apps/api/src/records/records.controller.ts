@@ -215,6 +215,16 @@ export class RecordsController {
         return this.records.batchRemove(tenantId(req), actor(req), list, input.items);
     }
 
+    /**
+     * v0.1.336 — En una lista espejo (la tienda o el sitio): cuántas filas ya se
+     * borraron en la fuente y se pueden quitar de la app.
+     */
+    @Get('source-gone')
+    @RequireCapability('delete_records', 'delete_own_records')
+    async sourceGone(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: { count: number } }> {
+        return { data: { count: await this.records.sourceGoneCount(tenantId(req), list) } };
+    }
+
     @Get(':id')
     @AllowGuest()
     @RequireCapability('view_records', 'view_own_records')

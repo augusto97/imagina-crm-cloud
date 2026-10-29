@@ -71,7 +71,8 @@ import {
 } from '../lists/list-acl';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
-import { assertNotStoreManaged } from '../lists/store-guard';
+import { assertNotStoreManaged, mirrorStillAliveError } from '../lists/store-guard';
+import { countGoneInList, goneIdsInList, rowIsGone } from '../sync/source-gone';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
@@ -1746,6 +1747,22 @@ export class RecordsService {
         if (!opts.silent) this.realtime.records(tenantId, list.id);
     }
 
+    /** v0.1.336 — Cuántas filas de una lista espejo ya se borraron en la fuente (0 en una lista común). */
+    async sourceGoneCount(tenantId: number, listIdOrSlug: string): Promise<number> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const mirror = readMirrorListMarker(list.settings);
+        if (!mirror) return 0;
+        return this.tenantDb.withTenant(tenantId, (tx) => countGoneInList(tx, tenantId, list.id, mirror));
+    }
+
+    /** v0.1.336 — Los ids de las filas que ya se borraron en la fuente (vacío en una lista común). */
+    async sourceGoneIds(tenantId: number, listIdOrSlug: string): Promise<Set<number>> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const mirror = readMirrorListMarker(list.settings);
+        if (!mirror) return new Set();
+        return new Set(await this.tenantDb.withTenant(tenantId, (tx) => goneIdsInList(tx, tenantId, list.id, mirror)));
+    }
+
     async remove(
         tenantId: number,
         actor: Actor,
@@ -1755,10 +1772,15 @@ export class RecordsService {
     ): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
-        assertNotStoreManaged(list, 'delete');
+        // v0.1.336 — en una lista espejo sólo se quita lo que la fuente ya borró.
+        const mirror = readMirrorListMarker(list.settings);
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
+            if (mirror) {
+                const parent = current.parentId ? await this.repo.findById(tx, tenantId, listId, current.parentId) : null;
+                if (!rowIsGone(mirror, current.data, parent?.data ?? null)) throw mirrorStillAliveError(mirror);
+            }
             const ok = await this.repo.softDelete(tx, tenantId, listId, id, actor.userId);
             if (ok) {
                 // Las subtareas se van con el padre: si no, quedarían vivas

@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { bulkOperationSchema, type BulkOperationInput } from '@imagina-base/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import Redis from 'ioredis';
@@ -40,6 +43,8 @@ const wp = vi.hoisted(() => ({
     appPasswordNames: {} as Record<string, string>,
     /** El próximo POST a una entrada se rechaza (como un plugin que valida). */
     rejectNext: false,
+    /** v0.1.336 — tipos de contenido que se crean en el sitio después de conectarlo (un CPT nuevo). */
+    extraTypes: {} as Record<string, { rest: string; name: string; hier: boolean; taxes: string[]; supports: string[] }>,
 }));
 
 vi.mock('../src/common/safe-fetch', async (importOriginal) => {
@@ -126,14 +131,14 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 return res(200, { id: 1, username: 'admin', name: 'Ana Admin', roles: ['administrator'], capabilities: { edit_posts: true, edit_pages: true, manage_categories: true } });
             }
             if (path === '/wp/v2/types') {
-                return res(200, Object.fromEntries(Object.entries(TYPES).map(([slug, t]) => [slug, { name: t.name, rest_base: t.rest, rest_namespace: 'wp/v2', hierarchical: t.hier, viewable: true, taxonomies: t.taxes, supports: Object.fromEntries(t.supports.map((s) => [s, true])) }])));
+                return res(200, Object.fromEntries(Object.entries({ ...TYPES, ...wp.extraTypes }).map(([slug, t]) => [slug, { name: t.name, rest_base: t.rest, rest_namespace: 'wp/v2', hierarchical: t.hier, viewable: true, taxonomies: t.taxes, supports: Object.fromEntries(t.supports.map((s) => [s, true])) }])));
             }
             if (path === '/wp/v2/taxonomies') {
                 return res(200, Object.fromEntries(Object.entries(TAXES).map(([slug, t]) => [slug, { name: t.name, rest_base: t.rest, rest_namespace: 'wp/v2', hierarchical: t.hier, visibility: { show_ui: true } }])));
             }
             if (path === '/wp/v2/users') return res(200, [{ id: 1, name: 'Ana Admin' }]);
             if (path === '/wp/v2/media') return res(200, [{ id: 30, source_url: 'https://blog.test/foto.jpg', media_details: { sizes: { thumbnail: { source_url: 'https://blog.test/foto-150x150.jpg' } } } }]);
-            const type = Object.entries(TYPES).find(([, t]) => path.startsWith(`/wp/v2/${t.rest}`));
+            const type = Object.entries({ ...TYPES, ...wp.extraTypes }).find(([, t]) => path.startsWith(`/wp/v2/${t.rest}`));
             const tax = Object.entries(TAXES).find(([, t]) => path.startsWith(`/wp/v2/${t.rest}`));
             if (tax) {
                 const [slug, t] = tax;
@@ -207,6 +212,9 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
+import { LocalFileStorage } from '../src/files/file-storage';
+import { FilesService } from '../src/files/files.service';
+import { TrashService } from '../src/trash/trash.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
@@ -216,7 +224,7 @@ import { DashboardsService } from '../src/dashboards/dashboards.service';
 import { AutomationScheduler } from '../src/automations/automation-scheduler.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
-import { connectionSyncs, connections, lists, memberships, plans, records, syncLinks, tenants, users } from '../src/db/schema';
+import { activity as activityTable, connectionSyncs, connections, lists, memberships, plans, records, syncLinks, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -383,6 +391,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
     let history: BulkHistoryService;
     let dispatcher: CapturingDispatcher;
     let queue: CapturingQueue;
+    let trash: TrashService;
     const reports: IncidentReport[] = [];
     const resolved: string[] = [];
     let tenantId: number;
@@ -416,6 +425,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         const automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), new NoHooks(), connectors);
         const plansService = new PlansService(pg.db);
         const billing = new BillingService(tenantDb, plansService, new EmailQuotaService(pg.db, plansService), new TenantSmtpService(pg.db, env));
+        trash = new TrashService(tenantDb, pg.db, env, rt, audit, new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-site-trash-'))), env), new AutomationScheduler(), new AutomationDispatcher(), billing);
         const blueprints = new BlueprintService(
             tenantDb,
             listsService,
@@ -451,6 +461,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
             writeBack,
             new SiteRealtimeService(tenantDb, pg.db, env, engine, queue),
             new WordpressPluginService(env),
+            activity,
             rt,
         );
         writeBack.setCredsResolver((t, s) => svc.credsForSync(t, s));
@@ -459,7 +470,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         // La tienda, para comprobar que una y otra no se pisan.
         const storeEngine = new StoreSyncEngine(tenantDb, fieldsService, billing, rt, dispatcher, activity, redis);
         const storeQueue = new StoreSyncQueue();
-        storeSvc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, storeEngine, storeQueue, new StoreRealtimeService(tenantDb, pg.db, env, storeEngine, storeQueue));
+        storeSvc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, storeEngine, storeQueue, new StoreRealtimeService(tenantDb, pg.db, env, storeEngine, storeQueue), activity);
 
         await pg.db.insert(plans).values({ slug: 'grande', name: 'Grande', maxRecords: null }).onConflictDoNothing();
         await pg.db.insert(plans).values({ slug: 'mini', name: 'Mini', maxRecords: 3 }).onConflictDoNothing();
@@ -613,13 +624,13 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         await expect(svc.setup(tenantId, adminId, 'admin', connId, { objects: [{ kind: 'post_type', object: 'post', columns: ['title'], editable: [] }], write_back: true, interval_minutes: 15, mode: 'interval' })).rejects.toThrow(/ya se está sincronizando/);
     });
 
-    it('primera carga: borradores y la papelera también, términos como opciones, ACF con su tipo — sin disparar automatizaciones', async () => {
+    it('primera carga: borradores también (lo que ya está en la papelera de WordPress no se trae), términos como opciones, ACF con su tipo — sin disparar automatizaciones', async () => {
         expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
         const st = await svc.status(tenantId, adminId, 'admin', connId);
         expect(st.last_error).toBeNull();
         expect(st.initial_done).toBe(true);
         expect(st.objects.map((o) => [o.resource, o.count])).toEqual([
-            ['post:propiedad', 3],
+            ['post:propiedad', 2],
             ['post:post', 3],
             ['post:page', 2],
             ['term:category', 2],
@@ -636,7 +647,8 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
             [k('post:propiedad', 'featured_image')]: 'https://blog.test/foto-150x150.jpg',
             [k('post:propiedad', 'edit_link')]: 'https://blog.test/wp-admin/post.php?post=30&action=edit',
         });
-        expect(props.find((r) => r[k('post:propiedad', 'wp_id')] === 32)![k('post:propiedad', 'status')]).toBe('trash');
+        // v0.1.336 — la Finca ya estaba en la papelera de WordPress al conectar: no se trae.
+        expect(props.find((r) => r[k('post:propiedad', 'wp_id')] === 32)).toBeUndefined();
         const posts = await rows(tenantId, L['post:post']!.id);
         expect(posts.find((r) => r[k('post:post', 'title')] === 'Borrador de ideas')![k('post:post', 'status')]).toBe('draft');
         const pages = await rows(tenantId, L['post:page']!.id);
@@ -647,7 +659,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         expect(wp.calls.every((c) => !/_fields=[^&]*content/.test(decodeURIComponent(c.url)))).toBe(true);
         // Re-correr no duplica.
         await svc.runJob(tenantId, syncId, { full: true });
-        expect(await rows(tenantId, L['post:propiedad']!.id)).toHaveLength(3);
+        expect(await rows(tenantId, L['post:propiedad']!.id)).toHaveLength(2);
     });
 
     it('incremental: trae lo modificado (por fecha de modificación) y lo nuevo, y ahí sí dispara automatizaciones', async () => {
@@ -661,7 +673,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         // Pidió desde la última fecha vista (un segundo antes: el filtro es exclusivo).
         expect(wp.calls.some((c) => c.url.includes('/propiedades') && c.url.includes('modified_after='))).toBe(true);
         const props = await rows(tenantId, L['post:propiedad']!.id);
-        expect(props).toHaveLength(4);
+        expect(props).toHaveLength(3);
         expect(props.find((r) => r[k('post:propiedad', 'wp_id')] === 31)).toMatchObject({ [k('post:propiedad', 'title')]: 'Apartamento renovado', [k('post:propiedad', 'acf:ciudad')]: 'Bogotá D.C.' });
         const kinds = dispatcher.events.map((e) => e.trigger);
         expect(kinds).toEqual(expect.arrayContaining(['record_created', 'record_updated']));
@@ -671,8 +683,123 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         wp.posts.propiedad = wp.posts.propiedad!.filter((x) => x.id !== 33);
         await svc.runJob(tenantId, syncId, { full: true });
         const props = await rows(tenantId, L['post:propiedad']!.id);
-        expect(props).toHaveLength(4);
+        expect(props).toHaveLength(3);
         expect(props.find((r) => r[k('post:propiedad', 'wp_id')] === 33)![k('post:propiedad', 'status')]).toBe('trash');
+    });
+
+    // ── v0.1.336: quitar de la app lo que WordPress ya borró ───────────────
+
+    let loteId = 0;
+    const propRow = async (wpId: number) => (await rows(tenantId, L['post:propiedad']!.id)).find((r) => r[k('post:propiedad', 'wp_id')] === wpId);
+
+    it('quitar de la app lo que WordPress ya borró: sólo eso, deja de contar y no vuelve mientras siga borrado', async () => {
+        const slug = L['post:propiedad']!.slug;
+        const lote = (await propRow(33))!;
+        const casa = (await propRow(30))!;
+        loteId = lote.id;
+        expect(await recordsService.sourceGoneCount(tenantId, slug)).toBe(1);
+        const st0 = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st0.gone).toEqual([{ list: expect.objectContaining({ id: L['post:propiedad']!.id }), count: 1 }]);
+        expect(st0.on_source_delete).toBe('keep');
+        // Lo que sigue vivo en WordPress no se quita (volvería en la próxima vuelta).
+        await expect(recordsService.remove(tenantId, admin(), slug, casa.id)).rejects.toThrow(/Sigue en WordPress/);
+        await recordsService.remove(tenantId, admin(), slug, lote.id);
+        expect(await recordsService.sourceGoneCount(tenantId, slug)).toBe(0);
+        expect(await rows(tenantId, L['post:propiedad']!.id)).toHaveLength(2);
+        // Va a la papelera de la app (se puede restaurar), no se borra de verdad.
+        const [inTrash] = await withTenant(pg.db, tenantId, (tx) => tx.select({ deletedAt: records.deletedAt }).from(records).where(eq(records.id, lote.id)));
+        expect(inTrash!.deletedAt).not.toBeNull();
+        // Aparece en la papelera de la app (lo vivo de la lista, no) y se puede restaurar: vuelve marcado.
+        const viewer = { userId: adminId, role: 'admin' as const };
+        const listed = await trash.list(tenantId, viewer as never, { page: 1, limit: 50, type: 'record' } as never);
+        expect(listed.data.filter((i) => i.list_id === L['post:propiedad']!.id).map((i) => [i.id, i.name])).toEqual([[lote.id, 'Lote']]);
+        await trash.restore(tenantId, viewer as never, 'record', lote.id);
+        expect(await recordsService.sourceGoneCount(tenantId, slug)).toBe(1);
+        await recordsService.remove(tenantId, admin(), slug, lote.id);
+        // Una vuelta completa no lo trae de nuevo, y el vínculo sigue siendo el mismo registro.
+        await svc.runJob(tenantId, syncId, { full: true });
+        expect(await rows(tenantId, L['post:propiedad']!.id)).toHaveLength(2);
+        const [link] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select().from(syncLinks).where(and(eq(syncLinks.syncId, syncId), eq(syncLinks.resource, 'post:propiedad'), eq(syncLinks.externalId, '33'))),
+        );
+        expect(link!.recordId).toBe(lote.id);
+    });
+
+    it('si vuelve a aparecer en WordPress (lo restauraron), vuelve el MISMO registro', async () => {
+        wp.posts.propiedad!.push(post('propiedad', 33, 'Lote', { zonas: [7], acf: { precio: 50000000, ciudad: 'Cali', habitaciones: 0 }, meta: { referencia: 'REF-4' } }));
+        await svc.runJob(tenantId, syncId, {});
+        const back = (await propRow(33))!;
+        expect(back.id).toBe(loteId);
+        expect(back[k('post:propiedad', 'status')]).toBe('publish');
+        const log = await withTenant(pg.db, tenantId, (tx) => tx.select().from(activityTable).where(and(eq(activityTable.recordId, loteId), eq(activityTable.action, 'record_restored'))));
+        expect(log.map((l) => l.diff)).toContainEqual({ source_back: { from: null, to: 'WordPress' } });
+    });
+
+    it('«quitarlo de la app» solo: se quita lo que ya estaba marcado, lo que se borra después sale solo, y si vuelve, vuelve', async () => {
+        const slug = L['post:propiedad']!.slug;
+        // El Lote va a la papelera de WordPress: queda marcado en la app.
+        const lote = wp.posts.propiedad!.find((x) => x.id === 33)!;
+        lote.status = 'trash';
+        lote.modified = tick();
+        await svc.runJob(tenantId, syncId, {});
+        expect((await propRow(33))![k('post:propiedad', 'status')]).toBe('trash');
+        expect(await recordsService.sourceGoneCount(tenantId, slug)).toBe(1);
+        // Al elegir «quitarlo de la app», lo que ya estaba marcado también sale.
+        const st = await svc.update(tenantId, adminId, 'admin', connId, { on_source_delete: 'remove' });
+        expect(st.on_source_delete).toBe('remove');
+        expect(st.gone).toEqual([]);
+        expect(await propRow(33)).toBeUndefined();
+        const gone = await withTenant(pg.db, tenantId, (tx) => tx.select().from(activityTable).where(and(eq(activityTable.recordId, loteId), eq(activityTable.action, 'record_deleted'))));
+        expect(gone.map((l) => l.diff)).toContainEqual({ source_gone: { from: 'WordPress', to: null } });
+        // Lo que se borra después sale solo, en la misma vuelta.
+        const apto = wp.posts.propiedad!.find((x) => x.id === 31)!;
+        apto.status = 'trash';
+        apto.modified = tick();
+        await svc.runJob(tenantId, syncId, {});
+        expect(await propRow(31)).toBeUndefined();
+        expect(await rows(tenantId, L['post:propiedad']!.id)).toHaveLength(1);
+        // Y si se restauran en WordPress, vuelven los mismos registros.
+        for (const p of [apto, lote]) {
+            p.status = 'publish';
+            p.modified = tick();
+        }
+        await svc.runJob(tenantId, syncId, {});
+        expect(await rows(tenantId, L['post:propiedad']!.id)).toHaveLength(3);
+        expect((await propRow(33))!.id).toBe(loteId);
+        await svc.update(tenantId, adminId, 'admin', connId, { on_source_delete: 'keep' });
+    });
+
+    it('novedades: un campo de ACF y un tipo de contenido nuevos se avisan; «Ya lo vi» y traerlo los sacan', async () => {
+        // Hasta ahora, nada nuevo: lo que el sitio ofrecía al conectar es la base.
+        const before = await svc.checkNovelties(tenantId, adminId, 'admin', connId);
+        expect(before.novelties!.items).toEqual([]);
+        // En el sitio: un campo de ACF nuevo en Propiedades y un tipo de contenido nuevo.
+        (wp.posts.propiedad!.find((x) => x.id === 30)!.acf as Row).metraje = 120;
+        wp.extraTypes.proyecto = { rest: 'proyectos', name: 'Proyectos', hier: false, taxes: [], supports: ['title'] };
+        wp.posts.proyecto = [post('proyecto', 50, 'Edificio Centro')];
+        const st = await svc.checkNovelties(tenantId, adminId, 'admin', connId);
+        expect(st.novelties!.items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ resource: 'post:proyecto', column: null, object_label: 'Proyectos' }),
+                expect.objectContaining({ resource: 'post:propiedad', column: expect.objectContaining({ key: 'acf:metraje' }) }),
+            ]),
+        );
+        // Las columnas viejas que no se eligieron al conectar NO son novedad.
+        expect(st.novelties!.items.filter((n) => n.resource === 'post:propiedad').map((n) => n.column?.key)).toEqual(['acf:metraje']);
+        // La lista también lo avisa.
+        const marker = async () =>
+            ((await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, L['post:propiedad']!.id))))[0]!.settings as { site_sync: { new_columns: string[] } }).site_sync;
+        expect((await marker()).new_columns).toEqual(['Metraje']);
+        // «Ya lo vi» del tipo de contenido.
+        const dismissed = await svc.dismissNovelties(tenantId, adminId, 'admin', connId, { items: [{ resource: 'post:proyecto', key: null }] });
+        expect(dismissed.novelties!.items.map((n) => n.resource)).toEqual(['post:propiedad']);
+        // Traer la columna la saca de las novedades (y del aviso de la lista).
+        const added = await svc.addColumn(tenantId, adminId, 'admin', connId, { resource: 'post:propiedad', key: 'acf:metraje' });
+        expect(added.novelties!.items).toEqual([]);
+        expect((await marker()).new_columns).toEqual([]);
+        // Mirar de nuevo no vuelve a mostrar nada de eso.
+        const again = await svc.checkNovelties(tenantId, adminId, 'admin', connId);
+        expect(again.novelties!.items).toEqual([]);
     });
 
     it('editar desde la app: SÓLO lo que cambió viaja; un término nuevo se crea en WordPress; lo bloqueado se rechaza con el motivo', async () => {
@@ -682,10 +809,15 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         await expect(recordsService.update(tenantId, admin(), slug, casa.id, { data: { [k('post:propiedad', 'acf:habitaciones')]: 5 } } as never)).rejects.toThrow(/habilítala/);
         await expect(recordsService.update(tenantId, admin(), slug, casa.id, { data: { [k('post:propiedad', 'link')]: 'https://x.test' } } as never)).rejects.toThrow(/Lo pone WordPress/);
         await expect(recordsService.update(tenantId, admin(), slug, casa.id, { data: { [k('post:propiedad', 'title')]: '  ' } } as never)).rejects.toThrow(/título no puede quedar vacío/);
-        const finca = props.find((r) => r[k('post:propiedad', 'wp_id')] === 32)!;
-        await expect(recordsService.update(tenantId, admin(), slug, finca.id, { data: { [k('post:propiedad', 'title')]: 'X' } } as never)).rejects.toThrow(/papelera de WordPress/);
+        // Lo que está en la papelera de WordPress no se edita aquí.
+        const lote = wp.posts.propiedad!.find((x) => x.id === 33)!;
+        lote.status = 'trash';
+        lote.modified = tick();
+        await svc.runJob(tenantId, syncId, {});
+        const loteRow = (await propRow(33))!;
+        await expect(recordsService.update(tenantId, admin(), slug, loteRow.id, { data: { [k('post:propiedad', 'title')]: 'X' } } as never)).rejects.toThrow(/papelera de WordPress/);
         await expect(recordsService.create(tenantId, admin(), slug, { data: { [k('post:propiedad', 'title')]: 'Nueva' } } as never)).rejects.toThrow(/se crea en WordPress/);
-        await expect(recordsService.remove(tenantId, admin(), slug, casa.id)).rejects.toThrow(/se borra en WordPress/);
+        await expect(recordsService.remove(tenantId, admin(), slug, casa.id)).rejects.toThrow(/Sigue en WordPress: se borra allá/);
         await expect(importer.preview(tenantId, slug, 'Título\nX')).rejects.toThrow(/importar/);
 
         queue.pushes.length = 0;
@@ -847,7 +979,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
     it('dejar de sincronizar conserva las listas y sus datos, y ya se editan libremente', async () => {
         await svc.remove(tenantId, adminId, 'admin', connId);
         const props = await rows(tenantId, L['post:propiedad']!.id);
-        expect(props).toHaveLength(4);
+        expect(props).toHaveLength(3);
         const [list] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, L['post:propiedad']!.id)));
         expect((list!.settings as Record<string, unknown>).site_sync).toBeUndefined();
         const created = await recordsService.create(tenantId, admin(), L['post:propiedad']!.slug, { data: { [k('post:propiedad', 'title')]: 'Ahora sí' } } as never);

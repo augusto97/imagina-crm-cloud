@@ -76,7 +76,7 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                 <div className="imcrm-mt-2 imcrm-grid imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-2 imcrm-text-muted-foreground sm:imcrm-grid-cols-2">
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                         <li>
-                            {__('Los registros se crean y se borran en WooCommerce, y llegan solos.')}
+                            {__('Los registros se crean y se borran en WooCommerce, y llegan solos. Lo que se borra allá queda aquí marcado (o sale solo, si lo elegiste en la página de la tienda) y lo puedes quitar de la app cuando quieras.')}
                             {createUrl && (
                                 <>
                                     {' '}

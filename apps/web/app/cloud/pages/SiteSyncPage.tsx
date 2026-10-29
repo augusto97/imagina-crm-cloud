@@ -8,8 +8,10 @@ import {
     type SiteObject,
     type SiteObjectChoice,
     type SiteSyncMode,
+    type SiteNovelty,
     type SiteSyncObjectState,
     type SiteSyncStatus,
+    type SourceDeleteMode,
 } from '@imagina-base/shared';
 import {
     AlertTriangle,
@@ -25,6 +27,7 @@ import {
     Lock,
     Plus,
     RefreshCw,
+    Sparkles,
     Tags,
     FileText,
     X,
@@ -34,6 +37,7 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { SiteEditableColumns } from '@/cloud/components/SiteEditableColumns';
 import { SiteKits } from '@/cloud/components/SiteKits';
 import { SitePluginCard } from '@/cloud/components/SitePluginCard';
+import { SourceDeleteChoice, SourceDeleteSection } from '@/cloud/components/SourceDeleteSection';
 import { SiteSyncModeChoice } from '@/cloud/components/SiteSyncMode';
 import { siteColumnGroups, siteColumnOrigin } from '@/cloud/components/siteColumnGroups';
 import { api } from '@/cloud/session';
@@ -224,6 +228,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
     /** null = lo recomendado: al instante si el sitio lo permite. */
     const [pickedMode, setPickedMode] = useState<SiteSyncMode | null>(null);
     const [writeBack, setWriteBack] = useState(true);
+    const [onDelete, setOnDelete] = useState<SourceDeleteMode>('keep');
     const [error, setError] = useState<string | null>(null);
     const realtimeBlocked = discover.data ? realtimeBlockedFor(discover.data) : __('Revisando el sitio…');
     const mode: SiteSyncMode = realtimeBlocked !== null ? 'interval' : pickedMode ?? 'realtime';
@@ -234,6 +239,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
                 write_back: writeBack,
                 interval_minutes: interval,
                 mode,
+                on_source_delete: onDelete,
             }),
         onSuccess: onDone,
         onError: (err) => setError(errText(err)),
@@ -355,6 +361,10 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
                         </span>
                     </span>
                 </label>
+                <div className="imcrm-space-y-2">
+                    <p className="imcrm-text-sm imcrm-font-medium">{__('Cuando algo se borre en WordPress')}</p>
+                    <SourceDeleteChoice value={onDelete} onChange={setOnDelete} source="WordPress" />
+                </div>
             </fieldset>
 
             {chosen.length > 0 && (
@@ -640,6 +650,7 @@ function Configured({
                     recheckLabel={status.plugin?.missing_since ? __('Ya lo activé') : __('Ya lo instalé')}
                 />
             )}
+            <SiteNoveltiesCard status={status} connectionId={connectionId} onChange={onChange} onQueued={onQueued} />
             <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-site-sync-status">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
@@ -739,6 +750,17 @@ function Configured({
             ))}
 
             <AddObjects status={status} connectionId={connectionId} onQueued={onQueued} />
+
+            <SourceDeleteSection
+                value={update.isPending && update.variables?.on_source_delete ? update.variables.on_source_delete : status.on_source_delete}
+                gone={status.gone}
+                source="WordPress"
+                busy={update.isPending}
+                onChange={(v) => {
+                    setError(null);
+                    update.mutate({ on_source_delete: v });
+                }}
+            />
 
             <section className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-4">
                 <div className="imcrm-min-w-0 imcrm-text-sm">
@@ -1032,9 +1054,13 @@ function ObjectCard({
             {o.list && (o.kind === 'media' || o.kind === 'post_type' || o.kind === 'taxonomy') && <SiteKits object={o} status={status} connectionId={connectionId} />}
             {status.site_url && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {o.kind === 'media'
-                        ? __('Lo nuevo se sube en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera».')
-                        : __('Lo nuevo se crea en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera».')}
+                    {status.on_source_delete === 'remove'
+                        ? o.kind === 'media'
+                            ? __('Lo nuevo se sube en WordPress y llega solo; lo que se borra allá sale de aquí solo.')
+                            : __('Lo nuevo se crea en WordPress y llega solo; lo que se borra allá sale de aquí solo.')
+                        : o.kind === 'media'
+                          ? __('Lo nuevo se sube en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera» hasta que lo quites.')
+                          : __('Lo nuevo se crea en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera» hasta que lo quites.')}
                 </p>
             )}
             {error && <p className="imcrm-text-xs imcrm-text-destructive">{error}</p>}
@@ -1124,4 +1150,176 @@ function AddObjects({ status, connectionId, onQueued }: { status: SiteSyncStatus
             )}
         </section>
     );
+}
+
+// ── Novedades del sitio (v0.1.336) ──────────────────────────────────────
+
+/**
+ * Lo que apareció en WordPress desde la última revisión: un tipo de contenido
+ * nuevo (un CPT recién creado) o columnas nuevas (un campo de ACF, un campo
+ * personalizado) de lo que ya se trae. Se revisa solo una vez por día, y al
+ * abrir «Traer otra columna» o «Traer otro tipo de contenido».
+ */
+function SiteNoveltiesCard({
+    status,
+    connectionId,
+    onChange,
+    onQueued,
+}: {
+    status: SiteSyncStatus;
+    connectionId: number;
+    onChange: (s: SiteSyncStatus) => void;
+    onQueued: (s: SiteSyncStatus) => void;
+}): JSX.Element {
+    const qc = useQueryClient();
+    const [error, setError] = useState<string | null>(null);
+    const items = status.novelties?.items ?? [];
+    const onErr = (err: unknown) => setError(errText(err));
+    const check = useMutation({ mutationFn: () => api.siteSyncCheckNovelties(connectionId), onSuccess: (s) => { setError(null); onChange(s); }, onError: onErr });
+    const dismiss = useMutation({
+        mutationFn: (which?: SiteNovelty[]) => api.siteSyncDismissNovelties(connectionId, which?.map((n) => ({ resource: n.resource, key: n.column?.key ?? null }))),
+        onSuccess: (s) => {
+            void qc.invalidateQueries({ queryKey: listsKeys.all });
+            onChange(s);
+        },
+        onError: onErr,
+    });
+    const addColumn = useMutation({
+        mutationFn: (n: SiteNovelty) => api.siteSyncAddColumn(connectionId, { resource: n.resource, key: n.column!.key }),
+        onSuccess: (s) => {
+            void qc.invalidateQueries({ queryKey: listsKeys.all });
+            void qc.invalidateQueries({ queryKey: ['site-sync', connectionId, 'discover'] });
+            onQueued(s);
+        },
+        onError: onErr,
+    });
+    const addObject = useMutation({
+        mutationFn: async (n: SiteNovelty) => {
+            // Las columnas por defecto, como en «Traer otro tipo de contenido».
+            const d = await qc.fetchQuery({ queryKey: ['site-sync', connectionId, 'discover'], queryFn: () => api.siteSyncDiscover(connectionId), staleTime: 60_000 });
+            const o = d.objects.find((x) => objectKey(x) === n.resource);
+            if (!o) throw new Error(__('El sitio ya no tiene ese tipo de contenido.'));
+            const c = initialChoice(o);
+            return api.siteSyncAddObjects(connectionId, { objects: [{ kind: o.kind, object: o.object, columns: [...c.columns], editable: [...c.editable] }] });
+        },
+        onSuccess: (s) => {
+            void qc.invalidateQueries({ queryKey: listsKeys.all });
+            void qc.invalidateQueries({ queryKey: ['site-sync', connectionId, 'discover'] });
+            onQueued(s);
+        },
+        onError: onErr,
+    });
+    const busy = check.isPending || dismiss.isPending || addColumn.isPending || addObject.isPending;
+    const checkedAt = status.novelties?.checked_at ?? null;
+    const lastCheck = checkedAt ? sprintf(__('Revisado: %s'), when(checkedAt)) : __('Todavía no se revisó');
+
+    if (items.length === 0) {
+        return (
+            <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-px-1 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-site-novelties-none">
+                <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                {__('Sin tipos de contenido ni columnas nuevas en el sitio.')} {lastCheck}
+                {status.novelties?.error && <span className="imcrm-text-warning">{status.novelties.error}</span>}
+                <button
+                    type="button"
+                    className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline disabled:imcrm-opacity-60"
+                    disabled={busy}
+                    onClick={() => check.mutate()}
+                    data-testid="imcrm-site-novelties-check"
+                >
+                    {check.isPending ? __('Buscando…') : __('Buscar novedades ahora')}
+                </button>
+                {error && <span className="imcrm-text-destructive">{error}</span>}
+            </p>
+        );
+    }
+
+    const objects = items.filter((n) => n.column === null);
+    const columns = items.filter((n) => n.column !== null);
+    const byResource = new Map<string, SiteNovelty[]>();
+    for (const n of columns) byResource.set(n.resource, [...(byResource.get(n.resource) ?? []), n]);
+
+    return (
+        <section className="imcrm-space-y-3 imcrm-rounded-lg imcrm-border imcrm-border-primary/40 imcrm-bg-primary/5 imcrm-p-5" data-testid="imcrm-site-novelties" data-tour="site-novelties">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-2">
+                <div className="imcrm-min-w-0">
+                    <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
+                        <Sparkles className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" aria-hidden />
+                        {__('Novedades en tu sitio')}
+                    </h2>
+                    <p className="imcrm-mt-0.5 imcrm-text-sm imcrm-text-muted-foreground">
+                        {__('Desde la última revisión aparecieron en WordPress estas cosas que todavía no se traen. Trae las que quieras: las columnas se llenan solas con lo que ya tiene el sitio.')}
+                    </p>
+                </div>
+                <Button size="sm" variant="ghost" className="imcrm-ml-auto" disabled={busy} onClick={() => dismiss.mutate(undefined)} data-testid="imcrm-site-novelties-dismiss-all">
+                    {__('Ya vi todo')}
+                </Button>
+            </div>
+
+            {objects.length > 0 && (
+                <ul className="imcrm-space-y-1.5">
+                    {objects.map((n) => (
+                        <li key={n.resource} className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-card imcrm-px-3 imcrm-py-2 imcrm-text-sm" data-testid={`imcrm-site-novelty-object-${n.resource}`}>
+                            <ObjectIcon kind={n.kind} />
+                            <span className="imcrm-font-medium">{n.object_label}</span>
+                            <Badge variant="outline">{n.kind === 'taxonomy' ? __('Taxonomía nueva') : __('Tipo de contenido nuevo')}</Badge>
+                            <span className="imcrm-ml-auto imcrm-flex imcrm-gap-1.5">
+                                <Button size="sm" disabled={busy} onClick={() => addObject.mutate(n)}>
+                                    {addObject.isPending && addObject.variables?.resource === n.resource ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Plus className="imcrm-h-3.5 imcrm-w-3.5" />}
+                                    {__('Traerlo')}
+                                </Button>
+                                <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismiss.mutate([n])}>
+                                    {__('Ya lo vi')}
+                                </Button>
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            {[...byResource.entries()].map(([resource, list]) => (
+                <div key={resource} className="imcrm-space-y-1.5" data-testid={`imcrm-site-novelty-columns-${resource}`}>
+                    <p className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                        {sprintf(list.length === 1 ? __('Columna nueva en «%s»') : __('Columnas nuevas en «%s»'), list[0]!.object_label)}
+                    </p>
+                    <ul className="imcrm-space-y-1.5">
+                        {list.map((n) => (
+                            <li key={n.column!.key} className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-card imcrm-px-3 imcrm-py-2 imcrm-text-sm">
+                                <span className="imcrm-font-medium">{n.column!.label}</span>
+                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{noveltySourceLabel(n)}</span>
+                                <span className="imcrm-ml-auto imcrm-flex imcrm-gap-1.5">
+                                    <Button size="sm" disabled={busy} onClick={() => addColumn.mutate(n)} data-testid={`imcrm-site-novelty-add-${n.column!.key}`}>
+                                        {addColumn.isPending && addColumn.variables?.column?.key === n.column!.key ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Plus className="imcrm-h-3.5 imcrm-w-3.5" />}
+                                        {__('Traer')}
+                                    </Button>
+                                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => dismiss.mutate([n])}>
+                                        {__('Ya lo vi')}
+                                    </Button>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ))}
+
+            <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
+                {lastCheck}
+                <button type="button" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline disabled:imcrm-opacity-60" disabled={busy} onClick={() => check.mutate()}>
+                    {check.isPending ? __('Buscando…') : __('Buscar de nuevo')}
+                </button>
+            </p>
+            {error && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
+        </section>
+    );
+}
+
+/** «Campo de ACF», «Campo personalizado», «SEO»… (de dónde sale la columna nueva). */
+function noveltySourceLabel(n: SiteNovelty): string {
+    const c = n.column!;
+    const p = c.provider ?? '';
+    if (p === 'acf' || c.source === 'acf') return __('Campo de ACF');
+    if (p === 'metabox') return __('Campo de Meta Box');
+    if (p === 'jetengine') return __('Campo de JetEngine');
+    if (c.source === 'seo') return __('SEO');
+    if (c.source === 'core') return __('De WordPress');
+    return __('Campo personalizado');
 }

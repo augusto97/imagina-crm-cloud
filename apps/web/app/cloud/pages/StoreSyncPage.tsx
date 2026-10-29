@@ -15,6 +15,7 @@ import {
 import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { SourceDeleteChoice, SourceDeleteSection } from '@/cloud/components/SourceDeleteSection';
 import { StoreEditableColumns } from '@/cloud/components/StoreEditableColumns';
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -173,6 +174,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
     const [since, setSince] = useState('');
     const [interval, setInterval] = useState(15);
     const [mode, setMode] = useState<'realtime' | 'interval'>('realtime');
+    const [onDelete, setOnDelete] = useState<'keep' | 'remove'>('keep');
     const [error, setError] = useState<string | null>(null);
     const setup = useMutation({
         mutationFn: () =>
@@ -181,6 +183,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                 orders_since: sinceMode === 'since' && since ? since : null,
                 mode,
                 interval_minutes: interval,
+                on_source_delete: onDelete,
             }),
         onSuccess: onDone,
         onError: (err) => setError(errText(err)),
@@ -271,6 +274,11 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                         ))}
                     </Select>
                 )}
+            </fieldset>
+
+            <fieldset className="imcrm-space-y-2">
+                <legend className="imcrm-text-sm imcrm-font-medium">{__('Cuando algo se borre en WooCommerce')}</legend>
+                <SourceDeleteChoice value={onDelete} onChange={setOnDelete} source="WooCommerce" />
             </fieldset>
 
             {error && <p className="imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-store-sync-error">{error}</p>}
@@ -522,6 +530,17 @@ function Configured({
             />
 
             <MetaSection status={status} connectionId={connectionId} onChange={onChange} onQueued={onQueued} onError={onErr} />
+
+            <SourceDeleteSection
+                value={update.isPending && update.variables?.on_source_delete ? update.variables.on_source_delete : status.on_source_delete}
+                gone={status.gone}
+                source="WooCommerce"
+                busy={update.isPending}
+                onChange={(v) => {
+                    setError(null);
+                    update.mutate({ on_source_delete: v });
+                }}
+            />
 
             {error && <p className="imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-store-sync-action-error">{error}</p>}
 

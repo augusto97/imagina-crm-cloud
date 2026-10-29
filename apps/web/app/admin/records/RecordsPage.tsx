@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
-import { parseTeamGroupKey, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
+import { mirrorGoneFieldId, mirrorSourceName, parseTeamGroupKey, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     BookmarkPlus,
@@ -53,6 +53,8 @@ import { useBulkButtons } from './buttons/ButtonFieldControl';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
 import { SiteListBanner } from './SiteListBanner';
+import { SourceGoneBar } from './SourceGoneBar';
+import { useSourceGoneCount } from '@/hooks/useSourceGone';
 import { StoreListBanner } from './StoreListBanner';
 import { SampleDataBanner } from '@/admin/onboarding/SampleDataBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
@@ -388,6 +390,8 @@ export function RecordsPage(): JSX.Element {
     // v0.1.220 — mover como subtareas / duplicar / borrar en lote, y el
     // atajo «Asignar» (la edición masiva ya apuntada al campo de persona).
     const [structure, setStructure] = useState<{ action: BulkStructureAction; matching: boolean } | null>(null);
+    // v0.1.336 — «Quitar lo que ya se borró en WordPress / la tienda».
+    const [goneOpen, setGoneOpen] = useState(false);
     const [bulkEditPreset, setBulkEditPreset] = useState<{ title: string; drafts: BulkDraft[] } | null>(null);
     // El dialog de export es controlado desde aquí: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
@@ -440,10 +444,15 @@ export function RecordsPage(): JSX.Element {
     const recordTemplates = useRecordTemplates(canCreateRecords && !guest.isGuest ? list.data?.id : undefined, 'record').data ?? [];
     const canDeleteAny = useCan(CAP.DELETE_RECORDS);
     const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
-    // Reestructurar (mover/duplicar/borrar) no aplica a las listas de la tienda:
-    // eso se hace en WooCommerce (o en WordPress).
+    // v0.1.336 — cuántas filas ya se borraron en la tienda o el sitio (la misma consulta que el aviso).
+    const sourceGone = useSourceGoneCount(list.data?.id, storeRules !== null && (canDeleteAny || canDeleteOwn) && !guest.isGuest);
+    // Mover y duplicar no aplican a las listas de la tienda o del sitio: eso se
+    // hace en WooCommerce (o en WordPress). Borrar sí, desde v0.1.336, pero sólo
+    // lo que la fuente ya borró (el servidor separa lo que sigue vivo allá).
     const structureActions: Partial<Record<BulkStructureAction, () => void>> | undefined = mirror
-        ? undefined
+        ? canDeleteAny || canDeleteOwn
+            ? { delete: () => setStructure({ action: 'delete', matching: false }) }
+            : undefined
         : {
               ...(canEditAny || canEditOwn ? { move: () => setStructure({ action: 'move', matching: false }) } : {}),
               ...(canCreateRecords ? { duplicate: () => setStructure({ action: 'duplicate', matching: false }) } : {}),
@@ -1300,6 +1309,9 @@ const applyView = (view: SavedViewEntity | null): void => {
 
             {storeMarker && <StoreListBanner marker={storeMarker} />}
             {siteMarker && <SiteListBanner marker={siteMarker} fields={fields.data} />}
+            {storeRules && list.data && (canDeleteAny || canDeleteOwn) && !guest.isGuest && (
+                <SourceGoneBar listId={list.data.id} rules={storeRules} canRemoveAll={canBulkEdit} onRemove={() => setGoneOpen(true)} />
+            )}
             {/* F7 — datos de ejemplo de la bienvenida, con su botón para borrarlos. */}
             {!mirror && <SampleDataBanner listId={list.data?.id} />}
 
@@ -1565,6 +1577,23 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </Suspense>
             )}
 
+            {list.data && goneOpen && storeRules && mirrorGoneFieldId(storeRules.marker) !== null && (
+                <Suspense fallback={null}>
+                    <BulkStructureDialog
+                        action="delete"
+                        onClose={() => setGoneOpen(false)}
+                        listId={list.data.id}
+                        selectedIds={[]}
+                        filterTree={state.filterTree}
+                        search=""
+                        matchingCount={null}
+                        canActMatching={canBulkEdit}
+                        goneFrom={{ source: mirrorSourceName(storeRules.marker), statusFieldId: mirrorGoneFieldId(storeRules.marker)!, count: sourceGone.data ?? 0 }}
+                        onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
+            )}
+
             {list.data && structure !== null && (
                 <Suspense fallback={null}>
                     <BulkStructureDialog
@@ -1577,6 +1606,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         search={debouncedSearch}
                         matchingCount={matchingCount}
                         canActMatching={canBulkEdit}
+                        mirrorSource={storeRules ? mirrorSourceName(storeRules.marker) : null}
                         onDone={() => setSelectedIds([])}
                     />
                 </Suspense>

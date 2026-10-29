@@ -789,4 +789,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.336-lo-borrado-y-lo-nuevo',
+        version: '0.1.336',
+        date: '2026-10-29',
+        kind: 'feature',
+        title: 'Lo que borras en tu sitio o tu tienda ya no estorba',
+        summary:
+            'Lo que se borró en WordPress o en WooCommerce se quita de la app con un toque (o solo) y deja de contar para tu plan. Y si en tu sitio aparece un campo o un tipo de contenido nuevo, la app te avisa para traerlo.',
+        media: {
+            slides: [
+                {
+                    title: 'Quítalo de la app',
+                    text: 'La lista cuenta lo que ya se borró allá. Con «Quitarlos de la app» sale de la lista, va a la papelera 30 días y deja de contar para tu plan.',
+                    illustration: 'fuente-borrado',
+                },
+                {
+                    title: 'O que salga solo',
+                    text: 'En la página del sitio o de la tienda elige «Quitarlo de la app»: lo que se borre allá sale solo. Si lo restauran, vuelve el mismo registro.',
+                    illustration: 'tienda-borrado',
+                },
+                {
+                    title: 'Lo nuevo de tu sitio',
+                    text: 'Un campo de ACF o un tipo de contenido nuevo aparece en «Novedades en tu sitio». Con «Traer», la columna llega llena con lo que tiene el sitio.',
+                    illustration: 'sitio-novedades',
+                },
+            ],
+        },
+        body: 'Abre una lista que viene de tu sitio o de tu tienda: si algo ya se borró allá, verás la barra **Quitarlos de la app**. Las novedades del sitio aparecen en su página, en **Ajustes → Integraciones**.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

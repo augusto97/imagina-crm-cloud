@@ -7,7 +7,7 @@ import {
     type StoreMetaResource,
     type StoreSyncResource,
 } from '@imagina-base/shared';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
 import { ActivityService, computeDiff } from '../activity/activity.service';
@@ -19,6 +19,7 @@ import { FieldsService } from '../fields/fields.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { isGoneValue, removeGoneInTx, reviveInTx } from './source-gone';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import {
     metaResourceOf,
@@ -698,11 +699,15 @@ export class StoreSyncEngine {
         let done = 0;
         let variationsDone = 0;
         const variableSeen = new Set<string>();
-        await this.keyset(ctx, 'products', sweepProducts, [], async (rows, remaining) => {
+        // En el barrido diario se anota TODO lo que la tienda tiene (vivo y en la
+        // papelera): lo que falte se borró del todo (v0.1.336).
+        const seen = sweepProducts ? new Set<string>() : null;
+        const liveComplete = await this.keyset(ctx, 'products', sweepProducts, [], async (rows, remaining) => {
             // Con keyset la tienda informa lo que FALTA desde el cursor, no el total.
             const total = remaining === null ? null : done + remaining;
             await this.upsert(ctx, 'products', rows.map((p) => mapProduct(p, this.inv(ctx))), {});
             for (const p of rows) {
+                seen?.add(String(Number(p.id)));
                 if (p.type !== 'variable') continue;
                 variableSeen.add(String(p.id));
                 variationsDone += await this.syncVariationsOf(ctx, p);
@@ -711,6 +716,20 @@ export class StoreSyncEngine {
             await this.progress(ctx, 'products', done, total);
             if (variationsDone > 0) await this.progress(ctx, 'variations', variationsDone, null);
         });
+        // v0.1.336 — lo que se mandó a la papelera de la tienda (`status=any` no
+        // lo trae): se MARCA en lo ya traído, nunca se crea.
+        const trashComplete = await this.keyset(
+            ctx,
+            'products',
+            sweepProducts,
+            [['status', 'trash']],
+            async (rows) => {
+                for (const p of rows) seen?.add(String(Number(p.id)));
+                await this.upsert(ctx, 'products', rows.map((p) => mapProduct(p, this.inv(ctx))), { updateOnly: true });
+            },
+            'products|trash',
+        );
+        if (seen && liveComplete && trashComplete) await this.markMissingProducts(ctx, seen);
         // El stock de una variación puede cambiar sin tocar al producto padre
         // (una venta, un ajuste): una vez por día se recorren todas.
         if (sweepVariations) {
@@ -944,6 +963,65 @@ export class StoreSyncEngine {
             await this.progress(ctx, 'orders', done, total);
             await this.progress(ctx, 'line_items', lines, null);
         });
+        // v0.1.336 — los pedidos que se mandaron a la papelera de la tienda: se
+        // MARCAN en lo ya traído (sin sus líneas, que se quedan como estaban).
+        await this.keyset(
+            ctx,
+            'orders',
+            forceFull,
+            [...extra, ['status', 'trash']],
+            async (rows) => {
+                await this.upsert(ctx, 'orders', rows.map((o) => mapOrder(o, ctx.settings.store_url)), { updateOnly: true });
+            },
+            'orders|trash',
+        );
+    }
+
+    /**
+     * v0.1.336 — Productos que la tienda ya no tiene (se borraron del todo, sin
+     * pasar por la papelera): se marcan «En la papelera», o salen de la app si
+     * la empresa lo eligió. Sólo tras un barrido COMPLETO (vivo + papelera).
+     */
+    private async markMissingProducts(ctx: RunCtx, seen: Set<string>): Promise<void> {
+        const target = ctx.targets.products;
+        const estado = ctx.settings.fields.products?.estado;
+        if (!target || !estado) return;
+        const key = `f${estado}`;
+        const changed = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(${ctx.syncId})`);
+            const linked = await tx
+                .select({ externalId: syncLinks.externalId, id: records.id, data: records.data })
+                .from(syncLinks)
+                .innerJoin(records, eq(records.id, syncLinks.recordId))
+                .where(
+                    and(
+                        eq(syncLinks.syncId, ctx.syncId),
+                        eq(syncLinks.resource, 'products'),
+                        isNull(records.deletedAt),
+                        sql`coalesce(${records.data}->>${key}, '') <> 'trash'`,
+                    ),
+                );
+            const gone = linked.filter((l) => !seen.has(l.externalId));
+            for (const g of gone) {
+                const after = { ...g.data, [key]: 'trash' };
+                await tx.update(records).set({ data: after, updatedAt: new Date(), updatedBy: 0 }).where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, g.id)));
+                if (ctx.dispatch) {
+                    await this.activity.logInTx(tx, {
+                        tenantId: ctx.tenantId,
+                        listId: target.listId,
+                        recordId: g.id,
+                        userId: null,
+                        action: 'record_updated',
+                        diff: computeDiff(g.data, after),
+                    });
+                }
+            }
+            if (gone.length > 0 && ctx.settings.on_source_delete === 'remove') {
+                await removeGoneInTx(tx, this.activity, ctx.tenantId, target.listId, 'WooCommerce', gone.map((g) => g.id));
+            }
+            return gone.length;
+        });
+        if (changed > 0) ctx.touchedLists.add(target.listId);
     }
 
     /** Escribe una tanda de pedidos (con su cliente y sus líneas). Devuelve cuántas líneas. */
@@ -967,14 +1045,20 @@ export class StoreSyncEngine {
 
     // ── Paginación por fecha de modificación (keyset) ───────────────────────
 
+    /**
+     * Devuelve si llegó al final (una tienda enorme corta en el tope y sigue
+     * la próxima vez). `cursorKey` separa el cursor de la papelera
+     * (`products|trash`, v0.1.336) del de lo vivo.
+     */
     private async keyset(
         ctx: RunCtx,
         resource: 'products' | 'orders',
         forceFull: boolean,
         extra: Array<[string, string]>,
         onPage: (rows: WooJson[], total: number | null) => Promise<void>,
-    ): Promise<void> {
-        let cursor: KeysetCursor | null = forceFull || !ctx.state.initial_done ? null : (ctx.state.cursors[resource] ?? null);
+        cursorKey: string = resource,
+    ): Promise<boolean> {
+        let cursor: KeysetCursor | null = forceFull || !ctx.state.initial_done ? null : (ctx.state.cursors[cursorKey] ?? null);
         let page = 1;
         // Una tienda vieja que IGNORA `modified_after` devolvería siempre las
         // mismas primeras filas: se detecta y se pasa a paginar por número.
@@ -1014,10 +1098,11 @@ export class StoreSyncEngine {
                 cursor = { at: cursor.at, ids: [...new Set([...cursor.ids, ...res.rows.map((r) => String(r.id))])] };
                 page += 1;
             }
-            ctx.state.cursors[resource] = cursor;
+            ctx.state.cursors[cursorKey] = cursor;
             await this.saveState(ctx.tenantId, ctx.syncId, { cursors: ctx.state.cursors });
-            if (res.rows.length < WOO_PAGE_SIZE) break;
+            if (res.rows.length < WOO_PAGE_SIZE) return true;
         }
+        return false;
     }
 
     // ── Escritura ───────────────────────────────────────────────────────────
@@ -1051,7 +1136,8 @@ export class StoreSyncEngine {
         const known = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
             this.existingLinks(tx, ctx, resource, items.map((i) => i.externalId)),
         );
-        const newCount = opts.updateOnly ? 0 : items.filter((i) => !known.has(i.externalId)).length;
+        // Lo que ya está borrado en la tienda nunca se crea (v0.1.336).
+        const newCount = opts.updateOnly ? 0 : items.filter((i) => !known.has(i.externalId) && !isGoneValue(i.values.estado)).length;
         if (newCount > 0) {
             try {
                 await this.billing.assertCanCreateRecords(ctx.tenantId, newCount);
@@ -1067,20 +1153,18 @@ export class StoreSyncEngine {
             if (resource === 'customers') await this.adoptGuests(tx, ctx, items);
             const links = await this.existingLinks(tx, ctx, resource, items.map((i) => i.externalId));
             const recordIds = [...new Set([...links.values()])];
+            // v0.1.336 — también los que se quitaron de la app (están en su papelera):
+            // si la tienda los vuelve a tener vivos, vuelven; si siguen borrados, se dejan.
             const current = recordIds.length
                 ? await tx
-                      .select({ id: records.id, data: records.data, parentId: records.parentId })
+                      .select({ id: records.id, data: records.data, parentId: records.parentId, deletedAt: records.deletedAt, listId: records.listId })
                       .from(records)
-                      .where(
-                          and(
-                              eq(records.tenantId, ctx.tenantId),
-                              inArray(records.id, recordIds),
-                              isNull(records.deletedAt),
-                          ),
-                      )
+                      .where(and(eq(records.tenantId, ctx.tenantId), inArray(records.id, recordIds)))
                 : [];
-            const byId = new Map(current.map((r) => [r.id, r.data]));
-            const parentOf = new Map(current.map((r) => [r.id, r.parentId]));
+            const live = current.filter((r) => r.deletedAt === null);
+            const byId = new Map(live.map((r) => [r.id, r.data]));
+            const removed = new Map(current.filter((r) => r.deletedAt !== null && r.listId === target.listId).map((r) => [r.id, r.data]));
+            const parentOf = new Map(live.map((r) => [r.id, r.parentId]));
             // v0.1.213 — una variación cuelga de su producto y una línea de su
             // pedido: son SUBTAREAS (mismo registro padre en la misma lista).
             const parentRes = WOO_PARENT_RESOURCE[resource];
@@ -1094,14 +1178,33 @@ export class StoreSyncEngine {
                 : new Map<string, number>();
             const parentFor = (item: MappedItem): number | null =>
                 item.parentExternalId ? (parents.get(item.parentExternalId) ?? null) : null;
+            // Padres que se quitaron de la app (v0.1.336): sus variaciones y sus
+            // líneas no vuelven solas; vuelven con él si la tienda lo restaura.
+            const parentIds = [...new Set([...parents.values()])];
+            const removedParents = parentIds.length
+                ? new Set(
+                      (
+                          await tx
+                              .select({ id: records.id })
+                              .from(records)
+                              .where(and(eq(records.tenantId, ctx.tenantId), inArray(records.id, parentIds), isNotNull(records.deletedAt)))
+                      ).map((r) => r.id),
+                  )
+                : new Set<number>();
 
             const toCreate: Array<{ item: MappedItem; data: Record<string, unknown> }> = [];
             const toUpdate: Array<{ item: MappedItem; id: number; before: Record<string, unknown>; after: Record<string, unknown> }> = [];
             const untouched: Array<{ item: MappedItem; id: number }> = [];
+            const toRevive: number[] = [];
+            const toRemove: number[] = [];
             for (const item of items) {
+                const parentRecord = parentFor(item);
+                if (parentRecord !== null && removedParents.has(parentRecord)) continue;
+                const gone = isGoneValue(item.values.estado);
                 const data = this.buildData(ctx, target, fieldMap, useMeta ? metaMap : {}, item);
                 const linked = links.get(item.externalId);
                 const before = linked !== undefined ? byId.get(linked) : undefined;
+                const wasRemoved = linked !== undefined ? removed.get(linked) : undefined;
                 if (linked !== undefined && before) {
                     if (opts.createOnly) {
                         untouched.push({ item, id: linked });
@@ -1113,10 +1216,18 @@ export class StoreSyncEngine {
                     } else {
                         untouched.push({ item, id: linked });
                     }
-                } else if (!opts.updateOnly) {
+                    if (gone && ctx.settings.on_source_delete === 'remove') toRemove.push(linked);
+                } else if (linked !== undefined && wasRemoved) {
+                    // Se quitó de la app: si sigue borrado en la tienda, se deja como está.
+                    if (gone || opts.createOnly) continue;
+                    toRevive.push(linked);
+                    toUpdate.push({ item, id: linked, before: wasRemoved, after: { ...wasRemoved, ...data } });
+                } else if (!opts.updateOnly && !gone) {
+                    // Lo que ya está borrado en la tienda nunca se trae.
                     toCreate.push({ item, data });
                 }
             }
+            await reviveInTx(tx, this.activity, ctx.tenantId, target.listId, toRevive, 'WooCommerce');
 
             // Altas en bloque.
             const created: Array<{ item: MappedItem; id: number; data: Record<string, unknown> }> = [];
@@ -1199,10 +1310,12 @@ export class StoreSyncEngine {
                 ...untouched.filter(() => !opts.createOnly).map((u) => ({ item: u.item, id: u.id, isNew: false })),
             ];
             await this.writeRelations(tx, ctx, resource, target, fieldMap, all);
-            return { created, toUpdate };
+            // «Quitarlo de la app» (v0.1.336): lo que la tienda acaba de borrar se va a la papelera de la app.
+            const removedNow = toRemove.length > 0 ? await removeGoneInTx(tx, this.activity, ctx.tenantId, target.listId, 'WooCommerce', toRemove) : 0;
+            return { created, toUpdate, removedNow };
         });
 
-        if (result.created.length > 0 || result.toUpdate.length > 0) ctx.touchedLists.add(target.listId);
+        if (result.created.length > 0 || result.toUpdate.length > 0 || result.removedNow > 0) ctx.touchedLists.add(target.listId);
         if (ctx.dispatch) {
             for (const c of result.created) {
                 this.automations.dispatch({

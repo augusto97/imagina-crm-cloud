@@ -36,6 +36,7 @@ import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
 import { shortcutLabel, type GridMenuActions } from './grid/useGridController';
+import { mirrorSourceOf, recordGoneInSource, useStoreRules } from './storeRules';
 
 /** Dónde se abrió el menú y sobre qué registro. */
 export interface RowMenuTarget {
@@ -97,6 +98,7 @@ export function RecordRowMenu({
 }: RecordRowMenuProps): JSX.Element | null {
     const create = useCreateRecord(listId);
     const remove = useDeleteRecord(listId);
+    const storeRules = useStoreRules();
     const confirm = useConfirm();
     const toast = useToast();
     const trashed = useTrashedToast();
@@ -104,6 +106,10 @@ export function RecordRowMenu({
 
     if (target === null) return null;
     const record = target.record;
+    // v0.1.336 — en una lista de la tienda o del sitio sólo se quita lo que la fuente ya borró.
+    const gone = recordGoneInSource(storeRules, record);
+    const allowDelete = canDelete && (storeRules === null || gone);
+    const source = mirrorSourceOf(storeRules);
 
     const recordUrl = `${window.location.origin}${window.location.pathname}#/lists/${listSlug}/records/${record.id}`;
 
@@ -141,16 +147,28 @@ export function RecordRowMenu({
     };
 
     const del = async (): Promise<void> => {
-        const ok = await confirm({
-            title: __('¿Eliminar este registro?'),
-            description: sprintf(
-                /* translators: %d: record id */
-                __('Va a la papelera con sus subtareas: puedes recuperarlo durante 30 días. (#%d)'),
-                record.id,
-            ),
-            confirmLabel: __('Eliminar'),
-            destructive: true,
-        });
+        const ok = await confirm(
+            gone && source
+                ? {
+                      title: __('¿Quitarlo de la app?'),
+                      description: sprintf(
+                          __('Ya se borró en %s. Va a la papelera de la app con sus subtareas (puedes recuperarlo durante 30 días) y deja de contar para tu plan. Si vuelve a aparecer allá, vuelve solo.'),
+                          source,
+                      ),
+                      confirmLabel: __('Quitar de la app'),
+                      destructive: true,
+                  }
+                : {
+                      title: __('¿Eliminar este registro?'),
+                      description: sprintf(
+                          /* translators: %d: record id */
+                          __('Va a la papelera con sus subtareas: puedes recuperarlo durante 30 días. (#%d)'),
+                          record.id,
+                      ),
+                      confirmLabel: __('Eliminar'),
+                      destructive: true,
+                  },
+        );
         if (!ok) return;
         await remove.mutateAsync({ id: record.id });
         trashed({ type: 'record', id: record.id, name: recordTitleFor(fields, record.fields) });
@@ -281,12 +299,12 @@ export function RecordRowMenu({
                     </DropdownMenuItem>
                 )}
 
-                {canDelete && (
+                {allowDelete && (
                     <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem danger onSelect={() => void del()}>
+                        <DropdownMenuItem danger onSelect={() => void del()} data-testid="imcrm-row-menu-delete">
                             <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {__('Eliminar')}
+                            {gone ? __('Quitar de la app') : __('Eliminar')}
                         </DropdownMenuItem>
                     </>
                 )}

@@ -372,10 +372,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.335**
-(auditoría de seguridad y rendimiento del complemento para WordPress, que pasa a
-1.1.0; antes v0.1.334 el complemento, v0.1.333 el sitio sin complemento y
-v0.1.332 SMS), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.336**
+(quitar de la app lo que el sitio o la tienda ya borró, y novedades del sitio;
+antes v0.1.335 la auditoría del complemento para WordPress, v0.1.334 el
+complemento, v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-29 — **Pregunta del usuario sobre el sitio conectado** (después de
@@ -390,7 +390,8 @@ v0.1.332 SMS), en `main`.
   en el sitio o en la tienda (p. ej. una colección de prendas que no vuelve)
   queda en la app marcado «Papelera» para siempre, ocupando registros del plan y
   estorbando, y en una lista espejo no se puede borrar (403 `store_managed`).
-  **Se le recomendó** (esperando su OK): permitir quitar de la app los registros
+  **HECHO en v0.1.336** (el usuario aprobó: «Sí, hazlo así, con el aviso de
+  novedades también»). Lo que se le había recomendado: permitir quitar de la app los registros
   que la fuente YA tiene borrados (uno, varios o «Quitar los N borrados» desde el
   aviso de la lista → van a la papelera de la app 30 días y dejan de contar para
   el plan), un ajuste por sincronización «cuando algo se borra allá: conservarlo
@@ -948,6 +949,27 @@ v0.1.332 SMS), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-29 · v0.1.336** — **Lo que la fuente borra sale de la app +
+  novedades del sitio** (ADR-S85). Pedido del usuario (aprobado tal como se
+  propuso): (1) **quitar de la app** lo que WordPress o WooCommerce ya borró —uno
+  por el menú de la fila o la ficha, varios o todos con la barra «N registros ya
+  se borraron en … · Quitarlos de la app»—: va a la papelera de la app 30 días,
+  se puede restaurar y deja de contar para el plan; lo vivo en la fuente no se
+  quita. (2) Modo **«Quitarlo de la app»** por sincronización (alta y página del
+  sitio o la tienda): lo que se borra sale solo, y elegirlo quita lo ya marcado
+  (con confirmación). (3) **Sin lápidas**: nunca se crea algo que ya llega
+  borrado, y si vuelve vivo en la fuente vuelve el MISMO registro. (4) La tienda
+  por **intervalos** ahora detecta su papelera (pasada `status=trash`) y lo
+  borrado del todo (barrido diario). (5) **Novedades del sitio**: tipos de
+  contenido y columnas nuevas en WordPress se avisan en la página del sitio y en
+  la lista, con Traer / Ya lo vi / Buscar novedades ahora. (6) La papelera de la
+  app ahora muestra lo quitado de listas espejo (antes las excluía), y el
+  asistente/MCP sólo propone quitar lo ya borrado. Ayuda: dos guías, dos
+  artículos de Aprende, tres ilustraciones y novedad. Tests: API (suite completa
+  en verde), front 692, shared 587; E2E 49/49 contra WordPress real + tienda
+  falsa, celular oscuro. **Pendiente**: nada de este hilo; de antes, cargar
+  `RELEASE_SIGNING_KEY` para firmar el complemento.
 
 - **2026-10-29 · v0.1.335** — **El complemento para WordPress, auditado**
   (addendum de ADR-S84, complemento 1.1.0). Pregunta del usuario: si tenía

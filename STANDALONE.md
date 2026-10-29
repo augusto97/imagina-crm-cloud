@@ -5240,4 +5240,64 @@ por revisión de código.
 
 ---
 
-**Versión del documento:** 1.131.0 (complemento para WordPress auditado: rendimiento, permisos y actualizaciones firmadas)
+### ADR-S85 — Lo que la fuente borra sale de la app sin lápidas, y el sitio avisa lo nuevo (v0.1.336)
+
+**Contexto.** Una lista espejo (ADR-S24 tienda, ADR-S83 sitio) nunca borraba
+nada: lo que se borraba en WooCommerce o en WordPress quedaba en la app con el
+estado «Papelera» para siempre. Una colección de ropa que no vuelve, entradas
+viejas, pedidos de prueba: estorbaban en la lista y ocupaban registros del plan.
+Y si en el sitio aparecía un campo nuevo (ACF) o un tipo de contenido nuevo, no
+había forma de enterarse más que abrir «Traer otra columna» por si acaso.
+
+**Decisión.**
+1. **Quitar = el borrado de siempre de la app.** Una fila de una lista espejo
+   que la fuente YA borró (`mirrorRecordGone`: su columna de estado dice
+   `trash`, o la de su padre —una variación, una línea—) se puede quitar: va a
+   la papelera de la app 30 días (ADR-S52), se puede restaurar y deja de contar
+   para el plan. Una fila viva en la fuente NO se quita: volvería en la próxima
+   vuelta, y el motivo lo dice («Sigue en WordPress: se borra allá»). La regla
+   es una sola función de shared y la aplican el borrado de un registro, el
+   borrado en lote (vista previa con lo vivo en «No se pueden»), la papelera
+   (lista y restaura sólo lo quitado así) y el asistente/MCP
+   (`propose_delete_records` filtra a lo ya borrado). Los clientes de la tienda
+   no tienen columna de estado: nunca cuentan como borrados.
+2. **Sin tabla de lápidas.** Lo que impide que un registro quitado reaparezca
+   son tres reglas de los dos motores, sobre el vínculo de `sync_links` que ya
+   existía: nunca se CREA un registro para algo que ya llega borrado de la
+   fuente; algo borrado que apunta a un registro quitado se saltea; algo VIVO
+   que apunta a un registro quitado lo **revive** (el mismo id, con su historial
+   y sus columnas propias; actividad `record_restored` con
+   `source_back`). Si la papelera ya lo purgó, el vínculo se fue en cascada y lo
+   que vuelva vivo nace como registro nuevo —que es lo correcto—.
+3. **«Quitarlo de la app» como modo** (`on_source_delete`: `keep` | `remove`,
+   por sincronización, en el alta y en su página): con `remove`, lo que se borra
+   en la fuente sale solo en la misma vuelta (`removeGoneInTx`, sin autor,
+   actividad `record_deleted` con `source_gone`), y elegirlo quita también lo
+   que ya estaba marcado (con confirmación que dice cuántos).
+4. **La tienda por intervalos también ve la papelera.** WooCommerce no lista lo
+   que está en su papelera sin `status=trash`, así que el modo «Cada cierto
+   tiempo» nunca se enteraba: ahora hay una pasada de papelera por keyset para
+   productos y pedidos (cursores propios `products|trash` / `orders|trash`, que
+   sólo marca lo ya traído) y, tras el barrido completo diario, lo que no
+   aparece ni vivo ni en la papelera se da por borrado del todo
+   (`markMissingProducts`).
+5. **Novedades del sitio.** Se compara lo que el sitio OFRECE con lo que
+   ofrecía la última vez (`state.seen`, no con lo que se trae: lo que se eligió
+   no traer al conectar no reaparece); la primera vez que se mira algo, lo de
+   hoy es la base, sin avisos; las columnas internas de plugins no cuentan. Se
+   revisa al descubrir, al abrir «Traer otra columna», una vez por día tras una
+   vuelta y con «Buscar novedades ahora»; «Traer» / «Ya lo vi» las sacan. La
+   marca de cada lista lleva `new_columns` para que su aviso lo diga. Todo PURO
+   (`site-novelties.ts`).
+
+**Consecuencias.** La papelera de la app pasa a mostrar registros de listas
+espejo (sólo los quitados por estar borrados en la fuente). Un borrado
+definitivo en WordPress se nota en el barrido completo; en la tienda, también.
+Los límites: lo que la fuente saca por su cuenta (una talla, una línea que el
+pedido ya no tiene) no aparece en la papelera ni se restaura, y la revisión de
+novedades no avisa columnas nuevas de un tipo de contenido que todavía no se
+trae (el tipo entero ya es la novedad).
+
+---
+
+**Versión del documento:** 1.132.0 (lo que la fuente borra sale de la app sin lápidas; novedades del sitio)

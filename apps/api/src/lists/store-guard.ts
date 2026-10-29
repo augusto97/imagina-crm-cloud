@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { mirrorFromPlace, readMirrorListMarker, type MirrorListMarker } from '@imagina-base/shared';
+import { mirrorFromPlace, mirrorGoneReason, readMirrorListMarker, type MirrorListMarker } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { lists } from '../db/schema';
@@ -27,17 +27,26 @@ export function assertNotStoreManaged(
         m.source === 'store'
             ? {
                   create: `Esta lista viene ${from}: los registros nuevos se crean en WooCommerce y llegan solos.`,
-                  delete: `Esta lista viene ${from}: los registros se borran en WooCommerce.`,
+                  delete: `Esta lista viene ${from}: los registros se borran en WooCommerce (cuando se borran allá, puedes quitarlos de aquí).`,
                   import: `Esta lista viene ${from}: no se le pueden importar filas (se crean en WooCommerce).`,
                   move: `Esta lista viene ${from}: qué es variación de qué lo decide WooCommerce.`,
               }[action]
             : {
                   create: `Esta lista viene ${from}: lo nuevo se crea en WordPress y llega solo.`,
-                  delete: `Esta lista viene ${from}: se borra en WordPress (aquí queda en «Papelera»).`,
+                  delete: `Esta lista viene ${from}: se borra en WordPress (cuando se borra allá, puedes quitarlo de aquí).`,
                   import: `Esta lista viene ${from}: no se le pueden importar filas (se crean en WordPress).`,
                   move: `Esta lista viene ${from}: su orden lo decide WordPress.`,
               }[action];
     throw new ForbiddenException({ code: 'store_managed', message: what, data: { status: 403 } });
+}
+
+/**
+ * v0.1.336 — Una fila de una lista espejo que la fuente YA borró se puede
+ * quitar de la app; una que sigue viva allá, no (volvería en la próxima
+ * vuelta). Este es el error de la segunda, con el motivo.
+ */
+export function mirrorStillAliveError(m: MirrorListMarker): ForbiddenException {
+    return new ForbiddenException({ code: 'store_managed', message: mirrorGoneReason(m), data: { status: 403 } });
 }
 
 /**

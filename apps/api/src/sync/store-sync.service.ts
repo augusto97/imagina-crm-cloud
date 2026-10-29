@@ -14,10 +14,13 @@ import {
     type StoreMetaResource,
     type StoreSyncResource,
     type StoreSyncStatus,
+    type SourceGoneCount,
     type UnmapStoreMetaInput,
     type UpdateStoreSyncInput,
+    readMirrorListMarker,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { ActivityService } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
@@ -32,12 +35,16 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { BlueprintService } from '../templates/blueprint.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { StoreRealtimeService } from './store-realtime.service';
+import { countGoneInList, goneIdsInList, removeGoneInTx } from './source-gone';
 import { StoreSyncEngine, type RunOptions } from './store-sync.engine';
 import { StoreSyncQueue } from './store-sync.queue';
 import { META_RESOURCES_OF, readLegacyPurchaseLists, readSettings, readState, type SyncSettings } from './store-sync.types';
 import { wooGet } from './woocommerce/woo-fetch';
 import { buildWooPack, WOO_LIST_KEYS, WOO_PACK_VERSION, WOO_ROOT_RESOURCES } from './woocommerce/woo-pack';
 import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
+
+/** v0.1.336 — `on_source_delete` es opcional al dar de alta (por defecto, conservar lo borrado). */
+type WithOptionalDelete<T extends { on_source_delete: unknown }> = Omit<T, 'on_source_delete'> & { on_source_delete?: T['on_source_delete'] };
 
 /**
  * Sincronización con tiendas — lo que ve y toca la persona (v0.1.206,
@@ -61,6 +68,7 @@ export class StoreSyncService {
         private readonly engine: StoreSyncEngine,
         private readonly queue: StoreSyncQueue,
         private readonly realtime: StoreRealtimeService,
+        private readonly activity: ActivityService,
         // v0.1.213 — avisar a las pestañas abiertas que la marca de sus listas cambió.
         @Optional() private readonly rt?: RealtimeService,
     ) {
@@ -99,6 +107,8 @@ export class StoreSyncService {
             mode: 'interval',
             interval_minutes: 15,
             write_back: false,
+            on_source_delete: 'keep',
+            gone: [],
             editable: { customers: defaultStoreEditable('customers'), products: defaultStoreEditable('products'), orders: defaultStoreEditable('orders') },
             orders_since: null,
             resources: { customers: true, products: true, orders: true },
@@ -128,7 +138,7 @@ export class StoreSyncService {
     ): Promise<StoreSyncStatus> {
         const settings = readSettings(row.settings);
         const state = readState(row.state);
-        const { counts, listRows } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { counts, listRows, gone } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const c = await tx
                 .select({ resource: syncLinks.resource, n: sql<number>`count(DISTINCT ${syncLinks.recordId})::int` })
                 .from(syncLinks)
@@ -139,11 +149,18 @@ export class StoreSyncService {
             );
             const l = ids.length
                 ? await tx
-                      .select({ id: lists.id, slug: lists.slug, name: lists.name })
+                      .select({ id: lists.id, slug: lists.slug, name: lists.name, settings: lists.settings })
                       .from(lists)
                       .where(and(eq(lists.tenantId, tenantId), inArray(lists.id, ids)))
                 : [];
-            return { counts: c, listRows: l };
+            // v0.1.336 — cuántas filas de cada lista ya se borraron en la tienda.
+            const g: SourceGoneCount[] = [];
+            for (const list of l) {
+                const marker = readMirrorListMarker(list.settings);
+                const n = marker ? await countGoneInList(tx, tenantId, list.id, marker) : 0;
+                if (n > 0) g.push({ list: { id: list.id, slug: list.slug, name: list.name }, count: n });
+            }
+            return { counts: c, listRows: l, gone: g };
         });
         const countOf = new Map(counts.map((c) => [c.resource, c.n]));
         const byId = new Map(listRows.map((l) => [l.id, l]));
@@ -187,6 +204,8 @@ export class StoreSyncService {
             mode: settings.mode,
             interval_minutes: settings.interval_minutes,
             write_back: settings.write_back,
+            on_source_delete: settings.on_source_delete,
+            gone,
             editable: {
                 customers: settings.editable.customers ?? defaultStoreEditable('customers'),
                 products: settings.editable.products ?? defaultStoreEditable('products'),
@@ -226,7 +245,7 @@ export class StoreSyncService {
         userId: number,
         role: Role,
         connectionId: number,
-        input: SetupStoreSyncInput,
+        input: WithOptionalDelete<SetupStoreSyncInput>,
     ): Promise<StoreSyncStatus> {
         const conn = await this.requireStore(tenantId, userId, role, connectionId);
         if (await this.findSync(tenantId, connectionId)) {
@@ -258,6 +277,7 @@ export class StoreSyncService {
             mode: input.mode,
             interval_minutes: input.interval_minutes,
             write_back: false,
+            on_source_delete: input.on_source_delete ?? 'keep',
             editable: {},
             store_url: storeUrl,
             store_name: storeName,
@@ -733,6 +753,7 @@ export class StoreSyncService {
             if (input.mode !== undefined) settings.mode = input.mode;
             if (input.interval_minutes !== undefined) settings.interval_minutes = input.interval_minutes;
             if (input.write_back !== undefined) settings.write_back = input.write_back;
+            if (input.on_source_delete !== undefined) settings.on_source_delete = input.on_source_delete;
             // Qué columnas se editan: sólo las del catálogo de esa lista o los
             // campos de plugins que ya se traen a columnas.
             for (const [r, slugs] of Object.entries(input.editable ?? {}) as Array<[StoreListRole, string[] | undefined]>) {
@@ -775,8 +796,30 @@ export class StoreSyncService {
         // «Editar desde la app» y la elección de columnas cambian qué se puede tocar.
         if (input.write_back !== undefined || input.editable !== undefined || input.editable_toggle !== undefined) await this.markLists(tenantId, connectionId, readSettings(updated.settings));
         this.realtime.forget(tenantId);
+        // «Quitarlo de la app» vale también para lo que ya estaba marcado como borrado.
+        if (input.on_source_delete === 'remove' && before.on_source_delete !== 'remove') {
+            await this.removeExistingGone(tenantId, readSettings(updated.settings));
+        }
         const fresh = (await this.findSync(tenantId, connectionId)) ?? updated;
         return this.toStatus(tenantId, fresh, conn.name);
+    }
+
+    /** v0.1.336 — Quita de la app todo lo que la tienda ya borró (al elegir «quitarlo de la app»). */
+    private async removeExistingGone(tenantId: number, settings: SyncSettings): Promise<number> {
+        let total = 0;
+        const ids = [...new Set(Object.values(settings.lists).filter((v): v is number => typeof v === 'number'))];
+        for (const listId of ids) {
+            const n = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                const [l] = await tx.select({ settings: lists.settings }).from(lists).where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId))).limit(1);
+                const marker = l ? readMirrorListMarker(l.settings) : null;
+                if (!marker) return 0;
+                const gone = await goneIdsInList(tx, tenantId, listId, marker);
+                return removeGoneInTx(tx, this.activity, tenantId, listId, 'WooCommerce', gone);
+            });
+            if (n > 0) this.rt?.records(tenantId, listId);
+            total += n;
+        }
+        return total;
     }
 
     /** El modo tiempo real no se pudo activar: queda por intervalos, con el motivo a la vista. */

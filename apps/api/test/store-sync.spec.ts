@@ -161,7 +161,8 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 };
             };
             const byModified = (items: Row[]) => {
-                let out = [...items];
+                // Como WooCommerce: sin `status` (= any) no trae la papelera; `status=trash`, sólo ella.
+                let out = q.get('status') === 'trash' ? items.filter((x) => x.status === 'trash') : items.filter((x) => x.status !== 'trash');
                 const after = q.get('modified_after');
                 if (after && !store.ignoreModifiedAfter) {
                     out = out.filter((x) => String(x.date_modified_gmt) > after.replace(/Z$/, '').slice(0, 19));
@@ -469,7 +470,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const engine = new StoreSyncEngine(tenantDb, fieldsService, billing, rt, dispatcher, activity, redis);
         queue = new CapturingQueue();
         realtime = new StoreRealtimeService(tenantDb, pg.db, env, engine, queue);
-        svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, realtime);
+        svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, realtime, activity);
         bulkHistory = new BulkHistoryService(tenantDb, listsService, recordsService, rt, audit);
         bulk = new StoreBulkService(tenantDb, listsService, fieldsService, recordsService, connectors, engine, audit, bulkHistory);
         bulk.onModuleInit();
@@ -667,7 +668,9 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(st.last_error).toBeNull();
         expect(st.progress.orders!.count).toBe(231);
         expect(st.progress.line_items!.count).toBe(173 * 2 + 57);
-        const orderCalls = store.calls.slice(calls).filter((c) => c.url.includes('/wc/v3/orders'));
+        // (la papelera tiene su propio cursor: la primera vez se lee entera, v0.1.336)
+        const orderCalls = store.calls.slice(calls).filter((c) => c.url.includes('/wc/v3/orders') && !c.url.includes('status=trash'));
+        expect(orderCalls.length).toBeGreaterThan(0);
         expect(orderCalls.every((c) => c.url.includes('modified_after='))).toBe(true);
         // La línea nueva cuelga del pedido nuevo, y la del pedido editado copia su estado.
         const orders = await tree(tenantId, st.lists.orders!.id);
@@ -765,6 +768,101 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(queue.runs.map((r) => r.syncId)).toEqual([syncId]);
     });
 
+    // ── v0.1.336: lo que la tienda borra ─────────────────────────────────────
+
+    it('la papelera de la tienda se detecta también por intervalos; lo marcado se puede quitar, lo vivo no, y si vuelve, vuelve el MISMO registro', async () => {
+        const products = st.lists.products!;
+        const bufanda: Row = { id: 30, name: 'Bufanda', slug: 'bufanda', type: 'simple', status: 'publish', price: '15000', regular_price: '15000', manage_stock: true, stock_quantity: 4, stock_status: 'instock', date_modified_gmt: tick(), meta_data: [] };
+        store.products.push(bufanda);
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const row = async () => (await tree(tenantId, products.id)).roots.find((r) => r[k('products', 'woo_id')] === '30');
+        const created = (await row())!;
+        // Va a la papelera de WooCommerce: el incremental lo marca (antes sólo lo veía el tiempo real).
+        bufanda.status = 'trash';
+        touch(bufanda);
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        expect((await row())![k('products', 'estado')]).toBe('trash');
+        expect(await recordsService.sourceGoneCount(tenantId, products.slug)).toBe(1);
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.gone).toEqual([{ list: expect.objectContaining({ id: products.id }), count: 1 }]);
+        // Lo vivo no se quita; lo borrado sí (a la papelera de la app).
+        const taza = (await tree(tenantId, products.id)).roots.find((r) => r[k('products', 'woo_id')] === '10')!;
+        await expect(recordsService.remove(tenantId, admin(), products.slug, Number(taza.id))).rejects.toThrow(/Sigue en WooCommerce/);
+        await recordsService.remove(tenantId, admin(), products.slug, Number(created.id));
+        expect(await row()).toBeUndefined();
+        expect(await recordsService.sourceGoneCount(tenantId, products.slug)).toBe(0);
+        // Una vuelta completa no lo trae de nuevo.
+        expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
+        expect(await row()).toBeUndefined();
+        // Lo restauran en WooCommerce: vuelve el mismo registro, vivo.
+        bufanda.status = 'publish';
+        touch(bufanda);
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const back = (await row())!;
+        expect(back.id).toBe(created.id);
+        expect(back[k('products', 'estado')]).toBe('publish');
+    });
+
+    it('«quitarlo de la app» solo: un producto con variaciones sale con ellas y no vuelven; lo borrado del todo también sale; un pedido en la papelera, también', async () => {
+        const products = st.lists.products!;
+        const orders = st.lists.orders!;
+        const gorra: Row = { id: 40, name: 'Gorra', slug: 'gorra', type: 'variable', status: 'publish', price: '25000', stock_status: 'instock', date_modified_gmt: tick(), meta_data: [] };
+        store.products.push(gorra);
+        store.variations[40] = [
+            { id: 41, parent_id: 40, sku: 'GOR-R', price: '25000', manage_stock: true, stock_quantity: 3, stock_status: 'instock', attributes: [{ name: 'Color', option: 'Rojo' }], date_modified_gmt: tick(), meta_data: [] },
+            { id: 42, parent_id: 40, sku: 'GOR-A', price: '25000', manage_stock: true, stock_quantity: 2, stock_status: 'instock', attributes: [{ name: 'Color', option: 'Azul' }], date_modified_gmt: tick(), meta_data: [] },
+        ];
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const gorraRow = async () => (await tree(tenantId, products.id)).roots.find((r) => r[k('products', 'woo_id')] === '40');
+        const g = (await gorraRow())!;
+        expect((await tree(tenantId, products.id)).children.filter((c) => c.parentId === g.id)).toHaveLength(2);
+
+        st = await svc.update(tenantId, adminId, 'admin', connId, { on_source_delete: 'remove' });
+        expect(st.on_source_delete).toBe('remove');
+        gorra.status = 'trash';
+        touch(gorra);
+        expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
+        expect(await gorraRow()).toBeUndefined();
+        expect((await tree(tenantId, products.id)).children.filter((c) => c.parentId === g.id)).toHaveLength(0);
+        const [inTrash] = await withTenant(pg.db, tenantId, (tx) => tx.select({ deletedAt: records.deletedAt }).from(records).where(eq(records.id, Number(g.id))));
+        expect(inTrash!.deletedAt).not.toBeNull();
+        // El barrido diario vuelve a pedir sus variaciones (siguen vivas en la tienda): no vuelven.
+        expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
+        expect((await tree(tenantId, products.id)).children.filter((c) => c.parentId === g.id)).toHaveLength(0);
+
+        // Borrado del todo en WooCommerce (sin pasar por la papelera): el barrido completo lo nota.
+        const bufandaIdx = store.products.findIndex((p) => p.id === 30);
+        const [bufanda] = store.products.splice(bufandaIdx, 1);
+        expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
+        expect((await tree(tenantId, products.id)).roots.some((r) => r[k('products', 'woo_id')] === '30')).toBe(false);
+        expect(bufanda!.id).toBe(30);
+
+        // Un pedido a la papelera sale con sus líneas.
+        const victim = store.orders[10]!;
+        victim.status = 'trash';
+        touch(victim);
+        const before = await tree(tenantId, orders.id);
+        const vRec = before.roots.find((o) => o[k('orders', 'woo_id')] === String(victim.id))!;
+        expect(before.children.some((l) => l.parentId === vRec.id)).toBe(true);
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const after = await tree(tenantId, orders.id);
+        expect(after.roots.some((o) => o.id === vRec.id)).toBe(false);
+        expect(after.children.some((l) => l.parentId === vRec.id)).toBe(false);
+        // Vuelve a la vida en la tienda: vuelve el MISMO pedido.
+        victim.status = 'completed';
+        touch(victim);
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        expect((await tree(tenantId, orders.id)).roots.find((o) => o[k('orders', 'woo_id')] === String(victim.id))!.id).toBe(vRec.id);
+        // La gorra se borra del todo en la tienda: ya estaba fuera de la app, nada cambia.
+        store.products.splice(store.products.indexOf(gorra), 1);
+        delete store.variations[40];
+        expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
+        expect(await gorraRow()).toBeUndefined();
+        expect(await recordsService.sourceGoneCount(tenantId, products.slug)).toBe(0);
+        st = await svc.update(tenantId, adminId, 'admin', connId, { on_source_delete: 'keep' });
+        expect(st.on_source_delete).toBe('keep');
+    });
+
     // ── Lo que WooCommerce no permitiría (v0.1.213) ───────────────────────────
 
     it('no se crean, borran ni importan registros en una lista de la tienda', async () => {
@@ -772,7 +870,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
             recordsService.create(tenantId, admin(), st.lists.products!.slug, { data: { [k('products', 'nombre')]: 'Nuevo' } } as never),
         ).rejects.toThrow(/se crean en WooCommerce/);
         const [one] = await rows(tenantId, st.lists.orders!.id);
-        await expect(recordsService.remove(tenantId, admin(), st.lists.orders!.slug, Number(one!.id))).rejects.toThrow(/se borran en WooCommerce/);
+        await expect(recordsService.remove(tenantId, admin(), st.lists.orders!.slug, Number(one!.id))).rejects.toThrow(/Sigue en WooCommerce: se borra allá/);
         const bulk = await recordsService.bulk(tenantId, admin(), st.lists.orders!.slug, 'delete', [Number(one!.id)], {});
         expect(bulk.succeeded).toHaveLength(0);
         await expect(importer.preview(tenantId, st.lists.customers!.slug, 'nombre\nX')).rejects.toThrow(/importar/);

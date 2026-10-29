@@ -99,3 +99,45 @@ export function mirrorColumnKind(m: MirrorListMarker, fieldId: number): 'locked'
 export function mirrorSettingsPath(m: MirrorListMarker): string {
     return m.source === 'store' ? `/settings/stores/${m.marker.connection_id}` : `/settings/sites/${m.marker.connection_id}`;
 }
+
+// --- Lo que la fuente ya borró (v0.1.336) -----------------------------------
+
+/** La columna que dice si la fuente lo borró: `status` del sitio, `estado` de la tienda. */
+export function mirrorGoneKey(m: MirrorListMarker): string {
+    return m.source === 'store' ? 'estado' : 'status';
+}
+
+/** El valor de esa columna cuando la fuente lo borró o lo tiene en su papelera. */
+export const MIRROR_GONE_VALUE = 'trash';
+
+/** El id del campo de esa columna en la lista (null si la lista no la tiene: clientes de la tienda). */
+export function mirrorGoneFieldId(m: MirrorListMarker): number | null {
+    return m.marker.fields[mirrorGoneKey(m)] ?? null;
+}
+
+/**
+ * v0.1.336 — ¿La fuente ya lo borró (o lo tiene en su papelera)? Sólo una fila
+ * así se puede QUITAR de la app: una que sigue viva en la fuente volvería en
+ * la próxima sincronización. Una subtarea (la variación de un producto, la
+ * línea de un pedido) se va con su padre: si el padre ya no está, ella tampoco.
+ * Los clientes de una tienda no tienen esa columna: nunca cuentan como borrados.
+ */
+export function mirrorRecordGone(m: MirrorListMarker, row: StoreRowGetter, parent?: StoreRowGetter | null): boolean {
+    const key = mirrorGoneKey(m);
+    if (m.marker.fields[key] === undefined) return false;
+    if (row(key) === MIRROR_GONE_VALUE) return true;
+    return parent ? parent(key) === MIRROR_GONE_VALUE : false;
+}
+
+/** El lector de una fila guardada (`f{id}` → valor) para estas reglas. */
+export function mirrorRowFromData(m: MirrorListMarker, data: Record<string, unknown> | null | undefined): StoreRowGetter {
+    return (key: string) => {
+        const id = m.marker.fields[key];
+        return id !== undefined && data ? data[`f${id}`] : undefined;
+    };
+}
+
+/** «ya se borró en WordPress» / «ya se borró en WooCommerce»: para avisos y motivos. */
+export function mirrorGoneReason(m: MirrorListMarker): string {
+    return `Sigue en ${mirrorSourceName(m)}: se borra allá. Cuando lo borres, podrás quitarlo de aquí.`;
+}

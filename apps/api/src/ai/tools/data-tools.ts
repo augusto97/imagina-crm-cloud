@@ -555,11 +555,31 @@ export class DataTools implements AiProposalApplier {
     private async proposeDeleteRecords(ctx: AiToolContext, input: DeleteRecordsSpec): Promise<AiToolResult> {
         const { list, bySlug } = await this.loadList(ctx, input.list);
         const mirrorDel = readMirrorListMarker(list.settings);
-        if (mirrorDel) {
-            throw new AiToolError(`«${list.name}» viene ${mirrorFromPlace(mirrorDel)}: sus registros se borran en ${mirrorSourceName(mirrorDel)}.`);
-        }
         const targets = await this.resolveTargets(ctx, list, bySlug, input);
         if (targets.ids.length === 0) throw new AiToolError('Ningún registro coincide con esos filtros (o la persona no puede verlos).');
+        if (mirrorDel) {
+            // v0.1.336 — de una lista de la tienda o del sitio sólo se quita lo que
+            // la fuente YA borró (lo vivo volvería en la próxima sincronización).
+            const source = mirrorSourceName(mirrorDel);
+            const gone = await this.records.sourceGoneIds(ctx.tenantId, String(list.id));
+            const ids = targets.ids.filter((id) => gone.has(id));
+            if (ids.length === 0) {
+                throw new AiToolError(
+                    `«${list.name}» viene ${mirrorFromPlace(mirrorDel)}: sus registros se borran en ${source}. Sólo se pueden quitar de la app los que ya se borraron allá (estado «trash»), y ninguno de esos lo está.`,
+                );
+            }
+            const skipped = targets.ids.length - ids.length;
+            const m = ids.length;
+            return this.saveProposal(ctx, {
+                kind: 'delete_records',
+                title: `Quitar de la app ${m} registro${m === 1 ? '' : 's'} de «${list.name}» que ya se borraron en ${source}`,
+                summary: `Salen de la lista y van a la papelera de la app 30 días (con sus subtareas); dejan de contar para el plan. Si vuelven a aparecer en ${source}, vuelven solos.${skipped > 0 ? ` ${skipped} siguen vivos en ${source} y no se tocan.` : ''}`,
+                destructive: true,
+                listSlug: list.slug,
+                preview: emptyPreview({ affected_count: m, rows: targets.sample }),
+                payload: { kind: 'delete_records', listId: list.id, listSlug: list.slug, ids },
+            });
+        }
         const n = targets.ids.length;
         return this.saveProposal(ctx, {
             kind: 'delete_records',

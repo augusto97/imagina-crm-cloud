@@ -875,7 +875,8 @@ function GroupBucketSection({
     // v0.1.213 — lista de una tienda: sin altas ni borrados (se hacen allá).
     const storeRules = useStoreRules();
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
-    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS) && storeRules === null;
+    // En una lista de la tienda o del sitio, el menú sólo ofrece quitar lo que la fuente ya borró (v0.1.336).
+    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
 
     // Filter tree del bucket: árbol base + condición `groupByField op
     // value`. Solo se usa para fallback (page > 1 o cuando el bundle

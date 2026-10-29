@@ -23,22 +23,28 @@ import {
     type SiteObjectChoice,
     type SitePluginInfo,
     type SiteSyncStatus,
+    type SourceGoneCount,
+    type DismissSiteNoveltiesInput,
     type UpdateSiteSyncInput,
+    readMirrorListMarker,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
+import { ActivityService } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import { parseWpUser, wpRoleLabel, wpSiteUrl } from '../connectors/wordpress/wp-api';
 import { revokeWpAppPassword } from '../connectors/wordpress/wp-verify';
 import { DRIZZLE, type Db } from '../db/client';
-import { connectionSyncs, lists, syncLinks } from '../db/schema';
+import { connections, connectionSyncs, lists, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListGroupsService } from '../lists/list-groups.service';
 import { stripSiteMarkers } from '../lists/store-guard';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BlueprintService } from '../templates/blueprint.service';
+import { countGoneInList, goneIdsInList, removeGoneInTx } from '../sync/source-gone';
+import { computeNovelties, dismissNovelties, pendingNovelties, readNovelties, readSeen } from './site-novelties';
 import { SiteRealtimeService } from './site-realtime.service';
 import { SiteSyncEngine, nextRunMinutes, type SiteRunOptions } from './site-sync.engine';
 import { SiteSyncQueue } from './site-sync.queue';
@@ -49,6 +55,9 @@ import { ibcColumnToSite, ibcHooksDelete, ibcInfo, ibcSchema, type IbcSchemaObje
 import { wpGet, wpGetPage } from './wordpress/wp-fetch';
 import { discoverExtraColumns, titleColumnOf } from './wordpress/wp-map';
 
+/** v0.1.336 — `on_source_delete` es opcional al dar de alta (por defecto, conservar lo borrado). */
+type WithOptionalDelete<T extends { on_source_delete: unknown }> = Omit<T, 'on_source_delete'> & { on_source_delete?: T['on_source_delete'] };
+
 /** Lo que el alta necesita de cada columna además de lo que se guarda. */
 interface ColumnPlan extends SiteColumnSettings {
     always: boolean;
@@ -57,6 +66,9 @@ interface ColumnPlan extends SiteColumnSettings {
     options: Array<{ value: string; label: string }> | null;
     image: boolean;
 }
+
+/** Cada cuánto se revisa solo si el sitio tiene tipos de contenido o columnas nuevas. */
+const NOVELTIES_EVERY_MS = 24 * 60 * 60 * 1000;
 
 /** Tipos de contenido que nunca se ofrecen (no son contenido del sitio). */
 const HIDDEN_TYPES = new Set(['attachment', 'nav_menu_item', 'wp_block', 'wp_template', 'wp_template_part', 'wp_global_styles', 'wp_navigation', 'wp_font_family', 'wp_font_face']);
@@ -85,6 +97,7 @@ export class SiteSyncService {
         private readonly writeBack: SiteWriteBackService,
         private readonly realtime: SiteRealtimeService,
         private readonly plugin: WordpressPluginService,
+        private readonly activity: ActivityService,
         @Optional() private readonly rt?: RealtimeService,
     ) {
         // Borrar la CONEXIÓN de un sitio también borra su contraseña de
@@ -113,7 +126,92 @@ export class SiteSyncService {
         const row = await this.findSync(tenantId, connectionId);
         const settings = row ? readSiteSettings(row.settings) : null;
         const synced = new Set(Object.keys(settings?.objects ?? {}));
-        return this.discoverWith(creds, conn.name, synced, syncedColumns(settings));
+        const discovery = await this.discoverWith(creds, conn.name, synced, syncedColumns(settings));
+        // De paso, las novedades del sitio quedan al día (ya se miró todo).
+        if (row && settings) await this.saveNovelties(tenantId, row, settings, discovery).catch(() => undefined);
+        return discovery;
+    }
+
+    // ── Novedades del sitio (v0.1.336) ──────────────────────────────────────
+
+    /** Compara lo que ofrece hoy el sitio con la base y guarda las novedades. */
+    private async saveNovelties(
+        tenantId: number,
+        row: Pick<typeof connectionSyncs.$inferSelect, 'id' | 'connectionId' | 'state'>,
+        settings: SiteSyncSettings,
+        discovery: SiteDiscovery,
+    ): Promise<void> {
+        const { items, seen } = computeNovelties(discovery, readSeen(row.state), settings);
+        await this.engine.saveState(tenantId, row.id, { seen, novelties: { checked_at: new Date().toISOString(), items, error: null } });
+        await this.markLists(tenantId, row.connectionId, settings);
+    }
+
+    /** «Buscar novedades»: vuelve a mirar el sitio ahora. */
+    async checkNovelties(tenantId: number, userId: number, role: Role, connectionId: number): Promise<SiteSyncStatus> {
+        const conn = await this.requireSite(tenantId, userId, role, connectionId);
+        const row = await this.requireSync(tenantId, connectionId);
+        await this.refreshNovelties(tenantId, row, conn.name);
+        return this.toStatus(tenantId, (await this.findSync(tenantId, connectionId)) ?? row);
+    }
+
+    private async refreshNovelties(tenantId: number, row: typeof connectionSyncs.$inferSelect, connName: string): Promise<void> {
+        const settings = readSiteSettings(row.settings);
+        try {
+            const creds = await this.credsOf(tenantId, row.connectionId);
+            const discovery = await this.discoverWith(creds, connName, new Set(Object.keys(settings.objects)), syncedColumns(settings));
+            await this.saveNovelties(tenantId, row, settings, discovery);
+        } catch (err) {
+            // Lo de antes se conserva; se dice que no se pudo mirar.
+            const prev = readNovelties(row.state);
+            await this.engine.saveState(tenantId, row.id, {
+                novelties: { checked_at: new Date().toISOString(), items: prev?.items ?? [], error: errMessage(err) },
+            });
+        }
+    }
+
+    /** Una vez por día, después de una vuelta (no frena la sincronización si falla). */
+    private async refreshNoveltiesIfDue(tenantId: number, syncId: number): Promise<void> {
+        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [r] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1);
+            return r ?? null;
+        });
+        if (!row) return;
+        const last = readNovelties(row.state)?.checked_at;
+        if (last && Date.now() - Date.parse(last) < NOVELTIES_EVERY_MS) return;
+        const [conn] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ name: connections.name }).from(connections).where(and(eq(connections.tenantId, tenantId), eq(connections.id, row.connectionId))).limit(1),
+        );
+        await this.refreshNovelties(tenantId, row, conn?.name ?? '');
+    }
+
+    /** «Ya lo vi»: esas novedades (o todas) dejan de mostrarse. */
+    async dismissNovelties(tenantId: number, userId: number, role: Role, connectionId: number, input: DismissSiteNoveltiesInput): Promise<SiteSyncStatus> {
+        await this.requireSite(tenantId, userId, role, connectionId);
+        const row = await this.requireSync(tenantId, connectionId);
+        const prev = readNovelties(row.state);
+        const { items, seen } = dismissNovelties(prev?.items ?? [], readSeen(row.state), input.items);
+        await this.engine.saveState(tenantId, row.id, { seen, novelties: { checked_at: prev?.checked_at ?? null, items, error: prev?.error ?? null } });
+        await this.markLists(tenantId, connectionId, readSiteSettings(row.settings));
+        return this.toStatus(tenantId, (await this.findSync(tenantId, connectionId)) ?? row);
+    }
+
+    // ── Lo que WordPress ya borró (v0.1.336) ────────────────────────────────
+
+    /** Quita de la app todo lo que el sitio ya borró (al elegir «quitarlo de la app»). */
+    private async removeExistingGone(tenantId: number, settings: SiteSyncSettings): Promise<number> {
+        let total = 0;
+        for (const listId of [...new Set(Object.values(settings.lists))]) {
+            const n = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                const [l] = await tx.select({ settings: lists.settings }).from(lists).where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId))).limit(1);
+                const marker = l ? readMirrorListMarker(l.settings) : null;
+                if (!marker) return 0;
+                const ids = await goneIdsInList(tx, tenantId, listId, marker);
+                return removeGoneInTx(tx, this.activity, tenantId, listId, 'WordPress', ids);
+            });
+            if (n > 0) this.rt?.records(tenantId, listId);
+            total += n;
+        }
+        return total;
     }
 
     /**
@@ -323,6 +421,9 @@ export class SiteSyncService {
                 mode: 'interval',
                 effective_mode: 'interval',
                 write_back: true,
+                on_source_delete: 'keep',
+                gone: [],
+                novelties: null,
                 folder_id: null,
                 objects: [],
                 plugin: null,
@@ -345,7 +446,7 @@ export class SiteSyncService {
     private async toStatus(tenantId: number, row: typeof connectionSyncs.$inferSelect): Promise<SiteSyncStatus> {
         const settings = readSiteSettings(row.settings);
         const state = readSiteState(row.state);
-        const { counts, listRows } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { counts, listRows, gone } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const c = await tx
                 .select({ resource: syncLinks.resource, n: sql<number>`count(DISTINCT ${syncLinks.recordId})::int` })
                 .from(syncLinks)
@@ -353,9 +454,19 @@ export class SiteSyncService {
                 .groupBy(syncLinks.resource);
             const ids = Object.values(settings.lists);
             const l = ids.length
-                ? await tx.select({ id: lists.id, slug: lists.slug, name: lists.name }).from(lists).where(and(eq(lists.tenantId, tenantId), inArray(lists.id, ids)))
+                ? await tx
+                      .select({ id: lists.id, slug: lists.slug, name: lists.name, settings: lists.settings })
+                      .from(lists)
+                      .where(and(eq(lists.tenantId, tenantId), inArray(lists.id, ids)))
                 : [];
-            return { counts: c, listRows: l };
+            // v0.1.336 — cuántas filas de cada lista ya se borraron en WordPress.
+            const gone: SourceGoneCount[] = [];
+            for (const list of l) {
+                const marker = readMirrorListMarker(list.settings);
+                const n = marker ? await countGoneInList(tx, tenantId, list.id, marker) : 0;
+                if (n > 0) gone.push({ list: { id: list.id, slug: list.slug, name: list.name }, count: n });
+            }
+            return { counts: c, listRows: l, gone };
         });
         const countOf = new Map(counts.map((c) => [c.resource, c.n]));
         const byId = new Map(listRows.map((l) => [l.id, l]));
@@ -401,6 +512,12 @@ export class SiteSyncService {
             mode: settings.mode,
             effective_mode: settings.mode === 'realtime' && state.plugin?.installed !== false ? 'realtime' : 'interval',
             write_back: settings.write_back,
+            on_source_delete: settings.on_source_delete,
+            gone,
+            novelties: (() => {
+                const n = readNovelties(row.state);
+                return n ? { ...n, items: pendingNovelties(n.items, settings) } : null;
+            })(),
             folder_id: settings.folder_id,
             objects,
             plugin: state.plugin,
@@ -420,7 +537,7 @@ export class SiteSyncService {
 
     // ── Alta ────────────────────────────────────────────────────────────────
 
-    async setup(tenantId: number, userId: number, role: Role, connectionId: number, input: SetupSiteSyncInput): Promise<SiteSyncStatus> {
+    async setup(tenantId: number, userId: number, role: Role, connectionId: number, input: WithOptionalDelete<SetupSiteSyncInput>): Promise<SiteSyncStatus> {
         const conn = await this.requireSite(tenantId, userId, role, connectionId);
         if (await this.findSync(tenantId, connectionId)) {
             throw new ConflictException({ code: 'site_sync_exists', message: 'Este sitio ya se está sincronizando.', data: { status: 409 } });
@@ -439,6 +556,7 @@ export class SiteSyncService {
             interval_minutes: input.interval_minutes,
             mode: wantsRealtime ? 'realtime' : 'interval',
             write_back: input.write_back,
+            on_source_delete: input.on_source_delete ?? 'keep',
             folder_id: folder.id,
             objects: {},
             lists: {},
@@ -455,6 +573,9 @@ export class SiteSyncService {
                     provider: SITE_SYNC_PROVIDER,
                     settings: settings as unknown as Record<string, unknown>,
                     state: {
+                        // Lo que el sitio ofrece hoy es la base de las novedades (v0.1.336).
+                        seen: computeNovelties(discovery, null, settings).seen,
+                        novelties: { checked_at: new Date().toISOString(), items: [], error: null },
                         plugin: {
                             installed: discovery.plugin.installed,
                             version: discovery.plugin.version,
@@ -665,6 +786,7 @@ export class SiteSyncService {
             if (input.interval_minutes !== undefined) s.interval_minutes = input.interval_minutes;
             if (input.write_back !== undefined) s.write_back = input.write_back;
             if (input.mode !== undefined) s.mode = input.mode;
+            if (input.on_source_delete !== undefined) s.on_source_delete = input.on_source_delete;
             if (input.editable_toggle) {
                 const { resource, key, on } = input.editable_toggle;
                 const o = s.objects[resource];
@@ -696,8 +818,11 @@ export class SiteSyncService {
             });
             return next!;
         });
-        await this.markLists(tenantId, connectionId, readSiteSettings(updated.settings));
+        const after = readSiteSettings(updated.settings);
+        await this.markLists(tenantId, connectionId, after);
         this.writeBack.forget(tenantId);
+        // «Quitarlo de la app» vale también para lo que ya estaba marcado como borrado.
+        if (input.on_source_delete === 'remove' && before.on_source_delete !== 'remove') await this.removeExistingGone(tenantId, after);
         return this.toStatus(tenantId, updated);
     }
 
@@ -903,6 +1028,8 @@ export class SiteSyncService {
         // Sin el complemento, lo que él da queda con lo último que llegó y bloqueado.
         const row = await this.findSync(tenantId, connectionId);
         const pluginMissing = row ? readSiteState(row.state).plugin?.installed === false : false;
+        // v0.1.336 — las columnas nuevas del sitio también se avisan en la lista.
+        const novel = row ? pendingNovelties(readNovelties(row.state)?.items ?? [], settings) : [];
         for (const [resource, o] of Object.entries(settings.objects)) {
             const listId = settings.lists[resource];
             if (!listId) continue;
@@ -922,6 +1049,7 @@ export class SiteSyncService {
                     can_edit: can,
                     editable: o.editable.filter((k) => can.includes(k)),
                     needs_plugin: pluginMissing ? o.columns.map((c) => c.key).filter(isSitePluginColumn) : [],
+                    new_columns: novel.filter((n) => n.resource === resource && n.column).map((n) => n.column!.label),
                 },
             ]);
         }
@@ -964,6 +1092,8 @@ export class SiteSyncService {
         // La vuelta detectó si el complemento sigue: los candados de las listas siguen eso.
         await this.markLists(tenantId, row.connectionId, settings).catch(() => undefined);
         if (ran && settings.mode === 'realtime') await this.checkRealtime(tenantId, syncId, creds, settings);
+        // Una vez por día: ¿hay tipos de contenido o columnas nuevas en el sitio?
+        if (ran) await this.refreshNoveltiesIfDue(tenantId, syncId).catch((err: unknown) => this.logger.warn(`Novedades del sitio #${syncId}: ${errMessage(err)}`));
         return ran;
     }
 

@@ -261,7 +261,7 @@ describe('Estado de la sincronización (lectores tolerantes)', () => {
 
         const st = readState({ running: 'sí', cursors: { orders: { at: '2026-01-01T00:00:00', ids: [1, 2] }, products: { at: '' } }, realtime: { webhook_ids: [3, 'x', -1] } });
         expect(st.running).toBe(false);
-        expect(st.cursors).toEqual({ products: null, orders: { at: '2026-01-01T00:00:00', ids: ['1', '2'] } });
+        expect(st.cursors).toEqual({ products: null, orders: { at: '2026-01-01T00:00:00', ids: ['1', '2'] }, 'products|trash': null, 'orders|trash': null });
         expect(st.realtime.webhook_ids).toEqual([3]);
         expect(readState(null).initial_done).toBe(false);
     });

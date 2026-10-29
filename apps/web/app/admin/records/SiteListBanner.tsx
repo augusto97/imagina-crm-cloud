@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { ArrowLeftRight, ChevronDown, ChevronUp, ExternalLink, Globe, Lock, PencilLine } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronUp, ExternalLink, Globe, Lock, PencilLine, Sparkles } from 'lucide-react';
 import type { SiteListMarker } from '@imagina-base/shared';
 
 import { __, sprintf } from '@/lib/i18n';
@@ -59,6 +59,20 @@ export function SiteListBanner({ marker, fields }: { marker: SiteListMarker; fie
                     </Link>
                 </span>
             </div>
+            {marker.new_columns.length > 0 && (
+                <p className="imcrm-mt-1.5 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-text-xs" data-testid="site-list-banner-new-columns">
+                    <Sparkles className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-primary" aria-hidden />
+                    <span>
+                        {sprintf(
+                            marker.new_columns.length === 1 ? __('Hay una columna nueva en WordPress: %s.') : __('Hay columnas nuevas en WordPress: %s.'),
+                            joinList(marker.new_columns.slice(0, 4).map((l) => `«${l}»`)) + (marker.new_columns.length > 4 ? '…' : ''),
+                        )}
+                    </span>
+                    <Link to={`/settings/sites/${marker.connection_id}`} className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                        {__('Traerlas')}
+                    </Link>
+                </p>
+            )}
             {open && (
                 <div className="imcrm-mt-2 imcrm-grid imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-2 imcrm-text-muted-foreground sm:imcrm-grid-cols-2">
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -66,8 +80,8 @@ export function SiteListBanner({ marker, fields }: { marker: SiteListMarker; fie
                             {marker.kind === 'taxonomy'
                                 ? __('Los términos se crean y se borran en WordPress, y llegan solos.')
                                 : marker.kind === 'media'
-                                  ? __('Las imágenes y archivos se suben en WordPress y llegan solos. Lo que se borra allá queda aquí en «Papelera»: nunca se pierde nada.')
-                                  : __('Lo nuevo se crea en WordPress y llega solo. Lo que se borra allá queda aquí en «Papelera»: nunca se pierde nada.')}
+                                  ? __('Las imágenes y archivos se suben en WordPress y llegan solos. Lo que se borra allá queda aquí en «Papelera» (o sale solo, si lo elegiste en la página del sitio) y lo puedes quitar de la app cuando quieras.')
+                                  : __('Lo nuevo se crea en WordPress y llega solo. Lo que se borra allá queda aquí en «Papelera» (o sale solo, si lo elegiste en la página del sitio) y lo puedes quitar de la app cuando quieras.')}
                             {createUrl && (
                                 <>
                                     {' '}

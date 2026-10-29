@@ -41,7 +41,7 @@ import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
 import { readMirrorListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
 import { useRecordDraft } from '@/admin/records/recordDraft';
-import { lockedReasonsFor, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
+import { lockedReasonsFor, mirrorSourceOf, recordGoneInSource, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
@@ -120,6 +120,8 @@ export function RecordPage(): JSX.Element {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [JSON.stringify(storeMarker), fields.data],
     );
+    // v0.1.336 — lo que la fuente ya borró sí se puede quitar de la app.
+    const goneInSource = recordGoneInSource(storeRules, record.data);
     // E5 — las columnas del SLA (si la lista es una mesa de ayuda) tampoco se editan a mano.
     const helpdeskManaged = useHelpdeskManagedIds(list.data?.settings);
     const lockedReasons = useMemo(
@@ -136,18 +138,30 @@ export function RecordPage(): JSX.Element {
     // declarado después, el botón «Eliminar» tiraba ReferenceError.
     const handleDelete = async (): Promise<void> => {
         if (!record.data || !list.data) return;
-        const ok = await confirm({
-            title: sprintf(
-                /* translators: %d: record id */
-                __('¿Eliminar el registro #%d?'),
-                record.data.id,
-            ),
-            description: record.data.subtask_count > 0
-                ? __('Va a la papelera junto con sus subtareas: puedes recuperarlo durante 30 días.')
-                : __('Va a la papelera: puedes recuperarlo durante 30 días.'),
-            destructive: true,
-            confirmLabel: __('Eliminar'),
-        });
+        const ok = await confirm(
+            goneInSource
+                ? {
+                      title: __('¿Quitarlo de la app?'),
+                      description: sprintf(
+                          __('Ya se borró en %s. Va a la papelera de la app (puedes recuperarlo durante 30 días) y deja de contar para tu plan. Si vuelve a aparecer allá, vuelve solo.'),
+                          mirrorSourceOf(storeRules) ?? '',
+                      ),
+                      destructive: true,
+                      confirmLabel: __('Quitar de la app'),
+                  }
+                : {
+                      title: sprintf(
+                          /* translators: %d: record id */
+                          __('¿Eliminar el registro #%d?'),
+                          record.data.id,
+                      ),
+                      description: record.data.subtask_count > 0
+                          ? __('Va a la papelera junto con sus subtareas: puedes recuperarlo durante 30 días.')
+                          : __('Va a la papelera: puedes recuperarlo durante 30 días.'),
+                      destructive: true,
+                      confirmLabel: __('Eliminar'),
+                  },
+        );
         if (!ok) return;
         // Se sale ANTES de borrar: con la página montada, la invalidación de
         // la lista y el aviso del socket volvían a pedir el registro (404).
@@ -335,16 +349,17 @@ export function RecordPage(): JSX.Element {
                             <SaveRecordAsTemplateButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} title={title} compact />
                         )}
                         <RecordShareButton listId={listInfo.id} recordId={rec.id} title={title} compact />
-                        {!storeRules && !isGuest && (
+                        {(!storeRules || goneInSource) && !isGuest && (
                             <Button
                                 variant="ghost"
                                 size="sm"
                                 className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
                                 onClick={() => void handleDelete()}
                                 disabled={remove.isPending}
+                                data-testid="imcrm-record-delete"
                             >
                                 <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
+                                <span className="imcrm-hidden sm:imcrm-inline">{goneInSource ? __('Quitar de la app') : __('Eliminar')}</span>
                             </Button>
                         )}
                         {(!isGuest || canEditRecords) && (

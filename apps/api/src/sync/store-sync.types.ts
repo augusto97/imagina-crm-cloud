@@ -21,6 +21,11 @@ export interface SyncSettings {
     interval_minutes: number;
     write_back: boolean;
     /**
+     * v0.1.336 — lo que se borra en la tienda: `keep` queda marcado «En la
+     * papelera» en la app; `remove` se quita solo de la app (a su papelera).
+     */
+    on_source_delete: 'keep' | 'remove';
+    /**
      * v0.1.214 — columnas que se editan desde la app, por lista (slugs del
      * catálogo y `meta:<id>`). Sin clave para una lista = lo de por defecto.
      */
@@ -64,7 +69,8 @@ export interface SyncState {
     running: boolean;
     current: StoreSyncResource | null;
     progress: Partial<Record<StoreSyncResource, { done: number; total: number | null }>>;
-    cursors: Partial<Record<'products' | 'orders', KeysetCursor | null>>;
+    /** `products`, `orders` y, desde v0.1.336, `products|trash` / `orders|trash` (lo que se mandó a la papelera). */
+    cursors: Partial<Record<string, KeysetCursor | null>>;
     customers_full_at: string | null;
     variations_full_at: string | null;
     /** Último barrido completo de productos (el stock que cambió sin tocar la fecha). */
@@ -140,6 +146,7 @@ export function readSettings(raw: unknown): SyncSettings {
         mode: s.mode === 'realtime' ? 'realtime' : 'interval',
         interval_minutes: Number.isInteger(interval) && interval > 0 ? interval : 15,
         write_back: s.write_back === true,
+        on_source_delete: s.on_source_delete === 'remove' ? 'remove' : 'keep',
         editable,
         store_url: typeof s.store_url === 'string' ? s.store_url : '',
         store_name: typeof s.store_name === 'string' ? s.store_name : '',
@@ -201,7 +208,9 @@ export function readState(raw: unknown): SyncState {
             ? (s.current as StoreSyncResource)
             : null,
         progress,
-        cursors: { products: readCursor(cursors.products), orders: readCursor(cursors.orders) },
+        cursors: Object.fromEntries(
+            ['products', 'orders', 'products|trash', 'orders|trash'].map((k) => [k, readCursor(cursors[k])]),
+        ),
         customers_full_at: strOrNull(s.customers_full_at),
         variations_full_at: strOrNull(s.variations_full_at),
         products_full_at: strOrNull(s.products_full_at),

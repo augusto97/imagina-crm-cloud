@@ -14,6 +14,7 @@ import {
     listSlugSchema,
     mirrorFromPlace,
     mirrorSourceName,
+    mirrorGoneFieldId,
     readMirrorListMarker,
     resolveTitleFieldId,
     type Capability,
@@ -38,6 +39,7 @@ import { assignmentKeys, listRowInScope, effectivePermissions, scopeWhere } from
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { enterTrashMode, exitTrashMode } from './trash-ops';
+import { rowIsGone } from '../sync/source-gone';
 import { can } from '../authz/can';
 
 export interface TrashViewer {
@@ -222,7 +224,14 @@ export class TrashService {
 
         const whens: SQL[] = [];
         const visible: SQL[] = [];
+        // v0.1.336 — de una lista sincronizada sólo aparece lo que se quitó porque
+        // la fuente ya lo había borrado: lo demás (una talla o una línea que la
+        // fuente misma sacó) no se puede restaurar y sólo confundiría.
+        const mirrorGone: SQL[] = [];
         for (const l of liveLists) {
+            const mirror = readMirrorListMarker(l.settings);
+            const goneId = mirror ? mirrorGoneFieldId(mirror) : null;
+            if (goneId !== null) mirrorGone.push(sql`(${records.listId} = ${l.id} AND ${records.data} ->> ${`f${goneId}`} = 'trash')`);
             const listFields = fieldsByList.get(l.id) ?? [];
             const perms = effectivePermissions(l.settings, { ...viewer, userId: uid });
             const titleId = resolveTitleFieldId(listFields as never, l.settings);
@@ -274,8 +283,9 @@ export class TrashService {
                    (SELECT count(*) FROM records c WHERE c.parent_id = ${records.id} AND c.deleted_at IS NOT NULL
                        AND c.deleted_at BETWEEN ${records.deletedAt} - interval '1 second' AND ${records.deletedAt} + interval '1 second')::int,
                    ${records.deletedAt}, ${records.deletedBy}
-            FROM records JOIN lists pl ON pl.id = ${records.listId} AND pl.deleted_at IS NULL AND NOT (pl.settings ? 'store_sync') AND NOT (pl.settings ? 'site_sync')
+            FROM records JOIN lists pl ON pl.id = ${records.listId} AND pl.deleted_at IS NULL
             WHERE ${records.tenantId} = ${tenantId} AND ${records.deletedAt} IS NOT NULL
+              AND (NOT (pl.settings ? 'store_sync' OR pl.settings ? 'site_sync') OR ${mirrorGone.length > 0 ? or(...mirrorGone)! : sql`false`})
               AND NOT EXISTS (SELECT 1 FROM records p WHERE p.id = ${records.parentId} AND p.deleted_at IS NOT NULL)
               AND ${recordVisible}
         `;
@@ -330,11 +340,20 @@ export class TrashService {
             const list = await this.liveList(tx, tenantId, row.listId, 'registro');
             const mirror = readMirrorListMarker(list.settings);
             if (mirror) {
-                throw new ForbiddenException({
-                    code: 'store_managed',
-                    message: `Esta lista viene ${mirrorFromPlace(mirror)}: los registros se recuperan en ${mirrorSourceName(mirror)}.`,
-                    data: { status: 403 },
-                });
+                // v0.1.336 — lo que se quitó porque la fuente ya lo había borrado
+                // vuelve tal cual (marcado como borrado allá). Lo que la fuente
+                // misma sacó de la app (una talla, una línea que el pedido ya no
+                // tiene) no: quedaría un registro que la fuente no conoce.
+                const parent = row.parentId !== null
+                    ? (await tx.select({ data: records.data }).from(records).where(and(eq(records.tenantId, tenantId), eq(records.id, row.parentId))).limit(1))[0]
+                    : undefined;
+                if (!rowIsGone(mirror, row.data, parent?.data ?? null)) {
+                    throw new ForbiddenException({
+                        code: 'store_managed',
+                        message: `Esta lista viene ${mirrorFromPlace(mirror)}: los registros se recuperan en ${mirrorSourceName(mirror)}.`,
+                        data: { status: 403 },
+                    });
+                }
             }
             this.assertCanRestoreRecord(viewer, list.settings, row);
             if (row.parentId !== null) {

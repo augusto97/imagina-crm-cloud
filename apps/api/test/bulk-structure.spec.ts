@@ -243,6 +243,10 @@ describe('estructura en lote: mover, duplicar y borrar (v0.1.220)', () => {
                 .set({ settings: { ...list.settings, store_sync: { connection_id: 1, role: 'products' } } })
                 .where(eq(lists.id, list.id)),
         );
-        await expect(svc.preview(tenantId, admin, 'tareas', 'delete', { ids: [theirs.id] }, undefined, false)).rejects.toThrow(/tienda/);
+        await expect(svc.preview(tenantId, admin, 'tareas', 'duplicate', { ids: [theirs.id] }, undefined, false)).rejects.toThrow(/tienda/);
+        // v0.1.336 — borrar sí se puede, pero sólo lo que la tienda ya borró: lo vivo vuelve con el motivo.
+        const alive = await svc.preview(tenantId, admin, 'tareas', 'delete', { ids: [theirs.id] }, undefined, false);
+        expect(alive.ids).toEqual([]);
+        expect(alive.errors[0]!.message).toMatch(/Sigue en WooCommerce/);
     });
 });
