@@ -138,7 +138,7 @@ export function IntegrationsPanel(): JSX.Element | null {
                     : c.integration_key === 'sqlserver'
                       ? `${usage} ${__('Sus sincronizaciones se borran y dejan de traer datos; lo que ya se cargó en tus listas queda.')}`
                       : c.integration_key === 'wordpress'
-                        ? `${usage} ${__('El sitio deja de sincronizarse; las listas y sus datos quedan en tu empresa y se pueden editar libremente. La contraseña de aplicación sigue en tu WordPress: bórrala desde tu perfil si ya no la usas.')}`
+                        ? `${usage} ${__('El sitio deja de sincronizarse; las listas y sus datos quedan en tu empresa y se pueden editar libremente. La app borra su contraseña de aplicación de tu WordPress (si el sitio no responde, bórrala desde tu perfil).')}`
                         : usage,
             confirmLabel: __('Desconectar'),
             destructive: true,

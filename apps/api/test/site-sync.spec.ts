@@ -840,7 +840,11 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.connectionId, connId)));
         const listId = (row!.settings as { lists: Record<string, number> }).lists['term:post_tag']!;
         resolved.length = 0;
+        wp.calls.length = 0;
         await connectors.remove(tenantId, adminId, 'admin', connId, false);
+        // Antes de borrarse, la app borra SU contraseña de aplicación en WordPress.
+        expect(wp.calls.some((c) => c.method === 'GET' && c.url.includes('/application-passwords/introspect'))).toBe(true);
+        expect(wp.calls.some((c) => c.method === 'DELETE' && /\/application-passwords\/u-main$/.test(new URL(c.url).pathname))).toBe(true);
         const [list] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)));
         expect((list!.settings as Record<string, unknown>).site_sync).toBeUndefined();
         expect(resolved).toContain(`site_sync:${connId}:*`);

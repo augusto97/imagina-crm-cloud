@@ -26,7 +26,8 @@ import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
-import { parseWpUser, wpRoleLabel } from '../connectors/wordpress/wp-api';
+import { parseWpUser, wpRoleLabel, wpSiteUrl } from '../connectors/wordpress/wp-api';
+import { revokeWpAppPassword } from '../connectors/wordpress/wp-verify';
 import { DRIZZLE, type Db } from '../db/client';
 import { connectionSyncs, lists, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
@@ -74,7 +75,22 @@ export class SiteSyncService {
         private readonly queue: SiteSyncQueue,
         private readonly writeBack: SiteWriteBackService,
         @Optional() private readonly rt?: RealtimeService,
-    ) {}
+    ) {
+        // Borrar la CONEXIÓN de un sitio también borra su contraseña de
+        // aplicación en WordPress. ANTES de borrar: después ya no hay con qué.
+        this.connectors.onBeforeRemove(async (tenantId, connectionId) => {
+            const found = await this.connectors.integrationCredsFor(tenantId, connectionId).catch(() => null);
+            if (!found || found.provider !== 'wordpress') return;
+            const { creds } = found;
+            const login = (creds.fields.user_login ?? '').trim();
+            if (login === '' || creds.secret === '') return;
+            await revokeWpAppPassword(
+                { base: wpSiteUrl(creds.fields.site_url ?? ''), style: creds.fields.api_style === 'plain' ? 'plain' : 'pretty' },
+                login,
+                creds.secret,
+            );
+        });
+    }
 
     // ── Descubrir qué hay en el sitio ───────────────────────────────────────
 
