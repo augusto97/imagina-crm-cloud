@@ -25,7 +25,8 @@ const short = z
     .string()
     .trim()
     .max(200)
-    .transform((s) => s.replace(/[\u0000-\u001f\u007f]/g, ''))
+    // Sin caracteres de control (no tienen nada que hacer en una etiqueta).
+    .transform((s) => [...s].filter((ch) => ch.charCodeAt(0) > 31 && ch.charCodeAt(0) !== 127).join(''))
     .pipe(z.string().min(1));
 
 /** Una URL http(s) sin la parte de los parámetros (pueden traer tokens). */
