@@ -303,6 +303,27 @@ export function remapListSettings(
         out.permissions = p;
     }
 
+    // v0.1.333 — la marca de una lista espejo (tienda o sitio WordPress) lleva
+    // un mapa columna → id de campo cuyas CLAVES son nombres («title»,
+    // «acf:precio»): `remapJson` no lo ve. La sincronización la rearma en la
+    // próxima corrida, pero si la conexión llega sin su credencial esa corrida
+    // no ocurre, y los candados quedarían apuntando a campos de otra empresa.
+    for (const key of ['store_sync', 'site_sync'] as const) {
+        const marker = out[key];
+        if (marker === null || typeof marker !== 'object' || Array.isArray(marker)) continue;
+        const m = { ...(marker as Record<string, unknown>) };
+        const fields = m.fields;
+        if (fields !== null && typeof fields === 'object' && !Array.isArray(fields)) {
+            const remapped: Record<string, number> = {};
+            for (const [column, oldId] of Object.entries(fields as Record<string, unknown>)) {
+                const id = mapId(maps.field, oldId);
+                if (id !== null) remapped[column] = id;
+            }
+            m.fields = remapped;
+        }
+        out[key] = m;
+    }
+
     const pub = out.public;
     if (pub !== null && typeof pub === 'object') {
         // El token es la credencial del enlace público: se emite uno nuevo en

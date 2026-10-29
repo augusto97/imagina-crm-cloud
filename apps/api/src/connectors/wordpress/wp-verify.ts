@@ -178,3 +178,59 @@ export async function verifyWordpress(creds: IntegrationCreds): Promise<VerifyOu
         fields: { site_url: site.base, user_login: who.user.login || login, api_style: site.style },
     };
 }
+
+/**
+ * La contraseña que devuelve «Autorizar aplicación» llega en la URL de vuelta
+ * (WordPress la pega como `?password=…`), así que puede quedar en el registro
+ * de accesos de un proxy o de un firewall en el camino. Por eso no es la que
+ * se guarda: con ella se crea OTRA (que viaja sólo en el cuerpo de una
+ * respuesta HTTPS), se borra la de la URL y la nueva toma su nombre. Si el
+ * sitio no deja rotarla (un plugin de seguridad), se sigue con la recibida:
+ * conectar no puede depender de esto.
+ */
+export async function rotateWpAppPassword(
+    site: Pick<WpSite, 'base' | 'style'>,
+    login: string,
+    received: string,
+    appName: string,
+    appId: string,
+): Promise<{ password: string; rotated: boolean }> {
+    const call = async (method: 'GET' | 'POST' | 'DELETE', route: string, password: string, body?: Record<string, unknown>): Promise<Record<string, unknown> | null> => {
+        try {
+            const res = await safeWebhookFetch(wpRestUrl(site.base, site.style, route), {
+                method,
+                headers: {
+                    accept: 'application/json',
+                    authorization: `Basic ${Buffer.from(`${login}:${password}`, 'utf8').toString('base64')}`,
+                    ...(body ? { 'content-type': 'application/json; charset=utf-8' } : {}),
+                },
+                body: body ? JSON.stringify(body) : undefined,
+                captureBody: true,
+                timeoutMs: 12_000,
+            });
+            if (res.status < 200 || res.status >= 300) return null;
+            const json = JSON.parse(res.body ?? 'null') as unknown;
+            return json && typeof json === 'object' && !Array.isArray(json) ? (json as Record<string, unknown>) : {};
+        } catch {
+            return null;
+        }
+    };
+    const kept = { password: received, rotated: false };
+    const base = '/wp/v2/users/me/application-passwords';
+    const current = await call('GET', `${base}/introspect`, received);
+    const oldUuid = typeof current?.uuid === 'string' ? current.uuid : '';
+    if (oldUuid === '') return kept;
+    // WordPress no deja dos contraseñas con el mismo nombre en un usuario: la
+    // nueva nace con un nombre de paso y toma el definitivo al final.
+    const created = await call('POST', base, received, { name: `${appName} (nueva)`.slice(0, 120), app_id: appId });
+    const fresh = typeof created?.password === 'string' ? created.password.replace(/\s+/g, '') : '';
+    const newUuid = typeof created?.uuid === 'string' ? created.uuid : '';
+    if (fresh === '' || newUuid === '') return kept;
+    // Sin la vieja: la que pasó por la URL deja de valer.
+    if ((await call('DELETE', `${base}/${oldUuid}`, fresh)) === null) {
+        // La nueva sí vale; la vieja queda en el perfil (se puede borrar a mano).
+        return { password: fresh, rotated: false };
+    }
+    await call('POST', `${base}/${newUuid}`, fresh, { name: appName });
+    return { password: fresh, rotated: true };
+}

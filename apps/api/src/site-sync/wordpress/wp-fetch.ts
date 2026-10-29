@@ -86,7 +86,7 @@ export async function wpGet(
             continue;
         }
         lastStatus = res.status;
-        const problem = classifyWpResponse(res.status, res.body ?? '');
+        const problem = classifyWpResponse(res.status, res.body ?? '', true, 'sync');
         if (problem?.kind === 'server') {
             lastError = problem.message;
             const retryAfter = headerInt(res.headers, 'retry-after');
@@ -141,7 +141,7 @@ export async function wpSend(
     } catch (err) {
         throw new WpApiError(`No pudimos hablar con el sitio: ${redactValues(err instanceof Error ? err.message : String(err), hide)}.`, 0, 'network');
     }
-    const problem = classifyWpResponse(res.status, res.body ?? '');
+    const problem = classifyWpResponse(res.status, res.body ?? '', true, 'sync');
     if (problem) throw new WpApiError(problem.message, res.status, problem.kind, wpDetails(res.body ?? ''));
     try {
         return JSON.parse(res.body ?? 'null') as unknown;

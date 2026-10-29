@@ -91,6 +91,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { stripSiteMarkers, stripStoreMarkers } from '../lists/store-guard';
 import { verifyWordpress } from './wordpress/wp-verify';
 import { IncidentHub } from '../incidents/incident-hub';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
     connectionParts,
     joinUrl,
@@ -303,6 +304,9 @@ export class ConnectorsService {
         @Optional() @Inject(SQL_RUNNER) private readonly sqlRunner?: SqlRunner,
         // v0.1.285 (ADR-S44) — una conexión que deja de servir abre un problema.
         @Optional() private readonly incidents?: IncidentHub,
+        // v0.1.333 — borrar la conexión de una tienda o un sitio libera sus
+        // listas: las pestañas abiertas tienen que dejar de mostrar los candados.
+        @Optional() private readonly rt?: RealtimeService,
     ) {}
 
     // ── Ajustes del workspace ────────────────────────────────────────────
@@ -1991,6 +1995,8 @@ export class ConnectorsService {
                 meta: { in_use: usage.length, forced: force },
             });
         });
+        // Las listas que eran de la tienda o del sitio ya son comunes.
+        this.rt?.lists(tenantId);
         // Lo que ya no existe no puede seguir fallando (la conexión y lo que corría sobre ella).
         this.incidents?.resolve(tenantId, `connection:${id}`);
         this.incidents?.resolvePrefix(tenantId, `store_sync:${id}:`);

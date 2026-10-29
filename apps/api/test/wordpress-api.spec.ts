@@ -88,6 +88,29 @@ describe('WordPress — dirección del sitio y API', () => {
         expect(classifyWpResponse(200, '[]')).toBeNull();
     });
 
+    it('con la contraseña revocada WordPress responde como a un anónimo — se reconoce en sus tres formas', () => {
+        // Las tres respuestas reales de un WordPress 6.8 con la contraseña de aplicación borrada.
+        const notLogged = JSON.stringify({ code: 'rest_not_logged_in', message: 'No estás conectado.', data: { status: 401 } });
+        const forbiddenContext = JSON.stringify({ code: 'rest_forbidden_context', message: 'Lo siento, no tienes permisos para editar.', data: { status: 401 } });
+        const forbiddenStatus = JSON.stringify({
+            code: 'rest_invalid_param',
+            message: 'Parámetro(s) no válido(s): status',
+            data: { status: 400, params: { status: 'El estado está prohibido.' }, details: { status: { code: 'rest_forbidden_status', message: 'El estado está prohibido.', data: { status: 401 } } } },
+        });
+        for (const body of [notLogged, forbiddenContext]) expect(classifyWpResponse(401, body, true, 'sync')?.kind).toBe('not_seen');
+        const listed = classifyWpResponse(400, forbiddenStatus, true, 'sync');
+        expect(listed?.kind).toBe('not_seen');
+        expect(listed?.message).toContain('revocaron');
+        // Al conectar, la causa probable es otra: mal copiada o la cabecera borrada.
+        expect(classifyWpResponse(401, notLogged, true, 'connect')?.message).toMatch(/bien copiados.*Authorization/);
+        // Un usuario conectado SIN permiso es 403: eso sí es «no tiene permiso».
+        expect(classifyWpResponse(403, JSON.stringify({ code: 'rest_forbidden_context', message: 'x', data: { status: 403 } }), true, 'sync')?.kind).toBe('forbidden');
+        // Un 400 de verdad (un valor que no acepta) sigue siendo un cambio rechazado, sin doble punto.
+        const invalid = classifyWpResponse(400, JSON.stringify({ code: 'rest_invalid_param', message: 'Parámetro(s) no válido(s): slug.', data: { params: { slug: 'No válido.' } } }), true, 'sync');
+        expect(invalid?.kind).toBe('invalid');
+        expect(invalid?.message).not.toMatch(/\.\.$/);
+    });
+
     it('un suscriptor no puede editar; un editor sí', () => {
         expect(parseWpUser(JSON.stringify({ id: 2, slug: 'lector', roles: ['subscriber'], capabilities: { read: true } }))?.canEdit).toBe(false);
         expect(parseWpUser(JSON.stringify({ id: 1, username: 'ana', roles: ['editor'], capabilities: { edit_posts: true, manage_categories: true } }))).toMatchObject({ login: 'ana', canEdit: true, canManageTerms: true });

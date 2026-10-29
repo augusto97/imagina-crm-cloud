@@ -155,7 +155,7 @@ export function WordpressConnectDialog({
                                 <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col imcrm-gap-4">
                                     <ol className="imcrm-list-decimal imcrm-space-y-1 imcrm-rounded-md imcrm-bg-muted imcrm-py-3 imcrm-pl-8 imcrm-pr-3 imcrm-text-xs imcrm-text-muted-foreground">
                                         <li>{__('En tu WordPress entra a Usuarios → Perfil (con un usuario Editor o Administrador).')}</li>
-                                        <li>{__('Baja hasta «Contraseñas de aplicación», escribe un nombre (por ejemplo «Imagina») y toca «Añadir».')}</li>
+                                        <li>{__('Baja hasta «Contraseñas de aplicación», escribe un nombre (por ejemplo «App de gestión») y toca «Añadir».')}</li>
                                         <li>{__('Copia la contraseña que aparece (se muestra una sola vez) y pégala aquí con tu usuario.')}</li>
                                     </ol>
                                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">

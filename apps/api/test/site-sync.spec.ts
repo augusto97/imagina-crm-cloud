@@ -27,6 +27,17 @@ const wp = vi.hoisted(() => ({
     terms: {} as Record<string, Row[]>,
     calls: [] as Call[],
     appPasswords: true,
+    /**
+     * Como un WordPress real (6.8): con la contraseña revocada NO dice
+     * `incorrect_password` — responde como a un visitante anónimo.
+     */
+    anonymousOnBadAuth: false,
+    /** Otras contraseñas de aplicación vigentes del usuario (la rotación de la conexión en un clic). */
+    extraPasswords: {} as Record<string, string>,
+    renamedTo: '',
+    apSeq: 0,
+    /** uuid → nombre, como el perfil del usuario en WordPress. */
+    appPasswordNames: {} as Record<string, string>,
     /** El próximo POST a una entrada se rechaza (como un plugin que valida). */
     rejectNext: false,
 }));
@@ -64,8 +75,53 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 });
             }
             const auth = opts.headers?.authorization ?? '';
-            const expected = `Basic ${Buffer.from(`admin:${wp.password}`).toString('base64')}`;
-            if (auth !== expected) return res(401, { code: 'incorrect_password', message: 'La contraseña de aplicación no es correcta.' });
+            const basic = (p: string) => `Basic ${Buffer.from(`admin:${p}`).toString('base64')}`;
+            const expected = basic(wp.password);
+            const extra = Object.entries(wp.extraPasswords).find(([, p]) => basic(p) === auth);
+            if (auth !== expected && !extra) {
+                if (!wp.anonymousOnBadAuth) return res(401, { code: 'incorrect_password', message: 'La contraseña de aplicación no es correcta.' });
+                if (q.get('status') === 'any') {
+                    return res(400, {
+                        code: 'rest_invalid_param',
+                        message: 'Parámetro(s) no válido(s): status',
+                        data: { status: 400, params: { status: 'El estado está prohibido.' }, details: { status: { code: 'rest_forbidden_status', message: 'El estado está prohibido.', data: { status: 401 } } } },
+                    });
+                }
+                return res(401, { code: 'rest_not_logged_in', message: 'No estás conectado.', data: { status: 401 } });
+            }
+            // Contraseñas de aplicación del usuario conectado (la rotación al conectar en un clic).
+            const apBase = '/wp/v2/users/me/application-passwords';
+            const using = extra ? extra[0] : 'u-main';
+            if (path === `${apBase}/introspect` && method === 'GET') return res(200, { uuid: using, name: wp.appPasswordNames[using] ?? '' });
+            if (path === apBase && method === 'POST') {
+                const body = JSON.parse(opts.body ?? '{}') as { name?: string };
+                if (Object.values(wp.appPasswordNames).includes(body.name ?? '')) return res(409, { code: 'application_password_duplicate_name', message: 'Ese nombre ya existe.' });
+                const uuid = `u-${++wp.apSeq}`;
+                const pass = `rotada${uuid}PASS`;
+                wp.extraPasswords[uuid] = pass;
+                wp.appPasswordNames[uuid] = body.name ?? '';
+                return res(201, { uuid, name: body.name, password: pass.replace(/(.{4})/g, '$1 ').trim() });
+            }
+            const apOne = path.startsWith(`${apBase}/`) ? path.slice(apBase.length + 1) : null;
+            if (apOne && method === 'DELETE') {
+                if (apOne === 'u-main') {
+                    // Se borra la principal: la que quedó vigente pasa a serlo.
+                    const [nextUuid, nextPass] = Object.entries(wp.extraPasswords)[0] ?? [];
+                    if (!nextUuid) return res(400, { code: 'x', message: 'no' });
+                    wp.password = nextPass!;
+                    delete wp.extraPasswords[nextUuid];
+                    wp.appPasswordNames['u-main'] = wp.appPasswordNames[nextUuid] ?? '';
+                    delete wp.appPasswordNames[nextUuid];
+                    wp.renamedTo = nextUuid;
+                }
+                return res(200, { deleted: true });
+            }
+            if (apOne && method === 'POST') {
+                const body = JSON.parse(opts.body ?? '{}') as { name?: string };
+                const key = apOne === wp.renamedTo ? 'u-main' : apOne;
+                wp.appPasswordNames[key] = body.name ?? '';
+                return res(200, { uuid: apOne, name: body.name });
+            }
             if (path === '/wp/v2/users/me') {
                 return res(200, { id: 1, username: 'admin', name: 'Ana Admin', roles: ['administrator'], capabilities: { edit_posts: true, edit_pages: true, manage_categories: true } });
             }
@@ -463,8 +519,19 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         // Aprobado: WordPress devuelve usuario y contraseña nuevos; se prueban y se guardan.
         wp.password = 'nueva-pass-5678';
         const s3 = new URL(new URL((await connect.start(tenantId, adminId, 'admin', { site_url: 'blog.test', visibility: 'workspace', connection_id: connId })).authorize_url).searchParams.get('success_url')!).searchParams.get('state')!;
+        wp.appPasswordNames = { 'u-main': 'Imagina Base · Blog Co' };
         const ok = await connect.complete(adminId, { state: s3, user_login: 'admin', password: 'nueva-pass-5678' });
         expect(ok).toMatchObject({ ok: true, connectionId: connId });
+        // La contraseña que vino en la URL ya no vale: se cambió por otra con el mismo nombre.
+        expect(wp.password).not.toBe('nueva-pass-5678');
+        expect(wp.password).toMatch(/^rotada/);
+        expect(Object.values(wp.appPasswordNames)).toEqual(['Imagina Base · Blog Co']);
+        const who = await connectors.connectIntegrationKey(tenantId, adminId, 'admin', 'wordpress', {
+            fields: { site_url: 'blog.test', user_login: 'admin', app_password: 'nueva-pass-5678' },
+            visibility: 'workspace',
+            connection_id: connId,
+        }).catch((e: Error) => e);
+        expect(who).toBeInstanceOf(Error);
         // Sin contraseñas de aplicación, ni siquiera se manda a la persona.
         wp.appPasswords = false;
         await expect(connect.start(tenantId, adminId, 'admin', { site_url: 'blog.test', visibility: 'workspace' })).rejects.toThrow(/contraseñas de aplicación están desactivadas/);
@@ -510,6 +577,11 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         expect(Object.keys(F['post:propiedad']!).sort()).toEqual(['acf:ciudad', 'acf:habitaciones', 'acf:precio', 'edit_link', 'excerpt', 'featured_image', 'link', 'meta:referencia', 'status', 'tax:zona', 'title', 'wp_id']);
         const fields = await fieldsService.listByListId(tenantId, L['post:propiedad']!.id);
         expect(fields.find((f) => f.id === F['post:propiedad']!.featured_image)!.config).toMatchObject({ display: 'image' });
+        // Lo que se mira primero (título, estado, datos); lo técnico al final.
+        const keyOf = new Map(Object.entries(F['post:propiedad']!).map(([k, id]) => [id, k]));
+        const order = [...fields].sort((a, b) => a.position - b.position).map((f) => keyOf.get(f.id));
+        expect(order.slice(0, 2)).toEqual(['title', 'status']);
+        expect(order.slice(-3)).toEqual(['wp_id', 'edit_link', 'link']);
         const [list] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, L['post:propiedad']!.id)));
         expect((list!.settings as { site_sync: Record<string, unknown> }).site_sync).toMatchObject({
             connection_id: connId,
@@ -707,6 +779,23 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         expect(resolved).toContain(`site_sync:${connId}:run`);
         const [fixed] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connections).where(eq(connections.id, connId)));
         expect(fixed!.lastCheckOk).toBe(true);
+
+        // Un WordPress real no dice «contraseña incorrecta»: responde como a un
+        // anónimo (un 400 «el estado está prohibido» al listar con status=any).
+        // Igual se reconoce como contraseña revocada, no como un cambio rechazado.
+        const good = wp.password;
+        wp.anonymousOnBadAuth = true;
+        wp.password = 'revocada-otra-vez';
+        reports.length = 0;
+        await svc.runJob(tenantId, syncId, {});
+        const st2 = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st2.last_error).toMatch(/ya no acepta la contraseña de aplicación/);
+        expect(reports.find((r) => r.key === `site_sync:${connId}:run`)!.title).toMatch(/rechazó la conexión/);
+        const [again] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connections).where(eq(connections.id, connId)));
+        expect(again!.lastCheckOk).toBe(false);
+        wp.anonymousOnBadAuth = false;
+        wp.password = good;
+        await svc.runJob(tenantId, syncId, {});
     });
 
     it('la tienda y el sitio no se pisan: el tick de la tienda no toma la sincronización del sitio', async () => {

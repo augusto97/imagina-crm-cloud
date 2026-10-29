@@ -20,6 +20,7 @@ import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { listsKeys } from '@/hooks/useLists';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
 
@@ -97,6 +98,8 @@ export function IntegrationsPanel(): JSX.Element | null {
         onSuccess: () => {
             setNotice({ kind: 'ok', text: __('La app se desconectó.') });
             void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
+            // Una tienda o un sitio desconectado deja sus listas libres: sin candados.
+            void qc.invalidateQueries({ queryKey: listsKeys.all });
         },
         onError: (err) => setNotice({ kind: 'err', text: errText(err) }),
     });

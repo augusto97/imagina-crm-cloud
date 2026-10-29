@@ -396,7 +396,7 @@ export class SiteSyncService {
         for (const [i, p] of plans.entries()) {
             const slugs = new Map<string, string>();
             const used = new Set<string>();
-            const blueprintFields: BlueprintField[] = p.columns.map((c) => {
+            const blueprintFields: BlueprintField[] = orderColumns(p.columns).map((c) => {
                 const slug = uniqueSlug(columnSlug(c), used);
                 slugs.set(c.key, slug);
                 return {
@@ -920,3 +920,21 @@ function siteLabel(connectionName: string): string {
     return connectionName.replace(/^WordPress\s*·\s*/i, '').trim() || connectionName;
 }
 
+/**
+ * El orden de las columnas en la lista nueva: el título y el estado primero,
+ * después los datos (fechas, extracto, categorías, ACF, campos de plugins) y
+ * al final lo técnico (el ID, los enlaces, la fecha de modificación). Así lo
+ * que se mira y se edita queda a la vista sin correr la tabla.
+ */
+const TECH_COLUMNS = new Set(['wp_id', 'edit_link', 'link', 'modified', 'count']);
+function columnRank(key: string): number {
+    if (key === 'title' || key === 'name') return 0;
+    if (key === 'status') return 1;
+    return TECH_COLUMNS.has(key) ? 3 : 2;
+}
+export function orderColumns<T extends { key: string }>(columns: readonly T[]): T[] {
+    return columns
+        .map((c, i) => ({ c, i }))
+        .sort((a, b) => columnRank(a.c.key) - columnRank(b.c.key) || a.i - b.i)
+        .map((x) => x.c);
+}

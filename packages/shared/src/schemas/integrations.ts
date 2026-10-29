@@ -1197,7 +1197,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             how_to: [
                 'Lo más fácil es «Conectar con WordPress»: te lleva a tu sitio, apruebas y vuelves solo.',
                 'Si prefieres hacerlo a mano: en el panel de WordPress ve a Usuarios → Perfil y busca «Contraseñas de aplicación».',
-                'Escribe un nombre (por ejemplo «Imagina») y toca «Añadir nueva contraseña de aplicación». Copia la contraseña que aparece (sólo se muestra esa vez) y pégala aquí junto con tu usuario.',
+                'Escribe un nombre (por ejemplo «App de gestión») y toca «Añadir nueva contraseña de aplicación». Copia la contraseña que aparece (sólo se muestra esa vez) y pégala aquí junto con tu usuario.',
             ],
         },
         actions: [],

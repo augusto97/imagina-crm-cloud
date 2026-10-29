@@ -178,16 +178,49 @@ const AUTH_CODES = new Set(['incorrect_password', 'invalid_username', 'invalid_e
 const FORBIDDEN_CODES = /^rest_(forbidden|cannot_|forbidden_context|user_cannot)/;
 
 /**
+ * Cuándo se habla con el sitio: al conectar (la contraseña se acaba de pegar o
+ * de crear) o al sincronizar (ya funcionó antes). Cambia la causa más probable
+ * de un «no te conozco».
+ */
+export type WpPhase = 'connect' | 'sync';
+
+/**
+ * Mandamos usuario y contraseña pero WordPress respondió como a un visitante
+ * anónimo. Lo dice de varias formas, según el pedido: «no estás conectado»
+ * (401), un 401 de permisos (el código de permiso para un visitante es 401;
+ * para un usuario conectado sin permiso, 403) o, en un listado con
+ * `status=any`, un 400 «el estado está prohibido» (sólo un visitante no puede
+ * pedir borradores). Probado contra un WordPress real: con la contraseña de
+ * aplicación revocada, WordPress NO devuelve `incorrect_password` — trata el
+ * pedido como anónimo.
+ */
+function answeredAsAnonymous(status: number, code: string, o: Record<string, unknown> | null): boolean {
+    if (status === 401 && !AUTH_CODES.has(code)) return true;
+    if (status === 400 && code === 'rest_invalid_param') {
+        const inner = obj(obj(obj(o?.data)?.details)?.status);
+        return inner?.code === 'rest_forbidden_status';
+    }
+    return false;
+}
+
+const NOT_SEEN_MESSAGE: Record<WpPhase, string> = {
+    connect:
+        'WordPress no reconoció el usuario y la contraseña de aplicación. Revisa que estén bien copiados. Si lo están, el hosting está borrando la cabecera «Authorization» antes de que llegue al sitio (pasa con PHP por CGI/FastCGI): pídele al hosting que la deje pasar, o agrega al .htaccess la línea «SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1».',
+    sync: 'WordPress ya no acepta la contraseña de aplicación de esta conexión: la revocaron desde el perfil del usuario, o el usuario ya no existe. Vuelve a conectar el sitio en Ajustes → Integraciones (las listas siguen igual).',
+};
+
+/**
  * El motivo de un error de WordPress, en lenguaje claro, o `null` si salió
  * bien. `sentCredentials` = el pedido llevaba usuario y contraseña: si el
- * sitio dice «no estás conectado» igual, la cabecera se perdió en el camino.
+ * sitio responde como a un visitante anónimo, la contraseña no llegó o ya no
+ * vale (ver `answeredAsAnonymous`).
  */
-export function classifyWpResponse(status: number, body: string, sentCredentials = true): WpProblem | null {
+export function classifyWpResponse(status: number, body: string, sentCredentials = true, phase: WpPhase = 'connect'): WpProblem | null {
     const json = parseJson(body);
     const o = obj(json);
     const code = typeof o?.code === 'string' ? o.code : '';
     const raw = typeof o?.message === 'string' ? stripTags(o.message) : '';
-    const detail = raw ? ` («${raw.replace(/\.+$/, '')}»)` : '';
+    const detail = raw ? ` («${raw.replace(/[.\s]+$/, '')}»)` : '';
     if (status >= 200 && status < 300) {
         if (json === undefined && body.trim() !== '') {
             return {
@@ -206,13 +239,8 @@ export function classifyWpResponse(status: number, body: string, sentCredentials
             message: `WordPress rechazó el usuario o la contraseña de aplicación${detail}. Si la revocaron desde el perfil del usuario, vuelve a conectar el sitio en Ajustes → Integraciones.`,
         };
     }
-    if (status === 401 && (code === 'rest_not_logged_in' || code === '') && sentCredentials) {
-        return {
-            kind: 'not_seen',
-            code: code || 'not_logged_in',
-            message:
-                'WordPress no recibió el usuario y la contraseña: el hosting está borrando la cabecera «Authorization» antes de que llegue al sitio (pasa con PHP por CGI/FastCGI). Pídele al hosting que la deje pasar, o agrega al .htaccess la línea «SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1».',
-        };
+    if (sentCredentials && json !== undefined && answeredAsAnonymous(status, code, o)) {
+        return { kind: 'not_seen', code: code || 'not_logged_in', message: NOT_SEEN_MESSAGE[phase] };
     }
     if (FORBIDDEN_CODES.test(code) || status === 403) {
         if (json === undefined) {
@@ -240,7 +268,7 @@ export function classifyWpResponse(status: number, body: string, sentCredentials
     }
     if (status === 400) {
         const params = obj(obj(o?.data)?.params);
-        const extra = params ? Object.values(params).filter((v): v is string => typeof v === 'string').map((v) => stripTags(v).replace(/\.+$/, '')) : [];
+        const extra = params ? Object.values(params).filter((v): v is string => typeof v === 'string').map((v) => stripTags(v).replace(/[.\s]+$/, '')) : [];
         return {
             kind: 'invalid',
             code,

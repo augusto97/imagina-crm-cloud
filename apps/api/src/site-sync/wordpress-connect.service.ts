@@ -6,8 +6,8 @@ import { PlatformBrandService } from '../brand/platform-brand.service';
 import { ENV, type Env } from '../config/env';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { IntegrationInputError } from '../connectors/integration-errors';
-import { IMAGINA_WP_APP_ID, wpAuthorizeUrl } from '../connectors/wordpress/wp-api';
-import { discoverWpSite, wpSiteProblem } from '../connectors/wordpress/wp-verify';
+import { IMAGINA_WP_APP_ID, wpAuthorizeUrl, type WpApiStyle } from '../connectors/wordpress/wp-api';
+import { discoverWpSite, rotateWpAppPassword, wpSiteProblem } from '../connectors/wordpress/wp-verify';
 import { DRIZZLE, type Db } from '../db/client';
 import { tenants } from '../db/schema';
 
@@ -31,6 +31,10 @@ interface PendingWpConnect {
     connectionId: number | null;
     /** La dirección descubierta al empezar: es la que se guarda (no la que vuelve en la URL). */
     base: string;
+    /** Cómo habla la API del sitio (enlaces permanentes o `?rest_route=`). */
+    style?: WpApiStyle;
+    /** Con qué nombre aparece la contraseña en el perfil de WordPress. */
+    appName?: string;
 }
 
 export interface WpConnectOutcome {
@@ -79,12 +83,13 @@ export class WordpressConnectService {
         const problem = wpSiteProblem(site);
         if (problem) throw bad(problem);
         const state = randomBytes(24).toString('base64url');
-        const pending: PendingWpConnect = { tenantId, userId, role, visibility: input.visibility, connectionId, base: site.base };
+        const appName = await this.appName(tenantId);
+        const pending: PendingWpConnect = { tenantId, userId, role, visibility: input.visibility, connectionId, base: site.base, style: site.style, appName };
         await this.store.set(stateKey(state), JSON.stringify(pending), 'EX', STATE_TTL_SECONDS);
         const back = this.callbackUrl(state);
         return {
             authorize_url: wpAuthorizeUrl(site.index.authorizeUrl!, {
-                appName: await this.appName(tenantId),
+                appName,
                 appId: IMAGINA_WP_APP_ID,
                 successUrl: back,
                 rejectUrl: `${back}&success=false`,
@@ -118,9 +123,18 @@ export class WordpressConnectService {
         if (login === '' || password === '') {
             return fail('WordPress no devolvió la contraseña de aplicación. Si tu sitio tiene un plugin de seguridad, revisa que permita las contraseñas de aplicación.');
         }
+        // La contraseña de la URL se cambia por otra antes de guardarla (ver
+        // `rotateWpAppPassword`): la recibida pudo quedar en algún registro.
+        const { password: kept } = await rotateWpAppPassword(
+            { base: pending.base, style: pending.style ?? 'pretty' },
+            login,
+            password,
+            pending.appName ?? 'Imagina Base',
+            IMAGINA_WP_APP_ID,
+        );
         try {
             const { connection, warning } = await this.connectors.connectIntegrationKey(pending.tenantId, pending.userId, pending.role, 'wordpress', {
-                fields: { site_url: pending.base, user_login: login, app_password: password },
+                fields: { site_url: pending.base, user_login: login, app_password: kept },
                 visibility: pending.visibility,
                 connection_id: pending.connectionId,
             });
