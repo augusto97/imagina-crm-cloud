@@ -7,6 +7,19 @@
 #   sh scripts/dev/wordpress-up.sh [puerto] status
 #   sh scripts/dev/wordpress-up.sh [puerto] wp <args…>    # wp-cli contra ese sitio
 #
+# El complemento de la app (v0.1.334, ADR-S84):
+#   sh scripts/dev/wordpress-up.sh [puerto] extras        # plugins de SEO, Meta Box, el complemento y sus datos (sitios ya armados)
+#   sh scripts/dev/wordpress-up.sh [puerto] seo rank_math|yoast|seopress|aioseo|none
+#                                                         # deja activo UN plugin de SEO (o ninguno)
+#   sh scripts/dev/wordpress-up.sh [puerto] plugin repo   # el complemento copiado del repo (desarrollo) y activo
+#   sh scripts/dev/wordpress-up.sh [puerto] plugin zip [url-de-la-app=http://localhost:5182]
+#                                                         # instalado desde el zip que reparte la app (como un cliente)
+#   sh scripts/dev/wordpress-up.sh [puerto] plugin off|on # desactivarlo / activarlo
+#   sh scripts/dev/wordpress-up.sh [puerto] plugin remove # desactivarlo y borrarlo (corre su desinstalación)
+#
+# JetEngine (Crocoblock) es comercial: no se puede instalar desde wordpress.org,
+# así que su lectura se prueba sólo con los tests unitarios del complemento.
+#
 # Qué deja armado (lo que usa el E2E del conector):
 #  - WordPress en http://localhost:<puerto> con WP_ENVIRONMENT_TYPE=local (así
 #    las contraseñas de aplicación funcionan sin HTTPS y la pantalla
@@ -21,6 +34,11 @@
 #    (referencia_interna) en la API.
 #  - Datos: 3 páginas (una hija), 5 entradas con categorías y etiquetas,
 #    6 propiedades con sus campos ACF y su zona.
+#  - v0.1.334: Rank Math, Yoast SEO, SEOPress y All in One SEO instalados
+#    (apagados: `seo <cual>` prende uno), Meta Box activo con un cuadro
+#    «Catastro», un grupo de ACF «Ficha interna» SIN «Mostrar en la API REST»,
+#    4 imágenes (dos como destacada, una dentro de una entrada, una pesada) y
+#    el complemento de la app copiado del repo y activo.
 #
 # Requiere Docker (MariaDB en el contenedor imagina-dev-wp-db, puerto 33306)
 # y PHP ≥ 8.1 con mysqli. Logs en /tmp/imagina-dev-wp/<puerto>/server.log.
@@ -121,7 +139,76 @@ PHP
         wp plugin install advanced-custom-fields --activate
         wp user create lector lector@wp.test --role=subscriber --user_pass=lector-pass-1
         wp eval-file "$(dirname "$0")/wordpress-seed.php"
+        install_extras
     fi
+}
+
+# Los plugins con los que habla el complemento de la app (de wordpress.org):
+# los de SEO quedan INSTALADOS pero apagados (se prende uno con `seo …`),
+# Meta Box activo. Si alguno no se puede bajar, se avisa y se sigue.
+install_extras() {
+    cp "$(dirname "$0")/wordpress-dev-plugin.php" "$SITE/www/wp-content/mu-plugins/imagina-dev.php"
+    wp plugin is-installed meta-box || wp plugin install meta-box || echo "AVISO: no se pudo instalar Meta Box" >&2
+    wp plugin activate meta-box >/dev/null 2>&1 || true
+    for slug in seo-by-rank-math wordpress-seo wp-seopress all-in-one-seo-pack; do
+        wp plugin is-installed "$slug" || wp plugin install "$slug" || echo "AVISO: no se pudo instalar $slug" >&2
+    done
+    # Sin el asistente de Rank Math a medio terminar (si no, su API devuelve nulos).
+    wp option update rank_math_registration_skip 1 >/dev/null
+    plugin_repo
+    wp eval-file "$(dirname "$0")/wordpress-seed-plugin.php"
+}
+
+SEO_PLUGINS="seo-by-rank-math wordpress-seo wp-seopress all-in-one-seo-pack"
+
+seo_pick() {
+    case "$1" in
+        rank_math) want=seo-by-rank-math ;;
+        yoast) want=wordpress-seo ;;
+        seopress) want=wp-seopress ;;
+        aioseo) want=all-in-one-seo-pack ;;
+        none) want= ;;
+        *)
+            echo "uso: seo rank_math|yoast|seopress|aioseo|none" >&2
+            exit 2
+            ;;
+    esac
+    for slug in $SEO_PLUGINS; do
+        [ "$slug" = "$want" ] || wp plugin deactivate "$slug" >/dev/null 2>&1 || true
+    done
+    if [ -n "$want" ]; then
+        wp plugin is-installed "$want" || wp plugin install "$want" || {
+            echo "No se pudo instalar $want desde wordpress.org" >&2
+            exit 1
+        }
+        wp plugin activate "$want"
+        [ "$want" = seo-by-rank-math ] && wp option update rank_math_registration_skip 1 >/dev/null
+    fi
+    echo "SEO activo: ${1}"
+}
+
+# El complemento copiado del repo (sin `update-source.php`: no se actualiza solo).
+plugin_repo() {
+    rm -rf "$SITE/www/wp-content/plugins/imagina-base-connector"
+    cp -r "$(dirname "$0")/../../integrations/wordpress-plugin/imagina-base-connector" "$SITE/www/wp-content/plugins/"
+    wp plugin activate imagina-base-connector
+}
+
+plugin_cmd() {
+    case "$1" in
+        repo) plugin_repo ;;
+        zip)
+            app=${2:-http://localhost:5182}
+            wp plugin install "$app/api/v1/public/wordpress-plugin/download" --force --activate
+            ;;
+        off) wp plugin deactivate imagina-base-connector ;;
+        on) wp plugin activate imagina-base-connector ;;
+        remove) wp plugin uninstall imagina-base-connector --deactivate ;;
+        *)
+            echo "uso: plugin repo|zip [url]|off|on|remove" >&2
+            exit 2
+            ;;
+    esac
 }
 
 case "$CMD" in
@@ -150,8 +237,17 @@ case "$CMD" in
     wp)
         wp "$@"
         ;;
+    extras)
+        install_extras
+        ;;
+    seo)
+        seo_pick "${1:-}"
+        ;;
+    plugin)
+        plugin_cmd "${1:-}" "${2:-}"
+        ;;
     *)
-        echo "uso: sh scripts/dev/wordpress-up.sh [puerto] up|stop|reset|status|wp …" >&2
+        echo "uso: sh scripts/dev/wordpress-up.sh [puerto] up|stop|reset|status|wp|extras|seo|plugin …" >&2
         exit 2
         ;;
 esac

@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
-    SITE_SYNC_INTERVALS,
     siteResourceKey,
     type SiteColumn,
     type SiteDiscovery,
     type SiteObject,
     type SiteObjectChoice,
+    type SiteSyncMode,
     type SiteSyncObjectState,
     type SiteSyncStatus,
 } from '@imagina-base/shared';
@@ -20,7 +20,9 @@ import {
     ChevronRight,
     ExternalLink,
     FolderOpen,
+    Images,
     Loader2,
+    Lock,
     Plus,
     RefreshCw,
     Tags,
@@ -30,6 +32,10 @@ import {
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { SiteEditableColumns } from '@/cloud/components/SiteEditableColumns';
+import { SiteKits } from '@/cloud/components/SiteKits';
+import { SitePluginCard } from '@/cloud/components/SitePluginCard';
+import { SiteSyncModeChoice } from '@/cloud/components/SiteSyncMode';
+import { siteColumnGroups, siteColumnOrigin } from '@/cloud/components/siteColumnGroups';
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -48,16 +54,6 @@ import { cn } from '@/lib/utils';
  * estado de cada lista. El trabajo pesado corre en segundo plano; mientras hay
  * una corrida en curso esta pantalla pregunta el estado seguido.
  */
-
-const INTERVAL_LABEL: Record<number, string> = {
-    5: 'Cada 5 minutos',
-    15: 'Cada 15 minutos',
-    30: 'Cada 30 minutos',
-    60: 'Cada hora',
-    180: 'Cada 3 horas',
-    360: 'Cada 6 horas',
-    1440: 'Una vez por día',
-};
 
 const TYPE_LABEL: Record<string, string> = {
     text: 'Texto',
@@ -82,6 +78,25 @@ function when(iso: string | null): string {
 }
 
 const objectKey = (o: Pick<SiteObject, 'kind' | 'object'>): string => siteResourceKey(o.kind, o.object);
+
+const PROVIDER_LABEL: Record<string, string> = { acf: 'ACF', metabox: 'Meta Box', jetengine: 'JetEngine' };
+
+function objectIcon(kind: SiteObject['kind']): typeof FileText {
+    return kind === 'taxonomy' ? Tags : kind === 'media' ? Images : FileText;
+}
+
+function objectCount(kind: SiteObject['kind'], n: number): string {
+    if (kind === 'taxonomy') return sprintf(n === 1 ? __('%s término') : __('%s términos'), formatNumber(n));
+    if (kind === 'media') return sprintf(n === 1 ? __('%s archivo') : __('%s archivos'), formatNumber(n));
+    return sprintf(n === 1 ? __('%s entrada') : __('%s entradas'), formatNumber(n));
+}
+
+/** Por qué no se puede elegir «Al instante» en el alta (null = se puede). */
+function realtimeBlockedFor(d: Pick<SiteDiscovery, 'plugin'>): string | null {
+    if (!d.plugin.installed) return __('Necesita el complemento en el sitio (arriba están los pasos para instalarlo).');
+    if (!d.plugin.can_manage) return __('Necesita que la conexión sea de un usuario administrador de WordPress.');
+    return null;
+}
 
 export function SiteSyncPage(): JSX.Element {
     const { connectionId } = useParams();
@@ -206,14 +221,19 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
     });
     const [choices, setChoices] = useState<Record<string, Choice>>({});
     const [interval, setIntervalMin] = useState(60);
+    /** null = lo recomendado: al instante si el sitio lo permite. */
+    const [pickedMode, setPickedMode] = useState<SiteSyncMode | null>(null);
     const [writeBack, setWriteBack] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const realtimeBlocked = discover.data ? realtimeBlockedFor(discover.data) : __('Revisando el sitio…');
+    const mode: SiteSyncMode = realtimeBlocked !== null ? 'interval' : pickedMode ?? 'realtime';
     const setup = useMutation({
         mutationFn: () =>
             api.siteSyncSetup(connectionId, {
                 objects: chosenObjects(discover.data, choices),
                 write_back: writeBack,
                 interval_minutes: interval,
+                mode,
             }),
         onSuccess: onDone,
         onError: (err) => setError(errText(err)),
@@ -249,6 +269,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
     const d = discover.data;
     const types = d.objects.filter((o) => o.kind === 'post_type');
     const taxes = d.objects.filter((o) => o.kind === 'taxonomy');
+    const media = d.objects.filter((o) => o.kind === 'media');
     const chosen = d.objects.filter((o) => choices[objectKey(o)]);
     const toggleObject = (o: SiteObject): void =>
         setChoices((prev) => {
@@ -281,9 +302,24 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
                 )}
             </div>
 
+            <SitePluginCard
+                state={{
+                    installed: d.plugin.installed,
+                    version: d.plugin.version,
+                    latest: d.plugin.latest,
+                    seoName: d.plugin.seo?.name ?? null,
+                    providers: (['acf', 'metabox', 'jetengine'] as const).filter((k) => d.plugin.providers[k]).map((k) => PROVIDER_LABEL[k]!),
+                    problem: d.plugin.seo?.problem ?? d.plugin.error,
+                }}
+                siteUrl={d.site_url}
+                checking={discover.isFetching}
+                onRecheck={() => void discover.refetch()}
+            />
+
             <fieldset className="imcrm-space-y-3">
                 <legend className="imcrm-text-sm imcrm-font-medium">{__('1. Qué traer')}</legend>
                 <ObjectGrid title={__('Contenido')} icon={FileText} objects={types} choices={choices} onToggle={toggleObject} />
+                {media.length > 0 && <ObjectGrid title={__('Medios')} icon={Images} objects={media} choices={choices} onToggle={toggleObject} />}
                 {taxes.length > 0 && <ObjectGrid title={__('Taxonomías')} icon={Tags} objects={taxes} choices={choices} onToggle={toggleObject} />}
             </fieldset>
 
@@ -297,6 +333,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
                         <ColumnPicker
                             key={objectKey(o)}
                             object={o}
+                            seoName={d.plugin.seo?.name ?? null}
                             choice={choices[objectKey(o)]!}
                             writeBack={writeBack}
                             onChange={(c) => setChoices((prev) => ({ ...prev, [objectKey(o)]: c }))}
@@ -307,23 +344,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
 
             <fieldset className="imcrm-space-y-3">
                 <legend className="imcrm-text-sm imcrm-font-medium">{chosen.length > 0 ? __('3. Mantener al día') : __('2. Mantener al día')}</legend>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                    <Select
-                        id="site-interval"
-                        aria-label={__('Frecuencia')}
-                        className="imcrm-w-60"
-                        value={String(interval)}
-                        onChange={(e) => setIntervalMin(Number(e.target.value))}
-                        data-testid="imcrm-site-sync-interval"
-                    >
-                        {SITE_SYNC_INTERVALS.map((n) => (
-                            <option key={n} value={n}>
-                                {__(INTERVAL_LABEL[n] ?? `Cada ${n} minutos`)}
-                            </option>
-                        ))}
-                    </Select>
-                    <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Y cuando quieras, con «Sincronizar ahora».')}</span>
-                </div>
+                <SiteSyncModeChoice mode={mode} interval={interval} onMode={setPickedMode} onInterval={setIntervalMin} realtimeBlocked={realtimeBlocked} idPrefix="imcrm-site-sync" />
                 <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-sm">
                     <input type="checkbox" className="imcrm-mt-0.5" checked={writeBack} onChange={(e) => setWriteBack(e.target.checked)} data-testid="imcrm-site-sync-writeback" />
                     <span>
@@ -412,13 +433,7 @@ function ObjectGrid({
                             <span className="imcrm-min-w-0">
                                 <span className="imcrm-block imcrm-font-medium">{o.label}</span>
                                 <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                                    {o.synced
-                                        ? __('Ya se sincroniza')
-                                        : o.count === null
-                                          ? o.object
-                                          : o.kind === 'taxonomy'
-                                            ? sprintf(o.count === 1 ? __('%s término') : __('%s términos'), formatNumber(o.count))
-                                            : sprintf(o.count === 1 ? __('%s entrada') : __('%s entradas'), formatNumber(o.count))}
+                                    {o.synced ? __('Ya se sincroniza') : o.count === null ? o.object : objectCount(o.kind, o.count)}
                                 </span>
                             </span>
                         </label>
@@ -431,24 +446,20 @@ function ObjectGrid({
 
 function ColumnPicker({
     object,
+    seoName,
     choice,
     writeBack,
     onChange,
 }: {
     object: SiteObject;
+    seoName: string | null;
     choice: Choice;
     writeBack: boolean;
     onChange: (c: Choice) => void;
 }): JSX.Element {
     const [open, setOpen] = useState(true);
     const [showPrivate, setShowPrivate] = useState(false);
-    const groups = useMemo(() => {
-        const core = object.columns.filter((c) => c.source === 'core');
-        const acf = object.columns.filter((c) => c.source === 'acf');
-        const meta = object.columns.filter((c) => c.source === 'meta' && !c.private);
-        const internal = object.columns.filter((c) => c.private);
-        return { core, acf, meta, internal };
-    }, [object]);
+    const groups = useMemo(() => siteColumnGroups(object.columns), [object]);
     const toggleCol = (c: SiteColumn, on: boolean): void => {
         const columns = new Set(choice.columns);
         const editable = new Set(choice.editable);
@@ -478,7 +489,7 @@ function ColumnPicker({
                     <span className="imcrm-min-w-0">
                         <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
                             {c.label}
-                            <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__(TYPE_LABEL[c.type] ?? c.type)}</span>
+                            <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{c.image ? __('Imagen') : __(TYPE_LABEL[c.type] ?? c.type)}</span>
                             {c.always && <span className="imcrm-text-[11px] imcrm-text-muted-foreground">· {__('siempre')}</span>}
                         </span>
                         {c.sample !== null && <span className="imcrm-block imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{sprintf(__('Ej.: %s'), c.sample)}</span>}
@@ -510,8 +521,16 @@ function ColumnPicker({
             {open && (
                 <div className="imcrm-space-y-3 imcrm-border-t imcrm-border-border imcrm-px-3 imcrm-py-2">
                     <ColumnGroup title={__('De WordPress')}>{groups.core.map(row)}</ColumnGroup>
+                    {groups.seo.length > 0 && (
+                        <ColumnGroup title={seoName ? sprintf(__('SEO · %s'), seoName) : __('SEO')} testId={`imcrm-site-colgroup-${object.object}-seo`}>
+                            {groups.seo.map(row)}
+                        </ColumnGroup>
+                    )}
                     {groups.acf.length > 0 && <ColumnGroup title={__('Campos de ACF')}>{groups.acf.map(row)}</ColumnGroup>}
+                    {groups.metabox.length > 0 && <ColumnGroup title={__('Campos de Meta Box')}>{groups.metabox.map(row)}</ColumnGroup>}
+                    {groups.jetengine.length > 0 && <ColumnGroup title={__('Campos de JetEngine')}>{groups.jetengine.map(row)}</ColumnGroup>}
                     {groups.meta.length > 0 && <ColumnGroup title={__('Campos personalizados')}>{groups.meta.map(row)}</ColumnGroup>}
+                    {groups.plugin.length > 0 && <ColumnGroup title={__('Datos del complemento')}>{groups.plugin.map(row)}</ColumnGroup>}
                     {groups.internal.length > 0 && (
                         <div>
                             <button type="button" className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground" onClick={() => setShowPrivate((v) => !v)}>
@@ -527,9 +546,9 @@ function ColumnPicker({
     );
 }
 
-function ColumnGroup({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function ColumnGroup({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }): JSX.Element {
     return (
-        <div>
+        <div data-testid={testId}>
             <p className="imcrm-text-[11px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{title}</p>
             <ul className="imcrm-divide-y imcrm-divide-border">{children}</ul>
         </div>
@@ -565,10 +584,12 @@ function Configured({
             // Cambia la marca de las listas: candados y banner.
             void qc.invalidateQueries({ queryKey: listsKeys.all });
             setWriteBackLocal(null);
+            setModeLocal(null);
             onChange(s);
         },
         onError: (err) => {
             setWriteBackLocal(null);
+            setModeLocal(null);
             onErr(err);
         },
     });
@@ -582,6 +603,11 @@ function Configured({
         onError: onErr,
     });
     const writeBack = writeBackLocal ?? status.write_back;
+    // Optimista también el modo (el alta de los avisos en el sitio tarda unos segundos).
+    const [modeLocal, setModeLocal] = useState<SiteSyncMode | null>(null);
+    const mode = modeLocal ?? status.mode;
+    const pluginKnown = status.plugin !== null;
+    const pluginInstalled = status.plugin?.installed === true;
     const authProblem = status.last_error !== null && /contraseña|Authorization|usuario/.test(status.last_error);
     const state: 'running' | 'queued' | 'error' | 'paused' | 'ok' | 'pending' = status.running
         ? 'running'
@@ -598,6 +624,21 @@ function Configured({
 
     return (
         <div className="imcrm-space-y-6">
+            {pluginKnown && (
+                <SitePluginCard
+                    state={{
+                        installed: pluginInstalled,
+                        version: status.plugin?.version ?? null,
+                        latest: status.plugin_latest,
+                        seoName: status.plugin?.seo_name ?? null,
+                        missingSince: status.plugin?.missing_since ?? null,
+                    }}
+                    siteUrl={status.site_url}
+                    checking={status.running || queued || run.isPending}
+                    onRecheck={() => run.mutate(false)}
+                    recheckLabel={status.plugin?.missing_since ? __('Ya lo activé') : __('Ya lo instalé')}
+                />
+            )}
             <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-site-sync-status">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
@@ -637,33 +678,32 @@ function Configured({
                     </ul>
                 )}
 
-                <div className="imcrm-grid imcrm-gap-4 sm:imcrm-grid-cols-2">
-                    <div className="imcrm-space-y-1.5">
-                        <label htmlFor="site-interval-cfg" className="imcrm-text-xs imcrm-font-medium">
-                            {__('Frecuencia')}
-                        </label>
-                        <Select
-                            id="site-interval-cfg"
-                            className="imcrm-w-full"
-                            value={String(status.interval_minutes)}
-                            onChange={(e) => update.mutate({ interval_minutes: Number(e.target.value) })}
-                            data-testid="imcrm-site-sync-interval-cfg"
-                        >
-                            {SITE_SYNC_INTERVALS.map((n) => (
-                                <option key={n} value={n}>
-                                    {__(INTERVAL_LABEL[n] ?? `Cada ${n} minutos`)}
-                                </option>
-                            ))}
-                        </Select>
-                        <button
-                            type="button"
-                            className="imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline"
-                            onClick={() => update.mutate({ enabled: !status.enabled })}
-                            data-testid="imcrm-site-sync-pause"
-                        >
-                            {status.enabled ? __('Pausar la sincronización') : __('Reanudar la sincronización')}
-                        </button>
-                    </div>
+                <div className="imcrm-space-y-2">
+                    <p className="imcrm-text-xs imcrm-font-medium">{__('Cómo se mantiene al día')}</p>
+                    <SiteSyncModeChoice
+                        mode={mode}
+                        interval={status.interval_minutes}
+                        onMode={(m) => {
+                            if (m === mode) return;
+                            setModeLocal(m);
+                            update.mutate({ mode: m });
+                        }}
+                        onInterval={(n) => update.mutate({ interval_minutes: n })}
+                        realtimeBlocked={pluginInstalled || mode === 'realtime' ? null : __('Necesita el complemento en el sitio.')}
+                        disabled={update.isPending}
+                        idPrefix="imcrm-site-sync-cfg"
+                    />
+                    <RealtimeLine status={status} />
+                    <button
+                        type="button"
+                        className="imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline"
+                        onClick={() => update.mutate({ enabled: !status.enabled })}
+                        data-testid="imcrm-site-sync-pause"
+                    >
+                        {status.enabled ? __('Pausar la sincronización') : __('Reanudar la sincronización')}
+                    </button>
+                </div>
+                <div>
                     <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-sm">
                         <input
                             type="checkbox"
@@ -725,6 +765,56 @@ function Configured({
             </section>
         </div>
     );
+}
+
+/** El estado de los avisos al instante: cuántos llegaron, el último y si algo falló. */
+function RealtimeLine({ status }: { status: SiteSyncStatus }): JSX.Element | null {
+    const r = status.realtime;
+    if (status.mode !== 'realtime' && !r.error) return null;
+    if (status.mode === 'realtime' && status.effective_mode !== 'realtime') {
+        return (
+            <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-xs imcrm-text-warning" data-testid="imcrm-site-sync-realtime" data-state="fallback">
+                <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                {sprintf(__('Al instante necesita el complemento: mientras no esté, el sitio se revisa %s.'), siteIntervalText(status.interval_minutes))}
+            </p>
+        );
+    }
+    return (
+        <div className="imcrm-space-y-1" data-testid="imcrm-site-sync-realtime" data-state={r.error ? 'error' : r.registered ? 'listening' : 'pending'}>
+            {r.registered && !r.error && (
+                <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
+                    <span className="imcrm-relative imcrm-flex imcrm-h-2 imcrm-w-2" aria-hidden>
+                        <span className="imcrm-absolute imcrm-inline-flex imcrm-h-full imcrm-w-full imcrm-animate-ping imcrm-rounded-full imcrm-bg-success imcrm-opacity-60 motion-reduce:imcrm-animate-none" />
+                        <span className="imcrm-relative imcrm-inline-flex imcrm-h-2 imcrm-w-2 imcrm-rounded-full imcrm-bg-success" />
+                    </span>
+                    <span className="imcrm-font-medium imcrm-text-foreground">{__('Escuchando al sitio')}</span>
+                    <span>
+                        {[
+                            sprintf(r.received === 1 ? __('%s aviso recibido') : __('%s avisos recibidos'), formatNumber(r.received)),
+                            r.last_at ? `${__('el último')}: ${when(r.last_at)}` : null,
+                            __('revisión completa cada hora'),
+                        ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                    </span>
+                </p>
+            )}
+            {!r.registered && !r.error && <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Activando los avisos en el sitio…')}</p>}
+            {r.error && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-xs imcrm-text-destructive" data-testid="imcrm-site-sync-realtime-error">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {r.error}
+                </p>
+            )}
+        </div>
+    );
+}
+
+function siteIntervalText(n: number): string {
+    if (n === 60) return __('cada hora');
+    if (n === 1440) return __('una vez por día');
+    if (n % 60 === 0) return sprintf(__('cada %d horas'), n / 60);
+    return sprintf(__('cada %d minutos'), n);
 }
 
 function StateBadge({ state, current }: { state: 'running' | 'queued' | 'error' | 'paused' | 'ok' | 'pending'; current: string | null }): JSX.Element {
@@ -820,17 +910,18 @@ function ObjectCard({
     const have = new Set(o.columns.map((c) => c.key));
     const more = (discover.data?.objects.find((x) => objectKey(x) === o.resource)?.columns ?? []).filter((c) => !have.has(c.key));
     const pct = o.total && o.total > 0 ? Math.min(100, Math.round((o.done / o.total) * 100)) : null;
+    const needsPlugin = o.columns.filter((c) => c.needs_plugin);
 
     return (
         <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid={`imcrm-site-object-card-${o.resource}`}>
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
                 <div className="imcrm-min-w-0">
                     <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
-                        {o.kind === 'taxonomy' ? <Tags className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" /> : <FileText className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />}
+                        <ObjectIcon kind={o.kind} />
                         {o.label}
                     </h2>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {sprintf(o.count === 1 ? __('%s registro') : __('%s registros'), formatNumber(o.count))}
+                        {o.kind === 'media' ? objectCount('media', o.count) : sprintf(o.count === 1 ? __('%s registro') : __('%s registros'), formatNumber(o.count))}
                         {running && pct !== null && ` · ${sprintf(__('%d %% de esta vuelta'), pct)}`}
                     </p>
                 </div>
@@ -873,7 +964,15 @@ function ObjectCard({
                     <div className="imcrm-mt-2 imcrm-space-y-3">
                         <ul className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5">
                             {o.columns.map((c) => (
-                                <li key={c.key} className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs">
+                                <li
+                                    key={c.key}
+                                    className={cn(
+                                        'imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs',
+                                        c.needs_plugin ? 'imcrm-border-warning/40 imcrm-text-muted-foreground' : 'imcrm-border-border',
+                                    )}
+                                    title={c.needs_plugin ? __('Viene del complemento, que ya no está en el sitio.') : undefined}
+                                >
+                                    {c.needs_plugin && <Lock className="imcrm-h-3 imcrm-w-3" aria-hidden />}
                                     {c.label}
                                     {!c.always && (
                                         <button
@@ -905,7 +1004,7 @@ function ObjectCard({
                                     {more.map((c) => (
                                         <option key={c.key} value={c.key}>
                                             {c.label}
-                                            {c.source === 'acf' ? ' · ACF' : c.source === 'meta' ? ` · ${__('personalizado')}` : ''}
+                                            {siteColumnOrigin(c) ? ` · ${__(siteColumnOrigin(c))}` : ''}
                                         </option>
                                     ))}
                                 </Select>
@@ -918,14 +1017,33 @@ function ObjectCard({
                     </div>
                 )}
             </div>
+            {needsPlugin.length > 0 && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-xs imcrm-text-warning" data-testid={`imcrm-site-needs-plugin-${o.resource}`}>
+                    <Lock className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {sprintf(
+                        needsPlugin.length === 1
+                            ? __('%s viene del complemento, que ya no está en el sitio: queda con lo último que llegó y no se puede editar.')
+                            : __('%s vienen del complemento, que ya no está en el sitio: quedan con lo último que llegó y no se pueden editar.'),
+                        needsPlugin.map((c) => `«${c.label}»`).join(', '),
+                    )}
+                </p>
+            )}
+            {o.list && (o.kind === 'media' || o.kind === 'post_type' || o.kind === 'taxonomy') && <SiteKits object={o} status={status} connectionId={connectionId} />}
             {status.site_url && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Lo nuevo se crea en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera».')}
+                    {o.kind === 'media'
+                        ? __('Lo nuevo se sube en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera».')
+                        : __('Lo nuevo se crea en WordPress y llega solo; lo que se borra allá queda aquí en «Papelera».')}
                 </p>
             )}
             {error && <p className="imcrm-text-xs imcrm-text-destructive">{error}</p>}
         </section>
     );
+}
+
+function ObjectIcon({ kind }: { kind: SiteObject['kind'] }): JSX.Element {
+    const Icon = objectIcon(kind);
+    return <Icon className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" aria-hidden />;
 }
 
 function AddObjects({ status, connectionId, onQueued }: { status: SiteSyncStatus; connectionId: number; onQueued: (s: SiteSyncStatus) => void }): JSX.Element {
@@ -988,7 +1106,7 @@ function AddObjects({ status, connectionId, onQueued }: { status: SiteSyncStatus
                                     }
                                 />
                                 {o.label}
-                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{o.kind === 'taxonomy' ? __('taxonomía') : __('contenido')}</span>
+                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{o.kind === 'taxonomy' ? __('taxonomía') : o.kind === 'media' ? __('medios') : __('contenido')}</span>
                             </label>
                         ))}
                     </div>

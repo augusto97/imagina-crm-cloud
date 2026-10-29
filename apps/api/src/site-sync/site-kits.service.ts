@@ -83,6 +83,7 @@ export class SiteKitsService {
         };
         const viewsBefore = await this.views.list(tenantId, String(listId));
         const madeViews: Array<{ id: number; name: string }> = [];
+        let aiField: Field | null = null;
         const ensureView = async (name: string, filter: FilterNode): Promise<void> => {
             if (viewsBefore.some((v) => v.name === name)) return;
             const v = await this.views.create(tenantId, String(listId), { name, type: 'table', config: { filter_tree: filter }, icon: input.kit === 'seo_audit' ? 'magnifying_glass' : 'image' });
@@ -121,7 +122,7 @@ export class SiteKitsService {
                 );
             }
             const inputs = [title, kw, summary, gTitle].filter((x): x is number => typeof x === 'number');
-            await ensureField('meta_descripcion_sugerida', () =>
+            aiField = await ensureField('meta_descripcion_sugerida', () =>
                 this.fields.create(tenantId, String(listId), {
                     label: 'Meta descripción sugerida',
                     slug: 'meta_descripcion_sugerida',
@@ -139,7 +140,7 @@ export class SiteKitsService {
             const alt = map.alt_text;
             const title = map.title;
             if (!thumb) warnings.push('Sin la columna «Imagen» la IA no tiene qué mirar.');
-            await ensureField('texto_alternativo_sugerido', () =>
+            aiField = await ensureField('texto_alternativo_sugerido', () =>
                 this.fields.create(tenantId, String(listId), {
                     label: 'Texto alternativo sugerido',
                     slug: 'texto_alternativo_sugerido',
@@ -157,6 +158,7 @@ export class SiteKitsService {
             views: madeViews,
             fields: made,
             added_columns: ensured.added,
+            ai_field: aiField ? { id: aiField.id, label: aiField.label } : null,
             warnings,
         };
     }

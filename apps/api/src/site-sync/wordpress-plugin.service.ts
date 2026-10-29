@@ -121,13 +121,21 @@ export class WordpressPluginService {
             const m = new RegExp(`== ${name} ==\\n([\\s\\S]*?)(?:\\n== |$)`).exec(readme);
             return (m?.[1] ?? '').trim();
         };
-        const html = (text: string) =>
-            text
-                .split('\n')
-                .map((l) => l.trim())
-                .filter((l) => l !== '')
-                .map((l) => (l.startsWith('* ') ? `<li>${escapeHtml(l.slice(2))}</li>` : l.startsWith('= ') ? `<h4>${escapeHtml(l.replace(/^=\s*|\s*=$/g, ''))}</h4>` : `<p>${escapeHtml(l)}</p>`))
-                .join('\n');
+        const html = (text: string) => {
+            const out: string[] = [];
+            let inList = false;
+            for (const raw of text.split('\n')) {
+                const l = raw.trim();
+                if (l === '') continue;
+                const item = l.startsWith('* ');
+                if (item && !inList) out.push('<ul>');
+                if (!item && inList) out.push('</ul>');
+                inList = item;
+                out.push(item ? `<li>${escapeHtml(l.slice(2))}</li>` : l.startsWith('= ') ? `<h4>${escapeHtml(l.replace(/^=\s*|\s*=$/g, ''))}</h4>` : `<p>${escapeHtml(l)}</p>`);
+            }
+            if (inList) out.push('</ul>');
+            return out.join('\n');
+        };
         let mtime = 0;
         try {
             mtime = statSync(path.join(d, `${WP_PLUGIN_SLUG}.php`)).mtimeMs;

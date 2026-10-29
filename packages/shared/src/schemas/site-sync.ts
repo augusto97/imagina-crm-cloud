@@ -210,6 +210,8 @@ export const siteKitResultSchema = z.object({
     fields: z.array(z.object({ id: idSchema, label: z.string() })),
     /** Columnas del sitio que el kit sumó (se llenan en la próxima vuelta). */
     added_columns: z.array(z.string()),
+    /** La columna con IA del kit (nueva o la que ya estaba), para calcular las sugerencias. */
+    ai_field: z.object({ id: idSchema, label: z.string() }).nullable(),
     warnings: z.array(z.string()),
 });
 export type SiteKitResult = z.infer<typeof siteKitResultSchema>;
@@ -290,6 +292,8 @@ export const siteSyncStatusSchema = z.object({
             missing_since: z.string().nullable(),
         })
         .nullable(),
+    /** La versión del complemento que reparte la app (para avisar «hay una más nueva»). */
+    plugin_latest: z.string().nullable().default(null),
     realtime: z.object({
         registered: z.boolean(),
         received: z.number().int().nonnegative(),

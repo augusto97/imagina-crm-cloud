@@ -18,17 +18,11 @@ export function SiteListBanner({ marker, fields }: { marker: SiteListMarker; fie
         const id = marker.fields[key];
         return (fields ?? []).find((f) => f.id === id)?.label ?? key;
     };
-    const editable = marker.write_back ? marker.editable.filter((k) => marker.can_edit.includes(k) && marker.fields[k]).map((k) => labelOf(k).toLowerCase()) : [];
+    const editable = marker.write_back ? marker.editable.filter((k) => marker.can_edit.includes(k) && marker.fields[k]).map((k) => lowerFirst(labelOf(k))) : [];
     const listing = joinList(editable);
-    const site = marker.site_url.replace(/\/+$/, '');
-    const createUrl = site
-        ? marker.kind === 'taxonomy'
-            ? `${site}/wp-admin/edit-tags.php?taxonomy=${encodeURIComponent(marker.object)}`
-            : marker.object === 'post'
-              ? `${site}/wp-admin/post-new.php`
-              : `${site}/wp-admin/post-new.php?post_type=${encodeURIComponent(marker.object)}`
-        : null;
+    const createUrl = siteCreateUrl(marker);
     const where = marker.site_name || __('el sitio');
+    const needsPlugin = marker.needs_plugin.filter((k) => marker.fields[k]).map((k) => labelOf(k));
 
     return (
         <div
@@ -71,17 +65,27 @@ export function SiteListBanner({ marker, fields }: { marker: SiteListMarker; fie
                         <li>
                             {marker.kind === 'taxonomy'
                                 ? __('Los términos se crean y se borran en WordPress, y llegan solos.')
-                                : __('Lo nuevo se crea en WordPress y llega solo. Lo que se borra allá queda aquí en «Papelera»: nunca se pierde nada.')}
+                                : marker.kind === 'media'
+                                  ? __('Las imágenes y archivos se suben en WordPress y llegan solos. Lo que se borra allá queda aquí en «Papelera»: nunca se pierde nada.')
+                                  : __('Lo nuevo se crea en WordPress y llega solo. Lo que se borra allá queda aquí en «Papelera»: nunca se pierde nada.')}
                             {createUrl && (
                                 <>
                                     {' '}
                                     <a href={createUrl} target="_blank" rel="noreferrer" className="imcrm-inline-flex imcrm-items-center imcrm-gap-0.5 imcrm-text-primary hover:imcrm-underline">
-                                        {__('Crear en WordPress')}
+                                        {marker.kind === 'media' ? __('Subir en WordPress') : __('Crear en WordPress')}
                                         <ExternalLink className="imcrm-h-3 imcrm-w-3" />
                                     </a>
                                 </>
                             )}
                         </li>
+                        {needsPlugin.length > 0 && (
+                            <li className="imcrm-text-warning" data-testid="site-list-banner-needs-plugin">
+                                {sprintf(
+                                    __('%s vienen del complemento para WordPress, que ya no está en el sitio: quedan con lo último que llegó y no se pueden editar hasta que vuelva a activarse.'),
+                                    joinList(needsPlugin.map((l) => `«${l}»`)),
+                                )}
+                            </li>
+                        )}
                         <li>
                             {editable.length > 0
                                 ? sprintf(__('Desde aquí se puede cambiar: %s. El cambio se manda al sitio.'), listing)
@@ -113,6 +117,24 @@ export function SiteListBanner({ marker, fields }: { marker: SiteListMarker; fie
             )}
         </div>
     );
+}
+
+/** Dónde se crea algo nuevo de esta lista en el sitio (o null si no se sabe la dirección). */
+export function siteCreateUrl(marker: Pick<SiteListMarker, 'site_url' | 'kind' | 'object'>): string | null {
+    const site = marker.site_url.replace(/\/+$/, '');
+    if (!site) return null;
+    if (marker.kind === 'taxonomy') return `${site}/wp-admin/edit-tags.php?taxonomy=${encodeURIComponent(marker.object)}`;
+    if (marker.kind === 'media') return `${site}/wp-admin/media-new.php`;
+    if (marker.object === 'post') return `${site}/wp-admin/post-new.php`;
+    return `${site}/wp-admin/post-new.php?post_type=${encodeURIComponent(marker.object)}`;
+}
+
+/** «Título SEO» → «título SEO» (siglas y marcas como «WordPress» quedan como están). */
+export function lowerFirst(label: string): string {
+    return label
+        .split(' ')
+        .map((w) => (/\p{Lu}/u.test(w.slice(1)) ? w : w.toLowerCase()))
+        .join(' ');
 }
 
 /** «a», «a y b», «a, b y c». */

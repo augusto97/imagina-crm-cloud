@@ -31,6 +31,7 @@ import {
     storeSyncStatusSchema,
     siteSyncStatusSchema,
     siteDiscoverySchema,
+    siteKitResultSchema,
     startWordpressConnectResultSchema,
     type StoreSyncStatus,
     type CreateSqlSyncInput,
@@ -71,6 +72,8 @@ import {
     type SetupSiteSyncInput,
     type SiteColumnChangeInput,
     type SiteDiscovery,
+    type ApplySiteKitInput,
+    type SiteKitResult,
     type SiteSyncStatus,
     type StartWordpressConnectInput,
     type StartWordpressConnectResult,
@@ -1066,6 +1069,10 @@ export class CloudClient {
     }
     async siteSyncRemoveColumn(connectionId: number, input: SiteColumnChangeInput): Promise<SiteSyncStatus> {
         return (await this.request('POST', `/connections/${connectionId}/site-sync/columns/remove`, { body: input, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    /** Un kit listo para usar sobre una lista del sitio (auditoría SEO, texto alternativo — ADR-S84). */
+    async siteSyncApplyKit(connectionId: number, input: ApplySiteKitInput): Promise<SiteKitResult> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync/kits`, { body: input, schema: z.object({ data: siteKitResultSchema }) })).data;
     }
     async siteSyncRemove(connectionId: number): Promise<void> {
         await this.request('DELETE', `/connections/${connectionId}/site-sync`, {});
