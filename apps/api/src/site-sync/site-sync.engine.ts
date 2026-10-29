@@ -7,6 +7,7 @@ import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { BillingService } from '../billing/billing.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
+import { explainLostAccess } from '../connectors/wordpress/wp-verify';
 import type { Tx } from '../db/client';
 import { connectionSyncs, records, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
@@ -202,6 +203,8 @@ export class SiteSyncEngine {
             } catch (err) {
                 error = err instanceof Error ? err.message : String(err);
                 authFailed = err instanceof WpApiError && (err.kind === 'auth' || err.kind === 'not_seen');
+                // ¿Revocaron la contraseña, o un plugin de seguridad (Wordfence) apagó las contraseñas de aplicación?
+                if (err instanceof WpApiError && err.kind === 'not_seen') error = (await explainLostAccess(ctx.settings.site_url)) ?? error;
                 if (!(err instanceof SiteSyncStopped)) this.logger.warn(`Sincronización del sitio #${syncId} (tenant ${tenantId}): ${error}`);
             }
             const now = new Date();
@@ -264,7 +267,7 @@ export class SiteSyncEngine {
             touchedLists: new Set(),
             terms: new Map(),
             // Fuera de una vuelta (envíos, avisos) se confía en lo último que se supo.
-            plugin: state.plugin?.installed ? { version: state.plugin.version ?? '', seo: null, providers: { acf: false, metabox: false, jetengine: false }, can_manage: false, hooks: null, updates: false } : null,
+            plugin: state.plugin?.installed ? { version: state.plugin.version ?? '', seo: null, providers: { acf: false, metabox: false, jetengine: false }, can_manage: false, can_hooks: false, hooks: null, updates: false, signed: false, media_index: null } : null,
         };
     }
 
@@ -280,7 +283,15 @@ export class SiteSyncEngine {
         const uses = Object.values(ctx.settings.objects).some((o) => o.columns.some((c) => isSitePluginColumn(c.key)));
         if (found.installed) {
             ctx.plugin = found.info;
-            ctx.state.plugin = { installed: true, version: found.info.version, seo_name: found.info.seo?.name ?? null, checked_at: now, missing_since: null };
+            let mediaPending = prev?.media_pending === true;
+            if (mediaPending && found.info.media_index?.status === 'ready') {
+                // El sitio terminó de calcular «Dónde se usa»: esta vuelta relee los medios enteros.
+                for (const [resource, o] of Object.entries(ctx.settings.objects)) {
+                    if (o.kind === 'media') delete ctx.state.cursors[resource];
+                }
+                mediaPending = false;
+            }
+            ctx.state.plugin = { installed: true, version: found.info.version, seo_name: found.info.seo?.name ?? null, checked_at: now, missing_since: null, media_pending: mediaPending };
             if (found.info.seo?.problem) ctx.warnings.add(found.info.seo.problem);
         } else {
             ctx.plugin = null;
@@ -542,10 +553,18 @@ export class SiteSyncEngine {
         if (keys.length === 0 || !ctx.plugin) return;
         const ids = rows.map((r) => Number(r.id)).filter((n) => Number.isInteger(n) && n > 0);
         try {
-            const values = await ibcRead(ctx.creds, o.kind, o.object, ids, keys);
+            const meta: { mediaIndexBuilding?: boolean } = {};
+            const values = await ibcRead(ctx.creds, o.kind, o.object, ids, keys, meta);
             for (const r of rows) {
                 const v = values.get(Number(r.id));
                 if (v) r[IBC_VALUES] = v;
+            }
+            if (meta.mediaIndexBuilding) {
+                ctx.warnings.add('El sitio está calculando por primera vez dónde se usa cada imagen: esa columna se completa sola en las próximas vueltas.');
+                if (ctx.state.plugin && !ctx.state.plugin.media_pending) {
+                    ctx.state.plugin = { ...ctx.state.plugin, media_pending: true };
+                    await this.saveState(ctx.tenantId, ctx.syncId, { plugin: ctx.state.plugin satisfies SitePluginState });
+                }
             }
         } catch (err) {
             ctx.warnings.add(`No pudimos leer los datos del complemento (${o.label}): ${err instanceof Error ? err.message : String(err)}`);

@@ -18,7 +18,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     'En **Ajustes → Integraciones**, busca la tarjeta **WordPress** y toca **Conectar**.',
                     'Escribe la **Dirección del sitio** (por ejemplo https://misitio.com) y toca **Continuar en WordPress**.',
-                    'Se abre la pantalla **Autorizar aplicación** de tu propio WordPress. Si no tenías la sesión abierta, entra con un usuario **Editor** o **Administrador**.',
+                    'Se abre la pantalla **Autorizar aplicación** de tu propio WordPress. Si no tenías la sesión abierta, entra con el usuario que vas a conectar (mira el consejo de abajo).',
                     'Toca **Sí, apruebo esta conexión**. WordPress crea una contraseña sólo para la app y te devuelve aquí.',
                     'Vuelves a la página del sitio con el aviso **¡Listo! El sitio quedó conectado** y ya puedes elegir qué traer.',
                 ],
@@ -29,6 +29,12 @@ export const articles: LearnArticle[] = [
                 title: 'Nadie ve ni copia la contraseña',
                 md: 'La contraseña la crea WordPress y viaja directo a la app, que la guarda cifrada. Puedes revocarla cuando quieras desde **Usuarios → Perfil → Contraseñas de aplicación** en tu WordPress: desde ese momento la app deja de entrar.',
             },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Conecta un usuario Editor creado sólo para la app',
+                md: 'Lo más seguro es crear en WordPress (**Usuarios → Añadir nuevo**) un usuario con el rol **Editor** que use sólo la app, en vez de conectar tu cuenta de administrador. Un Editor puede cambiar entradas, páginas, categorías y medios, pero no instalar plugins ni tocar los ajustes del sitio: si algún día la contraseña de la app se filtrara, no daría el control del sitio. Con el complemento 1.1 (o más nuevo) descargado desde la app, un Editor también sirve para el modo **Al instante**.',
+            },
             { t: 'h', text: 'Si prefieres pegar una contraseña de aplicación' },
             {
                 t: 'p',
@@ -37,7 +43,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En tu WordPress entra a **Usuarios → Perfil** con un usuario Editor o Administrador.',
+                    'En tu WordPress entra a **Usuarios → Perfil** con el usuario que vas a conectar (lo mejor es un Editor creado sólo para la app).',
                     'Baja hasta **Contraseñas de aplicación**, escribe un nombre (por ejemplo «App de gestión») y toca **Añadir**.',
                     'Copia la contraseña que aparece (se muestra una sola vez) y pégala en la app junto con tu **Usuario de WordPress**.',
                     'Toca **Conectar**. La app prueba el sitio antes de guardar: si algo falla, no guarda nada y te dice por qué.',
@@ -50,7 +56,8 @@ export const articles: LearnArticle[] = [
                     { name: 'No pudimos llegar al sitio', what: 'La dirección está mal escrita o el sitio no responde. Ábrela en el navegador para comprobarla.' },
                     { name: 'El sitio tiene que usar HTTPS', what: 'WordPress no permite contraseñas de aplicación sin conexión segura. Activa el certificado en tu hosting (casi todos lo dan gratis).' },
                     { name: 'Las contraseñas de aplicación están desactivadas', what: 'Las apaga WordPress si el sitio no usa HTTPS, o un plugin de seguridad. Busca la opción «Application Passwords» y actívala.' },
-                    { name: 'El usuario no tiene permiso para editar', what: 'Conecta un usuario **Editor** o **Administrador**: un Autor o un Suscriptor no alcanza.' },
+                    { name: 'Tienes Wordfence', what: 'Wordfence apaga las contraseñas de aplicación al instalarse. En **Wordfence → Login Security → Settings** (Configuración), desmarca **Disable WordPress application passwords** («Desactivar las contraseñas de aplicación de WordPress») y guarda. El resto de la protección de Wordfence sigue igual.' },
+                    { name: 'El usuario no tiene permiso para editar', what: 'Conecta un usuario **Editor** (o Administrador): un Autor o un Suscriptor no alcanza.' },
                     { name: 'El hosting está borrando la cabecera de autorización', what: 'Pasa en algunos hostings. La app te dice la línea exacta para agregar al archivo de configuración del servidor, o puedes pedírselo al hosting.' },
                 ],
             },
@@ -287,7 +294,24 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'tip',
                 title: 'Si «Al instante» no se activa',
-                md: 'La app te dice el motivo. Lo más común: la conexión es de un usuario que no es administrador del sitio, o el hosting no deja que WordPress se comunique hacia afuera (un firewall). Mientras tanto, el sitio se revisa cada cierto tiempo.',
+                md: 'La app te dice el motivo. Lo más común: el complemento es anterior a la versión 1.1 y la conexión no es de un administrador (actualízalo y un Editor alcanza), o el hosting no deja que WordPress se comunique hacia afuera (un firewall). Mientras tanto, el sitio se revisa cada cierto tiempo.',
+            },
+            { t: 'h', text: 'Seguro y liviano para tu sitio' },
+            {
+                t: 'p',
+                md: 'El complemento está pensado para que instalarlo no le cueste nada a tu sitio ni lo exponga:',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'No hace más lento el sitio', what: 'Las páginas que ven tus visitantes no hacen ninguna consulta de más a la base de datos por el complemento. Sólo trabaja cuando la app le pide algo o cuando alguien guarda un cambio en el escritorio de WordPress.' },
+                    { name: 'Avisa sólo lo que importa', what: 'Un contador de visitas o un plugin que guarda datos a cada rato no genera avisos: el complemento sólo avisa los cambios en las columnas que traes a la app, y como mucho despierta el envío una vez cada 15 segundos.' },
+                    { name: '«Dónde se usa» sin cargar el sitio', what: 'El índice de qué imágenes usa cada página se arma de a poco, en segundo plano, y después se mantiene solo al guardar. Mientras se arma, la columna aparece en blanco con un aviso.' },
+                    { name: 'Respeta los permisos de WordPress', what: 'Sólo lee y cambia lo que el usuario conectado puede ver y editar, campo por campo. Nunca muestra contraseñas, claves ni datos internos de otros plugins, ni tipos de contenido privados.' },
+                    { name: 'Nadie puede desviar los avisos', what: 'Los avisos van firmados y sólo a la dirección de tu app. Un usuario que no es administrador no puede cambiar a dónde van ni pisar lo que configuró un administrador.' },
+                    { name: 'Actualizaciones verificadas', what: 'Antes de instalar una versión nueva, el complemento comprueba que la firmamos nosotros: un archivo alterado se rechaza. La tarjeta del sitio muestra **Actualizaciones verificadas** cuando está activo.' },
+                    { name: 'Convive con otros plugins', what: 'Probado junto a WooCommerce, Elementor, Wordfence, cachés como WP Super Cache, Yoast SEO y Query Monitor, en PHP 7.4 y 8.3.' },
+                ],
             },
             { t: 'h', text: 'Actualizaciones' },
             {
@@ -305,7 +329,8 @@ export const articles: LearnArticle[] = [
                     { q: '¿Necesito un plugin de SEO?', a: 'Para las columnas de SEO, sí: el complemento lee el que ya usas (Rank Math, Yoast SEO, SEOPress o All in One SEO). Sin ninguno, igual trae los campos, las palabras y los medios.' },
                     { q: 'Tengo dos plugins de SEO activos, ¿cuál usa?', a: 'Uno solo, en este orden: Rank Math, Yoast SEO, SEOPress y All in One SEO. La página del sitio te avisa cuál eligió.' },
                     { q: '¿Funciona con JetEngine?', a: 'Sí: lee los campos de los cuadros de JetEngine de cada tipo de contenido.' },
-                    { q: '¿Qué pasa al desinstalarlo del todo?', a: 'Borra sus ajustes del sitio. Tus listas en la app quedan como estaban.' },
+                    { q: '¿Qué pasa al desinstalarlo del todo?', a: 'Borra sus ajustes, sus tareas programadas y su índice de medios del sitio. Tus listas en la app quedan como estaban.' },
+                    { q: '¿Puedo instalarlo con un usuario Editor?', a: 'No: instalar plugins es cosa de un **Administrador**. Una vez instalado, la conexión de la app puede ser de un Editor.' },
                 ],
             },
             {

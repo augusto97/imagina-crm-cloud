@@ -108,8 +108,16 @@ export const sitePluginInfoSchema = z.object({
         .object({ plugin: z.string(), name: z.string(), version: z.string(), terms: z.boolean(), problem: z.string().nullable() })
         .nullable(),
     providers: z.object({ acf: z.boolean(), metabox: z.boolean(), jetengine: z.boolean() }),
-    /** El usuario conectado es administrador (los avisos en tiempo real lo necesitan). */
+    /** El usuario conectado es administrador. */
     can_manage: z.boolean(),
+    /**
+     * El usuario conectado puede tener avisos en tiempo real: un Administrador
+     * siempre; un Editor, con el complemento 1.1+ descargado desde la app (los
+     * avisos sólo pueden ir a ella). Ausente = complemento viejo: decide `can_manage`.
+     */
+    can_hooks: z.boolean().optional(),
+    /** Las actualizaciones del complemento llegan firmadas y se verifican antes de instalarse. */
+    signed: z.boolean().optional(),
     /** Se actualiza solo desde la app (lo instalaron con el zip de la app). */
     updates: z.boolean(),
     /** Si no se pudo leer (instalado pero con un error). */

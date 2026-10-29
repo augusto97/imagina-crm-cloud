@@ -758,4 +758,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.335-complemento-wordpress-seguro',
+        version: '0.1.335',
+        date: '2026-10-29',
+        kind: 'improvement',
+        title: 'El complemento para WordPress, más liviano y más seguro',
+        summary:
+            'La versión 1.1 del complemento no agrega ni una consulta a las páginas que ven tus visitantes, sólo avisa los cambios que importan y verifica sus actualizaciones antes de instalarlas.',
+        media: {
+            slides: [
+                {
+                    title: 'Tu sitio, igual de rápido',
+                    text: 'Las páginas públicas no hacen ninguna consulta de más, y leer cientos de páginas o imágenes desde la app tarda menos de un segundo.',
+                    illustration: 'sitio-complemento',
+                },
+                {
+                    title: 'Sólo los avisos que importan',
+                    text: 'Un contador de visitas o un plugin que guarda datos a cada rato ya no genera avisos: llegan sólo los cambios de las columnas que traes.',
+                    illustration: 'sitio-hero',
+                },
+                {
+                    title: 'Un Editor alcanza',
+                    text: 'Conecta un usuario con el rol Editor creado sólo para la app, también para el modo «Al instante». El complemento respeta sus permisos campo por campo.',
+                    illustration: 'sitio-lock',
+                },
+            ],
+        },
+        body: 'WordPress te ofrece la actualización del complemento en **Plugins**, como cualquier otra. Si tu sitio tiene **Wordfence**, la app te dice cómo dejar activas las contraseñas de aplicación sin apagar el resto de su protección.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin'] },
+    },
 ];

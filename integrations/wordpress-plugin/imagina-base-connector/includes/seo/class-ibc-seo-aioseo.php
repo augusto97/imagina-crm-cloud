@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_SEO_AIOSEO extends IBC_SEO_Adapter {
+class ImaginaBC_SEO_AIOSEO extends ImaginaBC_SEO_Adapter {
 
 	public static function active() {
 		return defined( 'AIOSEO_VERSION' ) && function_exists( 'aioseo' ) && class_exists( '\AIOSEO\Plugin\Common\Models\Post' );
@@ -126,7 +126,7 @@ class IBC_SEO_AIOSEO extends IBC_SEO_Adapter {
 		$result = \AIOSEO\Plugin\Common\Models\Post::savePost( $post->ID, $data );
 		if ( is_string( $result ) && '' !== $result ) {
 			foreach ( array_keys( $clean ) as $key ) {
-				$errors[ $key ] = sprintf( __( 'All in One SEO no lo guardó: %s', 'imagina-base-connector' ), $result );
+				$errors[ $key ] = sprintf( /* translators: el error que dio All in One SEO */ __( 'All in One SEO no lo guardó: %s', 'imagina-base-connector' ), $result );
 			}
 		}
 		return $errors;

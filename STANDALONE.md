@@ -5163,6 +5163,81 @@ terceros: se mantiene mínimo, sin dependencias y sin llamadas a nadie más. Un
 sitio sin loopback ni visitas entrega los avisos con WP-Cron (más tarde); la
 revisión de cada hora cubre lo que se pierda.
 
+**Addendum v0.1.335 — auditoría de seguridad y rendimiento del complemento
+(1.1.0).** El complemento corre en sitios de terceros: instalarlo no puede
+volver lento el sitio, chocar con otros plugins ni abrir una puerta. Se auditó
+contra un WordPress real con 20.000 entradas, 3.000 medios y 400.000 metas, en
+PHP 8.3 y 7.4, con WooCommerce, Elementor, Wordfence, WP Super Cache, Yoast y
+Query Monitor activos a la vez. Reglas que quedan fijas:
+
+1. **Cero costo en las páginas públicas.** Toda opción que se lee en cada
+   pedido es autoload y existe siempre (una opción ausente cuesta una consulta
+   por visita); las piezas pesadas se cargan a pedido. Medido: 0 consultas del
+   complemento por visita (1.0.0 hacía hasta 2 por visita con un contador de
+   visitas: un aviso y un pedido en segundo plano).
+2. **Avisos sólo de lo que importa.** La app manda, al registrar el aviso, la
+   lista de columnas que trae por objeto (`fields` + `watch_hash`; tope 300);
+   un cambio de meta fuera de esa lista no avisa, y el pedido en segundo plano
+   se despierta como mucho una vez cada 15 s. Si el sitio tiene otra lista, la
+   red de seguridad de cada hora lo re-registra.
+3. **«Dónde se usa» con un índice propio** (`{prefix}imaginabc_media_usage`):
+   se arma en segundo plano por WP-Cron, en tramos de 20 s con keyset, con un
+   candado y el avance en una opción aparte sin autoload; después se mantiene
+   al guardar (≈1 consulta). Mientras se arma, la app lo dice
+   (`media_index.ready = false` → `media_pending`) y, cuando está listo, vuelve
+   a leer los medios. Medido: leer 100 medios bajó de 36,5 s / 1.212 consultas
+   a 0,1 s / 16 (y 1.0.0 contaba de menos: `LIMIT 5000`). Leer 100 entradas:
+   0,93 s → 0,08 s; el schema: 1,57 s → 0,39 s, en caché 15 min.
+4. **Permisos de WordPress campo por campo.** Además de `edit_post`/`edit_term`
+   por objeto, cada meta pasa por `edit_post_meta`/`edit_term_meta` (lo que un
+   plugin restringe con `auth_post_meta_*` no se lee ni se escribe); las claves
+   que parecen secretas (password, token, secret, api key…, por palabra) nunca
+   se exponen; sólo se aceptan tipos de contenido y taxonomías públicos en la
+   API REST.
+5. **Un Editor alcanza, sin abrir una puerta.** Con 1.1.0 un usuario con
+   `edit_posts` puede registrar los avisos, pero SÓLO hacia la app de la que se
+   descargó el complemento (`update-source.json`) y nunca pisar un aviso que
+   registró un administrador hacia otra dirección (`can_register_to` +
+   `can_manage_current`); el envío usa `wp_safe_remote_post` permitiendo sólo
+   el host de la app. La app lo sabe por `info.can_hooks` (por eso el modo «Al
+   instante» ya no exige administrador) y recomienda conectar un Editor creado
+   sólo para la app. `request_from_app` exige además que el pedido sea REST y
+   del mismo usuario que registró el aviso (la cabecera sola no alcanza para
+   suprimir un aviso).
+6. **El origen de actualizaciones es DATOS.** `includes/update-source.json`
+   (`{url, name}`, forma exacta, sólo un origen https sin ruta) reemplaza al
+   `update-source.php` de 1.0.0: lo único que la app agrega al zip ya no es
+   código.
+7. **Actualizaciones firmadas.** Con `RELEASE_SIGNING_KEY` en el CI (la misma
+   clave del bundle, SEC-37), `scripts/sign-wordpress-plugin.sh` deja en el
+   complemento su clave pública (`includes/release-key.json`), un
+   `manifest.json` con el SHA-256 de cada archivo y `manifest.sig` (Ed25519).
+   En `upgrader_source_selection` la versión INSTALADA verifica la nueva con su
+   propia clave: firma, cada archivo, ninguno de más ni de menos, sin accesos
+   directos, y nunca una versión igual o más vieja. Aunque alguien tomara un
+   servidor de la app, no podría repartir código a los sitios que ya tienen el
+   complemento. Límites, anotados: una instalación NUEVA confía en el zip que
+   baja (la primera vez no hay contra qué comparar), una versión sin
+   `release-key.json` acepta la siguiente sólo con el chequeo de versión, y
+   rotar la clave obliga a pasar por una versión firmada con la anterior.
+8. **Instalación y desinstalación limpias.** `ImaginaBC_Install` migra las
+   opciones de 1.0.0 (`ibc_*` → `imaginabc_*`) y crea la tabla con `dbDelta`;
+   desactivar quita sus tareas programadas; desinstalar borra opciones,
+   transitorios, tabla y tareas en cada sitio de una red.
+9. **Wordfence.** Apaga las contraseñas de aplicación al instalarse: la app lo
+   detecta por su espacio en la API (`wordfence/v1`) y da los pasos exactos; y
+   una conexión que deja de entrar distingue «revocaron la contraseña» de «se
+   apagaron las contraseñas de aplicación» (`explainLostAccess`).
+
+Verificación: suite de seguridad propia 35/35 en PHP 8.3 y 7.4 (permisos por
+objeto y por campo, claves secretas, tipos no públicos, registro de avisos por
+Editor y Autor, eco, firma), paquete 13/13 (firma, archivo alterado, de más, de
+menos, acceso directo, versión vieja) y una actualización real de WordPress
+contra un servidor de actualizaciones falso (alterada rechazada, firmada
+instalada); Plugin Check oficial limpio salvo lo que sólo aplica al directorio
+de wordpress.org. Queda sin probar en real JetEngine, y la red multisitio sólo
+por revisión de código.
+
 ---
 
-**Versión del documento:** 1.130.0 (complemento propio para WordPress)
+**Versión del documento:** 1.131.0 (complemento para WordPress auditado: rendimiento, permisos y actualizaciones firmadas)

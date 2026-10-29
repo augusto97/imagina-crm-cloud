@@ -836,7 +836,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         minutes: 3,
         body: [
             '1. Ve a **Ajustes → Integraciones**, toca **Conectar** en **WordPress**, escribe la dirección de tu sitio y toca **Continuar en WordPress**.',
-            '2. En tu WordPress toca **Aprobar conexión**: vuelves a la app ya conectado.',
+            '2. En tu WordPress toca **Aprobar conexión**: vuelves a la app ya conectado. Lo más seguro es entrar con un usuario con el rol **Editor** creado sólo para la app, no con tu cuenta de administrador.',
             '3. Elige qué traer (páginas, entradas, tus tipos de contenido y sus categorías), qué columnas y cuáles se editan desde aquí, y toca **Empezar a sincronizar**.',
             'Cada tipo de contenido llega a su lista y se mantiene al día solo. Lo que cambies en una columna editable viaja a tu sitio.',
             'Con el **complemento para WordPress** (se descarga en la misma página) suman el SEO, todos los campos personalizados con su tipo y los cambios **al instante**.',

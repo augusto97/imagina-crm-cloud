@@ -62,6 +62,16 @@ Desde ese momento un release sin `.sig` o con una firma que no valida se
 RECHAZA (fail-closed) y queda el motivo en el panel de Actualizaciones. Activa
 el paso 3 recién cuando ya hay al menos un release firmado publicado.
 
+**La misma clave firma el complemento de WordPress** (v0.1.335, ADR-S84
+addendum). Con el secreto cargado, el release deja dentro del complemento su
+clave pública, un manifiesto con el SHA-256 de cada archivo y la firma; cada
+sitio verifica la próxima actualización con la clave de la versión que tiene
+instalada y rechaza un archivo alterado. No hay nada que configurar en los
+sitios. Ojo: la primera versión firmada que reciba un sitio se instala sin
+verificar (no tiene contra qué compararla) y desde ahí se exigen firmas; y si
+algún día cambias la clave, la versión que la cambia tiene que salir firmada
+con la anterior, o los sitios dejarán de actualizarse.
+
 ## Repo privado (a futuro)
 
 Cuando el repo pase a privado: crea un token de solo-lectura (fine-grained,

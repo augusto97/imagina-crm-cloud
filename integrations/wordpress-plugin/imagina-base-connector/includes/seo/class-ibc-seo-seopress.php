@@ -9,7 +9,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_SEO_SEOPress extends IBC_SEO_Adapter {
+class ImaginaBC_SEO_SEOPress extends ImaginaBC_SEO_Adapter {
 
 	public static function active() {
 		return defined( 'SEOPRESS_VERSION' ) && function_exists( 'seopress_get_service' );

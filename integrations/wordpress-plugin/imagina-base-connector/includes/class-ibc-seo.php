@@ -9,14 +9,14 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_SEO {
+class ImaginaBC_SEO {
 
-	const ADAPTERS = array( 'IBC_SEO_RankMath', 'IBC_SEO_Yoast', 'IBC_SEO_SEOPress', 'IBC_SEO_AIOSEO' );
+	const ADAPTERS = array( 'ImaginaBC_SEO_RankMath', 'ImaginaBC_SEO_Yoast', 'ImaginaBC_SEO_SEOPress', 'ImaginaBC_SEO_AIOSEO' );
 
-	/** @var IBC_SEO_Adapter|null|false */
+	/** @var ImaginaBC_SEO_Adapter|null|false */
 	private static $adapter = false;
 
-	/** @return IBC_SEO_Adapter[] */
+	/** @return ImaginaBC_SEO_Adapter[] */
 	public static function all_active() {
 		$out = array();
 		foreach ( self::ADAPTERS as $class ) {
@@ -27,7 +27,7 @@ class IBC_SEO {
 		return $out;
 	}
 
-	/** @return IBC_SEO_Adapter|null */
+	/** @return ImaginaBC_SEO_Adapter|null */
 	public static function adapter() {
 		if ( false === self::$adapter ) {
 			$all           = self::all_active();
@@ -98,7 +98,7 @@ class IBC_SEO {
 		} catch ( \Throwable $e ) {
 			$errors = array();
 			foreach ( array_keys( $values ) as $k ) {
-				$errors[ $k ] = sprintf( __( '%1$s no lo guardó: %2$s', 'imagina-base-connector' ), $a->name(), $e->getMessage() );
+				$errors[ $k ] = sprintf( /* translators: 1: plugin de SEO, 2: el error */ __( '%1$s no lo guardó: %2$s', 'imagina-base-connector' ), $a->name(), $e->getMessage() );
 			}
 			return $errors;
 		}

@@ -24,7 +24,7 @@ const wp = vi.hoisted(() => ({
     posts: {} as Record<string, Row[]>,
     /** id → valores que da el complemento (`seo:title`, `cf:acf.asesor`…), por objeto. */
     values: {} as Record<string, Record<number, Row>>,
-    plugin: { installed: true, pingOk: true, seo: true },
+    plugin: { installed: true, pingOk: true, seo: true, version: '1.0.0', mediaIndex: null as null | 'building' | 'ready' },
     hook: null as null | { url: string; secret: string; objects: unknown },
     calls: [] as Call[],
 }));
@@ -94,12 +94,14 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
         if (path === `${NS}/info`) {
             return res(200, {
                 plugin: 'imagina-base-connector',
-                version: '1.0.0',
+                version: wp.plugin.version,
                 seo: pluginSchema().seo,
                 providers: { acf: true, metabox: true, jetengine: false },
                 can_manage: true,
                 updates: true,
                 hooks: wp.hook ? { registered: true, url: wp.hook.url, objects: wp.hook.objects } : { registered: false },
+                // 1.1.0: lo nuevo (un 1.0.0 no lo manda).
+                ...(wp.plugin.version === '1.0.0' ? {} : { can_hooks: true, signed: false, media_index: { status: wp.plugin.mediaIndex ?? 'none', done: 0, ready_at: null } }),
             });
         }
         if (path === `${NS}/schema`) return res(200, pluginSchema());
@@ -113,8 +115,13 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 const post = (wp.posts[String(body.object)] ?? []).find((p) => p.id === id);
                 const title = (post?.title as { raw?: string } | undefined)?.raw ?? '';
                 const all: Row = { ...v, 'seo:google_title': `${(v['seo:title'] as string) || title} - Blog de prueba` };
-                items[String(id)] = Object.fromEntries(fields.filter((f) => f in all || f.startsWith('seo:') || f.startsWith('cf:')).map((f) => [f, all[f] ?? null]));
+                // 1.1.0: mientras arma «Dónde se usa», esas columnas no vienen (y avisa).
+                const building = body.kind === 'media' && wp.plugin.mediaIndex === 'building';
+                items[String(id)] = Object.fromEntries(
+                    fields.filter((f) => (f in all || f.startsWith('seo:') || f.startsWith('cf:')) && !(building && f.startsWith('plugin:used_'))).map((f) => [f, all[f] ?? null]),
+                );
             }
+            if (body.kind === 'media' && wp.plugin.mediaIndex === 'building') return res(200, { items, skipped: [], media_index: { status: 'building', done: 10, ready_at: null } });
             return res(200, { items, skipped: [] });
         }
         if (path === `${NS}/items/write`) {
@@ -149,6 +156,7 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 delivered: 0,
                 fails: 0,
                 secret_fingerprint: createHash('sha256').update(wp.hook.secret, 'utf8').digest('hex').slice(0, 16),
+                ...(wp.plugin.version === '1.0.0' ? {} : { watch_hash: (wp.hook.objects as { watch_hash?: string }).watch_hash ?? null }),
             });
         }
         return res(404, { code: 'rest_no_route', message: 'No se encontró ninguna ruta.' });
@@ -236,13 +244,14 @@ import { RecordChangeHub } from '../src/records/record-change-hub';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
+import { appPasswordsOffMessage } from '../src/connectors/wordpress/wp-verify';
 import { SiteKitsService } from '../src/site-sync/site-kits.service';
 import { SiteRealtimeService, type SiteSyncHookJob } from '../src/site-sync/site-realtime.service';
 import { nextRunMinutes, SiteSyncEngine } from '../src/site-sync/site-sync.engine';
 import { SiteSyncQueue, type SiteSyncPushJob } from '../src/site-sync/site-sync.queue';
 import { SiteSyncService } from '../src/site-sync/site-sync.service';
 import { SiteWriteBackService } from '../src/site-sync/site-writeback.service';
-import { parsePluginVersion, updateSourcePhp, versionNewer, WordpressPluginService } from '../src/site-sync/wordpress-plugin.service';
+import { parsePluginVersion, updateSourceJson, versionNewer, WordpressPluginService } from '../src/site-sync/wordpress-plugin.service';
 import { parseSiteHookBody, secretFingerprint, siteHookSignature, verifySiteSignature } from '../src/site-sync/wordpress/ibc-hooks';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { BlueprintService } from '../src/templates/blueprint.service';
@@ -272,6 +281,13 @@ describe('complemento de WordPress: piezas puras (v0.1.334)', () => {
         expect(secretFingerprint('secreto')).toHaveLength(16);
     });
 
+    it('contraseñas de aplicación apagadas: si el sitio tiene Wordfence, se dice qué opción tocar', () => {
+        expect(appPasswordsOffMessage(['wp/v2', 'wordfence/v1', 'wordfence-login-security/v1'])).toMatch(/Wordfence → Login Security.*Disable WordPress application passwords/);
+        const generic = appPasswordsOffMessage(['wp/v2']);
+        expect(generic).not.toMatch(/Wordfence → Login Security/);
+        expect(generic).toMatch(/plugins de seguridad/);
+    });
+
     it('el cuerpo de un aviso: sólo eventos que se entienden, con tope', () => {
         expect(parseSiteHookBody({ type: 'ping' })).toEqual({ type: 'ping' });
         expect(parseSiteHookBody({ type: 'x' })).toBeNull();
@@ -297,9 +313,10 @@ describe('complemento de WordPress: piezas puras (v0.1.334)', () => {
         expect(versionNewer('1.10.0', '1.9.9')).toBe(true);
         expect(versionNewer('1.0.0', '1.0.0')).toBe(false);
         expect(versionNewer(null, '1.0.0')).toBe(false);
-        const php = updateSourcePhp("https://app.test/o'reilly\\", 'Mi app');
-        expect(php).toContain("'url' => 'https://app.test/o\\'reilly\\\\'");
-        expect(php.startsWith('<?php')).toBe(true);
+        // El origen de las actualizaciones es DATOS (JSON), no código PHP que se ejecute (1.1.0).
+        const src = updateSourceJson('https://app.test/', 'Mi app');
+        expect(JSON.parse(src)).toEqual({ url: 'https://app.test', name: 'Mi app' });
+        expect(src).not.toContain('<?php');
         const assets = [{ name: 'imagina-base-connector-1.0.0.zip' }, { name: 'imagina-base-0.1.334.zip' }, { name: 'imagina-base-0.1.334.zip.sha256' }, { name: 'install.sh' }];
         expect(pickBundleAssets(assets, '0.1.334')).toEqual({ zip: { name: 'imagina-base-0.1.334.zip' }, sha: { name: 'imagina-base-0.1.334.zip.sha256' } });
         // Un release viejo con otro nombre: el primer .zip que no es el complemento.
@@ -316,7 +333,8 @@ describe('complemento de WordPress: piezas puras (v0.1.334)', () => {
         expect(zip.filename).toBe('imagina-base-connector.zip');
         const files = unzipText(new Uint8Array(zip.bytes));
         expect(Object.keys(files)).toEqual(expect.arrayContaining(['imagina-base-connector/imagina-base-connector.php', 'imagina-base-connector/uninstall.php', 'imagina-base-connector/includes/class-ibc-rest.php']));
-        expect(files['imagina-base-connector/includes/update-source.php']).toContain("'url' => 'https://app.test'");
+        expect(JSON.parse(files['imagina-base-connector/includes/update-source.json']!)).toEqual({ url: 'https://app.test', name: 'Imagina Base' });
+        expect(files['imagina-base-connector/includes/update-source.php']).toBeUndefined();
         // El que se reparte es el mismo código del repo (versión incluida).
         expect(parsePluginVersion(files['imagina-base-connector/imagina-base-connector.php']!)).toBe(svc.version());
         const info = svc.info()!;
@@ -430,7 +448,7 @@ function seedSite(): void {
             41: { 'plugin:used_in': null, 'plugin:used_count': 0 },
         },
     };
-    wp.plugin = { installed: true, pingOk: true, seo: true };
+    wp.plugin = { installed: true, pingOk: true, seo: true, version: '1.0.0', mediaIndex: null };
     wp.hook = null;
     wp.calls = [];
 }
@@ -562,7 +580,13 @@ describe('Complemento de WordPress en la app (v0.1.334, ADR-S84)', () => {
         expect(st.effective_mode).toBe('realtime');
         expect(st.realtime.registered).toBe(true);
         expect(wp.hook?.url).toMatch(/^https:\/\/app\.test\/api\/v1\/public\/site-hooks\/[A-Za-z0-9_-]{24,}$/);
-        expect(wp.hook?.objects).toEqual({ post_types: ['post'], taxonomies: [], media: true });
+        expect(wp.hook?.objects).toMatchObject({ post_types: ['post'], taxonomies: [], media: true });
+        // Desde v0.1.335 también QUÉ columnas trae (el complemento 1.1 sólo avisa por esas), con su huella.
+        const watched = wp.hook!.objects as { fields: Record<string, string[]>; watch_hash: string };
+        expect(watched.fields['post_type:post']).toEqual(expect.arrayContaining(['seo:title', 'cf:acf.precio', 'plugin:words']));
+        expect(watched.fields['post_type:post']).not.toContain('title');
+        expect(watched.fields['media:attachment']).toEqual(['plugin:used_in']);
+        expect(watched.watch_hash).toMatch(/^[a-f0-9]{16}$/);
         // El secreto queda CIFRADO en la tabla (nunca en claro).
         const [h] = await pg.db.select().from(storeHooks);
         expect(h!.secretEnc).not.toContain(wp.hook!.secret);
@@ -699,6 +723,53 @@ describe('Complemento de WordPress en la app (v0.1.334, ADR-S84)', () => {
         const [h] = await pg.db.select().from(storeHooks);
         expect(secretFingerprint(wp.hook!.secret)).not.toBe(secretFingerprint('otro'));
         expect(h).toBeTruthy();
+    });
+
+    it('1.1: el aviso vigila sólo las columnas que se traen; si la huella no coincide, la vuelta lo vuelve a registrar', async () => {
+        wp.plugin.version = '1.1.0';
+        try {
+            const posts = () => wp.calls.filter((c) => c.method === 'POST' && c.url.includes('/imagina-base/v1/hooks')).length;
+            const before = posts();
+            await svc.runJob(tenantId, syncId, {});
+            expect(posts()).toBe(before); // misma huella: no se toca
+            const good = (wp.hook!.objects as { watch_hash: string }).watch_hash;
+            (wp.hook!.objects as { watch_hash: string }).watch_hash = 'distinta';
+            await svc.runJob(tenantId, syncId, {});
+            expect(posts()).toBe(before + 1);
+            expect((wp.hook!.objects as { watch_hash: string }).watch_hash).toBe(good);
+            const d = await svc.discover(tenantId, adminId, 'admin', connId);
+            expect(d.plugin).toMatchObject({ version: '1.1.0', can_hooks: true, signed: false });
+        } finally {
+            wp.plugin.version = '1.0.0';
+        }
+    });
+
+    it('1.1: «Dónde se usa» mientras el sitio lo calcula queda pendiente y, al terminar, se releen los medios enteros', async () => {
+        wp.plugin.version = '1.1.0';
+        try {
+            const mediaId = L['media:attachment']!.id;
+            const fachada = () => rows(mediaId).then((r) => r.find((x) => x[k('media:attachment', 'title')] === 'Fachada')!);
+            (wp.values['media:attachment'] ??= {})[40] = { ...(wp.values['media:attachment']![40] ?? {}), 'plugin:used_in': 'Hola mundo, Otra entrada' };
+            wp.plugin.mediaIndex = 'building';
+            await svc.runJob(tenantId, syncId, { full: true });
+            let st = await svc.status(tenantId, adminId, 'admin', connId);
+            expect(st.warnings.join(' ')).toMatch(/calculando por primera vez dónde se usa cada imagen/);
+            // Lo anterior se conserva (no se borra mientras el sitio calcula).
+            expect((await fachada())[k('media:attachment', 'plugin:used_in')]).toBe('Hola mundo');
+            const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select({ state: connectionSyncs.state }).from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+            expect((row!.state as { plugin: { media_pending: boolean } }).plugin.media_pending).toBe(true);
+            // El sitio terminó: una vuelta normal (no completa) relee la biblioteca y lo trae.
+            wp.plugin.mediaIndex = 'ready';
+            await svc.runJob(tenantId, syncId, {});
+            expect((await fachada())[k('media:attachment', 'plugin:used_in')]).toBe('Hola mundo, Otra entrada');
+            const [after] = await withTenant(pg.db, tenantId, (tx) => tx.select({ state: connectionSyncs.state }).from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+            expect((after!.state as { plugin: { media_pending: boolean } }).plugin.media_pending).toBe(false);
+            st = await svc.status(tenantId, adminId, 'admin', connId);
+            expect(st.last_error).toBeNull();
+        } finally {
+            wp.plugin.version = '1.0.0';
+            wp.plugin.mediaIndex = null;
+        }
     });
 
     it('kits: auditoría SEO y texto alternativo arman fórmulas, vistas y campos con IA (y no se duplican)', async () => {

@@ -13,7 +13,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_SEO_Yoast extends IBC_SEO_Adapter {
+class ImaginaBC_SEO_Yoast extends ImaginaBC_SEO_Adapter {
 
 	public static function active() {
 		return defined( 'WPSEO_VERSION' ) && class_exists( 'WPSEO_Meta' );
@@ -74,7 +74,7 @@ class IBC_SEO_Yoast extends IBC_SEO_Adapter {
 			'seo:noindex'            => '1' === (string) $noindex ? true : ( '2' === (string) $noindex ? false : (bool) $this->option( 'noindex-' . $post->post_type, false ) ),
 			'seo:google_title'       => null,
 			'seo:google_description' => null,
-			'seo:score'              => IBC_Util::to_number( WPSEO_Meta::get_value( 'linkdex', $id ) ),
+			'seo:score'              => ImaginaBC_Util::to_number( WPSEO_Meta::get_value( 'linkdex', $id ) ),
 		);
 		$meta = function_exists( 'YoastSEO' ) ? YoastSEO()->meta->for_post( $id ) : false;
 		if ( $meta ) {

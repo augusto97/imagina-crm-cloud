@@ -372,11 +372,31 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.334**
-(el complemento para WordPress: SEO, campos con tipo, medios y tiempo real;
-antes v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.335**
+(auditoría de seguridad y rendimiento del complemento para WordPress, que pasa a
+1.1.0; antes v0.1.334 el complemento, v0.1.333 el sitio sin complemento y
+v0.1.332 SMS), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **El usuario preguntó si el complemento de WordPress tenía
+  pruebas de seguridad y rendimiento** («no quiero que lo ponga lento, que
+  choque con otros plugins ni que sea una puerta de hackeo»). Se le contestó con
+  honestidad que no se habían hecho a fondo y se hizo la auditoría completa →
+  **v0.1.335** (complemento 1.1.0, addendum de ADR-S84): cero consultas en las
+  páginas públicas, avisos sólo de las columnas que se traen, índice de «dónde
+  se usa» en segundo plano, permisos campo por campo, Editor sin poder desviar
+  avisos, origen de actualizaciones como datos y **actualizaciones firmadas**.
+  **Para el usuario**: (1) **configurar el secreto `RELEASE_SIGNING_KEY` en
+  GitHub** (pasos en `docs/runbook-updates.md`): hasta entonces el complemento
+  sale SIN firma y las actualizaciones sólo verifican que la versión sea más
+  nueva —el release de v0.1.334 también salió sin `.sig`, o sea que tampoco se
+  firma el bundle de la app—. La primera versión firmada que reciba un sitio se
+  acepta sin verificar (no tiene contra qué comparar) y desde ahí se exigen
+  firmas; (2) recomendar a cada cliente conectar un usuario **Editor creado
+  sólo para la app**; (3) con **Wordfence** hay que dejar activas las
+  contraseñas de aplicación (la app da los pasos). Sin probar en real: JetEngine
+  (comercial) y multisitio (sólo revisión de código). Entorno de la prueba:
+  `sh scripts/dev/wordpress-up.sh 8091 up` (sitio de carga) + PHP 7.4 en Docker.
 - SMS (v0.1.332): verificado sólo contra dobles. Con la primera cuenta real de
   cada proveedor, revisar los SUPUESTOS de ADR-S82 (BulkGate sin `country`,
   LabsMobile `long`/`credits`/valores de `status`, Infobip saldo, Onurix `id` y
@@ -908,6 +928,33 @@ antes v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-29 · v0.1.335** — **El complemento para WordPress, auditado**
+  (addendum de ADR-S84, complemento 1.1.0). Pregunta del usuario: si tenía
+  pruebas de seguridad y rendimiento. Contra un WordPress real con 20.000
+  entradas, 3.000 medios y 400.000 metas, en PHP 8.3 y 7.4, junto a WooCommerce,
+  Elementor, Wordfence, WP Super Cache, Yoast y Query Monitor: (1) **0
+  consultas** del complemento en las páginas públicas (1.0.0 hacía hasta 2 por
+  visita con un contador de visitas); (2) avisos sólo de las columnas que trae
+  la app (`fields`/`watch_hash`) y como mucho un despertar cada 15 s; (3)
+  «dónde se usa» con tabla propia armada en segundo plano: 100 medios de 36,5 s
+  a 0,1 s, 100 entradas de 0,93 s a 0,08 s, schema en caché; (4) permisos por
+  campo (`edit_post_meta`), claves secretas nunca expuestas, sólo tipos
+  públicos; (5) un Editor puede activar «Al instante» pero sólo hacia la app de
+  la que bajó el complemento y sin pisar a un administrador; (6) el origen de
+  actualizaciones es JSON, no PHP; (7) **actualizaciones firmadas** con
+  Ed25519 si el CI tiene `RELEASE_SIGNING_KEY`, verificadas por la versión
+  instalada (firma, cada archivo, sin accesos directos, nunca para atrás);
+  (8) migración de opciones de 1.0.0 y desinstalación limpia también en red;
+  (9) Wordfence detectado con los pasos exactos, y «revocaron la contraseña» vs
+  «se apagaron las contraseñas de aplicación». App: «Al instante» con Editor,
+  textos que recomiendan un Editor exclusivo, «Actualizaciones verificadas» en
+  la tarjeta, artículo de Aprende con «Seguro y liviano para tu sitio» y
+  novedad. Tests: suite de seguridad 35/35 (8.3 y 7.4), paquete 13/13,
+  actualización real (alterada rechazada, firmada instalada), Plugin Check
+  limpio; API 1763 (site-plugin + site-sync 34/34), front 691, shared 583.
+  **Pendiente**: el usuario tiene que cargar `RELEASE_SIGNING_KEY` para que la
+  firma se active; JetEngine y multisitio sin prueba real.
 
 - **2026-10-29 · v0.1.334** — **El complemento para WordPress** (ADR-S84).
   Segunda mitad del conector de WordPress. (1) Plugin propio «Imagina Base

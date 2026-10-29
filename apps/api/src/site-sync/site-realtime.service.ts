@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { SITE_SYNC_PROVIDER } from '@imagina-base/shared';
+import { isSitePluginColumn, SITE_SYNC_PROVIDER } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import type { IntegrationCreds } from '../connectors/integration-calls';
@@ -77,13 +77,29 @@ export class SiteRealtimeService {
         return { token, secret };
     }
 
-    /** Qué tiene que avisar el complemento: sólo lo que esta sincronización trae. */
-    private objectsOf(settings: SiteSyncSettings): { post_types: string[]; taxonomies: string[]; media: boolean } {
+    /**
+     * Qué tiene que avisar el complemento: sólo lo que esta sincronización
+     * trae. Desde el complemento 1.1, además, qué COLUMNAS (por objeto): un
+     * metadato que cambia sólo avisa si alimenta una de ellas, así un contador
+     * de visitas o el CSS de un constructor de páginas no generan avisos.
+     */
+    objectsOf(settings: SiteSyncSettings): { post_types: string[]; taxonomies: string[]; media: boolean; fields: Record<string, string[]>; watch_hash: string } {
         const objects = Object.values(settings.objects);
+        const fields: Record<string, string[]> = {};
+        for (const o of objects) {
+            const key = `${o.kind}:${o.kind === 'media' ? 'attachment' : o.object}`;
+            fields[key] = o.columns
+                .map((c) => c.key)
+                .filter(isSitePluginColumn)
+                .sort();
+        }
+        const sorted = Object.fromEntries(Object.entries(fields).sort(([a], [b]) => a.localeCompare(b)));
         return {
             post_types: objects.filter((o) => o.kind === 'post_type').map((o) => o.object),
             taxonomies: objects.filter((o) => o.kind === 'taxonomy').map((o) => o.object),
             media: objects.some((o) => o.kind === 'media'),
+            fields: sorted,
+            watch_hash: createHash('sha256').update(JSON.stringify(sorted)).digest('hex').slice(0, 16),
         };
     }
 
@@ -133,7 +149,9 @@ export class SiteRealtimeService {
                 status.objects !== null &&
                 JSON.stringify([...status.objects.post_types].sort()) === JSON.stringify([...want.post_types].sort()) &&
                 JSON.stringify([...status.objects.taxonomies].sort()) === JSON.stringify([...want.taxonomies].sort()) &&
-                status.objects.media === want.media;
+                status.objects.media === want.media &&
+                // Complemento 1.1+: también las columnas que vigila (cambiaron las columnas de la sincronización).
+                (!status.watch_supported || status.watch_hash === want.watch_hash);
             const healthy =
                 status.registered && sameHookUrl(status.url, this.deliveryUrl(token)) && status.secret_fingerprint === secretFingerprint(secret) && sameObjects && !status.disabled;
             if (!healthy) {
@@ -273,7 +291,8 @@ function safeJson(raw: string): unknown {
 
 function explain(err: unknown): string {
     if (err instanceof WpApiError) {
-        if (err.wp.code === 'ibc_needs_admin') return 'para los avisos en tiempo real hace falta conectar el sitio con un usuario Administrador.';
+        if (err.wp.code === 'ibc_needs_admin')
+            return 'para los avisos en tiempo real el usuario conectado tiene que ser Administrador del sitio, o el complemento tiene que estar descargado desde esta app en su versión 1.1 o más nueva (así también sirve un Editor).';
         if (err.wp.code === 'rest_no_route' || err.status === 404) return 'el complemento para WordPress no está activo en el sitio.';
         return err.message;
     }
