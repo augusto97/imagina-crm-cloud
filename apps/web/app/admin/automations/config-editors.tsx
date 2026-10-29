@@ -14,6 +14,7 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 
 import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
+import { SmsActionConfig } from './SmsActionConfig';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { FilterOptionPicker } from '../records/FilterOptionPicker';
@@ -32,6 +33,7 @@ import {
     readWaitConfig,
     RESPONSE_NAME_RE,
     SCHEDULED_EACH_MAX,
+    isSmsProvider,
     scheduleParts,
     scheduleTimeZone,
     timeZoneLabel,
@@ -2349,6 +2351,11 @@ function ConnectorActionConfig({
     // sus variables y la vista previa, y «Probar ahora» manda de verdad.
     if (connection?.integration_key === 'whatsapp_cloud') {
         return <WhatsappActionConfig spec={spec} onChange={onChange} fields={fields} />;
+    }
+    // SMS (ADR-S82): contador de SMS, «Quitar tildes», horario de la Ley 2300 y
+    // «Probar ahora» que NO manda (la prueba real es «Enviarme una prueba»).
+    if (connection && isSmsProvider(connection.integration_key ?? '') && actionKey === 'send_sms') {
+        return <SmsActionConfig spec={spec} onChange={onChange} fields={fields} connection={connection} />;
     }
 
     return (

@@ -79,8 +79,10 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
             .limit(BATCH);
         let sent = 0;
         for (const { appt, config } of rows) {
-            if (!appt.clientEmail) continue;
             const cfg = readBookingConfig(config);
+            // SMS (ADR-S82): sin correo igual sale el SMS (el cliente pudo dejar sólo el teléfono).
+            const bySms = this.publicSvc.smsRemindersOn(cfg);
+            if (!appt.clientEmail && !bySms) continue;
             const done = new Set(appt.remindersSent ?? []);
             const due = cfg.notifications.reminders.filter(
                 (r) => !done.has(r.id) && appt.startAt.getTime() - r.minutes_before * 60_000 <= now.getTime(),
@@ -102,10 +104,19 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
                 .returning({ id: bookingAppointments.id });
             if (claimed.length === 0) continue;
             const closest = due.reduce((a, b) => (b.minutes_before < a.minutes_before ? b : a));
-            try {
-                if (await this.publicSvc.sendReminder(appt, closest.minutes_before)) sent++;
-            } catch (err) {
-                this.logger.warn(`Recordatorio de la cita ${appt.id}: ${String(err)}`);
+            if (appt.clientEmail) {
+                try {
+                    if (await this.publicSvc.sendReminder(appt, closest.minutes_before)) sent++;
+                } catch (err) {
+                    this.logger.warn(`Recordatorio de la cita ${appt.id}: ${String(err)}`);
+                }
+            }
+            if (bySms) {
+                try {
+                    if (await this.publicSvc.sendSmsReminder(appt)) sent++;
+                } catch (err) {
+                    this.logger.warn(`Recordatorio por SMS de la cita ${appt.id}: ${String(err)}`);
+                }
             }
         }
         return sent;

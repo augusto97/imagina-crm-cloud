@@ -167,6 +167,9 @@ export type AuditAction =
     | 'whatsapp.config'
     | 'whatsapp.columns'
     | 'whatsapp.subscribe'
+    // SMS (ADR-S82): envío a una selección y columnas de estado de la lista.
+    | 'sms.bulk'
+    | 'sms.columns'
     // D2/E5 — mesa de ayuda: el buzón de la lista (credencial) y sus ajustes (mapeo, SLA).
     | 'helpdesk.mailbox_connect'
     | 'helpdesk.mailbox_update'

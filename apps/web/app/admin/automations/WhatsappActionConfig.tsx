@@ -118,7 +118,7 @@ function TextFields({ values, fields, setValues }: { values: Values; fields: Fie
                     {__('Mensaje')}
                     <span className="imcrm-text-destructive"> *</span>
                 </Label>
-                <MergeTagInput value={str(values.text)} onChange={(next) => setValues({ text: next })} fields={fields} autoGrow data-testid="imcrm-whatsapp-action-text" />
+                <MergeTagInput value={str(values.text)} onChange={(next) => setValues({ text: next })} fields={fields} rows={3} autoGrow data-testid="imcrm-whatsapp-action-text" />
             </div>
             <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
                 <input type="checkbox" checked={str(values.preview_url) === 'true'} onChange={(e) => setValues({ preview_url: e.target.checked ? 'true' : 'false' })} />

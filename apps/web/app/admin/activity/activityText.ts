@@ -250,6 +250,41 @@ export function whatsappText(entry: Pick<ActivityEntity, 'changes'>): string {
 }
 
 /**
+ * SMS (ADR-S82) — `diff.sms` = {event: sent|scheduled|failed, phone (enmascarado),
+ * segments, connection, provider, scheduled_for?, error?}. Nunca el texto.
+ */
+export function smsEventOf(entry: Pick<ActivityEntity, 'changes'>): { event: string; to: string; segments: number; scheduledFor: string | null; error: string | null } {
+    const raw = (entry.changes as Record<string, unknown> | null | undefined)?.sms;
+    const s = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    return {
+        event: typeof s.event === 'string' ? s.event : '',
+        to: typeof s.phone === 'string' ? s.phone : typeof s.to === 'string' ? s.to : '',
+        segments: typeof s.segments === 'number' && s.segments > 0 ? s.segments : 1,
+        scheduledFor: typeof s.scheduled_for === 'string' ? s.scheduled_for : null,
+        error: typeof s.error === 'string' && s.error !== '' ? s.error : null,
+    };
+}
+
+export function smsText(entry: Pick<ActivityEntity, 'changes'>): string {
+    const s = smsEventOf(entry);
+    const parts = s.segments === 1 ? __('1 segmento') : sprintf(/* translators: %d: segmentos */ __('%d segmentos'), s.segments);
+    if (s.event === 'scheduled') {
+        return sprintf(
+            /* translators: 1: teléfono, 2: fecha */
+            __('programó un SMS a %1$s para %2$s (horario de la Ley 2300)'),
+            s.to,
+            s.scheduledFor ? formatDateTimeStr(s.scheduledFor) : '',
+        );
+    }
+    if (s.event === 'failed') {
+        return s.error
+            ? sprintf(/* translators: 1: teléfono, 2: motivo */ __('no pudo enviar un SMS a %1$s: %2$s'), s.to, s.error)
+            : sprintf(/* translators: %s: teléfono */ __('no pudo enviar un SMS a %s'), s.to);
+    }
+    return sprintf(/* translators: 1: teléfono, 2: segmentos */ __('envió un SMS a %1$s, %2$s'), s.to, parts);
+}
+
+/**
  * E6 — Una entrada `ai_agent` (`diff.agent` = {event, agent_name, count?,
  * summary?, excerpt?, visibility?}), contada después del sujeto.
  */
@@ -319,6 +354,8 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         // C6 — el registro nació de una plantilla.
         case 'record_template_applied':
             return templateAppliedText(entry);
+        case 'sms':
+            return smsText(entry);
         case 'whatsapp':
             return whatsappText(entry);
         // Campo «Botón»: `diff.button` = {label, ok, error?}.

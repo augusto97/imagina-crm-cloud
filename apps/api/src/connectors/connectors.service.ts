@@ -7,6 +7,10 @@ import {
     integrationScopes,
     isIntegrationKey,
     isMailAccountIntegration,
+    isSmsProvider,
+    smsRecipient,
+    smsSegments,
+    type SmsProviderKey,
     oauthConfigSchema,
     type AuthorizeIntegrationInput,
     type ConnectIntegrationKeyInput,
@@ -44,7 +48,8 @@ import {
     precheckCreds,
 } from '../collections/collection-gateways';
 import { gatewayBases } from '../collections/gateway-bases';
-import { safeWebhookFetch } from '../common/safe-fetch';
+import { devPrivateEgressAllowed, safeWebhookFetch } from '../common/safe-fetch';
+import { SMS_PROVIDERS, SMS_TEST_MESSAGE, infobipBase, smsBases } from '../sms/sms-providers';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { findConnectorAction, readConnectorActions } from './connector-actions';
 import { IntegrationAppsService } from './integration-apps.service';
@@ -1355,6 +1360,8 @@ export class ConnectorsService {
             const label = def.auth.kind === 'key' ? def.auth.fields.find((f) => f.key === 'account')?.label : null;
             return `Elige o escribe «${label ?? 'la cuenta'}» antes de mandar la prueba.`;
         }
+        // v0.1.332 — SMS: el mismo armado del motor de SMS (sin URL de avisos).
+        if (isSmsProvider(key)) return this.runSmsTestSend(key, creds, to);
         const req = testSendRequest(key, creds, to);
         if (!req) return null;
         try {
@@ -1608,6 +1615,8 @@ export class ConnectorsService {
         if (key === 'mercadopago' || key === 'wompi') return this.runCollectionVerify(key, creds);
         // D3 — WhatsApp oficial: el número, la cuenta, el token y la clave de la app.
         if (key === 'whatsapp_cloud') return verifyWhatsappCloud(creds, graphBase(this.env));
+        // v0.1.332 — SMS: la cuenta (o su saldo) con el proveedor.
+        if (isSmsProvider(key)) return this.runSmsVerify(key, creds);
         const req = verifyRequest(key, creds);
         if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
         try {
@@ -1629,6 +1638,70 @@ export class ConnectorsService {
                 warning: `No pudimos comprobar la conexión ahora (${message}). Se puede guardar igual.`,
                 options: {},
             };
+        }
+    }
+
+    /**
+     * v0.1.332 (ADR-S82) — SMS: la credencial se comprueba con el proveedor
+     * ANTES de guardarla (la cuenta en Twilio; el crédito o saldo en el resto).
+     * Un rechazo definitivo (credencial mala, cuenta suspendida, IP no
+     * autorizada) no se guarda; sin red hasta el proveedor se deja guardar
+     * avisando, igual que el resto de las apps por clave.
+     */
+    private async runSmsVerify(key: SmsProviderKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
+        const base: VerifyOutcome = { ok: true, label: null, error: null, warning: null, options: {} };
+        const provider = SMS_PROVIDERS[key];
+        const fields: Record<string, string> = {};
+        if (key === 'sms_infobip') {
+            const url = infobipBase(creds.fields.base_url ?? '');
+            if (url === '') return { ...base, ok: false, error: 'Falta la URL base de Infobip (algo como xxxxx.api.infobip.com).' };
+            if (url.startsWith('http://') && !devPrivateEgressAllowed()) {
+                return { ...base, ok: false, error: 'La URL base de Infobip tiene que empezar con https://.' };
+            }
+            fields.base_url = url;
+        }
+        const country = (creds.fields.default_country ?? '').trim().toUpperCase();
+        if (country !== '' && !/^[A-Z]{2}$/.test(country)) {
+            return { ...base, ok: false, error: 'El país para números sin indicativo es un código de dos letras (CO, MX, PE…).' };
+        }
+        if (country !== '') fields.default_country = country;
+        const effective: IntegrationCreds = { ...creds, fields: { ...creds.fields, ...fields } };
+        const req = provider.buildVerify({ secret: effective.secret, fields: effective.fields }, smsBases(this.env));
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                body: req.body,
+                captureBody: true,
+                timeoutMs: 15_000,
+            });
+            const out = provider.parseVerify(res.status, res.body ?? '', { secret: effective.secret, fields: effective.fields });
+            return { ...base, ...out, options: {}, fields };
+        } catch (err) {
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
+            return { ...base, fields, warning: `No pudimos comunicarnos con el proveedor de SMS ahora (${message}). Se puede guardar igual: mándate un SMS de prueba.` };
+        }
+    }
+
+    /** El SMS de prueba al conectar: el mismo armado que el motor de SMS, sin URL de avisos. */
+    private async runSmsTestSend(key: SmsProviderKey, creds: IntegrationCreds, to: string): Promise<string | null> {
+        const dest = smsRecipient(to, creds.fields.default_country);
+        if (!dest.ok) return `El número de prueba no sirve: ${dest.error}`;
+        const provider = SMS_PROVIDERS[key];
+        const seg = smsSegments(SMS_TEST_MESSAGE);
+        const fields = key === 'sms_infobip' ? { ...creds.fields, base_url: infobipBase(creds.fields.base_url ?? '') } : creds.fields;
+        const req = provider.buildSend(
+            { to: dest.e164, text: SMS_TEST_MESSAGE, sender: '', unicode: seg.encoding === 'ucs2', segments: seg.segments, callbackUrl: null, reference: `t${randomBytes(9).toString('hex')}` },
+            { secret: creds.secret, fields },
+            smsBases(this.env),
+        );
+        try {
+            const res = await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, body: req.body, captureBody: true, timeoutMs: 15_000 });
+            const out = provider.parseSend(res.status, res.body ?? '');
+            return out.ok ? null : `El SMS de prueba no salió. ${redactValues(out.error, [creds.secret])}`;
+        } catch (err) {
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
+            return `No pudimos mandar el SMS de prueba (${message}).`;
         }
     }
 

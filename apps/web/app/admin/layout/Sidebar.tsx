@@ -381,7 +381,7 @@ export function Sidebar({
                 <SettingsPanelNav
                     isAdmin={isAdmin}
                     // La página de una tienda sincronizada vive bajo Integraciones.
-                    requested={pathname.startsWith('/settings/stores/') || pathname.startsWith('/settings/sql/') || pathname.startsWith('/settings/whatsapp/') || pathname.startsWith('/settings/collections/') ? 'conectores' : params.get('s')}
+                    requested={pathname.startsWith('/settings/stores/') || pathname.startsWith('/settings/sql/') || pathname.startsWith('/settings/whatsapp/') || pathname.startsWith('/settings/sms/') || pathname.startsWith('/settings/collections/') ? 'conectores' : params.get('s')}
                 />
             )}
 

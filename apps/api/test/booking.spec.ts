@@ -820,6 +820,55 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         expect(appt!.remindersSent).toEqual(['rem24h', 'rem1h']);
     });
 
+    it('recordatorios por SMS (ADR-S82): salen al teléfono del registro con {{cita.*}}, junto al correo; a medio configurar no se publica', async () => {
+        const calls: Array<{ tenantId: number; args: Record<string, unknown> }> = [];
+        pub.setSms({
+            sendNow: async (t: number, args: Record<string, unknown>) => {
+                calls.push({ tenantId: t, args });
+                return { ok: true, status: 'enviado', message_id: 1, provider_message_id: 'SM1', to: String(args.to), text: String(args.message), segments: 1, encoding: 'gsm7', scheduled_for: null, error: null, request: null, response: null };
+            },
+        } as never);
+        try {
+            const base = pageConfig();
+            const dto = await booking.create(tenantId, ana, 'citas', { name: 'Agenda SMS' });
+            // Encendido sin conexión: la agenda dice qué falta y no se publica.
+            const half = await booking.update(tenantId, 'citas', dto.id, {
+                config: { ...base, notifications: { ...base.notifications, sms_reminders: { enabled: true, connection_id: null, text: 'Hola', strip_accents: true } } },
+            });
+            expect(half.problems.join(' ')).toContain('conexión de SMS');
+            await expect(booking.update(tenantId, 'citas', dto.id, { enabled: true })).rejects.toMatchObject({ status: 400 });
+            await booking.update(tenantId, 'citas', dto.id, {
+                config: {
+                    ...base,
+                    notifications: {
+                        ...base.notifications,
+                        sms_reminders: { enabled: true, connection_id: 999, text: 'Hola {{cita.cliente}}: {{cita.servicio}} el {{cita.inicio}}. Cambiarla: {{cita.enlace_reprogramar}}', strip_accents: true },
+                    },
+                },
+            });
+            const pub2 = await booking.update(tenantId, 'citas', dto.id, { enabled: true });
+            pageId = pub2.id;
+            token = pub2.public_path.split('/').pop()!;
+            pub.forgetLists(tenantId);
+            await book({ staff: 'stfana', start: at(D, 10) });
+            await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+            const start = Date.parse(at(D, 10));
+            // El recordatorio de 24 h sale por correo Y por SMS (dos envíos), una sola vez.
+            expect(await reminders.tick(new Date(start - 23 * 3600_000))).toBe(2);
+            expect(await reminders.tick(new Date(start - 22 * 3600_000))).toBe(0);
+            expect(calls).toHaveLength(1);
+            const [appt] = await appointments();
+            const a = calls[0]!.args as { connectionId: number; to: string; message: string; source: string; respectHours: boolean; stripAccents: boolean; target: { recordId: number; listId: number } };
+            expect(calls[0]!.tenantId).toBe(tenantId);
+            expect(a).toMatchObject({ connectionId: 999, source: 'booking', respectHours: false, stripAccents: true, target: { recordId: appt!.recordId, listId } });
+            expect(a.to.replace(/\D/g, '')).toBe('573001112233');
+            expect(a.message).toMatch(/^Hola Luis Gómez: Consulta el .+\. Cambiarla: https?:\/\/.+\/manage\/.+/);
+            expect(a.message).not.toContain('{{');
+        } finally {
+            pub.setSms(null);
+        }
+    });
+
     it('la empresa en solo-lectura por impago no recibe reservas; la lista en la papelera es un 404', async () => {
         await freshPage();
         await pg.db.update(tenants).set({ status: 'past_due' }).where(eq(tenants.id, tenantId));

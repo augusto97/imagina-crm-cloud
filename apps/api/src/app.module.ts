@@ -45,6 +45,7 @@ import { StoreSyncModule } from './sync/store-sync.module';
 import { SqlSyncModule } from './sql-sync/sql-sync.module';
 import { CollectionsModule } from './collections/collections.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { SmsModule } from './sms/sms.module';
 import { FormsModule } from './forms/forms.module';
 import { BookingModule } from './booking/booking.module';
 import { DataConsentModule } from './data-consent/data-consent.module';
@@ -106,6 +107,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         CollectionsModule,
         // D3 — WhatsApp oficial (Meta Cloud API).
         WhatsappModule,
+        SmsModule,
         DocumentsModule,
         FormsModule,
         // D5 — agenda de citas pública.

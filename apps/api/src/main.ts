@@ -74,7 +74,9 @@ async function bootstrap(): Promise<void> {
                   path.startsWith('/api/v1/public/store-hooks/') ||
                     path.startsWith('/api/v1/public/collections/') ||
                     // D3 — los avisos de WhatsApp llegan de Meta en ráfagas (estados de cada envío).
-                    path.startsWith('/api/v1/public/whatsapp/')
+                    path.startsWith('/api/v1/public/whatsapp/') ||
+                    // SMS (ADR-S82) — los avisos de entrega llegan en ráfagas tras un envío masivo.
+                    path.startsWith('/api/v1/public/sms/')
                   ? env.RATE_LIMIT_MAX * 10
                   : env.RATE_LIMIT_MAX;
         },

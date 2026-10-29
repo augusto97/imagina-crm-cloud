@@ -111,6 +111,12 @@ export const INTEGRATION_KEYS = [
     // D3 — WhatsApp oficial (Meta WhatsApp Cloud API), al lado del de WAS.
     'whatsapp_cloud',
     'telegram',
+    // v0.1.332 — SMS con la cuenta de cada empresa (ADR-S82).
+    'sms_twilio',
+    'sms_bulkgate',
+    'sms_infobip',
+    'sms_labsmobile',
+    'sms_onurix',
     'slack',
     'gmail',
     'google_calendar',
@@ -132,6 +138,7 @@ export function isIntegrationKey(value: unknown): value is IntegrationKey {
 
 export const INTEGRATION_CATEGORY_LABEL = {
     mensajeria: 'Mensajería',
+    sms: 'Mensajes de texto (SMS)',
     correo: 'Correo',
     calendario: 'Calendario',
     datos: 'Hojas de cálculo',
@@ -296,6 +303,286 @@ export const WOO_ORDER_STATUS_OPTIONS: Array<{ value: string; label: string }> =
     { value: 'failed', label: 'Fallido' },
     { value: 'checkout-draft', label: 'Borrador' },
     { value: 'trash', label: 'En la papelera' },
+];
+
+
+// --- SMS (v0.1.332, ADR-S82) ------------------------------------------------
+
+/**
+ * La acción es la misma en los cinco proveedores: el motor de SMS arma la
+ * petición de cada uno (`apps/api/src/sms/sms-providers.ts`) y deja el envío,
+ * su estado y la actividad en el registro.
+ */
+const smsSendAction = action({
+    key: 'send_sms',
+    label: 'Enviar SMS',
+    description: 'Un mensaje de texto a un celular, con variables del registro.',
+    params: [
+        {
+            key: 'to',
+            label: 'Número de destino',
+            required: true,
+            help: 'Con indicativo de país (+57…). Un número sin indicativo toma el país de la conexión. Puedes usar el campo teléfono: {{telefono}}.',
+        },
+        {
+            key: 'message',
+            label: 'Mensaje',
+            type: 'long_text',
+            required: true,
+            help: 'Hasta 160 caracteres es 1 SMS. Una sola letra con tilde (á, í, ó, ú) pasa el mensaje a Unicode y cada SMS lleva 70.',
+        },
+        { key: 'sender', label: 'Remitente', help: 'Opcional: el nombre o número que ve quien lo recibe. Vacío = el de la conexión.' },
+        { key: 'strip_accents', label: 'Quitar tildes para que entre en menos SMS', type: 'boolean', default: 'false' },
+        {
+            key: 'respect_hours',
+            label: 'Respetar el horario para mensajes comerciales y de cobranza (Ley 2300 de 2023)',
+            type: 'boolean',
+            default: 'false',
+            help: 'Fuera de lunes a viernes de 7:00 a. m. a 7:00 p. m. y sábados de 8:00 a. m. a 3:00 p. m. (ni domingos ni festivos), el SMS queda programado para el siguiente momento permitido, en la zona horaria de la empresa. Conviene que lo confirme tu abogado.',
+        },
+    ],
+});
+
+function smsCountryField(): IntegrationFieldDef {
+    return field({
+        key: 'default_country',
+        label: 'País para números sin indicativo',
+        advanced: true,
+        default: 'CO',
+        placeholder: 'CO',
+        help: 'El código de dos letras del país (CO, MX, PE…). Un número escrito sin +57 se completa con el indicativo de este país.',
+    });
+}
+
+function smsRateField(def: string): IntegrationFieldDef {
+    return field({
+        key: 'rate',
+        label: 'Mensajes por segundo en un envío masivo',
+        advanced: true,
+        type: 'number',
+        default: def,
+        help: 'Cuántos SMS se mandan por segundo cuando envías a una selección. Súbelo sólo si tu proveedor te lo permite.',
+    });
+}
+
+const smsTest = {
+    label: 'Número para el SMS de prueba',
+    placeholder: '+573001234567',
+    help: 'Con indicativo de país. Llega un SMS real (lo cobra tu proveedor).',
+};
+
+const SMS_INTEGRATIONS: IntegrationDef[] = [
+    {
+        key: 'sms_twilio',
+        name: 'Twilio (SMS)',
+        tagline: 'SMS a cualquier país con tu cuenta de Twilio, con el estado de cada envío.',
+        description:
+            'Manda SMS desde un registro, a una selección o en una automatización con tu cuenta de Twilio. Twilio avisa a la app cuando cada mensaje se entrega o falla, y el estado queda en el registro.',
+        category: 'sms',
+        color: '#F22F46',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'account_sid',
+                    label: 'Account SID',
+                    required: true,
+                    placeholder: 'AC…',
+                    help: 'En console.twilio.com, en la portada de tu cuenta («Account Info»).',
+                }),
+                field({
+                    key: 'auth_token',
+                    label: 'Auth Token',
+                    secret: true,
+                    required: true,
+                    help: 'Al lado del Account SID. Se guarda cifrado; con él también verificamos que cada aviso de entrega viene de Twilio.',
+                }),
+                field({
+                    key: 'from',
+                    label: 'Remitente',
+                    required: true,
+                    placeholder: '+15551234567 · MG… · MiEmpresa',
+                    help: 'Un número de Twilio (+1…), un servicio de mensajería (empieza con MG) o un nombre de remitente aprobado en el país de destino.',
+                }),
+                smsCountryField(),
+                smsRateField('1'),
+            ],
+            how_to: [
+                'Entra a console.twilio.com y copia el Account SID y el Auth Token de la portada.',
+                'Elige el remitente: un número de Twilio con SMS, un servicio de mensajería (MG…) o un nombre de remitente si tu país lo permite.',
+                'Pégalos aquí. Al conectar comprobamos la cuenta con Twilio.',
+                'Mándate un SMS de prueba a tu número: si llega, quedó conectado. Los avisos de entrega se configuran solos en cada envío.',
+            ],
+            test: smsTest,
+        },
+        actions: [smsSendAction],
+    },
+    {
+        key: 'sms_bulkgate',
+        name: 'BulkGate (SMS)',
+        tagline: 'SMS transaccionales y promocionales a más de 200 países.',
+        description:
+            'Manda SMS con tu aplicación de API de BulkGate. Pega la URL de avisos en BulkGate una sola vez y la app sabrá qué mensajes se entregaron.',
+        category: 'sms',
+        color: '#0F7BE6',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'application_id',
+                    label: 'Application ID',
+                    required: true,
+                    placeholder: '12345',
+                    help: 'En portal.bulkgate.com → Módulos y APIs → tu API HTTP → Application ID.',
+                }),
+                field({
+                    key: 'application_token',
+                    label: 'Application token',
+                    secret: true,
+                    required: true,
+                    help: 'En el mismo lugar. Se guarda cifrado.',
+                }),
+                field({
+                    key: 'sender',
+                    label: 'Remitente',
+                    placeholder: 'MiEmpresa',
+                    help: 'Opcional: un nombre (hasta 11 letras) o tu número verificado en BulkGate. Vacío = el número del sistema de BulkGate.',
+                }),
+                smsCountryField(),
+                smsRateField('5'),
+            ],
+            how_to: [
+                'En portal.bulkgate.com abre «Módulos y APIs» y crea una «API HTTP simple» (o usa la que ya tienes).',
+                'Copia el Application ID y el Application token y pégalos aquí. Al conectar consultamos tu crédito.',
+                'Después, en la página de esta conexión, copia la URL de avisos y pégala en BulkGate → tu API → Ajustes → Web hooks → URL de reportes de entrega.',
+            ],
+            test: smsTest,
+        },
+        actions: [smsSendAction],
+    },
+    {
+        key: 'sms_infobip',
+        name: 'Infobip (SMS)',
+        tagline: 'SMS empresariales con tu cuenta de Infobip y reportes de entrega.',
+        description:
+            'Manda SMS con tu clave de API de Infobip. La app le pide a Infobip el reporte de entrega de cada mensaje y deja el estado en el registro.',
+        category: 'sms',
+        color: '#FC6423',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'base_url',
+                    label: 'URL base',
+                    required: true,
+                    placeholder: 'xxxxx.api.infobip.com',
+                    help: 'Tu URL base personal: aparece en la portada del portal de Infobip y en la sección de claves de API.',
+                }),
+                field({
+                    key: 'api_key',
+                    label: 'Clave de API',
+                    secret: true,
+                    required: true,
+                    help: 'En el portal de Infobip → Desarrolladores → Claves de API. Necesita el permiso para mandar SMS. Se guarda cifrada.',
+                }),
+                field({
+                    key: 'sender',
+                    label: 'Remitente',
+                    placeholder: 'MiEmpresa',
+                    help: 'Opcional: el nombre o número registrado en Infobip. Vacío = el que Infobip tenga por defecto.',
+                }),
+                smsCountryField(),
+                smsRateField('10'),
+            ],
+            how_to: [
+                'Entra al portal de Infobip y copia tu URL base personal (algo como xxxxx.api.infobip.com).',
+                'Crea una clave de API con permiso para mandar SMS y pégala aquí. Al conectar consultamos tu saldo.',
+                'Mándate un SMS de prueba. Los reportes de entrega se piden solos en cada envío.',
+            ],
+            test: smsTest,
+        },
+        actions: [smsSendAction],
+    },
+    {
+        key: 'sms_labsmobile',
+        name: 'LabsMobile (SMS)',
+        tagline: 'SMS desde España y Latinoamérica con confirmación de entrega.',
+        description:
+            'Manda SMS con tu cuenta de LabsMobile. Cada envío pide la confirmación de entrega y el estado queda en el registro.',
+        category: 'sms',
+        color: '#00A0E3',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'username',
+                    label: 'Usuario',
+                    required: true,
+                    placeholder: 'tu-correo@empresa.com',
+                    help: 'El correo con el que entras a LabsMobile.',
+                }),
+                field({
+                    key: 'api_token',
+                    label: 'Token de API',
+                    secret: true,
+                    required: true,
+                    help: 'En LabsMobile → Configuración → API (token). Se guarda cifrado.',
+                }),
+                field({
+                    key: 'sender',
+                    label: 'Remitente',
+                    placeholder: 'MiEmpresa',
+                    help: 'Opcional: hasta 11 letras o 14 números. En algunos países no se puede elegir.',
+                }),
+                smsCountryField(),
+                smsRateField('5'),
+            ],
+            how_to: [
+                'Entra a tu cuenta de LabsMobile y abre la configuración de la API.',
+                'Copia el token de API y pégalo aquí junto con tu correo de acceso. Al conectar consultamos tus créditos.',
+                'Mándate un SMS de prueba. La confirmación de entrega se pide sola en cada envío.',
+            ],
+            test: smsTest,
+        },
+        actions: [smsSendAction],
+    },
+    {
+        key: 'sms_onurix',
+        name: 'Onurix (SMS)',
+        tagline: 'SMS en Colombia con tu cuenta de Onurix.',
+        description:
+            'Manda SMS con tu cuenta de Onurix (Colombia). La app consulta el estado de cada mensaje y lo deja en el registro.',
+        category: 'sms',
+        color: '#1E9E6A',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'client_id',
+                    label: 'Client ID',
+                    required: true,
+                    placeholder: '1234',
+                    help: 'En portal.onurix.com → Seguridad → Datos de integración API.',
+                }),
+                field({
+                    key: 'key',
+                    label: 'Key',
+                    secret: true,
+                    required: true,
+                    help: 'En el mismo lugar. Se guarda cifrada.',
+                }),
+                smsCountryField(),
+                smsRateField('5'),
+            ],
+            how_to: [
+                'En portal.onurix.com abre Seguridad → Datos de integración API y copia el Client ID y la Key.',
+                'En esa misma pantalla, autoriza la IP de este servidor: Onurix rechaza los envíos de direcciones que no conoce.',
+                'Pégalos aquí. Al conectar consultamos tu saldo; después mándate un SMS de prueba.',
+            ],
+            test: smsTest,
+        },
+        actions: [smsSendAction],
+    },
 ];
 
 export const INTEGRATIONS: readonly IntegrationDef[] = [
@@ -533,6 +820,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             }),
         ],
     },
+    ...SMS_INTEGRATIONS,
     {
         key: 'slack',
         name: 'Slack',

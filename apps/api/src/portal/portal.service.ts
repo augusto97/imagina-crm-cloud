@@ -1559,7 +1559,8 @@ export class PortalService implements OnModuleInit {
                 if (row.action === 'dependency_added' || row.action === 'dependency_removed') continue;
                 // D3 — el registro de WhatsApp (qué plantilla se mandó, cuándo
                 // escribió) es del equipo: el cliente ya tiene la conversación.
-                if (row.action === 'whatsapp') continue;
+                // ADR-S82 — lo mismo con los SMS: el cliente ya recibió el mensaje.
+                if (row.action === 'whatsapp' || row.action === 'sms') continue;
                 let diff = filterActivityDiff(row.diff, ctx.visible);
                 if (row.action === 'record_updated' && Object.keys(diff).length === 0) continue;
                 // Campo «Botón»: sólo los botones que el cliente ve, y sólo su nombre.

@@ -57,6 +57,7 @@ const StoreSyncPage = lazyWithReload(() => import('@/cloud/pages/StoreSyncPage')
 const SqlSyncPage = lazyWithReload(() => import('@/cloud/pages/SqlSyncPage').then(m => ({ default: m.SqlSyncPage })));
 const CollectionsPage = lazyWithReload(() => import('@/cloud/pages/CollectionsPage').then(m => ({ default: m.CollectionsPage })));
 const WhatsappPage = lazyWithReload(() => import('@/cloud/pages/WhatsappPage').then(m => ({ default: m.WhatsappPage })));
+const SmsPage = lazyWithReload(() => import('@/cloud/pages/SmsPage').then(m => ({ default: m.SmsPage })));
 const GuestShell = lazyWithReload(() => import('@/admin/guests/GuestShell').then(m => ({ default: m.GuestShell })));
 const SharedWithMePage = lazyWithReload(() => import('@/admin/guests/GuestShell').then(m => ({ default: m.SharedWithMePage })));
 
@@ -204,6 +205,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="settings/whatsapp/:connectionId" element={
                     <Suspense fallback={<RouteFallback />}><WhatsappPage /></Suspense>
+                } />
+                <Route path="settings/sms/:connectionId" element={
+                    <Suspense fallback={<RouteFallback />}><SmsPage /></Suspense>
                 } />
                 <Route path="platform" element={
                     <PlatformGate><Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense></PlatformGate>

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PublicDataConsent } from './data-consent';
+import { SMS_BOOKING_REMINDER_DEFAULT } from './sms';
 import {
     FORM_FIELD_TYPES,
     formFieldItemSchema,
@@ -248,6 +249,19 @@ export const bookingNotificationsSchema = z.object({
     notify_client_on_team_change: z.boolean().default(true),
     /** Texto que va en el correo de confirmación (indicaciones, qué traer). */
     email_note: z.string().max(2000).default(''),
+    /**
+     * v0.1.332 — los MISMOS recordatorios también por SMS, con una conexión de
+     * SMS de la empresa y un texto con `{{cita.*}}`. El teléfono es el del
+     * campo «Teléfono» del mapeo de la página.
+     */
+    sms_reminders: z
+        .object({
+            enabled: z.boolean().default(false),
+            connection_id: z.number().int().positive().nullable().default(null),
+            text: z.string().max(1000).default(SMS_BOOKING_REMINDER_DEFAULT),
+            strip_accents: z.boolean().default(true),
+        })
+        .default({}),
 });
 export type BookingNotifications = z.infer<typeof bookingNotificationsSchema>;
 
@@ -659,6 +673,15 @@ export function bookingProblems(
         const week = s.availability.week.some((d) => d.length > 0);
         const extra = s.availability.exceptions.some((e) => !e.closed && e.intervals.length > 0);
         if (!week && !extra) out.push(`«${staffLabel(s)}» no tiene horario: agrégale al menos un tramo.`);
+    }
+    // SMS (ADR-S82): los recordatorios por SMS necesitan la conexión y el teléfono del cliente.
+    const sms = config.notifications.sms_reminders;
+    if (sms.enabled) {
+        if (sms.connection_id === null) out.push('Elige la conexión de SMS de los recordatorios (Correos y recordatorios).');
+        if (m.phone_field_id === null) out.push('Elige el campo donde se guarda el teléfono del cliente (Campos de la lista): sin él no hay a quién mandarle el SMS.');
+        if (config.settings.ask_phone === 'hidden') out.push('La página no pide el teléfono: pídelo (opcional u obligatorio) para mandar los recordatorios por SMS.');
+        if (config.notifications.reminders.length === 0) out.push('Agrega al menos un recordatorio (por ejemplo, 24 horas antes) para mandarlo por SMS.');
+        if (sms.text.trim() === '') out.push('Escribe el texto del recordatorio por SMS.');
     }
     return out;
 }

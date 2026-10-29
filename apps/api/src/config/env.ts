@@ -211,6 +211,15 @@ const envSchema = z.object({
         .string()
         .default('')
         .refine((v) => v === '' || /^v\d{1,3}\.\d{1,2}$/.test(v), { message: 'META_GRAPH_VERSION se escribe como v26.0' }),
+    /**
+     * v0.1.332 — SMS: sólo desarrollo/pruebas, las APIs SIMULADAS de los
+     * proveedores (`scripts/dev/fake-sms.mjs`). En producción se ignoran. La de
+     * Infobip es por cuenta (un campo de la conexión), no va aquí.
+     */
+    SMS_TWILIO_API_URL: z.string().default(''),
+    SMS_BULKGATE_API_URL: z.string().default(''),
+    SMS_LABSMOBILE_API_URL: z.string().default(''),
+    SMS_ONURIX_API_URL: z.string().default(''),
 
     // --- Superadmins de plataforma (no de workspace): emails separados por coma.
     // Único rol que puede operar la auto-actualización del servidor.

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Activity as ActivityIcon, Bot, Loader2, Mail, MessageCircle, MessageSquare, MousePointerClick, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
+import { Activity as ActivityIcon, Bot, Loader2, Mail, MessageCircle, MessageSquare, MessageSquareText, MousePointerClick, Pencil, Phone, Plus, StickyNote, Trash2, Users, Zap } from 'lucide-react';
 
 import { ActivityValue } from '@/admin/activity/ActivityPanel';
 import { RestorePreviousButton } from '@/admin/records/history/FieldHistory';
@@ -403,7 +403,9 @@ function ChangeRow({
           ? Zap
           : first.action === 'button_pressed'
             ? MousePointerClick
-            : first.action === 'whatsapp'
+            : first.action === 'sms'
+              ? MessageSquareText
+              : first.action === 'whatsapp'
               ? MessageCircle
               : first.action.includes('deleted')
               ? Trash2
