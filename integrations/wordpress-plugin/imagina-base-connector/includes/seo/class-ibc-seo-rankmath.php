@@ -8,7 +8,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_SEO_RankMath extends IBC_SEO_Adapter {
+class ImaginaBC_SEO_RankMath extends ImaginaBC_SEO_Adapter {
 
 	public static function active() {
 		return class_exists( '\RankMath\Helper' ) && function_exists( 'rank_math' );
@@ -85,7 +85,7 @@ class IBC_SEO_RankMath extends IBC_SEO_Adapter {
 			'seo:noindex'        => $this->noindex_of( get_post_meta( $id, 'rank_math_robots', true ), $type ),
 			'seo:google_title'   => null,
 			'seo:google_description' => null,
-			'seo:score'          => IBC_Util::to_number( get_post_meta( $id, 'rank_math_seo_score', true ) ),
+			'seo:score'          => ImaginaBC_Util::to_number( get_post_meta( $id, 'rank_math_seo_score', true ) ),
 		);
 		if ( $this->ready() ) {
 			$out['seo:google_title']       = $this->clean( \RankMath\Helper::replace_seo_fields( '%seo_title%', $post ) );

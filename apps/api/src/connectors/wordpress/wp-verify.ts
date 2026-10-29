@@ -104,10 +104,38 @@ export function wpSiteProblem(site: WpSite): string | null {
     if (!site.index.namespaces.includes('wp/v2')) {
         return 'El sitio tiene la API REST de WordPress recortada (falta «wp/v2»): suele ser un plugin de seguridad. Habilítala para poder conectarlo.';
     }
-    if (!site.index.authorizeUrl) {
-        return 'Las contraseñas de aplicación están desactivadas en el sitio. WordPress las apaga si el sitio no usa HTTPS, y algunos plugins de seguridad también (busca la opción «Application Passwords»). Actívalas para poder conectarlo.';
-    }
+    if (!site.index.authorizeUrl) return appPasswordsOffMessage(site.index.namespaces);
     return null;
+}
+
+/**
+ * Las contraseñas de aplicación están apagadas en el sitio. Wordfence las
+ * apaga POR DEFECTO al instalarse (probado: opción «Disable WordPress
+ * application passwords» encendida), así que si el sitio lo tiene se dice
+ * exactamente dónde está la opción. Se reconoce por su ruta en la API REST
+ * (`wordfence/v1`), sin pedir nada más.
+ */
+export function appPasswordsOffMessage(namespaces: string[]): string {
+    if (namespaces.some((n) => n.startsWith('wordfence/'))) {
+        return 'Wordfence tiene apagadas las contraseñas de aplicación de WordPress (lo hace solo al instalarse), y la app se conecta con ellas. En WordPress ve a Wordfence → Login Security → Settings (Configuración), desmarca «Disable WordPress application passwords» («Desactivar las contraseñas de aplicación de WordPress») y guarda. Lo demás de Wordfence sigue funcionando igual.';
+    }
+    return 'Las contraseñas de aplicación están desactivadas en el sitio. WordPress las apaga si el sitio no usa HTTPS, y algunos plugins de seguridad también (Wordfence, Solid Security, All In One WP Security…: busca la opción «Application Passwords» o «Contraseñas de aplicación»). Actívalas para poder conectarlo.';
+}
+
+/**
+ * Una conexión que andaba y de pronto WordPress responde como a un visitante:
+ * ¿se apagaron las contraseñas de aplicación (por ejemplo, instalaron
+ * Wordfence) o revocaron la de esta conexión? Se mira el índice de la API
+ * (sin credenciales) y, si están apagadas, se dice cómo prenderlas: volver a
+ * conectar no lo arreglaría. `null` = siguen encendidas (la revocaron).
+ */
+export async function explainLostAccess(siteUrl: string): Promise<string | null> {
+    try {
+        const site = await discoverWpSite(siteUrl);
+        return site.index.authorizeUrl ? null : `${appPasswordsOffMessage(site.index.namespaces)} Después, si sigue sin andar, vuelve a conectar el sitio en Ajustes → Integraciones (las listas siguen igual).`;
+    } catch {
+        return null;
+    }
 }
 
 /** Prueba usuario + contraseña de aplicación contra `users/me`. */

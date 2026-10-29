@@ -35,6 +35,17 @@ export interface IbcHooksStatus {
     last_error: string | null;
     disabled: string | null;
     secret_fingerprint: string | null;
+    /** La huella de las columnas que la app le dijo que vigile (complemento 1.1+). */
+    watch_hash: string | null;
+    /** El complemento sabe vigilar columnas (1.1+): si no, no se compara la huella. */
+    watch_supported: boolean;
+}
+
+/** «Dónde se usa cada imagen» (complemento 1.1+): se arma una vez, en segundo plano. */
+export interface IbcMediaIndex {
+    status: 'none' | 'building' | 'ready';
+    done: number;
+    ready_at: string | null;
 }
 
 export interface IbcInfo {
@@ -42,8 +53,13 @@ export interface IbcInfo {
     seo: IbcSeoInfo | null;
     providers: { acf: boolean; metabox: boolean; jetengine: boolean };
     can_manage: boolean;
+    /** Puede tener avisos en tiempo real (1.1+: también un Editor, hacia la app). Complemento viejo: `can_manage`. */
+    can_hooks: boolean;
     hooks: IbcHooksStatus | null;
     updates: boolean;
+    /** Las versiones del complemento se verifican con firma antes de instalarse. */
+    signed: boolean;
+    media_index: IbcMediaIndex | null;
 }
 
 export interface IbcColumn {
@@ -112,10 +128,19 @@ export async function ibcInfo(creds: IntegrationCreds): Promise<{ installed: tru
                     : null,
             providers: { acf: providers.acf === true, metabox: providers.metabox === true, jetengine: providers.jetengine === true },
             can_manage: j.can_manage === true,
+            can_hooks: typeof j.can_hooks === 'boolean' ? j.can_hooks : j.can_manage === true,
             hooks: j.hooks ? readHooksStatus(j.hooks) : null,
             updates: j.updates === true,
+            signed: j.signed === true,
+            media_index: readMediaIndex(j.media_index),
         },
     };
+}
+
+export function readMediaIndex(v: unknown): IbcMediaIndex | null {
+    const m = obj(v);
+    if (m.status !== 'none' && m.status !== 'building' && m.status !== 'ready') return null;
+    return { status: m.status, done: Number(m.done) || 0, ready_at: str(m.ready_at) };
 }
 
 export function readHooksStatus(v: unknown): IbcHooksStatus {
@@ -138,6 +163,8 @@ export function readHooksStatus(v: unknown): IbcHooksStatus {
         last_error: str(h.last_error),
         disabled: str(h.disabled),
         secret_fingerprint: str(h.secret_fingerprint),
+        watch_hash: str(h.watch_hash),
+        watch_supported: Object.prototype.hasOwnProperty.call(h, 'watch_hash'),
     };
 }
 
@@ -202,7 +229,9 @@ export function ibcColumnToSite(c: IbcColumn): SiteColumn {
 
 /**
  * Lee en lote: `id → (clave → valor)`. Los que el complemento salteó (no
- * existen o el usuario no puede editarlos) no aparecen.
+ * existen o el usuario no puede editarlos) no aparecen. `meta.mediaIndexBuilding`
+ * = «Dónde se usa» todavía se está calculando en el sitio: esas columnas no
+ * vinieron (se vuelven a leer cuando termine).
  */
 export async function ibcRead(
     creds: IntegrationCreds,
@@ -210,12 +239,14 @@ export async function ibcRead(
     object: string,
     ids: number[],
     fields: string[],
+    meta?: { mediaIndexBuilding?: boolean },
 ): Promise<Map<number, Record<string, unknown>>> {
     const out = new Map<number, Record<string, unknown>>();
     if (ids.length === 0 || fields.length === 0) return out;
     for (let i = 0; i < ids.length; i += IBC_READ_CHUNK) {
         const chunk = ids.slice(i, i + IBC_READ_CHUNK);
         const res = obj(await wpSend(creds, 'POST', `${IBC_NS}/items/read`, { kind: kindOf(kind), object, ids: chunk, fields }, [], { idempotent: true, timeoutMs: 60_000 }));
+        if (meta && readMediaIndex(res.media_index)?.status === 'building') meta.mediaIndexBuilding = true;
         for (const [id, values] of Object.entries(obj(res.items))) {
             const n = Number(id);
             if (Number.isInteger(n) && n > 0) out.set(n, obj(values));
@@ -260,7 +291,18 @@ export interface IbcRegisterResult {
 
 export async function ibcHooksRegister(
     creds: IntegrationCreds,
-    body: { url: string; secret: string; objects: { post_types: string[]; taxonomies: string[]; media: boolean } },
+    body: {
+        url: string;
+        secret: string;
+        objects: {
+            post_types: string[];
+            taxonomies: string[];
+            media: boolean;
+            /** Las columnas que la app trae por objeto (`post_type:post` → claves): el complemento sólo avisa por esas. */
+            fields?: Record<string, string[]>;
+            watch_hash?: string;
+        };
+    },
 ): Promise<IbcRegisterResult> {
     const r = obj(await wpSend(creds, 'POST', `${IBC_NS}/hooks`, body, [], { timeoutMs: 45_000 }));
     const p = obj(r.ping);

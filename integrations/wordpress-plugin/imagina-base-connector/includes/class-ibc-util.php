@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_Util {
+class ImaginaBC_Util {
 
 	const TYPES = array( 'text', 'long_text', 'number', 'date', 'datetime', 'checkbox', 'url', 'select', 'multi_select' );
 
@@ -186,8 +186,66 @@ class IBC_Util {
 		return array_slice( array_values( $out ), 0, $max );
 	}
 
-	/** «La app» que está hablando (cabecera que manda la app en sus escrituras). */
+	/**
+	 * «La app» que está escribiendo: la cabecera que manda la app en SUS
+	 * escrituras, y sólo si el pedido viene por la API REST con el mismo
+	 * usuario que registró los avisos. Así nadie más puede apagar los avisos
+	 * de sus propios cambios mandando la cabecera.
+	 */
 	public static function request_from_app() {
-		return isset( $_SERVER['HTTP_X_IMAGINA_SOURCE'] ) && 'app' === $_SERVER['HTTP_X_IMAGINA_SOURCE'];
+		if ( ! isset( $_SERVER['HTTP_X_IMAGINA_SOURCE'] ) || 'app' !== $_SERVER['HTTP_X_IMAGINA_SOURCE'] ) {
+			return false;
+		}
+		if ( ! defined( 'REST_REQUEST' ) || ! REST_REQUEST ) {
+			return false;
+		}
+		$c = ImaginaBC_Hooks::config();
+		return $c && isset( $c['user_id'] ) && (int) $c['user_id'] > 0 && (int) $c['user_id'] === get_current_user_id();
+	}
+
+	/**
+	 * Un metadato con nombre de credencial (contraseñas, claves de API,
+	 * tokens, licencias, datos de tarjeta): nunca se ofrece ni se lee, aunque
+	 * no empiece con «_».
+	 */
+	public static function sensitive_key( $key ) {
+		// Por PALABRAS del nombre (no por pedazos): «autor» o «session_date» no son credenciales.
+		$k     = strtolower( preg_replace( '/([a-z])([A-Z])/', '$1_$2', (string) $key ) );
+		$parts = preg_split( '/[^a-z0-9]+/', $k, -1, PREG_SPLIT_NO_EMPTY );
+		$set   = array_flip( (array) $parts );
+		foreach ( array( 'password', 'passwd', 'pwd', 'pass', 'secret', 'secrets', 'token', 'tokens', 'apikey', 'nonce', 'salt', 'credential', 'credentials', 'cvv', 'cvc', 'iban', 'ssn' ) as $w ) {
+			if ( isset( $set[ $w ] ) ) {
+				return true;
+			}
+		}
+		$joined = '_' . implode( '_', (array) $parts ) . '_';
+		foreach ( array( 'api_key', 'private_key', 'license_key', 'licence_key', 'access_key', 'secret_key', 'auth_key', 'client_secret', 'card_number' ) as $w ) {
+			if ( false !== strpos( $joined, '_' . $w . '_' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Carga en UNA consulta las entradas (y sus metadatos) que se van a leer. */
+	public static function prime_posts( array $ids ) {
+		$ids = self::ids( $ids, 1000 );
+		if ( ! empty( $ids ) ) {
+			_prime_post_caches( $ids, false, true );
+		}
+	}
+
+	/** Lo mismo para términos. */
+	public static function prime_terms( array $ids ) {
+		$ids = self::ids( $ids, 1000 );
+		if ( ! empty( $ids ) ) {
+			_prime_term_caches( $ids, false );
+			update_termmeta_cache( $ids );
+		}
+	}
+
+	/** El sitio de pruebas (`local`/`development`): ahí se aceptan direcciones `http://`. */
+	public static function is_local_env() {
+		return in_array( wp_get_environment_type(), array( 'local', 'development' ), true );
 	}
 }

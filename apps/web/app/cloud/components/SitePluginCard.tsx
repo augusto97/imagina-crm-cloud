@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, ExternalLink, Loader2, Plug, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, ExternalLink, Loader2, Plug, RefreshCw, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,8 @@ export interface SitePluginCardState {
     missingSince?: string | null;
     /** El plugin de SEO tiene algo a medio configurar. */
     problem?: string | null;
+    /** El complemento verifica la firma de sus actualizaciones (1.1+ con release firmado). */
+    signed?: boolean;
 }
 
 function newer(a: string | null, b: string | null): boolean {
@@ -72,6 +74,12 @@ export function SitePluginCard({
                         {__('Complemento activo')}
                     </Badge>
                     {state.version && <span className="imcrm-text-xs imcrm-text-muted-foreground">{sprintf(__('Versión %s'), state.version)}</span>}
+                    {state.signed && (
+                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground" title={__('Antes de instalar una actualización, el complemento comprueba que la firmamos nosotros: un archivo alterado se rechaza.')} data-testid="imcrm-site-plugin-signed">
+                            <ShieldCheck className="imcrm-h-3 imcrm-w-3 imcrm-text-success" aria-hidden />
+                            {__('Actualizaciones verificadas')}
+                        </span>
+                    )}
                 </div>
                 <p className="imcrm-text-sm" data-testid="imcrm-site-plugin-seo">
                     {state.seoName

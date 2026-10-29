@@ -9,17 +9,24 @@ import { ENV, type Env } from '../config/env';
  *
  * El código vive en el repo (`integrations/wordpress-plugin/imagina-base-connector`)
  * y viaja en cada release junto al API; el zip se arma EN MEMORIA al pedirlo,
- * con un archivo extra (`includes/update-source.php`) que le dice al
+ * con un archivo extra (`includes/update-source.json`) que le dice al
  * complemento de qué app buscar actualizaciones: la de este servidor. Así cada
  * operador reparte su propio complemento y las actualizaciones le llegan a
  * WordPress como las de cualquier plugin.
+ *
+ * Desde 1.1.0 (v0.1.335) ese archivo es DATOS (JSON), no código: el complemento
+ * lo lee y valida su forma exacta, y es lo único que la app agrega al zip. Si
+ * el release viene firmado (`RELEASE_SIGNING_KEY` en el CI), la carpeta trae
+ * además `manifest.json`, `manifest.sig` y `includes/release-key.json`, que se
+ * reparten tal cual: con eso cada sitio verifica la próxima actualización antes
+ * de instalarla (aunque alguien tomara este servidor, no podría meter código).
  */
 
 export const WP_PLUGIN_SLUG = 'imagina-base-connector';
 /** Lo que promete el complemento (lo mismo que dice su cabecera). */
 const REQUIRES_WP = '6.0';
 const REQUIRES_PHP = '7.4';
-const TESTED_WP = '6.8';
+const TESTED_WP = '7.1';
 /** Tope de bytes del código del complemento (un error de empaquetado no se reparte). */
 const MAX_PLUGIN_BYTES = 5 * 1024 * 1024;
 
@@ -39,23 +46,15 @@ export function parsePluginVersion(php: string): string | null {
     return m ? m[1]! : null;
 }
 
-/** El archivo que le dice al complemento de dónde actualizarse (texto PHP escapado). */
-export function updateSourcePhp(appUrl: string, appName: string): string {
-    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return [
-        '<?php',
-        '/**',
-        ' * Generado por la app al descargar el complemento: de aquí busca actualizaciones.',
-        ' *',
-        ' * @package ImaginaBaseConnector',
-        ' */',
-        '',
-        "defined( 'ABSPATH' ) || exit;",
-        '',
-        `return array( 'url' => '${esc(appUrl)}', 'name' => '${esc(appName)}' );`,
-        '',
-    ].join('\n');
+/**
+ * El archivo que le dice al complemento de dónde actualizarse: SÓLO datos
+ * (`{url, name}`), que el complemento valida con su forma exacta (una dirección
+ * de origen, sin ruta).
+ */
+export function updateSourceJson(appUrl: string, appName: string): string {
+    return `${JSON.stringify({ url: appUrl.replace(/\/+$/, ''), name: appName.slice(0, 80) })}\n`;
 }
+
 
 /** Compara versiones `1.2.3` (número por número). */
 export function versionNewer(a: string | null, b: string | null): boolean {
@@ -168,7 +167,7 @@ export class WordpressPluginService {
         const walk = (dir: string, rel: string) => {
             for (const entry of readdirSync(dir, { withFileTypes: true })) {
                 // Ocultos y lo generado: nunca viajan del servidor.
-                if (entry.name.startsWith('.') || entry.name === 'update-source.php') continue;
+                if (entry.name.startsWith('.') || entry.name === 'update-source.php' || entry.name === 'update-source.json') continue;
                 const abs = path.join(dir, entry.name);
                 const relPath = rel ? `${rel}/${entry.name}` : entry.name;
                 if (entry.isDirectory()) walk(abs, relPath);
@@ -186,7 +185,7 @@ export class WordpressPluginService {
             this.logger.error(`No se pudo armar el zip del complemento: ${String(err)}`);
             return null;
         }
-        files.push({ path: `${WP_PLUGIN_SLUG}/includes/update-source.php`, data: updateSourcePhp(this.baseUrl(), 'Imagina Base') });
+        files.push({ path: `${WP_PLUGIN_SLUG}/includes/update-source.json`, data: updateSourceJson(this.baseUrl(), 'Imagina Base') });
         const bytes = Buffer.from(zipFiles(files));
         this.cache = { key, bytes };
         return { bytes, filename: `${WP_PLUGIN_SLUG}.zip`, version };

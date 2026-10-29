@@ -13,7 +13,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-class IBC_Items {
+class ImaginaBC_Items {
 
 	const KINDS = array( 'post_type', 'taxonomy', 'media' );
 
@@ -29,6 +29,15 @@ class IBC_Items {
 		return $out;
 	}
 
+	/** Los nombres de los tipos que se pueden leer y escribir (lo de WordPress por dentro, no). */
+	public static function post_type_names() {
+		return wp_list_pluck( self::post_types(), 'name' );
+	}
+
+	public static function taxonomy_names() {
+		return wp_list_pluck( self::taxonomies(), 'name' );
+	}
+
 	public static function taxonomies() {
 		$out = array();
 		foreach ( get_taxonomies( array( 'show_in_rest' => true ), 'objects' ) as $tax ) {
@@ -41,12 +50,12 @@ class IBC_Items {
 	}
 
 	/** Las columnas extra que da el complemento, por tipo de objeto. */
-	public static function schema() {
+	public static function schema( $fresh = false ) {
 		$objects = array();
 		foreach ( self::post_types() as $pt ) {
-			$cols = IBC_SEO::columns( 'post_type' );
+			$cols = ImaginaBC_SEO::columns( 'post_type' );
 			if ( post_type_supports( $pt->name, 'editor' ) ) {
-				$cols[] = IBC_Util::column(
+				$cols[] = ImaginaBC_Util::column(
 					'plugin:words',
 					__( 'Palabras', 'imagina-base-connector' ),
 					'number',
@@ -57,7 +66,7 @@ class IBC_Items {
 					)
 				);
 			}
-			$cols      = array_merge( $cols, IBC_Fields::columns( 'post_type', $pt->name ) );
+			$cols      = array_merge( $cols, ImaginaBC_Fields::columns( 'post_type', $pt->name, $fresh ) );
 			$objects[] = array(
 				'kind'    => 'post_type',
 				'object'  => $pt->name,
@@ -68,14 +77,14 @@ class IBC_Items {
 			$objects[] = array(
 				'kind'    => 'taxonomy',
 				'object'  => $tax->name,
-				'columns' => array_merge( IBC_SEO::columns( 'taxonomy' ), IBC_Fields::columns( 'taxonomy', $tax->name ) ),
+				'columns' => array_merge( ImaginaBC_SEO::columns( 'taxonomy' ), ImaginaBC_Fields::columns( 'taxonomy', $tax->name, $fresh ) ),
 			);
 		}
 		$objects[] = array(
 			'kind'    => 'media',
 			'object'  => 'attachment',
 			'columns' => array(
-				IBC_Util::column(
+				ImaginaBC_Util::column(
 					'plugin:used_in',
 					__( 'Dónde se usa', 'imagina-base-connector' ),
 					'long_text',
@@ -84,7 +93,7 @@ class IBC_Items {
 						'hint'     => __( 'Las entradas y páginas que la muestran (como imagen destacada o dentro del contenido).', 'imagina-base-connector' ),
 					)
 				),
-				IBC_Util::column(
+				ImaginaBC_Util::column(
 					'plugin:used_count',
 					__( 'Veces usada', 'imagina-base-connector' ),
 					'number',
@@ -136,6 +145,12 @@ class IBC_Items {
 				$plugin[] = $k;
 			}
 		}
+		// Todo lo que se va a leer, en una consulta (no una por objeto).
+		if ( 'taxonomy' === $kind ) {
+			ImaginaBC_Util::prime_terms( $ids );
+		} else {
+			ImaginaBC_Util::prime_posts( $ids );
+		}
 		$loaded = array();
 		foreach ( $ids as $id ) {
 			$item = self::load( $kind, $object, $id );
@@ -145,36 +160,56 @@ class IBC_Items {
 			}
 			$loaded[ $id ] = $item;
 		}
-		$usage = ( 'media' === $kind && ! empty( $plugin ) ) ? self::media_usage( array_keys( $loaded ) ) : array();
+		$usage = array();
+		$index = null;
+		if ( 'media' === $kind && ! empty( $plugin ) ) {
+			ImaginaBC_Media_Index::start();
+			// La primera vez se adelanta un poco del armado en este mismo pedido (sitios chicos quedan listos ya).
+			if ( ! ImaginaBC_Media_Index::ready() ) {
+				ImaginaBC_Media_Index::build( 3 );
+			}
+			$usage = ImaginaBC_Media_Index::usage( array_keys( $loaded ) );
+			if ( null === $usage ) {
+				$index = ImaginaBC_Media_Index::public_state();
+			}
+		}
 		foreach ( $loaded as $id => $item ) {
 			$values = array();
 			if ( ! empty( $seo ) && 'media' !== $kind ) {
-				$all = IBC_SEO::read( $item );
+				$all = ImaginaBC_SEO::read( $item );
 				foreach ( $seo as $k ) {
 					$values[ $k ] = array_key_exists( $k, $all ) ? $all[ $k ] : null;
 				}
 			}
 			if ( ! empty( $fields ) && 'media' !== $kind ) {
-				$values = array_merge( $values, IBC_Fields::read( $kind, $item, $object, $fields ) );
+				$values = array_merge( $values, ImaginaBC_Fields::read( $kind, $item, $object, $fields ) );
 			}
 			foreach ( $plugin as $k ) {
 				if ( 'plugin:words' === $k && $item instanceof WP_Post ) {
-					$values[ $k ] = IBC_Util::word_count( $item->post_content );
-				} elseif ( 'plugin:used_in' === $k ) {
-					$titles       = isset( $usage[ $id ] ) ? array_values( $usage[ $id ] ) : array();
-					$shown        = array_slice( $titles, 0, 10 );
-					$more         = count( $titles ) - count( $shown );
-					$values[ $k ] = empty( $shown ) ? null : implode( ', ', $shown ) . ( $more > 0 ? sprintf( __( ' y %d más', 'imagina-base-connector' ), $more ) : '' );
-				} elseif ( 'plugin:used_count' === $k ) {
-					$values[ $k ] = isset( $usage[ $id ] ) ? count( $usage[ $id ] ) : 0;
+					$values[ $k ] = ImaginaBC_Util::word_count( $item->post_content );
+				} elseif ( 'plugin:used_in' === $k && null !== $usage ) {
+					$shown        = isset( $usage[ $id ] ) ? $usage[ $id ]['titles'] : array();
+					$more         = isset( $usage[ $id ] ) ? $usage[ $id ]['count'] - count( $shown ) : 0;
+					$values[ $k ] = empty( $shown ) ? null : implode( ', ', $shown ) . ( $more > 0 ? sprintf(
+						/* translators: %d: cuántas entradas más usan la imagen */
+						__( ' y %d más', 'imagina-base-connector' ),
+						$more
+					) : '' );
+				} elseif ( 'plugin:used_count' === $k && null !== $usage ) {
+					$values[ $k ] = isset( $usage[ $id ] ) ? (int) $usage[ $id ]['count'] : 0;
 				}
 			}
 			$items[ (string) $id ] = (object) $values;
 		}
-		return array(
+		$out = array(
 			'items'   => (object) $items,
 			'skipped' => $skipped,
 		);
+		if ( null !== $index ) {
+			// «Dónde se usa» todavía se está calculando: esas columnas no vienen (la app vuelve a leerlas al terminar).
+			$out['media_index'] = $index;
+		}
+		return $out;
 	}
 
 	/**
@@ -199,7 +234,7 @@ class IBC_Items {
 			$fields = array();
 			$errors = array();
 			foreach ( $values as $key => $value ) {
-				if ( ! IBC_Util::valid_key( $key ) ) {
+				if ( ! ImaginaBC_Util::valid_key( $key ) ) {
 					continue;
 				}
 				if ( 0 === strpos( $key, 'seo:' ) && 'media' !== $kind ) {
@@ -210,11 +245,19 @@ class IBC_Items {
 					$errors[ $key ] = __( 'Lo calcula WordPress: no se escribe.', 'imagina-base-connector' );
 				}
 			}
-			if ( ! empty( $seo ) ) {
-				$errors = array_merge( $errors, IBC_SEO::write( $item, $seo ) );
-			}
-			if ( ! empty( $fields ) ) {
-				$errors = array_merge( $errors, IBC_Fields::write( $kind, $item, $object, $fields ) );
+			try {
+				if ( ! empty( $seo ) ) {
+					$errors = array_merge( $errors, ImaginaBC_SEO::write( $item, $seo ) );
+				}
+				if ( ! empty( $fields ) ) {
+					$errors = array_merge( $errors, ImaginaBC_Fields::write( $kind, $item, $object, $fields ) );
+				}
+			} catch ( \Throwable $e ) {
+				$errors['*'] = sprintf(
+					/* translators: %s: el error que dio WordPress o un plugin */
+					__( 'WordPress no lo guardó: %s', 'imagina-base-connector' ),
+					$e->getMessage()
+				);
 			}
 			// Los plugins de caché vacían la página al limpiar la caché del objeto.
 			if ( $item instanceof WP_Term ) {
@@ -229,47 +272,5 @@ class IBC_Items {
 			);
 		}
 		return array( 'items' => $out );
-	}
-
-	/**
-	 * Dónde se usa cada imagen: como imagen destacada o dentro del contenido
-	 * (la clase `wp-image-N` del editor clásico y el `"id":N` del bloque).
-	 * `id del medio => [id de la entrada => título]`.
-	 */
-	public static function media_usage( array $ids ) {
-		global $wpdb;
-		$ids   = IBC_Util::ids( $ids );
-		$usage = array();
-		if ( empty( $ids ) ) {
-			return $usage;
-		}
-		$in       = implode( ',', array_map( 'intval', $ids ) );
-		$statuses = "'publish','future','draft','pending','private'";
-		$found    = array();
-		$rows     = $wpdb->get_results( "SELECT pm.post_id AS post_id, pm.meta_value AS media_id FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = '_thumbnail_id' AND pm.meta_value IN ({$in}) AND p.post_status IN ({$statuses})" ); // phpcs:ignore WordPress.DB.PreparedSQL
-		foreach ( (array) $rows as $r ) {
-			$found[ (int) $r->media_id ][ (int) $r->post_id ] = true;
-		}
-		$likes = array();
-		foreach ( $ids as $id ) {
-			$likes[] = $wpdb->prepare( 'post_content LIKE %s', '%wp-image-' . $id . '%' );
-			$likes[] = $wpdb->prepare( 'post_content LIKE %s', '%"id":' . $id . '%' );
-		}
-		$types = "'revision','attachment','nav_menu_item','customize_changeset','oembed_cache','wp_global_styles'";
-		$rows  = $wpdb->get_results( "SELECT ID, post_content FROM {$wpdb->posts} WHERE post_type NOT IN ({$types}) AND post_status IN ({$statuses}) AND (" . implode( ' OR ', $likes ) . ') LIMIT 5000' ); // phpcs:ignore WordPress.DB.PreparedSQL
-		foreach ( (array) $rows as $r ) {
-			foreach ( $ids as $id ) {
-				if ( preg_match( '/wp-image-' . $id . '(?!\d)|"id":' . $id . '(?!\d)/', (string) $r->post_content ) ) {
-					$found[ $id ][ (int) $r->ID ] = true;
-				}
-			}
-		}
-		foreach ( $found as $media_id => $posts ) {
-			foreach ( array_keys( $posts ) as $pid ) {
-				$title = get_the_title( $pid );
-				$usage[ $media_id ][ $pid ] = '' !== $title ? html_entity_decode( $title, ENT_QUOTES, 'UTF-8' ) : sprintf( '#%d', $pid );
-			}
-		}
-		return $usage;
 	}
 }

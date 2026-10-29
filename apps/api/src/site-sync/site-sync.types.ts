@@ -103,6 +103,13 @@ export interface SitePluginState {
     checked_at: string | null;
     /** Estuvo y ya no está: desde cuándo. */
     missing_since: string | null;
+    /**
+     * «Dónde se usa cada imagen» llegó vacío porque el complemento todavía lo
+     * estaba calculando: cuando el sitio diga que terminó, se vuelve a leer la
+     * biblioteca de medios entera (si no, esas columnas quedarían vacías hasta
+     * el barrido del día siguiente).
+     */
+    media_pending?: boolean;
 }
 
 function obj(v: unknown): Record<string, unknown> {
@@ -234,6 +241,7 @@ export function readSiteState(raw: unknown): SiteSyncState {
                       seo_name: strOrNull(pl.seo_name),
                       checked_at: strOrNull(pl.checked_at),
                       missing_since: strOrNull(pl.missing_since),
+                      media_pending: pl.media_pending === true,
                   }
                 : null,
         realtime: {

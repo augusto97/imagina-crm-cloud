@@ -132,7 +132,7 @@ export function WordpressConnectDialog({
                             <div className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted imcrm-p-3 imcrm-text-xs imcrm-text-muted-foreground">
                                 <ShieldCheck className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-success" aria-hidden />
                                 <p>
-                                    {__('Te llevamos a tu WordPress para que apruebes la conexión. WordPress crea una contraseña sólo para esta app, que puedes revocar cuando quieras desde tu perfil. Entra con un usuario Editor o Administrador.')}
+                                    {__('Te llevamos a tu WordPress para que apruebes la conexión. WordPress crea una contraseña sólo para esta app, que puedes revocar cuando quieras desde tu perfil. Te recomendamos crear en WordPress un usuario con el rol Editor sólo para esta app (no uses tu cuenta de administrador).')}
                                 </p>
                             </div>
                         )}
@@ -154,7 +154,7 @@ export function WordpressConnectDialog({
                             {manual && (
                                 <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col imcrm-gap-4">
                                     <ol className="imcrm-list-decimal imcrm-space-y-1 imcrm-rounded-md imcrm-bg-muted imcrm-py-3 imcrm-pl-8 imcrm-pr-3 imcrm-text-xs imcrm-text-muted-foreground">
-                                        <li>{__('En tu WordPress entra a Usuarios → Perfil (con un usuario Editor o Administrador).')}</li>
+                                        <li>{__('En tu WordPress entra a Usuarios → Perfil con el usuario que vas a conectar (lo mejor es uno con el rol Editor creado sólo para esta app).')}</li>
                                         <li>{__('Baja hasta «Contraseñas de aplicación», escribe un nombre (por ejemplo «App de gestión») y toca «Añadir».')}</li>
                                         <li>{__('Copia la contraseña que aparece (se muestra una sola vez) y pégala aquí con tu usuario.')}</li>
                                     </ol>

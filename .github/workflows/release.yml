@@ -90,6 +90,9 @@ jobs:
           rm -f apps/web/dist-cloud/help-media/fallo-*.png
 
       - name: Armar bundle autocontenido
+        env:
+          # v0.1.335: la misma clave firma el complemento de WordPress (si está).
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
           set -euo pipefail
           VERSION="${{ needs.gate.outputs.version }}"
@@ -118,7 +121,10 @@ jobs:
           fi
           mkdir -p "$OUT/integrations"
           cp -r integrations/wordpress-plugin "$OUT/integrations/wordpress-plugin"
-          ( cd integrations/wordpress-plugin && zip -qr "../../dist-release/check-plugin.zip" imagina-base-connector )
+          # v0.1.335 — firma del complemento (manifiesto + Ed25519 + clave pública):
+          # cada sitio verifica la próxima actualización antes de instalarla.
+          sh scripts/sign-wordpress-plugin.sh "$OUT/integrations/wordpress-plugin/imagina-base-connector"
+          ( cd "$OUT/integrations/wordpress-plugin" && zip -qr "../../../dist-release/check-plugin.zip" imagina-base-connector )
           unzip -l dist-release/check-plugin.zip | grep -q 'imagina-base-connector/imagina-base-connector.php'
           # Se borra: un segundo .zip en el release confundiría al actualizador de
           # los servidores que todavía eligen «el primer .zip» (antes de v0.1.334).

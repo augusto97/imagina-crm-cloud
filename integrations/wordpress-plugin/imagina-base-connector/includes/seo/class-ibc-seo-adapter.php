@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-abstract class IBC_SEO_Adapter {
+abstract class ImaginaBC_SEO_Adapter {
 
 	/** `rank_math`, `yoast`, `seopress`, `aioseo`. */
 	abstract public function id();
@@ -64,18 +64,18 @@ abstract class IBC_SEO_Adapter {
 		);
 		$cols = array();
 		if ( 'post_type' === $kind || $this->supports_term_meta() ) {
-			$cols[] = IBC_Util::column( 'seo:title', __( 'Título SEO', 'imagina-base-connector' ), 'text', array_merge( $edit, array( 'hint' => $var ) ) );
-			$cols[] = IBC_Util::column( 'seo:description', __( 'Descripción SEO', 'imagina-base-connector' ), 'long_text', array_merge( $edit, array( 'hint' => $var ) ) );
+			$cols[] = ImaginaBC_Util::column( 'seo:title', __( 'Título SEO', 'imagina-base-connector' ), 'text', array_merge( $edit, array( 'hint' => $var ) ) );
+			$cols[] = ImaginaBC_Util::column( 'seo:description', __( 'Descripción SEO', 'imagina-base-connector' ), 'long_text', array_merge( $edit, array( 'hint' => $var ) ) );
 			if ( 'post_type' === $kind || $this->supports_term_focus() ) {
-				$cols[] = IBC_Util::column( 'seo:focus_keyword', __( 'Palabra clave', 'imagina-base-connector' ), 'text', $edit );
+				$cols[] = ImaginaBC_Util::column( 'seo:focus_keyword', __( 'Palabra clave', 'imagina-base-connector' ), 'text', $edit );
 			}
-			$cols[] = IBC_Util::column( 'seo:canonical', __( 'URL canónica', 'imagina-base-connector' ), 'url', array_merge( $edit, array( 'hint' => __( 'Vacío = la dirección de la propia página.', 'imagina-base-connector' ) ) ) );
-			$cols[] = IBC_Util::column( 'seo:noindex', __( 'No indexar', 'imagina-base-connector' ), 'checkbox', array_merge( $edit, array( 'hint' => __( 'Marcado, Google no muestra la página en los resultados.', 'imagina-base-connector' ) ) ) );
+			$cols[] = ImaginaBC_Util::column( 'seo:canonical', __( 'URL canónica', 'imagina-base-connector' ), 'url', array_merge( $edit, array( 'hint' => __( 'Vacío = la dirección de la propia página.', 'imagina-base-connector' ) ) ) );
+			$cols[] = ImaginaBC_Util::column( 'seo:noindex', __( 'No indexar', 'imagina-base-connector' ), 'checkbox', array_merge( $edit, array( 'hint' => __( 'Marcado, Google no muestra la página en los resultados.', 'imagina-base-connector' ) ) ) );
 		}
-		$cols[] = IBC_Util::column( 'seo:google_title', __( 'Título en Google', 'imagina-base-connector' ), 'text', array_merge( $p, array( 'hint' => __( 'El título que ve Google, con las variables ya reemplazadas.', 'imagina-base-connector' ) ) ) );
-		$cols[] = IBC_Util::column( 'seo:google_description', __( 'Descripción en Google', 'imagina-base-connector' ), 'long_text', array_merge( $p, array( 'hint' => __( 'La descripción que ve Google, con las variables ya reemplazadas.', 'imagina-base-connector' ) ) ) );
+		$cols[] = ImaginaBC_Util::column( 'seo:google_title', __( 'Título en Google', 'imagina-base-connector' ), 'text', array_merge( $p, array( 'hint' => __( 'El título que ve Google, con las variables ya reemplazadas.', 'imagina-base-connector' ) ) ) );
+		$cols[] = ImaginaBC_Util::column( 'seo:google_description', __( 'Descripción en Google', 'imagina-base-connector' ), 'long_text', array_merge( $p, array( 'hint' => __( 'La descripción que ve Google, con las variables ya reemplazadas.', 'imagina-base-connector' ) ) ) );
 		if ( 'post_type' === $kind && $this->supports_score() ) {
-			$cols[] = IBC_Util::column( 'seo:score', __( 'Puntaje SEO', 'imagina-base-connector' ), 'number', array_merge( $p, array( 'hint' => __( 'Lo calcula el plugin de SEO al editar la entrada en WordPress.', 'imagina-base-connector' ) ) ) );
+			$cols[] = ImaginaBC_Util::column( 'seo:score', __( 'Puntaje SEO', 'imagina-base-connector' ), 'number', array_merge( $p, array( 'hint' => __( 'Lo calcula el plugin de SEO al editar la entrada en WordPress.', 'imagina-base-connector' ) ) ) );
 		}
 		return $cols;
 	}
@@ -102,7 +102,7 @@ abstract class IBC_SEO_Adapter {
 	/** Lo que se escribe, saneado por clave. `null` = borrar (volver al formato por defecto). */
 	protected function sanitize( $key, $value ) {
 		if ( 'seo:noindex' === $key ) {
-			return IBC_Util::to_bool( $value );
+			return ImaginaBC_Util::to_bool( $value );
 		}
 		if ( null === $value || ( is_string( $value ) && '' === trim( $value ) ) ) {
 			return null;
@@ -135,7 +135,7 @@ abstract class IBC_SEO_Adapter {
 				continue;
 			}
 			if ( 'taxonomy' === $kind && ! $this->supports_term_meta() ) {
-				$errors[ $key ] = sprintf( __( '%s no guarda SEO propio por término en esta versión.', 'imagina-base-connector' ), $this->name() );
+				$errors[ $key ] = sprintf( /* translators: plugin de SEO */ __( '%s no guarda SEO propio por término en esta versión.', 'imagina-base-connector' ), $this->name() );
 				continue;
 			}
 			$clean = $this->sanitize( $key, $value );

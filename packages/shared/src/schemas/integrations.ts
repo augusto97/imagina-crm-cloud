@@ -1181,7 +1181,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     label: 'Usuario de WordPress',
                     required: true,
                     placeholder: 'admin',
-                    help: 'El usuario con el que entras al panel. Tiene que poder editar (Editor o Administrador).',
+                    help: 'El usuario que vas a conectar. Tiene que poder editar: lo mejor es uno con el rol Editor creado sólo para esta app.',
                 }),
                 field({
                     key: 'app_password',

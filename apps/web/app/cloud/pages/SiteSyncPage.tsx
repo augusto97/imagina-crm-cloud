@@ -94,7 +94,7 @@ function objectCount(kind: SiteObject['kind'], n: number): string {
 /** Por qué no se puede elegir «Al instante» en el alta (null = se puede). */
 function realtimeBlockedFor(d: Pick<SiteDiscovery, 'plugin'>): string | null {
     if (!d.plugin.installed) return __('Necesita el complemento en el sitio (arriba están los pasos para instalarlo).');
-    if (!d.plugin.can_manage) return __('Necesita que la conexión sea de un usuario administrador de WordPress.');
+    if (!(d.plugin.can_hooks ?? d.plugin.can_manage)) return __('Necesita un usuario Administrador de WordPress, o el complemento 1.1 (o más nuevo) descargado desde esta app: con él también sirve un Editor.');
     return null;
 }
 
@@ -310,6 +310,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sit
                     seoName: d.plugin.seo?.name ?? null,
                     providers: (['acf', 'metabox', 'jetengine'] as const).filter((k) => d.plugin.providers[k]).map((k) => PROVIDER_LABEL[k]!),
                     problem: d.plugin.seo?.problem ?? d.plugin.error,
+                    signed: d.plugin.signed ?? false,
                 }}
                 siteUrl={d.site_url}
                 checking={discover.isFetching}
