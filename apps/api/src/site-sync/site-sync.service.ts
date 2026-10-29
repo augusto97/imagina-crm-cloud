@@ -645,7 +645,7 @@ export class SiteSyncService {
                 if (!found.installed) {
                     throw new BadRequestException({
                         code: 'site_plugin_missing',
-                        message: 'Para el modo en tiempo real hace falta el complemento «Imagina Base Connector» activo en el sitio. Instálalo desde esta página y vuelve a intentar.',
+                        message: 'Para el modo en tiempo real hace falta el complemento para WordPress activo en el sitio. Instálalo desde esta página y vuelve a intentar.',
                         data: { status: 400 },
                     });
                 }
@@ -977,7 +977,7 @@ export class SiteSyncService {
         }
         await this.realtime.saveRealtime(tenantId, syncId, {
             registered: false,
-            error: `El complemento «Imagina Base Connector» no está activo en el sitio: mientras tanto los cambios llegan en la vuelta de cada ${settings.interval_minutes} minutos. Al instalarlo de nuevo, el tiempo real vuelve solo.`,
+            error: `El complemento para WordPress no está activo en el sitio: mientras tanto los cambios llegan en la vuelta de cada ${settings.interval_minutes} minutos. Al instalarlo de nuevo, el tiempo real vuelve solo.`,
         });
     }
 

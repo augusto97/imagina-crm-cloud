@@ -58,7 +58,7 @@ export class SiteKitsService {
                 code: 'site_kit_needs_seo',
                 message: ensured.plugin.installed
                     ? 'La auditoría SEO necesita un plugin de SEO activo en el sitio (Rank Math, Yoast SEO, SEOPress o All in One SEO).'
-                    : 'La auditoría SEO necesita el complemento «Imagina Base Connector» activo en el sitio. Instálalo desde la página del sitio.',
+                    : 'La auditoría SEO necesita el complemento para WordPress activo en el sitio. Instálalo desde la página del sitio.',
                 data: { status: 400 },
             });
         }

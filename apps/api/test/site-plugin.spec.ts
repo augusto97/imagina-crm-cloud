@@ -31,6 +31,7 @@ const wp = vi.hoisted(() => ({
 
 vi.mock('../src/common/safe-fetch', async (importOriginal) => {
     const real = await importOriginal<typeof import('../src/common/safe-fetch')>();
+    const { createHash } = await import('node:crypto');
     const TYPES: Record<string, { rest: string; name: string; supports: string[] }> = {
         post: { rest: 'posts', name: 'Entradas', supports: ['title', 'editor', 'excerpt', 'author'] },
         attachment: { rest: 'media', name: 'Medios', supports: ['title'] },
@@ -140,7 +141,6 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 return res(200, { registered: true, ping: wp.plugin.pingOk ? { ok: true, status: 200, error: null } : { ok: false, status: 0, error: 'cURL error 7: no se pudo conectar' } });
             }
             if (!wp.hook) return res(200, { registered: false, pending: 0, delivered: 0, fails: 0 });
-            const { createHash } = require('node:crypto') as typeof import('node:crypto');
             return res(200, {
                 registered: true,
                 url: wp.hook.url,

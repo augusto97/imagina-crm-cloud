@@ -83,7 +83,7 @@ export interface SiteHookEvent {
 
 /** Mensaje cuando una columna del complemento no se puede mandar porque el sitio ya no lo tiene. */
 export const PLUGIN_MISSING_WRITE =
-    'Ese dato lo guarda el complemento «Imagina Base Connector» y el sitio ya no lo tiene activo: no se pudo mandar. Instálalo de nuevo desde la página del sitio.';
+    'Ese dato lo guarda el complemento para WordPress y el sitio ya no lo tiene activo: no se pudo mandar. Instálalo de nuevo desde la página del sitio.';
 
 interface ListTarget {
     listId: number;
@@ -289,8 +289,8 @@ export class SiteSyncEngine {
             if (uses) {
                 ctx.warnings.add(
                     found.error
-                        ? `No pudimos leer el complemento «Imagina Base Connector»: ${found.error} Las columnas de SEO y campos quedaron con lo último que llegó.`
-                        : 'El complemento «Imagina Base Connector» ya no está activo en el sitio: las columnas que da (SEO, campos, medios) quedaron con lo último que llegó y no se pueden editar. Instálalo de nuevo desde la página del sitio.',
+                        ? `No pudimos leer el complemento para WordPress: ${found.error} Las columnas de SEO y campos quedaron con lo último que llegó.`
+                        : 'El complemento para WordPress ya no está activo en el sitio: las columnas que da (SEO, campos, medios) quedaron con lo último que llegó y no se pueden editar. Instálalo de nuevo desde la página del sitio.',
                 );
             }
         }

@@ -274,7 +274,7 @@ function safeJson(raw: string): unknown {
 function explain(err: unknown): string {
     if (err instanceof WpApiError) {
         if (err.wp.code === 'ibc_needs_admin') return 'para los avisos en tiempo real hace falta conectar el sitio con un usuario Administrador.';
-        if (err.wp.code === 'rest_no_route' || err.status === 404) return 'el complemento «Imagina Base Connector» no está activo en el sitio.';
+        if (err.wp.code === 'rest_no_route' || err.status === 404) return 'el complemento para WordPress no está activo en el sitio.';
         return err.message;
     }
     if (err instanceof BadRequestException) {

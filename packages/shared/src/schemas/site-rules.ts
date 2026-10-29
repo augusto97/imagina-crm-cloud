@@ -22,7 +22,7 @@ const HOW_TO_EDIT = 'Se edita en WordPress.';
 
 /** Sin el complemento, lo que él da no se puede leer ni mandar. */
 export const SITE_NEEDS_PLUGIN_REASON =
-    'Necesita el complemento «Imagina Base Connector» activo en el sitio: quedó con lo último que llegó. Instálalo de nuevo desde la página del sitio.';
+    'Necesita el complemento para WordPress activo en el sitio: quedó con lo último que llegó. Instálalo de nuevo desde la página del sitio.';
 
 /** La clave de columna del sitio de un campo, o null si es una columna propia. */
 export function siteFieldKey(marker: SiteListMarker, fieldId: number): string | null {
