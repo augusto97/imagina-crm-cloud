@@ -237,8 +237,10 @@ import {
     platformDiagnosticsSchema,
     diskUsageSchema,
     diskCleanupResultSchema,
+    walReleaseResultSchema,
     type DiskUsage,
     type DiskCleanupResult,
+    type WalReleaseResult,
     platformDomainSchema,
     platformDomainsSchema,
     smtpDiagnoseInputSchema,
@@ -1553,6 +1555,10 @@ export class CloudClient {
     }
     diskCleanup(): Promise<DiskCleanupResult> {
         return this.request('POST', '/system/diagnostics/disk/cleanup', { schema: diskCleanupResultSchema });
+    }
+    // v0.1.337 — liberar y reparar el registro de cambios (WAL) trabado.
+    walRelease(): Promise<WalReleaseResult> {
+        return this.request('POST', '/system/diagnostics/disk/wal-release', { schema: walReleaseResultSchema });
     }
 
     // --- dominios de las empresas (v0.1.246, sólo superadmin) ---

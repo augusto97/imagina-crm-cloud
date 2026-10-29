@@ -68,11 +68,15 @@ if [[ -n "${WAL_ARCHIVE_DIR:-}" && -d "$WAL_ARCHIVE_DIR" ]]; then
     if [[ -n "$label" ]]; then
         needed="$(basename "$label" | cut -d. -f1)"
         echo "→ podando WAL anterior a $needed (base backup más viejo retenido)"
-        if command -v pg_archivecleanup >/dev/null 2>&1; then
-            pg_archivecleanup "$WAL_ARCHIVE_DIR" "$needed" || true
-        else
-            docker run --rm -v "$WAL_ARCHIVE_DIR":/wal "$(docker inspect -f '{{.Config.Image}}' "$PG_CONTAINER")" \
-                pg_archivecleanup /wal "$needed" || true
-        fi
+        # v0.1.337 — los segmentos van comprimidos (`.gz`): `-x .gz` los poda
+        # igual; la segunda pasada, los sin comprimir de antes.
+        for ext in .gz ""; do
+            if command -v pg_archivecleanup >/dev/null 2>&1; then
+                pg_archivecleanup ${ext:+-x "$ext"} "$WAL_ARCHIVE_DIR" "$needed" || true
+            else
+                docker run --rm -v "$WAL_ARCHIVE_DIR":/wal "$(docker inspect -f '{{.Config.Image}}' "$PG_CONTAINER")" \
+                    pg_archivecleanup ${ext:+-x "$ext"} /wal "$needed" || true
+            fi
+        done
     fi
 fi

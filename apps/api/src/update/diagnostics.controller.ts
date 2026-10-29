@@ -1,8 +1,9 @@
 import { Controller, Delete, Get, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
-import type { DiskCleanupResult, DiskUsage, PlatformDiagnostics } from '@imagina-base/shared';
+import type { DiskCleanupResult, DiskUsage, PlatformDiagnostics, WalReleaseResult } from '@imagina-base/shared';
 import path from 'node:path';
 import { ENV, type Env } from '../config/env';
 import { LayoutDisk, MIN_FREE_INODES, dirBytes, freeBytes, freeInodes } from './disk-space';
+import { PostgresWalService } from './postgres-wal';
 import type Redis from 'ioredis';
 import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
@@ -24,6 +25,7 @@ export class DiagnosticsController {
         @Inject(REDIS) private readonly redis: Redis,
         private readonly mail: MailService,
         @Inject(ENV) private readonly env: Env,
+        private readonly wal: PostgresWalService,
     ) {}
 
     @Get()
@@ -54,8 +56,11 @@ export class DiagnosticsController {
             min_free_inodes: MIN_FREE_INODES,
             low_inodes: ino !== null && ino.free < MIN_FREE_INODES,
         };
+        // v0.1.337 — la base, su registro de cambios (WAL) y el archivo: lo que
+        // antes quedaba escondido en «Base de datos, sistema y otros».
+        const postgres = await this.wal.status();
         if (!base) {
-            return { available: false, path: where, total_bytes: total, free_bytes: free, low: free < min, min_free_bytes: min, ...inodes, parts: [], reclaimable_bytes: 0 };
+            return { available: false, path: where, total_bytes: total, free_bytes: free, low: free < min, min_free_bytes: min, ...inodes, parts: [], reclaimable_bytes: 0, postgres };
         }
         const layout = new LayoutDisk(base, this.env.UPDATER_KEEP_RELEASES);
         const [releases, backups, uploads, reclaimable] = await Promise.all([
@@ -78,7 +83,19 @@ export class DiagnosticsController {
                 { key: 'uploads', label: 'Archivos subidos', bytes: uploads },
             ],
             reclaimable_bytes: reclaimable,
+            postgres,
         };
+    }
+
+    /**
+     * v0.1.337 — «Liberar y reparar» el registro de cambios trabado: da por
+     * archivados los pendientes, hace un punto de control y le devuelve la
+     * carpeta del archivo a postgres. Sólo si el archivado está fallando.
+     */
+    @Post('disk/wal-release')
+    @HttpCode(200)
+    async walRelease(): Promise<WalReleaseResult> {
+        return this.wal.release();
     }
 
     /** «Liberar espacio»: lo mismo que hace solo el actualizador cuando falta lugar. */

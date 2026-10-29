@@ -35,16 +35,32 @@ Se usan **los dos**: el lógico para portabilidad y el físico/WAL para el DR re
 ```
 wal_level=replica
 archive_mode=on
-archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f
+archive_command=f=/wal_archive/%f; [ -f "$f.gz" ] || [ -f "$f" ] || { gzip -c %p > "$f.gz.tmp" && mv -f "$f.gz.tmp" "$f.gz"; } && { find /wal_archive -type f -mmin +4320 -delete || true; }
 archive_timeout=300          # fuerza archivar cada 5 min (acota el RPO)
 max_wal_senders=3            # habilita pg_basebackup por streaming
 ```
 
-Cada segmento de WAL se copia al volumen **`walarchive`** (`/wal_archive`),
-**separado de `pgdata` a propósito**: si se pierde el disco de datos, el WAL
-sobrevive. El `archive_command` es idempotente (`test ! -f …` → no pisa un
-segmento ya archivado; devuelve 0 sólo si la copia fue exitosa, condición para
-que Postgres marque el segmento como archivado).
+Cada segmento de WAL se guarda **comprimido** (`%f.gz`) en el volumen
+**`walarchive`** (`/wal_archive`), **separado de `pgdata` a propósito**: si se
+pierde el disco de datos, el WAL sobrevive. Desde v0.1.337 (ADR-S86) el comando:
+
+- **comprime**: un segmento que cierra `archive_timeout` es casi todo ceros —
+  16 MB → ~16 KB—; antes el archivo ocupaba hasta ~4,5 GB por día;
+- es **atómico**: escribe a `.tmp` y renombra, así un corte (disco lleno) no
+  deja un archivo a medias;
+- es **idempotente**: si el segmento ya está archivado (comprimido o no)
+  responde éxito. El comando viejo (`test ! -f … && cp …`) fallaba PARA SIEMPRE
+  si quedaba un archivo de un intento cortado, y Postgres guardaba todo el WAL;
+- poda lo de más de 3 días.
+
+Y el servicio arranca con un `entrypoint` que le da `/wal_archive` a postgres:
+Docker crea la carpeta de un volumen nombrado como `root:root 755` y, sin eso,
+Postgres no puede escribir — **el archivado no funcionó nunca hasta v0.1.337**
+(ver runbook-disk §7).
+
+La app vigila el archivado cada 15 minutos (Plataforma → Diagnóstico → Disco):
+si se traba, lo muestra en rojo, avisa por correo a los superadmins y lo destraba
+con «Liberar y reparar».
 
 ## Piezas
 
@@ -53,7 +69,7 @@ que Postgres marque el segmento como archivado).
 | `deploy/docker-compose.prod.yml` | Postgres con `archive_mode=on` → WAL al volumen `walarchive`. |
 | `scripts/basebackup.sh` | Base backup físico (`pg_basebackup -Ft -z -Xs`) + GPG/retención + poda de WAL vencido. |
 | `scripts/pitr-restore.sh` | Restaura un base backup + replay del WAL hasta un `--target-time` (o al final). |
-| `scripts/pitr-drill.sh` | Drill end-to-end en contenedores throwaway: prueba que el replay a un T elegido trae A y no B. |
+| `scripts/pitr-drill.sh` | Drill end-to-end con el servicio postgres del `docker-compose.prod.yml` TAL CUAL (volumen nombrado incluido): exige que archive comprimido y sin fallos, y que el replay a un T elegido traiga A y no B. |
 
 ## Operación
 

@@ -295,7 +295,7 @@ describe('DomainsService (Postgres real)', () => {
             expect(sent[0]).toMatchObject({ to: 'ops@imaginabase.com' });
             expect(sent[0]!.subject).toBe(`Dominio para habilitar: ${app} (ACME)`);
             expect(sent[0]!.text).toContain('alias');
-            expect(sent[0]!.text).toContain('https://app.imaginabase.com/platform?tab=dominios');
+            expect(sent[0]!.text).toContain('https://app.imaginabase.com/#/platform?tab=dominios');
             expect(sent[0]!.tenantId).toBeUndefined();
 
             let list = await ops.listForPlatform();

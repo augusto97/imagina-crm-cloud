@@ -8,6 +8,7 @@ import { BackupsService } from './backups.service';
 import { CheckUpdatesService } from './check-updates.service';
 import { ReleasesRepository } from './releases.repository';
 import { DiagnosticsController } from './diagnostics.controller';
+import { PostgresWalService } from './postgres-wal';
 import { SmtpController } from './smtp.controller';
 import { SymlinkDeployer } from './symlink-deployer.service';
 import { UpdateController } from './update.controller';
@@ -31,6 +32,7 @@ import { DEPLOYER } from './update.types';
         BackupsService,
         BackupDriveService,
         UpdateQueue,
+        PostgresWalService,
         {
             provide: DEPLOYER,
             inject: [ENV],

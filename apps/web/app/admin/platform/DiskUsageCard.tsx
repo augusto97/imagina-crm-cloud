@@ -11,12 +11,8 @@ import { __, sprintf } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
-function size(bytes: number | null): string {
-    if (bytes === null) return '—';
-    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-    if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
-    return `${Math.round(bytes / 1024)} KB`;
-}
+import { diskSize as size } from './diskSize';
+import { WalStatusPanel } from './WalStatusPanel';
 
 /**
  * v0.1.278 — Plataforma → Diagnóstico → Disco. Un servidor se llenó sin que
@@ -45,6 +41,18 @@ export function DiskUsageCard(): JSX.Element | null {
     const used = Math.max(0, d.total_bytes - d.free_bytes);
     const pct = d.total_bytes > 0 ? Math.round((used / d.total_bytes) * 100) : 0;
     const known = d.parts.reduce((a, p) => a + (p.bytes ?? 0), 0);
+    // v0.1.337 — la base de datos, su registro de cambios (WAL) y el archivo,
+    // por separado: antes los 45 GB de un WAL trabado eran «sistema y otros».
+    const pg = d.postgres;
+    const pgParts =
+        pg?.available && pg.local
+            ? [
+                  { key: 'db', label: __('Base de datos'), bytes: pg.db_bytes },
+                  { key: 'wal', label: __('Registro de cambios (WAL)'), bytes: pg.wal_bytes, bad: pg.health === 'failing' },
+                  ...(pg.archive_mode !== 'off' ? [{ key: 'archive', label: __('Archivo del registro de cambios'), bytes: pg.archive_bytes }] : []),
+              ]
+            : [];
+    const pgKnown = pgParts.reduce((a, p) => a + (p.bytes ?? 0), 0);
     const inodePct =
         d.total_inodes && d.free_inodes !== null ? Math.round(((d.total_inodes - d.free_inodes) / d.total_inodes) * 100) : null;
     const bad = d.low || d.low_inodes;
@@ -94,9 +102,22 @@ export function DiskUsageCard(): JSX.Element | null {
                                     <span className="imcrm-tabular-nums">{size(p.bytes)}</span>
                                 </li>
                             ))}
-                            <li className="imcrm-flex imcrm-justify-between imcrm-gap-3 imcrm-rounded imcrm-bg-muted/40 imcrm-px-2.5 imcrm-py-1.5">
-                                <span className="imcrm-text-muted-foreground">{__('Base de datos, sistema y otros')}</span>
-                                <span className="imcrm-tabular-nums">{size(Math.max(0, used - known))}</span>
+                            {pgParts.map((p) => (
+                                <li
+                                    key={p.key}
+                                    className={cn(
+                                        'imcrm-flex imcrm-justify-between imcrm-gap-3 imcrm-rounded imcrm-px-2.5 imcrm-py-1.5',
+                                        'bad' in p && p.bad ? 'imcrm-bg-destructive/10 imcrm-font-medium imcrm-text-destructive' : 'imcrm-bg-muted/40',
+                                    )}
+                                    data-testid={`disk-part-${p.key}`}
+                                >
+                                    <span className={'bad' in p && p.bad ? undefined : 'imcrm-text-muted-foreground'}>{p.label}</span>
+                                    <span className="imcrm-tabular-nums">{size(p.bytes)}</span>
+                                </li>
+                            ))}
+                            <li className="imcrm-flex imcrm-justify-between imcrm-gap-3 imcrm-rounded imcrm-bg-muted/40 imcrm-px-2.5 imcrm-py-1.5" data-testid="disk-part-other">
+                                <span className="imcrm-text-muted-foreground">{pgParts.length > 0 ? __('Sistema y otros') : __('Base de datos, sistema y otros')}</span>
+                                <span className="imcrm-tabular-nums">{size(Math.max(0, used - known - pgKnown))}</span>
                             </li>
                         </ul>
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
@@ -123,12 +144,13 @@ export function DiskUsageCard(): JSX.Element | null {
                                 {__('Liberar espacio')}
                             </Button>
                         </div>
-                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('Si la base de datos ocupa mucho, revisa el archivo de WAL de Postgres (ver docs/runbook-disk.md).')}
-                        </p>
+                        {pg && <WalStatusPanel wal={pg} />}
                     </>
                 ) : (
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Este servidor no usa el layout de versiones (desarrollo): sólo se muestra el espacio libre.')}</p>
+                    <>
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Este servidor no usa el layout de versiones (desarrollo): sólo se muestra el espacio libre.')}</p>
+                        {pg && <WalStatusPanel wal={pg} />}
+                    </>
                 )}
             </CardContent>
         </Card>

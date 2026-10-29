@@ -372,12 +372,57 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.336**
-(quitar de la app lo que el sitio o la tienda ya borró, y novedades del sitio;
-antes v0.1.335 la auditoría del complemento para WordPress, v0.1.334 el
-complemento, v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.337**
+(el WAL de Postgres vigilado y comprimido, y su carpeta con el permiso correcto;
+antes v0.1.336 quitar de la app lo que el sitio o la tienda ya borró, v0.1.335
+la auditoría del complemento para WordPress, v0.1.334 el complemento y v0.1.333
+el sitio sin complemento), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **RESUELTO** (el usuario: "listo, ya me liberó mucho espacio. sí,
+  hazlo en la próxima versión para que no vuelva a pasar") → **v0.1.337**
+  (ADR-S86). Detalle del diagnóstico abajo. Queda del lado del usuario, OPCIONAL:
+  recrear el contenedor de Postgres una vez (runbook-disk §4) para tener el
+  `entrypoint` y el comando comprimido; sin eso la app repara el permiso,
+  comprime el archivo cada 15 min y avisa si algo se traba.
+- 2026-10-29 — **Servidor de producción sin espacio: no instala v0.1.336**
+  (captura de Plataforma → Disco): 927 MB libres de 57,7 GB (el actualizador
+  pide 1 GB). Lo que la app mide de sí misma es ~0,8 GB (versiones 755 MB,
+  copias 16 MB, archivos 2 MB); los **56,1 GB** están en «Base de datos,
+  sistema y otros» = todo lo demás del disco, que el API (usuario `deploy`) no
+  puede medir. Sospecha principal: **WAL de Postgres** en los volúmenes Docker.
+  OJO con el `archive_command`: `test ! -f /wal_archive/%f && cp …` — si un
+  `cp` quedó a medias (disco lleno), ese archivo existe y el archivado falla
+  para siempre → Postgres guarda TODO en `pg_wal` (~4,5 GB/día con
+  `archive_timeout=300`) y la poda (`find -mmin +4320`) nunca corre. Si es eso,
+  con 927 MB Postgres se cae en horas. **Diagnóstico confirmado** (salida del
+  usuario): `/var/lib/docker/volumes` 46 GB, pgdata **45,8 GB**,
+  `/wal_archive` **vacío (4 KB)**, `pg_stat_archiver`: archived_count **0**,
+  failed_count **86.256** (≈20 días: desde que se recreó el contenedor el
+  2026-10-09), last_failed_wal `…0A`. **Causa raíz** (reproducida aquí con el
+  `docker-compose.prod.yml` tal cual): el volumen nombrado `walarchive` se
+  monta en `/wal_archive`, que no existe en la imagen, y Docker lo crea
+  **root:root 755** → Postgres (uid 70) recibe `cp: can't create …: Permission
+  denied` y NUNCA archivó nada; todo el WAL quedó en `pg_wal`. Afecta a toda
+  instalación con ese compose (también `install.sh`). Pruebas: (1) dar permiso
+  primero dispara el backlog a ~700 MB por segundo en el archivo (disco lleno);
+  (2) un symlink a /dev/null no sirve (el `cp` de busybox dice «File exists»);
+  (3) **lo que sí**: como usuario postgres renombrar `archive_status/*.ready` →
+  `.done` + `CHECKPOINT` → pg_wal baja a ~1 GB (max_wal_size) sin copiar nada,
+  y DESPUÉS `chown postgres:postgres /wal_archive` → lo nuevo se archiva bien.
+  Se le pasaron esos 3 pasos + comprobación; **esperando que confirme** el
+  espacio libre y que instale v0.1.336. A su ritmo (~2,3 GB/día de WAL) el
+  archivo con poda a 3 días quedará en ~7 GB. **Para el próximo release**
+  (propuesto, sin aprobar): compose con entrypoint que haga `mkdir -p
+  /wal_archive && chown postgres` antes de arrancar; segmentos comprimidos con
+  gzip en el `archive_command` (un segmento forzado por `archive_timeout` es
+  casi todo ceros: 16 MB → KB) con `pitr-restore.sh` que los descomprima;
+  tarjeta Disco que mida base/`pg_wal`/archivo vía SQL (la conexión base es
+  superusuario: `pg_ls_waldir()`, `pg_stat_archiver`, `pg_database_size`) y
+  abra un **Problema** (ADR-S44) si el archivado falla; y que «Liberar
+  espacio» marque los pendientes y haga el checkpoint por SQL (`COPY … TO
+  PROGRAM` corre como postgres dentro del contenedor). El `chown` necesita
+  root: por `docker exec` sólo si el usuario del API está en el grupo docker.
 - 2026-10-29 — **Pregunta del usuario sobre el sitio conectado** (después de
   v0.1.335): (a) si el cliente crea en WordPress un campo personalizado o un
   tipo de contenido nuevo, ¿cómo se suma a la app? → YA existe: «Traer otra
@@ -950,6 +995,32 @@ complemento, v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-29 · v0.1.337** — **El WAL de Postgres, vigilado, comprimido y con
+  su carpeta en orden** (ADR-S86). Reporte del usuario con captura: no podía
+  instalar v0.1.336 — 927 MB libres de 57,7 GB y la app ocupaba <1 GB. Se le
+  pidieron comandos de sólo lectura: **45,8 GB de `pg_wal`**, `/wal_archive`
+  vacío, `pg_stat_archiver` 0 archivados / 86.256 fallidos (≈20 días, desde que
+  se recreó el contenedor el 2026-10-09). Causa reproducida con el compose tal
+  cual: el volumen nombrado se monta en una ruta que la imagen no trae y Docker
+  la crea `root:root 755` → Postgres nunca pudo archivar. Se destrabó por
+  consola EN ORDEN (`.ready`→`.done` + `CHECKPOINT` + recién después `chown`:
+  al revés copia el atraso de golpe —700 MB/s— y llena el disco); el usuario
+  liberó el espacio y pidió que no vuelva a pasar. Hecho: compose con
+  `entrypoint` que da la carpeta a postgres + `archive_command` comprimido
+  (16 MB → ~16 KB), atómico (`.tmp`+`mv`) e idempotente; servicio que mide por
+  SQL (base, WAL, archivo, pendientes, motivo «sin permiso» probado por el
+  propio postgres) en la tarjeta Disco con «Liberar y reparar»; revisión cada
+  15 min que repara el permiso sola si el atraso entra en el disco, comprime el
+  archivo de los contenedores viejos y avisa por correo a los superadmins
+  (archivado trabado / disco bajo de max(2 GB, 5 %) / sin inodos); PITR
+  restore/poda con `.gz`; y `pitr-drill.sh` ahora prueba el compose real (con
+  el viejo falla con el motivo — antes usaba su propio contenedor en 777 y por
+  eso nunca lo vio). De paso: los enlaces de los correos al operador (copia a
+  Drive, dominios) no llevaban el `#` del router. **Lección**: un simulacro que
+  no corre la configuración de producción no prueba nada; y el bug estuvo
+  desde F5 — cada servidor instalado tiene el mismo problema hasta actualizar.
+  Tests: `postgres-wal.spec` 13/13 con Postgres real (API 1790 en verde),
+  drill ✅/❌, E2E 22/22.
 - **2026-10-29 · v0.1.336** — **Lo que la fuente borra sale de la app +
   novedades del sitio** (ADR-S85). Pedido del usuario (aprobado tal como se
   propuso): (1) **quitar de la app** lo que WordPress o WooCommerce ya borró —uno
