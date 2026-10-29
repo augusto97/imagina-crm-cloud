@@ -5,6 +5,10 @@ import {
     mirrorColumnKind,
     mirrorFieldKey,
     mirrorFromPlace,
+    mirrorGoneFieldId,
+    mirrorGoneReason,
+    mirrorRecordGone,
+    mirrorRowFromData,
     mirrorSettingsPath,
     mirrorSourceName,
     mirrorValueError,
@@ -27,6 +31,7 @@ const marker = (over: Partial<SiteListMarker> = {}): SiteListMarker => ({
     can_edit: ['title', 'status', 'acf:precio', 'tax:zona', 'slug'],
     editable: ['title', 'acf:precio', 'tax:zona'],
     needs_plugin: [],
+    new_columns: [],
     ...over,
 });
 const row = (status: string) => (key: string) => (key === 'status' ? status : undefined);
@@ -95,6 +100,44 @@ describe('ADR-S83 — listas espejo: tienda y sitio por la misma puerta', () => 
         expect(mirrorColumnKind(m, 3)).toBe('locked');
         expect(mirrorColumnKind(m, 6)).toBe('locked');
         expect(mirrorColumnKind(m, 99)).toBe('own');
+    });
+});
+
+describe('v0.1.336 — lo que la fuente ya borró', () => {
+    it('una fila está borrada si su estado dice «trash», o si su padre lo dice (variación, línea)', () => {
+        const site = readMirrorListMarker({ site_sync: marker() })!;
+        expect(mirrorGoneFieldId(site)).toBe(2);
+        expect(mirrorRecordGone(site, row('trash'))).toBe(true);
+        expect(mirrorRecordGone(site, row('publish'))).toBe(false);
+        expect(mirrorRecordGone(site, row('draft'))).toBe(false);
+        const store = readMirrorListMarker({
+            store_sync: { connection_id: 3, role: 'products', store_name: 'Demo', write_back: true, fields: { nombre: 10, estado: 11 } },
+        })!;
+        expect(mirrorGoneFieldId(store)).toBe(11);
+        const fromData = mirrorRowFromData(store, { f11: 'publish' });
+        expect(fromData('estado')).toBe('publish');
+        expect(mirrorRecordGone(store, fromData)).toBe(false);
+        expect(mirrorRecordGone(store, fromData, mirrorRowFromData(store, { f11: 'trash' }))).toBe(true);
+        expect(mirrorRecordGone(store, mirrorRowFromData(store, null))).toBe(false);
+    });
+
+    it('sin columna de estado (clientes de la tienda) nada cuenta como borrado', () => {
+        const customers = readMirrorListMarker({
+            store_sync: { connection_id: 3, role: 'customers', store_name: 'Demo', write_back: true, fields: { nombre: 10 } },
+        })!;
+        expect(mirrorGoneFieldId(customers)).toBeNull();
+        expect(mirrorRecordGone(customers, () => 'trash')).toBe(false);
+    });
+
+    it('el motivo dice dónde se borra y que después se puede quitar', () => {
+        const site = readMirrorListMarker({ site_sync: marker() })!;
+        expect(mirrorGoneReason(site)).toMatch(/^Sigue en WordPress: se borra allá/);
+        expect(mirrorGoneReason(site)).toContain('quitarlo de aquí');
+    });
+
+    it('la marca del sitio trae las columnas nuevas que avisa (vacío si no hay)', () => {
+        expect(readSiteListMarker({ site_sync: marker() })!.new_columns).toEqual([]);
+        expect(readSiteListMarker({ site_sync: marker({ new_columns: ['Metraje'] }) })!.new_columns).toEqual(['Metraje']);
     });
 });
 

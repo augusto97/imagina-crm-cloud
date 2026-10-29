@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, P
 import {
     addSiteObjectsSchema,
     applySiteKitSchema,
+    dismissSiteNoveltiesSchema,
     runSiteSyncSchema,
     setupSiteSyncSchema,
     siteColumnChangeSchema,
@@ -9,6 +10,7 @@ import {
     updateSiteSyncSchema,
     type AddSiteObjectsInput,
     type ApplySiteKitInput,
+    type DismissSiteNoveltiesInput,
     type Role,
     type RunSiteSyncInput,
     type SetupSiteSyncInput,
@@ -127,6 +129,24 @@ export class SiteSyncController {
         @Body(new ZodValidationPipe(applySiteKitSchema)) input: ApplySiteKitInput,
     ): Promise<{ data: SiteKitResult }> {
         return { data: await this.kits.apply(tenant(req), user(req), role(req), id, input) };
+    }
+
+    /** v0.1.336 — «Buscar novedades»: mirar ahora si el sitio tiene tipos de contenido o columnas nuevas. */
+    @Post('novelties/check')
+    @HttpCode(200)
+    async checkNovelties(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: SiteSyncStatus }> {
+        return { data: await this.sync.checkNovelties(tenant(req), user(req), role(req), id) };
+    }
+
+    /** v0.1.336 — «Ya lo vi»: esas novedades (o todas) dejan de mostrarse. */
+    @Post('novelties/dismiss')
+    @HttpCode(200)
+    async dismissNovelties(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(dismissSiteNoveltiesSchema)) input: DismissSiteNoveltiesInput,
+    ): Promise<{ data: SiteSyncStatus }> {
+        return { data: await this.sync.dismissNovelties(tenant(req), user(req), role(req), id, input) };
     }
 
     /** Dejar de sincronizar: las listas QUEDAN y pasan a ser listas comunes. */

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { idSchema } from './common';
-import { STORE_SYNC_INTERVALS, storeSyncIntervalSchema } from './store-sync';
+import { STORE_SYNC_INTERVALS, sourceDeleteModeSchema, sourceGoneCountSchema, storeSyncIntervalSchema } from './store-sync';
 
 /**
  * Sincronizar un sitio WordPress (v0.1.333, ADR-S83).
@@ -167,6 +167,8 @@ export const setupSiteSyncSchema = z.object({
     interval_minutes: storeSyncIntervalSchema.default(60),
     /** En tiempo real (necesita el complemento): el sitio avisa cada cambio y se revisa todo cada hora. */
     mode: z.enum(SITE_SYNC_MODES).default('interval'),
+    /** v0.1.336 — lo que se borre en WordPress: conservarlo marcado o quitarlo de la app. */
+    on_source_delete: sourceDeleteModeSchema.default('keep'),
 });
 export type SetupSiteSyncInput = z.infer<typeof setupSiteSyncSchema>;
 
@@ -178,6 +180,8 @@ export type AddSiteObjectsInput = z.infer<typeof addSiteObjectsSchema>;
 
 export const updateSiteSyncSchema = z.object({
     interval_minutes: storeSyncIntervalSchema.optional(),
+    /** v0.1.336 — lo que se borra en WordPress: conservarlo marcado o quitarlo de la app. */
+    on_source_delete: sourceDeleteModeSchema.optional(),
     mode: z.enum(SITE_SYNC_MODES).optional(),
     enabled: z.boolean().optional(),
     write_back: z.boolean().optional(),
@@ -241,6 +245,46 @@ export const startWordpressConnectResultSchema = z.object({
 });
 export type StartWordpressConnectResult = z.infer<typeof startWordpressConnectResultSchema>;
 
+// --- Novedades del sitio (v0.1.336) ----------------------------------------
+
+/**
+ * Lo que apareció en el sitio desde la última vez que se miró: tipos de
+ * contenido nuevos (un CPT recién creado) y columnas nuevas de los tipos que
+ * ya se sincronizan (un campo de ACF, un campo personalizado). Se compara con
+ * lo que el sitio ofrecía la última vez (`seen`), no con lo que se trae: una
+ * columna que la persona decidió no traer no vuelve a aparecer como novedad.
+ * Las internas de los plugins (empiezan con `_`) no cuentan.
+ */
+export const siteNoveltySchema = z.object({
+    resource: z.string(),
+    kind: z.enum(SITE_OBJECT_KINDS),
+    object: z.string(),
+    /** El tipo de contenido («Propiedades»). */
+    object_label: z.string(),
+    /** null = el tipo de contenido entero es nuevo; si no, la columna nueva. */
+    column: z
+        .object({ key: z.string(), label: z.string(), source: z.enum(SITE_COLUMN_SOURCES), provider: z.string().nullable() })
+        .nullable(),
+});
+export type SiteNovelty = z.infer<typeof siteNoveltySchema>;
+
+export const siteNoveltiesSchema = z.object({
+    checked_at: z.string().nullable(),
+    items: z.array(siteNoveltySchema),
+    /** Si la última revisión no pudo leer el sitio. */
+    error: z.string().nullable(),
+});
+export type SiteNovelties = z.infer<typeof siteNoveltiesSchema>;
+
+/** «Ya lo vi»: dejar de mostrar estas novedades (o todas, sin lista). */
+export const dismissSiteNoveltiesSchema = z.object({
+    items: z
+        .array(z.object({ resource: z.string().min(1).max(64), key: siteColumnKeySchema.nullable() }))
+        .max(500)
+        .optional(),
+});
+export type DismissSiteNoveltiesInput = z.infer<typeof dismissSiteNoveltiesSchema>;
+
 // --- Estado de una sincronización ----------------------------------------
 
 const listRefSchema = z.object({ id: idSchema, slug: z.string(), name: z.string() }).nullable();
@@ -287,6 +331,12 @@ export const siteSyncStatusSchema = z.object({
     /** Lo que corre de verdad: en tiempo real sin el complemento vuelve a intervalos. */
     effective_mode: z.enum(SITE_SYNC_MODES),
     write_back: z.boolean(),
+    /** v0.1.336 — lo que se borra en WordPress: conservarlo marcado o quitarlo de la app. */
+    on_source_delete: sourceDeleteModeSchema.default('keep'),
+    /** v0.1.336 — por lista: cuántas filas ya se borraron en WordPress. */
+    gone: z.array(sourceGoneCountSchema).default([]),
+    /** v0.1.336 — tipos de contenido y columnas que aparecieron en el sitio desde la última vez. */
+    novelties: siteNoveltiesSchema.nullable().default(null),
     folder_id: idSchema.nullable(),
     objects: z.array(siteSyncObjectStateSchema),
     /** Lo último que se supo del complemento (en cada vuelta). */
@@ -356,6 +406,8 @@ export const siteListMarkerSchema = z.object({
      * lo último que llegó, bloqueadas con el motivo (no se pueden mandar).
      */
     needs_plugin: z.array(z.string()).default([]),
+    /** v0.1.336 — columnas nuevas en el sitio para esta lista (sus nombres): el aviso las ofrece. */
+    new_columns: z.array(z.string()).default([]),
 });
 export type SiteListMarker = z.infer<typeof siteListMarkerSchema>;
 

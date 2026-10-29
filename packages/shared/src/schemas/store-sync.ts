@@ -50,6 +50,23 @@ export const storeSyncIntervalSchema = z
     .int()
     .refine((n) => (STORE_SYNC_INTERVALS as readonly number[]).includes(n), 'Intervalo no disponible');
 
+/**
+ * v0.1.336 — Qué pasa en la app cuando algo se borra en la fuente (la tienda o
+ * el sitio): `keep` = queda marcado «Papelera» (lo de siempre); `remove` = se
+ * quita solo de la app (va a la papelera de la app 30 días y deja de contar
+ * para el plan). Si vuelve a aparecer en la fuente, vuelve.
+ */
+export const SOURCE_DELETE_MODES = ['keep', 'remove'] as const;
+export const sourceDeleteModeSchema = z.enum(SOURCE_DELETE_MODES);
+export type SourceDeleteMode = z.infer<typeof sourceDeleteModeSchema>;
+
+/** Cuántas filas de una lista espejo ya se borraron en la fuente (para quitarlas). */
+export const sourceGoneCountSchema = z.object({
+    list: z.object({ id: idSchema, slug: z.string(), name: z.string() }),
+    count: z.number().int().nonnegative(),
+});
+export type SourceGoneCount = z.infer<typeof sourceGoneCountSchema>;
+
 export const setupStoreSyncSchema = z.object({
     resources: z
         .object({
@@ -65,11 +82,15 @@ export const setupStoreSyncSchema = z.object({
         .nullish(),
     mode: storeSyncModeSchema.default('interval'),
     interval_minutes: storeSyncIntervalSchema.default(15),
+    /** v0.1.336 — lo que se borre en la tienda: conservarlo marcado o quitarlo de la app. */
+    on_source_delete: sourceDeleteModeSchema.default('keep'),
 });
 export type SetupStoreSyncInput = z.infer<typeof setupStoreSyncSchema>;
 
 export const updateStoreSyncSchema = z.object({
     mode: storeSyncModeSchema.optional(),
+    /** v0.1.336 — lo que se borra en la tienda: conservarlo marcado o quitarlo de la app. */
+    on_source_delete: sourceDeleteModeSchema.optional(),
     interval_minutes: storeSyncIntervalSchema.optional(),
     enabled: z.boolean().optional(),
     /** Fase 3: los cambios hechos en la app viajan a la tienda. */
@@ -260,6 +281,10 @@ export const storeSyncStatusSchema = z.object({
     mode: storeSyncModeSchema,
     interval_minutes: z.number().int(),
     write_back: z.boolean(),
+    /** v0.1.336 — lo que se borra en la tienda: conservarlo marcado o quitarlo de la app. */
+    on_source_delete: sourceDeleteModeSchema.default('keep'),
+    /** v0.1.336 — por lista: cuántas filas ya se borraron en la tienda. */
+    gone: z.array(sourceGoneCountSchema).default([]),
     /** v0.1.214 — columnas habilitadas para editar desde la app, por lista. */
     editable: z
         .object({ customers: z.array(z.string()), products: z.array(z.string()), orders: z.array(z.string()) })

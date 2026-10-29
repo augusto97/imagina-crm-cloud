@@ -16,7 +16,9 @@ import { AuditService } from '../src/audit/audit.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
-import { memberships, tenants, users } from '../src/db/schema';
+import { lists as listsTable, memberships, records as recordsTable, tenants, users } from '../src/db/schema';
+import { withTenant } from '../src/db/tenant-tx';
+import { eq } from 'drizzle-orm';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
@@ -339,5 +341,34 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
             },
         });
         expect(() => translateBulkEditActions([{ type: 'bulk_edit', config: { operations: [{ field: 'precio', op: 'clear' }] } }], fs, list.name)).toThrow(/TODA la lista/);
+    });
+
+    it('v0.1.336 — en una lista de la tienda sólo propone quitar lo que la tienda ya borró', async () => {
+        const list = await lists.create(tenantId, { name: 'Productos IA' });
+        const nombre = await fields.create(tenantId, String(list.id), { label: 'Nombre', slug: 'nombre', type: 'text' });
+        const estado = await fields.create(tenantId, String(list.id), { label: 'Estado', slug: 'estado', type: 'text' });
+        const mk = async (n: string, e: string) =>
+            (await recordsSvc.create(tenantId, { userId: adminId, role: 'admin' }, String(list.id), { data: { [`f${nombre.id}`]: n, [`f${estado.id}`]: e } })).id;
+        const vivo = await mk('Taza', 'publish');
+        const borrado = await mk('Termo', 'trash');
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .update(listsTable)
+                .set({ settings: { store_sync: { connection_id: 1, role: 'products', store_name: 'Demo', write_back: false, fields: { nombre: nombre.id, estado: estado.id } } } })
+                .where(eq(listsTable.id, list.id)),
+        );
+        // Sólo lo vivo: no hay nada que quitar.
+        const none = await exec(admin, 'propose_delete_records', { list: list.slug, ids: [vivo] });
+        expect(none.isError).toBe(true);
+        expect(JSON.stringify(none.content)).toMatch(/ya se borraron allá/);
+        // Los dos: la propuesta lleva sólo el borrado y lo dice.
+        const r = await exec(admin, 'propose_delete_records', { list: list.slug, ids: [vivo, borrado] });
+        expect(r.proposal).toMatchObject({ kind: 'delete_records', destructive: true });
+        expect(r.proposal!.title).toMatch(/Quitar de la app 1 registro/);
+        expect(r.proposal!.summary).toMatch(/1 siguen vivos en WooCommerce/);
+        await proposals.apply(admin, r.proposal!.id);
+        const left = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: recordsTable.id, deletedAt: recordsTable.deletedAt }).from(recordsTable).where(eq(recordsTable.listId, list.id)));
+        expect(left.find((x) => x.id === borrado)!.deletedAt).not.toBeNull();
+        expect(left.find((x) => x.id === vivo)!.deletedAt).toBeNull();
     });
 });

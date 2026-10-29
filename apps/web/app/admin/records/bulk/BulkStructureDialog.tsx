@@ -33,6 +33,17 @@ interface BulkStructureDialogProps {
     canActMatching: boolean;
     /** Arranca sobre «todo lo que coincide» (abierto desde Personalizar vista). */
     preferMatching?: boolean;
+    /**
+     * v0.1.336 — Quitar de una lista de la tienda o del sitio lo que la fuente
+     * ya borró: el alcance es fijo (las filas marcadas «Papelera»).
+     */
+    goneFrom?: { source: string; statusFieldId: number; count: number } | null;
+    /**
+     * v0.1.336 — La lista viene de la tienda o del sitio («WooCommerce» /
+     * «WordPress»): borrar es «quitar de la app» y sólo vale para lo que la
+     * fuente ya borró (lo vivo aparece en «No se pueden», con el motivo).
+     */
+    mirrorSource?: string | null;
     onDone?: () => void;
 }
 
@@ -61,6 +72,8 @@ export function BulkStructureDialog({
     matchingCount,
     canActMatching,
     preferMatching,
+    goneFrom,
+    mirrorSource,
     onDone,
 }: BulkStructureDialogProps): JSX.Element | null {
     const open = action !== null;
@@ -94,14 +107,19 @@ export function BulkStructureDialog({
     const meta = META[action];
     const Icon = meta.icon;
 
-    const target: BulkEditTarget =
-        scope === 'selection'
-            ? { ids: selectedIds }
-            : {
-                  ...(isEmptyTree(filterTree) ? {} : { filter_tree: filterTree as never }),
-                  ...(search.trim() !== '' ? { search: search.trim() } : {}),
-                  include_subtasks: false,
-              };
+    const target: BulkEditTarget = goneFrom
+        ? {
+              // Lo que la fuente marcó como borrado (también una talla o una línea suelta).
+              filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: goneFrom.statusFieldId, op: 'eq', value: 'trash' }] } as never,
+              include_subtasks: true,
+          }
+        : scope === 'selection'
+          ? { ids: selectedIds }
+          : {
+                ...(isEmptyTree(filterTree) ? {} : { filter_tree: filterTree as never }),
+                ...(search.trim() !== '' ? { search: search.trim() } : {}),
+                include_subtasks: false,
+            };
     const body = {
         ...(action === 'move' ? { parent_id: parentId } : {}),
         include_subtasks: action === 'duplicate' ? includeSubtasks : false,
@@ -126,9 +144,12 @@ export function BulkStructureDialog({
         onDone?.();
     };
 
-    const scopeCount = scope === 'selection' ? selectedIds.length : matchingCount;
+    const scopeCount = goneFrom ? goneFrom.count : scope === 'selection' ? selectedIds.length : matchingCount;
+    const removing = action === 'delete' && (!!goneFrom || !!mirrorSource);
     const applyLabel = (n: number): string =>
-        action === 'delete'
+        removing
+            ? sprintf(_n('Quitar %s registro de la app', 'Quitar %s registros de la app', n), formatNumber(n))
+            : action === 'delete'
             ? sprintf(_n('Eliminar %s registro', 'Eliminar %s registros', n), formatNumber(n))
             : action === 'duplicate'
               ? sprintf(_n('Duplicar %s registro', 'Duplicar %s registros', n), formatNumber(n))
@@ -151,7 +172,11 @@ export function BulkStructureDialog({
                         <div className="imcrm-min-w-0">
                             <Dialog.Title className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
                                 <Icon className={cn('imcrm-h-4 imcrm-w-4', action === 'delete' ? 'imcrm-text-destructive' : 'imcrm-text-primary')} aria-hidden />
-                                {meta.title}
+                                {goneFrom
+                                    ? sprintf(__('Quitar lo que ya se borró en %s'), goneFrom.source)
+                                    : removing
+                                      ? __('Quitar de la app')
+                                      : meta.title}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
                                 {scopeCount !== null
@@ -171,7 +196,7 @@ export function BulkStructureDialog({
                     <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-5 imcrm-py-4">
                         {phase === 'edit' && (
                             <div className="imcrm-space-y-4">
-                                {(selectedIds.length > 0 || canActMatching) && (
+                                {!goneFrom && (selectedIds.length > 0 || canActMatching) && (
                                     <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2" role="radiogroup" aria-label={__('A qué registros')}>
                                         {selectedIds.length > 0 && (
                                             <ScopeChip
@@ -216,7 +241,25 @@ export function BulkStructureDialog({
                                     </label>
                                 )}
 
-                                {action === 'delete' && (
+                                {action === 'delete' && goneFrom && (
+                                    <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-structure-gone-help">
+                                        {sprintf(
+                                            __('Se quitan de la app los registros que ya se borraron en %s (con sus subtareas). Van a la papelera de la app 30 días y dejan de contar para tu plan. Si alguno vuelve a aparecer en %s, vuelve solo. Puedes deshacerlo al terminar.'),
+                                            goneFrom.source,
+                                            goneFrom.source,
+                                        )}
+                                    </p>
+                                )}
+                                {action === 'delete' && !goneFrom && mirrorSource && (
+                                    <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-structure-gone-help">
+                                        {sprintf(
+                                            __('Sólo se quitan los que ya se borraron en %s: los que siguen allá aparecen en «No se pueden». Van a la papelera de la app 30 días y dejan de contar para tu plan; si alguno vuelve a aparecer en %s, vuelve solo.'),
+                                            mirrorSource,
+                                            mirrorSource,
+                                        )}
+                                    </p>
+                                )}
+                                {action === 'delete' && !goneFrom && !mirrorSource && (
                                     <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
                                         {__('Las subtareas se van con su registro. Puedes deshacerlo desde el historial de ediciones masivas: los registros vuelven enteros, con sus subtareas y vínculos.')}
                                     </p>
@@ -230,7 +273,7 @@ export function BulkStructureDialog({
                             </div>
                         )}
 
-                        {phase === 'preview' && preview && <PreviewPanel action={action} preview={preview} />}
+                        {phase === 'preview' && preview && <PreviewPanel action={action} preview={preview} removing={removing} />}
 
                         {phase === 'applying' && (
                             <div className="imcrm-py-8 imcrm-text-center" aria-live="polite">
@@ -260,7 +303,7 @@ export function BulkStructureDialog({
                                 </Button>
                                 <Button
                                     onClick={() => void runPreview()}
-                                    disabled={previewM.isPending || (scope === 'selection' && selectedIds.length === 0)}
+                                    disabled={previewM.isPending || (!goneFrom && scope === 'selection' && selectedIds.length === 0)}
                                     data-testid="imcrm-structure-preview-btn"
                                 >
                                     {previewM.isPending ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : null}
@@ -359,12 +402,12 @@ function ParentChooser({ listId, parentId, onChange }: { listId: number; parentI
     );
 }
 
-function PreviewPanel({ action, preview }: { action: BulkStructureAction; preview: BulkStructurePreview }): JSX.Element {
+function PreviewPanel({ action, preview, removing }: { action: BulkStructureAction; preview: BulkStructurePreview; removing: boolean }): JSX.Element {
     return (
         <div className="imcrm-space-y-3" data-testid="imcrm-structure-preview">
             <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-2">
                 <Stat label={__('Abarcados')} value={preview.total} />
-                <Stat label={action === 'delete' ? __('Se eliminan') : action === 'duplicate' ? __('Se duplican') : __('Se mueven')} value={preview.ids.length} tone="primary" testId="imcrm-structure-count" />
+                <Stat label={removing ? __('Se quitan') : action === 'delete' ? __('Se eliminan') : action === 'duplicate' ? __('Se duplican') : __('Se mueven')} value={preview.ids.length} tone="primary" testId="imcrm-structure-count" />
                 <Stat label={__('No se pueden')} value={preview.error_count} tone={preview.error_count > 0 ? 'warn' : undefined} />
             </div>
             {action === 'move' && (

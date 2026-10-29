@@ -205,6 +205,10 @@ function page(list, query) {
         const ids = include.split(',').map(Number);
         items = items.filter((x) => ids.includes(x.id));
     }
+    // Como WooCommerce (v0.1.336): sin `status` (= any) no trae la papelera; `status=trash`, sólo ella.
+    if (items.length > 0 && 'status' in items[0] && !('parent_id' in items[0] && items[0].parent_id)) {
+        items = query.get('status') === 'trash' ? items.filter((x) => x.status === 'trash') : items.filter((x) => x.status !== 'trash');
+    }
     const after = query.get('modified_after');
     if (after) items = items.filter((x) => x.date_modified_gmt > after.replace(/Z$/, '').slice(0, 19));
     const orderby = query.get('orderby');

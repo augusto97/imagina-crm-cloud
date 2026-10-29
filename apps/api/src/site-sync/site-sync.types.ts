@@ -61,6 +61,11 @@ export interface SiteSyncSettings {
      */
     mode: 'interval' | 'realtime';
     write_back: boolean;
+    /**
+     * v0.1.336 — lo que se borra en WordPress: `keep` queda marcado «Papelera»
+     * en la app; `remove` se quita solo de la app (a su papelera, 30 días).
+     */
+    on_source_delete: 'keep' | 'remove';
     folder_id: number | null;
     /** Recurso (`post:propiedad`) → lo elegido. */
     objects: Record<string, SiteObjectSettings>;
@@ -186,6 +191,7 @@ export function readSiteSettings(raw: unknown): SiteSyncSettings {
         interval_minutes: Number.isInteger(interval) && interval > 0 ? interval : 60,
         mode: s.mode === 'realtime' ? 'realtime' : 'interval',
         write_back: s.write_back === true,
+        on_source_delete: s.on_source_delete === 'remove' ? 'remove' : 'keep',
         folder_id: Number(s.folder_id) > 0 ? Number(s.folder_id) : null,
         objects,
         lists: idMap(s.lists),

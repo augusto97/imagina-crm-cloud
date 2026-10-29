@@ -1077,6 +1077,23 @@ export class CloudClient {
     async siteSyncRemove(connectionId: number): Promise<void> {
         await this.request('DELETE', `/connections/${connectionId}/site-sync`, {});
     }
+    /** v0.1.336 — «Buscar novedades»: mirar ahora si el sitio tiene tipos de contenido o columnas nuevas. */
+    async siteSyncCheckNovelties(connectionId: number): Promise<SiteSyncStatus> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync/novelties/check`, { body: {}, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    /** v0.1.336 — «Ya lo vi»: esas novedades (o todas, sin `items`) dejan de mostrarse. */
+    async siteSyncDismissNovelties(connectionId: number, items?: Array<{ resource: string; key: string | null }>): Promise<SiteSyncStatus> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/site-sync/novelties/dismiss`, {
+                body: items ? { items } : {},
+                schema: z.object({ data: siteSyncStatusSchema }),
+            })
+        ).data;
+    }
+    /** v0.1.336 — En una lista de la tienda o del sitio: cuántas filas ya se borraron allá. */
+    async recordsSourceGone(listId: number): Promise<number> {
+        return (await this.request('GET', `/lists/${listId}/records/source-gone`, { schema: z.object({ data: z.object({ count: z.number() }) }) })).data.count;
+    }
     // ── Sincronización desde SQL Server (v0.1.243) ──────────────────────
     // Las respuestas son DTOs del backend tipados en shared; no hace falta
     // re-validar su forma en el cliente.

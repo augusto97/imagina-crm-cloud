@@ -3,8 +3,10 @@ import {
     BULK_STRUCTURE_CHUNK,
     BULK_STRUCTURE_MAX_TARGET,
     mirrorFromPlace,
+    mirrorGoneReason,
     mirrorSourceName,
     readMirrorListMarker,
+    type MirrorListMarker,
     resolveTitleFieldId,
     type BulkEditTarget,
     type BulkRevertPreview,
@@ -23,6 +25,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { BulkHistoryService, type BulkEditHeader, type BulkItemInput, type BulkItemRow } from './bulk-history.service';
 import { RecordsService, type Actor } from './records.service';
 import { can } from '../authz/can';
+import { rowIsGone } from '../sync/source-gone';
 
 const SAMPLE_SIZE = 20;
 const ERROR_LIST = 50;
@@ -82,9 +85,11 @@ export class BulkStructureService {
     ): Promise<BulkStructurePreview> {
         this.assertCan(actor, action, !('ids' in target));
         const loaded = await this.records.bulkRows(tenantId, actor, listIdOrSlug, target, BULK_STRUCTURE_MAX_TARGET, action === 'delete' ? 'delete' : 'edit');
-        assertNotStore(loaded.list);
+        const mirror = assertNotStore(loaded.list, action);
         const title = this.titleFn(loaded.list, loaded.fields);
         const out: BulkStructurePreview = { total: loaded.total, ids: [], unchanged: 0, error_count: 0, errors: [], sample: [], subtasks: 0, parent_title: null };
+        // v0.1.336 — en una lista espejo sólo se quita lo que la fuente ya borró.
+        const alive = mirror ? await this.aliveInSource(tenantId, mirror, loaded.rows) : new Set<number>();
         const kids = await this.childCounts(tenantId, loaded.rows.map((r) => r.id));
 
         if (action === 'move') {
@@ -113,9 +118,34 @@ export class BulkStructureService {
             // copia) CON él: tocarla aparte la borraría dos veces o la
             // duplicaría dos veces.
             if (carried && row.parentId !== null && targeted.has(row.parentId)) continue;
+            if (mirror && alive.has(row.id)) {
+                out.error_count++;
+                if (out.errors.length < ERROR_LIST) out.errors.push({ id: row.id, title: title(row.data, row.id), message: mirrorGoneReason(mirror) });
+                continue;
+            }
             out.ids.push(row.id);
             if (out.sample.length < SAMPLE_SIZE) out.sample.push({ id: row.id, title: title(row.data, row.id) });
             if (carried) out.subtasks += kids.get(row.id) ?? 0;
+        }
+        return out;
+    }
+
+    /** Las filas que siguen vivas en la fuente (las subtareas miran también a su padre). */
+    private async aliveInSource(tenantId: number, mirror: MirrorListMarker, rows: Row[]): Promise<Set<number>> {
+        const parentIds = [...new Set(rows.map((r) => r.parentId).filter((p): p is number => p !== null))];
+        const parents = new Map<number, Record<string, unknown>>();
+        if (parentIds.length > 0) {
+            const got = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx
+                    .select({ id: records.id, data: records.data })
+                    .from(records)
+                    .where(and(eq(records.tenantId, tenantId), inArray(records.id, parentIds), isNull(records.deletedAt))),
+            );
+            for (const p of got) parents.set(p.id, p.data);
+        }
+        const out = new Set<number>();
+        for (const r of rows) {
+            if (!rowIsGone(mirror, r.data, r.parentId !== null ? (parents.get(r.parentId) ?? null) : null)) out.add(r.id);
         }
         return out;
     }
@@ -134,7 +164,8 @@ export class BulkStructureService {
     ): Promise<BulkStructureResult> {
         this.assertCan(actor, action, false);
         const loaded = await this.records.bulkRows(tenantId, actor, listIdOrSlug, { ids }, BULK_STRUCTURE_CHUNK, action === 'delete' ? 'delete' : 'edit');
-        assertNotStore(loaded.list);
+        // En una lista espejo sólo borrar (lo que ya no está en la fuente: lo revisa `remove`).
+        assertNotStore(loaded.list, action);
         const list = loaded.list;
         const title = this.titleFn(list, loaded.fields);
         const result: BulkStructureResult = { succeeded: [], unchanged: [], failed: [], created: 0, edit_id: editId ?? null };
@@ -501,8 +532,14 @@ function copyData(fields: Field[], data: Record<string, unknown>): Record<string
     return out;
 }
 
-function assertNotStore(list: List): void {
+/**
+ * Mover y duplicar no existen en una lista espejo (eso lo decide la fuente).
+ * Borrar sí, desde v0.1.336, pero sólo lo que la fuente ya borró: devuelve la
+ * marca para que la vista previa lo separe (y `remove` lo vuelve a revisar).
+ */
+function assertNotStore(list: List, action: BulkStructureAction): MirrorListMarker | null {
     const m = readMirrorListMarker(list.settings);
+    if (m && action === 'delete') return m;
     if (m) {
         throw new ForbiddenException({
             code: 'store_managed',
@@ -510,6 +547,7 @@ function assertNotStore(list: List): void {
             data: { status: 403 },
         });
     }
+    return null;
 }
 
 function emptyPreview(edit: BulkEditHeader, items: BulkItemRow[]): BulkRevertPreview {

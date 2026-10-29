@@ -153,7 +153,7 @@ export const articles: LearnArticle[] = [
                 t: 'faq',
                 items: [
                     { q: '¿Qué pasa si se llega al límite de registros del plan?', a: 'La sincronización se detiene con el motivo a la vista. Puedes subir de plan o traer pedidos desde una fecha más reciente.' },
-                    { q: 'Borré un producto en WooCommerce, ¿se borra aquí?', a: 'No se borra nada: el registro queda con el estado de la tienda (por ejemplo, en la papelera), así no pierdes su historial.' },
+                    { q: 'Borré un producto en WooCommerce, ¿se borra aquí?', a: 'Queda marcado con el estado «En la papelera», con su historial. Si ya no te sirve, quítalo de la app con **Quitarlos de la app**, o elige en la pantalla de la tienda que lo borrado salga solo.' },
                     { q: '¿Quién puede configurarlo?', a: 'Quien puede administrar listas y editar la conexión de la tienda.' },
                 ],
             },
@@ -292,8 +292,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'warn',
-                title: 'No se crean ni se borran registros',
-                md: 'En las listas de la tienda no se crean, borran ni importan registros: ni a mano, ni con automatizaciones, ni con el asistente. Eso se hace en WooCommerce y llega solo.',
+                title: 'Los registros se crean y se borran en WooCommerce',
+                md: 'En las listas de la tienda no se crean ni se importan registros: ni a mano, ni con automatizaciones, ni con el asistente. Eso se hace en WooCommerce y llega solo. Lo que **ya se borró en la tienda** sí se puede quitar de la app (mira **Lo que se borra en la tienda**); lo que sigue vivo allá, no.',
             },
             {
                 t: 'example',
@@ -531,6 +531,69 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
                     { label: 'Ver el recorrido de automatizaciones', tour: 'automation-basics' },
+                ],
+            },
+        ],
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'tienda-lo-que-se-borra',
+        route: '/lists',
+        related: ['tienda-la-tienda-manda', 'tienda-sincronizar', 'sitio-borrado-y-novedades', 'ajustes-empresa-papelera'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cuando mandas un producto o un pedido a la papelera de WooCommerce (o lo borras del todo), su registro queda en la lista marcado **En la papelera**, con todos sus datos. Si ya no te sirve —una colección que no vuelve, pedidos de prueba—, quítalo de la app: deja de estorbar y deja de contar para tu plan.',
+            },
+            { t: 'anim', key: 'tienda-borrado', caption: 'Lo que se borró en la tienda queda marcado; con un toque sale de la lista y pasa a la papelera de la app.' },
+            { t: 'h', text: 'Quitar lo que ya se borró' },
+            {
+                t: 'steps',
+                items: [
+                    'En **Productos** o **Pedidos**, la barra de arriba cuenta lo que ya se borró en WooCommerce. Toca **Quitarlos de la app**.',
+                    'Para uno solo, abre el menú de su fila (clic derecho) o su ficha y toca **Quitar de la app**.',
+                    'Revisa cuántos se quitan y confirma. Un producto sale con sus variaciones y un pedido con sus líneas.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'En la pantalla de la tienda, «Lo que se borra en WooCommerce»',
+                rows: [
+                    { name: 'Conservarlo marcado', what: 'Queda en la lista con el estado de la papelera y todos sus datos. Lo quitas cuando quieras.' },
+                    { name: 'Quitarlo de la app', what: 'Lo que se borre en la tienda sale solo de la lista, va a la papelera de la app 30 días y deja de contar para tu plan. Lo que ya estaba marcado se quita al elegirlo.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Funciona en los dos modos',
+                md: 'Con **En tiempo real** la tienda avisa al instante; con **Cada cierto tiempo**, la app revisa en cada vuelta lo que está en la papelera de WooCommerce y, una vez por día, lo que se borró del todo.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Si vuelve en la tienda, vuelve aquí',
+                md: 'Si restauras el producto en WooCommerce, en la próxima sincronización vuelve **el mismo registro**, con su historial y sus columnas propias. Mientras tanto, lo puedes recuperar desde **Ajustes → Papelera** durante 30 días. Lo que sigue a la venta en la tienda no se quita: volvería en la próxima vuelta.',
+            },
+            {
+                t: 'example',
+                title: 'Fin de la colección de invierno',
+                md: 'Café Aurora sacó una línea de termos de edición limitada que se agotó y no vuelve. Mandan los termos a la papelera de WooCommerce y, en la app, eligen **Quitarlo de la app**: los productos y sus variaciones salen de la lista solos y dejan libres esos registros del plan para los pedidos nuevos.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Quitar de la app borra algo en WooCommerce?', a: 'No. Sólo saca el registro de la app; la tienda no se toca.' },
+                    { q: '¿Y los clientes?', a: 'Los clientes no se borran desde la sincronización: WooCommerce no los manda a una papelera.' },
+                    { q: '¿Qué pasa con los pedidos de un producto que quité?', a: 'Siguen en Pedidos con sus líneas; la línea conserva el nombre y el precio del producto.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
+                    { label: 'Recuperar algo de la papelera', article: 'ajustes-empresa-papelera' },
                 ],
             },
         ],

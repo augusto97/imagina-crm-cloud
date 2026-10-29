@@ -17,6 +17,7 @@ export const meta: LearnModuleMeta = {
         'Edición en lote con vista previa y deshacer, también en WordPress',
         'Con el complemento: el SEO de cada página, todos los campos con su tipo y los cambios al instante',
         'Auditoría SEO y texto alternativo de las imágenes con IA, listos con un botón',
+        'Quitar de la app lo que ya se borró en el sitio, y enterarte de lo nuevo que aparece',
     ],
     articles: [
         {
@@ -77,6 +78,14 @@ export const meta: LearnModuleMeta = {
             minutes: 5,
             level: 'advanced',
             keywords: 'edicion en lote masiva entradas estado borrador publicado categoria acf deshacer historial wordpress',
+        },
+        {
+            id: 'sitio-borrado-y-novedades',
+            title: 'Lo que se borra en tu sitio y lo nuevo que aparece',
+            summary: 'Quitar de la app lo que ya se borró en WordPress (uno, varios o solo), qué pasa si vuelve, y las novedades del sitio: tipos de contenido y columnas nuevas para traer con un toque.',
+            minutes: 5,
+            level: 'intermediate',
+            keywords: 'borrado papelera quitar de la app registros plan limpiar lista restaurar vuelve novedades tipo de contenido nuevo columna nueva campo acf nuevo traer ya lo vi',
         },
     ],
 };

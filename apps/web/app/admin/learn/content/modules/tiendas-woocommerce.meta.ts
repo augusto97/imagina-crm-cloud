@@ -76,5 +76,13 @@ export const meta: LearnModuleMeta = {
             keywords: 'campos de otros plugins meta traer como columna automatizaciones actualizar producto estado del pedido nota cupon',
             needs: 'manage_automations',
         },
+        {
+            id: 'tienda-lo-que-se-borra',
+            title: 'Lo que se borra en la tienda',
+            summary: 'Quitar de la app los productos y pedidos que ya se borraron en WooCommerce (uno, varios o solos), qué pasa si vuelven y por qué dejan de contar para tu plan.',
+            minutes: 4,
+            level: 'intermediate',
+            keywords: 'borrado papelera quitar de la app productos pedidos coleccion limpiar lista plan restaurar vuelve woocommerce',
+        },
     ],
 };

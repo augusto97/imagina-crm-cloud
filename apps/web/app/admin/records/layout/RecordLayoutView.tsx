@@ -20,7 +20,7 @@ import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine'
 import { RecordSubtasks } from '../RecordSubtasks';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
-import { lockedReasonsFor, useStoreRules } from '../storeRules';
+import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
 import { LayoutHeader } from './LayoutHeader';
@@ -96,7 +96,9 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                     <Toolbar
                         list={list}
                         saving={save.saving}
-                        onDelete={storeRules || guest.isGuest ? null : onDelete}
+                        // v0.1.336 — en una lista de la tienda o del sitio, sólo lo que la fuente ya borró.
+                        onDelete={(storeRules && !recordGoneInSource(storeRules, record)) || guest.isGuest ? null : onDelete}
+                        deleteLabel={storeRules ? __('Quitar de la app') : __('Eliminar')}
                         deleting={deleting}
                         canDesign={canDesign}
                         origin={origin}
@@ -300,6 +302,7 @@ function Toolbar({
     list,
     saving,
     onDelete,
+    deleteLabel,
     deleting,
     canDesign,
     origin,
@@ -308,6 +311,7 @@ function Toolbar({
     list: ListSummary;
     saving: boolean;
     onDelete: (() => void) | null;
+    deleteLabel?: string;
     deleting: boolean;
     canDesign: boolean;
     origin: LayoutOrigin;
@@ -353,7 +357,7 @@ function Toolbar({
                         disabled={deleting}
                     >
                         <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
+                        <span className="imcrm-hidden sm:imcrm-inline">{deleteLabel ?? __('Eliminar')}</span>
                     </Button>
                 )}
             </div>

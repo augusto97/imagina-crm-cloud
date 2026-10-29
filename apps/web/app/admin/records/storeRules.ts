@@ -3,6 +3,7 @@ import {
     mirrorCellAccess,
     mirrorColumnKind,
     mirrorFieldMap,
+    mirrorRecordGone,
     mirrorSourceName,
     readMirrorListMarker,
     type MirrorListMarker,
@@ -94,4 +95,22 @@ export function lockedReasonsFor(
         if (access?.access === 'locked') out[f.slug] = access.reason;
     }
     return out;
+}
+
+/**
+ * v0.1.336 — ¿La fuente (WordPress o la tienda) ya borró este registro? Sólo
+ * así se puede QUITAR de la app (si sigue vivo allá, volvería solo). La misma
+ * regla que aplica el servidor (`mirrorRecordGone`); aquí se mira la propia
+ * fila (una línea de un pedido borrado se va cuando se quita el pedido).
+ */
+export function recordGoneInSource(rules: StoreRules | null, record: Pick<RecordEntity, 'fields'> | null | undefined): boolean {
+    if (!rules || !record) return false;
+    const bySlug = new Map(rules.fields.map((f) => [f.id, f.slug]));
+    const map = mirrorFieldMap(rules.marker);
+    const row = (key: string): unknown => {
+        const id = map[key];
+        const slug = id ? bySlug.get(id) : undefined;
+        return slug ? record.fields[slug] : undefined;
+    };
+    return mirrorRecordGone(rules.marker, row);
 }

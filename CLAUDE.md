@@ -10470,6 +10470,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el release de v0.1.334 salió sin `.sig`). Sin probar en real: JetEngine
         y la red multisitio (sólo revisión de código).
 
+  - [x] **Lo que la fuente borra sale de la app + novedades del sitio
+        (v0.1.336, ADR-S85, pregunta del usuario: "si en el sitio de un
+        cliente crean un campo nuevo o un CPT, ¿cómo lo agrego? Y lo que ya
+        eliminé del sitio o de la tienda no le veo necesidad de seguirlo
+        guardando con la etiqueta papelera")**: (a) **quitar de la app** lo que
+        WordPress o WooCommerce ya borró —uno (menú de la fila o ficha:
+        «Quitar de la app»), los de una selección o todos con la barra
+        **«N registros ya se borraron en … · Quitarlos de la app»** de la
+        lista—: va a la papelera de la app 30 días, se puede restaurar y deja
+        de contar para el plan. Lo vivo en la fuente no se quita («Sigue en
+        WordPress: se borra allá»: volvería en la próxima vuelta). La regla es
+        `mirrorRecordGone` (shared; una variación o línea cuenta con su padre)
+        y la aplican `RecordsService.remove`, el borrado en lote (lo vivo en
+        «No se pueden»), la papelera (que ahora lista y restaura sólo eso de
+        las listas espejo) y el asistente/MCP (`propose_delete_records` filtra
+        a lo ya borrado). (b) **«Quitarlo de la app» como modo**
+        (`on_source_delete` keep|remove, en el alta y en la página del sitio o
+        la tienda, sección «Lo que se borra en …» con la lista de lo marcado):
+        lo que se borra sale solo, y elegirlo quita lo ya marcado con
+        confirmación. (c) **Sin lápidas**: los dos motores nunca crean algo que
+        ya llega borrado, saltean lo borrado que apunta a un registro quitado y
+        **reviven el MISMO registro** si vuelve vivo (actividad «volvió»);
+        purgado, el vínculo cae en cascada. (d) **La tienda por intervalos ya
+        ve su papelera**: pasada `status=trash` por keyset para productos y
+        pedidos (cursores propios) y, tras el barrido diario, lo que no aparece
+        se da por borrado del todo. (e) **Novedades del sitio**: tarjeta
+        «Novedades en tu sitio» con los tipos de contenido y las columnas que
+        aparecieron desde la última revisión (no lo que se eligió no traer al
+        conectar, ni las internas de plugins), con **Traer / Traerlo / Ya lo
+        vi / Buscar novedades ahora**; se revisa sola una vez por día y la
+        lista afectada lo avisa en su barra (`new_columns` en la marca).
+        Puro en `site-novelties.ts`. Ayuda: dos guías, artículos nuevos en
+        Aprende (sitio y tienda) con tres ilustraciones, y novedad. Tests:
+        API 1777 (nuevos: quitar/volver/modo en el sitio y la tienda,
+        papelera, pasada de papelera, variaciones que no vuelven, borrado del
+        todo, novedades puras, asistente), front 692, shared 587 — y E2E
+        navegador **49/49 contra un WordPress 6.8 real** y la tienda falsa
+        (borrar en WordPress → barra → el menú de una fila viva no ofrece
+        quitar → quitar desde la barra → papelera de la app → restaurar →
+        quitar desde la fila → restaurar en WordPress vuelve el mismo
+        registro → modo «quitarlo» con confirmación → CPT y campo nuevos
+        avisados, traídos y llenos → producto en la papelera de la tienda
+        detectado por intervalos → celular 390 px en oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

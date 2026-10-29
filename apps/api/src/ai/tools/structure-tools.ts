@@ -1273,7 +1273,7 @@ export class StructureTools implements AiProposalApplier {
                     return {
                         source: mirrorSourceName(m),
                         place: mirrorPlaceName(m),
-                        rules: `Los registros se crean y se borran en ${mirrorSourceName(m)} (aquí no se puede). Sólo cambian las columnas de «editable_fields» (y viajan a ${mirrorSourceName(m)}); las de «locked_fields» son de sólo lectura; las de «own_fields» son propias de la empresa y libres.`,
+                        rules: `Los registros se crean y se borran en ${mirrorSourceName(m)} (aquí no se puede); lo que ya se borró allá (estado «trash») sí se puede quitar de la app con propose_delete_records. Sólo cambian las columnas de «editable_fields» (y viajan a ${mirrorSourceName(m)}); las de «locked_fields» son de sólo lectura; las de «own_fields» son propias de la empresa y libres.`,
                         editable_fields: kinds.filter((k) => k.kind === 'sync').map((k) => k.slug),
                         locked_fields: kinds.filter((k) => k.kind === 'locked').map((k) => k.slug),
                         own_fields: kinds.filter((k) => k.kind === 'own').map((k) => k.slug),

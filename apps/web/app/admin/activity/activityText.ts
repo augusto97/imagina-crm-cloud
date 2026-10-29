@@ -41,6 +41,8 @@ export function changesOf(entry: ActivityEntity, fields: FieldEntity[]): FieldCh
     const out: FieldChange[] = [];
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
         if (value === null || typeof value !== 'object') continue;
+        // v0.1.336 — el motivo de un registro que la sincronización quitó o trajo de vuelta (no es un campo).
+        if (key === 'source_gone' || key === 'source_back') continue;
         if (key === DESCRIPTION_KEY) {
             // `{from,to}` desde v0.1.286; `{old,new}` en las entradas viejas.
             const d = value as { from?: unknown; to?: unknown; old?: unknown; new?: unknown };
@@ -319,10 +321,17 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         case 'record.created':
             return __('creó este registro');
         case 'record_deleted':
-        case 'record.deleted':
+        case 'record.deleted': {
+            // v0.1.336 — la sincronización lo quitó de la app porque la fuente ya lo había borrado.
+            const gone = (entry.changes as Record<string, { from?: unknown } | undefined>).source_gone;
+            if (gone && typeof gone.from === 'string') return sprintf(__('lo quitó de la app: ya no estaba en %s'), gone.from);
             return __('eliminó este registro');
-        case 'record_restored':
+        }
+        case 'record_restored': {
+            const back = (entry.changes as Record<string, { to?: unknown } | undefined>).source_back;
+            if (back && typeof back.to === 'string') return sprintf(__('lo trajo de vuelta: volvió a aparecer en %s'), back.to);
             return __('restauró este registro desde la papelera');
+        }
         case 'comment.created':
             return __('comentó');
         case 'comment.updated':

@@ -3,7 +3,7 @@ import type { StoreListMarker } from '@imagina-base/shared';
 
 import type { FieldEntity } from '@/types/field';
 
-import { lockedReasonsFor, storeColumnKind, type StoreRules } from './storeRules';
+import { lockedReasonsFor, recordGoneInSource, storeColumnKind, type StoreRules } from './storeRules';
 
 const field = (id: number, slug: string): FieldEntity => ({ id, slug, label: slug, type: 'text' }) as unknown as FieldEntity;
 const fields = [field(1, 'nombre'), field(2, 'precio_normal'), field(3, 'tipo'), field(4, 'controla_stock'), field(9, 'nota')];
@@ -58,6 +58,7 @@ describe('reglas de una lista de tienda en la UI', () => {
                     can_edit: ['title', 'acf:precio', 'status'],
                     editable: ['title'],
                     needs_plugin: [],
+                    new_columns: [],
                 },
             },
             fields,
@@ -71,5 +72,20 @@ describe('reglas de una lista de tienda en la UI', () => {
         expect(ok.precio_normal).toMatch(/habilítala/);
         const trash = lockedReasonsFor(site, fields, { tipo: 'trash' });
         expect(trash.nombre).toMatch(/papelera/);
+    });
+
+    it('v0.1.336 — sabe si un registro ya se borró en la fuente (sólo esos se pueden quitar)', () => {
+        const withEstado: StoreRules = {
+            marker: { source: 'store', marker: { ...marker(true), fields: { ...marker(true).fields, estado: 9 } } },
+            fields,
+        };
+        const rec = (nota: unknown) => ({ fields: { nota } }) as never;
+        expect(recordGoneInSource(withEstado, rec('trash'))).toBe(true);
+        expect(recordGoneInSource(withEstado, rec('publish'))).toBe(false);
+        expect(recordGoneInSource(withEstado, null)).toBe(false);
+        // Una lista común nunca tiene nada «borrado en la fuente».
+        expect(recordGoneInSource(null, rec('trash'))).toBe(false);
+        // Sin columna de estado (clientes de la tienda), tampoco.
+        expect(recordGoneInSource(rules(true), rec('trash'))).toBe(false);
     });
 });

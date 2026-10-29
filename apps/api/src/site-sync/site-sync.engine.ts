@@ -15,6 +15,7 @@ import { IncidentHub } from '../incidents/incident-hub';
 import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { isGoneValue, removeGoneInTx, reviveInTx } from '../sync/source-gone';
 import { readSiteSettings, readSiteState, type SiteKeysetCursor, type SiteObjectSettings, type SitePluginState, type SiteSyncSettings, type SiteSyncState } from './site-sync.types';
 import { ibcInfo, ibcRead, ibcWrite, type IbcInfo } from './wordpress/ibc';
 import { WP_PAGE_SIZE, WpApiError, wpGet, wpGetPage, wpSend } from './wordpress/wp-fetch';
@@ -585,8 +586,9 @@ export class SiteSyncEngine {
         const fieldMap = ctx.settings.fields[resource] ?? {};
 
         // Límite de registros del plan (SEC-09): se cuenta lo NUEVO antes de escribir.
+        // Lo que ya está borrado en el sitio nunca se crea (v0.1.336).
         const known = await this.tenantDb.withTenant(ctx.tenantId, (tx) => this.existingLinks(tx, ctx, resource, items.map((i) => i.externalId)));
-        const newCount = opts.updateOnly ? 0 : items.filter((i) => !known.has(i.externalId)).length;
+        const newCount = opts.updateOnly ? 0 : items.filter((i) => !known.has(i.externalId) && !isGoneValue(i.values.status)).length;
         if (newCount > 0) {
             try {
                 await this.billing.assertCanCreateRecords(ctx.tenantId, newCount);
@@ -601,27 +603,42 @@ export class SiteSyncEngine {
             await tx.execute(sql`SELECT pg_advisory_xact_lock(${ctx.syncId})`);
             const links = await this.existingLinks(tx, ctx, resource, items.map((i) => i.externalId));
             const recordIds = [...new Set([...links.values()])];
+            // v0.1.336 — también los que se quitaron de la app (están en su papelera):
+            // si el sitio los vuelve a tener vivos, vuelven; si siguen borrados, se dejan.
             const current = recordIds.length
                 ? await tx
-                      .select({ id: records.id, data: records.data })
+                      .select({ id: records.id, data: records.data, deletedAt: records.deletedAt, listId: records.listId })
                       .from(records)
-                      .where(and(eq(records.tenantId, ctx.tenantId), inArray(records.id, recordIds), isNull(records.deletedAt)))
+                      .where(and(eq(records.tenantId, ctx.tenantId), inArray(records.id, recordIds)))
                 : [];
-            const byId = new Map(current.map((r) => [r.id, r.data]));
+            const byId = new Map(current.filter((r) => r.deletedAt === null).map((r) => [r.id, r.data]));
+            const removed = new Map(current.filter((r) => r.deletedAt !== null && r.listId === target.listId).map((r) => [r.id, r.data]));
             const toCreate: Array<{ item: MappedSiteItem; data: Record<string, unknown> }> = [];
             const toUpdate: Array<{ id: number; before: Record<string, unknown>; after: Record<string, unknown> }> = [];
+            const toRevive: number[] = [];
+            const toRemove: number[] = [];
             for (const item of items) {
+                const gone = isGoneValue(item.values.status);
                 const data = this.buildData(ctx, target, fieldMap, item);
                 const linked = links.get(item.externalId);
                 const before = linked !== undefined ? byId.get(linked) : undefined;
+                const wasRemoved = linked !== undefined ? removed.get(linked) : undefined;
                 if (linked !== undefined && before) {
                     if (Object.keys(data).some((k) => !sameValue(before[k], data[k]))) {
                         toUpdate.push({ id: linked, before, after: { ...before, ...data } });
                     }
-                } else if (!opts.updateOnly) {
+                    if (gone && ctx.settings.on_source_delete === 'remove') toRemove.push(linked);
+                } else if (linked !== undefined && wasRemoved) {
+                    // Se quitó de la app: si sigue borrado en el sitio, se deja como está.
+                    if (gone) continue;
+                    toRevive.push(linked);
+                    toUpdate.push({ id: linked, before: wasRemoved, after: { ...wasRemoved, ...data } });
+                } else if (!opts.updateOnly && !gone) {
+                    // Lo que ya está borrado en el sitio nunca se trae.
                     toCreate.push({ item, data });
                 }
             }
+            await reviveInTx(tx, this.activity, ctx.tenantId, target.listId, toRevive, 'WordPress');
             const created: Array<{ id: number; data: Record<string, unknown>; item: MappedSiteItem }> = [];
             for (let i = 0; i < toCreate.length; i += INSERT_CHUNK) {
                 const chunk = toCreate.slice(i, i + INSERT_CHUNK);
@@ -665,10 +682,12 @@ export class SiteSyncEngine {
                     });
                 }
             }
-            return { created, toUpdate };
+            // «Quitarlo de la app» (v0.1.336): lo que el sitio acaba de borrar se va a la papelera de la app.
+            const removedNow = await this.removeIfAsked(tx, ctx, target.listId, toRemove);
+            return { created, toUpdate, removedNow };
         });
 
-        if (result.created.length > 0 || result.toUpdate.length > 0) ctx.touchedLists.add(target.listId);
+        if (result.created.length > 0 || result.toUpdate.length > 0 || result.removedNow > 0) ctx.touchedLists.add(target.listId);
         if (ctx.dispatch) {
             for (const c of result.created) {
                 this.automations.dispatch({ tenantId: ctx.tenantId, listId: target.listId, recordId: c.id, trigger: 'record_created', after: c.data });
@@ -744,8 +763,19 @@ export class SiteSyncEngine {
     }
 
     /**
+     * v0.1.336 — Si la empresa eligió «quitarlo de la app», lo que el sitio
+     * borró se manda a la papelera de la app (30 días; se puede restaurar y
+     * deja de contar para el plan). Si no, queda marcado «Papelera».
+     */
+    private async removeIfAsked(tx: Tx, ctx: SiteRunCtx, listId: number, ids: number[]): Promise<number> {
+        if (ctx.settings.on_source_delete !== 'remove' || ids.length === 0) return 0;
+        return removeGoneInTx(tx, this.activity, ctx.tenantId, listId, 'WordPress', ids);
+    }
+
+    /**
      * Lo que ya no está en el sitio (se borró del todo): el registro NO se
-     * borra (los datos son de la empresa, ADR-S09) — queda en «Papelera».
+     * borra (los datos son de la empresa, ADR-S09) — queda en «Papelera», o
+     * sale de la app si la empresa lo eligió (v0.1.336).
      */
     private async markMissing(ctx: SiteRunCtx, resource: string, seen: Set<string>): Promise<void> {
         const target = ctx.targets[resource];
@@ -784,6 +814,7 @@ export class SiteSyncEngine {
                     });
                 }
             }
+            await this.removeIfAsked(tx, ctx, target.listId, gone.map((g) => g.id));
             return gone.length;
         });
         if (changed > 0) ctx.touchedLists.add(target.listId);
