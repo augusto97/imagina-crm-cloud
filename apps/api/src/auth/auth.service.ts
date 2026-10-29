@@ -20,6 +20,7 @@ import {
     type MembershipSummary,
     type MfaChallenge,
     type RegisterInput,
+    parseSignupAttribution,
     type SessionUser,
     type TotpSetup,
     type VerifyTwoFactorInput,
@@ -847,9 +848,16 @@ export class AuthService implements OnModuleInit {
             }
 
             const slug = await this.availableTenantSlug(tx, slugifyTenant(input.workspace_name));
+            // v0.1.331 — de dónde vino el alta (la consola lo muestra por empresa
+            // y cuenta las altas por origen). Sólo el registro público lo trae.
+            const attribution = parseSignupAttribution(input.attribution);
             const [tenant] = await tx
                 .insert(tenants)
-                .values({ slug, name: input.workspace_name })
+                .values({
+                    slug,
+                    name: input.workspace_name,
+                    ...(attribution ? { settings: { signup: { ...attribution, at: new Date().toISOString() } } } : {}),
+                })
                 .returning();
             if (!tenant) {
                 throw new Error('Insert de tenant no devolvió fila');

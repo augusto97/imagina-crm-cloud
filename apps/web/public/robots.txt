@@ -1,0 +1,7 @@
+# La app no se indexa: cada página responde con «noindex» (la cabecera
+# X-Robots-Tag del servidor y la etiqueta <meta name="robots"> de la app).
+# Se deja rastrear a propósito: si se bloqueara aquí, los buscadores no
+# podrían leer ese «noindex» y podrían listar las direcciones igual.
+# La promoción del producto vive en su propio sitio.
+User-agent: *
+Allow: /

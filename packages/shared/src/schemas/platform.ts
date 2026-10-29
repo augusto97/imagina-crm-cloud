@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
 import { idSchema } from './common';
+import { storedSignupAttributionSchema } from './signup-attribution';
 
 /**
  * Consola de PLATAFORMA (operador SaaS / superadmin). A diferencia del resto
@@ -36,6 +37,8 @@ export const platformTenantSchema = z.object({
     created_at: z.string(),
     owner: platformOwnerSchema.nullable(),
     usage: usageSchema,
+    /** v0.1.331 — de dónde vino el alta (null = la creó el operador o es anterior). */
+    signup_source: storedSignupAttributionSchema.nullable().default(null),
 });
 export type PlatformTenant = z.infer<typeof platformTenantSchema>;
 
@@ -281,4 +284,9 @@ export interface PlatformStats {
     records_total: number;
     /** Altas de empresas en los últimos 30 días. */
     signups_last_30d: number;
+    /**
+     * v0.1.331 — esas altas por origen (fuente de la campaña, sitio de donde
+     * vino o «Directo»), de mayor a menor. Sólo las del registro público.
+     */
+    signups_by_source: Array<{ source: string; count: number }>;
 }

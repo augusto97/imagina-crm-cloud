@@ -156,6 +156,15 @@ async function bootstrap(): Promise<void> {
     // SIN `includeSubDomains` a propósito: si la app vive en el dominio raíz,
     // eso forzaría HTTPS durante un año en TODOS los subdominios del operador
     // (otras apps suyas que quizás no lo tienen). Eso lo decide el proxy.
+    // v0.1.331 — nada de la app se indexa en buscadores. La promoción vive en el
+    // sitio del producto (Plataforma → Marca → «Sitio del producto»): la app no
+    // compite con él, y lo que publican las empresas (formularios, agendas,
+    // listas y tableros públicos, páginas legales) no aparece en Google sin que
+    // nadie lo decida. Una página que ya fija la suya se respeta.
+    fastify.addHook('onSend', (_req, reply, payload, done) => {
+        if (!reply.hasHeader('x-robots-tag')) void reply.header('X-Robots-Tag', 'noindex, nofollow');
+        done(null, payload);
+    });
     if (env.NODE_ENV === 'production') {
         fastify.addHook('onSend', (req, reply, payload, done) => {
             if (req.protocol === 'https' && !reply.hasHeader('strict-transport-security')) {

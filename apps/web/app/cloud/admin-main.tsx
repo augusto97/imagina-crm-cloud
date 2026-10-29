@@ -17,6 +17,7 @@ import { queryClient } from '@/lib/query-client';
 import { initTheme } from '@/lib/theme';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
 import { captureInstallPrompt } from '@/lib/pwa/install';
+import { captureSignupAttribution } from '@/lib/signupAttribution';
 import { registerServiceWorker, takeTenantParam } from '@/lib/pwa/serviceWorker';
 import { useSession } from '@/cloud/session';
 import { installUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
@@ -27,6 +28,10 @@ import '@/styles/globals.css';
 // atributo antes del primer frame; aquí se re-afirma y se engancha el listener
 // del SO para el modo "seguir al sistema".
 initTheme();
+
+// v0.1.331 — de dónde vino la visita (`utm_*`, `ref`, el sitio anterior):
+// se toma al entrar, antes de que la navegación lo pierda, para el alta.
+captureSignupAttribution();
 
 // Tras una auto-actualización del servidor, una pestaña abierta sigue siendo
 // la app VIEJA y pide sus chunks con hash viejo → 404 ("Failed to fetch

@@ -10046,6 +10046,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sincronización y el diálogo de conexión. 6 tests nuevos y verificado con
         el driver real (puerto mudo, IP que descarta, puerto cerrado).
 
+  - [x] **La app lista para la landing (v0.1.331, ADR-S81, pregunta del
+        usuario: "¿un home en la app o una landing aparte para SEO?")**: se
+        decidió un sitio propio en WordPress en `imagina.cloud/base` (marca
+        paraguas de sus apps; no un home dentro del SPA ni imaginawp.com). La
+        app queda lista para acompañarlo: (a) **no se indexa** —
+        `X-Robots-Tag: noindex, nofollow` en toda respuesta del API (hook
+        `onSend` que respeta una página que fije la suya), `<meta name="robots">`
+        en los HTML del SPA y del portal, y `robots.txt` que DEJA rastrear (si
+        bloqueara, el buscador no leería el noindex y listaría las direcciones
+        igual); lo que publican las empresas tampoco sale en Google; (b)
+        **«Sitio del producto»** en Plataforma → Marca
+        (`platform_brand.marketing_url`, sólo https) → «Conoce …» en el pie del
+        login, nunca en el dominio de una empresa; (c) **`/registro`** (y
+        `?registro`) abre directo el alta y al terminar la barra vuelve a `/`;
+        (d) **de dónde vino cada alta**: `captureSignupAttribution` toma al
+        entrar `utm_*`, `ref` y la página anterior si es de otro sitio, los
+        recuerda 30 días en el dispositivo (una visita directa no pisa una con
+        origen), limpia la barra y los manda con el registro; el servidor los
+        lee campo por campo (`parseSignupAttribution`: lo raro se descarta,
+        nunca falla el alta; de las URLs sólo origen + ruta) y los guarda en
+        `tenants.settings.signup`. La consola los muestra bajo «Alta» de cada
+        empresa y el KPI de Empresas cuenta las altas de 30 días por origen
+        (`signups_by_source`). Sin migración ni novedad en el catálogo (es del
+        operador). Tests: 4 de shared, 4 del front, 2 de API (platform +
+        platform-brand) + E2E navegador 16/16 (cabeceras y robots.txt, http
+        rechazado, persistencia, `/registro` con utm y referrer, barra limpia,
+        alta → «Desde sitio» con detalle y KPI por origen, celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

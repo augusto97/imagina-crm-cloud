@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { signupAttributionLabel, signupSourceKey } from '@imagina-base/shared';
 import {
     Archive,
     ArchiveRestore,
@@ -341,6 +342,16 @@ export function PlatformTenantsCard(): JSX.Element {
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-xs imcrm-text-muted-foreground imcrm-whitespace-nowrap">
                                             {formatDate(parseUtcDate(t.created_at))}
+                                            {/* v0.1.331 — de dónde vino el alta (registro público). */}
+                                            {t.signup_source && (
+                                                <span
+                                                    className="imcrm-mt-0.5 imcrm-block imcrm-max-w-[160px] imcrm-truncate imcrm-text-[11px]"
+                                                    title={signupAttributionLabel(t.signup_source)}
+                                                    data-testid="tenant-signup-source"
+                                                >
+                                                    {__('Desde')} {signupSourceKey(t.signup_source)}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right">
                                             <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-1">

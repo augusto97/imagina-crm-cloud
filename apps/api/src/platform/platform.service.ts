@@ -18,6 +18,9 @@ import {
     type PlatformOwner,
     type PlatformPlan,
     type PlatformStats,
+    parseSignupAttribution,
+    parseStoredSignupAttribution,
+    signupSourceKey,
     type PlatformTenant,
     type PlatformTenantDetail,
     type PlatformUser,
@@ -259,6 +262,7 @@ export class PlatformService {
             created_at: t.createdAt.toISOString(),
             owner,
             usage,
+            signup_source: parseStoredSignupAttribution((t.settings as Record<string, unknown> | null)?.signup),
         };
     }
 
@@ -676,6 +680,21 @@ export class PlatformService {
             if (r.createdAt >= cutoff) signups_last_30d += 1;
         }
 
+        // v0.1.331 — las altas de los últimos 30 días por origen. Sólo se lee
+        // `settings->'signup'` (no los ajustes enteros de cada empresa).
+        const recent = await this.db
+            .select({ signup: sql<unknown>`${tenants.settings} -> 'signup'` })
+            .from(tenants)
+            .where(sql`${tenants.createdAt} >= ${cutoff}`);
+        const bySource = new Map<string, number>();
+        for (const r of recent) {
+            const key = signupSourceKey(parseSignupAttribution(r.signup));
+            bySource.set(key, (bySource.get(key) ?? 0) + 1);
+        }
+        const signups_by_source = [...bySource.entries()]
+            .map(([source, count]) => ({ source, count }))
+            .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
+
         const [u] = await this.db.select({ n: intCount() }).from(users);
         const [rec] = await this.db.select({ n: intCount() }).from(records).where(isNull(records.deletedAt));
 
@@ -687,6 +706,7 @@ export class PlatformService {
             users_total: u?.n ?? 0,
             records_total: rec?.n ?? 0,
             signups_last_30d,
+            signups_by_source,
         };
     }
 

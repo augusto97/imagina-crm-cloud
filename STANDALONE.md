@@ -4838,6 +4838,57 @@ REALES del riel y de la línea en cada tema, recordados en el dispositivo
 uno gris que de golpe se vuelve verde sería otro salto). Sólo aparece si la
 última apertura fue con sesión; antes del login, fondo liso con la línea.
 
+### ADR-S81 — La promoción vive fuera de la app: sitio del producto, la app sin indexar y el origen de cada alta (v0.1.331)
+
+**Contexto.** El usuario quiere promocionar la app con SEO y preguntó si hacerle
+un «home» a la app o una landing en otro sitio (imaginawp.com). La app es un SPA
+que se dibuja con JavaScript (el HTML inicial no trae texto), su raíz responde
+también en los dominios propios de las empresas y en el portal de sus clientes
+(white-label, ADR-S17/S28), y cada cambio suyo es un release. Un sitio que
+posiciona necesita blog, una página por función y por caso de uso, y cambiar
+sin tocar la app.
+
+**Decisión.** (1) La promoción vive en un **sitio propio del producto**, en
+WordPress (lo que el usuario domina, con Rank Math/Yoast), en
+**`imagina.cloud/base`**: imagina.cloud es la marca paraguas de sus apps
+(base.imagina.cloud, was.imagina.cloud), así que la raíz presenta la marca y
+cada producto tiene su carpeta; la autoridad del dominio la comparten todos.
+Se descartó imaginawp.com como casa del producto (el nombre dice «WordPress» y
+el público no es de WordPress; queda para enlazar hacia el sitio) y la raíz de
+imagina.cloud (mover después de la raíz a una carpeta cuesta posicionamiento).
+(2) **La app no se indexa**: `X-Robots-Tag: noindex, nofollow` en TODA respuesta
+del API (un hook `onSend` que respeta una página que fije la suya) y
+`<meta name="robots">` en los HTML del SPA y del portal (la página pública de
+tableros ya lo tenía). `robots.txt` **deja rastrear** a propósito: si bloqueara,
+el buscador no podría leer el `noindex` y listaría las direcciones igual. Así lo
+que publican las empresas (formularios, agendas, listas, tableros, páginas
+legales) no aparece en Google sin que nadie lo decida, y la app no compite con
+el sitio. (3) **Plataforma → Marca → «Sitio del producto»**
+(`platform_brand.marketing_url`, sólo https): el login muestra «Conoce …» con
+el enlace, sólo en el dominio de la plataforma (`useAppIdentity` lo anula en el
+de una empresa). (4) **`/registro`** (y `?registro`) abre directo el alta: es
+a donde apunta el botón del sitio. (5) **De dónde vino cada alta**: el SPA toma
+al ENTRAR los `utm_*`, `ref` y la página anterior si es de otro sitio
+(`captureSignupAttribution`), los recuerda 30 días en el dispositivo (una
+visita directa no pisa una con origen; una con origen nuevo, sí), limpia la
+barra y los manda con el registro (`attribution`, `z.unknown()` en el schema:
+el servidor lo lee con `parseSignupAttribution` campo por campo y un valor raro
+se descarta, nunca hace fallar el alta). Se guarda en
+`tenants.settings.signup` con la fecha; de las URLs sólo origen + ruta (la
+consulta puede traer tokens). La consola lo muestra bajo «Alta» de cada empresa
+(«Desde sitio», con el detalle al pasar el mouse) y el KPI de Empresas cuenta
+las altas de 30 días por origen (`signups_by_source`: fuente, si no `ref`, si
+no el sitio de donde vino, si no «Directo»; se lee sólo `settings->'signup'`).
+Sin migración.
+
+**Consecuencias.** El sitio enlaza el registro como
+`https://base.imagina.cloud/registro?utm_source=sitio&utm_campaign=<página>`.
+Las empresas que crea el operador o que llegan por invitación no tienen origen
+(null). Un servidor con el `.env`/proxy de siempre no necesita cambios: el
+`robots.txt` sale de la raíz de `dist-cloud`, que el proxy ya sirve. Queda
+fuera, a propósito: permitir que una empresa indexe su agenda o su formulario
+público (hoy nada se indexa).
+
 ---
 
-**Versión del documento:** 1.126.0 (diagnóstico de conexiones SQL)
+**Versión del documento:** 1.127.0 (sitio del producto y SEO)

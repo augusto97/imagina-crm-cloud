@@ -25,6 +25,11 @@ export interface AppIdentity {
     markUrl: string | null;
     /** Se entró por el dominio de una empresa. */
     whiteLabel: boolean;
+    /**
+     * v0.1.331 — el sitio del producto (Plataforma → Marca). Nunca en el
+     * dominio de una empresa: ahí la app es de ella.
+     */
+    marketingUrl: string | null;
 }
 
 export function useAppIdentity(opts: { workspaceName?: string | null } = {}): AppIdentity {
@@ -47,6 +52,7 @@ export function useAppIdentity(opts: { workspaceName?: string | null } = {}): Ap
         logoDarkUrl: tenantLogo ?? (whiteLabel ? null : platform.logo_dark_url),
         markUrl: tenantLogo ?? (whiteLabel ? null : (platform.icons?.icon_192 ?? null)),
         whiteLabel,
+        marketingUrl: whiteLabel ? null : platform.marketing_url,
     };
 }
 
