@@ -947,7 +947,8 @@ export class StoreSyncService {
             const [r] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1);
             return r ?? null;
         });
-        if (!row || !row.enabled) return true;
+        // v0.1.333 — la tabla también guarda las sincronizaciones de sitios WordPress.
+        if (!row || !row.enabled || row.provider !== 'woocommerce') return true;
         let creds: IntegrationCreds;
         try {
             creds = await this.credsOf(tenantId, row.connectionId);
@@ -990,7 +991,7 @@ export class StoreSyncService {
         const due = await this.db
             .select({ id: connectionSyncs.id, tenantId: connectionSyncs.tenantId })
             .from(connectionSyncs)
-            .where(and(eq(connectionSyncs.enabled, true), lte(connectionSyncs.nextRunAt, new Date())))
+            .where(and(eq(connectionSyncs.enabled, true), eq(connectionSyncs.provider, 'woocommerce'), lte(connectionSyncs.nextRunAt, new Date())))
             .orderBy(asc(connectionSyncs.nextRunAt))
             .limit(100);
         for (const d of due) {
@@ -1023,7 +1024,7 @@ export class StoreSyncService {
             const [r] = await tx
                 .select()
                 .from(connectionSyncs)
-                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.connectionId, connectionId)))
+                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.connectionId, connectionId), eq(connectionSyncs.provider, 'woocommerce')))
                 .limit(1);
             return r ?? null;
         });

@@ -27,7 +27,7 @@ import {
     readPortalConfig,
     readPortalLayoutV3,
     readPortalPaymentsConfig,
-    readStoreListMarker,
+    readMirrorListMarker,
     sanitizePortalLayout,
     tenantFormatSchema,
     isUserWritableType,
@@ -1614,7 +1614,7 @@ export class PortalService implements OnModuleInit {
         const out: Array<{ listId: number; name: string; label: string; relationFieldId: number; fields: Field[] }> = [];
         for (const entry of cfg) {
             const other = others.find((o) => o.id === entry.list_id);
-            if (!other || readStoreListMarker(other.settings as Record<string, unknown>)) continue;
+            if (!other || readMirrorListMarker(other.settings as Record<string, unknown>)) continue;
             const own = (await this.fields.listByListIdWithinTx(tx, tenantId, other.id)).sort((a, b) => a.position - b.position);
             const rel = own.find(
                 (f) => f.type === 'relation' && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === ctx.list.id,

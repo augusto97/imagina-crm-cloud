@@ -403,7 +403,7 @@ export function resolveListRefs(value: unknown, keyToId: ReadonlyMap<string, num
  *  - `public`: la publicación es un token único por lista; la copia nace sin
  *    publicar (quien la quiera pública la publica a propósito).
  */
-export const BLUEPRINT_EXCLUDED_SETTINGS: readonly string[] = ['public', 'store_sync'];
+export const BLUEPRINT_EXCLUDED_SETTINGS: readonly string[] = ['public', 'store_sync', 'site_sync'];
 
 /** Claves del `trigger_config` que son credenciales y se regeneran. */
 export const BLUEPRINT_EXCLUDED_TRIGGER_KEYS: readonly string[] = [

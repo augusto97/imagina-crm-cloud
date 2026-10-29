@@ -35,7 +35,8 @@ import {
     type SubmitFormInput,
     type SubmitFormResult,
     type UpdateFormInput,
-    readStoreListMarker,
+    readMirrorListMarker,
+    mirrorFromPlace,
     addDaysYmd,
     formatEmailFieldValue,
     formFileAllowed,
@@ -306,10 +307,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
     async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateFormInput): Promise<FormDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        if (readStoreListMarker(list.settings)) {
+        const mirror = readMirrorListMarker(list.settings);
+        if (mirror) {
             throw badRequest(
                 'store_managed',
-                'Esta lista la maneja tu tienda online: los registros nuevos llegan desde ahí, no desde un formulario.',
+                `Esta lista viene ${mirrorFromPlace(mirror)}: los registros nuevos llegan desde ahí, no desde un formulario.`,
             );
         }
         const fields = await this.fields.listByListId(tenantId, list.id);
@@ -338,8 +340,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const patch: Partial<typeof forms.$inferInsert> = { updatedAt: new Date() };
         if (input.name !== undefined) patch.name = input.name;
         if (input.enabled !== undefined) {
-            if (input.enabled && readStoreListMarker(list.settings)) {
-                throw badRequest('store_managed', 'Esta lista la maneja tu tienda online: no puede recibir respuestas de un formulario.');
+            const mirror = input.enabled ? readMirrorListMarker(list.settings) : null;
+            if (mirror) {
+                throw badRequest('store_managed', `Esta lista viene ${mirrorFromPlace(mirror)}: no puede recibir respuestas de un formulario.`);
             }
             patch.enabled = input.enabled;
         }

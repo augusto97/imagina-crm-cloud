@@ -7,9 +7,10 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
-    isStoreField,
+    isMirrorField,
     jsonbKeyForField,
-    readStoreListMarker,
+    mirrorSourceName,
+    readMirrorListMarker,
     validateFieldValue,
     zonedToday,
     FALLBACK_TIME_ZONE,
@@ -110,13 +111,20 @@ export class RecurrencesService {
         // v0.1.213 — en una lista de tienda los registros nacen en WooCommerce
         // (no se clonan) y sus fechas vienen de allá (la próxima
         // sincronización pisaría la fecha rodada): sólo sobre columnas propias.
-        const storeMarker = readStoreListMarker(list.settings);
+        // v0.1.333 — lo mismo en una lista que viene de un sitio WordPress.
+        const storeMarker = readMirrorListMarker(list.settings);
         if (storeMarker) {
+            const source = mirrorSourceName(storeMarker);
             if (input.action_type === 'clone') {
-                throw validationFailed({ action_type: 'En una lista de la tienda no se clonan registros: se crean en WooCommerce.' });
+                throw validationFailed({
+                    action_type:
+                        storeMarker.source === 'store'
+                            ? 'En una lista de la tienda no se clonan registros: se crean en WooCommerce.'
+                            : `En una lista del sitio no se clonan registros: se crean en ${source}.`,
+                });
             }
-            if (isStoreField(storeMarker, dateField.id)) {
-                throw validationFailed({ date_field_id: 'Esa fecha viene de la tienda: usa una columna propia.' });
+            if (isMirrorField(storeMarker, dateField.id)) {
+                throw validationFailed({ date_field_id: `Esa fecha viene de ${source}: usa una columna propia.` });
             }
         }
 
@@ -148,7 +156,7 @@ export class RecurrencesService {
         if (input.update_status_field_id != null && input.update_status_field_id > 0) {
             const us = fields.find((f) => f.id === input.update_status_field_id);
             // Paridad con el plugin: un campo de reset inválido NO falla — se ignora.
-            if (us && (us.type === 'select' || us.type === 'checkbox') && !(storeMarker && isStoreField(storeMarker, us.id))) {
+            if (us && (us.type === 'select' || us.type === 'checkbox') && !(storeMarker && isMirrorField(storeMarker, us.id))) {
                 updateStatusFieldId = us.id;
                 updateStatusValue = String(input.update_status_value ?? '');
             }

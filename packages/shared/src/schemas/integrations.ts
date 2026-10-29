@@ -124,6 +124,8 @@ export const INTEGRATION_KEYS = [
     'google_drive',
     'outlook',
     'woocommerce',
+    // v0.1.333 (ADR-S83) — sitios WordPress: páginas, entradas, tipos propios y taxonomías.
+    'wordpress',
     'sqlserver',
     'mercadopago',
     'wompi',
@@ -143,6 +145,7 @@ export const INTEGRATION_CATEGORY_LABEL = {
     calendario: 'Calendario',
     datos: 'Hojas de cálculo',
     comercio: 'Tiendas online',
+    sitios: 'Sitios web',
     bases_datos: 'Bases de datos',
     pagos: 'Cobros y pagos',
     almacenamiento: 'Almacenamiento',
@@ -1151,6 +1154,53 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 ],
             }),
         ],
+    },
+    {
+        // v0.1.333 (ADR-S83). Se conecta en un clic con la pantalla «Autorizar
+        // aplicación» del propio WordPress (contraseñas de aplicación, WP 5.6+);
+        // los campos de abajo son el respaldo para pegarla a mano.
+        key: 'wordpress',
+        name: 'WordPress',
+        tagline: 'Tu sitio web: páginas, entradas y tus propios tipos de contenido.',
+        description:
+            'Conecta tu sitio para ver y editar desde la app los datos que elijas de tus páginas, entradas y tipos de contenido (por ejemplo, el precio y la ciudad de tus «Propiedades»), sin traer el contenido completo. Lo nuevo se sigue creando en WordPress.',
+        category: 'sitios',
+        color: '#21759B',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'site_url',
+                    label: 'Dirección del sitio',
+                    required: true,
+                    placeholder: 'https://misitio.com',
+                    help: 'La dirección de tu sitio de WordPress. Tiene que tener HTTPS (candado).',
+                }),
+                field({
+                    key: 'user_login',
+                    label: 'Usuario de WordPress',
+                    required: true,
+                    placeholder: 'admin',
+                    help: 'El usuario con el que entras al panel. Tiene que poder editar (Editor o Administrador).',
+                }),
+                field({
+                    key: 'app_password',
+                    label: 'Contraseña de aplicación',
+                    secret: true,
+                    required: true,
+                    placeholder: 'abcd efgh ijkl mnop qrst uvwx',
+                    help: 'NO es la contraseña con la que entras: es una que se crea para la app. Se guarda cifrada.',
+                }),
+                // Los completa la verificación: si el sitio tiene enlaces permanentes.
+                field({ key: 'api_style', label: 'Rutas', hidden: true, default: 'pretty' }),
+            ],
+            how_to: [
+                'Lo más fácil es «Conectar con WordPress»: te lleva a tu sitio, apruebas y vuelves solo.',
+                'Si prefieres hacerlo a mano: en el panel de WordPress ve a Usuarios → Perfil y busca «Contraseñas de aplicación».',
+                'Escribe un nombre (por ejemplo «Imagina») y toca «Añadir nueva contraseña de aplicación». Copia la contraseña que aparece (sólo se muestra esa vez) y pégala aquí junto con tu usuario.',
+            ],
+        },
+        actions: [],
     },
     {
         key: 'mercadopago',

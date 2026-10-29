@@ -100,6 +100,11 @@ export type AuditAction =
     | 'store_sync.map_meta'
     | 'store_sync.bulk_edit'
     | 'store_sync.create_variations'
+    // v0.1.333 (ADR-S83) — sincronización con un sitio WordPress.
+    | 'site_sync.create'
+    | 'site_sync.update'
+    | 'site_sync.delete'
+    | 'site_sync.map_column'
     // v0.1.243 — sincronización desde SQL Server (trae datos de una base externa).
     | 'sql_sync.create'
     | 'sql_sync.update'

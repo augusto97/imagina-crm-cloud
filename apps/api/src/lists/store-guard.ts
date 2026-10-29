@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { readStoreListMarker, type StoreListMarker } from '@imagina-base/shared';
+import { mirrorFromPlace, readMirrorListMarker, type MirrorListMarker } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { lists } from '../db/schema';
@@ -11,20 +11,32 @@ import { lists } from '../db/schema';
  * sincronización lo pisaría o lo dejaría huérfano. Lo usan el alta, el
  * borrado y la importación (el motor de la sincronización escribe por su
  * propio camino y no pasa por aquí).
+ *
+ * v0.1.333 (ADR-S83) — vale igual para una lista que viene de un sitio
+ * WordPress (`site_sync`): las entradas se crean y se borran en WordPress.
+ * Devuelve la marca (de la tienda o del sitio) o null si es una lista común.
  */
 export function assertNotStoreManaged(
     list: { settings: Record<string, unknown> },
     action: 'create' | 'delete' | 'import' | 'move',
-): StoreListMarker | null {
-    const marker = readStoreListMarker(list.settings);
-    if (!marker) return null;
-    const where = marker.store_name ? `la tienda ${marker.store_name}` : 'la tienda';
-    const what = {
-        create: `Esta lista viene de ${where}: los registros nuevos se crean en WooCommerce y llegan solos.`,
-        delete: `Esta lista viene de ${where}: los registros se borran en WooCommerce.`,
-        import: `Esta lista viene de ${where}: no se le pueden importar filas (se crean en WooCommerce).`,
-        move: `Esta lista viene de ${where}: qué es variación de qué lo decide WooCommerce.`,
-    }[action];
+): MirrorListMarker | null {
+    const m = readMirrorListMarker(list.settings);
+    if (!m) return null;
+    const from = mirrorFromPlace(m);
+    const what =
+        m.source === 'store'
+            ? {
+                  create: `Esta lista viene ${from}: los registros nuevos se crean en WooCommerce y llegan solos.`,
+                  delete: `Esta lista viene ${from}: los registros se borran en WooCommerce.`,
+                  import: `Esta lista viene ${from}: no se le pueden importar filas (se crean en WooCommerce).`,
+                  move: `Esta lista viene ${from}: qué es variación de qué lo decide WooCommerce.`,
+              }[action]
+            : {
+                  create: `Esta lista viene ${from}: lo nuevo se crea en WordPress y llega solo.`,
+                  delete: `Esta lista viene ${from}: se borra en WordPress (aquí queda en «Papelera»).`,
+                  import: `Esta lista viene ${from}: no se le pueden importar filas (se crean en WordPress).`,
+                  move: `Esta lista viene ${from}: su orden lo decide WordPress.`,
+              }[action];
     throw new ForbiddenException({ code: 'store_managed', message: what, data: { status: 403 } });
 }
 
@@ -42,6 +54,20 @@ export async function stripStoreMarkers(tx: Tx, tenantId: number, connectionId: 
                 eq(lists.tenantId, tenantId),
                 sql`${lists.settings} ? 'store_sync'`,
                 sql`(${lists.settings}->'store_sync'->>'connection_id')::bigint = ${connectionId}`,
+            ),
+        );
+}
+
+/** v0.1.333 — lo mismo para las listas de un sitio WordPress (`site_sync`). */
+export async function stripSiteMarkers(tx: Tx, tenantId: number, connectionId: number): Promise<void> {
+    await tx
+        .update(lists)
+        .set({ settings: sql`${lists.settings} - 'site_sync'` })
+        .where(
+            and(
+                eq(lists.tenantId, tenantId),
+                sql`${lists.settings} ? 'site_sync'`,
+                sql`(${lists.settings}->'site_sync'->>'connection_id')::bigint = ${connectionId}`,
             ),
         );
 }

@@ -7,7 +7,8 @@ import {
     filterOperatorSchema,
     isUserWritableType,
     jsonbKeyForField,
-    readStoreListMarker,
+    mirrorFromPlace,
+    readMirrorListMarker,
     resolveTitleFieldId,
     type ActivityDto,
     type AiAgentMode,
@@ -511,8 +512,9 @@ export class AgentToolbox {
         if (this.creates + input.records.length > AI_AGENT_MAX_CREATES_PER_RUN) {
             throw new AgentToolError(`Una corrida crea como máximo ${AI_AGENT_MAX_CREATES_PER_RUN} registros.`);
         }
-        if (readStoreListMarker(ctx.list.settings)) {
-            throw new AgentToolError(`«${ctx.list.name}» es una lista de una tienda: sus registros nacen en la tienda, no se crean aquí.`);
+        const mirror = readMirrorListMarker(ctx.list.settings);
+        if (mirror) {
+            throw new AgentToolError(`«${ctx.list.name}» viene ${mirrorFromPlace(mirror)}: sus registros nacen allá, no se crean aquí.`);
         }
         const created: string[] = [];
         for (const values of input.records) {

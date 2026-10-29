@@ -28,7 +28,8 @@ export class MetricsInterceptor implements NestInterceptor {
             this.metrics.record(ms, isError);
             if (ms > MetricsService.SLOW_MS) {
                 const req = context.switchToHttp().getRequest<{ method: string; url: string }>();
-                this.logger.warn(`slow ${req.method} ${req.url} — ${ms.toFixed(1)}ms`);
+                // Sin query string: puede traer credenciales (la vuelta de «Autorizar aplicación» de WordPress, tokens).
+                this.logger.warn(`slow ${req.method} ${(req.url ?? '').split('?')[0]} — ${ms.toFixed(1)}ms`);
             }
         };
         return next.handle().pipe(

@@ -6,7 +6,9 @@ import {
     SQL_SYNC_PREVIEW_ROWS,
     nextSqlSyncRun,
     readSqlSyncSettings,
-    readStoreListMarker,
+    readMirrorListMarker,
+    mirrorFromPlace,
+    mirrorSourceName,
     sqlSourceIsIncremental,
     validTimeZone,
     type CreateSqlSyncInput,
@@ -292,8 +294,9 @@ export class SqlSyncService {
         } catch {
             throw bad('La lista elegida no existe.');
         }
-        if (readStoreListMarker(list.settings)) {
-            throw bad('Esa lista es de una tienda sincronizada: sus datos los trae WooCommerce. Elige otra lista.');
+        const mirror = readMirrorListMarker(list.settings);
+        if (mirror) {
+            throw bad(`Esa lista viene ${mirrorFromPlace(mirror)}: sus datos los trae ${mirrorSourceName(mirror)}. Elige otra lista.`);
         }
         const fields: Field[] = await this.fields.listByListId(tenantId, list.id);
         const byId = new Map(fields.map((f) => [f.id, f]));

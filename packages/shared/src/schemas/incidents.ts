@@ -19,6 +19,8 @@ export const INCIDENT_SOURCES = [
     'connection',
     'sql_sync',
     'store_sync',
+    // v0.1.333 (ADR-S83) — un sitio WordPress sincronizado.
+    'site_sync',
     'ai_field',
     'form',
     'recurrence',
@@ -40,6 +42,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     connection: 'Conector',
     sql_sync: 'Sincronización SQL',
     store_sync: 'Tienda',
+    site_sync: 'Sitio WordPress',
     ai_field: 'Campo con IA',
     form: 'Formulario',
     recurrence: 'Recurrencia',
@@ -105,6 +108,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return i.source_id ? `/settings/sql/${i.source_id}` : '/settings?s=conectores';
         case 'store_sync':
             return i.source_id ? `/settings/stores/${i.source_id}` : '/settings?s=conectores';
+        case 'site_sync':
+            return i.source_id ? `/settings/sites/${i.source_id}` : '/settings?s=conectores';
         case 'ai_field':
             return list ? `${list}/edit?s=campos${i.source_id ? `&field=${i.source_id}` : ''}` : '/lists';
         case 'form':
