@@ -54,8 +54,14 @@ pago con Mercado Pago y Wompi; WhatsApp Business oficial; integraciones con Gmai
 Google Calendar/Sheets/Drive, Outlook, Slack, Telegram, WooCommerce y SQL Server;
 inteligencia artificial (asistente que arma listas y tableros en lenguaje natural,
 agentes que trabajan sobre los registros, campos con IA, conexión con Claude); marca
-blanca con dominio propio; app instalable en el celular con notificaciones. Se cobra
-POR EMPRESA (no por usuario), en pesos colombianos, con PSE, Nequi o tarjeta.
+blanca con dominio propio; app instalable en el celular con notificaciones; importador
+de Excel casi automático (reconoce las columnas y su tipo y arma la lista sola). Se
+cobra POR EMPRESA (no por usuario), en pesos colombianos, con PSE, Nequi o tarjeta.
+
+MODELO COMERCIAL: prueba gratis de 15 días sin tarjeta (hasta 500 registros, 3
+personas, 3 automatizaciones). Planes de pago: Starter $59.000 COP/mes (US$15) y Pro
+$199.000 COP/mes (US$49), más Empresa a medida. El asistente IA y el soporte en español
+están SOLO en los planes de pago: dilo así donde aparezcan, sin esconderlo.
 
 PARA QUIÉN
 Dueños, gerentes y coordinadores de pymes de 3 a 50 personas en Colombia y el resto de
@@ -111,8 +117,8 @@ ESTRUCTURA (en este orden; los textos exactos están en 02-TEXTOS-LANDING.md)
 0. Barra superior fija con logo, menú (Producto, Soluciones, Precios, Aprende), «Entrar»
    y el botón «Prueba gratis».
 1. HERO: antetítulo, H1 «Organiza tu negocio a tu manera, sin programar», subtítulo,
-   botón principal «Crear mi cuenta gratis» + secundario «Ver cómo funciona», y el
-   micro-texto «Sin tarjeta · En español · Precios en pesos». A la derecha (o debajo en
+   botón principal «Probar gratis 15 días» + secundario «Ver cómo funciona», y el
+   micro-texto «15 días gratis · Sin tarjeta · En español · Precios en pesos». A la derecha (o debajo en
    celular) una DEMO INTERACTIVA de la app hecha en HTML/CSS (no una imagen plana) con
    chips «¿Qué quieres organizar?» (Clientes, Ventas, Cobros, Proyectos, Citas, Soporte,
    Inventario): cada chip cambia los datos y la vista. Basa la demo en las capturas
@@ -128,8 +134,8 @@ ESTRUCTURA (en este orden; los textos exactos están en 02-TEXTOS-LANDING.md)
    medida). En escritorio, la captura queda fija y cambia mientras el texto avanza; en
    celular, pestañas deslizables. Cada pestaña: título, 3 viñetas, captura y botón «Usar
    esta plantilla».
-5. Cómo empiezas en 3 pasos (con un cuadro de texto que «se escribe solo» y genera las
-   listas).
+5. Cómo empiezas en 3 pasos. Protagonista: el importador de Excel (un archivo entra en
+   la pantalla y se convierte en la lista, con el tipo de cada columna marcado).
 6. Vistas: selector de 6 vistas sobre los mismos datos.
 7. Automatizaciones (sección oscura): un flujo que se dibuja solo (factura por vencer →
    recordatorio → espera 3 días → si sigue pendiente…), con la captura del lienzo y la
@@ -139,7 +145,8 @@ ESTRUCTURA (en este orden; los textos exactos están en 02-TEXTOS-LANDING.md)
    tarjetas grandes con captura).
 10. Bloque destacado de cobros con el degradado de marca: de la cuenta de cobro al pago
     por WhatsApp, animado.
-11. Inteligencia artificial: asistente, agentes y campos con IA (tres columnas).
+11. Inteligencia artificial: asistente, agentes y campos con IA (tres columnas), con
+    la etiqueta «Incluida en los planes de pago».
 12. Integraciones: marquee de logos + tres viñetas.
 13. En el celular: tres teléfonos en abanico con las capturas de celular.
 14. Tu marca: demo de marca blanca (el portal cambia de color al tocar muestras).
@@ -147,12 +154,13 @@ ESTRUCTURA (en este orden; los textos exactos están en 02-TEXTOS-LANDING.md)
 16. Seguridad: cinco viñetas con íconos.
 17. Comparativa en tabla HTML (no imagen), con texto en lugar de ✓/✗ para la
     competencia.
-18. Precios: 4 planes en tarjetas (Gratis, Starter, Pro, Empresa) con precios en pesos y
-    un interruptor de moneda COP/USD; incluye una mini calculadora «¿Cuántas personas
-    son?» que compara contra herramientas que cobran por usuario.
-19. Aprende y soporte.
-20. Preguntas frecuentes en acordeón (13 preguntas, visibles en el HTML).
-21. Llamado final con el degradado de marca y el botón «Crear mi cuenta gratis».
+18. Precios: una franja «Prueba gratis de 15 días, sin tarjeta» y 3 planes en tarjetas
+    (Starter, Pro, Empresa) con precios en pesos y un interruptor de moneda COP/USD;
+    incluye una mini calculadora «¿Cuántas personas son?» que compara contra
+    herramientas que cobran por usuario.
+19. Aprende y soporte (soporte en español en los planes de pago).
+20. Preguntas frecuentes en acordeón (15 preguntas, visibles en el HTML).
+21. Llamado final con el degradado de marca y el botón «Probar gratis 15 días».
 22. Pie de página.
 
 ANIMACIONES (detalle en 04-MOTION.md)

@@ -25,10 +25,9 @@
    el contenido que citan las IA (ChatGPT, Perplexity, Google AI Mode).
 5. **Una sola versión en español neutro, sin hreflang por ahora** (Google no admite
    `es-419`). Metas de rendimiento con margen: LCP ≤ 2,0 s, INP ≤ 150 ms, CLS ≤ 0,05.
-6. **Revisa Cloudflare ya:** imagina.cloud respondió 403 a un cliente que no es navegador.
-   Confirma que Googlebot, OAI-SearchBot y PerplexityBot no estén bloqueados
-   (Security → Events, y «Inspeccionar URL» en Search Console).
-
+6. **Hoy imagina.cloud está cerrado a los buscadores a propósito** (WordPress recién
+   instalado, sin contenido). Ábrelo el día que publiques la landing, no antes: lista de
+   lanzamiento en la sección 6 («Checklist del día de lanzamiento»).
 ---
 
 ## 2. Etiquetas de la landing principal
@@ -42,9 +41,9 @@ Haz que el H1 diga lo mismo que el título: si el H1 es más claro, Google reesc
 título con él.
 
 ### Meta description (≤ 155 caracteres) — elige una
-1. `Arma tu CRM, cobros, proyectos e inventario sin programar. WhatsApp oficial, automatizaciones e IA. En español y con precios en pesos. Pruébalo gratis.` (151)
-2. `Deja Excel: organiza clientes, ventas, cobros y tareas en una base de datos sin código, con WhatsApp y automatizaciones. Empieza con una plantilla gratis.` (154)
-3. `Tu CRM en minutos: elige una plantilla o descríbele tu negocio a la IA. Kanban, cobros con PSE y Nequi, WhatsApp y portal de clientes. Prueba gratis.` (149)
+1. `Arma tu CRM, cobros, proyectos e inventario sin programar. WhatsApp oficial y automatizaciones. En español y con precios en pesos. Prueba 15 días gratis.` (153)
+2. `Deja Excel: sube tu archivo y organiza clientes, ventas, cobros y tareas sin código, con WhatsApp y automatizaciones. Prueba 15 días gratis, sin tarjeta.` (153)
+3. `Tu CRM en minutos: sube tu Excel o elige una plantilla. Kanban, cobros con PSE y Nequi, WhatsApp y portal de clientes. Prueba 15 días gratis.` (141)
 
 ### Jerarquía de encabezados
 - **H1** (uno solo): «Organiza tu negocio a tu manera, sin programar»
@@ -117,7 +116,6 @@ Esqueleto (reemplaza lo que está entre `< >`):
       "url": "https://imagina.cloud/base/",
       "publisher": { "@id": "https://imagina.cloud/#org" },
       "offers": [
-        { "@type": "Offer", "name": "Gratis", "price": "0", "priceCurrency": "COP" },
         { "@type": "Offer", "name": "Starter", "price": "<59000>", "priceCurrency": "COP" },
         { "@type": "Offer", "name": "Pro", "price": "<199000>", "priceCurrency": "COP" }
       ]
@@ -264,11 +262,13 @@ Reglas de URL: minúsculas, con guiones, sin tildes ni fechas, máximo dos nivel
 
 ---
 
-## 6. SEO técnico (WordPress en la subcarpeta /base/)
+## 6. SEO técnico (WordPress en la raíz, landing en /base/)
 
-- `/base/` hereda la autoridad de imagina.cloud. Si es un WordPress aparte dentro de la
-  subcarpeta, **solo vale el `robots.txt` de la raíz**: agrega allí
-  `Sitemap: https://imagina.cloud/base/sitemap_index.xml`.
+- WordPress vive en la raíz de imagina.cloud, así que **/base/ es una página madre del
+  mismo WordPress** (las páginas de la tabla de la sección 5 van como hijas:
+  `/base/precios/`, `/base/crm-whatsapp/`…). Un solo sitio, un solo sitemap y un solo
+  `robots.txt`, el de la raíz: deja que el plugin de SEO lo genere y confirma que incluye
+  `Sitemap: https://imagina.cloud/sitemap_index.xml`.
 - Search Console: una propiedad de dominio + una de prefijo `https://imagina.cloud/base/`.
 - Canonical propio en cada página, barra final consistente, https y una sola variante de www.
 - **hreflang: no por ahora.** Una sola versión en español neutro no lo necesita. No crees
@@ -295,6 +295,27 @@ Reglas de URL: minúsculas, con guiones, sin tildes ni fechas, máximo dos nivel
   agendas, portales) tampoco se indexa.
 - **Idea de crecimiento:** una insignia «Hecho con Imagina Base» en los formularios y
   agendas públicas de los planes sin marca blanca (menciones y referidos).
+
+### Checklist del día de lanzamiento
+
+Hoy el sitio está cerrado a los buscadores a propósito. El día que publiques:
+1. **WordPress → Ajustes → Lectura:** desmarca «Disuadir a los motores de búsqueda de
+   indexar este sitio» (si queda marcado, WordPress responde `noindex` y el `robots.txt`
+   bloquea todo).
+2. Abre `https://imagina.cloud/robots.txt` y confirma que **no** dice `Disallow: /` y que
+   trae la línea `Sitemap:`.
+3. Que ninguna capa bloquee a los robots: el modo «en construcción» o «mantenimiento» del
+   tema o de un plugin, una contraseña del hosting y, si usas Cloudflare, «Bot Fight Mode»
+   o reglas de WAF (Security → Events). Deben pasar Googlebot, Bingbot, OAI-SearchBot y
+   PerplexityBot.
+4. Revisa con «Ver código fuente» que la página no tenga
+   `<meta name="robots" content="noindex">`.
+5. **Search Console:** agrega la propiedad, envía el sitemap y usa «Inspeccionar URL» →
+   «Probar URL publicada» en `/base/`. Debe decir «Se puede indexar». Luego «Solicitar
+   indexación».
+6. **Bing Webmaster Tools:** importa la propiedad desde Search Console (Bing alimenta a
+   ChatGPT).
+7. Plataforma → Marca → «Sitio del producto» = `https://imagina.cloud/base` en la app.
 
 ---
 

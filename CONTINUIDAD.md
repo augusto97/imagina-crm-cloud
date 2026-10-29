@@ -396,12 +396,25 @@ login, `/registro` y el origen de cada alta en la consola), en `main`.
   cuadro por cuadro y 8 clips de la app en uso NO están en el repo (pesan
   ~37 MB): se armaron con la empresa de ejemplo «Distribuidora Andina» (tenant
   de desarrollo, laura@andina.test) y se le entregaron en un .zip + una página
-  de revisión (artifact privado). **Pendientes del usuario** marcados
-  [CONFIRMAR] en los textos: si el plan «Trial» queda gratis sin vencimiento
-  (hoy no vence), precios reales de Starter/Pro, medios de pago activos, IA de
-  la plataforma activa, canal de soporte y si ofrece migración. **Riesgo
-  detectado**: imagina.cloud respondió 403 a un cliente automático (Cloudflare):
-  revisar que no bloquee a Googlebot / OAI-SearchBot / PerplexityBot. Ideas
+  de revisión (artifact privado). **Decisiones del usuario (mismo día), ya en los
+  textos**: prueba gratis de **15 días** sin tarjeta; precios Starter $59.000 /
+  Pro $199.000 COP al mes por empresa (los va a cambiar él); **asistente IA y
+  soporte en español SOLO en los planes de pago**; el importador de Excel (casi
+  automático) es el camino principal de «Cómo empiezas»; imagina.cloud es un
+  WordPress recién instalado **cerrado a los buscadores a propósito** (sin
+  contenido; el 403 que se vio era eso, no un riesgo) — checklist del día de
+  lanzamiento en `docs/landing/03-SEO.md` §6; WordPress está en la raíz, así que
+  /base/ es una página madre del mismo sitio. Quedan [CONFIRMAR]: medios de pago
+  activos y redes sociales. **Ojo, dos cosas de la APP que no coinciden con lo
+  decidido** (avisadas al usuario, esperan su respuesta): (1) **la app no hace
+  vencer la prueba a los 15 días** — `isEffectivelyReadOnly` sólo mira
+  status/archived_at/subscription_ends_at/paid_until y el alta no fija ninguno;
+  propuesta: días de prueba configurables por plan (default 15), avisos antes de
+  vencer y solo-lectura + export al vencer (ADR-S09) hasta pagar; (2) la semilla
+  del plan Trial trae 20 pedidos de IA/mes: para «IA sólo en pago» hay que
+  ponerlo en 0 en Plataforma → Planes, y entonces «Cuéntanos de tu negocio» de
+  la bienvenida queda deshabilitada durante la prueba (plantillas y Excel
+  siguen). Ideas
   que salieron del estudio y quedan para cuando las pida: que `/registro`
   acepte `?plantilla=crm` (la página de cada plantilla abre la app con esa
   plantilla), publicar el manual «Aprende» y las 39 ideas como páginas del

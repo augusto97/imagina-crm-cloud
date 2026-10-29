@@ -20,25 +20,35 @@ bien posicionada.
 | `motion/app/` | Clips de la app en uso con cursor (MP4 + WebM) |
 | `marca/` | Logo (claro y oscuro) e ícono, del servidor de producción |
 
+## Decisiones ya tomadas (están en los textos)
+
+- **Prueba gratis de 15 días, sin tarjeta.** Durante la prueba: 500 registros, 3 personas y
+  3 automatizaciones.
+- **Precios:** Starter $59.000 COP / US$15 y Pro $199.000 COP / US$49 al mes, por empresa
+  (los vas a ajustar: cámbialos en Plataforma → Planes y en `02-TEXTOS-LANDING.md`).
+- **Asistente IA y soporte en español: solo en los planes de pago.** Los textos lo dicen
+  así, sin esconderlo.
+- **Importador de Excel casi automático:** es el camino principal de «Cómo empiezas».
+
 ## Antes de publicar, confirma
 
 Busca **[CONFIRMAR]** en `02-TEXTOS-LANDING.md`:
-1. **Plan gratis**: en la configuración inicial el plan «Trial» no vence (500 registros,
-   3 personas, 3 automatizaciones). Si vas a limitarlo en el tiempo, cambia «gratis» por
-   «prueba gratis de N días».
-2. **Precios** (Plataforma → Planes): los del documento son los de la configuración
-   inicial (Starter $59.000 COP / US$15, Pro $199.000 COP / US$49).
-3. **Medios de pago activos** (Plataforma → Cobros): PSE, Nequi, tarjeta y efectivo
+1. **Medios de pago activos** (Plataforma → Cobros): PSE, Nequi, tarjeta y efectivo
    dependen de tener Mercado Pago configurado; dólares, de PayPal.
-4. **IA de la plataforma** activa y compartida con las empresas (Plataforma → Asistente IA).
-5. **Canal de soporte** (WhatsApp / correo) y si ofreces ayuda para migrar datos.
+2. **Redes sociales** del pie y del JSON-LD (LinkedIn, YouTube, Instagram…).
 
-## Tres tareas técnicas que conviene hacer ya
+## Tareas en la app y en el sitio
 
 1. **Plataforma → Marca → «Sitio del producto»** = `https://imagina.cloud/base` (aparece
    «Conoce Imagina Base» en el login).
 2. Botones del sitio a
    `https://base.imagina.cloud/registro?utm_source=sitio&utm_medium=landing&utm_campaign=<seccion>`
    (la consola muestra «Desde sitio» en cada alta).
-3. **Cloudflare de imagina.cloud**: revisa que no bloquee a Googlebot, OAI-SearchBot ni
-   PerplexityBot (en la investigación, el sitio respondió 403 a un cliente automático).
+3. **Plataforma → Planes → Trial:** pon «IA/mes» en **0** para que la IA quede solo en los
+   planes de pago (hoy la semilla le da 20). Ojo: con 0, la opción «Cuéntanos de tu
+   negocio» de la bienvenida aparece deshabilitada en la prueba; quedan las plantillas y
+   el Excel, que es justo lo que la landing promete.
+4. **Los 15 días todavía no los aplica la app:** hoy el plan Trial no vence. Hasta que se
+   implemente el vencimiento, la prueba sigue abierta (ver el hilo en `CONTINUIDAD.md`).
+5. **El día del lanzamiento**, abre el sitio a los buscadores: checklist en `03-SEO.md`,
+   sección 6 (hoy está cerrado a propósito).

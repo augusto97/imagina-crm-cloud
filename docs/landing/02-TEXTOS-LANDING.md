@@ -1,8 +1,10 @@
 # Imagina Base — Textos de la landing (imagina.cloud/base)
 
 > Español neutro, tuteando. Todo lo que dice este documento es verdad hoy en la app
-> (versión 0.1.331). Lo marcado con **[CONFIRMAR]** depende de cómo tengas configurada
-> tu plataforma (precios, plan gratis, medios de pago activos): revísalo antes de publicar.
+> (versión 0.1.331), con estas decisiones comerciales: **prueba gratis de 15 días sin
+> tarjeta**, precios Starter $59.000 y Pro $199.000 (los puedes cambiar después), y
+> **asistente IA y soporte solo en los planes de pago**. Lo que sigue marcado con
+> **[CONFIRMAR]** (medios de pago activos, redes) revísalo antes de publicar.
 > Lo marcado con **[CUANDO EXISTA]** son espacios para prueba social real: no los llenes
 > con cifras inventadas.
 
@@ -23,7 +25,7 @@ sitio NO llevan `utm`.
   - **Soluciones ▾** — Ventas y CRM · Cobros y cartera · Proyectos y tareas · Agenda de citas · Mesa de ayuda · Tienda online e inventario
   - **Precios**
   - **Aprende**
-- A la derecha: **Entrar** (texto) · **Prueba gratis** (botón principal)
+- A la derecha: **Entrar** (texto) · **Prueba gratis** (botón principal; lleva a /registro)
 
 ---
 
@@ -38,15 +40,15 @@ CRM y base de datos sin código para pymes de Latinoamérica
 3. El sistema a la medida de tu negocio, listo en minutos
 
 **Subtítulo:**
-Clientes, ventas, cobros, proyectos y soporte en un solo lugar. Arma tu CRM en minutos
-con una plantilla o contándole tu negocio a la IA, conéctalo a WhatsApp y cobra en pesos
+Clientes, ventas, cobros, proyectos y soporte en un solo lugar. Sube tu Excel o elige
+una plantilla y tu sistema queda listo en minutos; conéctalo a WhatsApp y cobra en pesos
 con PSE, Nequi o tarjeta.
 
-**Botón principal:** Crear mi cuenta gratis
+**Botón principal:** Probar gratis 15 días
 **Botón secundario:** Ver cómo funciona (2 min)
 
 **Debajo de los botones (micro-texto, con íconos de check):**
-Sin tarjeta de crédito · En español · Precios en pesos colombianos **[CONFIRMAR plan gratis]**
+15 días gratis · Sin tarjeta de crédito · En español · Precios en pesos
 
 **Selector «¿Qué quieres organizar?» (chips sobre la demo del hero):**
 Clientes · Ventas · Cobros · Proyectos · Citas · Soporte · Inventario
@@ -157,15 +159,17 @@ Captura: `25-plantillas-de-listas.png` · Botón: Ver todas las plantillas
 
 **H2:** Listo en minutos, no en meses
 
-1. **Cuéntanos de tu negocio.** Escribe a qué te dedicas y la IA arma tus listas, campos,
-   vistas y un tablero. O elige una plantilla. O importa tu Excel.
+1. **Sube tu Excel o elige una plantilla.** La app reconoce tus columnas y su tipo
+   (montos, fechas, teléfonos, opciones) y arma la lista sola. O arranca con una plantilla
+   de ventas, cobros, proyectos, citas y más. Con un plan de pago, también puedes
+   contarle tu negocio a la IA y ella arma todo.
 2. **Elige cómo verlo.** Tabla tipo Excel, tablero kanban, calendario, cronograma o
    tarjetas: los mismos datos, la forma que necesites.
 3. **Deja que trabaje solo.** Activa recordatorios, avisos y cobros automáticos con un clic
    desde las ideas listas para usar.
 
-Visual: `motion/animaciones/pp-empezar.mp4` (o un cuadro de texto que se escribe solo:
-«Tengo una distribuidora de alimentos con 3 vendedores…» y las listas aparecen).
+Visual: un archivo de Excel que entra en la pantalla y se convierte en la lista, con el
+tipo de cada columna marcado (`motion/animaciones/lote-pegar.mp4`, `pp-empezar.mp4`).
 
 ---
 
@@ -280,8 +284,8 @@ Tres columnas:
 
 Línea extra: ¿Usas Claude? Conéctalo a tu negocio y pregúntale por tus ventas, tus
 clientes o tus cobros directamente desde el chat.
-Nota pequeña: Incluye pedidos de IA cada mes según tu plan, o usa tu propia clave.
-**[CONFIRMAR que la IA de la plataforma está activa]**
+Nota pequeña: Incluida en los planes de pago, con pedidos de IA cada mes según el plan
+(o con tu propia clave).
 
 Captura: `16-agentes-de-ia.png` · Videos: `motion/animaciones/ia-asistente.mp4`, `ia-agente.mp4`
 
@@ -385,17 +389,19 @@ pertenecen a sus dueños.
 ## 18. Precios (resumen)
 
 **H2:** Precios simples, en pesos
-**Bajada:** Un precio por empresa. Empieza gratis y cambia de plan cuando crezcas.
+**Bajada:** Un precio por empresa. Pruébala gratis 15 días y elige tu plan cuando estés
+listo.
 
-**[CONFIRMAR todos los valores en Plataforma → Planes]** (los de abajo son los de la
-configuración inicial de la app):
+Franja arriba de los planes: **Prueba gratis de 15 días, sin tarjeta** — para conocerla
+con hasta 500 registros, 3 personas y 3 automatizaciones. Botón: Probar gratis 15 días.
 
 | Plan | Precio | Incluye |
 |---|---|---|
-| **Gratis** | $0 | Hasta 500 registros · 3 personas · 3 automatizaciones · 100 MB |
-| **Starter** | $59.000 COP / mes (US$15) | 10.000 registros · 10 personas · 20 automatizaciones · 1 GB · 1.000 correos/mes · 100 pedidos de IA/mes |
-| **Pro** | $199.000 COP / mes (US$49) | 200.000 registros · 50 personas · 200 automatizaciones · 10 GB · 10.000 correos/mes · 500 pedidos de IA/mes |
+| **Starter** | $59.000 COP / mes (US$15) | 10.000 registros · 10 personas · 20 automatizaciones · 1 GB · 1.000 correos/mes · Asistente IA (100 pedidos/mes) · Soporte en español |
+| **Pro** | $199.000 COP / mes (US$49) | 200.000 registros · 50 personas · 200 automatizaciones · 10 GB · 10.000 correos/mes · Asistente IA (500 pedidos/mes) · Soporte en español |
 | **Empresa** | A tu medida | Sin límites · acompañamiento |
+
+(Los valores salen de Plataforma → Planes; si los cambias allá, cámbialos aquí.)
 
 Debajo: Paga por meses (1, 3, 6 o 12) o con renovación automática. Con PSE, Nequi,
 tarjeta o efectivo. Sin permanencia.
@@ -409,7 +415,8 @@ Botón: Ver precios completos (→ `/base/precios/`)
 - **Centro de aprendizaje**: guías paso a paso con animaciones de cada parte de la app.
 - **Recorridos guiados** que te muestran dónde está cada cosa.
 - **Ideas para tu negocio**: casos reales listos para activar.
-- **Soporte en español** **[CONFIRMAR canal: WhatsApp / correo]**.
+- **Soporte en español** en los planes de pago. Durante la prueba te acompañan el centro
+  de aprendizaje y los recorridos guiados.
 
 Captura: `21-centro-de-aprendizaje.png`
 
@@ -425,11 +432,10 @@ Captura: `21-centro-de-aprendizaje.png`
    Puede serlo, y mucho más. Trae una plantilla de CRM lista, pero también puedes armar
    facturación, proyectos, inventario, agenda de citas o lo que tu negocio necesite.
 3. **¿Necesito saber programar?**
-   No. Eliges una plantilla, le cuentas tu negocio a la IA o importas tu Excel, y lo
-   ajustas con clics.
+   No. Subes tu Excel o eliges una plantilla y lo ajustas con clics.
 4. **¿Puedo probarla gratis?**
-   Sí. Creas tu cuenta sin tarjeta de crédito y empiezas con el plan gratis.
-   **[CONFIRMAR]**
+   Sí: 15 días gratis, sin tarjeta de crédito. Al terminar eliges el plan que te sirva, y
+   lo que armaste se queda.
 5. **¿Cuánto cuesta?**
    Se cobra por empresa, no por usuario, y en pesos colombianos. Mira los planes en la
    página de precios.
@@ -438,8 +444,9 @@ Captura: `21-centro-de-aprendizaje.png`
    Puedes pagar varios meses por adelantado o activar la renovación automática.
    **[CONFIRMAR]**
 7. **¿Puedo importar mi Excel?**
-   Sí. Subes tu archivo .xlsx o .csv, la app sugiere el tipo de cada columna y crea los
-   registros. También puedes actualizar registros existentes desde un archivo.
+   Sí, y es casi automático: subes tu .xlsx o .csv, la app reconoce las columnas y su tipo
+   (montos, fechas, teléfonos, opciones), crea la lista y carga los registros. Después
+   puedes actualizar registros existentes desde otro archivo.
 8. **¿Se conecta con WhatsApp?**
    Sí, con la API oficial de WhatsApp Business: envía plantillas aprobadas desde la ficha
    o desde automatizaciones, y registra lo que te responden tus clientes.
@@ -459,17 +466,22 @@ Captura: `21-centro-de-aprendizaje.png`
     Te da las herramientas: autorización de tratamiento de datos en formularios y portal,
     con la prueba de cada aceptación y su versión. La responsabilidad del tratamiento sigue
     siendo de tu empresa.
+14. **¿La inteligencia artificial está incluida?**
+    Sí, en los planes de pago: el asistente que arma listas y tableros en español, los
+    agentes y los campos con IA, con pedidos incluidos cada mes según el plan.
+15. **¿Tienen soporte?**
+    Sí, en español, para los planes de pago. Durante la prueba tienes el centro de
+    aprendizaje, los recorridos guiados y las ideas listas para activar.
 
 ---
 
 ## 21. Llamado final
 
 **H2:** Tu negocio, organizado desde hoy
-**Texto:** Crea tu cuenta gratis y arma tu primera lista en menos de cinco minutos.
-**Botón:** Crear mi cuenta gratis
+**Texto:** Pruébala gratis 15 días y arma tu primera lista en menos de cinco minutos.
+**Botón:** Probar gratis 15 días
 **Debajo:** Sin tarjeta · En español · Tus datos siempre tuyos
-**Secundario:** ¿Vienes de Excel, Airtable o Notion? Te ayudamos a pasar tus datos.
-**[CONFIRMAR si ofreces esa ayuda]**
+**Secundario:** ¿Vienes de Excel? Sube tu archivo y la app arma la lista sola.
 
 ---
 

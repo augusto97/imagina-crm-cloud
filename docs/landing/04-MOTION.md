@@ -104,9 +104,12 @@ cortos (8-16 px). Nada gira.
 10. **Tu marca en vivo (al tocar una muestra de color).** El portal de ejemplo se tiñe por
     variables CSS en 400 ms y cambian el logo y el dominio de la barra
     (`portal.tuempresa.com`). Referencia: `empresa-branding.mp4`.
-11. **Cuadro de IA que escribe solo («Cómo empiezas»).** El texto se escribe solo («Tengo
-    una distribuidora de alimentos con 3 vendedores…») y las listas y campos «vuelan» a un
-    panel lateral, en 1,5 s. Referencia: `ia-asistente.mp4`, `pp-empezar.mp4`.
+11. **Excel que se convierte en lista («Cómo empiezas»).** Una hoja de cálculo con
+    columnas sueltas «cae» sobre la app; las columnas se reconocen solas (texto, número,
+    fecha, teléfono) y la tabla se arma con chips de color, en 1,5 s. Es el importador casi
+    automático de verdad. Referencia: `lote-pegar.mp4`, `pp-empezar.mp4`. Variante para la
+    sección de IA (planes de pago): el cuadro que escribe solo («Tengo una distribuidora de
+    alimentos con 3 vendedores…») con `ia-asistente.mp4`.
 12. **Marquee de integraciones.** 40 s en `linear infinite`, con degradado de máscara en
     los bordes; se pausa con hover o foco. Con movimiento reducido pasa a una grilla quieta.
 13. **Aparición de secciones (una sola vez).** `opacity` + `translateY(8px)` en 450 ms con
