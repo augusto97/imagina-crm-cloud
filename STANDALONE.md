@@ -4984,4 +4984,98 @@ sin registros, plantillas de SMS reutilizables y que la app pague los SMS
 
 ---
 
-**Versión del documento:** 1.128.0 (SMS con la cuenta de cada empresa)
+### ADR-S83 — Sitio WordPress como lista espejo: conectar en un clic, sincronizar por fecha de modificación y editar en los dos sentidos (v0.1.333)
+
+**Contexto.** El usuario pidió traer a la app el contenido de sitios WordPress
+—entradas, páginas y los tipos de contenido que crean los plugins (propiedades,
+cursos, eventos) con sus campos de ACF— para verlos, organizarlos y editarlos
+desde aquí. La app ya tenía un patrón para esto con WooCommerce (ADR-S24: una
+carpeta de listas que «manda» la tienda, vínculo por id externo, incremental,
+edición en los dos sentidos), pero sus reglas estaban escritas para la tienda
+(`store-rules.ts`, `settings.store_sync`) y en ~20 lugares del backend. Un sitio
+WordPress no tiene claves de API propias: el mecanismo estándar son las
+**contraseñas de aplicación** del núcleo (WP 5.6+), con una pantalla
+«Autorizar aplicación» que las emite sin que nadie las copie.
+
+**Decisión.**
+
+1. **Lista espejo de dos fuentes.** Las reglas de la tienda se generalizaron:
+   `MirrorListMarker` (`packages/shared/src/schemas/mirror-list.ts`) es
+   `{ source: 'store', marker } | { source: 'site', marker }`, leído de
+   `settings.store_sync` o `settings.site_sync`, con funciones puras comunes
+   (`mirrorCellAccess`, `mirrorValueError`, `mirrorWriteBack`,
+   `mirrorColumnKind`, `mirrorFieldMap`, `mirrorPlaceName`…) que usan el backend
+   (que rechaza) y la interfaz (que bloquea y explica). Las reglas propias del
+   sitio viven en `site-rules.ts`. Todo lugar que respetaba la marca de la tienda
+   respeta ahora cualquiera de las dos; las funciones que sólo tienen sentido en
+   una tienda (editar en la tienda, crear variaciones, la marca de una lista de
+   productos) siguen mirando sólo `store_sync`, y el motor de la tienda filtra
+   por `provider = 'woocommerce'` (no toma una sincronización de sitio).
+2. **Conectar en un clic.** `POST /integrations/wordpress/start` descubre la API
+   del sitio (`/wp-json/` o `?rest_route=`, siguiendo una redirección de la
+   raíz), exige `wp/v2` y la pantalla «Autorizar aplicación», y devuelve su URL
+   con `app_name` («<marca> · <empresa>»), un `app_id` fijo y la vuelta
+   `{APP_BASE_URL}/api/v1/connections/wordpress/callback?state=…`. El `state` es
+   de un solo uso (Redis `wpconnect:<state>`, 15 min, `GETDEL`) y sólo lo canjea
+   la persona que lo pidió (el callback va con sesión pero sin `X-Tenant-Id`: la
+   empresa sale del state). La dirección que se guarda es la descubierta al
+   empezar. Como WordPress devuelve la contraseña **en la URL de vuelta**, la
+   app la **rota** antes de guardarla: con ella crea otra
+   (`POST /wp/v2/users/me/application-passwords`), borra la de la URL (`introspect`
+   + `DELETE`) y le devuelve el nombre; si el sitio no lo permite, sigue con la
+   recibida. La conexión se prueba con la MISMA verificación que el alta manual
+   (pegar una contraseña de aplicación), que queda como alternativa.
+3. **Qué se trae.** Por tipo de contenido o taxonomía, sólo las columnas
+   elegidas (`_fields`), nunca el contenido completo de una entrada («Editar en
+   WordPress» lo abre allá). Columnas del núcleo, taxonomías (selección múltiple
+   por nombre), campos de ACF de un solo valor (los de varias partes se traen
+   como texto de sólo lectura) y campos personalizados con `show_in_rest`. Cada
+   tipo es una lista dentro de la carpeta «WordPress · <sitio>»; el vínculo
+   entrada↔registro vive en `sync_links` (recurso `post:<tipo>` /
+   `term:<taxonomía>`, por eso pasa a varchar(64): una taxonomía puede tener 32
+   caracteres) y la sincronización en `connection_syncs` con
+   `provider = 'wordpress'`. Sin tablas nuevas.
+4. **Motor.** Incremental por **fecha de modificación** con keyset
+   (`orderby=modified` + `modified_after` desde un cursor fecha + ids de ese
+   segundo; la fecha es la del sitio, sin zona, porque `modified_after` compara
+   contra esa columna) con `context=edit` y `status=any`, y la papelera aparte;
+   un sitio que ignora el filtro (WordPress viejo) se pagina por número. Un
+   **barrido completo diario** detecta lo borrado del todo (queda en «Papelera»;
+   nunca se borra un registro, ADR-S09). Una corrida a la vez (candado en Redis)
+   y `pg_advisory_xact_lock` por escritura; reintentos ante 5xx/429/red; la
+   primera carga no dispara automatizaciones; el límite de registros del plan
+   detiene la carga con el motivo.
+5. **Editar en los dos sentidos.** Por defecto se editan desde la app sólo el
+   título, el extracto y las categorías/etiquetas; la empresa habilita más por
+   lista (no lo que calcula WordPress). Lo que una persona, una automatización o
+   una edición masiva cambia en una columna habilitada viaja por el
+   `RecordChangeHub` con **sólo lo que cambió**; un término que no existe se crea
+   en WordPress; un rechazo relee la entrada y la celda vuelve al valor del
+   sitio. El motor nunca emite en el hub (sin bucles). Deshacer una edición
+   masiva revierte en WordPress.
+6. **Contraseña revocada.** WordPress no responde «contraseña incorrecta» ante
+   una contraseña de aplicación revocada: trata el pedido como anónimo (401
+   `rest_not_logged_in`, 401 de permisos, o 400 `rest_forbidden_status` al listar
+   con `status=any`). El clasificador reconoce esas respuestas —cuando se
+   mandaron credenciales— como «no te reconoce» y la sincronización lo muestra
+   como contraseña revocada: Problema (`site_sync:<conexión>:run`), conexión
+   marcada y «Volver a conectar» con un clic.
+7. **Ciclo de vida.** Dejar de sincronizar o borrar la conexión quitan la marca
+   (las listas quedan comunes) y avisan por realtime; borrar la conexión además
+   borra la contraseña de aplicación de la app en WordPress (antes de borrar,
+   con `introspect` + `DELETE`; si el sitio no responde se sigue); migrar una empresa re-mapea
+   la sincronización y el mapa de columnas de la marca; borrar la empresa la
+   limpia; duplicar una lista o guardarla como plantilla no copia la marca.
+
+**Consecuencias.** Funciona con cualquier WordPress 5.7+ con HTTPS y
+contraseñas de aplicación encendidas (algunos plugins de seguridad las apagan:
+se explica). No hay tiempo real: los cambios del sitio llegan en la próxima
+vuelta o con «Sincronizar ahora» — el tiempo real, el SEO (Rank Math, Yoast…),
+los metas sin `show_in_rest` y los medios requieren el complemento propio
+(v0.1.334). El contenido completo de las entradas no se trae ni se edita, por
+decisión del usuario. Una URL del callback con la contraseña puede quedar en el log del
+proxy; por eso se rota (punto 2).
+
+---
+
+**Versión del documento:** 1.129.0 (sitio WordPress como lista espejo)

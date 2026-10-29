@@ -372,9 +372,8 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.332**
-(SMS con la cuenta de cada empresa: Twilio, BulkGate, Infobip, LabsMobile y
-Onurix), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.333**
+(sitio WordPress en listas, sin complemento; antes v0.1.332 SMS), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - SMS (v0.1.332): verificado sólo contra dobles. Con la primera cuenta real de
@@ -394,8 +393,9 @@ Onurix), en `main`.
   un complemento propio porque Rank Math no expone sus campos por REST). **Respuesta del
   usuario**: «hazlo todo como recomiendas» salvo **crear páginas o entradas
   desde la app** (lo nuevo se crea en WordPress; se mira si un cliente lo pide).
-  Plan: v0.1.332 SMS (publicada), v0.1.333 WordPress sin complemento, v0.1.334
-  el complemento «Imagina Base Connector». El vencimiento de la
+  Plan: v0.1.332 SMS (publicada), v0.1.333 WordPress sin complemento
+  (publicada), v0.1.334 el complemento «Imagina Base Connector» (en curso).
+  Para probar contra un WordPress real: `sh scripts/dev/wordpress-up.sh 8090 up`. El vencimiento de la
   prueba de 15 días quedó **para después** (lo dijo el usuario).
 - 2026-10-29 — **Landing para SEO** (ADR-S81). Decidido con el usuario: NO un
   home dentro de la app (SPA, white-label, releases) ni imaginawp.com; un sitio
@@ -903,6 +903,29 @@ Onurix), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-29 · v0.1.333** — **Sitio WordPress en listas** (ADR-S83). Pedido
+  del usuario: un conector de WordPress que traiga páginas, entradas y tipos de
+  contenido (con ACF) y que se puedan editar desde la app; sigue la v0.1.334 (complemento
+  propio «Imagina Base Connector»: SEO, campos personalizados, medios, tiempo
+  real); crear páginas o entradas desde la app quedó fuera por decisión suya.
+  (1) Conectar en un clic con «Autorizar aplicación» del propio WordPress
+  (contraseña de aplicación; la que llega en la URL se rota) o pegando una a
+  mano, con diagnóstico claro. (2) «Sincronizar sitio»: tipos, columnas
+  (incluidos ACF y campos personalizados) y cuáles se editan; carpeta + una
+  lista por tipo; cada 5 min a 1 día. (3) Lista espejo generalizada (tienda |
+  sitio) en `mirror-list.ts`: sin crear/borrar/importar, candados, aviso,
+  columnas propias; WooCommerce sin cambios. (4) Motor incremental por fecha de
+  modificación + barrido diario; edición que viaja sólo con lo cambiado,
+  términos nuevos creados en WordPress, rechazo que vuelve al valor del sitio,
+  lote + deshacer. (5) Contraseña revocada → Problema + conexión marcada →
+  volver a conectar; borrar la conexión borra su contraseña en WordPress.
+  Migración 0095. Entorno: `scripts/dev/wordpress-up.sh` (WordPress real con
+  ACF). Tests API 1731, front 685, shared 563; E2E 43/43 contra WordPress 6.8
+  real. **Pendiente**: tiempo real, SEO, campos personalizados sin `show_in_rest` y medios =
+  v0.1.334 (complemento
+  propio, la siguiente entrega); metas sin `show_in_rest` no se
+  escriben; no probado contra plugins de seguridad reales ni multisitio.
 
 - **2026-10-29 · v0.1.332** — **SMS con la cuenta de cada empresa**
   (ADR-S82). Cinco proveedores por clave en Integraciones → «Mensajes de texto
