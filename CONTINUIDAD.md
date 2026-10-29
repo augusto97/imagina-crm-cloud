@@ -966,8 +966,8 @@ complemento, v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
   la lista, con Traer / Ya lo vi / Buscar novedades ahora. (6) La papelera de la
   app ahora muestra lo quitado de listas espejo (antes las excluía), y el
   asistente/MCP sólo propone quitar lo ya borrado. Ayuda: dos guías, dos
-  artículos de Aprende, tres ilustraciones y novedad. Tests: API (suite completa
-  en verde), front 692, shared 587; E2E 49/49 contra WordPress real + tienda
+  artículos de Aprende, tres ilustraciones y novedad. Tests: API 1777 (suite
+  completa en verde), front 692, shared 587; E2E 49/49 contra WordPress real + tienda
   falsa, celular oscuro. **Pendiente**: nada de este hilo; de antes, cargar
   `RELEASE_SIGNING_KEY` para firmar el complemento.
 

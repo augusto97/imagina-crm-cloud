@@ -10503,7 +10503,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         lista afectada lo avisa en su barra (`new_columns` en la marca).
         Puro en `site-novelties.ts`. Ayuda: dos guías, artículos nuevos en
         Aprende (sitio y tienda) con tres ilustraciones, y novedad. Tests:
-        API 1767 + nuevos (quitar/volver/modo en el sitio y la tienda,
+        API 1777 (nuevos: quitar/volver/modo en el sitio y la tienda,
         papelera, pasada de papelera, variaciones que no vuelven, borrado del
         todo, novedades puras, asistente), front 692, shared 587 — y E2E
         navegador **49/49 contra un WordPress 6.8 real** y la tienda falsa
