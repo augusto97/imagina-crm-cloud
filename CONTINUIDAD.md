@@ -379,6 +379,32 @@ la auditoría del complemento para WordPress, v0.1.334 el complemento y v0.1.333
 el sitio sin complemento), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **Kit de landing actualizado con SMS y WordPress** (pedido del
+  usuario: "actualiza la información… y las capturas para hacer la landing con lo
+  de sms y wordpress; no sé si tengas algo más para añadir"). Hecho sin release
+  (sólo `docs/landing/`): bloques 12-A (WordPress) y 12-B (SMS), pestaña 7
+  «Tu sitio WordPress», marquee, comparativa, 7.ª tarjeta de Latam (Ley 2300),
+  FAQ 16-20, grupos F (WordPress/SEO) y G (SMS) de palabras clave sacados del
+  autocompletado real (CO y MX: la Ley 2300 se busca como **«ley dejen de
+  fregar»**; «wordpress bulk edit» se busca en inglés), 7 páginas nuevas (16-22,
+  con dos herramientas gratis: contador de SMS y revisor de título/descripción),
+  2 ideas de motion, sección «Ideas para sumar a la landing» en el LEEME.
+  Capturas nuevas (fuera del repo, en el .zip): 15 de escritorio (28-41 + 30b),
+  3 oscuro, 3 celular, 14-integraciones rehecha, y 2 clips (`sms-desde-la-ficha`,
+  `wordpress-editar-palabra-clave`). **Cómo se armó la demo** (por si hay que
+  repetirla): WordPress real en el puerto 8092 + **también en el 80** con
+  `127.0.0.1 distribuidoraandina.co` en `/etc/hosts` (la conexión 12 de la
+  empresa 22 apunta a `http://distribuidoraandina.co`); contenido Andina
+  (blog, páginas, CPT «Recetas» con ACF y «Calorías» como campo nuevo para el
+  aviso de novedades), Rank Math, el complemento instalado desde el zip de la
+  app; SMS con `scripts/dev/fake-sms.mjs 4897` y el API arrancado con
+  `SMS_*_API_URL` apuntando al doble (conexiones 13 Onurix y 14 Twilio). Los
+  scripts quedaron en el scratchpad de la sesión (se pierden con el contenedor).
+  **Detalle encontrado (para una versión del complemento):** la página
+  Herramientas → Imagina Base dice «2 enviados · **1 pendientes**» — el texto no
+  hace plural/singular (`class-ibc-hooks.php`, «%3$d pendientes»). **Ojo en la
+  landing:** no prometer «actualizaciones firmadas» del complemento mientras no
+  esté el secreto `RELEASE_SIGNING_KEY` en GitHub.
 - 2026-10-29 — **RESUELTO** (el usuario: "listo, ya me liberó mucho espacio. sí,
   hazlo en la próxima versión para que no vuelva a pasar") → **v0.1.337**
   (ADR-S86). Detalle del diagnóstico abajo. Queda del lado del usuario, OPCIONAL:
@@ -995,6 +1021,10 @@ el sitio sin complemento), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-29 · sin versión** — Kit de landing (`docs/landing/`) actualizado con
+  SMS (v0.1.332) y WordPress (v0.1.333-336): textos, SEO con autocompletado real,
+  prompt de Claude Design, competencia, motion, índice de capturas y LEEME con
+  ideas para sumar; capturas y clips nuevos entregados en el .zip (detalle en §10).
 - **2026-10-29 · v0.1.337** — **El WAL de Postgres, vigilado, comprimido y con
   su carpeta en orden** (ADR-S86). Reporte del usuario con captura: no podía
   instalar v0.1.336 — 927 MB libres de 57,7 GB y la app ocupaba <1 GB. Se le

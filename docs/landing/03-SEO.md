@@ -1,7 +1,8 @@
 # Imagina Base — SEO de la landing (imagina.cloud/base)
 
 > Investigación de octubre de 2026: autocompletado real de Google (~180 consultas
-> semilla), páginas de la competencia y la documentación vigente de Google. Los volúmenes
+> semilla, y 80 más el 29 de octubre para SMS y WordPress, desde Colombia y México),
+> páginas de la competencia y la documentación vigente de Google. Los volúmenes
 > son **estimados** (no hubo acceso a Keyword Planner ni Semrush): valídalos con Keyword
 > Planner y con Search Console 6-8 semanas después del lanzamiento.
 
@@ -70,6 +71,9 @@ página: 1.200-1.800 palabras** — las animaciones no reemplazan al texto.
 - Automatización: «Automatización de cobro: recordatorio, espera de 3 días y condición»
 - Portal: «Portal del cliente con estado de cuenta y facturas»
 - PDF: «Cuenta de cobro en PDF generada desde una factura»
+- WordPress: «Entradas de un sitio WordPress en una tabla con el largo del título que ve Google»
+- Medios: «Biblioteca de medios de WordPress con el texto alternativo sugerido por IA»
+- SMS: «Envío de SMS a un cliente con el contador de mensajes y el horario de la Ley 2300»
 
 ### Open Graph
 - `og:type=website`, `og:locale=es_LA`, `og:image` 1200×630 **JPG o PNG** con el producto
@@ -199,7 +203,49 @@ la versión de España: hay espacio para «la alternativa hecha en Latinoaméric
 **No compitas por «facturación electrónica»**: no corresponde y genera reclamos. Dilo
 claro en la página: «no reemplaza la factura electrónica de la DIAN».
 
-### F. Marca y comparaciones (a partir del segundo trimestre)
+### F. WordPress y SEO (agencias y equipos de marketing)
+Lo que muestra el autocompletado: «wordpress bulk edit» (y «… image alt text», «… media»,
+«… posts»), «meta descripción caracteres / ejemplos / wordpress», «texto alternativo para
+imágenes», «yoast seo vs rank math», «acf wordpress», «campos personalizados wordpress
+plugin», «conectar wordpress con claude / n8n / odoo / base de datos», «crm para wordpress»,
+«wordpress google sheets», «mantenimiento wordpress para agencias». En español la búsqueda
+de edición masiva casi no existe: se busca en inglés. Hay espacio para ser la página en
+español.
+| Palabra clave | Intención | Vol. | Dif. | Página |
+|---|---|---|---|---|
+| editar entradas de wordpress en masa, wordpress bulk edit (posts, media, alt text) | Transaccional | B-M | M | `/base/integraciones/wordpress/` |
+| auditoría seo wordpress, revisar seo de todo el sitio | Comercial | B-M | M | `/base/integraciones/wordpress/` + guía |
+| meta descripción (caracteres, ejemplos, wordpress), cuántos caracteres debe tener un título seo | Informacional | M-A | M | Herramienta `/base/herramientas/revisor-de-titulo-y-descripcion/` + blog |
+| texto alternativo para imágenes (wordpress, con ia) | Informacional | M | B-M | Blog «Texto alternativo: qué es y cómo ponerlo a todo el sitio» |
+| yoast seo vs rank math | Info-comercial | M | M | Blog (comparativa honesta: la app lee los dos) |
+| acf wordpress, campos personalizados wordpress | Informacional | M | M | Guía «Edita tus campos de ACF como en Excel» |
+| conectar wordpress con (claude, base de datos, google sheets) | Info-comercial | B-M | B | Blog + `/base/integraciones/wordpress/` |
+| crm para wordpress, crm wordpress gratis | Comercial | M | M-A | `/base/integraciones/wordpress/` (el formulario del sitio crea registros) |
+| wordpress para agencias, mantenimiento wordpress para agencias | Comercial | B | B-M | `/base/soluciones/agencias/` |
+
+### G. SMS y mensajes de cobranza
+Lo que muestra el autocompletado: «sms masivos colombia», «enviar sms masivos desde excel»,
+«mensajes de texto masivos colombia (gratis)», «plataforma de sms masivos», «api sms
+colombia», «sms de cobranza», «ejemplo sms de cobranza», «modelos de sms de cobranzas»,
+«mensajes de cobranza (por whatsapp, efectivos, ejemplos)», «mensaje recordatorio de pago
+(ejemplo, vencido, corto)», «cuántos caracteres tiene un sms», «labsmobile precios /
+colombia / opiniones», «onurix sms», «recordatorio de citas por sms gratis». Y sobre la ley:
+**«ley 2300 de 2023 (resumen, ¿está vigente?, artículo 3)»** y **«ley dejen de fregar
+(horarios, 2026)»** — la gente la conoce por el apodo: úsalo en títulos y textos.
+| Palabra clave | Intención | Vol. | Dif. | Página |
+|---|---|---|---|---|
+| sms masivos colombia, mensajes de texto masivos colombia, enviar sms masivos desde excel | Comercial | M-A | A | `/base/integraciones/sms/` |
+| plataforma de sms masivos, api sms colombia | Comercial | M | A | `/base/integraciones/sms/` (con tu cuenta del proveedor) |
+| ley 2300 de 2023 resumen, ley dejen de fregar horarios, horarios de cobranza en colombia | Informacional | M-A | M | Blog pilar «Ley Dejen de Fregar: horarios para cobrar por SMS, WhatsApp y llamadas» → `/base/cobros/` |
+| sms de cobranza, modelos de sms de cobranzas, mensajes de cobranza ejemplos | Informacional | M | B-M | Blog «20 mensajes de cobranza por SMS y WhatsApp (que respetan la ley)» |
+| mensaje recordatorio de pago (ejemplo, vencido, corto) | Informacional | M | B | Blog → `/base/cobros/` |
+| cuántos caracteres tiene un sms, sms con tildes | Informacional | M | B | Herramienta `/base/herramientas/contador-de-sms/` |
+| recordatorio de citas por sms | Comercial | B-M | M | `/base/agenda-de-citas/` |
+
+**No compitas por «sms gratis» ni «enviar sms gratis desde pc»**: buscan mandar un mensaje
+suelto sin pagar, y la app usa la cuenta (paga) del proveedor de cada empresa.
+
+### H. Marca y comparaciones (a partir del segundo trimestre)
 `hubspot vs pipedrive`, `alternativas a hubspot`, `bitrix24 vs hubspot`, `alternativa a
 zapier`. Volumen bajo-medio, intención alta. «Imagina Base» todavía no tiene búsquedas de
 marca: hay que construir la entidad (sección 7).
@@ -222,7 +268,8 @@ imagina.cloud/base/                         Landing principal
 │   └── cuenta-de-cobro/  cotizacion/  seguimiento-de-proyectos/ …
 ├── alternativas/   airtable/ excel/ clickup/ monday/ notion/ hubspot/
 ├── herramientas/   generador-cuenta-de-cobro/ generador-de-cotizaciones/ calculadora-dias-habiles-colombia/
-├── integraciones/  whatsapp/ woocommerce/ mercado-pago/ sql-server/
+│                   contador-de-sms/ revisor-de-titulo-y-descripcion/
+├── integraciones/  whatsapp/ wordpress/ sms/ woocommerce/ mercado-pago/ sql-server/
 ├── ideas/<caso>/                           Las 39 ideas, versión pública
 ├── ayuda/<modulo>/<articulo>/              El manual «Aprende», versión pública
 ├── seguridad/                              Ley 1581, exportación, copias
@@ -250,6 +297,21 @@ Reglas de URL: minúsculas, con guiones, sin tildes ni fechas, máximo dos nivel
 | 13 | `/base/blog/cuanto-cuesta-un-crm-en-colombia/` | (igual) |
 | 14 | `/base/blog/como-crear-un-crm-sin-programar/` | cómo crear un crm (con IA) |
 | 15 | `/base/proyectos/` | software de gestión de proyectos y tareas |
+
+### Las siguientes 7 (SMS y WordPress)
+| # | Página | Palabra objetivo |
+|---|---|---|
+| 16 | `/base/integraciones/wordpress/` | editar wordpress en masa, auditoría seo wordpress |
+| 17 | `/base/soluciones/agencias/` | wordpress para agencias, administrar los sitios de tus clientes |
+| 18 | `/base/integraciones/sms/` | sms masivos colombia, enviar sms desde excel |
+| 19 | `/base/blog/ley-dejen-de-fregar-horarios/` | ley 2300 de 2023, ley dejen de fregar horarios |
+| 20 | `/base/blog/mensajes-de-cobranza-ejemplos/` | sms de cobranza, mensajes de cobranza ejemplos |
+| 21 | `/base/herramientas/contador-de-sms/` | cuántos caracteres tiene un sms (cuenta segmentos y tildes en vivo) |
+| 22 | `/base/herramientas/revisor-de-titulo-y-descripcion/` | cuántos caracteres meta descripción / título seo |
+
+Las dos herramientas son baratas de construir porque la lógica ya existe en la app: el
+contador de SMS (`smsSegments`, GSM-7 y Unicode, quitar tildes) y el largo de título y
+descripción que usa la auditoría SEO. Son las que más enlaces atraen de este grupo.
 
 ### Enlazado interno
 - La home de **imagina.cloud** debe enlazar `/base/` de forma visible: así hereda autoridad.
@@ -335,7 +397,12 @@ Hoy el sitio está cerrado a los buscadores a propósito. El día que publiques:
      «Cómo se organizan las pymes colombianas» con datos agregados y anónimos. Ofrecerla a
      Enter.co, Portafolio, La República, Xataka Colombia, Impacto TIC.
   3. Ecosistema propio: imagina.cloud, la comunidad de Imagina WP, el conector de
-     WooCommerce.
+     WooCommerce y el **complemento de WordPress** (una página propia del complemento con
+     su descripción, capturas y enlace a `/base/integraciones/wordpress/`; publicarlo en
+     el directorio de wordpress.org sería el enlace más fuerte del grupo, pero exige
+     revisar sus reglas antes).
+  3-bis. Proveedores de SMS (Onurix, LabsMobile, BulkGate, Infobip, Twilio): pregúntales si
+     tienen una página de integraciones o de socios donde aparecer.
   4. Programas y gremios: iNNpulsa, Centros de Transformación Digital de MinTIC, Cámara de
      Comercio de Bogotá, SENA/Fondo Emprender, universidades.
   5. Alianzas con contadores y agencias que implementen, con página de socios.

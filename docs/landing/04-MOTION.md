@@ -47,6 +47,8 @@ referencia de ritmo y, recortados, como videos de producto.
 | `ficha-abrir` | Abrir la ficha de un cliente desde la tabla |
 | `agenda-publica-reservar` | Un cliente elige servicio, día y hora |
 | `tablero-ventas` | El tablero de ventas cargando con sus gráficos |
+| `sms-desde-la-ficha` | Desde un cliente: escribir el SMS con variables, «Quitar tildes» (el contador baja de 2 a 1 SMS), marcar el horario de la Ley 2300 y enviarlo |
+| `wordpress-editar-palabra-clave` | Entradas de WordPress en la tabla: escribir la palabra clave en dos celdas vacías (en ámbar) y el color se va al guardar; el cambio llega al sitio |
 
 ---
 
@@ -67,7 +69,7 @@ cortos (8-16 px). Nada gira.
 
 ---
 
-## 3. Las 15 ideas de motion
+## 3. Las 17 ideas de motion
 
 1. **Titular por líneas (al cargar).** El antetítulo, el subtítulo y los botones suben 12 px
    y pasan de un desenfoque de 6 px a nítido, escalonados cada 80 ms, en 500-600 ms con
@@ -119,6 +121,15 @@ cortos (8-16 px). Nada gira.
     izquierda. En el celular no se fija: son pestañas.
 15. **Botón claro/oscuro en la demo.** La interfaz cambia de tema en 300 ms: luce el modo
     oscuro real de la app (capturas en `capturas/oscuro/`).
+16. **«Edita aquí, se guarda allá» (bloque WordPress, una vez al ser visible).** Una fila
+    de la tabla de entradas: la celda «Largo del título: 73» está en rojo; el cursor la
+    corrige, el número baja a 58 y el fondo pasa a neutro en 300 ms; a la derecha aparece
+    un aviso pequeño «Guardado en WordPress ✓» que se va a los 2 s. Referencia:
+    `motion/app/wordpress-editar-palabra-clave.mp4`.
+17. **El contador de SMS (bloque SMS, al tocar o una vez).** El mensaje con «ñ» y tildes
+    muestra «2 SMS»; se marca «Quitar tildes» y el número rueda de 2 a 1 (contador
+    vertical de 250 ms) mientras la burbuja «Así llega» cambia sus letras. Referencia:
+    `motion/app/sms-desde-la-ficha.mp4`.
 
 ### Motivo gráfico de la marca
 El logo tiene **rayas diagonales blancas** y una **forma de pico (una «A»)** sobre un
