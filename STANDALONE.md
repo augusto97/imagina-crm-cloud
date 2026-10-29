@@ -4891,4 +4891,97 @@ público (hoy nada se indexa).
 
 ---
 
-**Versión del documento:** 1.127.0 (sitio del producto y SEO)
+### ADR-S82 — SMS con la cuenta de cada empresa: cinco proveedores, contador compartido, Ley 2300 y estado de entrega (v0.1.332)
+
+**Contexto.** Las empresas avisan por SMS lo que no puede esperar a que abran
+el correo: la cita de mañana, el pago vencido, el pedido listo. WhatsApp
+(ADR-S69) no lo reemplaza: no todo cliente lo usa y una plantilla aprobada no
+siempre está a mano. Cada proveedor de SMS tiene su propia API, su forma de
+cobrar (por segmento: un SMS con una tilde cuesta más del doble) y su forma de
+avisar si llegó. Y en Colombia la Ley 2300 de 2023 limita el horario de los
+mensajes comerciales y de cobranza.
+
+**Decisión.**
+(1) **La cuenta es de la empresa**: cinco integraciones por clave en la
+categoría «Mensajes de texto (SMS)» — Twilio (cualquier país), BulkGate
+(200+ países), Infobip, LabsMobile (España y Latinoamérica) y Onurix
+(Colombia) — y «API personalizada» para cualquier otro. Nada sale por una
+cuenta del operador. La credencial se verifica contra el proveedor antes de
+guardarse, con el motivo traducido, y queda cifrada (`SECRETS_KEY`, como el
+resto de las conexiones); el saldo que devuelve la verificación queda en el
+nombre de la conexión. Cada conexión tiene país por defecto (CO) para los
+números sin indicativo y su ritmo de envío masivo (mensajes por segundo).
+(2) **Una capa común de proveedores, pura** (`apps/api/src/sms/sms-providers.ts`):
+por proveedor, `buildSend`/`parseSend`, `buildVerify`/`parseVerify` y
+`parseDeliveryReport`/`verifyDeliveryReport`. Se prueba contra las respuestas
+de la documentación de cada uno (incluido el vector oficial de la firma de
+Twilio) y lo que la documentación no deja confirmar va marcado `SUPUESTO` al
+lado del código. Toda salida pasa por `safeWebhookFetch` (SEC-03); las URLs
+base de Twilio, BulkGate, LabsMobile y Onurix sólo se cambian por env para
+tests (`SMS_*_API_URL`); la de Infobip es la URL personal de cada cuenta.
+(3) **Un solo contador** en shared (`smsSegments`, `finalSmsText`,
+`stripSmsAccents`): GSM-7 a 160 caracteres (153 por parte en un mensaje
+largo), con los de extensión contando doble, y UCS-2 a 70 (67 por parte);
+máximo 6 partes. «Quitar tildes» reemplaza lo que no es GSM-7 por su
+equivalente (la ñ y la É son GSM-7 y se conservan). La interfaz cuenta y el
+servidor cobra con la MISMA función.
+(4) **Ley 2300 como opción, no como regla**: «Respetar el horario para mensajes
+comerciales y de cobranza» (en la acción, en la ficha y en el envío a una
+selección) usa `nextCommercialSendTime` (shared): lunes a viernes de 7:00 a
+19:00 y sábados de 8:00 a 15:00, nunca domingos ni festivos de Colombia, en la
+zona de la empresa (sin zona, la de Bogotá); fuera de esa franja el SMS queda
+`programado` para el siguiente momento permitido. Los recordatorios de citas
+no la usan: son avisos de servicio. La app ayuda a cumplir, no asesora: el
+texto pide confirmarlo con el abogado.
+(5) **Cola durable en Postgres**: `sms_messages` (RLS) es la verdad — destino,
+partes, codificación, estado, id del proveedor y una referencia propia —; una
+cola BullMQ sólo la despierta (tic por minuto + un `drain` al encolar un envío
+masivo). Se reclaman filas con `FOR UPDATE SKIP LOCKED`, se respeta el ritmo de
+cada conexión y lo que queda `enviando` más de 10 minutos (el proceso se cortó
+a mitad) pasa a `fallido`: es preferible un fallo visible a un doble envío. El
+texto se guarda sólo mientras el mensaje espera (programado o en cola) y se
+borra al salir.
+(6) **Estado de entrega que nunca retrocede** (`nextSmsStatus`): programado →
+en cola → enviado → entregado / fallido; un aviso atrasado no deshace un
+«entregado». Los avisos llegan a `/api/v1/public/sms/:token` (`sms_hooks`, sin
+RLS como `whatsapp_hooks`: se conoce la empresa por el token). Twilio firma con
+`X-Twilio-Signature` y se verifica (mala → 401); los que no firman (BulkGate,
+LabsMobile, Infobip) quedan protegidos por un token de 32 caracteres imposible
+de adivinar y porque sólo pueden actualizar SMS que esa misma conexión mandó
+(por id del proveedor o por nuestra referencia). Twilio, Infobip y LabsMobile
+reciben la dirección en cada envío; en BulkGate se pega una vez en su portal;
+a Onurix, que no avisa, la app le pregunta (5 min, luego cada 30 min y cada
+3 h, hasta 3 días). La ruta pública tiene 10× el rate limit general.
+(7) **En el registro**: `lists.settings.sms` mapea Teléfono, «Último SMS» y
+«Estado del último SMS» (`*_field_id`, re-mapeados por plantillas y migración);
+«Preparar columnas» las crea. Se escriben directo, sin pasar por el hub de
+cambios (no disparan automatizaciones ni avisos a seguidores). La actividad
+(`action = 'sms'`) guarda el hecho —evento, teléfono enmascarado, partes,
+conexión y motivo si falló—, **nunca el texto**, y el portal del cliente no la
+muestra.
+(8) **Dónde se usa**: acción de conector `send_sms` (cualquier disparador), con
+«Probar ahora» (simula, no envía) y «Enviarme una prueba»; botón de la ficha
+(modal, página y ficha diseñada) con la vista previa del texto real; envío a
+una selección hasta `SMS_BULK_MAX` (500) con revisión previa y resultado por
+fila; recordatorios de la agenda (D5) con su conexión y un texto con
+`{{cita.*}}`, en los mismos momentos y con el mismo reclamo «una vez» que los
+del correo.
+(9) **Fallas**: una credencial rechazada, sin saldo o un remitente no aceptado
+son «sistémicas» y abren un Problema por conexión (`connection:<id>`) que se
+cierra solo al volver a funcionar; un número inválido sólo falla ese mensaje.
+(10) **Permisos**: mandar desde la ficha o a una selección exige poder editar
+esos registros (el teléfono oculto por ACL no se usa); configurar columnas,
+`manage_lists`/`manage_fields`; ninguna ruta abre a invitados.
+
+**Consecuencias.** Migración 0094 (`sms_hooks`, `sms_messages`). Migrar una
+empresa lleva las conexiones (por el camino genérico) pero no el historial ni
+los SMS programados, y avisa que la URL de avisos de BulkGate cambia; borrarla
+limpia las dos tablas. El asistente y el MCP ven las conexiones de SMS sin
+secretos en `get_list_schema` y pueden proponer `send_sms`. Queda fuera, a
+propósito: recibir SMS entrantes (respuestas), MMS, enviar a listas de difusión
+sin registros, plantillas de SMS reutilizables y que la app pague los SMS
+(cada empresa los paga en su proveedor).
+
+---
+
+**Versión del documento:** 1.128.0 (SMS con la cuenta de cada empresa)

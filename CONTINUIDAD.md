@@ -372,11 +372,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.331**
-(la app lista para la landing: no se indexa, enlace al sitio del producto en el
-login, `/registro` y el origen de cada alta en la consola), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.332**
+(SMS con la cuenta de cada empresa: Twilio, BulkGate, Infobip, LabsMobile y
+Onurix), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- SMS (v0.1.332): verificado sólo contra dobles. Con la primera cuenta real de
+  cada proveedor, revisar los SUPUESTOS de ADR-S82 (BulkGate sin `country`,
+  LabsMobile `long`/`credits`/valores de `status`, Infobip saldo, Onurix `id` y
+  estados). La URL de avisos de BulkGate hay que pegarla en su portal.
 - 2026-10-29 — **Dos integraciones nuevas pedidas por el usuario: SMS y
   WordPress.** (1) SMS con proveedores económicos + Twilio (lo usan muchas
   plataformas) + BulkGate. (2) Conectar sitios WordPress «como WooCommerce»:
@@ -387,9 +391,11 @@ login, `/registro` y el origen de cada alta en la consola), en `main`.
   entrega + horario de la Ley 2300; WordPress: conexión de un clic con
   «Autorizar aplicación» del propio WordPress, asistente que elige tipo de
   contenido y columnas, el motor de sincronización de la tienda generalizado, y
-  un complemento propio porque Rank Math no expone sus campos por REST). **Espera
-  su respuesta**: qué proveedores de SMS, si acepta el complemento de WordPress,
-  si se pueden crear borradores desde la app y el orden. El vencimiento de la
+  un complemento propio porque Rank Math no expone sus campos por REST). **Respuesta del
+  usuario**: «hazlo todo como recomiendas» salvo **crear páginas o entradas
+  desde la app** (lo nuevo se crea en WordPress; se mira si un cliente lo pide).
+  Plan: v0.1.332 SMS (publicada), v0.1.333 WordPress sin complemento, v0.1.334
+  el complemento «Imagina Base Connector». El vencimiento de la
   prueba de 15 días quedó **para después** (lo dijo el usuario).
 - 2026-10-29 — **Landing para SEO** (ADR-S81). Decidido con el usuario: NO un
   home dentro de la app (SPA, white-label, releases) ni imaginawp.com; un sitio
@@ -897,6 +903,25 @@ login, `/registro` y el origen de cada alta en la consola), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-29 · v0.1.332** — **SMS con la cuenta de cada empresa**
+  (ADR-S82). Cinco proveedores por clave en Integraciones → «Mensajes de texto
+  (SMS)»: Twilio, BulkGate, Infobip, LabsMobile y Onurix (para otro, «API
+  personalizada»). La clave se verifica antes de guardarse y queda cifrada.
+  (1) Contador de SMS compartido (GSM-7 160/153, UCS-2 70/67) con «Quitar
+  tildes», la misma función que el envío. (2) Acción «Enviar SMS» en las
+  automatizaciones, con «Respetar el horario… (Ley 2300 de 2023)» (lun-vie
+  7-19, sáb 8-15, sin domingos ni festivos, zona de la empresa → si no, queda
+  programado), «Probar ahora» (no envía) y «Enviarme una prueba». (3) «Enviar
+  SMS» en la ficha y a una selección (hasta 500, con revisión y resultado por
+  fila). (4) Recordatorios de citas por SMS en la agenda. (5) Estado de
+  entrega en `sms_messages` (migración 0094) que nunca retrocede: avisos de
+  Twilio firmados, de los demás por un token de la conexión, Onurix por
+  consulta; columnas «Último SMS» / «Estado del último SMS»; la actividad anota
+  el hecho sin el texto. (6) Problemas por credencial, asistente/MCP, migrar y
+  borrar empresa, ideas, guía, Aprende y novedad. Tests: shared 14, API 14 +
+  agenda + borrado, front 3 + E2E navegador 79/79. Queda: probar con cuentas
+  reales de cada proveedor (los supuestos de API están en el ADR).
 
 - **2026-10-29 · v0.1.331** — **La app lista para la landing** (ADR-S81). El
   usuario preguntó si hacerle un home a la app o una landing aparte para SEO;

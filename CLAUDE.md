@@ -10074,6 +10074,102 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         rechazado, persistencia, `/registro` con utm y referrer, barra limpia,
         alta → «Desde sitio» con detalle y KPI por origen, celular oscuro).
 
+  - [x] **SMS con la cuenta de cada empresa (v0.1.332, ADR-S82, pedido del
+        usuario)**: cinco proveedores por clave en una categoría nueva de
+        Integraciones, «Mensajes de texto (SMS)» — **Twilio**, **BulkGate**,
+        **Infobip**, **LabsMobile** y **Onurix** (Colombia); para otro
+        proveedor, «API personalizada». El costo y la reputación son de cada
+        empresa: nada sale por una cuenta del operador.
+        (a) **Conectar**: la credencial se verifica contra el proveedor ANTES de
+        guardarse (Twilio la cuenta; BulkGate, Infobip, LabsMobile y Onurix el
+        saldo, que queda en el nombre de la conexión) con el motivo traducido
+        («Twilio no reconoce el Account SID o el Auth Token…»), y queda cifrada
+        con `SECRETS_KEY`. País por defecto CO para los números sin indicativo,
+        ritmo de envío masivo por conexión, y «Enviar prueba» desde el mismo
+        diálogo. Las piezas de cada API son PURAS (`sms/sms-providers.ts`:
+        armar el envío, leer la respuesta, leer y verificar el aviso de
+        entrega), probadas contra las respuestas de la documentación de cada
+        uno; lo que la documentación no deja confirmar está marcado SUPUESTO al
+        lado del código.
+        (b) **Contador de SMS** compartido (`smsSegments`, shared): GSM-7
+        160/153 —los caracteres de extensión (`€ [ ] { } ~ ^ | \`) cuentan
+        doble— y UCS-2 70/67; dice qué caracteres pasan el mensaje a Unicode y
+        ofrece «Quitar tildes» (`finalSmsText`), y es la MISMA función que usa
+        el envío: lo que se cuenta es lo que se cobra. Con variables la opción
+        se ve aunque el texto no tenga tildes, porque los datos sí pueden
+        traerlas («Gómez»).
+        (c) **Acción «Enviar SMS»** en las automatizaciones (una acción de
+        conector `send_sms`): destino con variables (E.164, con los campos de
+        teléfono como atajo), mensaje con contador, remitente, quitar tildes y
+        **«Respetar el horario… (Ley 2300 de 2023)»**: lunes a viernes de 7:00
+        a 19:00 y sábados de 8:00 a 15:00, nunca domingos ni festivos de
+        Colombia, en la zona de la empresa (sin zona, la de Bogotá); fuera de
+        esa franja el SMS queda **programado** para el siguiente momento
+        permitido. El texto pide confirmarlo con el abogado. «Probar ahora»
+        resuelve las variables con un registro real y NO envía; «Enviarme una
+        prueba» manda un SMS real sólo a tu número.
+        (d) **«Enviar SMS» en la ficha** (modal, página y ficha diseñada) con la
+        vista previa del texto real del registro y el contador; y **a una
+        selección** (barra de acciones): hasta 500, revisión previa con cuántos
+        salen, quién no tiene teléfono, cuántos van en Unicode y cuántos quedan
+        programados, cola al ritmo del proveedor y resultado por fila.
+        (e) **Recordatorios de citas por SMS** en el constructor de la agenda
+        (Correos y recordatorios): conexión + texto con `{{cita.*}}`, en los
+        mismos momentos y con el mismo «una sola vez» que los del correo, al
+        teléfono del mapeo de la página; la publicación se rechaza si falta la
+        conexión, el teléfono o el texto.
+        (f) **Estado de entrega** en `sms_messages` (migración 0094, RLS):
+        programado → en cola → enviado → entregado / fallido, **sin retroceder
+        nunca** (un aviso atrasado no deshace un «entregado»). Los avisos llegan
+        a `/api/v1/public/sms/:token` (tabla `sms_hooks` sin RLS, un token
+        imposible de adivinar por conexión): Twilio con su firma
+        `X-Twilio-Signature` (mala → 401), los que no firman sólo pueden tocar
+        SMS que mandamos nosotros por ESA conexión. Twilio, Infobip y LabsMobile
+        llevan la dirección en cada envío; en BulkGate se pega una vez (la
+        página de la conexión la da lista para copiar); a Onurix, que no avisa,
+        la app le pregunta (a los 5 min, después cada 30 min y cada 3 h, durante
+        3 días). Cola durable en Postgres (`FOR UPDATE SKIP LOCKED`) despertada
+        por un tic de BullMQ por minuto; un envío cortado a mitad queda
+        «fallido» en vez de mandarse dos veces. El texto se guarda sólo
+        mientras espera.
+        (g) **Columnas en la lista**: «Preparar columnas» crea «Último SMS» y
+        «Estado del último SMS» (con los colores de cada estado) y elige el
+        teléfono; se escriben solas sin disparar automatizaciones. La
+        actividad anota «envió un SMS a +57 300…, 1 segmento» (o programó / no
+        pudo enviar con el motivo), **nunca el texto**, y el portal del cliente
+        no lo muestra (mismo criterio que WhatsApp).
+        (h) **Problemas** (ADR-S44): una credencial rechazada, sin saldo o un
+        remitente no aceptado abren uno por conexión que se cierra solo al
+        volver a funcionar; un número inválido no.
+        (i) **Página de la conexión** (`/settings/sms/:id`): envíos de 30 días,
+        entregados, fallidos, programados y SMS cobrados, cómo llega el estado,
+        columnas por lista y los envíos recientes.
+        (j) Asistente y MCP: `get_list_schema` muestra las conexiones de SMS (sin
+        secretos) y las columnas, y `propose_create_automation` acepta
+        `send_sms`. Migrar una empresa lleva las conexiones (la URL de BulkGate
+        cambia: se avisa) y no el historial; borrarla limpia las dos tablas.
+        Ideas nuevas («Recordatorio de cita por SMS», «Aviso de pago por SMS»),
+        guía, módulo de Aprende con 3 artículos e ilustraciones, y novedad.
+        **Atrapado en el E2E**: el mensaje de la acción de WhatsApp (desde
+        v0.1.315) y el de SMS eran un cuadro de UNA línea —`autoGrow` sin
+        `rows` dibuja un input, la lección de v0.1.156—; ahora son cuadros que
+        crecen. Y el envío masivo quitaba las tildes de los datos («Gómez») sin
+        mostrar la opción porque el texto en sí no las tenía.
+        Tests: 14 de shared, 14 de integración en la API (el vector oficial de
+        la firma de Twilio, los 5 proveedores contra dobles con sus respuestas
+        documentadas, avisos firmados y por token, Ley 2300 con reloj fijo,
+        cola, envío cortado, Problemas, ACL y RLS) + recordatorio por SMS en la
+        agenda + borrado de empresa; 3 del front — 1716 API (160 archivos), 687
+        front y 567 shared en verde — + E2E navegador 79/79 contra un doble de
+        los 5 proveedores (`scripts/dev/fake-sms.mjs`): conectar cada uno con
+        clave mala y buena, contador y quitar tildes, envío desde la ficha con
+        aviso de entrega, programado por la Ley 2300, automatización con aviso
+        firmado de Twilio → «entregado», firma falsa 401, envío a una selección
+        con el resultado por fila, recordatorio de cita por SMS, consulta de
+        Onurix, celular 390×844 en oscuro.
+        **Límite de la verificación**: ningún proveedor real alcanza el sandbox;
+        la prueba con cuentas reales queda para el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
