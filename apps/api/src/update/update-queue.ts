@@ -5,6 +5,7 @@ import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { BackupsService } from './backups.service';
 import { CheckUpdatesService } from './check-updates.service';
+import { PostgresWalService } from './postgres-wal';
 import { UpdateManager } from './update-manager.service';
 import { UPDATE_QUEUE } from './update.types';
 
@@ -26,6 +27,7 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
         private readonly manager: UpdateManager,
         private readonly checkUpdates: CheckUpdatesService,
         private readonly backups: BackupsService,
+        private readonly wal: PostgresWalService,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -51,6 +53,8 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
                     if (job.name === 'backups-tick') return void (await this.backups.tick());
                     // v0.1.282 — subir a Google Drive una copia que ya existe.
                     if (job.name === 'drive-upload') return void (await this.backups.uploadExisting(String((job.data as { name?: string }).name ?? '')));
+                    // v0.1.337 — el WAL de Postgres y el disco, vigilados.
+                    if (job.name === 'server-health') return void (await this.wal.tick());
                     return void (await this.manager.update());
                 },
                 // 1 a la vez; lock largo (>30min) para no re-encolar el deploy en curso.
@@ -59,7 +63,7 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
             this.worker.on('failed', (job, err) => {
                 this.logger.error(`Update job ${job?.name} falló: ${err.message}`);
                 if (job?.name === 'snapshot' || job?.name === 'drive-upload') void this.backups.markFailed(err.message);
-                else if (job?.name !== 'check' && job?.name !== 'backups-tick') void this.manager.markFailed(err.message);
+                else if (job?.name !== 'check' && job?.name !== 'backups-tick' && job?.name !== 'server-health') void this.manager.markFailed(err.message);
             });
             this.worker.on('error', (err) => this.logger.warn(`Worker de actualización con error: ${err.message}`));
 
@@ -76,6 +80,11 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
             void this.queue
                 .upsertJobScheduler('backups-hourly', { pattern: '5 * * * *' }, { name: 'backups-tick' })
                 .catch((err) => this.logger.warn(`No se pudo registrar el scheduler de copias: ${String(err)}`));
+            // v0.1.337 — cada 15 min: que el archivado del WAL funcione (si se
+            // traba, Postgres guarda todo y llena el disco) y que quede disco.
+            void this.queue
+                .upsertJobScheduler('server-health', { pattern: '10,25,40,55 * * * *' }, { name: 'server-health' })
+                .catch((err) => this.logger.warn(`No se pudo registrar la revisión del servidor: ${String(err)}`));
             this.logger.log('Cola de actualización lista');
         } catch (err) {
             this.logger.warn(`Auto-actualización deshabilitada (sin Redis): ${String(err)}`);

@@ -592,7 +592,7 @@ export class DomainsService {
                 ...event,
                 tenantName: row?.name ?? `#${event.tenantId}`,
                 target: this.targetHost(),
-                consoleUrl: `${this.env.APP_BASE_URL.replace(/\/$/, '')}/platform?tab=dominios`,
+                consoleUrl: `${this.env.APP_BASE_URL.replace(/\/$/, '')}/#/platform?tab=dominios`,
             });
             for (const address of to) await this.mail.enqueue({ to: address, ...notice });
         } catch {

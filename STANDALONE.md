@@ -5298,6 +5298,74 @@ pedido ya no tiene) no aparece en la papelera ni se restaura, y la revisión de
 novedades no avisa columnas nuevas de un tipo de contenido que todavía no se
 trae (el tipo entero ya es la novedad).
 
+### ADR-S86 — El registro de cambios de Postgres (WAL), vigilado, comprimido y con su carpeta en orden (v0.1.337)
+
+**Contexto.** El servidor de producción dejó de poder actualizarse: 927 MB libres
+de 57,7 GB. La app ocupaba menos de 1 GB; los 45,8 GB estaban en el WAL de
+Postgres. El archivado de PITR (STANDALONE §14/§17) **nunca había funcionado**:
+el volumen nombrado `walarchive` se monta en `/wal_archive`, una ruta que la
+imagen no trae, y Docker la crea `root:root 755`; Postgres (uid 70) recibía
+`Permission denied` (86.256 intentos, 0 archivados en 20 días) y, como no borra
+un segmento hasta archivarlo, guardaba todo en `pg_wal`. Nadie se enteró: la
+tarjeta Disco decía «Base de datos, sistema y otros» porque el API no corre como
+root y no ve dentro de Docker, y el `pitr-drill.sh` levantaba su PROPIO Postgres
+con un bind mount en 777 y un `archive_command` copiado a mano — pasaba siempre.
+De paso, el comando (`test ! -f … && cp …`) tenía otra forma de trabarse para
+siempre: un `cp` cortado (disco lleno) o un corte entre copiar y marcar el
+segmento dejaba el archivo, y el `test ! -f` fallaba en cada reintento.
+
+**Decisión.**
+1. **El compose arregla la carpeta al arrancar**: un `entrypoint` que hace
+   `mkdir -p /wal_archive; chown postgres:postgres /wal_archive` y sigue con el
+   `docker-entrypoint.sh` oficial (que corre como root y baja a postgres).
+2. **`archive_command` comprimido, atómico e idempotente**: si el segmento ya
+   está (`%f.gz` o `%f` sin comprimir, de antes) responde éxito; si no,
+   `gzip -c` a `%f.gz.tmp` y `mv` → nunca un archivo a medias; poda de 3 días
+   como antes. Un segmento que cierra `archive_timeout` es casi todo ceros:
+   16 MB → ~16 KB. `pitr-restore.sh`/`pitr-drill.sh` restauran los dos
+   formatos y `basebackup.sh` poda los dos (`pg_archivecleanup -x .gz`).
+3. **La app mide y vigila el WAL** (`PostgresWalService`): por SQL con la
+   conexión base (superusuario) — `pg_database_size`, `pg_ls_waldir()`,
+   `pg_stat_archiver`, `pg_ls_archive_statusdir()` y el archivo con
+   `pg_ls_dir`/`pg_stat_file` (la carpeta sale del `archive_command`, sólo si es
+   una ruta simple). «Fallando» = 6+ pendientes y el último fallo posterior al
+   último bueno; el motivo «sin permiso» se prueba con el propio usuario
+   postgres (`COPY … TO PROGRAM 'test -w …'`). Lo que hay que ejecutar dentro
+   del contenedor va por `COPY … TO PROGRAM` con comandos FIJOS (nunca texto de
+   una persona); lo único que necesita root —devolver la carpeta— va por
+   `docker exec -u 0 $PG_CONTAINER` si el usuario del API usa Docker. Sin
+   superusuario (base administrada) la tarjeta lo dice y no hace nada.
+4. **«Liberar y reparar»** (Plataforma → Diagnóstico → Disco, sólo con el
+   archivado trabado), EN ESTE ORDEN: dar por archivados los pendientes
+   (`archive_status/*.ready → .done`), `CHECKPOINT` (Postgres los borra sin
+   copiarlos) y recién entonces el permiso. Arreglar el permiso primero hace que
+   Postgres copie el atraso entero de golpe al mismo disco — medido: 700 MB en
+   un segundo — y con el disco casi lleno lo llena. Se pierde sólo poder
+   restaurar a un minuto exacto de ese período.
+5. **Revisión cada 15 minutos** (job `server-health` en la cola de
+   actualizaciones): si falla por permiso y el atraso entra holgado en el disco
+   libre (×1,5), repara el permiso solo; con el comando viejo comprime el
+   archivo (lotes de 400, conservando la fecha para que la poda siga
+   midiéndose bien); avisa por correo a los superadmins y deja el aviso en
+   Diagnóstico cuando el archivado sigue trabado (uno cada 12 h) o el disco
+   baja de max(2 GB, 5 %) o se queda sin inodos (uno cada 24 h). El aviso del
+   WAL se suspende la revisión en que se reparó el permiso: Postgres reintenta
+   a su ritmo.
+6. **La tarjeta Disco** muestra «Base de datos», «Registro de cambios (WAL)»
+   (en rojo si está trabado) y «Archivo del registro de cambios» por separado
+   cuando la base es local, y «Sistema y otros» con lo que queda.
+7. **El simulacro de PITR prueba lo que corre**: levanta el servicio postgres
+   del `docker-compose.prod.yml` tal cual (otro proyecto de compose, volumen
+   nombrado de verdad) y exige carpeta de postgres, segmentos `.gz` y cero
+   fallidos antes de restaurar. Con el compose viejo falla con el motivo.
+
+**Consecuencias.** Los servidores existentes no recrean el contenedor de
+Postgres en una actualización (cortaría la base unos segundos): siguen con el
+comando viejo hasta que se recree una vez (runbook-disk §4) — mientras tanto la
+app repara el permiso, comprime el archivo y avisa. De paso se corrigieron los
+enlaces de los correos al operador (copia a Drive, dominios), que apuntaban a
+`/platform?tab=…` sin el `#` del router y caían en la lista de listas.
+
 ---
 
-**Versión del documento:** 1.132.0 (lo que la fuente borra sale de la app sin lápidas; novedades del sitio)
+**Versión del documento:** 1.133.0 (el WAL de Postgres, vigilado y comprimido)

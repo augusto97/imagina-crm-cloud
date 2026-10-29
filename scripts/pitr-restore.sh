@@ -79,7 +79,9 @@ fi
 # El WAL archivado se monta en /wal_archive dentro del contenedor.
 log "escribiendo configuración de recovery"
 {
-    echo "restore_command = 'cp /wal_archive/%f %p'"
+    # v0.1.337 — los segmentos se archivan comprimidos (`%f.gz`); los de antes
+    # de esa versión están sin comprimir. El comando acepta los dos.
+    echo "restore_command = 'f=/wal_archive/%f; if [ -f \"\$f.gz\" ]; then gunzip -c \"\$f.gz\" > \"%p\"; else cp \"\$f\" \"%p\"; fi'"
     if [[ -n "$TARGET_TIME" ]]; then
         echo "recovery_target_time = '$TARGET_TIME'"
     fi

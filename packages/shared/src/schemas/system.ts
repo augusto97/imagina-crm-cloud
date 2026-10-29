@@ -165,6 +165,61 @@ export const platformDiagnosticsSchema = z.object({
 export type PlatformDiagnostics = z.infer<typeof platformDiagnosticsSchema>;
 
 /**
+ * v0.1.337 — La base de datos vista desde el disco: cuánto ocupa, su registro
+ * de cambios (WAL) y el archivo del WAL, y si el archivado funciona. Nació de
+ * un servidor que se llenó con 45 GB de WAL: la carpeta del archivo nacía de
+ * root, Postgres no podía escribir y guardaba todo — y la tarjeta Disco sólo
+ * decía «Base de datos, sistema y otros».
+ *
+ * `available` es false si la conexión no es de superusuario (una base
+ * administrada): ahí no se puede medir ni arreglar desde la app.
+ */
+export const POSTGRES_WAL_HEALTH = ['ok', 'failing', 'off', 'unknown'] as const;
+export type PostgresWalHealth = (typeof POSTGRES_WAL_HEALTH)[number];
+
+export const postgresWalStatusSchema = z.object({
+    available: z.boolean(),
+    /** Por qué no se pudo medir (cuando `available` es false). */
+    reason: z.string().nullable().default(null),
+    /** La base corre en este servidor: lo que ocupa cuenta en ESTE disco. */
+    local: z.boolean().default(true),
+    db_bytes: z.number().nullable().default(null),
+    /** pg_wal: lo que Postgres guarda hasta archivarlo y pasar un punto de control. */
+    wal_bytes: z.number().nullable().default(null),
+    archive_mode: z.string().default('off'),
+    archive_dir: z.string().nullable().default(null),
+    archive_bytes: z.number().nullable().default(null),
+    archive_files: z.number().nullable().default(null),
+    archive_oldest_at: z.string().nullable().default(null),
+    /** El archive_command ya comprime (configuración de v0.1.337 en adelante). */
+    archive_compressed: z.boolean().default(false),
+    /** Segmentos esperando a archivarse (no se pueden borrar mientras tanto). */
+    pending: z.number().nullable().default(null),
+    pending_bytes: z.number().nullable().default(null),
+    archived_count: z.number().nullable().default(null),
+    failed_count: z.number().nullable().default(null),
+    last_archived_at: z.string().nullable().default(null),
+    last_failed_at: z.string().nullable().default(null),
+    last_failed_wal: z.string().nullable().default(null),
+    health: z.enum(POSTGRES_WAL_HEALTH).default('unknown'),
+    /** Diagnóstico cuando falla: `not_writable` = Postgres no puede escribir en la carpeta del archivo. */
+    problem: z.enum(['not_writable', 'unknown']).nullable().default(null),
+});
+export type PostgresWalStatus = z.infer<typeof postgresWalStatusSchema>;
+
+/** «Liberar y reparar» el registro de cambios trabado. */
+export const walReleaseResultSchema = z.object({
+    /** Segmentos pendientes que se dieron por archivados. */
+    marked: z.number(),
+    freed_bytes: z.number(),
+    wal_bytes: z.number().nullable(),
+    /** `fixed`: se reparó el permiso · `ok`: no hacía falta · `failed`: no se pudo (ver `message`). */
+    permission: z.enum(['fixed', 'ok', 'failed']),
+    message: z.string().nullable().default(null),
+});
+export type WalReleaseResult = z.infer<typeof walReleaseResultSchema>;
+
+/**
  * v0.1.278 — Uso del disco del servidor (Plataforma → Diagnóstico). `parts`
  * son las carpetas de la app que más crecen; `available` es false fuera del
  * layout de releases (desarrollo).
@@ -186,6 +241,8 @@ export const diskUsageSchema = z.object({
     parts: z.array(z.object({ key: z.string(), label: z.string(), bytes: z.number().nullable() })),
     /** Lo que liberaría «Liberar espacio» ahora (estimado). */
     reclaimable_bytes: z.number(),
+    /** v0.1.337 — la base de datos, su WAL y el archivo (null si no se pudo consultar). */
+    postgres: postgresWalStatusSchema.nullable().default(null),
 });
 export type DiskUsage = z.infer<typeof diskUsageSchema>;
 

@@ -244,6 +244,10 @@ const envSchema = z.object({
     UPDATER_KEEP_RELEASES: z.coerce.number().int().positive().default(3),
     // v0.1.278 — espacio libre mínimo para empezar una actualización.
     UPDATER_MIN_FREE_MB: z.coerce.number().int().positive().default(1024),
+    // v0.1.337 — contenedor de Postgres del compose de producción: la app le
+    // devuelve la carpeta del archivo de WAL a postgres (`docker exec -u 0`)
+    // si el archivado falla por permiso.
+    PG_CONTAINER: z.string().default('imagina-base-prod-postgres-1'),
 
     // --- Copias de seguridad completas (v0.1.179, ADR-S20). En producción
     // ambos se derivan de UPDATER_BASE_PATH (shared/backups y current/deploy);

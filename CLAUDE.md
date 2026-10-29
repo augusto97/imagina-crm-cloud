@@ -10514,6 +10514,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         avisados, traídos y llenos → producto en la papelera de la tienda
         detectado por intervalos → celular 390 px en oscuro).
 
+  - [x] **El WAL de Postgres, vigilado, comprimido y con su carpeta en orden
+        (v0.1.337, ADR-S86, reporte del usuario: "no me deja instalar la nueva
+        versión, dice que me quedé sin espacio, ¿en qué la app ocupa tanto?")**.
+        El servidor tenía 927 MB libres de 57,7 GB: la app ocupaba menos de
+        1 GB y **45,8 GB eran WAL de Postgres**. El archivado de PITR **nunca
+        funcionó**: el volumen nombrado `walarchive` se monta en `/wal_archive`,
+        que la imagen no trae, y Docker lo crea `root:root 755` → Postgres
+        (uid 70) `Permission denied` en cada intento (86.256 fallidos, 0
+        archivados en 20 días) y, como no borra un segmento hasta archivarlo,
+        guardaba todo en `pg_wal`. Reproducido aquí con el compose tal cual.
+        Se destrabó con el usuario por consola EN ORDEN (marcar `.ready` →
+        `.done`, `CHECKPOINT`, recién después el `chown`: al revés Postgres
+        copia el atraso de golpe —700 MB/s medido— y llena el disco). Para que
+        no vuelva: (a) **compose**: `entrypoint` que le da `/wal_archive` a
+        postgres antes del entrypoint oficial, y `archive_command`
+        **comprimido** (16 MB → ~16 KB por segmento casi vacío), **atómico**
+        (`.tmp` + `mv`) e **idempotente** (si ya está archivado, éxito; el
+        viejo `test ! -f` se trababa para siempre con un archivo a medias);
+        `pitr-restore.sh`/`basebackup.sh` leen y podan `.gz` y lo de antes;
+        (b) **`PostgresWalService`** mide por SQL con la conexión base
+        (superusuario): tamaño de la base, `pg_wal`, archivo, pendientes y
+        `pg_stat_archiver`; «fallando» = 6+ pendientes con el último fallo
+        posterior al último bueno, y el motivo «sin permiso» lo prueba el
+        propio postgres (`COPY … TO PROGRAM 'test -w …'`); (c) **tarjeta Disco**
+        con «Base de datos», «Registro de cambios (WAL)» (en rojo si está
+        trabado), «Archivo del registro de cambios» y «Sistema y otros», y un
+        aviso que dice desde cuándo falla, cuánto espera y por qué, con
+        **«Liberar y reparar»** (marca los pendientes, punto de control, y
+        `docker exec -u 0 $PG_CONTAINER chown` si el usuario del API puede usar
+        Docker; si no, da el comando); (d) **revisión cada 15 min** (job
+        `server-health`): repara el permiso sola si el atraso entra holgado en
+        el disco, comprime el archivo de los contenedores viejos (lotes de 400,
+        conservando la fecha para la poda) y avisa por correo a los
+        superadmins —archivado trabado (12 h) o disco bajo de max(2 GB, 5 %)
+        o sin inodos (24 h)—; (e) **`pitr-drill.sh` prueba lo que corre**:
+        levanta el postgres del `docker-compose.prod.yml` tal cual y exige
+        carpeta de postgres, `.gz` y cero fallidos — con el compose viejo
+        falla con el motivo (antes usaba su propio contenedor con un bind en
+        777 y por eso nunca lo detectó). De paso: los correos al operador
+        (copia a Drive, dominios) enlazaban `/platform?tab=…` sin el `#` y
+        caían en la lista de listas. Tests: `postgres-wal.spec` (13, con
+        Postgres real: el estado roto, el aviso una sola vez, liberar sin
+        copiar, la compresión con fecha, la autorreparación, y la
+        configuración nueva del compose con la carpeta de root) — front 692 y
+        shared 587 en verde — + simulacro de PITR con el compose real (✅ y ❌
+        con el viejo) + E2E navegador 22/22 (escritorio y celular en oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

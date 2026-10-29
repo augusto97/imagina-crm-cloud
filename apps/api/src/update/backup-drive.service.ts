@@ -515,7 +515,7 @@ export class BackupDriveService implements OnModuleInit, SnapshotUploader {
         try {
             const first = await this.redis.set(ALERT_KEY, '1', 'EX', 12 * 3600, 'NX');
             if (first !== 'OK') return;
-            const panel = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/platform?tab=backups`;
+            const panel = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/#/platform?tab=backups`;
             const subject = 'La copia del servidor no se pudo subir a Google Drive';
             const text = [
                 `La copia ${name} se creó en el servidor, pero no se pudo subir a Google Drive:`,

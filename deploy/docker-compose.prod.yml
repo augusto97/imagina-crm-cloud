@@ -16,7 +16,19 @@ services:
     # `archive_timeout=300` fuerza el archivado aunque haya poca escritura (acota
     # el RPO a ≤5 min). El `archive_command` es idempotente (no pisa segmentos).
     # OJO: cada segmento pesa 16 MB aunque esté casi vacío — con archivado cada
-    # 5 min son hasta ~4,5 GB por día; por eso el comando poda (ver abajo).
+    # 5 min son hasta ~4,5 GB por día; por eso el comando comprime y poda.
+    #
+    # v0.1.337 — `/wal_archive` es un volumen NOMBRADO montado en una ruta que
+    # la imagen no trae, así que Docker la crea `root:root 755` y Postgres
+    # (uid 70) no puede escribir: el archivado fallaba SIEMPRE y Postgres
+    # guardaba todo el WAL en pg_wal hasta llenar el disco (pasó en producción:
+    # 45 GB en 20 días). El entrypoint le da la carpeta a postgres antes de
+    # arrancar (el entrypoint oficial corre como root y después baja a postgres).
+    entrypoint:
+      - sh
+      - -c
+      - 'mkdir -p /wal_archive; chown postgres:postgres /wal_archive || true; exec docker-entrypoint.sh "$$@"'
+      - --
     command:
       - postgres
       - -c
@@ -31,7 +43,14 @@ services:
       # backup diario (scripts/basebackup.sh) eso alcanza para restaurar a
       # cualquier momento de los últimos 3 días. Cambiar a mano los minutos
       # (4320) si se quiere otra ventana.
-      - archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f && (find /wal_archive -type f -mmin +4320 -delete || true)
+      # v0.1.337 — (a) COMPRIMIDO: un segmento que cierra `archive_timeout` es
+      # casi todo ceros, 16 MB → unos KB en gzip; (b) ATÓMICO: se escribe a
+      # `.tmp` y se renombra, así un corte (disco lleno) no deja un archivo a
+      # medias; (c) IDEMPOTENTE: si el segmento ya está archivado (Postgres lo
+      # reintenta tras un corte entre copiar y marcarlo), responde éxito. El
+      # comando viejo (`test ! -f … && cp …`) fallaba PARA SIEMPRE en esos dos
+      # casos → mismo efecto: pg_wal crece sin límite. `$$` = `$` para compose.
+      - 'archive_command=f=/wal_archive/%f; [ -f "$$f.gz" ] || [ -f "$$f" ] || { gzip -c %p > "$$f.gz.tmp" && mv -f "$$f.gz.tmp" "$$f.gz"; } && { find /wal_archive -type f -mmin +4320 -delete || true; }'
       - -c
       - archive_timeout=300
       - -c
