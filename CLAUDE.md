@@ -10275,14 +10275,14 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         levanta un **WordPress REAL** (MariaDB en Docker + PHP del sistema + ACF
         de wordpress.org) con un tipo de contenido «Propiedades», la taxonomía
         «Zonas», 4 campos ACF, un meta registrado y datos de prueba.
-        Tests: shared 563 (10 nuevos de reglas, marca y catálogo), API 1731 + 1 omitido
+        Tests: shared 577 (10 nuevos de reglas, marca y catálogo), API 1746 + 1 omitido
         (`wordpress-api.spec` 11 puros + `site-sync.spec` 18 de integración con
         un WordPress simulado en el borde de red —conectar en un clic con
         rotación, descubrir, alta, carga, incremental, papelera, edición que
         viaja, rechazo, lote + deshacer, columnas, contraseña revocada en sus dos
         formas, tienda y sitio aislados, RLS, límite del plan, dejar de
         sincronizar, borrar la conexión— + re-mapeo de la marca al migrar), front
-        685 — + E2E navegador **43/43 contra un WordPress 6.8 real** (conectar en
+        688 (cifras sobre la rama ya integrada con SMS) — + E2E navegador **43/43 contra un WordPress 6.8 real** (conectar en
         un clic aprobando en WordPress, la contraseña de la URL ya no sirve,
         Propiedades con 3 campos ACF, precio editado en la celda y título en la
         ficha verificados en WordPress, lote +1 y deshacer verificados en

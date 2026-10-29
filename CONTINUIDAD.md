@@ -921,7 +921,7 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.333**
   lote + deshacer. (5) Contraseña revocada → Problema + conexión marcada →
   volver a conectar; borrar la conexión borra su contraseña en WordPress.
   Migración 0095. Entorno: `scripts/dev/wordpress-up.sh` (WordPress real con
-  ACF). Tests API 1731, front 685, shared 563; E2E 43/43 contra WordPress 6.8
+  ACF). Tests API 1746, front 688, shared 577; E2E 43/43 contra WordPress 6.8
   real. **Pendiente**: tiempo real, SEO, campos personalizados sin `show_in_rest` y medios =
   v0.1.334 (complemento
   propio, la siguiente entrega); metas sin `show_in_rest` no se
