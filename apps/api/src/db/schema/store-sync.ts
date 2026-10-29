@@ -35,7 +35,8 @@ export const syncLinks = pgTable(
         syncId: bigint('sync_id', { mode: 'number' })
             .notNull()
             .references(() => connectionSyncs.id, { onDelete: 'cascade' }),
-        resource: varchar('resource', { length: 32 }).notNull(),
+        // v0.1.333 — 64: el recurso de un sitio lleva el nombre de la taxonomía (hasta 32).
+        resource: varchar('resource', { length: 64 }).notNull(),
         externalId: varchar('external_id', { length: 190 }).notNull(),
         parentExternalId: varchar('parent_external_id', { length: 190 }),
         recordId: bigint('record_id', { mode: 'number' })

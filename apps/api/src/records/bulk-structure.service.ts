@@ -2,7 +2,9 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import {
     BULK_STRUCTURE_CHUNK,
     BULK_STRUCTURE_MAX_TARGET,
-    readStoreListMarker,
+    mirrorFromPlace,
+    mirrorSourceName,
+    readMirrorListMarker,
     resolveTitleFieldId,
     type BulkEditTarget,
     type BulkRevertPreview,
@@ -500,10 +502,11 @@ function copyData(fields: Field[], data: Record<string, unknown>): Record<string
 }
 
 function assertNotStore(list: List): void {
-    if (readStoreListMarker(list.settings)) {
+    const m = readMirrorListMarker(list.settings);
+    if (m) {
         throw new ForbiddenException({
             code: 'store_managed',
-            message: 'Esta lista viene de la tienda: los registros se crean, se borran y se ordenan en WooCommerce.',
+            message: `Esta lista viene ${mirrorFromPlace(m)}: los registros se crean, se borran y se ordenan en ${mirrorSourceName(m)}.`,
             data: { status: 403 },
         });
     }

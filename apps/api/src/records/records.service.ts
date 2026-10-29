@@ -30,12 +30,13 @@ import {
     isDataField,
     isValidTimeZone,
     jsonbKeyForField,
-    readStoreListMarker,
+    mirrorCellAccess,
+    mirrorFieldMap,
+    mirrorValueError,
+    readMirrorListMarker,
     richDocToPlainText,
     sameBulkValue,
     sanitizeRichDoc,
-    storeCellAccess,
-    storeValueError,
     validateFieldValue,
     type BatchCreateRecordsResult,
     type BatchDeleteRecordsResult,
@@ -2040,17 +2041,19 @@ export class RecordsService {
         merged: Record<string, unknown>,
         fieldIds: number[],
     ): void {
-        const marker = readStoreListMarker(list.settings);
+        // v0.1.333 — vale igual para una lista que viene de un sitio WordPress.
+        const marker = readMirrorListMarker(list.settings);
         if (!marker) return;
+        const map = mirrorFieldMap(marker);
         const row = (slug: string): unknown => {
-            const id = marker.fields[slug];
+            const id = map[slug];
             return id ? merged[`f${id}`] : undefined;
         };
         for (const fieldId of new Set(fieldIds)) {
             const key = `f${fieldId}`;
             if (JSON.stringify(before[key] ?? null) === JSON.stringify(merged[key] ?? null) && !fields.some((f) => f.id === fieldId && f.type === 'relation')) continue;
             const label = fields.find((f) => f.id === fieldId)?.label ?? 'Esa columna';
-            const access = storeCellAccess(marker, fieldId, row);
+            const access = mirrorCellAccess(marker, fieldId, row);
             if (access.access === 'locked') {
                 throw new ForbiddenException({
                     code: 'store_field_locked',
@@ -2059,7 +2062,7 @@ export class RecordsService {
                 });
             }
             if (access.access === 'editable') {
-                const err = storeValueError(marker, fieldId, merged[key], row);
+                const err = mirrorValueError(marker, fieldId, merged[key], row);
                 if (err) {
                     throw new BadRequestException({
                         code: 'store_invalid_value',

@@ -7,10 +7,11 @@ import {
     isThroughField,
     helpdeskManagedFieldIds,
     HELPDESK_MANAGED_REASON,
-    readStoreListMarker,
+    mirrorCellAccess,
+    mirrorFieldMap,
+    mirrorValueError,
+    readMirrorListMarker,
     resolveTitleFieldId,
-    storeCellAccess,
-    storeValueError,
     summarizeBulkOperations,
     type BulkEditPreview,
     type BulkEditResult,
@@ -235,7 +236,8 @@ export class BulkEditService {
             fields.map((f) => [f.id, { id: f.id, label: f.label, type: f.type, config: f.config, is_required: f.is_required }]),
         );
         const titleId = resolveTitleFieldId(fields, list.settings);
-        const marker = readStoreListMarker(list.settings);
+        // v0.1.333 — una lista de una tienda o de un sitio WordPress (lista espejo).
+        const marker = readMirrorListMarker(list.settings);
         return {
             operations,
             bulkFields,
@@ -264,18 +266,19 @@ export class BulkEditService {
         // (la vista previa avisa por fila en vez de fallar al aplicar).
         const merged = { ...row.data, ...res.patch };
         const marker = ctx.marker;
+        const map = mirrorFieldMap(marker);
         const get = (slug: string): unknown => {
-            const id = marker.fields[slug];
+            const id = map[slug];
             return id ? merged[`f${id}`] : undefined;
         };
         for (const change of res.changes) {
             const label = ctx.bulkFields.get(change.field_id)?.label ?? 'Esa columna';
-            const access = storeCellAccess(marker, change.field_id, get);
+            const access = mirrorCellAccess(marker, change.field_id, get);
             if (access.access === 'locked') {
                 return { patch: {}, changes: [], errors: [{ field_id: change.field_id, message: `${label}: ${access.reason}` }] };
             }
             if (access.access === 'editable') {
-                const err = storeValueError(marker, change.field_id, change.after, get);
+                const err = mirrorValueError(marker, change.field_id, change.after, get);
                 if (err) return { patch: {}, changes: [], errors: [{ field_id: change.field_id, message: `${label}: ${err}` }] };
             }
         }

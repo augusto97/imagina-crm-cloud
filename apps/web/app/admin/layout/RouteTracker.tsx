@@ -72,6 +72,7 @@ export function RouteTracker(): null {
         if (pathname === '/dashboards') return __('Dashboards');
         if (dashMatch) return dashboard?.name ?? __('Dashboard');
         if (pathname.startsWith('/settings/stores/')) return `${__('Tienda')} · ${__('Ajustes')}`;
+        if (pathname.startsWith('/settings/sites/')) return `${__('Sitio WordPress')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/sql/')) return `${__('Sincronización SQL')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/collections/')) return `${__('Cobros')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/whatsapp/')) return `${__('WhatsApp')} · ${__('Ajustes')}`;

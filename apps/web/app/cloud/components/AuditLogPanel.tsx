@@ -101,6 +101,11 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'store_sync.update': { text: 'cambió la sincronización de la tienda' },
     'store_sync.delete': { text: 'desactivó la sincronización de la tienda', danger: true },
     'store_sync.map_meta': { text: 'trajo un campo de la tienda a' },
+    // v0.1.333 — sitios WordPress.
+    'site_sync.create': { text: 'activó la sincronización del sitio' },
+    'site_sync.update': { text: 'cambió la sincronización del sitio' },
+    'site_sync.delete': { text: 'desactivó la sincronización del sitio', danger: true },
+    'site_sync.map_column': { text: 'trajo una columna del sitio a' },
     // D3 — WhatsApp oficial.
     'whatsapp.config': { text: 'cambió dónde caen los mensajes de WhatsApp de' },
     'whatsapp.columns': { text: 'cambió las columnas de WhatsApp de la lista' },

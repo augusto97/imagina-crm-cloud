@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Link2, Plus, Table2 } from 'lucide-react';
-import { defaultTotalFieldIds, readStoreListMarker } from '@imagina-base/shared';
+import { defaultTotalFieldIds, readMirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
@@ -103,7 +103,7 @@ function BacklinkGroup({ path, recordId, baseListId }: { path: RelationPath; rec
         [relField, recordId],
     );
     // Una lista de tienda no admite altas desde aquí (se crean en WooCommerce).
-    const storeManaged = readStoreListMarker(list.data?.settings) !== null;
+    const storeManaged = readMirrorListMarker(list.data?.settings) !== null;
     const label = path.list_name === path.relation_label ? path.list_name : `${path.list_name} · ${path.relation_label}`;
 
     // v0.1.290 — Tabla editable: el título primero y las columnas de siempre (hasta 6).
@@ -177,7 +177,7 @@ function BacklinkGroup({ path, recordId, baseListId }: { path: RelationPath; rec
                     rows={editRows}
                     total={total}
                     relation={relField ? { field: relField, recordId } : null}
-                    storeMarker={readStoreListMarker(list.data.settings)}
+                    storeMarker={readMirrorListMarker(list.data.settings)}
                     onSaved={refreshBase}
                     onChanged={refreshBase}
                 />

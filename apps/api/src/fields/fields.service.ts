@@ -23,7 +23,10 @@ import {
     inferFormulaResultType,
     prepareFormula,
     isDataField,
-    isStoreField,
+    isMirrorField,
+    mirrorFieldKey,
+    mirrorFromPlace,
+    mirrorSourceName,
     isThroughField,
     jsonbKeyForField,
     LOOKUP_TARGET_TYPES,
@@ -32,15 +35,14 @@ import {
     resolveTitleFieldId,
     ROLLUP_MINMAX_TYPES,
     ROLLUP_NUMERIC_TYPES,
-    readStoreListMarker,
+    readMirrorListMarker,
     slugify,
     storeEditableSlugs,
-    storeFieldSlug,
     validateFieldValue,
     type CreateFieldInput,
     type Field,
     type FieldType,
-    type StoreListMarker,
+    type MirrorListMarker,
     type UpdateFieldInput
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
@@ -681,10 +683,10 @@ export class FieldsService {
         const marker = opts.internal ? null : await this.storeMarker(tenantId, listId);
         const current = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
-            if (marker && isStoreField(marker, current.id)) {
+            if (marker && isMirrorField(marker, current.id)) {
                 throw new BadRequestException({
                     code: 'store_field_locked',
-                    message: `«${current.label}» viene de ${marker.store_name ? `la tienda ${marker.store_name}` : 'la tienda'}: no se puede borrar mientras se sincronice.`,
+                    message: `«${current.label}» viene ${mirrorFromPlace(marker)}: no se puede borrar mientras se sincronice.`,
                     data: { status: 400 },
                 });
             }
@@ -747,12 +749,20 @@ export class FieldsService {
         }
         const marker = await this.storeMarker(tenantId, listId);
         if (marker) {
-            const slug = storeFieldSlug(marker, current.id);
-            const open = slug !== null && ['categorias', 'etiquetas'].includes(slug) && marker.write_back && storeEditableSlugs(marker).includes(slug);
+            const slug = mirrorFieldKey(marker, current.id);
+            // Tienda: sólo categorías y etiquetas. Sitio (v0.1.333): cualquier
+            // taxonomía (`tax:…`) que la empresa habilitó; el término nuevo se
+            // CREA en WordPress al guardar la entrada.
+            const open =
+                slug !== null &&
+                marker.marker.write_back &&
+                (marker.source === 'store'
+                    ? ['categorias', 'etiquetas'].includes(slug) && storeEditableSlugs(marker.marker).includes(slug)
+                    : slug.startsWith('tax:') && marker.marker.can_edit.includes(slug) && marker.marker.editable.includes(slug));
             if (slug !== null && !open) {
                 throw new BadRequestException({
                     code: 'store_field_locked',
-                    message: `«${current.label}» viene de la tienda: sus opciones las define WooCommerce.`,
+                    message: `«${current.label}» viene ${marker.source === 'store' ? 'de la tienda' : 'del sitio'}: sus opciones las define ${mirrorSourceName(marker)}.`,
                     data: { status: 400 },
                 });
             }
@@ -775,10 +785,10 @@ export class FieldsService {
         );
     }
 
-    /** El marcador de lista de tienda (v0.1.213), o null si es una lista común. */
-    private async storeMarker(tenantId: number, listId: number): Promise<StoreListMarker | null> {
+    /** El marcador de lista espejo (tienda v0.1.213, sitio v0.1.333), o null si es una lista común. */
+    private async storeMarker(tenantId: number, listId: number): Promise<MirrorListMarker | null> {
         const list = await this.lists.get(tenantId, String(listId));
-        return readStoreListMarker(list.settings);
+        return readMirrorListMarker(list.settings);
     }
 
     /**
@@ -796,7 +806,7 @@ export class FieldsService {
         const marker = await this.storeMarker(tenantId, listId);
         if (!marker) return;
         const current = await this.tenantDb.withTenant(tenantId, (tx) => this.resolveField(tx, tenantId, listId, fieldIdOrSlug));
-        if (!isStoreField(marker, current.id)) return;
+        if (!isMirrorField(marker, current.id)) return;
         const allowed = new Set(['label', 'description', 'position', 'is_indexed']);
         const touched = Object.entries(patch).filter(([k, v]) => v !== undefined && !allowed.has(k));
         // Reenviar el MISMO valor (un form que manda todo) no es un cambio.
@@ -814,7 +824,7 @@ export class FieldsService {
         if (real.length === 0) return;
         throw new BadRequestException({
             code: 'store_field_locked',
-            message: `«${current.label}» viene de la tienda: sólo se le puede cambiar el nombre y la descripción.`,
+            message: `«${current.label}» viene ${marker.source === 'store' ? 'de la tienda' : 'del sitio'}: sólo se le puede cambiar el nombre y la descripción.`,
             data: { status: 400 },
         });
     }

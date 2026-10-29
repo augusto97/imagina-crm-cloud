@@ -42,6 +42,10 @@ import {
     migratePortalTemplateToV3,
     readRecordLayout,
     readPortalLayoutV3,
+    readMirrorListMarker,
+    mirrorColumnKind,
+    mirrorPlaceName,
+    mirrorSourceName,
     readRecordLayoutV3,
     type LayoutFieldLite,
     type RecordLayoutV3,
@@ -1259,6 +1263,22 @@ export class StructureTools implements AiProposalApplier {
                           };
                 })(),
                 public_sharing: pub.success ? { enabled: pub.data.enabled, expires_at: pub.data.expires_at ?? null, visible_fields: pub.data.visible_field_slugs } : { enabled: false, expires_at: null, visible_fields: [] },
+                // v0.1.333 (ADR-S83) — una lista ESPEJO (de una tienda o de un
+                // sitio WordPress): sin esto el asistente propondría crear o
+                // borrar registros, o cambiar columnas que manda la fuente.
+                synced_from: (() => {
+                    const m = readMirrorListMarker(settings);
+                    if (!m) return null;
+                    const kinds = fields.map((f) => ({ slug: f.slug, kind: mirrorColumnKind(m, f.id) }));
+                    return {
+                        source: mirrorSourceName(m),
+                        place: mirrorPlaceName(m),
+                        rules: `Los registros se crean y se borran en ${mirrorSourceName(m)} (aquí no se puede). Sólo cambian las columnas de «editable_fields» (y viajan a ${mirrorSourceName(m)}); las de «locked_fields» son de sólo lectura; las de «own_fields» son propias de la empresa y libres.`,
+                        editable_fields: kinds.filter((k) => k.kind === 'sync').map((k) => k.slug),
+                        locked_fields: kinds.filter((k) => k.kind === 'locked').map((k) => k.slug),
+                        own_fields: kinds.filter((k) => k.kind === 'own').map((k) => k.slug),
+                    };
+                })(),
                 // v0.1.193 — la CONFIGURACIÓN completa (disparador + acciones),
                 // no sólo el nombre: sin esto el asistente/MCP no podía
                 // copiar ni explicar una automatización ("sólo veo que

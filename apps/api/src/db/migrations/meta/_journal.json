@@ -666,6 +666,13 @@
       "when": 1784200000280,
       "tag": "0094_sms",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1784200000290,
+      "tag": "0095_site_sync",
+      "breakpoints": true
     }
   ]
 }

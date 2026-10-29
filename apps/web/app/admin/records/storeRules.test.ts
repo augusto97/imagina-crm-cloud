@@ -17,7 +17,7 @@ const marker = (write_back: boolean): StoreListMarker => ({
     meta_fields: [],
     editable: null,
 });
-const rules = (wb: boolean): StoreRules => ({ marker: marker(wb), fields });
+const rules = (wb: boolean): StoreRules => ({ marker: { source: 'store', marker: marker(wb) }, fields });
 
 describe('reglas de una lista de tienda en la UI', () => {
     it('marca cada columna: de la tienda, que viaja, o propia', () => {
@@ -39,5 +39,36 @@ describe('reglas de una lista de tienda en la UI', () => {
         expect(variable.precio_normal).toMatch(/variaciones/);
         // Fuera de una tienda no se bloquea nada.
         expect(lockedReasonsFor(null, fields, {})).toEqual({});
+    });
+
+    it('un sitio WordPress (v0.1.333) usa las mismas piezas: sólo lo habilitado viaja, la papelera no se edita', () => {
+        const site: StoreRules = {
+            marker: {
+                source: 'site',
+                marker: {
+                    connection_id: 8,
+                    resource: 'post:propiedad',
+                    kind: 'post_type',
+                    object: 'propiedad',
+                    object_label: 'Propiedades',
+                    site_name: 'Mi blog',
+                    site_url: 'https://blog.test',
+                    write_back: true,
+                    fields: { title: 1, 'acf:precio': 2, status: 3, wp_id: 4 },
+                    can_edit: ['title', 'acf:precio', 'status'],
+                    editable: ['title'],
+                },
+            },
+            fields,
+        };
+        expect(storeColumnKind(site, 1)).toBe('store_sync');
+        expect(storeColumnKind(site, 2)).toBe('store_locked');
+        expect(storeColumnKind(site, 4)).toBe('store_locked');
+        expect(storeColumnKind(site, 9)).toBe('own');
+        const ok = lockedReasonsFor(site, fields, { tipo: 'publish' });
+        expect(ok.nombre).toBeUndefined();
+        expect(ok.precio_normal).toMatch(/habilítala/);
+        const trash = lockedReasonsFor(site, fields, { tipo: 'trash' });
+        expect(trash.nombre).toMatch(/papelera/);
     });
 });

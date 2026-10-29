@@ -5,7 +5,8 @@ import {
     parseCustomRoleKey,
     listSlugSchema,
     readHelpdeskMailboxMarker,
-    readStoreListMarker,
+    readMirrorListMarker,
+    mirrorPlaceName,
     slugify,
     SCAN_SEARCH_FIELD_TYPES,
     TITLE_FIELD_TYPES,
@@ -532,11 +533,12 @@ export class ListsService {
             // Una lista que mantiene la tienda se sigue escribiendo sola: si
             // se fuera a la papelera la sincronización quedaría escribiendo
             // en algo que no existe. Primero se deja de sincronizar.
-            const marker = readStoreListMarker(current.settings);
+            // v0.1.333 — vale igual para una lista que mantiene un sitio WordPress.
+            const marker = readMirrorListMarker(current.settings);
             if (marker) {
                 throw new ConflictException({
                     code: 'store_managed',
-                    message: `Esta lista la mantiene ${marker.store_name ? `la tienda ${marker.store_name}` : 'la tienda'}: deja de sincronizarla antes de borrarla.`,
+                    message: `Esta lista la mantiene ${mirrorPlaceName(marker)}: deja de sincronizarla antes de borrarla.`,
                     data: { status: 409 },
                 });
             }

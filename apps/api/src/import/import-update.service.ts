@@ -5,7 +5,7 @@ import {
     IMPORT_UPDATE_CHUNK,
     IMPORT_UPDATE_MAX_ROWS,
     helpdeskManagedFieldIds,
-    readStoreListMarker,
+    readMirrorListMarker,
     resolveTitleFieldId,
     sameBulkValue,
     validateFieldValue,
@@ -198,11 +198,15 @@ export class ImportUpdateService {
 
     private async context(tenantId: number, listIdOrSlug: string, input: ImportUpdateInput) {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const store = readStoreListMarker(list.settings);
+        // v0.1.333 — una lista de una tienda o de un sitio WordPress (lista espejo).
+        const store = readMirrorListMarker(list.settings);
         if (store && input.mode === 'upsert') {
             throw new BadRequestException({
                 code: 'store_managed',
-                message: 'En una lista de la tienda sólo se actualiza: los productos nuevos se crean en WooCommerce.',
+                message:
+                    store.source === 'store'
+                        ? 'En una lista de la tienda sólo se actualiza: los productos nuevos se crean en WooCommerce.'
+                        : 'En una lista del sitio sólo se actualiza: lo nuevo se crea en WordPress.',
                 data: { status: 403 },
             });
         }

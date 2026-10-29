@@ -10,8 +10,9 @@ import {
     buttonSupportsBulk,
     computeButtonValue,
     jsonbKeyForField,
-    readStoreListMarker,
-    storeCellAccess,
+    mirrorCellAccess,
+    mirrorFieldMap,
+    readMirrorListMarker,
     tenantFormatSchema,
     zonedToday,
     type ButtonAction,
@@ -254,15 +255,16 @@ export class ButtonsService {
             if (!caps || !reach) {
                 throw forbidden('button_needs_edit', `«${prep.label}» cambia el registro y tú no puedes editarlo.`);
             }
-            // La tienda (WooCommerce) manda: sólo las columnas que acepta.
-            const marker = readStoreListMarker(prep.list.settings);
+            // La tienda (WooCommerce) o el sitio (WordPress) mandan: sólo las columnas que aceptan.
+            const marker = readMirrorListMarker(prep.list.settings);
             if (marker) {
+                const map = mirrorFieldMap(marker);
                 const row = (slug: string): unknown => {
-                    const id = marker.fields[slug];
+                    const id = map[slug];
                     return id ? record.data[`f${id}`] : undefined;
                 };
                 for (const id of writtenIds(prep.config)) {
-                    const access = storeCellAccess(marker, id, row);
+                    const access = mirrorCellAccess(marker, id, row);
                     if (access.access === 'locked') {
                         throw forbidden('store_field_locked', `${byId.get(id)?.label ?? 'Esa columna'}: ${access.reason}`);
                     }

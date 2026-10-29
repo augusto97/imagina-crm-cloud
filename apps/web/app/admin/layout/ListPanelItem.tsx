@@ -1,5 +1,5 @@
 import { memo, Suspense, useState } from 'react';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { readMirrorListMarker } from '@imagina-base/shared';
 import {
     Check,
     Columns3,
@@ -92,7 +92,7 @@ export const ListPanelItem = memo(function ListPanelItem({
     const canAutomations = useCan(CAP.MANAGE_AUTOMATIONS) && moduleEnabled('automations');
     // v0.1.213 — una lista de tienda no admite altas ni importaciones: sus
     // registros nacen en WooCommerce.
-    const storeManaged = readStoreListMarker(list.settings) !== null;
+    const storeManaged = readMirrorListMarker(list.settings) !== null;
     const canCreate = useCan(CAP.CREATE_RECORDS) && !storeManaged;
     const canImport = useCan(CAP.IMPORT_RECORDS) && !storeManaged;
 

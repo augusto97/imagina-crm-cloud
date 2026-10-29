@@ -342,6 +342,20 @@ describe('remapListSettings', () => {
         });
     });
 
+    it('la marca de una lista espejo (sitio o tienda) re-apunta sus columnas y su conexión', () => {
+        const out = remapListSettings(
+            {
+                site_sync: { connection_id: 50, resource: 'post:propiedad', fields: { title: 10, 'acf:precio': 11, wp_id: 999 }, editable: ['title'], can_edit: ['title', 'acf:precio'] },
+                store_sync: { connection_id: 50, role: 'products', fields: { name: 12 } },
+            },
+            maps(),
+            null,
+        );
+        expect(out.site_sync).toEqual({ connection_id: 150, resource: 'post:propiedad', fields: { title: 110, 'acf:precio': 111 }, editable: ['title'], can_edit: ['title', 'acf:precio'] });
+        expect((out.store_sync as { connection_id: number; fields: Record<string, number> }).fields).toEqual({ name: 112 });
+        expect((out.store_sync as { connection_id: number }).connection_id).toBe(150);
+    });
+
     it('sin publicación no inventa el bloque público', () => {
         const out = remapListSettings({ title_field_id: 11 }, maps(), null);
         expect(out).toEqual({ title_field_id: 111 });

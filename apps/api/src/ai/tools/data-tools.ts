@@ -18,9 +18,11 @@ import {
     type FilterGroup,
     type List,
     type RecordDto,
-    readStoreListMarker,
+    readMirrorListMarker,
+    mirrorFieldKey,
+    mirrorFromPlace,
+    mirrorSourceName,
     STORE_EDITABLE_SLUGS,
-    storeFieldSlug,
     BULK_EDIT_APPLY_CHUNK,
     summarizeBulkOperations,
     type BulkEditTarget,
@@ -350,8 +352,9 @@ export class DataTools implements AiProposalApplier {
 
     private async proposeCreateRecords(ctx: AiToolContext, input: CreateRecordsSpec): Promise<AiToolResult> {
         const { list, fields, bySlug } = await this.loadList(ctx, input.list);
-        if (readStoreListMarker(list.settings)) {
-            throw new AiToolError(`«${list.name}» está sincronizada con una tienda: sus registros se crean en WooCommerce y llegan solos.`);
+        const mirror = readMirrorListMarker(list.settings);
+        if (mirror) {
+            throw new AiToolError(`«${list.name}» viene ${mirrorFromPlace(mirror)}: sus registros se crean en ${mirrorSourceName(mirror)} y llegan solos.`);
         }
         // C6 — plantilla de registro: completa lo que no viene en el pedido.
         const template = input.template ? await this.findRecordTemplate(ctx, list.id, input.template) : null;
@@ -455,18 +458,20 @@ export class DataTools implements AiProposalApplier {
         const data = this.coerceValues(input.values, bySlug, list, 'values');
         // v0.1.213 — en una lista de tienda sólo se cambian precios, stock y
         // estados (y sólo con «Editar desde la app»); las columnas propias, libres.
-        const marker = readStoreListMarker(list.settings);
+        // v0.1.333 — lo mismo en una lista que viene de un sitio WordPress.
+        const marker = readMirrorListMarker(list.settings);
         if (marker) {
             for (const key of Object.keys(data)) {
                 const fieldId = Number(key.slice(1));
-                const packSlug = storeFieldSlug(marker, fieldId);
+                const packSlug = mirrorFieldKey(marker, fieldId);
                 if (packSlug === null) continue;
                 const label = fields.find((f) => f.id === fieldId)?.label ?? key;
-                if (!STORE_EDITABLE_SLUGS[marker.role].includes(packSlug)) {
-                    throw new AiToolError(`«${label}» viene de WooCommerce y se edita allá.`);
+                const canBeEnabled = marker.source === 'store' ? STORE_EDITABLE_SLUGS[marker.marker.role].includes(packSlug) || packSlug.startsWith('meta:') : marker.marker.can_edit.includes(packSlug);
+                if (!canBeEnabled) {
+                    throw new AiToolError(`«${label}» viene de ${mirrorSourceName(marker)} y se edita allá.`);
                 }
-                if (!marker.write_back) {
-                    throw new AiToolError(`Para cambiar «${label}» desde la app hay que activar «Editar desde la app» en los ajustes de la tienda.`);
+                if (!marker.marker.write_back) {
+                    throw new AiToolError(`Para cambiar «${label}» desde la app hay que activar «Editar desde la app» en ${marker.source === 'store' ? 'los ajustes de la tienda' : 'la página del sitio'}.`);
                 }
             }
         }
@@ -549,8 +554,9 @@ export class DataTools implements AiProposalApplier {
 
     private async proposeDeleteRecords(ctx: AiToolContext, input: DeleteRecordsSpec): Promise<AiToolResult> {
         const { list, bySlug } = await this.loadList(ctx, input.list);
-        if (readStoreListMarker(list.settings)) {
-            throw new AiToolError(`«${list.name}» está sincronizada con una tienda: sus registros se borran en WooCommerce.`);
+        const mirrorDel = readMirrorListMarker(list.settings);
+        if (mirrorDel) {
+            throw new AiToolError(`«${list.name}» viene ${mirrorFromPlace(mirrorDel)}: sus registros se borran en ${mirrorSourceName(mirrorDel)}.`);
         }
         const targets = await this.resolveTargets(ctx, list, bySlug, input);
         if (targets.ids.length === 0) throw new AiToolError('Ningún registro coincide con esos filtros (o la persona no puede verlos).');

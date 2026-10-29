@@ -825,7 +825,7 @@ export class StoreBulkService implements OnModuleInit {
             const [r] = await tx
                 .select()
                 .from(connectionSyncs)
-                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.connectionId, marker.connection_id)))
+                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.connectionId, marker.connection_id), eq(connectionSyncs.provider, 'woocommerce')))
                 .limit(1);
             return r ?? null;
         });

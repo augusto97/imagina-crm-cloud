@@ -233,9 +233,9 @@ describe('calendario: quién mueve qué', () => {
     it('sin permiso no se mueve; un campo de la tienda dice por qué; el resto se mueve', () => {
         expect(calendarLockReason(ev, 'move', { canEdit: false, fieldsById: byId, storeRules: null })).toMatch(/permiso/);
         expect(calendarLockReason(ev, 'move', { canEdit: true, fieldsById: byId, storeRules: null })).toBeNull();
-        const locked = calendarLockReason(ev, 'move', { canEdit: true, fieldsById: byId, storeRules: { marker, fields } });
+        const locked = calendarLockReason(ev, 'move', { canEdit: true, fieldsById: byId, storeRules: { marker: { source: 'store', marker }, fields } });
         expect(locked).toMatch(/WooCommerce|tienda/);
         // Estirar toca sólo el fin (una columna propia): se puede.
-        expect(calendarLockReason(ev, 'resize', { canEdit: true, fieldsById: byId, storeRules: { marker, fields } })).toBeNull();
+        expect(calendarLockReason(ev, 'resize', { canEdit: true, fieldsById: byId, storeRules: { marker: { source: 'store', marker }, fields } })).toBeNull();
     });
 });

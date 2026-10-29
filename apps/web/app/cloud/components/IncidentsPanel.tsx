@@ -8,6 +8,7 @@ import {
     ClipboardList,
     CreditCard,
     Database,
+    Globe,
     Inbox,
     Mail,
     Plug,
@@ -36,6 +37,8 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     connection: Plug,
     sql_sync: Database,
     store_sync: ShoppingBag,
+    // v0.1.333 — un sitio WordPress sincronizado.
+    site_sync: Globe,
     ai_field: Sparkles,
     form: ClipboardList,
     recurrence: Repeat,

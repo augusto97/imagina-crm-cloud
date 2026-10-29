@@ -10170,6 +10170,128 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Límite de la verificación**: ningún proveedor real alcanza el sandbox;
         la prueba con cuentas reales queda para el servidor.
 
+  - [x] **Sitio WordPress: entradas, páginas y tipos de contenido en listas
+        (v0.1.333, ADR-S83, pedido del usuario: "conectar los WordPress… para
+        poder, como con WooCommerce, editar algunos campos de los post o pages,
+        de los cpt o categorías o meta fields")**. El molde de la tienda (ADR-S24) generalizado a una
+        **lista espejo** de dos fuentes.
+        (a) **Conectar en un clic**: Integraciones → **WordPress** → se escribe
+        la dirección del sitio y **«Continuar en WordPress»** abre la pantalla
+        **«Autorizar aplicación»** del PROPIO WordPress (contraseñas de
+        aplicación, WP 5.6+); la persona aprueba y vuelve conectada, sin copiar
+        nada (`POST /integrations/wordpress/start` → state de un solo uso en
+        Redis, `GETDEL`, canjeable sólo por la misma persona →
+        `GET /connections/wordpress/callback`, que vuelve a probar todo con la
+        verificación del alta manual). La dirección que se guarda es la
+        descubierta al empezar, no la que vuelve en la URL. **La contraseña que
+        llega en la URL se cambia por otra** antes de guardarla (se crea una
+        nueva con ella, se borra la de la URL y la nueva toma su nombre: la
+        recibida pudo quedar en el registro de accesos de un proxy); si el sitio
+        no deja rotarla, se sigue con la recibida. Plegado, **«Prefiero pegar una
+        contraseña de aplicación»** con los pasos. Diagnóstico en lenguaje claro:
+        dirección mal escrita, sin HTTPS, API REST recortada por un plugin,
+        contraseñas de aplicación apagadas, usuario sin permiso de editar
+        (Autor/Suscriptor), hosting que borra la cabecera `Authorization` (con la
+        línea exacta del `.htaccess`), firewall que responde con una página. La
+        API se descubre con enlaces permanentes (`/wp-json/`) o con el respaldo
+        `?rest_route=`, siguiendo UNA redirección de la raíz.
+        (b) **Descubrir qué tiene el sitio**: tipos de contenido (entradas,
+        páginas y los de plugins/temas, con cuántas entradas tiene cada uno),
+        taxonomías, campos de **ACF** (con un ejemplo de lo que guardan y el tipo
+        de columna sugerido) y campos personalizados registrados en la API (los
+        internos de plugins aparte y plegados). Nunca «Medios».
+        (c) **«Sincronizar sitio»** (`/settings/sites/:id`): un asistente para
+        elegir qué traer, **qué columnas** de cada tipo y **cuáles se editan
+        desde la app** —por defecto sólo título, extracto y categorías/etiquetas;
+        lo que calcula WordPress (modificación, enlace, autor) no se puede
+        marcar—, la frecuencia (5 min a 1 día) y «Editar desde la app». Crea una
+        **carpeta «WordPress · <sitio>»** con una lista por tipo (título y estado
+        primero, lo técnico al final) y hace la primera vuelta. Después: estado
+        en vivo, «Sincronizar ahora», pausar, frecuencia, **traer otra columna**
+        (se llena con lo que hay) o dejar de traerla (queda como columna propia),
+        **traer otro tipo de contenido** y «Dejar de sincronizar».
+        (d) **La lista la manda el sitio**: las reglas de la tienda se
+        generalizaron a `packages/shared/src/schemas/mirror-list.ts`
+        (`MirrorListMarker` = tienda | sitio, con `mirrorCellAccess`,
+        `mirrorValueError`, `mirrorColumnKind`…) y `site-rules.ts`; los ~20 lugares
+        del backend que respetaban la marca de la tienda (registros, edición
+        masiva, importar, actualizar desde archivo, automatizaciones, asistente
+        y MCP, agentes, recurrencias, formularios, portal, agenda, botones,
+        papelera, campos) ahora respetan cualquiera de las dos, y la tienda sigue
+        idéntica (sus suites en verde). En una lista del sitio no se crean, borran
+        ni importan registros (403 `store_managed`, «Se crea en WordPress»); una
+        columna del sitio sólo cambia de nombre; candado/flechas/lápiz en el
+        encabezado; **aviso «Sincronizada con WordPress»** con «¿Qué puedo
+        cambiar?» y «Crear en WordPress»; y **«Columnas que se editan desde la
+        app»** también en Ajustes → Campos de cada lista (la misma elección vista
+        desde dos lugares). Lo que WordPress no aceptaría se rechaza antes de
+        guardar (título vacío, una dirección con «/», un estado que se pone allá
+        —programar, papelera—, un orden no entero) y una entrada en la papelera
+        de WordPress no se edita aquí.
+        (e) **Motor** (`site-sync/`, cola BullMQ `site-sync`): incremental por
+        fecha de modificación con keyset (`orderby=modified` + `modified_after`
+        desde un cursor fecha + ids de ese segundo, la hora del SITIO), con
+        `context=edit` y `status=any` (borradores, privadas y programadas
+        también) y la papelera aparte; un sitio que ignora el filtro se detecta y
+        se pagina por número; **barrido completo diario** (lo borrado del todo
+        queda en «Papelera», nunca se borra nada); `_fields` con SÓLO las
+        columnas elegidas (jamás el contenido de una entrada); candado en Redis +
+        `pg_advisory_xact_lock` por escritura; reintentos ante 5xx/429/red; la
+        **primera carga no dispara automatizaciones** (las siguientes sí, con
+        antes y después); el **límite de registros del plan** detiene la carga
+        con el motivo; el vínculo entrada↔registro vive en `sync_links`
+        (recurso `post:propiedad` / `term:category`), fuera de los datos.
+        (f) **Editar desde la app**: lo que una persona, una automatización o una
+        edición masiva cambia en una columna habilitada viaja al sitio por el
+        `RecordChangeHub` — **sólo lo que cambió** (no se pisa lo que alguien
+        tocó en WordPress mientras tanto), con las mismas reglas; categorías y
+        etiquetas por nombre, y la que no existe se **crea en WordPress**; un
+        rechazo **vuelve la celda al valor del sitio** y la página del sitio lo
+        cuenta; sin bucles (el motor nunca emite en el hub). **Edición masiva +
+        deshacer** funcionan y deshacer revierte en WordPress.
+        (g) **Cuando algo se rompe**: con la contraseña revocada (o el usuario
+        borrado) la vuelta falla con el motivo, abre un **Problema** (ADR-S44) y
+        marca la conexión «Hay que volver a conectarla»; **«Volver a conectar»**
+        (un clic, la dirección ya puesta, misma conexión) lo arregla y el
+        Problema se cierra solo. **Borrar la conexión borra la contraseña de
+        aplicación de la app en WordPress** (`introspect` + `DELETE`, antes de
+        borrar; si el sitio no responde se sigue y el aviso lo dice). **Bug real
+        encontrado contra el WordPress real**:
+        con la contraseña revocada WordPress NO responde «contraseña incorrecta»
+        —trata el pedido como anónimo (401 «no estás conectado», o 400 «el estado
+        está prohibido» al listar con `status=any`)— y la primera versión lo
+        mostraba como «WordPress no aceptó el cambio»; ahora se reconocen las tres
+        formas. **Dejar de sincronizar** o **desconectar** quitan la marca: las
+        listas quedan comunes con todos sus datos (y las pestañas abiertas se
+        enteran por realtime).
+        (h) El asistente/MCP describe la marca (`synced_from` en
+        `get_list_schema`: de dónde viene, qué columnas se editan y cuáles no);
+        migrar una empresa lleva la sincronización re-mapeada (también el mapa de
+        columnas de la marca de cada lista) y borrarla la limpia; la plantilla de
+        lista/duplicar no copia la marca. Ayuda al día: guía «¿Cómo traigo mi
+        sitio WordPress a la app?», módulo **Sitio WordPress** de Aprende (4
+        artículos, 3 ilustraciones animadas nuevas) y novedad en el catálogo.
+        **Entorno de prueba**: `scripts/dev/wordpress-up.sh [8090] up|reset|wp …`
+        levanta un **WordPress REAL** (MariaDB en Docker + PHP del sistema + ACF
+        de wordpress.org) con un tipo de contenido «Propiedades», la taxonomía
+        «Zonas», 4 campos ACF, un meta registrado y datos de prueba.
+        Tests: shared 577 (10 nuevos de reglas, marca y catálogo), API 1746 + 1 omitido
+        (`wordpress-api.spec` 11 puros + `site-sync.spec` 18 de integración con
+        un WordPress simulado en el borde de red —conectar en un clic con
+        rotación, descubrir, alta, carga, incremental, papelera, edición que
+        viaja, rechazo, lote + deshacer, columnas, contraseña revocada en sus dos
+        formas, tienda y sitio aislados, RLS, límite del plan, dejar de
+        sincronizar, borrar la conexión— + re-mapeo de la marca al migrar), front
+        688 (cifras sobre la rama ya integrada con SMS) — + E2E navegador **43/43 contra un WordPress 6.8 real** (conectar en
+        un clic aprobando en WordPress, la contraseña de la URL ya no sirve,
+        Propiedades con 3 campos ACF, precio editado en la celda y título en la
+        ficha verificados en WordPress, lote +1 y deshacer verificados en
+        WordPress, un cambio hecho en WordPress llega con «Sincronizar ahora»,
+        candados y aviso, contraseña revocada → Problema + conexión marcada →
+        volver a conectar lo cierra, desconectar deja la lista libre y borra la
+        contraseña de la app en WordPress; escritorio
+        claro y oscuro, celular 390×844 en oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

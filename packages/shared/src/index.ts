@@ -84,6 +84,10 @@ export * from './schemas/legal-pages';
 export * from './schemas/store-sync';
 export * from './schemas/store-rules';
 export * from './schemas/store-bulk';
+// v0.1.333 (ADR-S83) — sitios WordPress y la regla común de las listas espejo.
+export * from './schemas/site-sync';
+export * from './schemas/site-rules';
+export * from './schemas/mirror-list';
 export * from './schemas/sql-sync';
 export * from './schemas/tenant-transfer';
 export * from './schemas/incidents';

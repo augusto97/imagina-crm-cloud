@@ -282,7 +282,7 @@ export class StoreRealtimeService {
             tx
                 .select({ id: connectionSyncs.id, settings: connectionSyncs.settings })
                 .from(connectionSyncs)
-                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.enabled, true))),
+                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.enabled, true), eq(connectionSyncs.provider, 'woocommerce'))),
         );
         const byList = new Map<number, WriteTarget>();
         for (const row of rows) {

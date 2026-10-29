@@ -34,12 +34,13 @@ import {
     readApprovalFlowId,
     readApprovalTriggerResults,
     readAskAgentConfig,
-    readStoreListMarker,
+    readMirrorListMarker,
     readWaitApprovalConfig,
     readWaitConfig,
     resolveTitleFieldId,
-    storeCellAccess,
-    storeValueError,
+    mirrorCellAccess,
+    mirrorFieldMap,
+    mirrorValueError,
     teamIdsOf,
     tenantFormatSchema,
     waitResumeAt,
@@ -63,7 +64,7 @@ import {
     type FlowBranch,
     type FlowPath,
     type ListRecordsQuery,
-    type StoreListMarker,
+    type MirrorListMarker,
     type TenantFormat,
     type WhatsappEventInfo,
 } from '@imagina-base/shared';
@@ -232,8 +233,8 @@ interface RunContext {
     people?: Map<number, PersonInfo | null>;
     /** C1 — nombres de los equipos de los campos «Equipo» (`{{equipo.nombre}}`), por id. */
     teamNames?: Map<number, string>;
-    /** Marca de tienda por lista, leída una vez por corrida. */
-    storeMarkers?: Map<number, StoreListMarker | null>;
+    /** Marca de tienda o de sitio WordPress por lista, leída una vez por corrida. */
+    storeMarkers?: Map<number, MirrorListMarker | null>;
     /** E5 — columnas que mantiene el SLA de la mesa de ayuda, por lista (nadie las escribe). */
     helpdeskManaged?: Map<number, number[]>;
     /**
@@ -559,8 +560,8 @@ export class AutomationEngine {
         return this.bookingSim;
     }
 
-    /** Marca de lista de tienda (v0.1.213), o null. Una lectura por lista y por corrida. */
-    private async storeMarkerOf(ctx: RunContext, listId: number): Promise<StoreListMarker | null> {
+    /** Marca de lista de tienda (v0.1.213) o de sitio (v0.1.333), o null. Una lectura por lista y por corrida. */
+    private async storeMarkerOf(ctx: RunContext, listId: number): Promise<MirrorListMarker | null> {
         ctx.storeMarkers ??= new Map();
         if (ctx.storeMarkers.has(listId)) return ctx.storeMarkers.get(listId) ?? null;
         const [row] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
@@ -570,7 +571,7 @@ export class AutomationEngine {
                 .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, listId)))
                 .limit(1),
         );
-        const marker = readStoreListMarker(row?.settings);
+        const marker = readMirrorListMarker(row?.settings);
         ctx.storeMarkers.set(listId, marker);
         (ctx.helpdeskManaged ??= new Map()).set(listId, helpdeskManagedFieldIds(row?.settings));
         return marker;
@@ -2506,19 +2507,20 @@ export class AutomationEngine {
         const marker = await this.storeMarkerOf(ctx, target.listId);
         if (marker) {
             const merged = { ...currentData, ...patch };
+            const map = mirrorFieldMap(marker);
             const row = (packSlug: string): unknown => {
-                const id = marker.fields[packSlug];
+                const id = map[packSlug];
                 return id ? merged[`f${id}`] : undefined;
             };
             for (const slug of Object.keys(applied)) {
                 const key = target.slugToKey.get(slug)!;
                 const fieldId = Number(key.slice(1));
-                const access = storeCellAccess(marker, fieldId, row);
+                const access = mirrorCellAccess(marker, fieldId, row);
                 const err =
                     access.access === 'locked'
                         ? access.reason
                         : access.access === 'editable'
-                          ? storeValueError(marker, fieldId, merged[key], row)
+                          ? mirrorValueError(marker, fieldId, merged[key], row)
                           : null;
                 if (!err) continue;
                 delete patch[key];
@@ -2611,9 +2613,15 @@ export class AutomationEngine {
             return { settings: target.settings, fields: await this.fields.listByList(tx, ctx.tenantId, targetList) };
         });
         if (!pre) return fail('create_record', `La lista destino (#${targetList}) no existe en esta empresa.`);
-        // Una lista de tienda no admite altas: sus registros nacen en WooCommerce.
-        if (readStoreListMarker(pre.settings)) {
-            return skip('create_record', 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.');
+        // Una lista de tienda (o de un sitio WordPress) no admite altas: sus registros nacen allá.
+        const mirror = readMirrorListMarker(pre.settings);
+        if (mirror) {
+            return skip(
+                'create_record',
+                mirror.source === 'store'
+                    ? 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.'
+                    : 'La lista destino viene de un sitio WordPress: lo nuevo se crea en WordPress.',
+            );
         }
         // El límite de registros del plan vale también para lo que crea
         // una automatización (si no, sería la forma de saltearlo). Con

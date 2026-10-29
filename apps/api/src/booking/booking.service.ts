@@ -3,7 +3,7 @@ import {
     BOOKING_STATUS_LABELS,
     bookingProblems,
     defaultBookingConfig,
-    readStoreListMarker,
+    readMirrorListMarker,
     resolveTimeZone,
     slugify,
     type BookingConfig,
@@ -186,8 +186,14 @@ export class BookingService {
     }
 
     private assertNotStore(list: List): void {
-        if (readStoreListMarker(list.settings)) {
-            throw badRequest('store_managed', 'Esta lista la maneja tu tienda online: los registros nuevos llegan desde ahí, no desde una agenda.');
+        const m = readMirrorListMarker(list.settings);
+        if (m) {
+            throw badRequest(
+                'store_managed',
+                m.source === 'store'
+                    ? 'Esta lista la maneja tu tienda online: los registros nuevos llegan desde ahí, no desde una agenda.'
+                    : 'Esta lista viene de tu sitio WordPress: lo nuevo se crea allá, no desde una agenda.',
+            );
         }
     }
 

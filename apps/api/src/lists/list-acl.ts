@@ -219,7 +219,7 @@ export function guestExtraHidden(fields: ReadonlyArray<{ id: number; type: strin
  */
 export function guestSafeListSettings(settings: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    for (const key of ['title_field_id', 'store_sync'] as const) if (key in settings) out[key] = settings[key];
+    for (const key of ['title_field_id', 'store_sync', 'site_sync'] as const) if (key in settings) out[key] = settings[key];
     return out;
 }
 

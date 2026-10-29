@@ -88,8 +88,10 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { attachments, automations, connections, lists, tenants, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { stripStoreMarkers } from '../lists/store-guard';
+import { stripSiteMarkers, stripStoreMarkers } from '../lists/store-guard';
+import { verifyWordpress } from './wordpress/wp-verify';
 import { IncidentHub } from '../incidents/incident-hub';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
     connectionParts,
     joinUrl,
@@ -302,6 +304,9 @@ export class ConnectorsService {
         @Optional() @Inject(SQL_RUNNER) private readonly sqlRunner?: SqlRunner,
         // v0.1.285 (ADR-S44) — una conexión que deja de servir abre un problema.
         @Optional() private readonly incidents?: IncidentHub,
+        // v0.1.333 — borrar la conexión de una tienda o un sitio libera sus
+        // listas: las pestañas abiertas tienen que dejar de mostrar los candados.
+        @Optional() private readonly rt?: RealtimeService,
     ) {}
 
     // ── Ajustes del workspace ────────────────────────────────────────────
@@ -1609,6 +1614,8 @@ export class ConnectorsService {
 
     private async runVerify(key: IntegrationKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
         if (key === 'woocommerce') return this.runWooVerify(creds);
+        // v0.1.333 (ADR-S83): descubre el sitio y confirma que la persona puede editar.
+        if (key === 'wordpress') return verifyWordpress(creds);
         if (key === 'sqlserver') return this.runSqlVerify(creds);
         // v0.1.268 (ADR-S36): sube, lee y borra un archivo de prueba.
         if (key === 's3') return verifyS3(creds, { allowPrivate: this.env.STORAGE_ALLOW_PRIVATE_HOSTS });
@@ -1975,8 +1982,9 @@ export class ConnectorsService {
             await tx
                 .delete(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
-            // Una tienda desconectada deja sus listas como listas comunes.
+            // Una tienda (o un sitio) desconectado deja sus listas como listas comunes.
             await stripStoreMarkers(tx, tenantId, id);
+            await stripSiteMarkers(tx, tenantId, id);
             await this.audit.logInTx(tx, {
                 tenantId,
                 userId,
@@ -1987,9 +1995,12 @@ export class ConnectorsService {
                 meta: { in_use: usage.length, forced: force },
             });
         });
+        // Las listas que eran de la tienda o del sitio ya son comunes.
+        this.rt?.lists(tenantId);
         // Lo que ya no existe no puede seguir fallando (la conexión y lo que corría sobre ella).
         this.incidents?.resolve(tenantId, `connection:${id}`);
         this.incidents?.resolvePrefix(tenantId, `store_sync:${id}:`);
+        this.incidents?.resolvePrefix(tenantId, `site_sync:${id}:`);
         this.incidents?.resolvePrefix(tenantId, `sql_sync:${id}:`);
         this.incidents?.resolvePrefix(tenantId, `collections:${id}:`);
     }
@@ -2497,6 +2508,38 @@ export class ConnectorsService {
         if (wanted.length === 0) return new Map();
         const rows = await this.db.select({ id: users.id, name: users.name }).from(users);
         return new Map(rows.filter((r) => wanted.includes(r.id)).map((r) => [r.id, r.name ?? '']));
+    }
+
+    /**
+     * v0.1.333 (ADR-S83) — antes de mandar a la persona a la pantalla
+     * «Autorizar aplicación» de WordPress se comprueba que, al volver, va a
+     * poder guardar la conexión (si no, autorizaría para nada).
+     */
+    async assertCanConnectKey(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        key: IntegrationKey,
+        visibility: ConnectorVisibility,
+        connectionId: number | null,
+    ): Promise<void> {
+        if (connectionId === null) {
+            await this.assertMayUseVisibility(tenantId, role, visibility);
+            return;
+        }
+        const row = await this.requireEditable(tenantId, userId, role, connectionId);
+        if (row.provider !== key) {
+            throw new BadRequestException({ code: 'integration_mismatch', message: 'Esa conexión es de otra app.', data: { status: 400 } });
+        }
+    }
+
+    /**
+     * v0.1.333 — lo que supo la sincronización de un sitio sobre la conexión
+     * (la contraseña de aplicación revocada, el sitio caído): así la fila de
+     * Integraciones dice «hay que reconectar» sin esperar a que alguien pruebe.
+     */
+    async markCheck(tenantId: number, id: number, ok: boolean, error: string | null): Promise<void> {
+        await this.recordCheck(tenantId, id, ok, error);
     }
 
     private async recordCheck(

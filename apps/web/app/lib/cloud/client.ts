@@ -29,6 +29,9 @@ import {
     platformLegalViewSchema,
     verifyIntegrationResultSchema,
     storeSyncStatusSchema,
+    siteSyncStatusSchema,
+    siteDiscoverySchema,
+    startWordpressConnectResultSchema,
     type StoreSyncStatus,
     type CreateSqlSyncInput,
     type CollectionConnection,
@@ -64,6 +67,14 @@ import {
     type SqlSyncDryRun,
     type UpdateSqlSyncInput,
     type SetupStoreSyncInput,
+    type AddSiteObjectsInput,
+    type SetupSiteSyncInput,
+    type SiteColumnChangeInput,
+    type SiteDiscovery,
+    type SiteSyncStatus,
+    type StartWordpressConnectInput,
+    type StartWordpressConnectResult,
+    type UpdateSiteSyncInput,
     type UpdateStoreSyncInput,
     type MapStoreMetaInput,
     type UnmapStoreMetaInput,
@@ -1027,6 +1038,37 @@ export class CloudClient {
     }
     async storeSyncRemove(connectionId: number): Promise<void> {
         await this.request('DELETE', `/connections/${connectionId}/sync`, {});
+    }
+    // ── Sitios WordPress (v0.1.333, ADR-S83) ──────────────────────────
+    async wordpressConnectStart(input: StartWordpressConnectInput): Promise<StartWordpressConnectResult> {
+        return (await this.request('POST', '/integrations/wordpress/start', { body: input, schema: z.object({ data: startWordpressConnectResultSchema }) })).data;
+    }
+    async siteSyncStatus(connectionId: number): Promise<SiteSyncStatus> {
+        return (await this.request('GET', `/connections/${connectionId}/site-sync`, { schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncDiscover(connectionId: number): Promise<SiteDiscovery> {
+        return (await this.request('GET', `/connections/${connectionId}/site-sync/discover`, { schema: z.object({ data: siteDiscoverySchema }) })).data;
+    }
+    async siteSyncSetup(connectionId: number, input: SetupSiteSyncInput): Promise<SiteSyncStatus> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync`, { body: input, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncAddObjects(connectionId: number, input: AddSiteObjectsInput): Promise<SiteSyncStatus> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync/objects`, { body: input, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncUpdate(connectionId: number, input: UpdateSiteSyncInput): Promise<SiteSyncStatus> {
+        return (await this.request('PATCH', `/connections/${connectionId}/site-sync`, { body: input, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncRun(connectionId: number, full: boolean): Promise<SiteSyncStatus> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync/run`, { body: { full }, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncAddColumn(connectionId: number, input: SiteColumnChangeInput): Promise<SiteSyncStatus> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync/columns`, { body: input, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncRemoveColumn(connectionId: number, input: SiteColumnChangeInput): Promise<SiteSyncStatus> {
+        return (await this.request('POST', `/connections/${connectionId}/site-sync/columns/remove`, { body: input, schema: z.object({ data: siteSyncStatusSchema }) })).data;
+    }
+    async siteSyncRemove(connectionId: number): Promise<void> {
+        await this.request('DELETE', `/connections/${connectionId}/site-sync`, {});
     }
     // ── Sincronización desde SQL Server (v0.1.243) ──────────────────────
     // Las respuestas son DTOs del backend tipados en shared; no hace falta

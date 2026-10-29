@@ -12,7 +12,9 @@ import {
     TRASH_RETENTION_DAYS_DEFAULT,
     fieldSlugSchema,
     listSlugSchema,
-    readStoreListMarker,
+    mirrorFromPlace,
+    mirrorSourceName,
+    readMirrorListMarker,
     resolveTitleFieldId,
     type Capability,
     type ListTrashQuery,
@@ -272,7 +274,7 @@ export class TrashService {
                    (SELECT count(*) FROM records c WHERE c.parent_id = ${records.id} AND c.deleted_at IS NOT NULL
                        AND c.deleted_at BETWEEN ${records.deletedAt} - interval '1 second' AND ${records.deletedAt} + interval '1 second')::int,
                    ${records.deletedAt}, ${records.deletedBy}
-            FROM records JOIN lists pl ON pl.id = ${records.listId} AND pl.deleted_at IS NULL AND NOT (pl.settings ? 'store_sync')
+            FROM records JOIN lists pl ON pl.id = ${records.listId} AND pl.deleted_at IS NULL AND NOT (pl.settings ? 'store_sync') AND NOT (pl.settings ? 'site_sync')
             WHERE ${records.tenantId} = ${tenantId} AND ${records.deletedAt} IS NOT NULL
               AND NOT EXISTS (SELECT 1 FROM records p WHERE p.id = ${records.parentId} AND p.deleted_at IS NOT NULL)
               AND ${recordVisible}
@@ -326,10 +328,11 @@ export class TrashService {
         const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.trashedRecord(tx, tenantId, id);
             const list = await this.liveList(tx, tenantId, row.listId, 'registro');
-            if (readStoreListMarker(list.settings)) {
+            const mirror = readMirrorListMarker(list.settings);
+            if (mirror) {
                 throw new ForbiddenException({
                     code: 'store_managed',
-                    message: 'Esta lista viene de la tienda: los registros se recuperan en WooCommerce.',
+                    message: `Esta lista viene ${mirrorFromPlace(mirror)}: los registros se recuperan en ${mirrorSourceName(mirror)}.`,
                     data: { status: 403 },
                 });
             }
