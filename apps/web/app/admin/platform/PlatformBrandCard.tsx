@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { APP_BAR_NEUTRAL, DEFAULT_PLATFORM_APP_NAME, iconBackgrounds, type PlatformBrand } from '@imagina-base/shared';
+import {
+    APP_BAR_NEUTRAL,
+    DEFAULT_PLATFORM_APP_NAME,
+    iconBackgrounds,
+    marketingUrlSchema,
+    type PlatformBrand,
+} from '@imagina-base/shared';
 import { ImageUp, Loader2, Palette, Smartphone, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -54,6 +60,12 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
     useEffect(() => setDraft(initial), [initial]);
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
+    const marketingError =
+        draft.marketing_url === null
+            ? null
+            : marketingUrlSchema.safeParse(draft.marketing_url).success
+              ? null
+              : 'Escribe la dirección completa, que empiece con https://';
 
     async function run(label: string, fn: () => Promise<void>): Promise<void> {
         setBusy(label);
@@ -111,6 +123,36 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         Se ve en el login, en la pestaña y debajo del ícono de la app instalada.
                     </p>
+                </div>
+
+                <div className="imcrm-space-y-1.5">
+                    <Label htmlFor="brand-marketing">Sitio del producto</Label>
+                    <Input
+                        id="brand-marketing"
+                        type="url"
+                        inputMode="url"
+                        value={draft.marketing_url ?? ''}
+                        maxLength={500}
+                        onChange={(e) => {
+                            const v = e.target.value.trim();
+                            setDraft((d) => ({ ...d, marketing_url: v === '' ? null : v }));
+                        }}
+                        placeholder="https://imagina.cloud/base"
+                        className="imcrm-max-w-sm"
+                        aria-invalid={marketingError !== null}
+                        data-testid="brand-marketing-url"
+                    />
+                    {marketingError ? (
+                        <p className="imcrm-text-xs imcrm-text-destructive">{marketingError}</p>
+                    ) : (
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            La página donde presentas la app. El inicio de sesión muestra «Conoce …» con un enlace
+                            ahí, sólo en este dominio (en el dominio propio de una empresa nunca aparece). Desde ese
+                            sitio, enlaza el botón de registro a <code>/registro</code> de la app y agrega etiquetas
+                            como <code>?utm_source=sitio&amp;utm_campaign=precios</code>: en Empresas verás de dónde
+                            llegó cada una.
+                        </p>
+                    )}
                 </div>
 
                 <section className="imcrm-space-y-3">
@@ -329,7 +371,7 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                     </p>
                 )}
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-3">
-                    <Button type="button" onClick={() => void onSave()} disabled={!dirty || busy !== null} data-testid="brand-save">
+                    <Button type="button" onClick={() => void onSave()} disabled={!dirty || busy !== null || marketingError !== null} data-testid="brand-save">
                         {busy === 'save' && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
                         Guardar
                     </Button>

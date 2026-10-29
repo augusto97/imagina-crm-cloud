@@ -12,6 +12,13 @@ export const registerInputSchema = z.object({
     password: passwordSchema,
     name: z.string().trim().min(1).max(120),
     workspace_name: z.string().trim().min(1).max(120),
+    /**
+     * v0.1.331 — de dónde vino el alta (`utm_*`, `ref`, página anterior;
+     * `SignupAttribution`). Viaja tal cual y el servidor lo lee con
+     * `parseSignupAttribution`, campo por campo: un valor raro se descarta,
+     * nunca hace fallar el registro.
+     */
+    attribution: z.unknown().optional(),
 });
 export type RegisterInput = z.infer<typeof registerInputSchema>;
 

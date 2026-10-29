@@ -23,6 +23,14 @@ import { APP_BAR_NEUTRAL, hexColorSchema } from './tenant';
 
 export const DEFAULT_PLATFORM_APP_NAME = 'Imagina Base';
 
+/** v0.1.331 — el sitio del producto. Sólo https: el enlace sale en el login de todos. */
+export const marketingUrlSchema = z
+    .string()
+    .trim()
+    .max(500)
+    .url('Escribe una dirección completa, con https://')
+    .refine((v) => v.startsWith('https://'), 'La dirección tiene que empezar con https://');
+
 /** URL de una imagen subida a la marca de la plataforma. */
 export const PLATFORM_BRAND_IMAGE_RE = /^\/api\/v1\/public\/brand\/images\/[a-f0-9]{32}\.png$/;
 const brandImageUrl = z.string().regex(PLATFORM_BRAND_IMAGE_RE, 'Imagen de marca inválida');
@@ -88,6 +96,12 @@ export const platformBrandSchema = z.object({
      * color de `icon_background` (útil si el logo necesita un fondo propio).
      */
     icon_background_auto: z.boolean().default(true),
+    /**
+     * v0.1.331 — el sitio del producto (la landing, p. ej.
+     * `https://imagina.cloud/base`). El login muestra «Conoce …» con un enlace
+     * ahí — sólo en el dominio de la plataforma, nunca en el de una empresa.
+     */
+    marketing_url: marketingUrlSchema.nullable().default(null),
 });
 export type PlatformBrand = z.infer<typeof platformBrandSchema>;
 

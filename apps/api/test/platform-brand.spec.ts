@@ -116,6 +116,20 @@ describe('v0.1.327 — marca de la plataforma', () => {
         expect(boot).toMatchObject({ tenant: null, platform: { app_name: 'Acme Nube', logo_url: null, icons: null } });
     });
 
+    it('v0.1.331: el sitio del producto viaja en el boot; sólo https', async () => {
+        const store = new MemStore();
+        const svc = new PlatformBrandService(store, new MemFiles());
+        await svc.update({ app_name: 'Acme Nube', marketing_url: 'https://imagina.cloud/base' });
+        const domains = { resolveHost: async () => ({ tenant: null }) } as unknown as DomainsService;
+        const boot = await new PublicDomainsController(domains, svc).boot({ headers: { host: 'app.acme.test' } } as never);
+        expect(boot.platform.marketing_url).toBe('https://imagina.cloud/base');
+        await expect(svc.update({ app_name: 'X', marketing_url: 'http://imagina.cloud/base' })).rejects.toThrow();
+        await expect(svc.update({ app_name: 'X', marketing_url: 'javascript:alert(1)' })).rejects.toThrow();
+        // Una marca guardada antes (sin el campo) se lee sin él.
+        expect(parsePlatformBrand({ app_name: 'Vieja' }).marketing_url).toBeNull();
+        expect(parsePlatformBrand({ app_name: 'Vieja', marketing_url: 'ftp://x' }).marketing_url).toBeNull();
+    });
+
     it('manifiesto: en la plataforma usa su nombre e íconos; en el dominio de una empresa, nunca', () => {
         const url = (k: string) => `/api/v1/public/brand/images/${k.padEnd(32, '0').slice(0, 32).replace(/[^a-f0-9]/g, 'a')}.png`;
         const icons = Object.fromEntries(PLATFORM_ICON_KEYS.map((k) => [k, url(k)])) as never;

@@ -108,7 +108,7 @@ export function PlatformPage(): JSX.Element {
                             label={__('Empresas')}
                             value={formatNumber(s.tenants_total)}
                             tone="blue"
-                            hint={`${s.signups_last_30d} ${__('nuevas en 30 días')}`}
+                            hint={signupsHint(s.signups_last_30d, s.signups_by_source)}
                         />
                         <StatTile
                             icon={BadgeCheck}
@@ -212,4 +212,15 @@ export function PlatformPage(): JSX.Element {
             {tab === 'transfers' && <PlatformTransfersCard />}
         </div>
     );
+}
+
+/**
+ * v0.1.331 — «12 nuevas en 30 días · sitio 7, google 3, directo 2»: de dónde
+ * vinieron las altas (las etiquetas que trae el enlace del sitio del producto).
+ */
+function signupsHint(total: number, bySource: ReadonlyArray<{ source: string; count: number }> | undefined): string {
+    const head = `${total} ${__('nuevas en 30 días')}`;
+    if (!bySource || bySource.length === 0 || total === 0) return head;
+    const top = bySource.slice(0, 3).map((b) => `${b.source} ${b.count}`);
+    return `${head} · ${top.join(', ')}${bySource.length > 3 ? '…' : ''}`;
 }

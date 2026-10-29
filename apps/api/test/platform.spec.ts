@@ -258,6 +258,70 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(s.signups_last_30d).toBe(3);
     });
 
+    it('v0.1.331 — el registro guarda de dónde vino; la consola lo muestra y cuenta las altas por origen', async () => {
+        const a = await auth.register({
+            email: 'sitio@origen.test',
+            password: 'password123',
+            name: 'Sitio',
+            workspace_name: 'Desde el sitio',
+            attribution: {
+                source: 'Sitio',
+                medium: 'landing',
+                campaign: 'precios',
+                // La consulta de la URL se descarta (puede traer tokens).
+                referrer: 'https://imagina.cloud/base/precios?token=secreto',
+                landing_url: 'https://base.imagina.cloud/registro?utm_source=sitio',
+                // Lo raro no hace fallar el alta: se descarta campo por campo.
+                term: 42,
+                content: 'x'.repeat(500),
+                extra: 'ignorado',
+            },
+        });
+        await auth.register({
+            email: 'otro@origen.test',
+            password: 'password123',
+            name: 'Otro',
+            workspace_name: 'Desde el blog',
+            attribution: { referrer: 'https://www.imagina.cloud/blog/airtable-en-espanol' },
+        });
+        await auth.register({ email: 'directo@origen.test', password: 'password123', name: 'Dir', workspace_name: 'Directo' });
+        // Un valor que no es un objeto tampoco rompe nada.
+        await auth.register({
+            email: 'raro@origen.test',
+            password: 'password123',
+            name: 'Raro',
+            workspace_name: 'Raro',
+            attribution: 'utm_source=hack' as unknown as Record<string, string>,
+        });
+
+        const detail = await platform.tenantDetail(a.memberships[0]!.tenant_id);
+        expect(detail.tenant.signup_source).toMatchObject({
+            source: 'Sitio',
+            medium: 'landing',
+            campaign: 'precios',
+            referrer: 'https://imagina.cloud/base/precios',
+            landing_url: 'https://base.imagina.cloud/registro',
+        });
+        expect(detail.tenant.signup_source?.term).toBeUndefined();
+        expect(detail.tenant.signup_source?.content).toBeUndefined();
+        expect(detail.tenant.signup_source).not.toHaveProperty('extra');
+        expect(Date.parse(detail.tenant.signup_source!.at)).not.toBeNaN();
+
+        const list = await platform.listTenants();
+        const byName = new Map(list.data.map((t) => [t.name, t]));
+        expect(byName.get('Directo')!.signup_source).toBeNull();
+        expect(byName.get('Raro')!.signup_source).toBeNull();
+        expect(byName.get('Desde el blog')!.signup_source?.referrer).toBe('https://www.imagina.cloud/blog/airtable-en-espanol');
+
+        const s = await platform.getStats();
+        expect(s.signups_last_30d).toBe(4);
+        expect(s.signups_by_source).toEqual([
+            { source: 'Directo', count: 2 },
+            { source: 'imagina.cloud', count: 1 },
+            { source: 'sitio', count: 1 },
+        ]);
+    });
+
     it('updateTenant: cambia plan y suspende (past_due → read_only)', async () => {
         const id = await seedTenant({ name: 'Acme', plan: 'trial', status: 'trialing', ownerEmail: 'a@a.test' });
 

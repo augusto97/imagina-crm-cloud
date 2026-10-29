@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, ArrowLeft, Eye, EyeOff, MailCheck, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowUpRight, Eye, EyeOff, MailCheck, ShieldCheck } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CloudApiError } from '@/lib/cloud/client';
 import { isTransientError, withTransientRetry } from '@/lib/cloud/transientRetry';
@@ -11,10 +11,12 @@ import { useAppIdentity } from '@/hooks/useAppIdentity';
 import { useTheme } from '@/lib/theme';
 import { Illustration } from '@/admin/learn/illustrations/registry';
 import { cn } from '@/lib/utils';
+import { clearSignupAttribution, isRegisterEntry, readSignupAttribution } from '@/lib/signupAttribution';
 
 /** Login + registro contra el backend. Auth por cookie de sesión. */
 export function LoginPage(): JSX.Element {
-    const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+    // v0.1.331 — la landing enlaza a `/registro`: abre directo el alta.
+    const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(() => (isRegisterEntry() ? 'register' : 'login'));
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
@@ -56,7 +58,18 @@ export function LoginPage(): JSX.Element {
             const result =
                 mode === 'login'
                     ? await withTransientRetry(() => api.login({ email, password }))
-                    : await api.register({ email, password, name, workspace_name: workspace });
+                    : await api.register({
+                          email,
+                          password,
+                          name,
+                          workspace_name: workspace,
+                          attribution: readSignupAttribution() ?? undefined,
+                      });
+            if (mode === 'register') {
+                clearSignupAttribution();
+                // La app no tiene una pantalla `/registro`: se entra al inicio.
+                if (isRegisterEntry()) window.history.replaceState(null, '', '/');
+            }
             if ('mfa_required' in result) {
                 setChallenge(result.challenge);
                 setPassword('');
@@ -270,8 +283,20 @@ export function LoginPage(): JSX.Element {
                     </form>
                 </main>
 
-                <footer className="imcrm-text-[12px] imcrm-text-muted-foreground">
-                    © {new Date().getFullYear()} {appName}
+                <footer className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-x-4 imcrm-gap-y-1 imcrm-text-[12px] imcrm-text-muted-foreground">
+                    <span>
+                        © {new Date().getFullYear()} {appName}
+                    </span>
+                    {identity.marketingUrl && (
+                        <a
+                            href={identity.marketingUrl}
+                            data-testid="login-marketing-link"
+                            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-foreground/80 imcrm-underline-offset-4 hover:imcrm-text-foreground hover:imcrm-underline"
+                        >
+                            Conoce {appName}
+                            <ArrowUpRight className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        </a>
+                    )}
                 </footer>
             </div>
 

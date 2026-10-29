@@ -372,11 +372,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.330**
-(una conexión SQL que falla dice en qué paso se cortó y qué respondió la base,
-con reintentos), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.331**
+(la app lista para la landing: no se indexa, enlace al sitio del producto en el
+login, `/registro` y el origen de cada alta en la consola), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **Landing para SEO** (ADR-S81). Decidido con el usuario: NO un
+  home dentro de la app (SPA, white-label, releases) ni imaginawp.com; un sitio
+  propio en WordPress en **`imagina.cloud/base`** (imagina.cloud = marca paraguas
+  de sus apps; la raíz presenta la marca y enlaza a /base). v0.1.331 deja la app
+  lista. **Para el usuario**: actualizar; en Plataforma → Marca poner «Sitio del
+  producto» = `https://imagina.cloud/base`; en el sitio, el botón de registro a
+  `https://base.imagina.cloud/registro?utm_source=sitio&utm_campaign=<página>`;
+  revisar `PUBLIC_BASE_DOMAIN` del `.env` (si es la raíz con un comodín
+  `*.imagina.cloud`, podría chocar). **Ofrecido y pendiente de respuesta**:
+  ayudarle con la estructura de páginas, los textos con palabras clave y las
+  capturas («Café Aurora») del sitio.
 - 2026-10-28 — **Un cliente con la sincronización SQL que falla y se arregla
   sola** («Failed to connect to sqlserver-erpbinapps.database.windows.net:1433
   in 15000ms», 3 veces en 3 días, cada una resuelta sola en la corrida
@@ -841,6 +852,17 @@ con reintentos), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-29 · v0.1.331** — **La app lista para la landing** (ADR-S81). El
+  usuario preguntó si hacerle un home a la app o una landing aparte para SEO;
+  se decidió un sitio propio en WordPress en `imagina.cloud/base`. (1) La app no
+  se indexa: `X-Robots-Tag: noindex, nofollow` en todo el API, meta robots en
+  los HTML, `robots.txt` que deja rastrear (para que se lea el noindex).
+  (2) «Sitio del producto» en Plataforma → Marca → «Conoce …» en el pie del
+  login (nunca en el dominio de una empresa). (3) `/registro` abre el alta.
+  (4) Origen de cada alta (`utm_*`, `ref`, sitio anterior; recordado 30 días en
+  el dispositivo) guardado en `tenants.settings.signup`, visible en Empresas y
+  contado por origen en el KPI de altas. Sin novedad en el catálogo (lo nuevo
+  es del operador). Tests: shared 4, front 4, API 2 + E2E navegador 16/16.
 - **2026-10-28 · v0.1.330** — **Diagnóstico claro de una conexión SQL que
   falla** (addendum ADR-S27). Reporte del usuario con captura: un cliente veía
   «No se pudo conectar… (Failed to connect … in 15000ms)» y no se sabía si
