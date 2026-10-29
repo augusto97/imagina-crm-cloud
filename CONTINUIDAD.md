@@ -372,8 +372,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.333**
-(sitio WordPress en listas, sin complemento; antes v0.1.332 SMS), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.334**
+(el complemento para WordPress: SEO, campos con tipo, medios y tiempo real;
+antes v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - SMS (v0.1.332): verificado sólo contra dobles. Con la primera cuenta real de
@@ -394,7 +395,11 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.333**
   usuario**: «hazlo todo como recomiendas» salvo **crear páginas o entradas
   desde la app** (lo nuevo se crea en WordPress; se mira si un cliente lo pide).
   Plan: v0.1.332 SMS (publicada), v0.1.333 WordPress sin complemento
-  (publicada), v0.1.334 el complemento «Imagina Base Connector» (en curso).
+  (publicada), v0.1.334 el complemento «Imagina Base Connector» (publicada). **Pedido
+  completo.** Pendientes: publicar el zip del complemento como asset de GitHub
+  desde una versión posterior (los servidores anteriores a v0.1.334 eligen «el
+  primer .zip»), JetEngine sin prueba real, «dónde se usa» no ve Elementor/Divi,
+  y probar en un hosting real con plugins de seguridad (Wordfence) y multisitio.
   Para probar contra un WordPress real: `sh scripts/dev/wordpress-up.sh 8090 up`. El vencimiento de la
   prueba de 15 días quedó **para después** (lo dijo el usuario).
 - 2026-10-29 — **Landing para SEO** (ADR-S81). Decidido con el usuario: NO un
@@ -903,6 +908,25 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.333**
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-29 · v0.1.334** — **El complemento para WordPress** (ADR-S84).
+  Segunda mitad del conector de WordPress. (1) Plugin propio «Imagina Base
+  Connector» en `integrations/wordpress-plugin/` (GPL, PHP 7.4+): rutas
+  `imagina-base/v1` con la misma contraseña de aplicación; SEO normalizado de
+  Rank Math, Yoast, SEOPress y AIOSEO (editable + lo que ve Google); ACF
+  completo, Meta Box, JetEngine y meta con su tipo; palabras; medios con dónde
+  se usa; lectura/escritura en lote; avisos firmados con cola y reintentos sin
+  frenar el guardado; desinstalar limpia. (2) La app lo reparte desde su
+  servidor y WordPress lo actualiza desde ahí. (3) Página del sitio: detecta el
+  complemento y ofrece instalarlo, modo «Al instante» con revisión cada hora,
+  columnas por origen, medios, kits de auditoría SEO y texto alternativo con IA
+  (que mira la imagen). Sin el complemento las columnas quedan bloqueadas con lo
+  último. (4) El actualizador elige el bundle por nombre. Sin migración. Tests
+  API 1760, front 691, shared 583; E2E 59/59 contra WordPress real (los 4 SEO).
+  **Pendiente**: publicar el zip del complemento como asset de GitHub (recién
+  cuando todos los servidores tengan el actualizador nuevo); JetEngine sin
+  prueba real (es comercial); «dónde se usa» no ve constructores que guardan
+  en meta (Elementor); sin contenido ni bloques a propósito.
 
 - **2026-10-29 · v0.1.333** — **Sitio WordPress en listas** (ADR-S83). Pedido
   del usuario: un conector de WordPress que traiga páginas, entradas y tipos de

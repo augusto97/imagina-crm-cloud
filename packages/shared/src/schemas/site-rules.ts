@@ -20,6 +20,10 @@ import { WP_SETTABLE_POST_STATUSES, type SiteListMarker } from './site-sync';
 
 const HOW_TO_EDIT = 'Se edita en WordPress.';
 
+/** Sin el complemento, lo que él da no se puede leer ni mandar. */
+export const SITE_NEEDS_PLUGIN_REASON =
+    'Necesita el complemento para WordPress activo en el sitio: quedó con lo último que llegó. Instálalo de nuevo desde la página del sitio.';
+
 /** La clave de columna del sitio de un campo, o null si es una columna propia. */
 export function siteFieldKey(marker: SiteListMarker, fieldId: number): string | null {
     for (const [key, id] of Object.entries(marker.fields)) if (id === fieldId) return key;
@@ -45,10 +49,25 @@ function readOnlyReason(key: string): string {
         case 'parent':
         case 'template':
         case 'featured_image':
+        case 'thumbnail':
+        case 'source_url':
+        case 'mime_type':
+        case 'dimensions':
+        case 'filesize':
             return HOW_TO_EDIT;
+        case 'seo:google_title':
+        case 'seo:google_description':
+            return 'Lo calcula tu plugin de SEO con las variables ya reemplazadas: cambia «Título SEO» o «Descripción SEO» y se actualiza solo.';
+        case 'seo:score':
+            return 'Lo calcula tu plugin de SEO al editar la entrada en WordPress.';
+        case 'plugin:words':
+            return 'Lo cuenta el complemento a partir del contenido, que se edita en WordPress.';
+        case 'plugin:used_in':
+        case 'plugin:used_count':
+            return 'Lo calcula el complemento mirando dónde aparece la imagen en el sitio.';
         default:
-            return key.startsWith('acf:') || key.startsWith('meta:')
-                ? 'Es un dato con varias partes (una lista o un grupo): se edita en WordPress.'
+            return key.startsWith('acf:') || key.startsWith('meta:') || key.startsWith('cf:')
+                ? 'Es un dato con varias partes (una lista, un grupo o una relación con otros contenidos): se edita en WordPress.'
                 : HOW_TO_EDIT;
     }
 }
@@ -56,6 +75,7 @@ function readOnlyReason(key: string): string {
 export function siteCellAccess(marker: SiteListMarker, fieldId: number, row: StoreRowGetter): StoreCellAccess {
     const key = siteFieldKey(marker, fieldId);
     if (key === null) return { access: 'own' };
+    if (marker.needs_plugin.includes(key)) return { access: 'locked', reason: SITE_NEEDS_PLUGIN_REASON };
     if (!marker.can_edit.includes(key)) return { access: 'locked', reason: readOnlyReason(key) };
     if (!marker.write_back) {
         return {
@@ -70,9 +90,9 @@ export function siteCellAccess(marker: SiteListMarker, fieldId: number, row: Sto
         };
     }
     if (row('status') === 'trash') {
-        return marker.kind === 'taxonomy'
-            ? { access: 'locked', reason: 'Este término se borró en WordPress.' }
-            : { access: 'locked', reason: 'Está en la papelera de WordPress: restáurala allá para editarla.' };
+        if (marker.kind === 'taxonomy') return { access: 'locked', reason: 'Este término se borró en WordPress.' };
+        if (marker.kind === 'media') return { access: 'locked', reason: 'Este medio se borró en WordPress.' };
+        return { access: 'locked', reason: 'Está en la papelera de WordPress: restáurala allá para editarla.' };
     }
     return { access: 'editable' };
 }
@@ -86,9 +106,11 @@ export function siteValueError(marker: SiteListMarker, fieldId: number, value: u
     const key = siteFieldKey(marker, fieldId);
     if (key === null) return null;
     const empty = value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+    if (marker.needs_plugin.includes(key)) return SITE_NEEDS_PLUGIN_REASON;
     switch (key) {
         case 'title':
-            return empty ? 'El título no puede quedar vacío.' : null;
+            // Un medio sin título es válido en WordPress (se ve el nombre del archivo).
+            return empty && marker.kind !== 'media' ? 'El título no puede quedar vacío.' : null;
         case 'name':
             return empty ? 'El nombre no puede quedar vacío.' : null;
         case 'slug': {
@@ -100,11 +122,22 @@ export function siteValueError(marker: SiteListMarker, fieldId: number, value: u
         }
         case 'status':
             if (marker.kind === 'taxonomy') return 'El estado de un término lo marca la sincronización.';
+            if (marker.kind === 'media') return 'El estado de un medio lo marca la sincronización.';
             return (WP_SETTABLE_POST_STATUSES as readonly string[]).includes(String(value))
                 ? null
                 : 'Ese estado se pone en WordPress (programar una fecha o mandar a la papelera): elige otro.';
         case 'date':
             return empty ? 'La fecha de publicación no puede quedar vacía.' : null;
+        case 'seo:canonical': {
+            if (empty) return null;
+            return /^https?:\/\/[^\s/$.?#][^\s]*$/i.test(String(value).trim())
+                ? null
+                : 'La URL canónica tiene que ser una dirección web completa (https://…). Vacía = la dirección de la propia página.';
+        }
+        case 'alt_text': {
+            if (empty) return null;
+            return String(value).length > 500 ? 'El texto alternativo es demasiado largo: una frase corta alcanza (hasta 125 caracteres es lo ideal).' : null;
+        }
         case 'menu_order': {
             if (empty) return null;
             const n = typeof value === 'number' ? value : Number(value);

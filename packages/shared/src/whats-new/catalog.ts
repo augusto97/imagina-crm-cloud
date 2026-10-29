@@ -727,4 +727,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Conectar un sitio', href: '/settings?s=conectores' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.334-complemento-wordpress',
+        version: '0.1.334',
+        date: '2026-10-29',
+        kind: 'feature',
+        title: 'El SEO de tu WordPress, en una tabla',
+        summary:
+            'Con el complemento para WordPress llegan el SEO de cada página, todos los campos personalizados con su tipo y las imágenes con su texto alternativo, y cada cambio llega al instante.',
+        media: {
+            slides: [
+                {
+                    title: 'Un complemento, una sola vez',
+                    text: 'Lo descargas desde la página del sitio y lo subes en Plugins. La lista suma el SEO, los campos de ACF, Meta Box y JetEngine y el texto alternativo.',
+                    illustration: 'sitio-complemento',
+                },
+                {
+                    title: 'Auditoría SEO con un botón',
+                    text: 'Vistas para lo que no tiene descripción o tiene el título demasiado largo, y la IA propone la meta descripción. La aplicas en lote y se puede deshacer.',
+                    illustration: 'sitio-seo',
+                },
+                {
+                    title: 'Texto alternativo para tus imágenes',
+                    text: 'La IA mira cada imagen sin texto alternativo y lo propone. También ves dónde se usa cada una y cuáles pesan demasiado.',
+                    illustration: 'sitio-alt',
+                },
+            ],
+        },
+        body: 'En la página de tu sitio, toca **Descargar el complemento** y súbelo en tu WordPress. Funciona con Rank Math, Yoast SEO, SEOPress y All in One SEO. Elige **Al instante** para que cada cambio llegue en segundos.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin'] },
+    },
 ];

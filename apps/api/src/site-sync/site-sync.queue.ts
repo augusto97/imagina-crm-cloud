@@ -3,6 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
+import type { SiteSyncHookJob } from './site-realtime.service';
 
 /**
  * Cola de la sincronización con sitios WordPress (v0.1.333, ADR-S83). Propia
@@ -15,6 +16,7 @@ export const SITE_SYNC_QUEUE = 'site-sync';
 const TICK_JOB = 'tick';
 const RUN_JOB = 'run';
 const PUSH_JOB = 'push';
+const HOOK_JOB = 'hook';
 
 export interface SiteSyncRunJob {
     tenantId: number;
@@ -67,12 +69,26 @@ export class SiteSyncQueue {
             .catch((err) => this.logger.error(`No se pudo encolar el envío al sitio: ${String(err)}`));
         return true;
     }
+
+    /**
+     * Un aviso del complemento (v0.1.334): se procesa en la cola para que el
+     * sitio reciba la respuesta enseguida. Reintenta lo pasajero (el sitio
+     * caído un momento) con espera creciente.
+     */
+    enqueueHook(job: SiteSyncHookJob): boolean {
+        if (!this.queue) return false;
+        this.queue
+            .add(HOOK_JOB, job, { attempts: 4, backoff: { type: 'exponential', delay: 5_000 }, removeOnComplete: true, removeOnFail: 100 })
+            .catch((err) => this.logger.error(`No se pudo encolar un aviso del sitio: ${String(err)}`));
+        return true;
+    }
 }
 
 export interface SiteSyncHandlers {
     tick(): Promise<unknown>;
     runJob(job: SiteSyncRunJob): Promise<boolean>;
     pushJob(job: SiteSyncPushJob): Promise<unknown>;
+    hookJob(job: SiteSyncHookJob): Promise<unknown>;
 }
 
 @Injectable()
@@ -111,6 +127,10 @@ export class SiteSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdo
                     }
                     if (job.name === PUSH_JOB) {
                         await this.handlers.pushJob(job.data as SiteSyncPushJob);
+                        return;
+                    }
+                    if (job.name === HOOK_JOB) {
+                        await this.handlers.hookJob(job.data as SiteSyncHookJob);
                         return;
                     }
                     const data = job.data as SiteSyncRunJob;

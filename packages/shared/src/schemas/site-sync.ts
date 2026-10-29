@@ -21,24 +21,33 @@ import { STORE_SYNC_INTERVALS, storeSyncIntervalSchema } from './store-sync';
 
 export const SITE_SYNC_PROVIDER = 'wordpress';
 
-/** Un tipo de contenido (`post_type`) o una taxonomía (categorías, etiquetas…). */
-export const SITE_OBJECT_KINDS = ['post_type', 'taxonomy'] as const;
+/**
+ * Un tipo de contenido (`post_type`), una taxonomía (categorías, etiquetas…) o
+ * la biblioteca de medios (`media`, v0.1.334: las imágenes con su texto
+ * alternativo, título y leyenda).
+ */
+export const SITE_OBJECT_KINDS = ['post_type', 'taxonomy', 'media'] as const;
 export type SiteObjectKind = (typeof SITE_OBJECT_KINDS)[number];
 
 /**
  * De dónde sale una columna. `core` = lo de WordPress (título, estado…),
  * `acf` = un campo de Advanced Custom Fields con «Mostrar en la API REST»,
- * `meta` = un campo personalizado registrado en la API. v0.1.334 suma las del
- * complemento propio (`seo`, `plugin`).
+ * `meta` = un campo personalizado registrado en la API. Con el complemento
+ * «Imagina Base Connector» (v0.1.334, ADR-S84) se suman `seo` (el SEO del
+ * plugin que use el sitio) y `plugin` (los campos de ACF, Meta Box, JetEngine
+ * y otros con su tipo, el número de palabras, dónde se usa cada imagen).
  */
-export const SITE_COLUMN_SOURCES = ['core', 'acf', 'meta'] as const;
+export const SITE_COLUMN_SOURCES = ['core', 'acf', 'meta', 'seo', 'plugin'] as const;
 export type SiteColumnSource = (typeof SITE_COLUMN_SOURCES)[number];
 
 /** Tipos de campo en los que puede llegar una columna del sitio. */
 export const SITE_COLUMN_TYPES = ['text', 'long_text', 'number', 'date', 'datetime', 'checkbox', 'url', 'select', 'multi_select'] as const;
 export type SiteColumnType = (typeof SITE_COLUMN_TYPES)[number];
 
-/** Clave de una columna: `title`, `tax:category`, `acf:precio`, `meta:referencia`. */
+/**
+ * Clave de una columna: `title`, `tax:category`, `acf:precio`, `meta:referencia`,
+ * y con el complemento `seo:title`, `cf:acf.precio`, `plugin:words`.
+ */
 export const siteColumnKeySchema = z.string().min(1).max(200).regex(/^[a-z_]+(:[A-Za-z0-9_.-]{1,190})?$/, 'Columna inválida');
 
 export const siteColumnSchema = z.object({
@@ -59,6 +68,12 @@ export const siteColumnSchema = z.object({
     sample: z.string().nullable(),
     /** Empieza con `_`: casi siempre interno de un plugin (se muestra plegado). */
     private: z.boolean(),
+    /** Opciones de un select/multi_select que declara el plugin (ACF, Meta Box). */
+    options: z.array(z.object({ value: z.string(), label: z.string() })).nullable().default(null),
+    /** Es una imagen: la columna se muestra como miniatura. */
+    image: z.boolean().default(false),
+    /** Quién la da (`acf`, `metabox`, `jetengine`, `meta`, `seo`…): para agrupar en la pantalla. */
+    provider: z.string().nullable().default(null),
 });
 export type SiteColumn = z.infer<typeof siteColumnSchema>;
 
@@ -78,6 +93,33 @@ export const siteObjectSchema = z.object({
 });
 export type SiteObject = z.infer<typeof siteObjectSchema>;
 
+/**
+ * El complemento «Imagina Base Connector» en el sitio (ADR-S84). `installed`
+ * false = el sitio no lo tiene (o no responde su ruta): la página del sitio
+ * ofrece instalarlo y dice qué no se puede sin él.
+ */
+export const sitePluginInfoSchema = z.object({
+    installed: z.boolean(),
+    version: z.string().nullable(),
+    /** La versión que reparte la app (para avisar que hay una más nueva). */
+    latest: z.string().nullable(),
+    outdated: z.boolean(),
+    seo: z
+        .object({ plugin: z.string(), name: z.string(), version: z.string(), terms: z.boolean(), problem: z.string().nullable() })
+        .nullable(),
+    providers: z.object({ acf: z.boolean(), metabox: z.boolean(), jetengine: z.boolean() }),
+    /** El usuario conectado es administrador (los avisos en tiempo real lo necesitan). */
+    can_manage: z.boolean(),
+    /** Se actualiza solo desde la app (lo instalaron con el zip de la app). */
+    updates: z.boolean(),
+    /** Si no se pudo leer (instalado pero con un error). */
+    error: z.string().nullable(),
+});
+export type SitePluginInfo = z.infer<typeof sitePluginInfoSchema>;
+
+export const SITE_SYNC_MODES = ['interval', 'realtime'] as const;
+export type SiteSyncMode = (typeof SITE_SYNC_MODES)[number];
+
 export const siteDiscoverySchema = z.object({
     site_name: z.string(),
     site_url: z.string(),
@@ -93,6 +135,7 @@ export const siteDiscoverySchema = z.object({
     objects: z.array(siteObjectSchema),
     /** ACF está instalado y expone campos en la API. */
     acf: z.boolean(),
+    plugin: sitePluginInfoSchema,
     warnings: z.array(z.string()),
 });
 export type SiteDiscovery = z.infer<typeof siteDiscoverySchema>;
@@ -114,6 +157,8 @@ export const setupSiteSyncSchema = z.object({
     /** «Editar desde la app»: sin esto, todas las columnas del sitio son de sólo lectura. */
     write_back: z.boolean().default(true),
     interval_minutes: storeSyncIntervalSchema.default(60),
+    /** En tiempo real (necesita el complemento): el sitio avisa cada cambio y se revisa todo cada hora. */
+    mode: z.enum(SITE_SYNC_MODES).default('interval'),
 });
 export type SetupSiteSyncInput = z.infer<typeof setupSiteSyncSchema>;
 
@@ -125,6 +170,7 @@ export type AddSiteObjectsInput = z.infer<typeof addSiteObjectsSchema>;
 
 export const updateSiteSyncSchema = z.object({
     interval_minutes: storeSyncIntervalSchema.optional(),
+    mode: z.enum(SITE_SYNC_MODES).optional(),
     enabled: z.boolean().optional(),
     write_back: z.boolean().optional(),
     /**
@@ -145,6 +191,30 @@ export const siteColumnChangeSchema = z.object({
 export type SiteColumnChangeInput = z.infer<typeof siteColumnChangeSchema>;
 
 export const runSiteSyncSchema = z.object({ full: z.boolean().default(false) });
+
+/**
+ * Armar en una lista del sitio un «kit» listo para usar (ADR-S84):
+ *  - `seo_audit`: largos del título y la descripción que ve Google, vistas
+ *    «Sin descripción», «Título de más de 60 caracteres» y «Sin palabra clave»,
+ *    y un campo con IA que propone la meta descripción;
+ *  - `alt_text`: en la biblioteca de medios, la vista «Sin texto alternativo» y
+ *    un campo con IA que lo propone mirando la imagen.
+ */
+export const SITE_KITS = ['seo_audit', 'alt_text'] as const;
+export type SiteKit = (typeof SITE_KITS)[number];
+export const applySiteKitSchema = z.object({ resource: z.string().min(1).max(64), kit: z.enum(SITE_KITS) });
+export type ApplySiteKitInput = z.infer<typeof applySiteKitSchema>;
+export const siteKitResultSchema = z.object({
+    list: z.object({ id: idSchema, slug: z.string(), name: z.string() }),
+    views: z.array(z.object({ id: idSchema, name: z.string() })),
+    fields: z.array(z.object({ id: idSchema, label: z.string() })),
+    /** Columnas del sitio que el kit sumó (se llenan en la próxima vuelta). */
+    added_columns: z.array(z.string()),
+    /** La columna con IA del kit (nueva o la que ya estaba), para calcular las sugerencias. */
+    ai_field: z.object({ id: idSchema, label: z.string() }).nullable(),
+    warnings: z.array(z.string()),
+});
+export type SiteKitResult = z.infer<typeof siteKitResultSchema>;
 export type RunSiteSyncInput = z.infer<typeof runSiteSyncSchema>;
 
 /** «Conectar en un clic»: la persona sólo escribe la dirección del sitio. */
@@ -177,6 +247,8 @@ export const siteSyncColumnStateSchema = z.object({
     editable: z.boolean(),
     always: z.boolean(),
     hint: z.string().nullable(),
+    /** La da el complemento y el sitio ya no lo tiene: queda con lo último que llegó. */
+    needs_plugin: z.boolean().default(false),
 });
 export type SiteSyncColumnState = z.infer<typeof siteSyncColumnStateSchema>;
 
@@ -202,9 +274,32 @@ export const siteSyncStatusSchema = z.object({
     site_url: z.string(),
     enabled: z.boolean(),
     interval_minutes: z.number().int(),
+    /** Lo elegido. */
+    mode: z.enum(SITE_SYNC_MODES),
+    /** Lo que corre de verdad: en tiempo real sin el complemento vuelve a intervalos. */
+    effective_mode: z.enum(SITE_SYNC_MODES),
     write_back: z.boolean(),
     folder_id: idSchema.nullable(),
     objects: z.array(siteSyncObjectStateSchema),
+    /** Lo último que se supo del complemento (en cada vuelta). */
+    plugin: z
+        .object({
+            installed: z.boolean(),
+            version: z.string().nullable(),
+            seo_name: z.string().nullable(),
+            checked_at: z.string().nullable(),
+            /** Estuvo y ya no está (lo desinstalaron o lo desactivaron). */
+            missing_since: z.string().nullable(),
+        })
+        .nullable(),
+    /** La versión del complemento que reparte la app (para avisar «hay una más nueva»). */
+    plugin_latest: z.string().nullable().default(null),
+    realtime: z.object({
+        registered: z.boolean(),
+        received: z.number().int().nonnegative(),
+        last_at: z.string().nullable(),
+        error: z.string().nullable(),
+    }),
     running: z.boolean(),
     current: z.string().nullable(),
     initial_done: z.boolean(),
@@ -248,6 +343,11 @@ export const siteListMarkerSchema = z.object({
     can_edit: z.array(z.string()).default([]),
     /** Columnas habilitadas para editar desde la app. */
     editable: z.array(z.string()).default([]),
+    /**
+     * Columnas que da el complemento cuando el sitio ya no lo tiene: quedan con
+     * lo último que llegó, bloqueadas con el motivo (no se pueden mandar).
+     */
+    needs_plugin: z.array(z.string()).default([]),
 });
 export type SiteListMarker = z.infer<typeof siteListMarkerSchema>;
 
@@ -258,15 +358,20 @@ export function readSiteListMarker(settings: unknown): SiteListMarker | null {
     return parsed.success ? parsed.data : null;
 }
 
-/** `post:propiedad` / `term:category`. */
+/** `post:propiedad` / `term:category` / `media:attachment`. */
 export function siteResourceKey(kind: SiteObjectKind, object: string): string {
-    return `${kind === 'taxonomy' ? 'term' : 'post'}:${object}`;
+    return `${kind === 'taxonomy' ? 'term' : kind === 'media' ? 'media' : 'post'}:${object}`;
 }
 
 export function parseSiteResourceKey(resource: string): { kind: SiteObjectKind; object: string } | null {
-    const m = /^(post|term):([a-z0-9_-]{1,32})$/.exec(resource);
+    const m = /^(post|term|media):([a-z0-9_-]{1,32})$/.exec(resource);
     if (!m) return null;
-    return { kind: m[1] === 'term' ? 'taxonomy' : 'post_type', object: m[2]! };
+    return { kind: m[1] === 'term' ? 'taxonomy' : m[1] === 'media' ? 'media' : 'post_type', object: m[2]! };
+}
+
+/** Las columnas que da el complemento (`seo:…`, `cf:…`, `plugin:…`). */
+export function isSitePluginColumn(key: string): boolean {
+    return /^(seo|cf|plugin):/.test(key);
 }
 
 // --- Catálogo de columnas de WordPress ------------------------------------
@@ -279,6 +384,11 @@ export const WP_POST_STATUS_OPTIONS: Array<{ value: string; label: string; color
     { value: 'private', label: 'Privado', color: 'violet' },
     { value: 'future', label: 'Programado', color: 'sky' },
     { value: 'trash', label: 'Papelera', color: 'rose' },
+];
+/** Un medio tampoco: está en la biblioteca o se borró. */
+export const WP_MEDIA_STATUS_OPTIONS: Array<{ value: string; label: string; color: string }> = [
+    { value: 'publish', label: 'En la biblioteca', color: 'emerald' },
+    { value: 'trash', label: 'Borrado en WordPress', color: 'rose' },
 ];
 /** Un término no tiene estado: se marca si se borró en el sitio. */
 export const WP_TERM_STATUS_OPTIONS: Array<{ value: string; label: string; color: string }> = [
@@ -308,6 +418,9 @@ function col(
         hint: null,
         sample: null,
         private: false,
+        options: null,
+        image: false,
+        provider: null,
         ...def,
     };
 }
@@ -321,6 +434,34 @@ const TERM_SLUG_HINT = 'Es la parte final del enlace del término. Si la cambias
  * alta (qué tipo tiene cada columna) y las pruebas.
  */
 export function siteCoreColumns(kind: SiteObjectKind, info: SiteObjectInfo): SiteColumn[] {
+    if (kind === 'media') {
+        return [
+            col({ key: 'title', label: 'Título', type: 'text', can_edit: true, default_on: true, default_edit: true, always: true }),
+            col({ key: 'status', label: 'Estado', type: 'select', always: true, hint: 'Se marca «Borrado en WordPress» si el medio deja de existir.' }),
+            col({ key: 'wp_id', label: 'ID en WordPress', type: 'number', always: true }),
+            col({ key: 'edit_link', label: 'Editar en WordPress', type: 'url', always: true }),
+            col({ key: 'thumbnail', label: 'Imagen', type: 'url', default_on: true, image: true }),
+            col({
+                key: 'alt_text',
+                label: 'Texto alternativo',
+                type: 'text',
+                can_edit: true,
+                default_on: true,
+                default_edit: true,
+                hint: 'Lo que leen los lectores de pantalla y Google cuando no ve la imagen. Una frase corta que la describa.',
+            }),
+            col({ key: 'caption', label: 'Leyenda', type: 'long_text', can_edit: true, default_on: true, default_edit: true }),
+            col({ key: 'description', label: 'Descripción', type: 'long_text', can_edit: true }),
+            col({ key: 'mime_type', label: 'Tipo de archivo', type: 'text', default_on: true }),
+            col({ key: 'dimensions', label: 'Medidas', type: 'text', default_on: true }),
+            col({ key: 'filesize', label: 'Peso (KB)', type: 'number', default_on: true }),
+            col({ key: 'source_url', label: 'Archivo', type: 'url' }),
+            col({ key: 'link', label: 'Página del medio', type: 'url' }),
+            col({ key: 'date', label: 'Fecha de subida', type: 'datetime', default_on: true }),
+            col({ key: 'modified', label: 'Última modificación', type: 'datetime' }),
+            col({ key: 'author', label: 'Subido por', type: 'text' }),
+        ];
+    }
     if (kind === 'taxonomy') {
         return [
             col({ key: 'name', label: 'Nombre', type: 'text', can_edit: true, default_on: true, default_edit: true, always: true }),

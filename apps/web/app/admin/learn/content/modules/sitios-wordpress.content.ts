@@ -97,6 +97,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Categorías y etiquetas', what: 'Cada taxonomía del tipo de contenido es una columna de selección múltiple.', tip: 'Si escribes una categoría que no existe, se crea en WordPress al guardar.' },
                     { name: 'Campos de ACF', what: 'Si usas Advanced Custom Fields, cada campo aparece con un ejemplo de lo que guarda y el tipo de columna sugerido (número, fecha, enlace, texto).' },
                     { name: 'Campos personalizados', what: 'Los datos que guardan otros plugins. Los internos de los plugins aparecen aparte y plegados.' },
+                    { name: 'Medios', what: 'La biblioteca de imágenes y archivos: la miniatura, el texto alternativo, la leyenda, el peso y las medidas.' },
+                    { name: 'Con el complemento', what: 'El SEO de cada página y todos los campos personalizados con su tipo, aunque no estén a la vista de la API de WordPress.', tip: 'Ver «El complemento para WordPress».' },
                 ],
             },
             {
@@ -113,7 +115,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Frecuencia', what: 'Cada cuánto la app le pregunta al sitio qué cambió: desde cada 5 minutos hasta una vez por día. Sólo se trae lo que cambió desde la vuelta anterior.' },
+                    { name: 'Al instante', what: 'Con el complemento para WordPress instalado, el sitio le avisa a la app cada cambio y llega en segundos. Una vez por hora se revisa todo, por si algo se perdió. Es lo recomendado.' },
+                    { name: 'Cada cierto tiempo', what: 'Sin el complemento, la app le pregunta al sitio qué cambió: desde cada 5 minutos hasta una vez por día. Sólo se trae lo que cambió desde la vuelta anterior.' },
                     { name: 'Editar desde la app', what: 'Si está activado, lo que cambies en una columna editable se manda a WordPress. Apagado, todo lo que viene del sitio es de sólo lectura.' },
                     { name: 'Empezar a sincronizar', what: 'Crea la carpeta **WordPress · nombre del sitio** con sus listas y hace la primera vuelta.' },
                 ],
@@ -230,6 +233,216 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Cambiar muchas entradas a la vez', article: 'sitio-editar-en-lote' },
+                ],
+            },
+        ],
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'sitio-complemento',
+        route: '/settings?s=conectores',
+        related: ['sitio-seo', 'sitio-medios', 'sitio-sincronizar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Sin instalar nada, la app ya trae del sitio lo que WordPress muestra en su API: títulos, estados, fechas, categorías, los medios y los campos de ACF que tengan activado «Mostrar en la API REST». Para todo lo demás está el **complemento para WordPress**: un plugin gratuito que instalas una sola vez en tu sitio y que le abre a la app el SEO de cada página, todos los campos personalizados con su tipo y los avisos al instante.',
+            },
+            { t: 'anim', key: 'sitio-complemento', caption: 'Se descarga desde la página del sitio, se sube en «Plugins» y la lista suma sus columnas.' },
+            { t: 'h', text: 'Qué suma el complemento' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'El SEO de cada página', what: 'Con **Rank Math**, **Yoast SEO**, **SEOPress** o **All in One SEO**: el título y la descripción para Google, la palabra clave, la dirección canónica y «no indexar», que se pueden cambiar desde aquí. También lo que muestra Google de verdad y el puntaje del plugin, sólo para mirar.' },
+                    { name: 'Todos los campos personalizados', what: 'Los de **ACF**, **Meta Box** y **JetEngine** con su tipo real (número, fecha, sí/no, selección con sus opciones), aunque no estén a la vista de la API. También los de otros plugins.' },
+                    { name: 'Las categorías con su SEO', what: 'El título y la descripción para Google de categorías, etiquetas y taxonomías, si el plugin de SEO los guarda.' },
+                    { name: 'Las palabras de cada página', what: 'Cuántas palabras tiene el contenido, sin traer el contenido.' },
+                    { name: 'Dónde se usa cada imagen', what: 'En qué páginas aparece cada medio y cuántas veces.' },
+                    { name: 'Al instante', what: 'Cada cambio que haces en WordPress llega en segundos, sin esperar la próxima revisión.' },
+                ],
+            },
+            { t: 'h', text: 'Instalarlo paso a paso' },
+            {
+                t: 'steps',
+                items: [
+                    'En la página del sitio (desde **Ajustes → Integraciones → Sincronizar sitio**), toca **Descargar el complemento**. No descomprimas el archivo.',
+                    'En tu WordPress, entra con un usuario **Administrador** y ve a **Plugins → Añadir nuevo → Subir plugin**. La app tiene un botón que abre esa pantalla directamente.',
+                    'Elige el archivo, toca **Instalar ahora** y después **Activar plugin**.',
+                    'Vuelve a la página del sitio y toca **Ya lo instalé**. La tarjeta pasa a **Complemento activo** y dice qué plugin de SEO encontró.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'No toca el contenido de tus páginas',
+                md: 'El complemento sólo habla con la app, con la misma contraseña de aplicación de la conexión, y respeta los permisos del usuario conectado. No trae ni cambia el texto de tus páginas ni sus bloques, y no crea entradas: eso se sigue haciendo en WordPress.',
+            },
+            { t: 'h', text: 'Al instante o cada cierto tiempo' },
+            {
+                t: 'p',
+                md: 'En la página del sitio, **Cómo se mantiene al día** tiene dos opciones. **Al instante** (recomendado) necesita el complemento: el sitio le avisa a la app cada cambio y, además, una vez por hora se revisa todo por si algo se perdió. Debajo ves **Escuchando al sitio** con cuántos avisos llegaron y el último. **Cada cierto tiempo** revisa el sitio con la frecuencia que elijas.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Si «Al instante» no se activa',
+                md: 'La app te dice el motivo. Lo más común: la conexión es de un usuario que no es administrador del sitio, o el hosting no deja que WordPress se comunique hacia afuera (un firewall). Mientras tanto, el sitio se revisa cada cierto tiempo.',
+            },
+            { t: 'h', text: 'Actualizaciones' },
+            {
+                t: 'p',
+                md: 'El complemento se actualiza como cualquier plugin: cuando hay una versión nueva, WordPress te la ofrece en **Escritorio → Actualizaciones** y en **Plugins**. La página del sitio también te avisa.',
+            },
+            { t: 'h', text: 'Si lo desactivas o lo desinstalas' },
+            {
+                t: 'p',
+                md: 'No se pierde nada. Las columnas que daba el complemento quedan **con lo último que llegó**, con un candado y el motivo, y no se pueden editar hasta que vuelva. Lo demás sigue funcionando igual, y el sitio se revisa cada cierto tiempo. Al activarlo de nuevo, toca **Ya lo activé**: las columnas se desbloquean y vuelve el modo al instante.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Necesito un plugin de SEO?', a: 'Para las columnas de SEO, sí: el complemento lee el que ya usas (Rank Math, Yoast SEO, SEOPress o All in One SEO). Sin ninguno, igual trae los campos, las palabras y los medios.' },
+                    { q: 'Tengo dos plugins de SEO activos, ¿cuál usa?', a: 'Uno solo, en este orden: Rank Math, Yoast SEO, SEOPress y All in One SEO. La página del sitio te avisa cuál eligió.' },
+                    { q: '¿Funciona con JetEngine?', a: 'Sí: lee los campos de los cuadros de JetEngine de cada tipo de contenido.' },
+                    { q: '¿Qué pasa al desinstalarlo del todo?', a: 'Borra sus ajustes del sitio. Tus listas en la app quedan como estaban.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
+                    { label: 'Revisar el SEO del sitio', article: 'sitio-seo' },
+                ],
+            },
+        ],
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'sitio-seo',
+        route: '/settings?s=conectores',
+        related: ['sitio-complemento', 'sitio-medios', 'ia-campos'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Con el complemento para WordPress y tu plugin de SEO, cada página llega con su **título SEO**, su **descripción para Google**, su **palabra clave** y **lo que muestra Google de verdad**. Así revisas todo el sitio en una tabla: qué páginas no tienen descripción, cuáles tienen el título demasiado largo, y lo arreglas desde aquí.',
+            },
+            { t: 'anim', key: 'sitio-seo', caption: 'La vista «Sin descripción», el largo en rojo, la propuesta de la IA y la edición en lote que la aplica.' },
+            { t: 'h', text: 'Las columnas de SEO' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Título SEO', what: 'El título que pusiste en el plugin de SEO. Se puede cambiar desde aquí. Puede llevar las variables del plugin (como el nombre del sitio).' },
+                    { name: 'Descripción SEO', what: 'La meta descripción. Se puede cambiar desde aquí.' },
+                    { name: 'Palabra clave', what: 'La palabra clave principal de la página.' },
+                    { name: 'Dirección canónica', what: 'La dirección que Google debe tomar como la principal. Tiene que ser una dirección completa (https://…).' },
+                    { name: 'No indexar', what: 'Si la página se esconde de los buscadores.' },
+                    { name: 'Título en Google y Descripción en Google', what: 'Lo que el plugin de SEO arma de verdad, con sus variables resueltas. Sólo para mirar: es lo que hay que medir.' },
+                    { name: 'Puntaje', what: 'El puntaje del plugin (Rank Math y Yoast), sólo para mirar.' },
+                ],
+            },
+            { t: 'h', text: 'La auditoría SEO, con un botón' },
+            {
+                t: 'steps',
+                items: [
+                    'En la página del sitio, en la tarjeta de **Entradas** (o de Páginas, o de un tipo de contenido), busca **Auditoría SEO** y toca **Armar**.',
+                    'La app suma a esa lista las columnas de SEO que falten, dos columnas que cuentan los caracteres del título y de la descripción que ve Google, y las vistas **Sin descripción**, **Título de más de 60 caracteres**, **Descripción de más de 160 caracteres** y **Sin palabra clave**.',
+                    'También crea la columna **Meta descripción sugerida**: la IA la escribe leyendo el título, la palabra clave y el extracto de cada página.',
+                    'Toca **Calcular las sugerencias** (usa los pedidos de IA de tu plan) y ábrelas en la lista.',
+                ],
+            },
+            { t: 'h', text: 'Aplicar lo que propone la IA' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre la vista **Sin descripción** y revisa las sugerencias.',
+                    'Marca las filas que te convencen y toca **Editar en lote**.',
+                    'Elige **Descripción SEO → Copiar de otra columna → Meta descripción sugerida** y mira la vista previa.',
+                    'Toca **Aplicar**: las descripciones viajan a WordPress y aparecen en el código de cada página. Si algo no te gusta, **Deshacer** las devuelve, también en el sitio.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'La IA nunca escribe sola en tu sitio',
+                md: 'La columna sugerida es sólo una propuesta. Al sitio llega únicamente lo que tú copias a **Descripción SEO**.',
+            },
+            {
+                t: 'example',
+                title: 'Una agencia que cuida el SEO de un cliente',
+                md: 'La agencia arma la auditoría en las entradas del blog de su cliente. La vista **Título de más de 60 caracteres** muestra 14 entradas: las acorta en la tabla, una por una. En **Sin descripción** calcula las sugerencias, corrige dos y las aplica en lote. En diez minutos el blog tiene todas sus descripciones, y el cliente ve los cambios en su WordPress.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Funciona con las categorías?', a: 'Sí, si tu plugin de SEO guarda el SEO de las categorías (Rank Math, Yoast SEO y SEOPress lo hacen).' },
+                    { q: 'Cambié de plugin de SEO, ¿qué pasa?', a: 'En la próxima revisión las columnas leen el plugin nuevo. Lo que guardaste en el anterior sigue en tu sitio, en ese plugin.' },
+                    { q: '¿Por qué el largo se mide en lo que ve Google?', a: 'Porque el título SEO puede llevar variables (como el nombre del sitio) que lo alargan: lo que se corta en Google es el resultado final.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
+                    { label: 'El texto alternativo de las imágenes', article: 'sitio-medios' },
+                ],
+            },
+        ],
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'sitio-medios',
+        route: '/settings?s=conectores',
+        related: ['sitio-seo', 'sitio-complemento', 'sitio-editar-en-lote'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'La **biblioteca de medios** de tu WordPress puede llegar a su propia lista: cada imagen con su miniatura, su **texto alternativo**, su leyenda, su peso y sus medidas. El texto alternativo es lo que leen los lectores de pantalla y lo que entiende Google de una imagen: completarlo mejora la accesibilidad y el SEO.',
+            },
+            { t: 'anim', key: 'sitio-alt', caption: 'La IA mira cada imagen sin texto alternativo y lo propone; copiado, viaja a WordPress.' },
+            { t: 'h', text: 'Traer los medios' },
+            {
+                t: 'p',
+                md: 'Al elegir qué traer del sitio, marca **Medios**. Si ya sincronizas el sitio, usa **Traer otro tipo de contenido** en su página. Vienen marcados el título, la imagen, el texto alternativo, la leyenda, el tipo de archivo, las medidas, el peso y la fecha. El título, el texto alternativo, la leyenda y la descripción se pueden cambiar desde aquí.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Imagen', what: 'La miniatura, para reconocerla de un vistazo.' },
+                    { name: 'Texto alternativo', what: 'Una frase corta que describe lo que se ve. Hasta 125 caracteres es lo ideal.' },
+                    { name: 'Peso (KB)', what: 'Cuánto pesa el archivo. Una imagen pesada hace lento el sitio.' },
+                    { name: 'Dónde se usa', what: 'Con el complemento para WordPress: en qué páginas aparece la imagen y cuántas veces.' },
+                ],
+            },
+            { t: 'h', text: 'Texto alternativo con IA' },
+            {
+                t: 'steps',
+                items: [
+                    'En la página del sitio, en la tarjeta de **Medios**, busca **Texto alternativo con IA** y toca **Armar**.',
+                    'Se crean las vistas **Sin texto alternativo** e **Imágenes de más de 300 KB**, y la columna **Texto alternativo sugerido**: la IA mira cada imagen y escribe una frase que la describe.',
+                    'Toca **Calcular las sugerencias** (usa los pedidos de IA de tu plan).',
+                    'En la vista **Sin texto alternativo**, marca las que te convencen y usa **Editar en lote → Texto alternativo → Copiar de otra columna → Texto alternativo sugerido**. Viaja a WordPress y se puede deshacer.',
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una tienda con cientos de fotos sin describir',
+                md: 'La tienda trae su biblioteca: 420 imágenes, 310 sin texto alternativo. Arma el kit, calcula las sugerencias y revisa la vista: corrige las que nombran mal un producto y aplica el resto en lote. Con **Imágenes de más de 300 KB** encuentra las fotos que conviene comprimir antes de subirlas de nuevo.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Puedo subir imágenes desde aquí?', a: 'No: las imágenes se suben en WordPress y llegan solas. El aviso de la lista tiene el enlace **Subir en WordPress**.' },
+                    { q: 'Borré una imagen en WordPress, ¿qué pasa aquí?', a: 'El registro queda con el estado **Borrado en WordPress**: no se pierde su historial.' },
+                    { q: '¿La IA ve imágenes de otros sitios?', a: 'Sólo la miniatura de cada imagen de tu biblioteca, cuando tocas Calcular las sugerencias.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
                     { label: 'Cambiar muchas entradas a la vez', article: 'sitio-editar-en-lote' },
                 ],
             },

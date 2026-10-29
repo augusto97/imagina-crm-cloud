@@ -48,3 +48,60 @@ add_action( 'acf/init', function () {
 		'location'     => array( array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'propiedad' ) ) ),
 	) );
 } );
+
+/*
+ * v0.1.334 (ADR-S84) — lo que sólo ve el complemento de la app:
+ *  - un grupo de ACF SIN «Mostrar en la API REST» (la API de WordPress no lo
+ *    expone; el complemento sí, con su tipo);
+ *  - campos de Meta Box (si el plugin está activo);
+ *  - Yoast arma sus «indexables» aunque el sitio sea local (en un sitio local
+ *    no los arma y lo que se lee no es lo que ve Google en producción).
+ */
+add_action( 'acf/init', function () {
+	if ( ! function_exists( 'acf_add_local_field_group' ) ) {
+		return;
+	}
+	acf_add_local_field_group( array(
+		'key'          => 'group_imagina_ficha_interna',
+		'title'        => 'Ficha interna',
+		'show_in_rest' => 0,
+		'fields'       => array(
+			array( 'key' => 'field_imagina_asesor', 'label' => 'Asesor', 'name' => 'asesor', 'type' => 'text' ),
+			array( 'key' => 'field_imagina_comision', 'label' => 'Comisión (%)', 'name' => 'comision', 'type' => 'number' ),
+			array(
+				'key'     => 'field_imagina_estado_interno',
+				'label'   => 'Estado interno',
+				'name'    => 'estado_interno',
+				'type'    => 'select',
+				'choices' => array( 'disponible' => 'Disponible', 'reservada' => 'Reservada', 'vendida' => 'Vendida' ),
+			),
+			array( 'key' => 'field_imagina_fecha_captacion', 'label' => 'Fecha de captación', 'name' => 'fecha_captacion', 'type' => 'date_picker', 'return_format' => 'd/m/Y' ),
+			array( 'key' => 'field_imagina_notas_internas', 'label' => 'Notas internas', 'name' => 'notas_internas', 'type' => 'textarea' ),
+		),
+		'location'     => array( array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'propiedad' ) ) ),
+	) );
+} );
+
+add_filter( 'rwmb_meta_boxes', function ( $boxes ) {
+	$boxes[] = array(
+		'id'         => 'imagina_catastro',
+		'title'      => 'Catastro',
+		'post_types' => array( 'propiedad' ),
+		'fields'     => array(
+			array( 'id' => 'mb_codigo_catastral', 'name' => 'Código catastral', 'type' => 'text' ),
+			array( 'id' => 'mb_estrato', 'name' => 'Estrato', 'type' => 'number' ),
+			array( 'id' => 'mb_tiene_parqueadero', 'name' => 'Tiene parqueadero', 'type' => 'checkbox' ),
+		),
+	);
+	return $boxes;
+} );
+
+add_filter( 'Yoast\WP\SEO\should_index_indexables', '__return_true' );
+
+// Sólo en este sitio de pruebas: WordPress no baja archivos de localhost ni de
+// puertos raros (así protege las descargas). La app de desarrollo vive en
+// localhost:5182: sin esto, «Actualizar» el complemento no podría bajar el zip.
+add_filter( 'http_request_host_is_external', '__return_true' );
+add_filter( 'http_allowed_safe_ports', function ( $ports ) {
+	return array_merge( (array) $ports, array( 3102, 3101, 3100, 5182, 5181, 5180, 5173 ) );
+} );

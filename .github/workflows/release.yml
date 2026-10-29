@@ -109,6 +109,21 @@ jobs:
           # SPA (cloud + portal + assets)
           cp -r apps/web/dist-cloud "$OUT/web"
 
+          # v0.1.334 (ADR-S84) — el complemento de WordPress viaja con el API:
+          # cada servidor arma el zip al descargarlo (con SU dirección, para que
+          # el complemento se actualice desde ahí). Se revisa que no tenga
+          # errores de PHP y que se pueda empaquetar antes de publicar.
+          if command -v php >/dev/null; then
+            find integrations/wordpress-plugin -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
+          fi
+          mkdir -p "$OUT/integrations"
+          cp -r integrations/wordpress-plugin "$OUT/integrations/wordpress-plugin"
+          ( cd integrations/wordpress-plugin && zip -qr "../../dist-release/check-plugin.zip" imagina-base-connector )
+          unzip -l dist-release/check-plugin.zip | grep -q 'imagina-base-connector/imagina-base-connector.php'
+          # Se borra: un segundo .zip en el release confundiría al actualizador de
+          # los servidores que todavía eligen «el primer .zip» (antes de v0.1.334).
+          rm -f dist-release/check-plugin.zip
+
           # scripts + config que el release necesita para instalar/rollback/servir
           cp deploy/deploy.sh deploy/finalize.sh deploy/oauth-discovery-static.sh "$OUT/deploy/"
           cp scripts/backup.sh scripts/restore.sh "$OUT/deploy/"

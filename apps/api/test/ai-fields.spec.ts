@@ -25,6 +25,7 @@ import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
+import { ImageProxyService } from '../src/files/image-proxy';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
@@ -242,6 +243,46 @@ describe('v0.1.277 — campos con IA (Postgres + Redis reales, modelo falso)', (
         expect(Buffer.from(content[0]!.source!.data, 'base64').toString()).toBe('%PDF-1.4 hola');
         expect(content.filter((b) => b.type === 'document' || b.type === 'image')).toHaveLength(1);
         expect(JSON.stringify(content)).toContain('factura.pdf, notas.txt');
+    });
+
+    it('v0.1.334: un enlace que la lista muestra como imagen le llega al modelo como IMAGEN (por el proxy con guard)', async () => {
+        const proxy = new ImageProxyService();
+        const png = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001', 'hex');
+        const seen: string[] = [];
+        proxy.fetcher = (url) => {
+            seen.push(url);
+            if (url.includes('rota')) return Promise.resolve({ status: 404 });
+            if (url.endsWith('.svg')) return Promise.resolve({ status: 200, contentType: 'image/svg+xml', bytes: Buffer.from('<svg/>') });
+            return Promise.resolve({ status: 200, contentType: 'image/png', bytes: png });
+        };
+        const tenantDb = new TenantDb(pg.db);
+        const rt = new RealtimeService();
+        const lists = new ListsService(tenantDb, new ListsRepository(), rt);
+        const fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
+        const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea', AI_API_KEY: '' });
+        const withImages = new AiFieldsService(pg.db, tenantDb, lists, fieldsSvc, recs, files, rt, settings, new AiQuotaService(pg.db, new PlansService(pg.db)), redis as never, env, undefined, fakeClient, undefined, proxy);
+        const mediaList = (await lists.create(tenantId, { name: 'Medios' })).id;
+        const img = await fieldsSvc.create(tenantId, 'medios', { label: 'Imagen', type: 'url', slug: 'imagen', config: { display: 'image' } });
+        const titulo = await fieldsSvc.create(tenantId, 'medios', { label: 'Título', type: 'text', slug: 'titulo' });
+        const alt = await fieldsSvc.create(tenantId, 'medios', { label: 'Texto alternativo sugerido', type: 'ai', slug: 'alt', config: { task: 'custom', inputs: [img.id, titulo.id], prompt: 'Describe la imagen.' } });
+        reply = 'Fachada blanca con jardín';
+        const r = await recs.create(tenantId, actor(), 'medios', { data: { [`f${img.id}`]: 'https://blog.test/foto.png', [`f${titulo.id}`]: 'Fachada' } });
+        calls.length = 0;
+        expect(await withImages.compute(tenantId, mediaList, r.id, alt.id)).toBe('Fachada blanca con jardín');
+        const content = calls[0]!.messages[0]!.content as Array<{ type: string; source?: { media_type: string; data: string } }>;
+        expect(content[0]).toMatchObject({ type: 'image', source: { type: 'base64', media_type: 'image/png' } });
+        expect(Buffer.from(content[0]!.source!.data, 'base64').equals(png)).toBe(true);
+        expect(JSON.stringify(content)).toContain('(la imagen va adjunta)');
+        expect(seen).toEqual(['https://blog.test/foto.png']);
+        // Una imagen que no se puede bajar (o un SVG) no rompe: va el enlace como texto.
+        for (const url of ['https://blog.test/rota.png', 'https://blog.test/logo.svg']) {
+            const r2 = await recs.create(tenantId, actor(), 'medios', { data: { [`f${img.id}`]: url, [`f${titulo.id}`]: 'Otra' } });
+            calls.length = 0;
+            await withImages.compute(tenantId, mediaList, r2.id, alt.id);
+            const c2 = calls[0]!.messages[0]!.content as Array<{ type: string }>;
+            expect(c2.some((b) => b.type === 'image')).toBe(false);
+            expect(JSON.stringify(c2)).toContain(url);
+        }
     });
 
     it('«Completar»: respeta lo que queda de la cuota del plan', async () => {

@@ -57,6 +57,7 @@ describe('reglas de una lista de tienda en la UI', () => {
                     fields: { title: 1, 'acf:precio': 2, status: 3, wp_id: 4 },
                     can_edit: ['title', 'acf:precio', 'status'],
                     editable: ['title'],
+                    needs_plugin: [],
                 },
             },
             fields,

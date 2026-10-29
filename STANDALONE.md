@@ -5078,4 +5078,91 @@ proxy; por eso se rota (punto 2).
 
 ---
 
-**Versión del documento:** 1.129.0 (sitio WordPress como lista espejo)
+### ADR-S84 — Un complemento propio para WordPress: SEO, campos con tipo, medios y avisos en tiempo real (v0.1.334)
+
+**Contexto.** La sincronización de ADR-S83 sólo ve lo que la API REST de
+WordPress expone: no el SEO (cada plugin lo guarda en su propia meta, con
+variables que sólo él resuelve), ni los campos de ACF sin «Mostrar en la API
+REST», ni Meta Box o JetEngine, ni dónde se usa una imagen; y no hay forma de
+enterarse de un cambio sin preguntar. Lo que vende la integración —auditar y
+mejorar el SEO, completar el texto alternativo— necesita esos datos. WordPress
+permite extender su API con un plugin, con la misma autenticación.
+
+**Decisión.**
+
+1. **Un plugin propio, mínimo y en el repo** (`integrations/wordpress-plugin/
+   imagina-base-connector/`, GPLv2+, PHP ≥ 7.4, WordPress ≥ 6.0). No llama a
+   nadie más que a la app. Rutas `imagina-base/v1` con la MISMA contraseña de
+   aplicación de la conexión: leer y escribir exigen `edit_posts` y además
+   `edit_post`/`edit_term` POR OBJETO (lo que el usuario no puede editar se
+   saltea y se dice); registrar los avisos exige `manage_options`. Lectura en
+   lote de SÓLO los campos pedidos (≤100 objetos, ≤150 campos) y escritura en
+   lote (≤50) saneada por tipo, con errores por campo y las claves de sólo
+   lectura rechazadas. Nunca trae ni escribe el contenido ni los bloques, ni
+   crea entradas.
+2. **Vocabulario normalizado.** Claves `seo:*` (título, descripción, palabra
+   clave, canónica, no indexar editables; `seo:google_title`,
+   `seo:google_description`, `seo:score` de sólo lectura), `cf:acf.<nombre>`,
+   `cf:mb.<id>`, `cf:je.<nombre>`, `cf:meta.<clave>` y `plugin:*` (palabras,
+   uso de cada medio). Un adaptador por plugin de SEO (Rank Math > Yoast >
+   SEOPress > AIOSEO; si hay varios activos se usa uno y se avisa) traduce a ese
+   vocabulario; la app no conoce las metas de cada plugin. «Lo que ve Google»
+   lo calcula el propio plugin de SEO (sus variables), no la app.
+3. **El schema lo da el sitio.** `GET schema` devuelve por tipo de objeto las
+   columnas con su tipo, opciones, si es imagen y si se edita; la app las suma
+   al descubrimiento (fuente `seo`/`plugin`, con `provider`) y deduplica ACF:
+   si llega por la API y por el complemento, gana la del complemento (tiene el
+   tipo y las opciones) salvo que la lista ya traiga la de la API.
+4. **La biblioteca de medios es un recurso** (`media:attachment`) aunque no
+   haya complemento (la API la expone); el complemento suma dónde se usa cada
+   imagen.
+5. **Avisos en tiempo real sin frenar el guardado.** El plugin anota cada
+   evento en memoria durante el pedido y al terminar lo pasa a una cola (una
+   opción), dispara un pedido en segundo plano a sí mismo (con WP-Cron de
+   respaldo) y entrega a la app en lotes firmados (`X-Imagina-Timestamp`,
+   `X-Imagina-Signature: sha256=HMAC(secreto, "ts.cuerpo")`, ±300 s). La app
+   (`POST /public/site-hooks/:token`, sin sesión, tope 10× del límite general)
+   reutiliza la tabla `store_hooks` (token → sincronización, secreto cifrado
+   con `SECRETS_KEY`), exige `provider = 'wordpress'` (un token de tienda no
+   sirve aquí ni al revés), contesta 404 opaco al token desconocido y 401 a la
+   firma mala o vencida, y encola el procesamiento: cada objeto avisado se
+   VUELVE A LEER con los permisos de la conexión (el aviso sólo trae el id);
+   borrado = «Papelera» en la app. Reintentos en el sitio (1/2/5/10/30/60 min,
+   48 h) y en la cola de la app. Lo que escribe la app viaja con
+   `X-Imagina-Source: app` y el plugin no lo devuelve como aviso (sin ecos).
+6. **Modo «Al instante» con red de seguridad.** Elegible sólo con el
+   complemento y un usuario administrador; en ese modo la vuelta completa
+   corre cada hora y revisa el aviso del sitio (dirección, huella del secreto,
+   objetos, apagado por fallas): si algo no coincide, lo vuelve a registrar.
+   Si el sitio no logra llegar a la app al registrar, no queda nada registrado
+   y se explica (firewall del hosting).
+7. **Sin el complemento, nada se pierde.** Cada vuelta detecta el complemento;
+   si falta, sus columnas quedan con lo último que llegó y se marcan
+   `needs_plugin` en la marca de la lista (`mirrorCellAccess` las bloquea con
+   el motivo en la celda, el backend las rechaza con 403), el modo efectivo
+   vuelve a intervalos y se abre un Problema; al volver se desbloquea todo.
+8. **Distribución desde el servidor del operador.** El zip se arma en memoria
+   con `includes/update-source.php` = la dirección de esa app, así cada
+   operador reparte su propio complemento y WordPress lo actualiza desde ahí
+   (`pre_set_site_transient_update_plugins` + `plugins_api` contra
+   `GET /public/wordpress-plugin/info`). El código viaja en el bundle del
+   release. El zip no se publica como asset de GitHub en esta versión: los
+   servidores anteriores eligen «el primer .zip» del release; desde v0.1.334 el
+   actualizador lo elige por nombre.
+9. **Los kits** (auditoría SEO, texto alternativo) se arman con piezas que ya
+   existen —columnas del sitio, fórmulas, vistas, campos con IA con `auto:
+   false`— y lo que propone la IA llega al sitio sólo si la persona lo copia con
+   la edición en lote (que se deshace). Un campo URL mostrado como imagen le
+   llega a un campo con IA como imagen, por el proxy con guard anti-SSRF.
+
+**Consecuencias.** El SEO, los campos y el tiempo real necesitan instalar un
+plugin (un paso más para el cliente, con su guía); a cambio la app no depende
+de cómo cada plugin guarda sus datos y un cambio de versión de Rank Math o
+Yoast se arregla en un adaptador. El plugin es código que corre en sitios de
+terceros: se mantiene mínimo, sin dependencias y sin llamadas a nadie más. Un
+sitio sin loopback ni visitas entrega los avisos con WP-Cron (más tarde); la
+revisión de cada hora cubre lo que se pierda.
+
+---
+
+**Versión del documento:** 1.130.0 (complemento propio para WordPress)
