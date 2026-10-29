@@ -388,15 +388,34 @@ complemento, v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
   `cp` quedó a medias (disco lleno), ese archivo existe y el archivado falla
   para siempre → Postgres guarda TODO en `pg_wal` (~4,5 GB/día con
   `archive_timeout=300`) y la poda (`find -mmin +4320`) nunca corre. Si es eso,
-  con 927 MB Postgres se cae en horas. Se le pidieron comandos de SÓLO
-  LECTURA (`du` del disco y de `/var/lib/docker`, `du` de pgdata/pg_wal/
-  wal_archive dentro del contenedor, `pg_stat_archiver`); **esperando la
-  salida** para darle la limpieza exacta. Si `pg_wal` es lo grande, NO
-  reactivar el archivado tal cual: copiaría 50 GB al mismo disco (el `cp` pone
-  mtime actual → la poda no los borra). Propuesta para después: que la tarjeta
-  Disco mida base/`pg_wal`/archivo/Docker (la conexión base es superusuario:
-  `pg_ls_waldir()`, `pg_stat_archiver`, `pg_database_size`) y que «Liberar
-  espacio» destrabe el archivado sin consola.
+  con 927 MB Postgres se cae en horas. **Diagnóstico confirmado** (salida del
+  usuario): `/var/lib/docker/volumes` 46 GB, pgdata **45,8 GB**,
+  `/wal_archive` **vacío (4 KB)**, `pg_stat_archiver`: archived_count **0**,
+  failed_count **86.256** (≈20 días: desde que se recreó el contenedor el
+  2026-10-09), last_failed_wal `…0A`. **Causa raíz** (reproducida aquí con el
+  `docker-compose.prod.yml` tal cual): el volumen nombrado `walarchive` se
+  monta en `/wal_archive`, que no existe en la imagen, y Docker lo crea
+  **root:root 755** → Postgres (uid 70) recibe `cp: can't create …: Permission
+  denied` y NUNCA archivó nada; todo el WAL quedó en `pg_wal`. Afecta a toda
+  instalación con ese compose (también `install.sh`). Pruebas: (1) dar permiso
+  primero dispara el backlog a ~700 MB por segundo en el archivo (disco lleno);
+  (2) un symlink a /dev/null no sirve (el `cp` de busybox dice «File exists»);
+  (3) **lo que sí**: como usuario postgres renombrar `archive_status/*.ready` →
+  `.done` + `CHECKPOINT` → pg_wal baja a ~1 GB (max_wal_size) sin copiar nada,
+  y DESPUÉS `chown postgres:postgres /wal_archive` → lo nuevo se archiva bien.
+  Se le pasaron esos 3 pasos + comprobación; **esperando que confirme** el
+  espacio libre y que instale v0.1.336. A su ritmo (~2,3 GB/día de WAL) el
+  archivo con poda a 3 días quedará en ~7 GB. **Para el próximo release**
+  (propuesto, sin aprobar): compose con entrypoint que haga `mkdir -p
+  /wal_archive && chown postgres` antes de arrancar; segmentos comprimidos con
+  gzip en el `archive_command` (un segmento forzado por `archive_timeout` es
+  casi todo ceros: 16 MB → KB) con `pitr-restore.sh` que los descomprima;
+  tarjeta Disco que mida base/`pg_wal`/archivo vía SQL (la conexión base es
+  superusuario: `pg_ls_waldir()`, `pg_stat_archiver`, `pg_database_size`) y
+  abra un **Problema** (ADR-S44) si el archivado falla; y que «Liberar
+  espacio» marque los pendientes y haga el checkpoint por SQL (`COPY … TO
+  PROGRAM` corre como postgres dentro del contenedor). El `chown` necesita
+  root: por `docker exec` sólo si el usuario del API está en el grupo docker.
 - 2026-10-29 — **Pregunta del usuario sobre el sitio conectado** (después de
   v0.1.335): (a) si el cliente crea en WordPress un campo personalizado o un
   tipo de contenido nuevo, ¿cómo se suma a la app? → YA existe: «Traer otra
