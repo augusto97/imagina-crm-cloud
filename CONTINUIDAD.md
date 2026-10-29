@@ -378,6 +378,26 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.335**
 v0.1.332 SMS), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **Pregunta del usuario sobre el sitio conectado** (después de
+  v0.1.335): (a) si el cliente crea en WordPress un campo personalizado o un
+  tipo de contenido nuevo, ¿cómo se suma a la app? → YA existe: «Traer otra
+  columna» y «Traer otro tipo de contenido» en la página del sitio consultan el
+  sitio EN VIVO al abrirse (caché de 1 min en el navegador; el complemento
+  refresca su lista de meta suelta cada 15 min). Límites dichos: un tipo de
+  contenido sin `show_in_rest` no aparece; sin el complemento, un campo sólo se
+  ve si la API lo expone y si alguna de las 20 entradas más recientes lo tiene;
+  no hay aviso de «hay cosas nuevas». (b) **Pedido**: lo que se borró del todo
+  en el sitio o en la tienda (p. ej. una colección de prendas que no vuelve)
+  queda en la app marcado «Papelera» para siempre, ocupando registros del plan y
+  estorbando, y en una lista espejo no se puede borrar (403 `store_managed`).
+  **Se le recomendó** (esperando su OK): permitir quitar de la app los registros
+  que la fuente YA tiene borrados (uno, varios o «Quitar los N borrados» desde el
+  aviso de la lista → van a la papelera de la app 30 días y dejan de contar para
+  el plan), un ajuste por sincronización «cuando algo se borra allá: conservarlo
+  marcado / quitarlo de la app solo», y que si vuelve a aparecer en la fuente
+  (se restauró en WordPress) reaparezca. Los que siguen vivos en la fuente no se
+  pueden quitar (volverían). Sumar de paso un aviso «hay columnas o tipos nuevos
+  en tu sitio» en la página del sitio.
 - 2026-10-29 — **El usuario preguntó si el complemento de WordPress tenía
   pruebas de seguridad y rendimiento** («no quiero que lo ponga lento, que
   choque con otros plugins ni que sea una puerta de hackeo»). Se le contestó con
