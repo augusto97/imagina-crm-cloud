@@ -1,17 +1,20 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
     addSiteObjectsSchema,
+    applySiteKitSchema,
     runSiteSyncSchema,
     setupSiteSyncSchema,
     siteColumnChangeSchema,
     startWordpressConnectSchema,
     updateSiteSyncSchema,
     type AddSiteObjectsInput,
+    type ApplySiteKitInput,
     type Role,
     type RunSiteSyncInput,
     type SetupSiteSyncInput,
     type SiteColumnChangeInput,
     type SiteDiscovery,
+    type SiteKitResult,
     type SiteSyncStatus,
     type StartWordpressConnectInput,
     type StartWordpressConnectResult,
@@ -24,6 +27,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { SiteKitsService } from './site-kits.service';
 import { SiteSyncService } from './site-sync.service';
 import { WordpressConnectService } from './wordpress-connect.service';
 
@@ -36,7 +40,10 @@ import { WordpressConnectService } from './wordpress-connect.service';
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_lists')
 export class SiteSyncController {
-    constructor(private readonly sync: SiteSyncService) {}
+    constructor(
+        private readonly sync: SiteSyncService,
+        private readonly kits: SiteKitsService,
+    ) {}
 
     @Get()
     async status(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: SiteSyncStatus }> {
@@ -107,6 +114,19 @@ export class SiteSyncController {
         @Body(new ZodValidationPipe(siteColumnChangeSchema)) input: SiteColumnChangeInput,
     ): Promise<{ data: SiteSyncStatus }> {
         return { data: await this.sync.removeColumn(tenant(req), user(req), role(req), id, input) };
+    }
+
+    /**
+     * Armar un kit en una lista del sitio (auditoría SEO, texto alternativo):
+     * columnas del sitio, fórmulas, vistas y un campo con IA (ADR-S84).
+     */
+    @Post('kits')
+    async applyKit(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(applySiteKitSchema)) input: ApplySiteKitInput,
+    ): Promise<{ data: SiteKitResult }> {
+        return { data: await this.kits.apply(tenant(req), user(req), role(req), id, input) };
     }
 
     /** Dejar de sincronizar: las listas QUEDAN y pasan a ser listas comunes. */

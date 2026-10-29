@@ -2,10 +2,12 @@ import { BadRequestException, ConflictException, Inject, Injectable, Logger, Not
 import {
     SITE_SYNC_PROVIDER,
     fieldSlugSchema,
+    isSitePluginColumn,
     siteColumnKeySchema,
     siteCoreColumns,
     siteResourceKey,
     slugify,
+    WP_MEDIA_STATUS_OPTIONS,
     WP_POST_STATUS_OPTIONS,
     WP_TERM_STATUS_OPTIONS,
     type AddSiteObjectsInput,
@@ -19,6 +21,7 @@ import {
     type SiteListMarker,
     type SiteObject,
     type SiteObjectChoice,
+    type SitePluginInfo,
     type SiteSyncStatus,
     type UpdateSiteSyncInput,
 } from '@imagina-base/shared';
@@ -36,10 +39,13 @@ import { stripSiteMarkers } from '../lists/store-guard';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BlueprintService } from '../templates/blueprint.service';
-import { SiteSyncEngine, type SiteRunOptions } from './site-sync.engine';
+import { SiteRealtimeService } from './site-realtime.service';
+import { SiteSyncEngine, nextRunMinutes, type SiteRunOptions } from './site-sync.engine';
 import { SiteSyncQueue } from './site-sync.queue';
 import { readSiteSettings, readSiteState, type SiteColumnSettings, type SiteObjectSettings, type SiteSyncSettings } from './site-sync.types';
 import { SiteWriteBackService } from './site-writeback.service';
+import { WordpressPluginService, versionNewer } from './wordpress-plugin.service';
+import { ibcColumnToSite, ibcHooksDelete, ibcInfo, ibcSchema, type IbcSchemaObject } from './wordpress/ibc';
 import { wpGet, wpGetPage } from './wordpress/wp-fetch';
 import { discoverExtraColumns, titleColumnOf } from './wordpress/wp-map';
 
@@ -47,6 +53,9 @@ import { discoverExtraColumns, titleColumnOf } from './wordpress/wp-map';
 interface ColumnPlan extends SiteColumnSettings {
     always: boolean;
     hint: string | null;
+    /** Lo que declara el plugin (ACF, Meta Box): las opciones de un select y si es una imagen. */
+    options: Array<{ value: string; label: string }> | null;
+    image: boolean;
 }
 
 /** Tipos de contenido que nunca se ofrecen (no son contenido del sitio). */
@@ -74,6 +83,8 @@ export class SiteSyncService {
         private readonly engine: SiteSyncEngine,
         private readonly queue: SiteSyncQueue,
         private readonly writeBack: SiteWriteBackService,
+        private readonly realtime: SiteRealtimeService,
+        private readonly plugin: WordpressPluginService,
         @Optional() private readonly rt?: RealtimeService,
     ) {
         // Borrar la CONEXIÓN de un sitio también borra su contraseña de
@@ -82,6 +93,8 @@ export class SiteSyncService {
             const found = await this.connectors.integrationCredsFor(tenantId, connectionId).catch(() => null);
             if (!found || found.provider !== 'wordpress') return;
             const { creds } = found;
+            // Y el aviso en tiempo real del complemento (si estaba): que deje de anotar.
+            await ibcHooksDelete(creds).catch(() => undefined);
             const login = (creds.fields.user_login ?? '').trim();
             if (login === '' || creds.secret === '') return;
             await revokeWpAppPassword(
@@ -98,8 +111,56 @@ export class SiteSyncService {
         const conn = await this.requireSite(tenantId, userId, role, connectionId);
         const creds = await this.credsOf(tenantId, connectionId);
         const row = await this.findSync(tenantId, connectionId);
-        const synced = new Set(Object.keys(row ? readSiteSettings(row.settings).objects : {}));
-        return this.discoverWith(creds, conn.name, synced);
+        const settings = row ? readSiteSettings(row.settings) : null;
+        const synced = new Set(Object.keys(settings?.objects ?? {}));
+        return this.discoverWith(creds, conn.name, synced, syncedColumns(settings));
+    }
+
+    /**
+     * El complemento en el sitio: si está, qué versión, qué plugin de SEO y de
+     * campos encontró, y si hay una versión más nueva para instalar.
+     */
+    private async pluginInfo(creds: IntegrationCreds): Promise<{ info: SitePluginInfo; schema: IbcSchemaObject[] }> {
+        const latest = this.plugin.version();
+        const found = await ibcInfo(creds);
+        if (!found.installed) {
+            return {
+                info: {
+                    installed: false,
+                    version: null,
+                    latest,
+                    outdated: false,
+                    seo: null,
+                    providers: { acf: false, metabox: false, jetengine: false },
+                    can_manage: false,
+                    updates: false,
+                    error: found.error,
+                },
+                schema: [],
+            };
+        }
+        let schema: IbcSchemaObject[] = [];
+        let error: string | null = null;
+        try {
+            schema = await ibcSchema(creds);
+        } catch (err) {
+            error = `El complemento está, pero no pudimos leer lo que ofrece: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        const { info } = found;
+        return {
+            info: {
+                installed: true,
+                version: info.version,
+                latest,
+                outdated: versionNewer(latest, info.version),
+                seo: info.seo ? { plugin: info.seo.plugin, name: info.seo.name, version: info.seo.version, terms: info.seo.terms, problem: info.seo.problem } : null,
+                providers: info.providers,
+                can_manage: info.can_manage,
+                updates: info.updates,
+                error,
+            },
+            schema,
+        };
     }
 
     /**
@@ -107,8 +168,29 @@ export class SiteSyncService {
      * campos de ACF y personalizados que aparecen. Una muestra que falla (un
      * tipo que un plugin registra mal) se avisa y no frena el resto.
      */
-    private async discoverWith(creds: IntegrationCreds, connName: string, synced: Set<string>): Promise<SiteDiscovery> {
+    private async discoverWith(
+        creds: IntegrationCreds,
+        connName: string,
+        synced: Set<string>,
+        syncedCols: Map<string, Set<string>> = new Map(),
+    ): Promise<SiteDiscovery> {
         const warnings: string[] = [];
+        const plugin = await this.pluginInfo(creds);
+        if (plugin.info.error) warnings.push(plugin.info.error);
+        if (plugin.info.seo?.problem) warnings.push(plugin.info.seo.problem);
+        /** Las columnas del complemento para un objeto, sin duplicar lo que ya llega por la API. */
+        const withPlugin = (kind: SiteObject['kind'], object: string, base: SiteColumn[]): SiteColumn[] => {
+            const extra = (plugin.schema.find((x) => x.kind === kind && x.object === object)?.columns ?? []).map(ibcColumnToSite);
+            const resource = siteResourceKey(kind, object);
+            const have = syncedCols.get(resource) ?? new Set<string>();
+            // Un campo de ACF llega de las dos formas: con el complemento se prefiere la suya (tiene el
+            // tipo y las opciones), salvo que la lista ya traiga la de la API (no se duplica la columna).
+            const pluginAcf = new Set(extra.filter((c) => c.key.startsWith('cf:acf.')).map((c) => c.key.slice('cf:acf.'.length)));
+            const core = base.filter((c) => !(c.key.startsWith('acf:') && pluginAcf.has(c.key.slice(4)) && !have.has(c.key)));
+            const restAcf = new Set(core.filter((c) => c.key.startsWith('acf:')).map((c) => c.key.slice(4)));
+            const fromPlugin = extra.filter((c) => !(c.key.startsWith('cf:acf.') && restAcf.has(c.key.slice('cf:acf.'.length))));
+            return [...core, ...validKeys(fromPlugin)];
+        };
         const me = parseWpUser(JSON.stringify((await wpGet(creds, '/wp/v2/users/me', [['context', 'edit']])).json));
         if (!me) throw new BadRequestException({ code: 'site_user_unknown', message: 'El sitio no dijo quién es el usuario conectado.', data: { status: 400 } });
         const types = asRecord((await wpGet(creds, '/wp/v2/types', [['context', 'edit']])).json);
@@ -131,6 +213,27 @@ export class SiteSyncService {
         for (const [slug, raw] of Object.entries(types)) {
             const t = asRecord(raw);
             const rest = typeof t.rest_base === 'string' ? t.rest_base : '';
+            if (slug === 'attachment' && rest) {
+                // La biblioteca de medios (v0.1.334): con su texto alternativo, título y leyenda.
+                let count: number | null = null;
+                try {
+                    count = (await wpGetPage(creds, `/wp/v2/${rest}`, [['per_page', '1'], ['_fields', 'id']])).total;
+                } catch (err) {
+                    warnings.push(`${__('Medios')}: ${err instanceof Error ? err.message : String(err)}`);
+                }
+                objects.push({
+                    kind: 'media',
+                    object: 'attachment',
+                    label: __('Medios'),
+                    rest_base: rest,
+                    rest_namespace: typeof t.rest_namespace === 'string' && t.rest_namespace ? t.rest_namespace : 'wp/v2',
+                    count,
+                    hierarchical: false,
+                    columns: withPlugin('media', 'attachment', siteCoreColumns('media', { supports: [], hierarchical: false, taxonomies: [] })),
+                    synced: synced.has(siteResourceKey('media', 'attachment')),
+                });
+                continue;
+            }
             if (!rest || HIDDEN_TYPES.has(slug) || t.viewable === false) continue;
             const ns = typeof t.rest_namespace === 'string' && t.rest_namespace ? t.rest_namespace : 'wp/v2';
             const supports = Object.entries(asRecord(t.supports)).filter(([, v]) => v === true || (Array.isArray(v) && v.length > 0)).map(([k]) => k);
@@ -156,7 +259,7 @@ export class SiteSyncService {
                 rest_namespace: ns,
                 count,
                 hierarchical,
-                columns: [...siteCoreColumns('post_type', { supports, hierarchical, taxonomies }), ...validKeys(extra)],
+                columns: withPlugin('post_type', slug, [...siteCoreColumns('post_type', { supports, hierarchical, taxonomies }), ...validKeys(extra)]),
                 synced: synced.has(siteResourceKey('post_type', slug)),
             });
         }
@@ -179,7 +282,7 @@ export class SiteSyncService {
                 rest_namespace: info.rest_namespace,
                 count,
                 hierarchical: info.hierarchical,
-                columns: [...siteCoreColumns('taxonomy', { supports: [], hierarchical: info.hierarchical, taxonomies: [] }), ...validKeys(extra)],
+                columns: withPlugin('taxonomy', slug, [...siteCoreColumns('taxonomy', { supports: [], hierarchical: info.hierarchical, taxonomies: [] }), ...validKeys(extra)]),
                 synced: synced.has(siteResourceKey('taxonomy', slug)),
             });
         }
@@ -193,7 +296,8 @@ export class SiteSyncService {
             site_url: creds.fields.site_url ?? '',
             user: { login: me.login, name: me.name, roles: me.roles, can_edit: me.canEdit, can_manage_terms: me.canManageTerms },
             objects,
-            acf,
+            acf: acf || plugin.info.providers.acf,
+            plugin: plugin.info,
             warnings,
         };
     }
@@ -212,9 +316,13 @@ export class SiteSyncService {
                 site_url: creds?.fields.site_url ?? '',
                 enabled: false,
                 interval_minutes: 60,
+                mode: 'interval',
+                effective_mode: 'interval',
                 write_back: true,
                 folder_id: null,
                 objects: [],
+                plugin: null,
+                realtime: { registered: false, received: 0, last_at: null, error: null },
                 running: false,
                 current: null,
                 initial_done: false,
@@ -246,6 +354,7 @@ export class SiteSyncService {
         });
         const countOf = new Map(counts.map((c) => [c.resource, c.n]));
         const byId = new Map(listRows.map((l) => [l.id, l]));
+        const pluginMissing = state.plugin !== null && !state.plugin.installed;
         // JSONB reordena las claves: el orden es el de las listas (el que eligió la persona).
         const order = (resource: string): number => settings.lists[resource] ?? Number.MAX_SAFE_INTEGER;
         const entries = Object.entries(settings.objects).sort(([a], [b]) => order(a) - order(b));
@@ -273,6 +382,7 @@ export class SiteSyncService {
                     editable: c.can_edit && o.editable.includes(c.key),
                     always: isAlwaysColumn(o, c.key),
                     hint: columnHint(o, c.key),
+                    needs_plugin: pluginMissing && isSitePluginColumn(c.key),
                 })),
             };
         });
@@ -283,9 +393,13 @@ export class SiteSyncService {
             site_url: settings.site_url,
             enabled: row.enabled,
             interval_minutes: settings.interval_minutes,
+            mode: settings.mode,
+            effective_mode: settings.mode === 'realtime' && state.plugin?.installed !== false ? 'realtime' : 'interval',
             write_back: settings.write_back,
             folder_id: settings.folder_id,
             objects,
+            plugin: state.plugin,
+            realtime: state.realtime,
             running: state.running,
             current: state.current,
             initial_done: state.initial_done,
@@ -311,18 +425,20 @@ export class SiteSyncService {
         const plans = resolveChoices(discovery, input.objects);
         const siteName = discovery.site_name;
         const folder = await this.groups.create(tenantId, { name: `WordPress · ${siteName}`.slice(0, 120), icon: 'globe', color: '#21759B' });
+        // En tiempo real sólo con el complemento (sin él no hay quién avise).
+        const wantsRealtime = input.mode === 'realtime' && discovery.plugin.installed;
         const settings: SiteSyncSettings = {
             site_url: discovery.site_url,
             site_name: siteName,
             interval_minutes: input.interval_minutes,
-            mode: 'interval',
+            mode: wantsRealtime ? 'realtime' : 'interval',
             write_back: input.write_back,
             folder_id: folder.id,
             objects: {},
             lists: {},
             fields: {},
         };
-        await this.materializeObjects(tenantId, userId, settings, plans, folder.id);
+        await this.materializeObjects(tenantId, userId, settings, plans, folder.id, discovery.plugin.seo?.name ?? null);
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [created] = await tx
@@ -332,9 +448,17 @@ export class SiteSyncService {
                     connectionId,
                     provider: SITE_SYNC_PROVIDER,
                     settings: settings as unknown as Record<string, unknown>,
-                    state: {},
+                    state: {
+                        plugin: {
+                            installed: discovery.plugin.installed,
+                            version: discovery.plugin.version,
+                            seo_name: discovery.plugin.seo?.name ?? null,
+                            checked_at: new Date().toISOString(),
+                            missing_since: null,
+                        },
+                    },
                     enabled: true,
-                    nextRunAt: new Date(Date.now() + input.interval_minutes * 60_000),
+                    nextRunAt: new Date(Date.now() + nextRunMinutes(settings, discovery.plugin.installed) * 60_000),
                     createdBy: userId,
                 })
                 .returning();
@@ -345,14 +469,38 @@ export class SiteSyncService {
                 targetType: 'connection',
                 targetId: connectionId,
                 targetLabel: conn.name,
-                meta: { objects: Object.keys(settings.objects), write_back: input.write_back, interval_minutes: input.interval_minutes },
+                meta: { objects: Object.keys(settings.objects), write_back: input.write_back, interval_minutes: input.interval_minutes, mode: settings.mode },
             });
             return created!;
         });
         await this.markLists(tenantId, connectionId, settings);
         this.writeBack.forget(tenantId);
+        let fresh = row;
+        if (wantsRealtime) {
+            try {
+                await this.realtime.register(tenantId, row.id, creds, settings);
+            } catch (err) {
+                // No se pudo: corre por intervalos y se dice por qué (no frena el alta).
+                fresh = await this.setMode(tenantId, row.id, 'interval');
+                await this.realtime.saveRealtime(tenantId, row.id, { registered: false, error: errMessage(err) });
+            }
+        }
         this.queue.enqueueRun(tenantId, row.id, { full: true });
-        return this.toStatus(tenantId, row);
+        return this.toStatus(tenantId, (await this.findSync(tenantId, connectionId)) ?? fresh);
+    }
+
+    private async setMode(tenantId: number, syncId: number, mode: 'interval' | 'realtime') {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
+            const s = readSiteSettings(locked!.settings);
+            s.mode = mode;
+            const [next] = await tx
+                .update(connectionSyncs)
+                .set({ settings: s as unknown as Record<string, unknown>, updatedAt: new Date() })
+                .where(eq(connectionSyncs.id, syncId))
+                .returning();
+            return next!;
+        });
     }
 
     /** Sumar tipos de contenido a una sincronización que ya existe. */
@@ -367,7 +515,7 @@ export class SiteSyncService {
             throw new BadRequestException({ code: 'site_objects_exist', message: 'Esos tipos de contenido ya se sincronizan.', data: { status: 400 } });
         }
         const added: SiteSyncSettings = { ...before, objects: {}, lists: {}, fields: {} };
-        await this.materializeObjects(tenantId, userId, added, plans, before.folder_id);
+        await this.materializeObjects(tenantId, userId, added, plans, before.folder_id, discovery.plugin.seo?.name ?? null);
         const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, row.id)).for('update');
             const s = readSiteSettings(locked!.settings);
@@ -392,6 +540,9 @@ export class SiteSyncService {
         });
         await this.markLists(tenantId, connectionId, readSiteSettings(fresh.settings));
         this.writeBack.forget(tenantId);
+        // En tiempo real: el aviso del sitio tiene que incluir lo nuevo.
+        const freshSettings = readSiteSettings(fresh.settings);
+        if (freshSettings.mode === 'realtime') await this.realtime.ensure(tenantId, row.id, creds, freshSettings).catch(() => undefined);
         this.queue.enqueueRun(tenantId, row.id, { full: true, only: Object.keys(added.objects) });
         return this.toStatus(tenantId, fresh);
     }
@@ -406,6 +557,7 @@ export class SiteSyncService {
         settings: SiteSyncSettings,
         plans: ObjectPlan[],
         folderId: number | null,
+        seoName: string | null = null,
     ): Promise<void> {
         const pack: ListBlueprint = { version: 1, lists: [], dashboards: [] };
         const slugsByPlan: Array<Map<string, string>> = [];
@@ -423,7 +575,7 @@ export class SiteSyncService {
                     is_required: false,
                     is_unique: false,
                     is_indexed: false,
-                    description: columnDescription(c),
+                    description: columnDescription(c, seoName),
                 };
             });
             const title = slugs.get(titleColumnOf(p.kind));
@@ -461,7 +613,7 @@ export class SiteSyncService {
                 rest_base: p.rest_base,
                 rest_namespace: p.rest_namespace,
                 hierarchical: p.hierarchical,
-                columns: p.columns.map(({ key, label, source, type, can_edit }) => ({ key, label, source, type, can_edit })),
+                columns: p.columns.map(({ key, label, source, type, can_edit, hint }) => ({ key, label, source, type, can_edit, hint: source === 'core' ? null : hint })),
                 editable: p.editable,
                 taxonomies: p.taxonomies,
             };
@@ -481,11 +633,32 @@ export class SiteSyncService {
     async update(tenantId: number, userId: number, role: Role, connectionId: number, input: UpdateSiteSyncInput): Promise<SiteSyncStatus> {
         const conn = await this.requireSite(tenantId, userId, role, connectionId);
         const row = await this.requireSync(tenantId, connectionId);
+        const before = readSiteSettings(row.settings);
+        // Cambiar el modo habla con el sitio ANTES de guardar: si el aviso no se
+        // puede registrar, el modo no cambia y se dice por qué.
+        if (input.mode && input.mode !== before.mode) {
+            const creds = await this.credsOf(tenantId, connectionId);
+            if (input.mode === 'realtime') {
+                const found = await ibcInfo(creds);
+                if (!found.installed) {
+                    throw new BadRequestException({
+                        code: 'site_plugin_missing',
+                        message: 'Para el modo en tiempo real hace falta el complemento «Imagina Base Connector» activo en el sitio. Instálalo desde esta página y vuelve a intentar.',
+                        data: { status: 400 },
+                    });
+                }
+                await this.realtime.register(tenantId, row.id, creds, before);
+            } else {
+                await this.realtime.unregister(tenantId, row.id, creds);
+            }
+        }
+        const pluginInstalled = readSiteState(row.state).plugin?.installed !== false;
         const updated = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, row.id)).for('update');
             const s = readSiteSettings(locked!.settings);
             if (input.interval_minutes !== undefined) s.interval_minutes = input.interval_minutes;
             if (input.write_back !== undefined) s.write_back = input.write_back;
+            if (input.mode !== undefined) s.mode = input.mode;
             if (input.editable_toggle) {
                 const { resource, key, on } = input.editable_toggle;
                 const o = s.objects[resource];
@@ -501,7 +674,7 @@ export class SiteSyncService {
                 .set({
                     settings: s as unknown as Record<string, unknown>,
                     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-                    nextRunAt: new Date(Date.now() + s.interval_minutes * 60_000),
+                    nextRunAt: new Date(Date.now() + nextRunMinutes(s, pluginInstalled) * 60_000),
                     updatedAt: new Date(),
                 })
                 .where(eq(connectionSyncs.id, row.id))
@@ -543,13 +716,13 @@ export class SiteSyncService {
             slug: uniqueSlug(columnSlug(found), new Set(current.map((f) => f.slug))),
             type: found.type,
             config: columnConfig(o.kind, found),
-            description: columnDescription(found),
+            description: columnDescription(found, discovery.plugin.seo?.name ?? null),
         });
         const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, row.id)).for('update');
             const s = readSiteSettings(locked!.settings);
             const so = s.objects[input.resource]!;
-            so.columns.push({ key: found.key, label: found.label, source: found.source, type: found.type, can_edit: found.can_edit });
+            so.columns.push({ key: found.key, label: found.label, source: found.source, type: found.type, can_edit: found.can_edit, hint: found.source === 'core' ? null : found.hint });
             s.fields[input.resource] = { ...(s.fields[input.resource] ?? {}), [found.key]: field.id };
             const [next] = await tx
                 .update(connectionSyncs)
@@ -572,6 +745,81 @@ export class SiteSyncService {
         // Para llenar lo que ya estaba hay que pasar por todos.
         this.queue.enqueueRun(tenantId, row.id, { full: true, only: [input.resource] });
         return this.toStatus(tenantId, fresh);
+    }
+
+    /**
+     * Traer varias columnas de una vez (lo que necesita un kit): crea los campos
+     * que faltan y recorre ese tipo de contenido UNA vez para llenarlos. Las
+     * que el sitio no ofrece se devuelven en `missing` (sin error: el kit dice
+     * qué le faltó). Con `editable`, las que se pueden editar quedan habilitadas.
+     */
+    async ensureColumns(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        connectionId: number,
+        resource: string,
+        keys: string[],
+        editable: string[] = [],
+    ): Promise<{ settings: SiteSyncSettings; added: string[]; missing: string[]; plugin: SitePluginInfo; syncId: number }> {
+        const conn = await this.requireSite(tenantId, userId, role, connectionId);
+        const row = await this.requireSync(tenantId, connectionId);
+        const before = readSiteSettings(row.settings);
+        const o = before.objects[resource];
+        const listId = before.lists[resource];
+        if (!o || !listId) throw new NotFoundException({ code: 'site_object_not_found', message: 'Ese tipo de contenido no se sincroniza.', data: { status: 404 } });
+        const creds = await this.credsOf(tenantId, connectionId);
+        const discovery = await this.discoverWith(creds, conn.name, new Set(), syncedColumns(before));
+        const offered = discovery.objects.find((x) => siteResourceKey(x.kind, x.object) === resource)?.columns ?? [];
+        const have = new Set(o.columns.map((c) => c.key));
+        const toAdd = keys.filter((k) => !have.has(k)).map((k) => offered.find((c) => c.key === k)).filter((c): c is SiteColumn => c !== undefined);
+        const missing = keys.filter((k) => !have.has(k) && !offered.some((c) => c.key === k));
+        const current = await this.fields.listByListId(tenantId, listId);
+        const used = new Set(current.map((f) => f.slug));
+        const created: Array<{ col: SiteColumn; fieldId: number }> = [];
+        for (const c of toAdd) {
+            const field = await this.fields.create(tenantId, String(listId), {
+                label: c.label,
+                slug: uniqueSlug(columnSlug(c), used),
+                type: c.type,
+                config: columnConfig(o.kind, c),
+                description: columnDescription(c, discovery.plugin.seo?.name ?? null),
+            });
+            created.push({ col: c, fieldId: field.id });
+        }
+        const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, row.id)).for('update');
+            const st = readSiteSettings(locked!.settings);
+            const so = st.objects[resource]!;
+            for (const { col, fieldId } of created) {
+                so.columns.push({ key: col.key, label: col.label, source: col.source, type: col.type, can_edit: col.can_edit, hint: col.source === 'core' ? null : col.hint });
+                st.fields[resource] = { ...(st.fields[resource] ?? {}), [col.key]: fieldId };
+            }
+            const can = new Set(so.columns.filter((c) => c.can_edit).map((c) => c.key));
+            so.editable = [...new Set([...so.editable, ...editable.filter((k) => can.has(k))])];
+            const [next] = await tx
+                .update(connectionSyncs)
+                .set({ settings: st as unknown as Record<string, unknown>, updatedAt: new Date() })
+                .where(eq(connectionSyncs.id, row.id))
+                .returning();
+            if (created.length > 0) {
+                await this.audit.logInTx(tx, {
+                    tenantId,
+                    userId,
+                    action: 'site_sync.map_column',
+                    targetType: 'connection',
+                    targetId: connectionId,
+                    targetLabel: conn.name,
+                    meta: { resource, keys: created.map((c) => c.col.key) },
+                });
+            }
+            return next!;
+        });
+        const settings = readSiteSettings(fresh.settings);
+        await this.markLists(tenantId, connectionId, settings);
+        this.writeBack.forget(tenantId);
+        if (created.length > 0) this.queue.enqueueRun(tenantId, row.id, { full: true, only: [resource] });
+        return { settings, added: created.map((c) => c.col.key), missing, plugin: discovery.plugin, syncId: row.id };
     }
 
     /** Dejar de traer una columna: el campo y lo que tiene QUEDAN, como una columna propia. */
@@ -616,6 +864,11 @@ export class SiteSyncService {
     async remove(tenantId: number, userId: number, role: Role, connectionId: number): Promise<void> {
         const conn = await this.requireSite(tenantId, userId, role, connectionId);
         const row = await this.requireSync(tenantId, connectionId);
+        // El aviso del complemento se apaga en el sitio (si se puede): que deje de anotar cambios.
+        if (readSiteSettings(row.settings).mode === 'realtime' || readSiteState(row.state).realtime.registered) {
+            const creds = await this.credsOf(tenantId, connectionId).catch(() => null);
+            await this.realtime.unregister(tenantId, row.id, creds).catch(() => undefined);
+        }
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.id, row.id));
             await stripSiteMarkers(tx, tenantId, connectionId);
@@ -630,7 +883,7 @@ export class SiteSyncService {
         });
         this.rt?.lists(tenantId);
         this.writeBack.forget(tenantId);
-        for (const part of ['run', 'push'] as const) this.engine.siteIncident({ tenantId, connectionId, actorId: 0 }, part, null, '');
+        for (const part of ['run', 'push', 'realtime'] as const) this.engine.siteIncident({ tenantId, connectionId, actorId: 0 }, part, null, '');
     }
 
     /**
@@ -641,6 +894,9 @@ export class SiteSyncService {
      */
     async markLists(tenantId: number, connectionId: number, settings: SiteSyncSettings): Promise<void> {
         const markers: Array<[number, SiteListMarker]> = [];
+        // Sin el complemento, lo que él da queda con lo último que llegó y bloqueado.
+        const row = await this.findSync(tenantId, connectionId);
+        const pluginMissing = row ? readSiteState(row.state).plugin?.installed === false : false;
         for (const [resource, o] of Object.entries(settings.objects)) {
             const listId = settings.lists[resource];
             if (!listId) continue;
@@ -659,6 +915,7 @@ export class SiteSyncService {
                     fields: settings.fields[resource] ?? {},
                     can_edit: can,
                     editable: o.editable.filter((k) => can.includes(k)),
+                    needs_plugin: pluginMissing ? o.columns.map((c) => c.key).filter(isSitePluginColumn) : [],
                 },
             ]);
         }
@@ -698,7 +955,28 @@ export class SiteSyncService {
         await this.markLists(tenantId, row.connectionId, settings).catch(() => undefined);
         const ran = await this.engine.run(tenantId, syncId, creds, opts);
         await this.flagConnection(tenantId, row.connectionId, syncId).catch(() => undefined);
+        // La vuelta detectó si el complemento sigue: los candados de las listas siguen eso.
+        await this.markLists(tenantId, row.connectionId, settings).catch(() => undefined);
+        if (ran && settings.mode === 'realtime') await this.checkRealtime(tenantId, syncId, creds, settings);
         return ran;
+    }
+
+    /**
+     * Red de seguridad del modo en tiempo real (en cada vuelta horaria): con el
+     * complemento, el aviso se revisa y se vuelve a registrar si hizo falta; sin
+     * él, se dice que los cambios llegan en la vuelta (sin romper nada).
+     */
+    private async checkRealtime(tenantId: number, syncId: number, creds: IntegrationCreds, settings: SiteSyncSettings): Promise<void> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) => tx.select({ state: connectionSyncs.state }).from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1));
+        const plugin = readSiteState(row?.state).plugin;
+        if (plugin?.installed) {
+            await this.realtime.ensure(tenantId, syncId, creds, settings);
+            return;
+        }
+        await this.realtime.saveRealtime(tenantId, syncId, {
+            registered: false,
+            error: `El complemento «Imagina Base Connector» no está activo en el sitio: mientras tanto los cambios llegan en la vuelta de cada ${settings.interval_minutes} minutos. Al instalarlo de nuevo, el tiempo real vuelve solo.`,
+        });
     }
 
     /**
@@ -819,7 +1097,7 @@ export function resolveChoices(discovery: SiteDiscovery, choices: SiteObjectChoi
         const wanted = new Set(choice.columns);
         const columns: ColumnPlan[] = obj.columns
             .filter((c) => c.always || wanted.has(c.key))
-            .map((c) => ({ key: c.key, label: c.label, source: c.source, type: c.type, can_edit: c.can_edit, always: c.always, hint: c.hint }));
+            .map((c) => ({ key: c.key, label: c.label, source: c.source, type: c.type, can_edit: c.can_edit, always: c.always, hint: c.hint, options: c.options, image: c.image }));
         const unknown = choice.columns.filter((k) => !obj.columns.some((c) => c.key === k));
         if (unknown.length > 0) {
             throw new BadRequestException({ code: 'site_column_unknown', message: `«${obj.label}» no tiene ${unknown.map((k) => `«${k}»`).join(', ')}.`, data: { status: 400 } });
@@ -867,12 +1145,32 @@ const CORE_SLUGS: Record<string, string> = {
     template: 'plantilla',
     description: 'descripcion',
     count: 'cantidad',
+    alt_text: 'texto_alternativo',
+    caption: 'leyenda',
+    thumbnail: 'imagen',
+    source_url: 'archivo',
+    mime_type: 'tipo_de_archivo',
+    dimensions: 'medidas',
+    filesize: 'peso_kb',
+    'seo:title': 'titulo_seo',
+    'seo:description': 'descripcion_seo',
+    'seo:focus_keyword': 'palabra_clave',
+    'seo:canonical': 'url_canonica',
+    'seo:noindex': 'no_indexar',
+    'seo:google_title': 'titulo_en_google',
+    'seo:google_description': 'descripcion_en_google',
+    'seo:score': 'puntaje_seo',
+    'plugin:words': 'palabras',
+    'plugin:used_in': 'donde_se_usa',
+    'plugin:used_count': 'veces_usada',
 };
 
 function columnSlug(c: Pick<SiteColumn, 'key' | 'label'>): string {
     const core = CORE_SLUGS[c.key];
     if (core) return core;
-    const base = slugify(c.key.startsWith('tax:') ? c.label : c.key.slice(c.key.indexOf(':') + 1)) || 'campo';
+    // `cf:acf.precio` → `precio` (el proveedor no es parte del nombre).
+    const name = c.key.startsWith('cf:') ? c.key.slice(c.key.indexOf('.') + 1) : c.key.slice(c.key.indexOf(':') + 1);
+    const base = slugify(c.key.startsWith('tax:') ? c.label : name) || 'campo';
     return /^[a-z]/.test(base) ? base.slice(0, 50) : `c_${base}`.slice(0, 50);
 }
 
@@ -885,22 +1183,46 @@ function uniqueSlug(base: string, used: Set<string>): string {
     return slug;
 }
 
-function columnConfig(kind: SiteObjectSettings['kind'], c: Pick<SiteColumn, 'key' | 'type'>): Record<string, unknown> {
-    if (c.key === 'status') return { options: kind === 'taxonomy' ? WP_TERM_STATUS_OPTIONS : WP_POST_STATUS_OPTIONS };
-    if (c.key === 'featured_image') return { display: 'image' };
-    if (c.type === 'multi_select' || c.type === 'select') return { options: [] };
-    if (c.type === 'number' && c.key !== 'wp_id' && c.key !== 'count' && c.key !== 'menu_order') return { precision: 2 };
+/** Las columnas que se traen hoy, por recurso (para no ofrecer dos veces el mismo dato). */
+function syncedColumns(settings: SiteSyncSettings | null): Map<string, Set<string>> {
+    const out = new Map<string, Set<string>>();
+    for (const [resource, o] of Object.entries(settings?.objects ?? {})) out.set(resource, new Set(o.columns.map((c) => c.key)));
+    return out;
+}
+
+const PALETTE = ['sky', 'violet', 'amber', 'emerald', 'rose', 'blue', 'orange', 'pink', 'teal', 'slate'];
+/** Números que NO llevan decimales (ids, conteos, palabras, puntajes). */
+const INTEGER_COLUMNS = new Set(['wp_id', 'count', 'menu_order', 'filesize', 'seo:score', 'plugin:words', 'plugin:used_count']);
+
+function columnConfig(
+    kind: SiteObjectSettings['kind'],
+    c: Pick<SiteColumn, 'key' | 'type'> & Partial<Pick<SiteColumn, 'options' | 'image'>>,
+): Record<string, unknown> {
+    if (c.key === 'status') return { options: kind === 'taxonomy' ? WP_TERM_STATUS_OPTIONS : kind === 'media' ? WP_MEDIA_STATUS_OPTIONS : WP_POST_STATUS_OPTIONS };
+    if (c.key === 'featured_image' || c.image) return { display: 'image' };
+    if (c.type === 'multi_select' || c.type === 'select') {
+        // Las opciones que declara el plugin (ACF, Meta Box) llegan desde el alta, con su etiqueta.
+        return { options: (c.options ?? []).slice(0, 200).map((o, i) => ({ value: o.value, label: o.label || o.value, color: PALETTE[i % PALETTE.length] })) };
+    }
+    if (c.type === 'number' && !INTEGER_COLUMNS.has(c.key)) return { precision: 2 };
     return {};
 }
 
-function columnDescription(c: Pick<SiteColumn, 'key' | 'source'>): string {
+function columnDescription(c: Pick<SiteColumn, 'key' | 'source'>, seoName: string | null = null): string {
     if (c.source === 'acf') return `Viene de WordPress (campo de ACF «${c.key.slice(4)}»).`;
     if (c.source === 'meta') return `Viene de WordPress (campo personalizado «${c.key.slice(5)}»).`;
+    if (c.source === 'seo') return seoName ? `Viene de WordPress (SEO de ${seoName}, por el complemento).` : 'Viene de WordPress (SEO, por el complemento).';
+    if (c.source === 'plugin') {
+        const m = /^cf:([a-z]+)\.(.+)$/.exec(c.key);
+        const provider = m ? ({ acf: 'ACF', mb: 'Meta Box', je: 'JetEngine', meta: 'un plugin' } as Record<string, string>)[m[1]!] ?? 'un plugin' : null;
+        return m ? `Viene de WordPress (campo «${m[2]}» de ${provider}, por el complemento).` : 'Viene de WordPress (por el complemento).';
+    }
     return 'Viene de WordPress.';
 }
 
 function objectIcon(kind: SiteObjectSettings['kind'], object: string): string {
     if (kind === 'taxonomy') return 'tag';
+    if (kind === 'media') return 'image';
     if (object === 'post') return 'newspaper';
     if (object === 'page') return 'file_text';
     return 'note';
@@ -919,7 +1241,21 @@ function columnHint(o: SiteObjectSettings, key: string): string | null {
     }).find((c) => c.key === key);
     if (core) return core.hint;
     const col = o.columns.find((c) => c.key === key);
+    if (col?.hint) return col.hint;
     return col && !col.can_edit && col.source !== 'core' ? 'Tiene varias partes (una lista o un grupo): se trae como texto y se edita en WordPress.' : null;
+}
+
+function errMessage(err: unknown): string {
+    if (err instanceof BadRequestException) {
+        const r = err.getResponse();
+        if (r && typeof r === 'object' && typeof (r as { message?: unknown }).message === 'string') return (r as { message: string }).message;
+    }
+    return err instanceof Error ? err.message : String(err);
+}
+
+/** Textos de la pantalla (español neutro). */
+function __(s: string): string {
+    return s;
 }
 
 /** Un campo con un nombre raro (con espacios o símbolos) no se puede elegir: se descarta. */
@@ -942,7 +1278,7 @@ function siteLabel(connectionName: string): string {
  * al final lo técnico (el ID, los enlaces, la fecha de modificación). Así lo
  * que se mira y se edita queda a la vista sin correr la tabla.
  */
-const TECH_COLUMNS = new Set(['wp_id', 'edit_link', 'link', 'modified', 'count']);
+const TECH_COLUMNS = new Set(['wp_id', 'edit_link', 'link', 'modified', 'count', 'source_url', 'mime_type']);
 function columnRank(key: string): number {
     if (key === 'title' || key === 'name') return 0;
     if (key === 'status') return 1;

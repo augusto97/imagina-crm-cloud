@@ -25,6 +25,7 @@ const marker = (over: Partial<SiteListMarker> = {}): SiteListMarker => ({
     fields: { title: 1, status: 2, wp_id: 3, 'acf:precio': 4, 'tax:zona': 5, slug: 6 },
     can_edit: ['title', 'status', 'acf:precio', 'tax:zona', 'slug'],
     editable: ['title', 'acf:precio', 'tax:zona'],
+    needs_plugin: [],
     ...over,
 });
 const row = (status: string) => (key: string) => (key === 'status' ? status : undefined);

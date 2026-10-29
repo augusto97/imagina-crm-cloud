@@ -28,6 +28,7 @@ import { DRIZZLE, type Db } from '../db/client';
 import { attachments, records, users } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
+import { ImageProxyService } from '../files/image-proxy';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -116,6 +117,9 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         @Optional() @Inject(AI_CLIENT_FACTORY) clientFactory?: AiClientFactory,
         // v0.1.285 (ADR-S44) — un campo que deja de calcularse en segundo plano avisa.
         @Optional() private readonly incidents?: IncidentHub,
+        // v0.1.334 (ADR-S84) — un enlace a una imagen (la miniatura de un medio
+        // de WordPress) se le pasa al modelo como IMAGEN, por el proxy con guard anti-SSRF.
+        @Optional() private readonly images?: ImageProxyService,
     ) {
         this.clientFactory = clientFactory ?? defaultClientFactory;
     }
@@ -241,6 +245,11 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
                 const docs = await this.fileBlocks(tenantId, v);
                 blocks.push(...docs.blocks);
                 inputs.push({ label: f.label, text: docs.names.join(', ') });
+            } else if (f.type === 'url' && (f.config as { display?: unknown } | undefined)?.display === 'image' && typeof v === 'string' && v !== '') {
+                // Un enlace que la lista muestra como imagen: el modelo la MIRA (texto alternativo, descripción…).
+                const img = await this.imageBlock(v);
+                if (img) blocks.push(img);
+                inputs.push({ label: f.label, text: img ? '(la imagen va adjunta)' : v });
             } else {
                 inputs.push({ label: f.label, text: inputText(f, v, names) });
             }
@@ -296,6 +305,20 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), eq(records.id, recordId))),
         );
         this.realtime.records(tenantId, listId);
+    }
+
+    /** Una imagen por su enlace (con el guard anti-SSRF del proxy de imágenes), o null si no se pudo. */
+    private async imageBlock(url: string): Promise<Anthropic.ContentBlockParam | null> {
+        if (!this.images) return null;
+        try {
+            const img = await this.images.fetch(url);
+            const mime = img.contentType === 'image/jpg' ? 'image/jpeg' : img.contentType;
+            // El modelo acepta estos cuatro (el resto —avif, bmp, ico— no se manda).
+            if (!/^image\/(png|jpeg|gif|webp)$/.test(mime) || img.bytes.length > MAX_FILE_BYTES) return null;
+            return { type: 'image', source: { type: 'base64', media_type: mime as 'image/png', data: img.bytes.toString('base64') } };
+        } catch {
+            return null;
+        }
     }
 
     private async fileBlocks(tenantId: number, value: unknown): Promise<{ blocks: Anthropic.ContentBlockParam[]; names: string[] }> {

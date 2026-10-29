@@ -237,7 +237,9 @@ import { RelationsRepository } from '../src/records/relations.repository';
 import { SiteSyncEngine } from '../src/site-sync/site-sync.engine';
 import { SiteSyncQueue, type SiteSyncPushJob } from '../src/site-sync/site-sync.queue';
 import { SiteSyncService } from '../src/site-sync/site-sync.service';
+import { SiteRealtimeService } from '../src/site-sync/site-realtime.service';
 import { SiteWriteBackService } from '../src/site-sync/site-writeback.service';
+import { WordpressPluginService } from '../src/site-sync/wordpress-plugin.service';
 import { WordpressConnectService, type WpConnectStateStore } from '../src/site-sync/wordpress-connect.service';
 import { StoreSyncEngine } from '../src/sync/store-sync.engine';
 import { StoreSyncQueue } from '../src/sync/store-sync.queue';
@@ -436,7 +438,21 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         const engine = new SiteSyncEngine(tenantDb, fieldsService, billing, rt, dispatcher, activity, redis, incidents);
         queue = new CapturingQueue();
         writeBack = new SiteWriteBackService(tenantDb, engine, queue);
-        svc = new SiteSyncService(tenantDb, pg.db, connectors, blueprints, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, writeBack, rt);
+        svc = new SiteSyncService(
+            tenantDb,
+            pg.db,
+            connectors,
+            blueprints,
+            new ListGroupsService(tenantDb),
+            fieldsService,
+            audit,
+            engine,
+            queue,
+            writeBack,
+            new SiteRealtimeService(tenantDb, pg.db, env, engine, queue),
+            new WordpressPluginService(env),
+            rt,
+        );
         writeBack.setCredsResolver((t, s) => svc.credsForSync(t, s));
         hub.subscribe((c) => writeBack.onRecordChange(c));
         connect = new WordpressConnectService(connectors, { get: () => Promise.resolve({ app_name: 'Imagina Base' }) } as never, memoryStates(), pg.db, env);
@@ -540,11 +556,14 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
         await expect(connect.start(tenantId, adminId, 'agent', { site_url: 'blog.test', visibility: 'workspace' })).rejects.toThrow(/admin/);
     });
 
-    it('descubrir: tipos de contenido, taxonomías y los campos de ACF con un ejemplo (sin «Medios»)', async () => {
+    it('descubrir: tipos de contenido, la biblioteca de medios, taxonomías y los campos de ACF con un ejemplo', async () => {
         const d = await svc.discover(tenantId, adminId, 'admin', connId);
         expect(d.site_name).toBe('Blog de prueba');
         expect(d.user).toMatchObject({ login: 'admin', can_edit: true, can_manage_terms: true });
-        expect(d.objects.map((o) => `${o.kind}:${o.object}`)).toEqual(['post_type:post', 'post_type:page', 'post_type:propiedad', 'taxonomy:category', 'taxonomy:post_tag', 'taxonomy:zona']);
+        expect(d.objects.map((o) => `${o.kind}:${o.object}`)).toEqual(['post_type:post', 'post_type:page', 'post_type:propiedad', 'media:attachment', 'taxonomy:category', 'taxonomy:post_tag', 'taxonomy:zona']);
+        // Sin el complemento: ni SEO ni campos del complemento, y la página lo dice.
+        expect(d.plugin).toMatchObject({ installed: false });
+        expect(d.objects.flatMap((o) => o.columns).some((c) => /^(seo|cf|plugin):/.test(c.key))).toBe(false);
         expect(d.acf).toBe(true);
         const prop = d.objects.find((o) => o.object === 'propiedad')!;
         expect(prop.count).toBe(2);
@@ -563,6 +582,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
             ],
             write_back: true,
             interval_minutes: 15,
+            mode: 'interval',
         });
         expect(st.configured).toBe(true);
         expect(st.objects.map((o) => o.resource)).toEqual(['post:propiedad', 'post:post', 'post:page', 'term:category']);
@@ -590,7 +610,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
             editable: ['title', 'excerpt', 'tax:zona', 'acf:precio'],
         });
         expect(queue.runs).toEqual([{ tenantId, syncId, opts: { full: true } }]);
-        await expect(svc.setup(tenantId, adminId, 'admin', connId, { objects: [{ kind: 'post_type', object: 'post', columns: ['title'], editable: [] }], write_back: true, interval_minutes: 15 })).rejects.toThrow(/ya se está sincronizando/);
+        await expect(svc.setup(tenantId, adminId, 'admin', connId, { objects: [{ kind: 'post_type', object: 'post', columns: ['title'], editable: [] }], write_back: true, interval_minutes: 15, mode: 'interval' })).rejects.toThrow(/ya se está sincronizando/);
     });
 
     it('primera carga: borradores y la papelera también, términos como opciones, ACF con su tipo — sin disparar automatizaciones', async () => {
@@ -836,7 +856,7 @@ describe('Sincronización con un sitio WordPress (v0.1.333, ADR-S83)', () => {
 
     it('borrar la CONEXIÓN también deja las listas libres (y cierra sus problemas)', async () => {
         // Se vuelve a sincronizar sólo las categorías y se borra la conexión.
-        await svc.setup(tenantId, adminId, 'admin', connId, { objects: [{ kind: 'taxonomy', object: 'post_tag', columns: ['name'], editable: ['name'] }], write_back: true, interval_minutes: 60 });
+        await svc.setup(tenantId, adminId, 'admin', connId, { objects: [{ kind: 'taxonomy', object: 'post_tag', columns: ['name'], editable: ['name'] }], write_back: true, interval_minutes: 60, mode: 'interval' });
         const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.connectionId, connId)));
         const listId = (row!.settings as { lists: Record<string, number> }).lists['term:post_tag']!;
         resolved.length = 0;

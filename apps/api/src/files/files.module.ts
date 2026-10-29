@@ -33,6 +33,6 @@ import { WorkspaceStorageController } from './workspace-storage.controller';
     ],
     // `FILE_STORAGE` sale del módulo para que la migración de empresas
     // (ADR-S23) mueva los bytes por el mismo driver que los sube.
-    exports: [FilesService, FILE_STORAGE],
+    exports: [FilesService, FILE_STORAGE, ImageProxyService],
 })
 export class FilesModule {}

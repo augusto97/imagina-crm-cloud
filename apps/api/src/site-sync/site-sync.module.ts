@@ -9,12 +9,17 @@ import { RecordChangeHub } from '../records/record-change-hub';
 import { RecordsModule } from '../records/records.module';
 import { REDIS } from '../redis/redis.module';
 import { TemplatesModule } from '../templates/templates.module';
+import { ViewsModule } from '../views/views.module';
+import { SiteKitsService } from './site-kits.service';
+import { SiteHooksController, WordpressPluginPublicController } from './site-public.controller';
+import { SiteRealtimeService } from './site-realtime.service';
 import { SiteSyncController, WordpressCallbackController, WordpressConnectController } from './site-sync.controller';
 import { SiteSyncEngine } from './site-sync.engine';
 import { SiteSyncQueue, SiteSyncQueueBootstrap } from './site-sync.queue';
 import { SiteSyncService } from './site-sync.service';
 import { SiteWriteBackService } from './site-writeback.service';
 import { WP_CONNECT_STATE, WordpressConnectService } from './wordpress-connect.service';
+import { WordpressPluginService } from './wordpress-plugin.service';
 
 /**
  * Sitios WordPress (v0.1.333, ADR-S83): conectar en un clic con «Autorizar
@@ -23,12 +28,15 @@ import { WP_CONNECT_STATE, WordpressConnectService } from './wordpress-connect.s
  * (`site-sync`) para no competir con la de la tienda.
  */
 @Module({
-    imports: [AuthModule, ActivityModule, AutomationsModule, BillingModule, FieldsModule, ListsModule, RecordsModule, TemplatesModule],
-    controllers: [SiteSyncController, WordpressConnectController, WordpressCallbackController],
+    imports: [AuthModule, ActivityModule, AutomationsModule, BillingModule, FieldsModule, ListsModule, RecordsModule, TemplatesModule, ViewsModule],
+    controllers: [SiteSyncController, WordpressConnectController, WordpressCallbackController, SiteHooksController, WordpressPluginPublicController],
     providers: [
         SiteSyncEngine,
         SiteSyncService,
         SiteWriteBackService,
+        SiteRealtimeService,
+        SiteKitsService,
+        WordpressPluginService,
         SiteSyncQueue,
         SiteSyncQueueBootstrap,
         WordpressConnectService,
@@ -41,6 +49,7 @@ export class SiteSyncModule implements OnModuleInit {
         private readonly bootstrap: SiteSyncQueueBootstrap,
         private readonly service: SiteSyncService,
         private readonly writeBack: SiteWriteBackService,
+        private readonly realtime: SiteRealtimeService,
         private readonly changes: RecordChangeHub,
     ) {}
 
@@ -49,8 +58,10 @@ export class SiteSyncModule implements OnModuleInit {
             tick: () => this.service.tick(),
             runJob: (job) => this.service.runJob(job.tenantId, job.syncId, { full: job.full, only: job.only }),
             pushJob: (job) => this.writeBack.processPush(job),
+            hookJob: (job) => this.realtime.processHook(job, null),
         });
         this.writeBack.setCredsResolver((tenantId, syncId) => this.service.credsForSync(tenantId, syncId));
+        this.realtime.setCredsResolver((tenantId, syncId) => this.service.credsForSync(tenantId, syncId));
         // Edición en los dos sentidos: lo que se cambia en la app viaja al sitio.
         this.changes.subscribe((change) => this.writeBack.onRecordChange(change));
     }

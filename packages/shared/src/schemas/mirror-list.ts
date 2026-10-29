@@ -91,7 +91,7 @@ export function mirrorEditableKeys(m: MirrorListMarker): readonly string[] {
 export function mirrorColumnKind(m: MirrorListMarker, fieldId: number): 'locked' | 'sync' | 'own' {
     const key = mirrorFieldKey(m, fieldId);
     if (key === null) return 'own';
-    if (m.source === 'site' && !m.marker.can_edit.includes(key)) return 'locked';
+    if (m.source === 'site' && (!m.marker.can_edit.includes(key) || m.marker.needs_plugin.includes(key))) return 'locked';
     return m.marker.write_back && mirrorEditableKeys(m).includes(key) ? 'sync' : 'locked';
 }
 

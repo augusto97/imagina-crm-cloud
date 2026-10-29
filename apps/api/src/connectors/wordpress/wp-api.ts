@@ -151,16 +151,18 @@ export function wpAuthorizeUrl(
 }
 
 /** «Editar en WordPress» de una entrada o de un término. */
-export function wpEditLink(site: string, kind: 'post_type' | 'taxonomy', object: string, id: number | string): string {
+export function wpEditLink(site: string, kind: 'post_type' | 'taxonomy' | 'media', object: string, id: number | string): string {
     const base = site.replace(/\/+$/, '');
     if (kind === 'taxonomy') return `${base}/wp-admin/term.php?taxonomy=${encodeURIComponent(object)}&tag_ID=${id}`;
     return `${base}/wp-admin/post.php?post=${id}&action=edit`;
 }
 
 /** «Crear en WordPress» (la app no crea entradas: se hace allá). */
-export function wpNewLink(site: string, kind: 'post_type' | 'taxonomy', object: string): string {
+export function wpNewLink(site: string, kind: 'post_type' | 'taxonomy' | 'media', object: string): string {
     const base = site.replace(/\/+$/, '');
     if (kind === 'taxonomy') return `${base}/wp-admin/edit-tags.php?taxonomy=${encodeURIComponent(object)}`;
+    // Los medios se suben en la biblioteca.
+    if (kind === 'media') return `${base}/wp-admin/media-new.php`;
     return object === 'post' ? `${base}/wp-admin/post-new.php` : `${base}/wp-admin/post-new.php?post_type=${encodeURIComponent(object)}`;
 }
 

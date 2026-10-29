@@ -121,6 +121,7 @@ export * from './schemas/workload';
 export * from './schemas/helpdesk';
 export * from './schemas/business-hours';
 export * from './xlsx';
+export * from './zip-files';
 export * from './schemas/team';
 export * from './schemas/custom-role';
 export * from './schemas/guest';

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { validateFieldValue, type Field } from '@imagina-base/shared';
+import { isSitePluginColumn, validateFieldValue, type Field, type SiteObjectKind } from '@imagina-base/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
@@ -14,9 +14,11 @@ import { IncidentHub } from '../incidents/incident-hub';
 import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { readSiteSettings, readSiteState, type SiteKeysetCursor, type SiteObjectSettings, type SiteSyncSettings, type SiteSyncState } from './site-sync.types';
+import { readSiteSettings, readSiteState, type SiteKeysetCursor, type SiteObjectSettings, type SitePluginState, type SiteSyncSettings, type SiteSyncState } from './site-sync.types';
+import { ibcInfo, ibcRead, ibcWrite, type IbcInfo } from './wordpress/ibc';
 import { WP_PAGE_SIZE, WpApiError, wpGet, wpGetPage, wpSend } from './wordpress/wp-fetch';
 import {
+    IBC_VALUES,
     buildWpWriteBack,
     emptyLookups,
     mapWpItem,
@@ -66,8 +68,22 @@ const MAX_PAGES_PER_RUN = 400;
 /** Términos que se leen de una taxonomía para traducir ids (5.000). */
 const MAX_TERM_PAGES = 50;
 const INSERT_CHUNK = 500;
+/** La red de seguridad del modo en tiempo real: una vuelta por hora. */
+const REALTIME_SWEEP_MINUTES = 60;
 
 export class SiteSyncStopped extends Error {}
+
+/** Un aviso del complemento (ya verificado): qué cambió en el sitio. */
+export interface SiteHookEvent {
+    kind: 'post' | 'term' | 'media';
+    object: string;
+    id: number;
+    action: 'saved' | 'trashed' | 'deleted';
+}
+
+/** Mensaje cuando una columna del complemento no se puede mandar porque el sitio ya no lo tiene. */
+export const PLUGIN_MISSING_WRITE =
+    'Ese dato lo guarda el complemento «Imagina Base Connector» y el sitio ya no lo tiene activo: no se pudo mandar. Instálalo de nuevo desde la página del sitio.';
 
 interface ListTarget {
     listId: number;
@@ -90,6 +106,8 @@ export interface SiteRunCtx {
     touchedLists: Set<number>;
     /** Términos ya leídos en esta corrida (taxonomía → id → término). */
     terms: Map<string, Map<number, WpTerm>>;
+    /** El complemento, si está (null = no está o no se sabe: sus columnas quedan como estaban). */
+    plugin: IbcInfo | null;
 }
 
 export interface SiteRunOptions {
@@ -114,7 +132,7 @@ export class SiteSyncEngine {
     ) {}
 
     /** Abre (con error) o cierra (sin error) el problema del sitio (ADR-S44). */
-    siteIncident(ctx: Pick<SiteRunCtx, 'tenantId' | 'connectionId' | 'actorId'>, part: 'run' | 'push', error: string | null, title: string): void {
+    siteIncident(ctx: Pick<SiteRunCtx, 'tenantId' | 'connectionId' | 'actorId'>, part: 'run' | 'push' | 'realtime', error: string | null, title: string): void {
         const key = `site_sync:${ctx.connectionId}:${part}`;
         if (error === null) {
             this.incidents?.resolve(ctx.tenantId, key);
@@ -174,6 +192,7 @@ export class SiteSyncEngine {
             let error: string | null = null;
             let authFailed = false;
             try {
+                await this.detectPlugin(ctx);
                 for (const [resource, o] of Object.entries(ctx.settings.objects)) {
                     if (opts.only && !opts.only.includes(resource)) continue;
                     if (!ctx.targets[resource]) continue;
@@ -210,7 +229,7 @@ export class SiteSyncEngine {
                     authFailed ? `El sitio ${siteHost(ctx.settings.site_url)} rechazó la conexión` : `No se pudo sincronizar el sitio ${siteHost(ctx.settings.site_url)}`,
                 );
             }
-            await this.setNextRun(tenantId, syncId, new Date(now.getTime() + ctx.settings.interval_minutes * 60_000));
+            await this.setNextRun(tenantId, syncId, new Date(now.getTime() + nextRunMinutes(ctx.settings, ctx.plugin !== null) * 60_000));
             for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
             return true;
         } finally {
@@ -244,7 +263,38 @@ export class SiteSyncEngine {
             warnings: new Set(),
             touchedLists: new Set(),
             terms: new Map(),
+            // Fuera de una vuelta (envíos, avisos) se confía en lo último que se supo.
+            plugin: state.plugin?.installed ? { version: state.plugin.version ?? '', seo: null, providers: { acf: false, metabox: false, jetengine: false }, can_manage: false, hooks: null, updates: false } : null,
         };
+    }
+
+    /**
+     * ¿Está el complemento? Se pregunta al empezar cada vuelta: si lo
+     * desinstalaron, sus columnas quedan con lo último que llegó (bloqueadas en
+     * la lista) y el tiempo real vuelve a intervalos sin romper nada.
+     */
+    async detectPlugin(ctx: SiteRunCtx): Promise<void> {
+        const prev = ctx.state.plugin;
+        const found = await ibcInfo(ctx.creds).catch((err: unknown) => ({ installed: false as const, error: err instanceof Error ? err.message : String(err) }));
+        const now = new Date().toISOString();
+        const uses = Object.values(ctx.settings.objects).some((o) => o.columns.some((c) => isSitePluginColumn(c.key)));
+        if (found.installed) {
+            ctx.plugin = found.info;
+            ctx.state.plugin = { installed: true, version: found.info.version, seo_name: found.info.seo?.name ?? null, checked_at: now, missing_since: null };
+            if (found.info.seo?.problem) ctx.warnings.add(found.info.seo.problem);
+        } else {
+            ctx.plugin = null;
+            const missingSince = prev?.installed ? now : (prev?.missing_since ?? (uses ? now : null));
+            ctx.state.plugin = { installed: false, version: null, seo_name: null, checked_at: now, missing_since: missingSince };
+            if (uses) {
+                ctx.warnings.add(
+                    found.error
+                        ? `No pudimos leer el complemento «Imagina Base Connector»: ${found.error} Las columnas de SEO y campos quedaron con lo último que llegó.`
+                        : 'El complemento «Imagina Base Connector» ya no está activo en el sitio: las columnas que da (SEO, campos, medios) quedaron con lo último que llegó y no se pueden editar. Instálalo de nuevo desde la página del sitio.',
+                );
+            }
+        }
+        await this.saveState(ctx.tenantId, ctx.syncId, { plugin: ctx.state.plugin satisfies SitePluginState });
     }
 
     private async loadTargets(tenantId: number, settings: SiteSyncSettings): Promise<Record<string, ListTarget>> {
@@ -287,6 +337,8 @@ export class SiteSyncEngine {
     // ── Entradas, páginas y tipos propios ───────────────────────────────────
 
     private async syncPosts(ctx: SiteRunCtx, resource: string, o: SiteObjectSettings, forceFull: boolean): Promise<void> {
+        // Los medios no tienen borradores: están «inherit» (o privados) en la biblioteca.
+        const live = o.kind === 'media' ? 'inherit,private' : 'any';
         const last = ctx.state.full_at[resource] ? Date.parse(ctx.state.full_at[resource]!) : 0;
         const sweep = forceFull || !ctx.state.initial_done || ctx.state.cursors[resource] === undefined || Date.now() - last > FULL_SWEEP_MS;
         const seen = sweep ? new Set<string>() : null;
@@ -298,7 +350,7 @@ export class SiteSyncEngine {
             done += rows.length;
             await this.progress(ctx, resource, done, total);
         };
-        const complete = await this.keyset(ctx, resource, o, 'any', sweep, onPage);
+        const complete = await this.keyset(ctx, resource, o, live, sweep, onPage);
         // La papelera va aparte: `status=any` no la incluye.
         const trashComplete = await this.keyset(ctx, `${resource}|trash`, o, 'trash', sweep, onPage);
         if (sweep && complete && trashComplete && seen) {
@@ -315,7 +367,7 @@ export class SiteSyncEngine {
         ctx: SiteRunCtx,
         cursorKey: string,
         o: SiteObjectSettings,
-        status: 'any' | 'trash',
+        status: string,
         fromStart: boolean,
         onPage: (rows: WpJson[], remaining: number | null) => Promise<void>,
     ): Promise<boolean> {
@@ -475,7 +527,29 @@ export class SiteSyncEngine {
     async upsertRows(ctx: SiteRunCtx, resource: string, o: SiteObjectSettings, rows: WpJson[]): Promise<{ created: number; updated: number }> {
         if (rows.length === 0) return { created: 0, updated: 0 };
         const lookups = await this.lookups(ctx, o, rows);
+        await this.attachPluginValues(ctx, o, rows);
         return this.upsert(ctx, resource, rows.map((r) => mapWpItem(o, r, ctx.settings.site_url, lookups)), {});
+    }
+
+    /**
+     * Lo que da el complemento (SEO, campos con su tipo, palabras, dónde se usa
+     * una imagen), leído EN LOTE para la misma tanda y pegado a cada fila. Sin
+     * el complemento no se toca nada (quedan los valores anteriores). Una tanda
+     * que falla se avisa y no frena la vuelta: lo de WordPress igual se guarda.
+     */
+    async attachPluginValues(ctx: SiteRunCtx, o: SiteObjectSettings, rows: WpJson[]): Promise<void> {
+        const keys = o.columns.map((c) => c.key).filter(isSitePluginColumn);
+        if (keys.length === 0 || !ctx.plugin) return;
+        const ids = rows.map((r) => Number(r.id)).filter((n) => Number.isInteger(n) && n > 0);
+        try {
+            const values = await ibcRead(ctx.creds, o.kind, o.object, ids, keys);
+            for (const r of rows) {
+                const v = values.get(Number(r.id));
+                if (v) r[IBC_VALUES] = v;
+            }
+        } catch (err) {
+            ctx.warnings.add(`No pudimos leer los datos del complemento (${o.label}): ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
 
     // ── Escritura ───────────────────────────────────────────────────────────
@@ -740,24 +814,122 @@ export class SiteSyncEngine {
             termIds[key] = await this.resolveTerms(ctx, tax, Array.isArray(values[key]) ? (values[key] as unknown[]).map(String) : [], optionLabels(field));
         }
         const req = buildWpWriteBack(o, found.link.externalId, values, termIds);
-        if (!req) return null;
+        const pluginValues = pluginWriteValues(o, values);
+        if (!req && Object.keys(pluginValues).length === 0) return null;
+        const route = `${wpCollectionRoute(o)}/${found.link.externalId}`;
         const query: Array<[string, string]> = [['context', 'edit'], ['_fields', wpFieldsParam(o)]];
-        let res: unknown;
-        try {
-            res = await wpSend(creds, 'POST', req.route, req.body, query);
-        } catch (err) {
-            if (err instanceof WpApiError && err.status >= 400 && err.status < 500 && err.kind !== 'auth' && err.kind !== 'not_seen') {
-                const current = await wpGet(creds, req.route, query).catch(() => null);
-                const json = current?.json;
-                if (json && typeof json === 'object' && !Array.isArray(json)) {
-                    await this.applyObject(ctx, resource, o, json as WpJson);
-                    throw new WpApiError(`${err.message} En la app quedó lo que tiene el sitio.`, err.status, err.kind);
-                }
+        const sent: string[] = [];
+        let res: unknown = null;
+        let pluginError: string | null = null;
+        if (Object.keys(pluginValues).length > 0) {
+            // Lo del complemento primero: si el sitio ya no lo tiene, se dice (y lo de WordPress igual viaja).
+            if (!ctx.plugin) {
+                pluginError = PLUGIN_MISSING_WRITE;
+            } else {
+                const [result] = await ibcWrite(creds, o.kind, o.object, [{ id: Number(found.link.externalId), values: pluginValues }]);
+                const errors = Object.entries(result?.errors ?? {});
+                const labels = new Map(o.columns.map((c) => [c.key, c.label]));
+                if (errors.length > 0) pluginError = errors.map(([k, m]) => (k === '*' ? m : `${labels.get(k) ?? k}: ${m}`)).join(' · ');
+                sent.push(...Object.keys(pluginValues).filter((k) => !(result?.errors ?? {})[k]));
             }
-            throw err;
         }
-        if (res && typeof res === 'object' && !Array.isArray(res)) await this.applyObject(ctx, resource, o, res as WpJson);
-        return { sent: req.keys };
+        if (req) {
+            try {
+                res = await wpSend(creds, 'POST', req.route, req.body, query);
+                sent.push(...req.keys);
+            } catch (err) {
+                if (err instanceof WpApiError && err.status >= 400 && err.status < 500 && err.kind !== 'auth' && err.kind !== 'not_seen') {
+                    const current = await wpGet(creds, req.route, query).catch(() => null);
+                    const json = current?.json;
+                    if (json && typeof json === 'object' && !Array.isArray(json)) {
+                        await this.applyObject(ctx, resource, o, json as WpJson);
+                        throw new WpApiError(`${err.message} En la app quedó lo que tiene el sitio.`, err.status, err.kind);
+                    }
+                }
+                throw err;
+            }
+        }
+        // Lo que quedó en el sitio vuelve a la app: el objeto de WordPress y, si
+        // hay columnas del complemento, sus valores RELEÍDOS en un pedido aparte
+        // (lo que ve Google se recalcula con lo recién guardado).
+        let json = res && typeof res === 'object' && !Array.isArray(res) ? (res as WpJson) : null;
+        if (!json && (Object.keys(pluginValues).length > 0 || pluginError)) {
+            const current = await wpGet(creds, route, query).catch(() => null);
+            json = current?.json && typeof current.json === 'object' && !Array.isArray(current.json) ? (current.json as WpJson) : null;
+        }
+        if (json) await this.applyObject(ctx, resource, o, json);
+        if (pluginError) throw new WpApiError(`${pluginError}${json ? ' En la app quedó lo que tiene el sitio.' : ''}`, 400, 'invalid');
+        return { sent };
+    }
+
+    // ── Avisos en tiempo real ───────────────────────────────────────────────
+
+    /**
+     * Lo que avisó el complemento (ya verificado). Cada objeto se VUELVE A LEER
+     * del sitio con los permisos de la conexión (el aviso sólo trae el id):
+     * guardado o en la papelera → se trae como está; borrado → queda en
+     * «Papelera» en la app (nunca se borra nada, ADR-S09).
+     */
+    async applyEvents(tenantId: number, syncId: number, creds: IntegrationCreds, events: SiteHookEvent[]): Promise<{ applied: number }> {
+        const ctx = await this.context(tenantId, syncId, creds, '');
+        if (!ctx) return { applied: 0 };
+        ctx.dispatch = ctx.state.initial_done;
+        const byResource = new Map<string, { o: SiteObjectSettings; saved: Set<number>; deleted: Set<number> }>();
+        for (const e of events) {
+            const kind: SiteObjectKind = e.kind === 'term' ? 'taxonomy' : e.kind === 'media' ? 'media' : 'post_type';
+            const resource = kind === 'media' ? 'media:attachment' : `${kind === 'taxonomy' ? 'term' : 'post'}:${e.object}`;
+            const o = ctx.settings.objects[resource];
+            if (!o || !ctx.targets[resource]) continue;
+            const bucket = byResource.get(resource) ?? { o, saved: new Set<number>(), deleted: new Set<number>() };
+            if (e.action === 'deleted') {
+                bucket.deleted.add(e.id);
+                bucket.saved.delete(e.id);
+            } else if (!bucket.deleted.has(e.id)) {
+                bucket.saved.add(e.id);
+            }
+            byResource.set(resource, bucket);
+        }
+        let applied = 0;
+        for (const [resource, { o, saved, deleted }] of byResource) {
+            const ids = [...saved];
+            const fields = wpFieldsParam(o);
+            const statuses = o.kind === 'taxonomy' ? [null] : o.kind === 'media' ? ['inherit,private', 'trash'] : ['any', 'trash'];
+            let pending = ids;
+            for (const status of statuses) {
+                if (pending.length === 0) break;
+                const found: WpJson[] = [];
+                for (let i = 0; i < pending.length; i += WP_PAGE_SIZE) {
+                    const chunk = pending.slice(i, i + WP_PAGE_SIZE);
+                    const query: Array<[string, string]> = [
+                        ['context', 'edit'],
+                        ['include', chunk.join(',')],
+                        ['per_page', String(WP_PAGE_SIZE)],
+                        ['_fields', fields],
+                    ];
+                    if (status) query.push(['status', status]);
+                    if (o.kind === 'taxonomy') query.push(['hide_empty', 'false']);
+                    const page = await wpGetPage(ctx.creds, wpCollectionRoute(o), query);
+                    found.push(...page.rows);
+                }
+                if (found.length > 0) {
+                    const r = await this.upsertRows(ctx, resource, o, found);
+                    applied += r.created + r.updated;
+                }
+                const got = new Set(found.map((r) => Number(r.id)));
+                pending = pending.filter((id) => !got.has(id));
+            }
+            if (deleted.size > 0) {
+                const r = await this.upsert(
+                    ctx,
+                    resource,
+                    [...deleted].map((id) => ({ externalId: String(id), values: { status: 'trash' }, options: {} })),
+                    { updateOnly: true },
+                );
+                applied += r.updated;
+            }
+        }
+        for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
+        return { applied };
     }
 
     /** El objeto tal como quedó en el sitio, sin disparar automatizaciones (no es una novedad del sitio). */
@@ -805,6 +977,27 @@ export class SiteSyncEngine {
 }
 
 // ── Utilidades ─────────────────────────────────────────────────────────────
+
+/** Lo que se manda al complemento: SÓLO lo que cambió y está habilitado. */
+export function pluginWriteValues(o: SiteObjectSettings, changed: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    const editable = new Set(o.editable);
+    for (const [key, value] of Object.entries(changed)) {
+        if (!isSitePluginColumn(key) || !editable.has(key)) continue;
+        const c = o.columns.find((x) => x.key === key);
+        if (!c || !c.can_edit) continue;
+        out[key] = value === undefined ? null : value;
+    }
+    return out;
+}
+
+/**
+ * Cada cuánto corre la próxima vuelta: en tiempo real (con el complemento) es
+ * la red de seguridad horaria; sin él, el intervalo elegido.
+ */
+export function nextRunMinutes(settings: Pick<SiteSyncSettings, 'mode' | 'interval_minutes'>, pluginInstalled: boolean): number {
+    return settings.mode === 'realtime' && pluginInstalled ? REALTIME_SWEEP_MINUTES : settings.interval_minutes;
+}
 
 /** `modified` del sitio (hora local de WordPress, sin zona). */
 function local(row: WpJson): string {

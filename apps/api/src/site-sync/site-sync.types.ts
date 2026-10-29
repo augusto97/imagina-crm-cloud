@@ -24,6 +24,8 @@ export interface SiteColumnSettings {
     source: SiteColumnSource;
     type: SiteColumnType;
     can_edit: boolean;
+    /** La ayuda que dio el sitio (las del complemento: «lo calcula tu plugin de SEO»…). */
+    hint?: string | null;
 }
 
 /** Una taxonomía de un tipo de contenido: la clave del post y el nombre del término. */
@@ -52,8 +54,12 @@ export interface SiteSyncSettings {
     site_url: string;
     site_name: string;
     interval_minutes: number;
-    /** v0.1.334 suma `realtime` (avisos del complemento propio). */
-    mode: 'interval';
+    /**
+     * `realtime` (v0.1.334, ADR-S84): el complemento avisa cada cambio y se
+     * revisa todo cada hora. Sin el complemento corre como `interval` (con el
+     * intervalo elegido) y vuelve solo cuando el complemento aparece.
+     */
+    mode: 'interval' | 'realtime';
     write_back: boolean;
     folder_id: number | null;
     /** Recurso (`post:propiedad`) → lo elegido. */
@@ -85,6 +91,18 @@ export interface SiteSyncState {
     last_error: string | null;
     warnings: string[];
     write_back: { pushed: number; failed: number; last_at: string | null; last_error: string | null };
+    /** Lo último que se supo del complemento (se revisa al empezar cada vuelta). */
+    plugin: SitePluginState | null;
+    realtime: { registered: boolean; received: number; last_at: string | null; error: string | null };
+}
+
+export interface SitePluginState {
+    installed: boolean;
+    version: string | null;
+    seo_name: string | null;
+    checked_at: string | null;
+    /** Estuvo y ya no está: desde cuándo. */
+    missing_since: string | null;
 }
 
 function obj(v: unknown): Record<string, unknown> {
@@ -113,6 +131,7 @@ function readColumn(v: unknown): SiteColumnSettings | null {
         source: (SITE_COLUMN_SOURCES as readonly string[]).includes(String(c.source)) ? (c.source as SiteColumnSource) : 'core',
         type: (SITE_COLUMN_TYPES as readonly string[]).includes(String(c.type)) ? (c.type as SiteColumnType) : 'text',
         can_edit: c.can_edit === true,
+        hint: typeof c.hint === 'string' && c.hint !== '' ? c.hint : null,
     };
 }
 
@@ -158,7 +177,7 @@ export function readSiteSettings(raw: unknown): SiteSyncSettings {
         site_url: typeof s.site_url === 'string' ? s.site_url : '',
         site_name: typeof s.site_name === 'string' ? s.site_name : '',
         interval_minutes: Number.isInteger(interval) && interval > 0 ? interval : 60,
-        mode: 'interval',
+        mode: s.mode === 'realtime' ? 'realtime' : 'interval',
         write_back: s.write_back === true,
         folder_id: Number(s.folder_id) > 0 ? Number(s.folder_id) : null,
         objects,
@@ -188,6 +207,8 @@ export function readSiteState(raw: unknown): SiteSyncState {
     const fullAt: SiteSyncState['full_at'] = {};
     for (const [k, v] of Object.entries(obj(s.full_at))) fullAt[k] = strOrNull(v);
     const wb = obj(s.write_back);
+    const pl = obj(s.plugin);
+    const rt = obj(s.realtime);
     return {
         running: s.running === true,
         current: strOrNull(s.current),
@@ -204,6 +225,22 @@ export function readSiteState(raw: unknown): SiteSyncState {
             failed: Number(wb.failed) || 0,
             last_at: strOrNull(wb.last_at),
             last_error: strOrNull(wb.last_error),
+        },
+        plugin:
+            typeof pl.installed === 'boolean'
+                ? {
+                      installed: pl.installed,
+                      version: strOrNull(pl.version),
+                      seo_name: strOrNull(pl.seo_name),
+                      checked_at: strOrNull(pl.checked_at),
+                      missing_since: strOrNull(pl.missing_since),
+                  }
+                : null,
+        realtime: {
+            registered: rt.registered === true,
+            received: Number(rt.received) || 0,
+            last_at: strOrNull(rt.last_at),
+            error: strOrNull(rt.error),
         },
     };
 }

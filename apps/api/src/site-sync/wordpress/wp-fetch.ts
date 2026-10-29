@@ -118,6 +118,11 @@ export async function wpGetPage(creds: IntegrationCreds, route: string, query: A
 /**
  * Escritura (lo editado en la app, un término nuevo). SIN reintentos a
  * ciegas: un POST de un término repetido crearía dos; el que llama decide.
+ * `idempotent` = es una LECTURA por POST (la del complemento, v0.1.334): se
+ * reintenta lo pasajero igual que un GET.
+ *
+ * Toda escritura lleva `X-Imagina-Source: app`: el complemento no avisa de
+ * vuelta lo que cambió la propia app (no hay ecos en el tiempo real).
  */
 export async function wpSend(
     creds: IntegrationCreds,
@@ -125,27 +130,42 @@ export async function wpSend(
     route: string,
     body: Record<string, unknown> | null,
     query: Array<[string, string]> = [],
+    opts: { idempotent?: boolean; timeoutMs?: number } = {},
 ): Promise<unknown> {
     const url = wpUrl(creds, route, query);
     const hide = [creds.secret].filter((s) => s.length >= 4);
-    let res;
-    try {
-        res = await safeWebhookFetch(url, {
-            method,
-            headers: wpHeaders(creds, body !== null),
-            body: body === null ? undefined : JSON.stringify(body),
-            captureBody: true,
-            maxCaptureBytes: MAX_PAGE_BYTES,
-            timeoutMs: 30_000,
-        });
-    } catch (err) {
-        throw new WpApiError(`No pudimos hablar con el sitio: ${redactValues(err instanceof Error ? err.message : String(err), hide)}.`, 0, 'network');
+    const attempts = opts.idempotent ? RETRIES : 0;
+    let lastError = '';
+    let lastStatus = 0;
+    for (let attempt = 0; attempt <= attempts; attempt++) {
+        if (attempt > 0) await sleep(1000 * 3 ** (attempt - 1));
+        let res;
+        try {
+            res = await safeWebhookFetch(url, {
+                method,
+                headers: { ...wpHeaders(creds, body !== null), 'x-imagina-source': 'app' },
+                body: body === null ? undefined : JSON.stringify(body),
+                captureBody: true,
+                maxCaptureBytes: MAX_PAGE_BYTES,
+                timeoutMs: opts.timeoutMs ?? 30_000,
+            });
+        } catch (err) {
+            lastError = redactValues(err instanceof Error ? err.message : String(err), hide);
+            if (!opts.idempotent || /SSRF|no permitido|inválida/.test(lastError)) break;
+            continue;
+        }
+        lastStatus = res.status;
+        const problem = classifyWpResponse(res.status, res.body ?? '', true, 'sync');
+        if (problem?.kind === 'server' && opts.idempotent && attempt < attempts) {
+            lastError = problem.message;
+            continue;
+        }
+        if (problem) throw new WpApiError(problem.message, res.status, problem.kind, wpDetails(res.body ?? ''));
+        try {
+            return JSON.parse(res.body ?? 'null') as unknown;
+        } catch {
+            return null;
+        }
     }
-    const problem = classifyWpResponse(res.status, res.body ?? '', true, 'sync');
-    if (problem) throw new WpApiError(problem.message, res.status, problem.kind, wpDetails(res.body ?? ''));
-    try {
-        return JSON.parse(res.body ?? 'null') as unknown;
-    } catch {
-        return null;
-    }
+    throw new WpApiError(`No pudimos hablar con el sitio: ${lastError || 'sin respuesta'}.`, lastStatus, lastStatus ? 'server' : 'network');
 }

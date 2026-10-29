@@ -1,7 +1,9 @@
 import {
     humanizeSiteKey,
     isScalarSiteValue,
+    isSitePluginColumn,
     suggestSiteValueType,
+    WP_MEDIA_STATUS_OPTIONS,
     WP_POST_STATUS_OPTIONS,
     WP_TERM_STATUS_OPTIONS,
     type SiteColumn,
@@ -85,6 +87,17 @@ export function wpSlug(v: unknown): string {
     }
 }
 
+/**
+ * Los valores que trajo el complemento para este objeto (`seo:…`, `cf:…`,
+ * `plugin:…`), pegados a la fila por el motor antes de mapearla.
+ */
+export const IBC_VALUES = '__ibc';
+
+/** Las opciones de estado según el tipo de objeto. */
+function statusOptionsOf(kind: SiteObjectKind): Array<{ value: string; label: string }> {
+    return kind === 'taxonomy' ? WP_TERM_STATUS_OPTIONS : kind === 'media' ? WP_MEDIA_STATUS_OPTIONS : WP_POST_STATUS_OPTIONS;
+}
+
 /** Una clave de ACF o meta, con su fuente. */
 export function columnPath(key: string): { source: 'acf' | 'meta'; name: string } | null {
     const m = /^(acf|meta):(.+)$/.exec(key);
@@ -100,11 +113,24 @@ export function wpFieldsParam(o: SiteObjectSettings): string {
     const out = new Set<string>(['id', 'modified', 'modified_gmt']);
     const keys = new Set(o.columns.map((c) => c.key));
     // El estado siempre: con él se marca lo que está en la papelera.
-    if (o.kind === 'post_type') out.add('status');
+    if (o.kind === 'post_type' || o.kind === 'media') out.add('status');
     const add = (k: string, ...fields: string[]) => {
         if (keys.has(k)) for (const f of fields) out.add(f);
     };
-    if (o.kind === 'taxonomy') {
+    if (o.kind === 'media') {
+        add('title', 'title');
+        add('alt_text', 'alt_text');
+        add('caption', 'caption');
+        add('description', 'description');
+        add('thumbnail', 'media_details', 'source_url');
+        add('source_url', 'source_url');
+        add('mime_type', 'mime_type');
+        add('dimensions', 'media_details');
+        add('filesize', 'media_details');
+        add('link', 'link');
+        add('date', 'date_gmt');
+        add('author', 'author');
+    } else if (o.kind === 'taxonomy') {
         add('name', 'name');
         add('slug', 'slug');
         add('description', 'description');
@@ -155,6 +181,12 @@ export function coerceSiteValue(v: unknown, type: string): unknown {
             return wpGmt(v) ?? undefined;
         case 'url':
             return /^https?:\/\//i.test(str(v)) ? str(v) : undefined;
+        case 'multi_select': {
+            const list = Array.isArray(v) ? v : str(v).split(',');
+            return list.map((x) => str(x).trim()).filter((x) => x !== '').slice(0, 200);
+        }
+        case 'select':
+            return Array.isArray(v) ? (v.length ? str(v[0]) : null) : str(v) || null;
         default: {
             const text = typeof v === 'object' ? JSON.stringify(v) : str(v);
             return text.slice(0, 8000);
@@ -189,7 +221,11 @@ export function mapWpItem(o: SiteObjectSettings, json: WpJson, siteUrl: string, 
     const id = Number(json.id);
     const values: Record<string, unknown> = {};
     const options: MappedSiteItem['options'] = {};
-    const status = o.kind === 'taxonomy' ? 'publish' : str(json.status) || 'publish';
+    // Un medio no tiene estado propio (`inherit`): está en la biblioteca o en la papelera.
+    const rawStatus = str(json.status);
+    const status = o.kind === 'taxonomy' ? 'publish' : o.kind === 'media' ? (rawStatus === 'trash' ? 'trash' : 'publish') : rawStatus || 'publish';
+    const plugin = obj(json[IBC_VALUES]);
+    const details = obj(json.media_details);
     for (const c of o.columns) {
         switch (c.key) {
             case 'wp_id':
@@ -200,7 +236,7 @@ export function mapWpItem(o: SiteObjectSettings, json: WpJson, siteUrl: string, 
                 break;
             case 'status': {
                 values.status = status;
-                const known = (o.kind === 'taxonomy' ? WP_TERM_STATUS_OPTIONS : WP_POST_STATUS_OPTIONS).find((s) => s.value === status);
+                const known = statusOptionsOf(o.kind).find((s) => s.value === status);
                 // Un estado que agrega un plugin («pedido-en-revisión») se suma como opción.
                 if (!known) options.status = [{ value: status, label: humanizeSiteKey(status) }];
                 break;
@@ -212,8 +248,34 @@ export function mapWpItem(o: SiteObjectSettings, json: WpJson, siteUrl: string, 
                 values.name = decodeEntities(str(json.name));
                 break;
             case 'description':
-                values.description = str(json.description);
+                values.description = o.kind === 'media' ? rawText(json.description) || null : str(json.description);
                 break;
+            case 'alt_text':
+                values.alt_text = str(json.alt_text).trim() || null;
+                break;
+            case 'caption':
+                values.caption = rawText(json.caption).trim() || null;
+                break;
+            case 'thumbnail':
+                values.thumbnail = wpMediaThumb(json);
+                break;
+            case 'source_url':
+                values.source_url = str(json.source_url) || null;
+                break;
+            case 'mime_type':
+                values.mime_type = str(json.mime_type) || null;
+                break;
+            case 'dimensions': {
+                const w = Number(details.width);
+                const h = Number(details.height);
+                values.dimensions = w > 0 && h > 0 ? `${w} × ${h}` : null;
+                break;
+            }
+            case 'filesize': {
+                const bytes = Number(details.filesize);
+                values.filesize = bytes > 0 ? Math.max(1, Math.round(bytes / 1024)) : null;
+                break;
+            }
             case 'excerpt':
                 values.excerpt = rawText(json.excerpt);
                 break;
@@ -262,6 +324,16 @@ export function mapWpItem(o: SiteObjectSettings, json: WpJson, siteUrl: string, 
                     const terms = ids.map((tid) => map.get(tid)).filter((t): t is WpTerm => t !== undefined);
                     values[c.key] = terms.map((t) => t.slug);
                     options[c.key] = terms.map((t) => ({ value: t.slug, label: t.name }));
+                    break;
+                }
+                if (isSitePluginColumn(c.key)) {
+                    // Sin el valor (el complemento no está o no lo mandó) queda lo que había.
+                    if (!(c.key in plugin)) break;
+                    const v = coerceSiteValue(plugin[c.key], c.type);
+                    if (v === undefined) break;
+                    values[c.key] = v;
+                    if (c.type === 'select' && typeof v === 'string' && v !== '') options[c.key] = [{ value: v, label: v }];
+                    if (c.type === 'multi_select' && Array.isArray(v)) options[c.key] = (v as string[]).map((x) => ({ value: x, label: x }));
                     break;
                 }
                 const p = columnPath(c.key);
@@ -332,6 +404,9 @@ export function discoverExtraColumns(rows: WpJson[]): SiteColumn[] {
             hint: scalar ? null : 'Tiene varias partes (una lista o un grupo): se trae como texto y se edita en WordPress.',
             sample: siteSample(value),
             private: name.startsWith('_'),
+            options: null,
+            image: false,
+            provider: key.startsWith('acf:') ? 'acf' : 'meta',
         });
     }
     return out.sort((a, b) => Number(a.private) - Number(b.private) || a.key.localeCompare(b.key));
@@ -363,13 +438,16 @@ export function buildWpWriteBack(
     const col = new Map<string, SiteColumnSettings>(o.columns.map((c) => [c.key, c]));
     for (const [key, value] of Object.entries(changed)) {
         const c = col.get(key);
-        if (!c || !c.can_edit || !editable.has(key)) continue;
+        // Lo del complemento viaja por SU ruta (`ibcWrite`), no por la de WordPress.
+        if (!c || !c.can_edit || !editable.has(key) || isSitePluginColumn(key)) continue;
         const text = value === null || value === undefined ? '' : String(value);
         switch (key) {
             case 'title':
             case 'excerpt':
             case 'name':
             case 'description':
+            case 'alt_text':
+            case 'caption':
                 body[key] = text;
                 break;
             case 'slug':
