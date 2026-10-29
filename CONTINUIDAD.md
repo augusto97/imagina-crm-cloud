@@ -1019,7 +1019,8 @@ el sitio sin complemento), en `main`.
   Drive, dominios) no llevaban el `#` del router. **Lección**: un simulacro que
   no corre la configuración de producción no prueba nada; y el bug estuvo
   desde F5 — cada servidor instalado tiene el mismo problema hasta actualizar.
-  Tests: `postgres-wal.spec` 13/13 con Postgres real, drill ✅/❌, E2E 22/22.
+  Tests: `postgres-wal.spec` 13/13 con Postgres real (API 1790 en verde),
+  drill ✅/❌, E2E 22/22.
 - **2026-10-29 · v0.1.336** — **Lo que la fuente borra sale de la app +
   novedades del sitio** (ADR-S85). Pedido del usuario (aprobado tal como se
   propuso): (1) **quitar de la app** lo que WordPress o WooCommerce ya borró —uno

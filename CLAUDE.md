@@ -10557,8 +10557,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         caían en la lista de listas. Tests: `postgres-wal.spec` (13, con
         Postgres real: el estado roto, el aviso una sola vez, liberar sin
         copiar, la compresión con fecha, la autorreparación, y la
-        configuración nueva del compose con la carpeta de root) — front 692 y
-        shared 587 en verde — + simulacro de PITR con el compose real (✅ y ❌
+        configuración nueva del compose con la carpeta de root) — API 1790,
+        front 692 y shared 587 en verde — + simulacro de PITR con el compose real (✅ y ❌
         con el viejo) + E2E navegador 22/22 (escritorio y celular en oscuro).
 
 ## 6. Cómo trabajar con Claude Code en este repo
