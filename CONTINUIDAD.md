@@ -378,6 +378,25 @@ antes v0.1.335 la auditoría del complemento para WordPress, v0.1.334 el
 complemento, v0.1.333 el sitio sin complemento y v0.1.332 SMS), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **Servidor de producción sin espacio: no instala v0.1.336**
+  (captura de Plataforma → Disco): 927 MB libres de 57,7 GB (el actualizador
+  pide 1 GB). Lo que la app mide de sí misma es ~0,8 GB (versiones 755 MB,
+  copias 16 MB, archivos 2 MB); los **56,1 GB** están en «Base de datos,
+  sistema y otros» = todo lo demás del disco, que el API (usuario `deploy`) no
+  puede medir. Sospecha principal: **WAL de Postgres** en los volúmenes Docker.
+  OJO con el `archive_command`: `test ! -f /wal_archive/%f && cp …` — si un
+  `cp` quedó a medias (disco lleno), ese archivo existe y el archivado falla
+  para siempre → Postgres guarda TODO en `pg_wal` (~4,5 GB/día con
+  `archive_timeout=300`) y la poda (`find -mmin +4320`) nunca corre. Si es eso,
+  con 927 MB Postgres se cae en horas. Se le pidieron comandos de SÓLO
+  LECTURA (`du` del disco y de `/var/lib/docker`, `du` de pgdata/pg_wal/
+  wal_archive dentro del contenedor, `pg_stat_archiver`); **esperando la
+  salida** para darle la limpieza exacta. Si `pg_wal` es lo grande, NO
+  reactivar el archivado tal cual: copiaría 50 GB al mismo disco (el `cp` pone
+  mtime actual → la poda no los borra). Propuesta para después: que la tarjeta
+  Disco mida base/`pg_wal`/archivo/Docker (la conexión base es superusuario:
+  `pg_ls_waldir()`, `pg_stat_archiver`, `pg_database_size`) y que «Liberar
+  espacio» destrabe el archivado sin consola.
 - 2026-10-29 — **Pregunta del usuario sobre el sitio conectado** (después de
   v0.1.335): (a) si el cliente crea en WordPress un campo personalizado o un
   tipo de contenido nuevo, ¿cómo se suma a la app? → YA existe: «Traer otra
