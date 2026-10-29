@@ -385,9 +385,28 @@ login, `/registro` y el origen de cada alta en la consola), en `main`.
   producto» = `https://imagina.cloud/base`; en el sitio, el botón de registro a
   `https://base.imagina.cloud/registro?utm_source=sitio&utm_campaign=<página>`;
   revisar `PUBLIC_BASE_DOMAIN` del `.env` (si es la raíz con un comodín
-  `*.imagina.cloud`, podría chocar). **Ofrecido y pendiente de respuesta**:
-  ayudarle con la estructura de páginas, los textos con palabras clave y las
-  capturas («Café Aurora») del sitio.
+  `*.imagina.cloud`, podría chocar).
+  **Hecho (mismo día, a pedido del usuario): kit de landing para Claude Design.**
+  El usuario lo pasa a Claude Design para diseñar la landing. Los textos viven en
+  el repo en **`docs/landing/`** (prompt para pegar + 7 de seguimiento, textos
+  sección por sección con 13 preguntas frecuentes, SEO con palabras clave /
+  título / meta / JSON-LD / arquitectura y primeras 15 páginas, motion con 15
+  ideas, estudio de 14 competidores, índice de capturas). Las capturas (27
+  escritorio + 6 oscuro + 8 celular), las 18 animaciones de Aprende grabadas
+  cuadro por cuadro y 8 clips de la app en uso NO están en el repo (pesan
+  ~37 MB): se armaron con la empresa de ejemplo «Distribuidora Andina» (tenant
+  de desarrollo, laura@andina.test) y se le entregaron en un .zip + una página
+  de revisión (artifact privado). **Pendientes del usuario** marcados
+  [CONFIRMAR] en los textos: si el plan «Trial» queda gratis sin vencimiento
+  (hoy no vence), precios reales de Starter/Pro, medios de pago activos, IA de
+  la plataforma activa, canal de soporte y si ofrece migración. **Riesgo
+  detectado**: imagina.cloud respondió 403 a un cliente automático (Cloudflare):
+  revisar que no bloquee a Googlebot / OAI-SearchBot / PerplexityBot. Ideas
+  que salieron del estudio y quedan para cuando las pida: que `/registro`
+  acepte `?plantilla=crm` (la página de cada plantilla abre la app con esa
+  plantilla), publicar el manual «Aprende» y las 39 ideas como páginas del
+  sitio, e insignia «Hecho con Imagina Base» en formularios/agendas públicas
+  de planes sin marca blanca.
 - 2026-10-28 — **Un cliente con la sincronización SQL que falla y se arregla
   sola** («Failed to connect to sqlserver-erpbinapps.database.windows.net:1433
   in 15000ms», 3 veces en 3 días, cada una resuelta sola en la corrida
