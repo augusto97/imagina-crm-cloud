@@ -47,6 +47,8 @@ import {
     bookingPages,
     whatsappContacts,
     whatsappHooks,
+    smsHooks,
+    smsMessages,
     whatsappTemplates,
     aiAgentLists,
     aiAgentProposals,
@@ -424,6 +426,10 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await pg.db.insert(whatsappHooks).values({ token: `wa-a-borrar-${id}-0123456789`, tenantId: id, connectionId: wa!.id, verifyToken: 'v' });
         await pg.db.insert(whatsappTemplates).values({ tenantId: id, connectionId: wa!.id, metaId: '1', name: 'aviso', language: 'es', category: 'UTILITY', status: 'APPROVED' });
         await pg.db.insert(whatsappContacts).values({ tenantId: id, connectionId: wa!.id, phone: '573001112233', lastOutboundListId: list!.id, lastOutboundRecordId: record!.id });
+        // SMS (ADR-S82): conexión, URL de avisos y un envío del registro.
+        const [smsConn] = await pg.db.insert(connections).values({ tenantId: id, name: 'SMS', provider: 'sms_twilio', createdBy: owner!.id }).returning();
+        await pg.db.insert(smsHooks).values({ token: `sms-a-borrar-${id}-0123456789`, tenantId: id, connectionId: smsConn!.id });
+        await pg.db.insert(smsMessages).values({ tenantId: id, connectionId: smsConn!.id, provider: 'sms_twilio', listId: list!.id, recordId: record!.id, source: 'manual', toPhone: '+573001112233', segments: 1, encoding: 'gsm7', status: 'enviado', reference: `sdel${id}` });
         await pg.db.insert(templates).values({ tenantId: id, name: 'Plantilla', blueprint: {} });
         const [comment] = await pg.db
             .insert(comments)
@@ -532,6 +538,8 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(await pg.db.select().from(whatsappHooks).where(eq(whatsappHooks.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(whatsappTemplates).where(eq(whatsappTemplates.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(whatsappContacts).where(eq(whatsappContacts.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(smsHooks).where(eq(smsHooks.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(smsMessages).where(eq(smsMessages.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(templates).where(eq(templates.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(listGroups).where(eq(listGroups.tenantId, id))).toHaveLength(0);
         expect(await pg.db.select().from(mentions).where(eq(mentions.tenantId, id))).toHaveLength(0);

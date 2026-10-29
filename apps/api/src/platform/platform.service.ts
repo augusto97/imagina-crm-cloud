@@ -104,6 +104,8 @@ import {
     collectionHooks,
     whatsappContacts,
     whatsappHooks,
+    smsHooks,
+    smsMessages,
     whatsappTemplates,
     syncLinks,
     bulkEditItems,
@@ -407,6 +409,9 @@ export class PlatformService {
             await tx.delete(whatsappContacts).where(eq(whatsappContacts.tenantId, id));
             await tx.delete(whatsappTemplates).where(eq(whatsappTemplates.tenantId, id));
             await tx.delete(whatsappHooks).where(eq(whatsappHooks.tenantId, id));
+            // SMS (ADR-S82) — los envíos y su URL de avisos (antes que registros y conexiones).
+            await tx.delete(smsMessages).where(eq(smsMessages.tenantId, id));
+            await tx.delete(smsHooks).where(eq(smsHooks.tenantId, id));
             await tx.delete(bulkEditItems).where(eq(bulkEditItems.tenantId, id));
             await tx.delete(bulkEdits).where(eq(bulkEdits.tenantId, id));
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));

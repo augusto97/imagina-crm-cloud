@@ -37,6 +37,7 @@ const CONNECTIONS = [
     { id: 13, integration_key: 'mercadopago', name: 'Mercado Pago' },
     { id: 14, integration_key: 'google_sheets', name: 'Google' },
     { id: 15, integration_key: 'google_calendar', name: 'Google' },
+    { id: 16, integration_key: 'sms_twilio', name: 'Twilio (SMS)' },
 ];
 
 function envFor(roles: string[]): AnswerEnv {
@@ -171,6 +172,7 @@ describe('activar una idea', () => {
         });
         expect(expandMessages(base, { 11: 'telegram' }, problems)[0]!.config).toMatchObject({ action_key: 'send_message', values: { chat_id: '{{tel}}', text: 'hola' } });
         expect(expandMessages(base, { 11: 'slack' }, problems)[0]!.config).toMatchObject({ values: { channel: '{{tel}}' } });
+        expect(expandMessages(base, { 11: 'sms_onurix' }, problems)[0]!.config).toMatchObject({ action_key: 'send_sms', values: { to: '{{tel}}', message: 'hola' } });
         expect(problems).toEqual([]);
         expandMessages(base, { 11: 'mercadopago' }, problems);
         expect(problems).toHaveLength(1);

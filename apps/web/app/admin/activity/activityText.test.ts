@@ -186,4 +186,13 @@ describe('D3 — WhatsApp en la actividad', () => {
         expect(actionText(text, 0)).toBe('envió un mensaje por WhatsApp');
         expect(changesOf(sent, FIELDS)).toEqual([]);
     });
+
+    it('SMS: el destino enmascarado y los segmentos, nunca el texto; programado y fallido con su motivo', () => {
+        const sms = (changes: Record<string, unknown>): ActivityEntity => entry({ action: 'sms' as ActivityEntity['action'], user_id: 2, user_name: 'Ana', changes: { sms: changes } });
+        expect(actionText(sms({ event: 'sent', phone: '+57 300…', segments: 2, connection: 'Twilio', provider: 'sms_twilio' }), 0)).toBe('envió un SMS a +57 300…, 2 segmentos');
+        expect(actionText(sms({ event: 'sent', phone: '+57 300…', segments: 1 }), 0)).toBe('envió un SMS a +57 300…, 1 segmento');
+        expect(actionText(sms({ event: 'failed', phone: '+57 300…', segments: 1, error: 'El número no es válido.' }), 0)).toBe('no pudo enviar un SMS a +57 300…: El número no es válido.');
+        expect(actionText(sms({ event: 'scheduled', phone: '+57 300…', segments: 1, scheduled_for: '2026-11-03T12:00:00.000Z' }), 0)).toMatch(/^programó un SMS a \+57 300… para .+ \(horario de la Ley 2300\)$/);
+        expect(changesOf(sms({ event: 'sent', phone: '+57 300…', segments: 1 }), FIELDS)).toEqual([]);
+    });
 });

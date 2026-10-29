@@ -19,6 +19,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
+    SMS_PROVIDER_KEYS,
     TENANT_TRANSFER_FORMAT,
     remapFormulaConfig,
     readTemplateContent,
@@ -2102,6 +2103,17 @@ export class TenantTransferService {
         if (Number(whatsapp?.n ?? 0) > 0) {
             warnings.push(
                 'WhatsApp Business (oficial): la conexión viajó sin el token ni la clave secreta de la app. En Integraciones toca «Actualizar clave» y pégalos de nuevo; después abre «WhatsApp» y pega en Meta la URL de avisos y el token de verificación nuevos (los anteriores apuntan al servidor de origen).',
+            );
+        }
+        // SMS (ADR-S82): la conexión viaja; el historial de envíos no (los avisos
+        // de entrega llegan a la URL del servidor de origen) y la URL es nueva.
+        const [smsConns] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(connections)
+            .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, [...SMS_PROVIDER_KEYS])));
+        if (Number(smsConns?.n ?? 0) > 0) {
+            warnings.push(
+                'SMS: las conexiones viajaron, pero el historial de envíos no (tampoco los SMS programados que no habían salido). Si usas BulkGate, pega en su portal la URL de avisos nueva (la ves en Integraciones → SMS); Twilio, Infobip y LabsMobile la reciben solas con cada envío.',
             );
         }
         if (Number(collections?.n ?? 0) > 0) {

@@ -78,6 +78,12 @@ export const MESSAGE_APPS: Record<string, { action: string; to: string; text: st
     whatsapp_cloud: { action: 'send_text', to: 'to', text: 'text', label: 'WhatsApp oficial' },
     telegram: { action: 'send_message', to: 'chat_id', text: 'text', label: 'Telegram' },
     slack: { action: 'send_message', to: 'channel', text: 'text', label: 'Slack' },
+    // SMS (ADR-S82): la misma acción en los cinco proveedores.
+    sms_twilio: { action: 'send_sms', to: 'to', text: 'message', label: 'SMS' },
+    sms_bulkgate: { action: 'send_sms', to: 'to', text: 'message', label: 'SMS' },
+    sms_infobip: { action: 'send_sms', to: 'to', text: 'message', label: 'SMS' },
+    sms_labsmobile: { action: 'send_sms', to: 'to', text: 'message', label: 'SMS' },
+    sms_onurix: { action: 'send_sms', to: 'to', text: 'message', label: 'SMS' },
 };
 
 /** Paso 2: `$message` → `connector_action` según la app de la conexión. */

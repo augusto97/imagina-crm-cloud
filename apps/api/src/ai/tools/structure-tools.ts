@@ -114,6 +114,7 @@ import { z } from 'zod';
 import { DocumentsService } from '../../documents/documents.service';
 import { ConnectorsService } from '../../connectors/connectors.service';
 import { assertWhatsappTemplateAction, whatsappSchema } from './whatsapp-ai';
+import { smsSchema } from './sms-ai';
 import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
 import { AutomationsService } from '../../automations/automations.service';
@@ -580,7 +581,7 @@ const automationSpec = z.object({
                 'create_record {target_list: slug, values: {slug: valor}, template_id? (id de una plantilla de registro de la lista destino: el registro nace con sus valores, subtareas y checklists; values pisa la plantilla)} | ' +
                 'create_subtasks_from_template {template_id (id de una de las `record_templates` de get_list_schema), include_checklists?: true} — crea las subtareas de esa plantilla (y, si se pide, sus checklists) DEBAJO del registro que disparó la automatización | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
-                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla) | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla). SMS (apps sms_twilio, sms_bulkgate, sms_infobip, sms_labsmobile, sms_onurix; ver `sms` en get_list_schema): send_sms {to: "{{telefono}}", message, sender?, strip_accents?, respect_hours?} — respect_hours:true para cobros o mensajes comerciales (Ley 2300 en Colombia) | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
@@ -1363,6 +1364,8 @@ export class StructureTools implements AiProposalApplier {
                 record_templates: recordTpls.map((t) => templateForModel(t, fields)),
                 // D3 — WhatsApp oficial: números y plantillas APROBADAS (sin credenciales).
                 whatsapp: await whatsappSchema(this.tenantDb, ctx.tenantId, connections, settings, fields).catch(() => null),
+                // SMS (ADR-S82): conexiones (sin credenciales) y columnas del último envío.
+                sms: smsSchema(connections, settings, fields),
                 // D2/E5 — mesa de ayuda: buzón de soporte (sin secretos) y política de SLA.
                 helpdesk: describeHelpdeskForModel(settings, fieldById),
                 connectors: connections

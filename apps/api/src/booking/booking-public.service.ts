@@ -12,6 +12,7 @@ import {
     type OnModuleInit,
 } from '@nestjs/common';
 import {
+    bookingMergeValue,
     bookingPriceLabel,
     brandingSchema,
     buildPublicFormItems,
@@ -60,6 +61,8 @@ import { CaptchaService } from '../forms/captcha.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
+import { SmsService } from '../sms/sms.service';
+import { ModuleRef } from '@nestjs/core';
 import { NotifyHub } from '../notifications/notify-hub';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -162,7 +165,29 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         @Optional() private readonly captcha?: CaptchaService,
         @Optional() private readonly mail?: MailService,
         @Optional() private readonly dataConsent?: DataConsentService,
+        @Optional() private readonly moduleRef?: ModuleRef,
     ) {}
+
+    /**
+     * SMS (ADR-S82) — se resuelve al usarlo (su módulo depende de registros y
+     * campos, igual que la agenda). Sin él, los recordatorios salen sólo por correo.
+     */
+    private smsSvc: SmsService | null | undefined;
+    private sms(): SmsService | null {
+        if (this.smsSvc === undefined) {
+            try {
+                this.smsSvc = this.moduleRef?.get(SmsService, { strict: false }) ?? null;
+            } catch {
+                this.smsSvc = null;
+            }
+        }
+        return this.smsSvc;
+    }
+
+    /** Para los specs que arman el servicio a mano. */
+    setSms(svc: SmsService | null): void {
+        this.smsSvc = svc;
+    }
 
     onModuleInit(): void {
         // Cambios del EQUIPO sobre una cita (la ficha, la tabla, el calendario):
@@ -1175,6 +1200,65 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     ? `que empieza en ${hours} horas`
                     : `del ${formatBookingWhen(appt.startAt.toISOString(), appt.clientTz ?? p.timeZone, p.format.time_format, { year: false })}`;
         return this.sendClientMail(p, appt, 'reminder', { base, names, reminderLead: lead });
+    }
+
+    /** ¿La página manda los recordatorios también por SMS? */
+    smsRemindersOn(config: BookingConfig): boolean {
+        const s = config.notifications.sms_reminders;
+        return s.enabled && s.connection_id !== null && config.mapping.phone_field_id !== null;
+    }
+
+    /**
+     * SMS (ADR-S82) — el recordatorio por SMS: al teléfono del registro de la
+     * cita, con el texto de la página (`{{cita.*}}` en la zona del cliente). Es
+     * un aviso de servicio, no comercial: sale a su hora (no espera la franja
+     * de la Ley 2300). Si no sale, la agenda abre un Problema con el motivo.
+     */
+    async sendSmsReminder(appt: BookingAppointmentRow): Promise<boolean> {
+        const p = await this.resolveById(appt.pageId);
+        if (!p || p.readOnly || !this.smsRemindersOn(p.config)) return false;
+        const cfg = p.config.notifications.sms_reminders;
+        const sms = this.sms();
+        if (!sms) return false;
+        const phoneId = p.config.mapping.phone_field_id!;
+        const [rec] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .select({ data: records.data })
+                .from(records)
+                .where(and(eq(records.tenantId, p.tenantId), eq(records.id, appt.recordId), isNull(records.deletedAt)))
+                .limit(1),
+        );
+        const phone = rec ? (rec.data as Record<string, unknown>)[jsonbKeyForField(phoneId)] : null;
+        if (typeof phone !== 'string' || phone.trim() === '') return false;
+        const base = await this.base(p.tenantId);
+        const names = await this.staffNames(p.config);
+        const info = { ...this.eventInfo(p, appt, 'booked', 'client', base, names, null), time_zone: appt.clientTz ?? p.timeZone };
+        const text = cfg.text.replace(/\{\{\s*cita\.([a-z_]+)\s*\}\}/g, (_m, key: string) => bookingMergeValue(info, key, p.format.time_format));
+        const res = await sms.sendNow(p.tenantId, {
+            connectionId: cfg.connection_id!,
+            to: phone,
+            message: text,
+            stripAccents: cfg.strip_accents,
+            respectHours: false,
+            source: 'booking',
+            target: { listId: p.listId, recordId: appt.recordId, userId: null },
+        });
+        const key = `booking:${p.pageId}:sms`;
+        if (res.ok) {
+            this.incidents?.resolve(p.tenantId, key);
+            return true;
+        }
+        this.incidents?.report({
+            tenantId: p.tenantId,
+            key,
+            source: 'booking',
+            sourceId: p.pageId,
+            listId: p.listId,
+            ownerId: p.createdBy,
+            title: `La agenda «${p.row.name}» no pudo mandar un recordatorio por SMS`,
+            message: `El recordatorio de una cita no salió: ${res.error ?? 'el proveedor no lo aceptó.'} Revisa la conexión de SMS en Integraciones o el teléfono del cliente.`,
+        });
+        return false;
     }
 
     // ─────────────────────────── Cambios del equipo ───────────────────────────

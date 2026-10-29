@@ -40,6 +40,10 @@ export const ACTIVITY_ACTIONS = [
     // template?, language?, connection}. NUNCA el texto: la conversación vive
     // en WhatsApp; en el registro queda sólo el último mensaje.
     'whatsapp',
+    // v0.1.332 — SMS. `diff.sms` = {event: sent | scheduled | failed, phone
+    // (enmascarado: «+57 300…»), segments, connection, provider}. NUNCA el
+    // texto, con el mismo criterio que WhatsApp.
+    'sms',
     // E6 — lo que hizo un agente de IA que no es un cambio de campos (una nota,
     // una propuesta, un correo). `diff.agent` = {event, agent_id, agent_name, …}.
     'ai_agent',

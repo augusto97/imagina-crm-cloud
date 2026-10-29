@@ -28,6 +28,7 @@ import {
     flowNodeAt,
     flowPathKey,
     formatEmailFieldValue,
+    isSmsProvider,
     jsonbKeyForField,
     parseFlowPath,
     readApprovalFlowId,
@@ -89,6 +90,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { BOOKING_SIMULATOR, type BookingSimulator } from '../booking/booking-simulator';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { SmsService } from '../sms/sms.service';
 import { HelpdeskReplyService } from '../helpdesk/helpdesk-reply.service';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
@@ -496,6 +498,24 @@ export class AutomationEngine {
     /** Para los specs que arman el motor a mano. */
     setWhatsapp(svc: WhatsappService | null): void {
         this.whatsappSvc = svc;
+    }
+
+    /** SMS (ADR-S82) — mismo criterio que WhatsApp: se resuelve al usarlo. */
+    private smsSvc: SmsService | null | undefined;
+    private sms(): SmsService | null {
+        if (this.smsSvc === undefined) {
+            try {
+                this.smsSvc = this.moduleRef?.get(SmsService, { strict: false }) ?? null;
+            } catch {
+                this.smsSvc = null;
+            }
+        }
+        return this.smsSvc;
+    }
+
+    /** Para los specs que arman el motor a mano. */
+    setSms(svc: SmsService | null): void {
+        this.smsSvc = svc;
     }
 
     /** C6 — plantillas de registro (se resuelve al usarlo, igual que RecordsService). */
@@ -3128,6 +3148,28 @@ export class AutomationEngine {
                     if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
                     if (out.status === 'failed') return fail('connector_action', out.message, { integration: 'whatsapp_cloud', ...out.details });
                     return ok('connector_action', out.message, { action: resolved.action.key, integration: 'whatsapp_cloud', ...out.details });
+                }
+                // SMS (ADR-S82): la petición la arma el proveedor, el envío queda
+                // en `sms_messages` (estado de entrega) y, con «Respetar el
+                // horario», fuera de la franja de la Ley 2300 queda programado.
+                if (resolved.integration && isSmsProvider(resolved.integration.key)) {
+                    const sms = this.sms();
+                    if (!sms) throw new Error('El envío de SMS no está disponible en este servidor.');
+                    const out = await sms.runAutomationAction(tx, {
+                        tenantId: ctx.tenantId,
+                        listId: ctx.listId,
+                        recordId: ctx.recordId,
+                        connectionId: connId,
+                        automationId: ctx.automation?.id ?? null,
+                        values,
+                        merge: (raw) => merge(raw),
+                        realCall,
+                    });
+                    const integKey = resolved.integration.key;
+                    if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
+                    if (out.status === 'failed') return fail('connector_action', out.message, { integration: integKey, ...out.details });
+                    if (out.status === 'skipped') return skip('connector_action', out.message);
+                    return ok('connector_action', out.message, { action: resolved.action.key, integration: integKey, ...out.details });
                 }
                 if (resolved.integration) {
                     const integ = resolved.integration;

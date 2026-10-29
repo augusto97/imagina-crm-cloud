@@ -372,11 +372,31 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.331**
-(la app lista para la landing: no se indexa, enlace al sitio del producto en el
-login, `/registro` y el origen de cada alta en la consola), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.332**
+(SMS con la cuenta de cada empresa: Twilio, BulkGate, Infobip, LabsMobile y
+Onurix), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- SMS (v0.1.332): verificado sólo contra dobles. Con la primera cuenta real de
+  cada proveedor, revisar los SUPUESTOS de ADR-S82 (BulkGate sin `country`,
+  LabsMobile `long`/`credits`/valores de `status`, Infobip saldo, Onurix `id` y
+  estados). La URL de avisos de BulkGate hay que pegarla en su portal.
+- 2026-10-29 — **Dos integraciones nuevas pedidas por el usuario: SMS y
+  WordPress.** (1) SMS con proveedores económicos + Twilio (lo usan muchas
+  plataformas) + BulkGate. (2) Conectar sitios WordPress «como WooCommerce»:
+  traer páginas, entradas, CPT, categorías y meta/ACF, y editar campos elegidos
+  —sobre todo el SEO de Rank Math—, SIN traer el contenido completo, y pudiendo
+  traer sólo un CPT con ciertos campos. Se le mandó una propuesta (SMS: catálogo
+  por clave + acción «Enviar SMS» + contador de segmentos/tildes + estado de
+  entrega + horario de la Ley 2300; WordPress: conexión de un clic con
+  «Autorizar aplicación» del propio WordPress, asistente que elige tipo de
+  contenido y columnas, el motor de sincronización de la tienda generalizado, y
+  un complemento propio porque Rank Math no expone sus campos por REST). **Respuesta del
+  usuario**: «hazlo todo como recomiendas» salvo **crear páginas o entradas
+  desde la app** (lo nuevo se crea en WordPress; se mira si un cliente lo pide).
+  Plan: v0.1.332 SMS (publicada), v0.1.333 WordPress sin complemento, v0.1.334
+  el complemento «Imagina Base Connector». El vencimiento de la
+  prueba de 15 días quedó **para después** (lo dijo el usuario).
 - 2026-10-29 — **Landing para SEO** (ADR-S81). Decidido con el usuario: NO un
   home dentro de la app (SPA, white-label, releases) ni imaginawp.com; un sitio
   propio en WordPress en **`imagina.cloud/base`** (imagina.cloud = marca paraguas
@@ -385,9 +405,41 @@ login, `/registro` y el origen de cada alta en la consola), en `main`.
   producto» = `https://imagina.cloud/base`; en el sitio, el botón de registro a
   `https://base.imagina.cloud/registro?utm_source=sitio&utm_campaign=<página>`;
   revisar `PUBLIC_BASE_DOMAIN` del `.env` (si es la raíz con un comodín
-  `*.imagina.cloud`, podría chocar). **Ofrecido y pendiente de respuesta**:
-  ayudarle con la estructura de páginas, los textos con palabras clave y las
-  capturas («Café Aurora») del sitio.
+  `*.imagina.cloud`, podría chocar).
+  **Hecho (mismo día, a pedido del usuario): kit de landing para Claude Design.**
+  El usuario lo pasa a Claude Design para diseñar la landing. Los textos viven en
+  el repo en **`docs/landing/`** (prompt para pegar + 7 de seguimiento, textos
+  sección por sección con 13 preguntas frecuentes, SEO con palabras clave /
+  título / meta / JSON-LD / arquitectura y primeras 15 páginas, motion con 15
+  ideas, estudio de 14 competidores, índice de capturas). Las capturas (27
+  escritorio + 6 oscuro + 8 celular), las 18 animaciones de Aprende grabadas
+  cuadro por cuadro y 8 clips de la app en uso NO están en el repo (pesan
+  ~37 MB): se armaron con la empresa de ejemplo «Distribuidora Andina» (tenant
+  de desarrollo, laura@andina.test) y se le entregaron en un .zip + una página
+  de revisión (artifact privado). **Decisiones del usuario (mismo día), ya en los
+  textos**: prueba gratis de **15 días** sin tarjeta; precios Starter $59.000 /
+  Pro $199.000 COP al mes por empresa (los va a cambiar él); **asistente IA y
+  soporte en español SOLO en los planes de pago**; el importador de Excel (casi
+  automático) es el camino principal de «Cómo empiezas»; imagina.cloud es un
+  WordPress recién instalado **cerrado a los buscadores a propósito** (sin
+  contenido; el 403 que se vio era eso, no un riesgo) — checklist del día de
+  lanzamiento en `docs/landing/03-SEO.md` §6; WordPress está en la raíz, así que
+  /base/ es una página madre del mismo sitio. Quedan [CONFIRMAR]: medios de pago
+  activos y redes sociales. **Ojo, dos cosas de la APP que no coinciden con lo
+  decidido** (avisadas al usuario, esperan su respuesta): (1) **la app no hace
+  vencer la prueba a los 15 días** — `isEffectivelyReadOnly` sólo mira
+  status/archived_at/subscription_ends_at/paid_until y el alta no fija ninguno;
+  propuesta: días de prueba configurables por plan (default 15), avisos antes de
+  vencer y solo-lectura + export al vencer (ADR-S09) hasta pagar; (2) la semilla
+  del plan Trial trae 20 pedidos de IA/mes: para «IA sólo en pago» hay que
+  ponerlo en 0 en Plataforma → Planes, y entonces «Cuéntanos de tu negocio» de
+  la bienvenida queda deshabilitada durante la prueba (plantillas y Excel
+  siguen). Ideas
+  que salieron del estudio y quedan para cuando las pida: que `/registro`
+  acepte `?plantilla=crm` (la página de cada plantilla abre la app con esa
+  plantilla), publicar el manual «Aprende» y las 39 ideas como páginas del
+  sitio, e insignia «Hecho con Imagina Base» en formularios/agendas públicas
+  de planes sin marca blanca.
 - 2026-10-28 — **Un cliente con la sincronización SQL que falla y se arregla
   sola** («Failed to connect to sqlserver-erpbinapps.database.windows.net:1433
   in 15000ms», 3 veces en 3 días, cada una resuelta sola en la corrida
@@ -851,6 +903,25 @@ login, `/registro` y el origen de cada alta en la consola), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-29 · v0.1.332** — **SMS con la cuenta de cada empresa**
+  (ADR-S82). Cinco proveedores por clave en Integraciones → «Mensajes de texto
+  (SMS)»: Twilio, BulkGate, Infobip, LabsMobile y Onurix (para otro, «API
+  personalizada»). La clave se verifica antes de guardarse y queda cifrada.
+  (1) Contador de SMS compartido (GSM-7 160/153, UCS-2 70/67) con «Quitar
+  tildes», la misma función que el envío. (2) Acción «Enviar SMS» en las
+  automatizaciones, con «Respetar el horario… (Ley 2300 de 2023)» (lun-vie
+  7-19, sáb 8-15, sin domingos ni festivos, zona de la empresa → si no, queda
+  programado), «Probar ahora» (no envía) y «Enviarme una prueba». (3) «Enviar
+  SMS» en la ficha y a una selección (hasta 500, con revisión y resultado por
+  fila). (4) Recordatorios de citas por SMS en la agenda. (5) Estado de
+  entrega en `sms_messages` (migración 0094) que nunca retrocede: avisos de
+  Twilio firmados, de los demás por un token de la conexión, Onurix por
+  consulta; columnas «Último SMS» / «Estado del último SMS»; la actividad anota
+  el hecho sin el texto. (6) Problemas por credencial, asistente/MCP, migrar y
+  borrar empresa, ideas, guía, Aprende y novedad. Tests: shared 14, API 14 +
+  agenda + borrado, front 3 + E2E navegador 79/79. Queda: probar con cuentas
+  reales de cada proveedor (los supuestos de API están en el ADR).
 
 - **2026-10-29 · v0.1.331** — **La app lista para la landing** (ADR-S81). El
   usuario preguntó si hacerle un home a la app o una landing aparte para SEO;

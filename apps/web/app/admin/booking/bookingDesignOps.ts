@@ -313,6 +313,15 @@ export function sectionProblems(config: BookingConfig, fields: readonly FieldLik
     if (m.start_field_id === null || typeOf.get(m.start_field_id) !== 'datetime') push('campos', 'Elige el campo de fecha y hora del inicio.');
     if (staff.some((s) => s.kind === 'user') && m.person_field_id === null) push('campos', 'Elige el campo Persona de quién atiende.');
     if (staff.some((s) => s.kind === 'resource') && m.resource_field_id === null) push('campos', 'Elige el campo del recurso.');
+    // SMS (ADR-S82): los recordatorios por SMS necesitan conexión, teléfono, momentos y texto.
+    const sms = config.notifications.sms_reminders;
+    if (sms.enabled) {
+        if (sms.connection_id === null) push('correos', 'Elige la conexión de SMS de los recordatorios.');
+        if (m.phone_field_id === null) push('campos', 'Elige el campo del teléfono del cliente (para los recordatorios por SMS).');
+        if (config.settings.ask_phone === 'hidden') push('campos', 'La página no pide el teléfono: pídelo para mandar los recordatorios por SMS.');
+        if (config.notifications.reminders.length === 0) push('correos', 'Agrega al menos un recordatorio para mandarlo por SMS.');
+        if (sms.text.trim() === '') push('correos', 'Escribe el texto del recordatorio por SMS.');
+    }
     return out;
 }
 

@@ -61,7 +61,11 @@ start_api() {
             FILES_SIGNING_SECRET=firma-dev-para-archivos \
             MERCADOPAGO_API_URL=http://127.0.0.1:4898/mp \
             WOMPI_API_URL=http://127.0.0.1:4898/wompi \
-            WOMPI_CHECKOUT_URL=http://127.0.0.1:4898/wompi-pay/
+            WOMPI_CHECKOUT_URL=http://127.0.0.1:4898/wompi-pay/ \
+            SMS_TWILIO_API_URL=http://127.0.0.1:4897/twilio \
+            SMS_BULKGATE_API_URL=http://127.0.0.1:4897/bulkgate \
+            SMS_LABSMOBILE_API_URL=http://127.0.0.1:4897/labsmobile \
+            SMS_ONURIX_API_URL=http://127.0.0.1:4897/onurix
         # .env trae PORT/DATABASE_URL/REDIS_URL del entorno principal: se pisan.
         export PORT=$API_PORT \
             DATABASE_URL="postgres://imagina:imagina@localhost:5432/$DB" \

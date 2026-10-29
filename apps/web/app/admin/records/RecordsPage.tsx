@@ -50,6 +50,7 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { useBulkButtons } from './buttons/ButtonFieldControl';
+import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
 import { StoreListBanner } from './StoreListBanner';
 import { SampleDataBanner } from '@/admin/onboarding/SampleDataBanner';
@@ -126,6 +127,7 @@ const BulkStructureDialog = lazyWithReload(() => import('./bulk/BulkStructureDia
 const CsvUpdateDialog = lazyWithReload(() => import('./bulk/CsvUpdateDialog').then((m) => ({ default: m.CsvUpdateDialog })));
 const StoreBulkDialog = lazyWithReload(() => import('./bulk/StoreBulkDialog').then((m) => ({ default: m.StoreBulkDialog })));
 const ButtonBulkDialog = lazyWithReload(() => import('./buttons/ButtonBulkDialog').then((m) => ({ default: m.ButtonBulkDialog })));
+const BulkSmsDialog = lazyWithReload(() => import('./bulk/BulkSmsDialog').then((m) => ({ default: m.BulkSmsDialog })));
 const StoreVariationsDialog = lazyWithReload(() => import('./bulk/StoreVariationsDialog').then((m) => ({ default: m.StoreVariationsDialog })));
 const ImportDialog = lazyWithReload(() => import('./ImportDialog').then((m) => ({ default: m.ImportDialog })));
 const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ default: m.ShareDialog })));
@@ -453,6 +455,9 @@ export function RecordsPage(): JSX.Element {
     // Campo «Botón»: presionarlo sobre la selección (en tandas, fila por fila).
     const bulkButtons = useBulkButtons(fields.data);
     const [bulkButtonId, setBulkButtonId] = useState<number | null>(null);
+    // SMS (ADR-S82): mandar a la selección (sólo con una conexión de SMS y poder editar).
+    const smsConnections = useSmsConnections((canEditAny || canEditOwn) && !guest.isGuest);
+    const [bulkSmsOpen, setBulkSmsOpen] = useState(false);
     // El registro abierto en el modal vive en la URL (`?record=<id>`): la
     // lista queda debajo, atrás (o el gesto de Android) cierra el modal,
     // recargar lo vuelve a abrir y el enlace se puede compartir.
@@ -1526,6 +1531,18 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </Suspense>
             )}
 
+            {list.data && bulkSmsOpen && smsConnections.length > 0 && selectedIds.length > 0 && (
+                <Suspense fallback={null}>
+                    <BulkSmsDialog
+                        listId={list.data.id}
+                        ids={selectedIds}
+                        connections={smsConnections}
+                        onClose={() => setBulkSmsOpen(false)}
+                        onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
+            )}
+
             {list.data && bulkButtonId !== null && fields.data?.some((f) => f.id === bulkButtonId) && (
                 <Suspense fallback={null}>
                     <ButtonBulkDialog
@@ -1811,6 +1828,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onStructure={structureActions}
                         pressButtons={bulkButtons.map((b) => ({ id: b.field.id, label: b.label, reason: b.reason }))}
                         onPressButton={setBulkButtonId}
+                        onSendSms={smsConnections.length > 0 ? () => setBulkSmsOpen(true) : undefined}
                         onAssign={
                             assignField
                                 ? () => {

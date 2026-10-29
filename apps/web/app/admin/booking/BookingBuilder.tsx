@@ -55,6 +55,8 @@ import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section, Segmented } from '../automations/email/EmailBlockInspector';
 import { useCaptchaAvailability, useDataConsentAvailability } from '../forms/useForms';
+import { SmsCounter } from '@/cloud/components/sms/smsUi';
+import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { extractFieldOptions } from '../records/fieldOptions';
 import {
     addQuestion,
@@ -1213,6 +1215,7 @@ function EmailsEditor({ config, onChange, captchaAvailable, consentActive }: Sec
                 )}
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('Cada recordatorio sale una sola vez por cita. Si la cita se mueve, se vuelven a programar.')}</p>
             </Section>
+            <SmsRemindersEditor config={config} onChange={onChange} />
             <Check
                 label={__('Avisarle al cliente si el equipo mueve o cancela su cita')}
                 checked={n.notify_client_on_team_change}
@@ -1238,6 +1241,86 @@ function EmailsEditor({ config, onChange, captchaAvailable, consentActive }: Sec
                 )}
             </Section>
         </div>
+    );
+}
+
+const SMS_REMINDER_TAGS: Array<{ tag: string; label: string }> = [
+    { tag: 'cita.cliente', label: 'Cliente' },
+    { tag: 'cita.servicio', label: 'Servicio' },
+    { tag: 'cita.inicio', label: 'Fecha y hora' },
+    { tag: 'cita.hora', label: 'Hora' },
+    { tag: 'cita.persona', label: 'Quién atiende' },
+    { tag: 'cita.enlace_reprogramar', label: 'Enlace para cambiarla' },
+    { tag: 'cita.enlace_cancelar', label: 'Enlace para cancelar' },
+];
+
+/**
+ * SMS (ADR-S82) — los recordatorios también por SMS: los MISMOS momentos de
+ * arriba, al teléfono que dejó el cliente, con la conexión de SMS de la
+ * empresa. El texto lleva `{{cita.*}}` y el contador de SMS.
+ */
+function SmsRemindersEditor({ config, onChange }: Pick<SectionEditorProps, 'config' | 'onChange'>): JSX.Element {
+    const sms = config.notifications.sms_reminders;
+    const connections = useSmsConnections(true);
+    const set = (patch: Partial<BookingConfig['notifications']['sms_reminders']>): void =>
+        onChange({ ...config, notifications: { ...config.notifications, sms_reminders: { ...sms, ...patch } } });
+    const insert = (tag: string): void => set({ text: `${sms.text}${sms.text.endsWith(' ') || sms.text === '' ? '' : ' '}{{${tag}}}` });
+    return (
+        <Section title={__('Recordatorios por SMS')}>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="booking-sms-reminders" data-tour="booking-sms-reminders">
+                <Check
+                    label={__('Mandar los recordatorios también por SMS')}
+                    checked={sms.enabled}
+                    onChange={(v) => set({ enabled: v, ...(v && sms.connection_id === null && connections[0] ? { connection_id: connections[0].id } : {}) })}
+                    testId="booking-sms-enabled"
+                />
+                {connections.length === 0 && (
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Para usarlo, conecta un proveedor de SMS (Twilio, BulkGate, Infobip, LabsMobile u Onurix) en Ajustes → Integraciones.')}
+                    </p>
+                )}
+                {sms.enabled && (
+                    <>
+                        <Field label={__('Enviar con')}>
+                            <Select
+                                value={sms.connection_id ?? ''}
+                                onChange={(e) => set({ connection_id: e.target.value === '' ? null : Number(e.target.value) })}
+                                data-testid="booking-sms-connection"
+                            >
+                                <option value="">{__('(elige una conexión)')}</option>
+                                {connections.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.name}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
+                        <Field label={__('Texto del SMS')}>
+                            <Textarea rows={3} value={sms.text} onChange={(e) => set({ text: e.target.value })} data-testid="booking-sms-text" />
+                            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+                                {SMS_REMINDER_TAGS.map((t) => (
+                                    <button
+                                        key={t.tag}
+                                        type="button"
+                                        className="imcrm-rounded imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-bg-accent"
+                                        onClick={() => insert(t.tag)}
+                                    >
+                                        {__(t.label)}
+                                    </button>
+                                ))}
+                            </div>
+                            <SmsCounter text={sms.text} stripAccents={sms.strip_accents} onStripAccents={(v) => set({ strip_accents: v })} hasVariables />
+                        </Field>
+                        {config.mapping.phone_field_id === null && (
+                            <p className="imcrm-text-[11px] imcrm-text-warning">{__('Falta elegir el campo del teléfono del cliente en «Campos de la lista».')}</p>
+                        )}
+                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            {__('Sale en los mismos momentos que los recordatorios de arriba. Es un aviso de servicio: no espera el horario de mensajes comerciales.')}
+                        </p>
+                    </>
+                )}
+            </div>
+        </Section>
     );
 }
 

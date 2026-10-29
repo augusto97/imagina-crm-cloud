@@ -33,6 +33,18 @@ import {
     type CreateSqlSyncInput,
     type CollectionConnection,
     type UpdateWhatsappConfigInput,
+    type SmsBatchStatus,
+    type SmsBulkInput,
+    type SmsBulkPreview,
+    type SmsBulkResult,
+    type SmsConnectionDetail,
+    type SmsConnectionSummary,
+    type SmsListColumns,
+    type SmsListFields,
+    type SmsRecordInfo,
+    type SmsSendInput,
+    type SmsSendResult,
+    type SmsTestSendInput,
     type WhatsappConnectionDetail,
     type WhatsappListColumns,
     type WhatsappListFields,
@@ -1103,6 +1115,43 @@ export class CloudClient {
     }
     whatsappTestSend(list: string | number, input: WhatsappTestSendInput): Promise<WhatsappSendResult> {
         return this.request('POST', `/lists/${list}/automations/whatsapp-test`, { body: input, schema: z.custom<WhatsappSendResult>() });
+    }
+    // ── SMS: Twilio, BulkGate, Infobip, LabsMobile, Onurix (ADR-S82) ─────
+    async smsConnections(): Promise<SmsConnectionSummary[]> {
+        return (await this.request('GET', '/sms/connections', { schema: z.object({ data: z.array(z.custom<SmsConnectionSummary>()) }) })).data;
+    }
+    smsConnection(id: number): Promise<SmsConnectionDetail> {
+        return this.request('GET', `/sms/connections/${id}`, { schema: z.custom<SmsConnectionDetail>() });
+    }
+    smsListColumns(list: string | number): Promise<SmsListColumns> {
+        return this.request('GET', `/lists/${list}/sms/columns`, { schema: z.custom<SmsListColumns>() });
+    }
+    smsSaveListColumns(list: string | number, fields: SmsListFields): Promise<SmsListColumns> {
+        return this.request('PUT', `/lists/${list}/sms/columns`, { body: { fields }, schema: z.custom<SmsListColumns>() });
+    }
+    smsSetupListColumns(list: string | number): Promise<SmsListColumns> {
+        return this.request('POST', `/lists/${list}/sms/setup`, { body: {}, schema: z.custom<SmsListColumns>() });
+    }
+    smsRecord(list: string | number, recordId: number): Promise<SmsRecordInfo> {
+        return this.request('GET', `/lists/${list}/records/${recordId}/sms`, { schema: z.custom<SmsRecordInfo>() });
+    }
+    smsSend(list: string | number, recordId: number, input: SmsSendInput): Promise<SmsSendResult> {
+        return this.request('POST', `/lists/${list}/records/${recordId}/sms/send`, { body: input, schema: z.custom<SmsSendResult>() });
+    }
+    smsPreview(list: string | number, recordId: number, input: SmsSendInput): Promise<SmsSendResult> {
+        return this.request('POST', `/lists/${list}/records/${recordId}/sms/preview`, { body: input, schema: z.custom<SmsSendResult>() });
+    }
+    smsTestSend(list: string | number, input: SmsTestSendInput): Promise<SmsSendResult> {
+        return this.request('POST', `/lists/${list}/automations/sms-test`, { body: input, schema: z.custom<SmsSendResult>() });
+    }
+    smsBulkPreview(list: string | number, input: SmsBulkInput): Promise<SmsBulkPreview> {
+        return this.request('POST', `/lists/${list}/sms/bulk/preview`, { body: input, schema: z.custom<SmsBulkPreview>() });
+    }
+    smsBulkSend(list: string | number, input: SmsBulkInput): Promise<SmsBulkResult> {
+        return this.request('POST', `/lists/${list}/sms/bulk`, { body: input, schema: z.custom<SmsBulkResult>() });
+    }
+    smsBatch(list: string | number, batchId: string): Promise<SmsBatchStatus> {
+        return this.request('GET', `/lists/${list}/sms/batches/${batchId}`, { schema: z.custom<SmsBatchStatus>() });
     }
     /**
      * v0.1.293 — Lo que necesita la pantalla «sin empresa» de un superadmin

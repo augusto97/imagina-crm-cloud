@@ -1,4 +1,4 @@
-import { Copy, CornerDownRight, Layers, MousePointerClick, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import { Copy, CornerDownRight, Layers, MessageSquareText, MousePointerClick, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
 import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ interface BulkActionsToolbarProps {
     /** Campo «Botón»: los botones de la lista (con el motivo de los que no van en lote). */
     pressButtons?: Array<{ id: number; label: string; reason: string | null }>;
     onPressButton?: (fieldId: number) => void;
+    /** SMS (ADR-S82): mandar un SMS a la selección (con vista previa y confirmación). */
+    onSendSms?: () => void;
 }
 
 /**
@@ -53,6 +55,7 @@ export function BulkActionsToolbar({
     onAssign,
     pressButtons = [],
     onPressButton,
+    onSendSms,
 }: BulkActionsToolbarProps): JSX.Element | null {
     if (selectedIds.length === 0) return null;
 
@@ -146,6 +149,22 @@ export function BulkActionsToolbar({
                 >
                     <UserPlus className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('Asignar')}</span>
+                </Button>
+            )}
+
+            {onSendSms && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    onClick={onSendSms}
+                    data-testid="imcrm-bulk-sms-open"
+                    data-tour="bulk-sms"
+                    aria-label={__('Enviar SMS')}
+                    title={__('Enviar SMS')}
+                >
+                    <MessageSquareText className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('SMS')}</span>
                 </Button>
             )}
 

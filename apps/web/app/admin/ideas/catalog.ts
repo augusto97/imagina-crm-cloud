@@ -44,12 +44,14 @@ const AVISAR_RESPONSABLE: IdeaQuestion = {
     help: 'Si eliges «Al responsable», le llega a quien esté asignado en cada registro.',
     personRole: 'responsable',
 };
+const SMS_APPS = ['sms_twilio', 'sms_bulkgate', 'sms_infobip', 'sms_labsmobile', 'sms_onurix'];
 const MENSAJERIA: IdeaQuestion = {
     kind: 'connection',
     key: 'conexion',
     label: 'Con qué app',
-    apps: ['whatsapp', 'whatsapp_cloud', 'telegram', 'slack'],
+    apps: ['whatsapp', 'whatsapp_cloud', 'telegram', 'slack', ...SMS_APPS],
 };
+const SMS_CUENTA: IdeaQuestion = { kind: 'connection', key: 'conexion', label: 'Cuenta de SMS', apps: SMS_APPS };
 const COBROS_APP: IdeaQuestion = { kind: 'connection', key: 'conexion', label: 'Cuenta de cobro', apps: ['mercadopago', 'wompi'] };
 
 const q = (key: string): { $q: string } => ({ $q: key });
@@ -1120,6 +1122,95 @@ export const IDEAS: readonly IdeaDef[] = [
                     trigger_type: 'record_created',
                     trigger_config: {},
                     actions: [{ type: '$message', config: { connection: q('conexion'), to: '{{telefono}}', text: q('mensaje') } }],
+                },
+            ],
+        },
+    },
+    {
+        id: 'recordatorio-cita-sms',
+        category: 'agenda',
+        title: 'Recuérdale la cita por SMS',
+        summary: 'Un día antes, el cliente recibe un SMS con la fecha y la hora de su cita.',
+        problem: 'Un correo se pierde en la bandeja; un SMS se lee en el momento.',
+        steps: ['Conectas tu proveedor de SMS en Integraciones.', 'Un día antes de cada cita sale un SMS al teléfono del cliente.', 'Las tildes se quitan para que entre en un solo SMS.'],
+        illustration: 'sms-hero',
+        icon: 'MessageSquareText',
+        tone: 'cyan',
+        listHints: ['cita', 'reserva', 'turno', 'agenda', 'consulta', 'clase'],
+        needsApps: SMS_APPS,
+        keywords: 'sms recordatorio cita turno reserva ausencias mensaje de texto',
+        learn: 'sms/sms-enviar',
+        plan: {
+            kind: 'automations',
+            roles: [role('fecha', 'Fecha de la cita', ['date', 'datetime']), TELEFONO, NOMBRE],
+            questions: [
+                SMS_CUENTA,
+                { kind: 'days', key: 'antes', label: 'Cuántos días antes', default: 1, unit: 'minutes', before: true },
+                { kind: 'text', key: 'mensaje', label: 'Mensaje', multiline: true, default: 'Hola {{nombre}}, te recordamos tu cita el {{fecha|larga}}. Si no puedes venir, avísanos.' },
+            ],
+            automations: [
+                {
+                    name: 'Recordatorio de la cita por SMS',
+                    description: 'Antes de la cita le manda un SMS al cliente con la fecha.',
+                    trigger_type: 'due_date_reached',
+                    trigger_config: { due_field: 'fecha', offset_minutes: q('antes') },
+                    actions: [
+                        {
+                            type: 'connector_action',
+                            config: { connection_id: q('conexion'), action_key: 'send_sms', values: { to: '{{telefono}}', message: q('mensaje'), strip_accents: 'true', respect_hours: 'false' } },
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        id: 'aviso-pago-sms',
+        category: 'cobros',
+        title: 'Recuerda el pago por SMS, en horario permitido',
+        summary: 'Antes del vencimiento, el cliente recibe un SMS si sigue sin pagar, siempre dentro del horario de la Ley 2300.',
+        problem: 'Los recordatorios de cobro por correo no se leen, y escribir fuera de horario es un riesgo.',
+        steps: [
+            'Conectas tu proveedor de SMS en Integraciones.',
+            'Unos días antes del vencimiento sale un SMS, sólo si la factura sigue pendiente.',
+            'Lo que se genere de noche o un domingo queda programado para el siguiente momento permitido.',
+        ],
+        illustration: 'sms-hours',
+        icon: 'MessageSquareText',
+        tone: 'mint',
+        listHints: ['factura', 'cobro', 'cuota', 'cuenta', 'pago', 'cartera'],
+        needsApps: SMS_APPS,
+        keywords: 'sms recordatorio pago cobranza factura vencimiento ley 2300 horario',
+        learn: 'sms/sms-horario-estado',
+        plan: {
+            kind: 'automations',
+            roles: [role('vence', 'Fecha de vencimiento', ['date', 'datetime']), ESTADO, TELEFONO, TITULO, NOMBRE, role('monto', 'Monto', ['currency', 'number', 'formula', 'rollup', 'computed'], false)],
+            questions: [
+                SMS_CUENTA,
+                { kind: 'option', key: 'pendiente', role: 'estado', label: 'Estado que significa «sin pagar»', guess: ['pendient', 'por cobrar', 'sin pagar', 'vencid', 'abiert'] },
+                { kind: 'days', key: 'antes', label: 'Cuántos días antes del vencimiento', default: 3, unit: 'minutes', before: true },
+            ],
+            automations: [
+                {
+                    name: 'Recordatorio de pago por SMS',
+                    description: 'Unos días antes del vencimiento, si sigue sin pagar, le manda un SMS al cliente (respetando el horario de cobranza).',
+                    trigger_type: 'due_date_reached',
+                    trigger_config: { due_field: 'vence', offset_minutes: q('antes'), field_filters: [{ slug: 'estado', op: 'eq', value: q('pendiente') }] },
+                    actions: [
+                        {
+                            type: 'connector_action',
+                            config: {
+                                connection_id: q('conexion'),
+                                action_key: 'send_sms',
+                                values: {
+                                    to: '{{telefono}}',
+                                    message: 'Hola {{nombre}}, te recordamos que «{{titulo}}» por {{monto|moneda}} vence el {{vence|fecha}}. Si ya pagaste, ignora este mensaje.',
+                                    strip_accents: 'true',
+                                    respect_hours: 'true',
+                                },
+                            },
+                        },
+                    ],
                 },
             ],
         },

@@ -54,6 +54,7 @@ import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
+import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
@@ -464,6 +465,7 @@ export function RecordDetailDrawer({
                                         <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
                                     )}
                                     {!isGuest && <SendWhatsappButton listId={listId} recordId={record.id} compact />}
+                                    {!isGuest && <SendSmsButton listId={listId} recordId={record.id} compact />}
                                     {/* C6 — «Guardar como plantilla» (no en listas de una tienda ni para un invitado). */}
                                     {!storeRules && !isGuest && (
                                         <SaveRecordAsTemplateButton listId={listId} listSlug={listSlug} recordId={record.id} title={title} compact />

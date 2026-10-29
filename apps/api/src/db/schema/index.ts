@@ -50,6 +50,7 @@ export * from './custom-roles';
 export * from './booking';
 export * from './push-subscriptions';
 export * from './whatsapp';
+export * from './sms';
 export * from './helpdesk';
 export * from './ai-agents';
 // Fase 7 — novedades de la plataforma (0092).

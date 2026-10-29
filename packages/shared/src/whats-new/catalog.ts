@@ -665,4 +665,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Ajustes → Problemas** verás si la red llega hasta el servidor, si el puerto abre y qué respondió la base, para saber si el problema está en la base, en la red o en la configuración.',
         action: { label: 'Ver problemas', href: '/settings?s=problemas' },
     },
+    {
+        key: 'v0.1.332-sms',
+        version: '0.1.332',
+        date: '2026-10-29',
+        kind: 'feature',
+        title: 'Manda SMS desde tus listas y automatizaciones',
+        summary:
+            'Conecta Twilio, BulkGate, Infobip, LabsMobile u Onurix y manda SMS desde un registro, a varios a la vez o en una automatización, con el estado de entrega en el registro.',
+        media: {
+            slides: [
+                {
+                    title: 'Conecta tu proveedor de SMS',
+                    text: 'En Integraciones, con la clave de tu cuenta. La revisamos antes de guardarla y los SMS se cobran a esa cuenta.',
+                    illustration: 'sms-hero',
+                },
+                {
+                    title: 'Sabes cuántos SMS vas a pagar',
+                    text: 'El contador te dice cuántos SMS ocupa el mensaje y te deja quitar las tildes para que entre en menos.',
+                    illustration: 'sms-counter',
+                },
+                {
+                    title: 'Respeta el horario de la Ley 2300',
+                    text: 'Para cobros y mensajes comerciales, lo que salga fuera de horario queda programado para el siguiente momento permitido.',
+                    illustration: 'sms-hours',
+                },
+            ],
+        },
+        body: 'Usa **Enviar SMS** en la ficha, el botón **SMS** al seleccionar varios registros o la acción **Enviar SMS** en una automatización. En la agenda de citas también puedes mandar los recordatorios por SMS.',
+        action: { label: 'Ver integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];
