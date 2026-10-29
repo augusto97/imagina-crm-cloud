@@ -377,6 +377,20 @@ funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.331**
 login, `/registro` y el origen de cada alta en la consola), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-29 — **Dos integraciones nuevas pedidas por el usuario: SMS y
+  WordPress.** (1) SMS con proveedores económicos + Twilio (lo usan muchas
+  plataformas) + BulkGate. (2) Conectar sitios WordPress «como WooCommerce»:
+  traer páginas, entradas, CPT, categorías y meta/ACF, y editar campos elegidos
+  —sobre todo el SEO de Rank Math—, SIN traer el contenido completo, y pudiendo
+  traer sólo un CPT con ciertos campos. Se le mandó una propuesta (SMS: catálogo
+  por clave + acción «Enviar SMS» + contador de segmentos/tildes + estado de
+  entrega + horario de la Ley 2300; WordPress: conexión de un clic con
+  «Autorizar aplicación» del propio WordPress, asistente que elige tipo de
+  contenido y columnas, el motor de sincronización de la tienda generalizado, y
+  un complemento propio porque Rank Math no expone sus campos por REST). **Espera
+  su respuesta**: qué proveedores de SMS, si acepta el complemento de WordPress,
+  si se pueden crear borradores desde la app y el orden. El vencimiento de la
+  prueba de 15 días quedó **para después** (lo dijo el usuario).
 - 2026-10-29 — **Landing para SEO** (ADR-S81). Decidido con el usuario: NO un
   home dentro de la app (SPA, white-label, releases) ni imaginawp.com; un sitio
   propio en WordPress en **`imagina.cloud/base`** (imagina.cloud = marca paraguas
