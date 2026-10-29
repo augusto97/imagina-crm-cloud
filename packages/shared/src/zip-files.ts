@@ -1,4 +1,4 @@
-import { strToU8, zipSync, type Zippable } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 
 /**
  * Arma un .zip en memoria (v0.1.334): con él la app reparte el complemento de
@@ -23,4 +23,11 @@ export function zipFiles(files: ZipFileInput[]): Uint8Array {
         tree[path] = [typeof f.data === 'string' ? strToU8(f.data) : f.data, { mtime: FIXED_MTIME }];
     }
     return zipSync(tree, { level: 6 });
+}
+
+/** Lo inverso, para revisar un zip (las pruebas del complemento): ruta → texto. */
+export function unzipText(bytes: Uint8Array): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [path, data] of Object.entries(unzipSync(bytes))) out[path] = strFromU8(data);
+    return out;
 }

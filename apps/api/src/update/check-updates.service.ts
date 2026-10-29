@@ -16,6 +16,18 @@ interface GhRelease {
 }
 
 /**
+ * El bundle del release y su checksum: `imagina-base-<versión>.zip(.sha256)`
+ * por nombre; si un release viejo no sigue ese nombre, el primer `.zip`
+ * (y su `.sha256`) como antes.
+ */
+export function pickBundleAssets<T extends { name: string }>(assets: T[], version: string): { zip: T | undefined; sha: T | undefined } {
+    const name = `imagina-base-${version}.zip`;
+    const zip = assets.find((a) => a.name === name) ?? assets.find((a) => a.name.endsWith('.zip') && !/connector/i.test(a.name));
+    const sha = zip ? (assets.find((a) => a.name === `${zip.name}.sha256`) ?? assets.find((a) => a.name.endsWith('.sha256'))) : undefined;
+    return { zip, sha };
+}
+
+/**
  * DETECT (ADR-S13): consulta el último release de GitHub y lo registra en
  * `app_releases`. Se corre por schedule (horario) y a demanda desde el panel.
  * Soporta repo privado vía `UPDATER_GITHUB_TOKEN`.
@@ -50,12 +62,16 @@ export class CheckUpdatesService {
         if (rel.draft) return null;
 
         const version = rel.tag_name.replace(/^v/, '');
-        const zip = rel.assets.find((a) => a.name.endsWith('.zip'));
+        // El bundle es `imagina-base-<versión>.zip`. v0.1.334: por NOMBRE primero —
+        // el release puede traer otros .zip (el complemento de WordPress) y
+        // «el primero» dependería del orden en que GitHub los devuelve.
+        const pickZip = pickBundleAssets(rel.assets, version);
+        const zip = pickZip.zip;
         if (!zip) {
             this.logger.warn(`Release ${rel.tag_name} sin asset .zip`);
             return null;
         }
-        const shaAsset = rel.assets.find((a) => a.name.endsWith('.sha256'));
+        const shaAsset = pickZip.sha;
         const checksum = shaAsset ? await this.fetchChecksum(shaAsset, headers) : null;
 
         await this.repo.upsert({

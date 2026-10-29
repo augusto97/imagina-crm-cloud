@@ -705,8 +705,10 @@ export class SiteSyncEngine {
             const current = Array.isArray(field.config.options) ? (field.config.options as Array<{ value: string; label?: string }>) : [];
             const have = new Map(current.map((o) => [o.value, o.label ?? o.value]));
             const missing = [...values].filter(([v]) => !have.has(v));
-            // Un término renombrado en WordPress cambia la etiqueta de su opción.
-            const renamed = [...values].filter(([v, label]) => have.has(v) && have.get(v) !== label);
+            // Un término renombrado en WordPress cambia la etiqueta de su opción. Un valor
+            // sin etiqueta propia (un select de ACF por el complemento llega con su valor,
+            // `disponible`) nunca pisa la etiqueta que se le puso («Disponible»).
+            const renamed = [...values].filter(([v, label]) => have.has(v) && label !== v && have.get(v) !== label);
             if (missing.length === 0 && renamed.length === 0) continue;
             const relabel = new Map(renamed);
             const options = [

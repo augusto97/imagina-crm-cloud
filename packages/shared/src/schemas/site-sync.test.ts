@@ -11,7 +11,8 @@ import {
     readMirrorListMarker,
 } from './mirror-list';
 import { siteCellAccess, siteValueError } from './site-rules';
-import { parseSiteResourceKey, readSiteListMarker, siteColumnKeySchema, siteCoreColumns, siteResourceKey, suggestSiteValueType, type SiteListMarker } from './site-sync';
+import { isSitePluginColumn, parseSiteResourceKey, readSiteListMarker, siteColumnKeySchema, siteCoreColumns, siteResourceKey, suggestSiteValueType, type SiteListMarker } from './site-sync';
+import { unzipText, zipFiles } from '../zip-files';
 
 const marker = (over: Partial<SiteListMarker> = {}): SiteListMarker => ({
     connection_id: 7,
@@ -140,5 +141,75 @@ describe('ADR-S83 — catálogo de columnas', () => {
         expect(suggestSiteValueType(true)).toBe('checkbox');
         expect(suggestSiteValueType('https://x.test/a')).toBe('url');
         expect(suggestSiteValueType('Medellín')).toBe('text');
+    });
+});
+
+describe('ADR-S84 — el complemento: columnas, medios y lo que queda sin él', () => {
+    const pm = (over: Partial<SiteListMarker> = {}) =>
+        marker({
+            fields: { title: 1, status: 2, 'seo:title': 10, 'seo:google_title': 11, 'seo:canonical': 12, 'cf:acf.asesor': 13, 'plugin:words': 14 },
+            can_edit: ['title', 'status', 'seo:title', 'seo:canonical', 'cf:acf.asesor'],
+            editable: ['title', 'seo:title', 'seo:canonical', 'cf:acf.asesor'],
+            ...over,
+        });
+
+    it('lo que calcula el plugin de SEO y el complemento nunca se edita', () => {
+        const g = siteCellAccess(pm(), 11, row('publish'));
+        expect(g.access === 'locked' && g.reason).toMatch(/Google|SEO/);
+        const w = siteCellAccess(pm(), 14, row('publish'));
+        expect(w.access).toBe('locked');
+        expect(siteCellAccess(pm(), 10, row('publish'))).toEqual({ access: 'editable' });
+        expect(siteCellAccess(pm(), 13, row('publish'))).toEqual({ access: 'editable' });
+    });
+
+    it('sin el complemento: sus columnas quedan bloqueadas con el motivo; lo de WordPress, no', () => {
+        const m = pm({ needs_plugin: ['seo:title', 'cf:acf.asesor', 'plugin:words'] });
+        const s = siteCellAccess(m, 10, row('publish'));
+        expect(s.access === 'locked' && s.reason).toContain('complemento');
+        expect(siteValueError(m, 13, 'Ana', row('publish'))).toContain('complemento');
+        expect(siteCellAccess(m, 1, row('publish'))).toEqual({ access: 'editable' });
+        expect(mirrorColumnKind({ source: 'site', marker: m }, 10)).toBe('locked');
+    });
+
+    it('la URL canónica tiene que ser una dirección completa', () => {
+        expect(siteValueError(pm(), 12, 'no es url', row('publish'))).toMatch(/dirección|https/i);
+        expect(siteValueError(pm(), 12, 'https://blog.test/casa/', row('publish'))).toBeNull();
+        expect(siteValueError(pm(), 12, '', row('publish'))).toBeNull();
+    });
+
+    it('la biblioteca de medios: su catálogo, su recurso y sus reglas', () => {
+        expect(siteResourceKey('media', 'attachment')).toBe('media:attachment');
+        expect(parseSiteResourceKey('media:attachment')).toEqual({ kind: 'media', object: 'attachment' });
+        const cols = siteCoreColumns('media', { supports: [], hierarchical: false, taxonomies: [] });
+        expect(cols.find((c) => c.key === 'thumbnail')).toMatchObject({ image: true, default_on: true });
+        expect(cols.find((c) => c.key === 'alt_text')).toMatchObject({ can_edit: true, default_edit: true });
+        expect(cols.filter((c) => c.always).map((c) => c.key)).toEqual(['title', 'status', 'wp_id', 'edit_link']);
+        const m = marker({ kind: 'media', object: 'attachment', resource: 'media:attachment', fields: { title: 1, alt_text: 2, status: 3 }, can_edit: ['title', 'alt_text'], editable: ['title', 'alt_text'] });
+        // Un medio puede quedar sin título (WordPress usa el nombre del archivo).
+        expect(siteValueError(m, 1, '', row('publish'))).toBeNull();
+        expect(siteValueError(m, 2, 'x'.repeat(501), row('publish'))).toMatch(/demasiado largo/);
+        const trashed = siteCellAccess(m, 2, row('trash'));
+        expect(trashed.access === 'locked' && trashed.reason).toMatch(/medio|WordPress/);
+    });
+
+    it('claves del complemento', () => {
+        expect(siteColumnKeySchema.safeParse('seo:google_title').success).toBe(true);
+        expect(siteColumnKeySchema.safeParse('cf:acf.precio_final').success).toBe(true);
+        expect(siteColumnKeySchema.safeParse('cf:mb.mb-estrato').success).toBe(true);
+        expect(isSitePluginColumn('seo:title')).toBe(true);
+        expect(isSitePluginColumn('cf:je.precio')).toBe(true);
+        expect(isSitePluginColumn('plugin:words')).toBe(true);
+        expect(isSitePluginColumn('acf:precio')).toBe(false);
+        expect(isSitePluginColumn('title')).toBe(false);
+    });
+
+    it('un zip armado en memoria: rutas seguras y el mismo contenido da los mismos bytes', () => {
+        const a = zipFiles([{ path: 'plugin/a.php', data: '<?php echo 1;' }, { path: 'plugin/inc/b.php', data: new Uint8Array([1, 2]) }]);
+        const b = zipFiles([{ path: 'plugin/a.php', data: '<?php echo 1;' }, { path: 'plugin/inc/b.php', data: new Uint8Array([1, 2]) }]);
+        expect(Array.from(a)).toEqual(Array.from(b));
+        expect(unzipText(a)['plugin/a.php']).toBe('<?php echo 1;');
+        expect(() => zipFiles([{ path: '../x.php', data: '' }])).toThrow(/Ruta inválida/);
+        expect(() => zipFiles([{ path: '/etc/x', data: '' }])).toThrow(/Ruta inválida/);
+        expect(() => zipFiles([{ path: 'a//b', data: '' }])).toThrow(/Ruta inválida/);
     });
 });
