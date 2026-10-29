@@ -10,11 +10,12 @@ import {
     type IntegrationDef,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { ChevronDown, ChevronRight, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, Wallet } from 'lucide-react';
+import { ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, Wallet } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { WordpressConnectDialog } from '@/cloud/components/WordpressConnectDialog';
 import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,8 @@ export function IntegrationsPanel(): JSX.Element | null {
     const [params, setParams] = useSearchParams();
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
     const [dialog, setDialog] = useState<{ def: IntegrationDef; connection: Connection | null } | null>(null);
+    // v0.1.333 — WordPress se conecta en un clic con su pantalla «Autorizar aplicación».
+    const [wpDialog, setWpDialog] = useState<{ connection: Connection | null } | null>(null);
     const [advanced, setAdvanced] = useState(false);
 
     const overview = useQuery({
@@ -114,6 +117,7 @@ export function IntegrationsPanel(): JSX.Element | null {
     const start = (def: IntegrationDef, connection: Connection | null): void => {
         setNotice(null);
         if (def.auth.kind === 'oauth') authorize.mutate({ def, connection });
+        else if (def.key === 'wordpress') setWpDialog({ connection });
         else setDialog({ def, connection });
     };
 
@@ -130,7 +134,9 @@ export function IntegrationsPanel(): JSX.Element | null {
                     ? `${usage} ${__('Si la tienda se sincroniza, deja de actualizarse; las listas y sus datos quedan en tu empresa.')}`
                     : c.integration_key === 'sqlserver'
                       ? `${usage} ${__('Sus sincronizaciones se borran y dejan de traer datos; lo que ya se cargó en tus listas queda.')}`
-                      : usage,
+                      : c.integration_key === 'wordpress'
+                        ? `${usage} ${__('El sitio deja de sincronizarse; las listas y sus datos quedan en tu empresa y se pueden editar libremente. La contraseña de aplicación sigue en tu WordPress: bórrala desde tu perfil si ya no la usas.')}`
+                        : usage,
             confirmLabel: __('Desconectar'),
             destructive: true,
         });
@@ -236,6 +242,19 @@ export function IntegrationsPanel(): JSX.Element | null {
                 )}
             </section>
 
+            {wpDialog && (
+                <WordpressConnectDialog
+                    connection={wpDialog.connection}
+                    visibility={info?.can_connect_workspace ? 'workspace' : 'private'}
+                    onClose={() => setWpDialog(null)}
+                    onDone={(text) => {
+                        setWpDialog(null);
+                        setNotice({ kind: 'ok', text });
+                        void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
+                    }}
+                />
+            )}
+
             {dialog && (
                 <IntegrationKeyDialog
                     def={dialog.def}
@@ -336,8 +355,12 @@ function ConnectedRow({
     busy: boolean;
 }): JSX.Element {
     const def = integrationDef(c.integration_key);
+    // v0.1.333 — un sitio WordPress cuya contraseña de aplicación se revocó
+    // lo sabe la sincronización (marca la conexión al fallar).
+    const siteRejected = c.integration_key === 'wordpress' && c.last_check_ok === false;
     const broken =
         c.secret_state === 'unreadable' ||
+        siteRejected ||
         (c.oauth_status !== null && (!c.oauth_status.connected || c.oauth_status.last_error !== null));
     const isOAuth = def?.auth.kind === 'oauth';
     return (
@@ -381,6 +404,9 @@ function ConnectedRow({
                 {c.oauth_status?.last_error && (
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive">{c.oauth_status.last_error}</p>
                 )}
+                {siteRejected && c.last_check_error && (
+                    <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive" data-testid="imcrm-site-rejected">{c.last_check_error}</p>
+                )}
                 {c.secret_state === 'unreadable' && (
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive">
                         {__('La clave guardada ya no se puede leer: vuelve a cargarla.')}
@@ -392,6 +418,14 @@ function ConnectedRow({
                     <Link to={`/settings/stores/${c.id}`} data-testid="imcrm-store-sync-open">
                         <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Sincronizar tienda')}
+                    </Link>
+                </Button>
+            )}
+            {c.integration_key === 'wordpress' && c.can_edit && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to={`/settings/sites/${c.id}`} data-testid="imcrm-site-sync-open" data-tour="site-sync-open">
+                        <Globe className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Sincronizar sitio')}
                     </Link>
                 </Button>
             )}
@@ -438,7 +472,7 @@ function ConnectedRow({
             {c.can_edit && (
                 <div className="imcrm-flex imcrm-gap-1 max-sm:imcrm-ml-auto">
                     <Button size="sm" variant="ghost" disabled={busy} onClick={onReconnect} data-testid="imcrm-integration-reconnect">
-                        {isOAuth ? __('Reconectar') : __('Actualizar clave')}
+                        {isOAuth || c.integration_key === 'wordpress' ? __('Reconectar') : __('Actualizar clave')}
                     </Button>
                     <Button size="sm" variant="ghost" disabled={busy} onClick={onDisconnect} data-testid="imcrm-integration-disconnect">
                         {__('Desconectar')}

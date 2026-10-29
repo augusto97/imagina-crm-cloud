@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
-import { parseTeamGroupKey, readStoreListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
+import { parseTeamGroupKey, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     BookmarkPlus,
@@ -52,6 +52,7 @@ import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { useBulkButtons } from './buttons/ButtonFieldControl';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
+import { SiteListBanner } from './SiteListBanner';
 import { StoreListBanner } from './StoreListBanner';
 import { SampleDataBanner } from '@/admin/onboarding/SampleDataBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
@@ -413,32 +414,35 @@ export function RecordsPage(): JSX.Element {
     // v0.1.213 — lista sincronizada con una tienda: los registros se crean,
     // se borran y se importan en WooCommerce; las celdas siguen las reglas
     // de `store-rules` (las mismas que aplica el backend).
-    const storeMarker = readStoreListMarker(list.data?.settings);
+    // v0.1.333 (ADR-S83) — o de un sitio WordPress: mismas reglas, otra fuente.
+    const mirror = readMirrorListMarker(list.data?.settings);
+    const storeMarker = mirror?.source === 'store' ? mirror.marker : null;
+    const siteMarker = mirror?.source === 'site' ? mirror.marker : null;
     const storeRules = useMemo<StoreRules | null>(
-        () => (storeMarker && fields.data ? { marker: storeMarker, fields: fields.data } : null),
+        () => (mirror && fields.data ? { marker: mirror, fields: fields.data } : null),
         // El marcador se re-lee en cada render: se compara por su contenido.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [JSON.stringify(storeMarker), fields.data],
+        [JSON.stringify(mirror), fields.data],
     );
     // E5 — las columnas que mantiene el SLA de la mesa de ayuda (candado en la celda).
     const helpdeskManaged = useHelpdeskManagedIds(list.data?.settings);
-    const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !storeMarker;
+    const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !mirror;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canBulkEdit = useCan(CAP.BULK_ACTIONS);
     const canEditAny = useCan(CAP.EDIT_RECORDS);
     const canEditOwn = useCan(CAP.EDIT_OWN_RECORDS);
     const canSeeBulkHistory = canEditAny || canEditOwn;
     // En una lista de la tienda, actualizar desde archivo exige «Editar desde la app».
-    const canCsvUpdate = useCan(CAP.IMPORT_RECORDS) && (canEditAny || canEditOwn) && (!storeMarker || storeMarker.write_back === true);
+    const canCsvUpdate = useCan(CAP.IMPORT_RECORDS) && (canEditAny || canEditOwn) && (!mirror || mirror.marker.write_back === true);
     const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
-    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker && (!guest.isGuest || guest.list === 'edit');
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !mirror && (!guest.isGuest || guest.list === 'edit');
     // C6 — plantillas de registro de la lista (el «▾» junto a «Nuevo registro»; no para un invitado).
     const recordTemplates = useRecordTemplates(canCreateRecords && !guest.isGuest ? list.data?.id : undefined, 'record').data ?? [];
     const canDeleteAny = useCan(CAP.DELETE_RECORDS);
     const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
     // Reestructurar (mover/duplicar/borrar) no aplica a las listas de la tienda:
-    // eso se hace en WooCommerce.
-    const structureActions: Partial<Record<BulkStructureAction, () => void>> | undefined = storeMarker
+    // eso se hace en WooCommerce (o en WordPress).
+    const structureActions: Partial<Record<BulkStructureAction, () => void>> | undefined = mirror
         ? undefined
         : {
               ...(canEditAny || canEditOwn ? { move: () => setStructure({ action: 'move', matching: false }) } : {}),
@@ -1295,8 +1299,9 @@ const applyView = (view: SavedViewEntity | null): void => {
             </div>
 
             {storeMarker && <StoreListBanner marker={storeMarker} />}
+            {siteMarker && <SiteListBanner marker={siteMarker} fields={fields.data} />}
             {/* F7 — datos de ejemplo de la bienvenida, con su botón para borrarlos. */}
-            {!storeMarker && <SampleDataBanner listId={list.data?.id} />}
+            {!mirror && <SampleDataBanner listId={list.data?.id} />}
 
             {/*
               Dialog de export sin trigger propio — lo abren los botones
@@ -1468,7 +1473,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         open={csvUpdateOpen}
                         onOpenChange={setCsvUpdateOpen}
                         listId={list.data.id}
-                        storeManaged={!!storeMarker}
+                        storeManaged={!!mirror}
                         isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked'}
                     />
                 </Suspense>

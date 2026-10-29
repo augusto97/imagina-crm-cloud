@@ -92,10 +92,10 @@ export function siteValueError(marker: SiteListMarker, fieldId: number, value: u
         case 'name':
             return empty ? 'El nombre no puede quedar vacío.' : null;
         case 'slug': {
-            if (empty) return 'El slug no puede quedar vacío: WordPress lo usa para la dirección.';
+            if (empty) return 'La dirección no puede quedar vacía: WordPress la usa para el enlace.';
             const text = String(value).trim();
-            if (text.length > 200) return 'El slug es demasiado largo (máximo 200 caracteres).';
-            if (/[/?#]/.test(text)) return 'El slug no puede llevar «/», «?» ni «#»: es sólo la última parte de la dirección.';
+            if (text.length > 200) return 'La dirección es demasiado larga (máximo 200 caracteres).';
+            if (/[/?#]/.test(text)) return 'La dirección no puede llevar «/», «?» ni «#»: es sólo la parte final del enlace.';
             return null;
         }
         case 'status':

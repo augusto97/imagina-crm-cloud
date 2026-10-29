@@ -840,7 +840,7 @@ const CORE_SLUGS: Record<string, string> = {
     wp_id: 'id_wordpress',
     edit_link: 'editar_en_wordpress',
     link: 'enlace',
-    slug: 'slug',
+    slug: 'direccion',
     date: 'fecha_publicacion',
     modified: 'ultima_modificacion',
     author: 'autor',

@@ -1,0 +1,55 @@
+import type { LearnModuleMeta } from '../types';
+
+export const meta: LearnModuleMeta = {
+    id: 'sitios-wordpress',
+    group: 'connect',
+    order: 5.5,
+    title: 'Sitio WordPress',
+    tagline: 'Trae las entradas, páginas y tipos de contenido de tu WordPress a listas, mantenlas al día solas y cambia títulos, estados y campos desde aquí, uno por uno o en lote.',
+    icon: 'Globe',
+    tone: 'blue',
+    hero: 'sitio-hero',
+    highlights: [
+        'Conectar el sitio con un clic, aprobando la conexión en tu propio WordPress',
+        'Entradas, páginas, tipos de contenido de plugins y sus categorías, cada uno en su lista',
+        'Los campos de ACF y los campos personalizados como columnas',
+        'Elegir qué columnas se cambian desde la app: el cambio viaja al sitio',
+        'Edición en lote con vista previa y deshacer, también en WordPress',
+    ],
+    articles: [
+        {
+            id: 'sitio-conectar',
+            title: 'Conectar tu sitio WordPress',
+            summary: 'Conectar con un clic aprobando en tu WordPress, o pegar una contraseña de aplicación, y qué hacer si el sitio no responde.',
+            minutes: 5,
+            level: 'basic',
+            keywords: 'conectar wordpress sitio web autorizar aplicacion contraseña de aplicacion usuario editor administrador https api rest',
+            needs: 'manage_automations',
+        },
+        {
+            id: 'sitio-sincronizar',
+            title: 'Sincronizar el sitio: qué traer y cada cuánto',
+            summary: 'Elegir tipos de contenido y columnas, cuáles se editan desde la app, la carpeta que se crea, la frecuencia y qué hacen «Sincronizar ahora» y «Dejar de sincronizar».',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'sincronizar sitio entradas paginas tipos de contenido taxonomias categorias etiquetas acf campos personalizados columnas frecuencia carpeta',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'sitio-el-sitio-manda',
+            title: 'El sitio manda: qué se puede cambiar desde aquí',
+            summary: 'Las marcas de cada columna, «Editar desde la app», las columnas propias, la papelera y qué pasa si WordPress rechaza un cambio.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'editar desde la app candado columnas editables titulo estado extracto categorias columna propia rechazo papelera',
+        },
+        {
+            id: 'sitio-editar-en-lote',
+            title: 'Cambiar muchas entradas a la vez',
+            summary: 'Usar la edición en lote sobre las listas del sitio: cambiar el estado, agregar una categoría o un valor de ACF a muchas entradas, ver la vista previa y deshacer.',
+            minutes: 5,
+            level: 'advanced',
+            keywords: 'edicion en lote masiva entradas estado borrador publicado categoria acf deshacer historial wordpress',
+        },
+    ],
+};

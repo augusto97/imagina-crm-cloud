@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { ClipboardList, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { readMirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -33,11 +33,11 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     const [created, setCreated] = useState<NonNullable<typeof forms.data>[number] | null>(null);
 
     // Las listas que llenan una tienda no aceptan altas desde la app.
-    if (readStoreListMarker(listSettings)) {
+    if (readMirrorListMarker(listSettings)) {
         return (
             <Card>
                 <CardContent className="imcrm-pt-5 imcrm-text-sm imcrm-text-muted-foreground" data-testid="forms-store-managed">
-                    {__('Esta lista la llena la tienda en línea: los registros nuevos se crean allá, así que no puede tener formularios.')}
+                    {__('Esta lista la llena una tienda o un sitio web sincronizado: los registros nuevos se crean allá, así que no puede tener formularios.')}
                 </CardContent>
             </Card>
         );

@@ -38,7 +38,7 @@ import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { readMirrorListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
 import { useRecordDraft } from '@/admin/records/recordDraft';
 import { lockedReasonsFor, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
@@ -113,7 +113,8 @@ export function RecordPage(): JSX.Element {
     // Salir con cambios sin guardar (enlace, Atrás, cerrar la pestaña) pregunta.
     useUnsavedChangesGuard(dirty);
     // v0.1.213 — lista de una tienda: sin borrar y con los campos de WooCommerce de lectura.
-    const storeMarker = readStoreListMarker(list.data?.settings);
+    // v0.1.333 — o de un sitio WordPress (mismas reglas).
+    const storeMarker = readMirrorListMarker(list.data?.settings);
     const storeRules = useMemo<StoreRules | null>(
         () => (storeMarker && fields.data ? { marker: storeMarker, fields: fields.data } : null),
         // eslint-disable-next-line react-hooks/exhaustive-deps

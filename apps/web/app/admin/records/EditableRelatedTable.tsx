@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { EDITABLE_TOTAL_TYPES, type StoreListMarker } from '@imagina-base/shared';
+import { EDITABLE_TOTAL_TYPES, type MirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -52,7 +52,7 @@ export interface EditableRelatedTableProps {
     /** La relación por la que un ítem nuevo nace vinculado (null = no se puede agregar). */
     relation: { field: FieldEntity; recordId: number } | null;
     /** Lista de una tienda (la tienda manda: no se crean ni borran ítems aquí). */
-    storeMarker?: StoreListMarker | null;
+    storeMarker?: MirrorListMarker | null;
     /** Después de guardar una celda (parchear/refrescar lo que dependa). */
     onSaved?: (id: number, values: Record<string, unknown>) => void;
     /** Después de agregar o borrar un ítem. */

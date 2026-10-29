@@ -696,4 +696,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.333-sitios-wordpress',
+        version: '0.1.333',
+        date: '2026-10-29',
+        kind: 'feature',
+        title: 'Tu sitio WordPress, en listas',
+        summary:
+            'Conecta tu WordPress con un clic y trae entradas, páginas, tipos de contenido y sus campos de ACF a listas que se mantienen al día solas.',
+        media: {
+            slides: [
+                {
+                    title: 'Conectar con un clic',
+                    text: 'Escribe la dirección del sitio, apruebas la conexión en tu propio WordPress y vuelves conectado: nadie copia contraseñas.',
+                    illustration: 'sitio-hero',
+                },
+                {
+                    title: 'Eliges qué traer',
+                    text: 'Cada tipo de contenido llega a su lista, con las columnas que elijas, en una carpeta con el nombre del sitio.',
+                    illustration: 'sitio-columnas',
+                },
+                {
+                    title: 'El sitio manda',
+                    text: 'Cambia desde aquí sólo las columnas que habilites: el cambio viaja a WordPress. Las columnas propias nunca salen de la app.',
+                    illustration: 'sitio-lock',
+                },
+            ],
+        },
+        body: 'Ve a **Ajustes → Integraciones**, toca **Conectar** en la tarjeta **WordPress** y después **Sincronizar sitio**. La edición en lote y deshacer también llegan al sitio.',
+        action: { label: 'Conectar un sitio', href: '/settings?s=conectores' },
+        audience: { roles: ['admin'] },
+    },
 ];

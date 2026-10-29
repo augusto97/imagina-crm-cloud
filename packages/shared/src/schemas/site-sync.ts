@@ -312,7 +312,8 @@ function col(
     };
 }
 
-const SLUG_HINT = 'Es la parte final de la dirección. Si lo cambias, WordPress actualiza el enlace y redirige la dirección vieja.';
+const SLUG_HINT = 'Es la parte final del enlace. Si la cambias, WordPress actualiza el enlace y redirige el viejo al nuevo.';
+const TERM_SLUG_HINT = 'Es la parte final del enlace del término. Si la cambias, el enlace viejo deja de funcionar.';
 
 /**
  * Las columnas de WordPress (núcleo) que se pueden traer de un tipo de
@@ -326,7 +327,7 @@ export function siteCoreColumns(kind: SiteObjectKind, info: SiteObjectInfo): Sit
             col({ key: 'status', label: 'Estado', type: 'select', always: true, hint: 'Se marca «Borrado en WordPress» si el término deja de existir.' }),
             col({ key: 'wp_id', label: 'ID en WordPress', type: 'number', always: true }),
             col({ key: 'edit_link', label: 'Editar en WordPress', type: 'url', always: true }),
-            col({ key: 'slug', label: 'Slug', type: 'text', can_edit: true, hint: SLUG_HINT }),
+            col({ key: 'slug', label: 'Dirección', type: 'text', can_edit: true, hint: TERM_SLUG_HINT }),
             col({ key: 'description', label: 'Descripción', type: 'long_text', can_edit: true, default_on: true, default_edit: true }),
             ...(info.hierarchical ? [col({ key: 'parent', label: 'Superior', type: 'text', default_on: true })] : []),
             col({ key: 'count', label: 'Cantidad de entradas', type: 'number', default_on: true }),
@@ -348,7 +349,7 @@ export function siteCoreColumns(kind: SiteObjectKind, info: SiteObjectInfo): Sit
         col({ key: 'wp_id', label: 'ID en WordPress', type: 'number', always: true }),
         col({ key: 'edit_link', label: 'Editar en WordPress', type: 'url', always: true }),
         col({ key: 'link', label: 'Enlace', type: 'url', default_on: true }),
-        col({ key: 'slug', label: 'Slug', type: 'text', can_edit: true, hint: SLUG_HINT }),
+        col({ key: 'slug', label: 'Dirección', type: 'text', can_edit: true, hint: SLUG_HINT }),
         col({ key: 'date', label: 'Fecha de publicación', type: 'datetime', can_edit: true, default_on: true }),
         col({ key: 'modified', label: 'Última modificación', type: 'datetime', default_on: true }),
         ...(has('author') ? [col({ key: 'author', label: 'Autor', type: 'text' })] : []),

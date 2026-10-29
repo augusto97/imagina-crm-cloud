@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } fr
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, Loader2, Plus } from 'lucide-react';
-import { defaultTotalFieldIds, readStoreListMarker, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
+import { defaultTotalFieldIds, readMirrorListMarker, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
 
 import { EditableRelatedTable, type EditableRow } from '@/admin/records/EditableRelatedTable';
 import { RecordCreateDialog } from '@/admin/records/RecordCreateDialog';
@@ -120,7 +120,7 @@ function RelatedToolbar({ block, data }: { block: LayoutBlock; data: RelatedBloc
     const otherList = useList(ctx.mode === 'portal' ? undefined : data.list.id);
     const relField = source?.kind === 'related' ? data.fields.find((f) => f.id === source.field_id) : undefined;
     // Sólo hacia adentro: el nuevo registro de la otra lista nace apuntando a éste.
-    const canAdd = ctx.mode !== 'portal' && relField !== undefined && !ctx.preview && readStoreListMarker(otherList.data?.settings) === null;
+    const canAdd = ctx.mode !== 'portal' && relField !== undefined && !ctx.preview && readMirrorListMarker(otherList.data?.settings) === null;
     const initialValues = useMemo(() => (relField ? { [relField.slug]: [ctx.record.id] } : undefined), [relField, ctx.record.id]);
     return (
         <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-px-4 imcrm-pb-2">
@@ -413,7 +413,7 @@ function EditableView({ block, data, titleField }: { block: LayoutBlock; data: R
             total={data.total}
             totals={data.totals}
             relation={relField && !readOnly ? { field: relField, recordId: ctx.record.id } : null}
-            storeMarker={readOnly ? null : readStoreListMarker(otherList.data?.settings)}
+            storeMarker={readOnly ? null : readMirrorListMarker(otherList.data?.settings)}
             onSaved={onSaved}
             onChanged={refresh}
             readOnly={readOnly}

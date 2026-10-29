@@ -240,7 +240,7 @@ export function classifyWpResponse(status: number, body: string, sentCredentials
     }
     if (status === 400) {
         const params = obj(obj(o?.data)?.params);
-        const extra = params ? Object.values(params).filter((v): v is string => typeof v === 'string').map(stripTags) : [];
+        const extra = params ? Object.values(params).filter((v): v is string => typeof v === 'string').map((v) => stripTags(v).replace(/\.+$/, '')) : [];
         return {
             kind: 'invalid',
             code,

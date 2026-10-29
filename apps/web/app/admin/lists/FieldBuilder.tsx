@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { isStoreField, readScanFieldId, readStoreListMarker, SCAN_SEARCH_FIELD_TYPES } from '@imagina-base/shared';
+import { isMirrorField, mirrorSourceName, readMirrorListMarker, readScanFieldId, SCAN_SEARCH_FIELD_TYPES } from '@imagina-base/shared';
 import {
     Columns3,
     GripVertical,
@@ -22,6 +22,8 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { StoreEditableColumnsCard } from '@/cloud/components/StoreEditableColumns';
+import { SiteEditableColumnsCard } from '@/cloud/components/SiteEditableColumns';
+import { StoreRulesContext, useStoreRules } from '@/admin/records/storeRules';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
@@ -97,8 +99,11 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const list = useList(listId);
     const listData = list.data;
     // v0.1.213 — columnas que vienen de la tienda: sólo cambian de nombre.
-    const storeMarker = readStoreListMarker(listData?.settings);
-    const fromStore = (f: FieldEntity): boolean => (storeMarker ? isStoreField(storeMarker, f.id) : false);
+    // v0.1.333 (ADR-S83) — o de un sitio WordPress: mismas reglas.
+    const mirror = readMirrorListMarker(listData?.settings);
+    const storeMarker = mirror?.source === 'store' ? mirror.marker : null;
+    const siteMarker = mirror?.source === 'site' ? mirror.marker : null;
+    const fromStore = (f: FieldEntity): boolean => (mirror ? isMirrorField(mirror, f.id) : false);
     const lists = useLists();
     const fields = useFields(listId);
     const types = useFieldTypes();
@@ -303,8 +308,18 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const requiredCount = all.filter((f) => f.is_required).length;
     const otherLists = (lists.data ?? []).filter((l) => l.id !== listId);
 
+    // Las notas y marcas de los editores dicen de dónde viene cada columna.
+    const mirrorRules = mirror && fields.data ? { marker: mirror, fields: fields.data } : null;
+
     return (
+        <StoreRulesContext.Provider value={mirrorRules}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            {siteMarker && (
+                <SiteEditableColumnsCard
+                    connectionId={siteMarker.connection_id}
+                    resource={siteMarker.resource}
+                />
+            )}
             {/* v0.1.214 — qué columnas de la tienda se editan desde la app. */}
             {storeMarker && (
                 <StoreEditableColumnsCard
@@ -580,6 +595,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 onOpenChange={setDialogOpen}
             />
         </div>
+        </StoreRulesContext.Provider>
     );
 }
 
@@ -735,6 +751,8 @@ function FieldRow({
     storeField = false,
 }: FieldRowProps): JSX.Element {
     const Icon = fieldTypeIcon(field.type);
+    const rules = useStoreRules();
+    const source = rules ? mirrorSourceName(rules.marker) : 'WooCommerce';
     return (
         <li
             draggable={draggable}
@@ -783,11 +801,11 @@ function FieldRow({
                         <Badge
                             variant="outline"
                             className="imcrm-shrink-0 imcrm-gap-1"
-                            title={__('Viene de WooCommerce: sólo se le cambia el nombre.')}
+                            title={sprintf(__('Viene de %s: sólo se le cambia el nombre.'), source)}
                             data-testid="field-store-badge"
                         >
                             <Lock className="imcrm-h-3 imcrm-w-3" />
-                            {__('WooCommerce')}
+                            {source}
                         </Badge>
                     )}
                 </span>

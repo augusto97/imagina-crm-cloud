@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertTriangle, CalendarClock, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { readMirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -46,11 +46,11 @@ export function BookingPanel({ listId, listName, listSettings }: { listId: numbe
     }, [pageParam, setParams]);
 
     // Las listas que llena una tienda no aceptan altas desde la app.
-    if (readStoreListMarker(listSettings)) {
+    if (readMirrorListMarker(listSettings)) {
         return (
             <Card>
                 <CardContent className="imcrm-pt-5 imcrm-text-sm imcrm-text-muted-foreground" data-testid="booking-store-managed">
-                    {__('Esta lista la llena la tienda en línea: los registros nuevos se crean allá, así que no puede tener una agenda.')}
+                    {__('Esta lista la llena una tienda o un sitio web sincronizado: los registros nuevos se crean allá, así que no puede tener una agenda.')}
                 </CardContent>
             </Card>
         );

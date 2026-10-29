@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { readMirrorListMarker } from '@imagina-base/shared';
 import { ArrowLeft, Loader2, Table2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,7 @@ export function ListBuilderPage(): JSX.Element {
     const canForms = useCan(CAP.MANAGE_FORMS);
     const canDocs = useCan(CAP.MANAGE_DOCUMENTS);
     // D2 — una lista que mantiene una tienda no tiene mesa de ayuda (sus registros los crea la tienda).
-    const storeManaged = readStoreListMarker(list.data?.settings) !== null;
+    const storeManaged = readMirrorListMarker(list.data?.settings) !== null;
     const allowed = (id: string): boolean =>
         (id !== 'formularios' || canForms) && (id !== 'documentos' || canDocs) && ((id !== 'correo' && id !== 'sla') || !storeManaged);
     const requested = resolveListSettingsSection(params.get('s'));
