@@ -29,6 +29,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { aclOf } from '../tenancy/acl-of';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
@@ -49,6 +50,8 @@ export class ListsController {
     ) {}
 
     @Get()
+    // v0.1.338 — la pantalla «cuenta pausada» lista las listas para descargarlas.
+    @AllowLocked()
     @AllowGuest()
     async all(@Req() req: FastifyRequest): Promise<{ data: List[] }> {
         const data = await this.lists.list(tenantId(req));

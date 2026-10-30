@@ -32,6 +32,7 @@ import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { DRIZZLE, type Db } from '../db/client';
 import { users } from '../db/schema';
+import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { PaymentsService } from './payments.service';
@@ -61,12 +62,14 @@ export class PaymentsController {
     ) {}
 
     @Get('payments/config')
+    @AllowLocked()
     @UseGuards(SessionGuard, TenantGuard)
     config(): Promise<PaymentConfig> {
         return this.payments.config();
     }
 
     @Post('checkout')
+    @AllowLocked()
     @AllowReadOnly()
     @UseGuards(SessionGuard, TenantGuard)
     async checkout(
@@ -83,6 +86,7 @@ export class PaymentsController {
     }
 
     @Get('subscription')
+    @AllowLocked()
     @UseGuards(SessionGuard, TenantGuard)
     subscription(@Req() req: FastifyRequest): Promise<SubscriptionInfo> {
         assertAdmin(req);
@@ -90,6 +94,7 @@ export class PaymentsController {
     }
 
     @Post('subscription/cancel')
+    @AllowLocked()
     @HttpCode(200)
     @AllowReadOnly()
     @UseGuards(SessionGuard, TenantGuard)

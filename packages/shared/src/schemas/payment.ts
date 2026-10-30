@@ -29,6 +29,11 @@ export const planPriceSchema = z.object({
     name: z.string(),
     usd: z.number().nullable(),
     cop: z.number().nullable(),
+    /** v0.1.338 — lo que el plan NO incluye (para mostrarlo al elegir). */
+    disabled_modules: z.array(z.string()).optional(),
+    /** Límites del plan, para compararlos al elegir. `null` = ilimitado. */
+    max_users: z.number().nullable().optional(),
+    max_records: z.number().nullable().optional(),
 });
 export type PlanPrice = z.infer<typeof planPriceSchema>;
 

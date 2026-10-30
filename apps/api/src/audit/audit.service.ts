@@ -52,6 +52,8 @@ export type AuditAction =
     | 'member.invite_resend'
     | 'member.remove'
     | 'billing.plan_change'
+    // v0.1.338 (ADR-S87) — no renovó: pasó al plan de prueba.
+    | 'billing.lapse_to_trial'
     | 'workspace.smtp_change'
     | 'workspace.mail_account_change'
     | 'workspace.storage_change'

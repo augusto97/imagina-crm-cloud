@@ -24,6 +24,7 @@ import {
     type SessionUser,
     type TotpSetup,
     type VerifyTwoFactorInput,
+    readDisabledModules,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
@@ -31,7 +32,8 @@ import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { customRoles, impersonationLog, memberships, personalAccessTokens, tenants, users } from '../db/schema';
+import { accessOf, newTrialEndsAt } from '../billing/tenant-access';
+import { customRoles, impersonationLog, memberships, personalAccessTokens, plans, tenants, users } from '../db/schema';
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
@@ -345,7 +347,11 @@ export class AuthService implements OnModuleInit {
             }
 
             const slug = await this.availableTenantSlug(tx, slugifyTenant(input.workspace_name));
-            const [tenant] = await tx.insert(tenants).values({ slug, name: input.workspace_name, plan: input.plan }).returning();
+            // v0.1.338 — una empresa en prueba que da de alta el operador también
+            // tiene fecha de fin; la de un superadmin no (es la del operador).
+            const trialEndsAt =
+                input.plan === 'trial' && !this.env.PLATFORM_SUPERADMINS.includes(email) ? newTrialEndsAt() : null;
+            const [tenant] = await tx.insert(tenants).values({ slug, name: input.workspace_name, plan: input.plan, trialEndsAt }).returning();
             if (!tenant) throw new Error('Insert de tenant no devolvió fila');
 
             // Membership admin bajo el rol de app + contexto RLS (WITH CHECK real).
@@ -856,6 +862,8 @@ export class AuthService implements OnModuleInit {
                 .values({
                     slug,
                     name: input.workspace_name,
+                    // v0.1.338 (ADR-S87) — la prueba arranca con fecha de fin.
+                    trialEndsAt: newTrialEndsAt(),
                     ...(attribution ? { settings: { signup: { ...attribution, at: new Date().toISOString() } } } : {}),
                 })
                 .returning();
@@ -1336,9 +1344,19 @@ export class AuthService implements OnModuleInit {
                     customRoleId: memberships.customRoleId,
                     customRoleName: customRoles.name,
                     customCaps: customRoles.capabilities,
+                    // v0.1.338 (ADR-S87) — acceso y módulos del plan: la app decide
+                    // si monta o muestra «cuenta pausada» sin otro pedido.
+                    plan: tenants.plan,
+                    status: tenants.status,
+                    archivedAt: tenants.archivedAt,
+                    trialEndsAt: tenants.trialEndsAt,
+                    subscriptionEndsAt: tenants.subscriptionEndsAt,
+                    paidUntil: tenants.paidUntil,
+                    disabledModules: plans.disabledModules,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+                .leftJoin(plans, eq(plans.slug, tenants.plan))
                 .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
                 // v0.1.227 — el acceso de PORTAL (rol client) no es un workspace
                 // de la app de equipo: el TenantGuard lo rechaza (SEC-24), así
@@ -1346,7 +1364,10 @@ export class AuthService implements OnModuleInit {
                 // todo responde 403. El portal tiene su propia entrada.
                 .where(and(eq(memberships.userId, userId), ne(memberships.role, 'client')));
             return rows.map((r) => {
-                const custom = r.customRoleName !== null && Array.isArray(r.customCaps) ? r.customCaps : null;
+                const disabled = readDisabledModules(r.disabledModules);
+                // C2 — sin «Roles propios» en el plan, la persona usa su rol base.
+                const custom =
+                    r.customRoleName !== null && Array.isArray(r.customCaps) && !disabled.includes('custom_roles') ? r.customCaps : null;
                 return {
                     tenant_id: r.tenantId,
                     tenant_slug: r.tenantSlug,
@@ -1355,6 +1376,8 @@ export class AuthService implements OnModuleInit {
                     custom_role_id: custom ? r.customRoleId : null,
                     custom_role_name: custom ? r.customRoleName : null,
                     capabilities: effectiveCapabilities(r.role, custom),
+                    access: accessOf(r),
+                    disabled_modules: disabled,
                 };
             });
         });

@@ -19,7 +19,6 @@ import {
     formatBookingWhen,
     formItemVisible,
     isBookingQuestionType,
-    isEffectivelyReadOnly,
     isEmptyAnswer,
     isValidTimeZone,
     jsonbKeyForField,
@@ -47,6 +46,7 @@ import {
     type RescheduleAppointmentInput,
     type TenantFormat,
 } from '@imagina-base/shared';
+import { accessOf } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
@@ -241,12 +241,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             timeZone: resolveTimeZone(fmt.timezone),
             fields: await this.fields.listByListId(page.tenantId, page.listId),
             createdBy: page.createdBy,
-            readOnly: isEffectivelyReadOnly({
-                status: tenant.status as BillingStatus,
-                archived_at: tenant.archivedAt,
-                subscription_ends_at: tenant.subscriptionEndsAt,
-                paid_until: tenant.paidUntil,
-            }),
+            // v0.1.338 — pausada también cuenta (no tiene acceso completo).
+            readOnly: accessOf(tenant).state !== 'full',
             tenantSettings: settings,
             tenantName: tenant.name,
             format: fmt,

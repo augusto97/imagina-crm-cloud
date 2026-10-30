@@ -30,6 +30,7 @@ import { AuthService } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { DomainsService } from '../domains/domains.service';
+import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { TenantGuard, type TenantContext } from '../tenancy/tenant.guard';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { MailService } from '../mail/mail.service';
@@ -101,6 +102,7 @@ export class WorkspacesController {
 
     /** Branding del workspace — lo lee cualquier miembro (lo aplica el boot). */
     @Get('current/branding')
+    @AllowLocked()
     @UseGuards(TenantGuard)
     @AllowGuest()
     getBranding(@Req() req: FastifyRequest): Promise<BrandingResponse> {

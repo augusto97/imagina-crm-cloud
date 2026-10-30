@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { idSchema } from './common';
 import { capabilitySchema, roleSchema } from './membership';
 import { tenantSlugSchema } from './slug';
+import { tenantAccessSchema } from './plan-access';
 
 export const emailSchema = z.string().trim().toLowerCase().email().max(255);
 export const passwordSchema = z.string().min(8, 'Mínimo 8 caracteres').max(128);
@@ -64,6 +65,12 @@ export const membershipSummarySchema = z.object({
     custom_role_id: z.number().int().positive().nullable().optional(),
     custom_role_name: z.string().nullable().optional(),
     capabilities: z.array(capabilitySchema).optional(),
+    /**
+     * v0.1.338 — acceso de la empresa (la app decide si monta o muestra
+     * «cuenta pausada» sin otro pedido) y los módulos que su plan no incluye.
+     */
+    access: tenantAccessSchema.optional(),
+    disabled_modules: z.array(z.string()).optional(),
 });
 export type MembershipSummary = z.infer<typeof membershipSummarySchema>;
 

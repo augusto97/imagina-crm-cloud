@@ -6,6 +6,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import type { Actor } from '../records/records.service';
 import { contentDispositionHeader } from '../files/safe-content-type';
+import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ExportService } from './export.service';
 import { aclOf } from '../tenancy/acl-of';
@@ -24,6 +25,9 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
  *
  * SEC-10: todos se STREAMEAN (keyset) → sin OOM en listas grandes.
  */
+// v0.1.338 (ADR-S87) — con la empresa pausada se siguen pudiendo descargar
+// los datos (ADR-S09).
+@AllowLocked()
 @Controller('lists/:list/export')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class ExportController {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { tenantAccessSchema } from './plan-access';
 
 /**
  * Planes y límites (STANDALONE §11). Los límites se aplican por un
@@ -56,6 +57,10 @@ export function isReadOnly(status: BillingStatus): boolean {
 }
 
 /**
+ * OJO (v0.1.338): los días de gracia ahora son configurables (política de la
+ * plataforma, `tenantAccess` en plan-access.ts). Esta constante es el valor
+ * por defecto y lo que usan las pruebas puras; el API no la usa para decidir.
+ *
  * v0.1.250 — Días de gracia después de que vence un período PAGADO por la
  * app (`paid_until`) antes de pasar a solo-lectura: el tiempo de una
  * renovación que se demora (un PSE pendiente, una tarjeta que rebota y el
@@ -139,6 +144,14 @@ export const billingSummarySchema = z.object({
     paid_until: z.string().nullable().default(null),
     /** Fecha manual del operador (`null` = sin corte). */
     subscription_ends_at: z.string().nullable().default(null),
+    /** v0.1.338 — acceso efectivo (completo / sólo lectura / pausada) y hasta cuándo. */
+    access: tenantAccessSchema.optional(),
+    /** v0.1.338 — fin de la prueba (`null` = no vence o no está en prueba). */
+    trial_ends_at: z.string().nullable().default(null),
+    /** v0.1.338 — módulos que el plan NO incluye. */
+    disabled_modules: z.array(z.string()).default([]),
+    /** v0.1.338 — si pasó a prueba por no renovar: de qué plan venía. */
+    lapsed_from: z.object({ plan: z.string(), at: z.string() }).nullable().default(null),
 });
 export type BillingSummary = z.infer<typeof billingSummarySchema>;
 

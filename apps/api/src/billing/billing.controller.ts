@@ -17,6 +17,7 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
+import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BillingService } from './billing.service';
 
@@ -43,6 +44,7 @@ export class BillingController {
 
     /** Plan + estado + uso + límites del workspace activo (solo admin, SEC-18). */
     @Get()
+    @AllowLocked()
     @UseGuards(SessionGuard, TenantGuard)
     summary(@Req() req: FastifyRequest): Promise<BillingSummary> {
         if (req.tenant!.role !== 'admin') {

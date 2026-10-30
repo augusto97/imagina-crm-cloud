@@ -673,6 +673,13 @@
       "when": 1784200000290,
       "tag": "0095_site_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1784200000300,
+      "tag": "0096_trial_plan_modules",
+      "breakpoints": true
     }
   ]
 }

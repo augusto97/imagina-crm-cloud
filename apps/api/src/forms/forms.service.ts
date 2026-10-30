@@ -19,7 +19,6 @@ import {
     defaultFormConfig,
     formConfigSchema,
     formItemVisible,
-    isEffectivelyReadOnly,
     isEmptyAnswer,
     isFormFieldType,
     jsonbKeyForField,
@@ -45,6 +44,7 @@ import {
     zonedInstant,
     type FormFieldItem,
 } from '@imagina-base/shared';
+import { accessOf } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
@@ -417,6 +417,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                plan: tenants.plan,
+                trialEndsAt: tenants.trialEndsAt,
                 tenantSettings: tenants.settings,
                 tenantName: tenants.name,
             })
@@ -433,12 +435,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return {
             row: hit.form,
             config: readConfig(hit.form.config),
-            readOnly: isEffectivelyReadOnly({
-                status: hit.status as BillingStatus,
-                archived_at: hit.archivedAt,
-                subscription_ends_at: hit.subscriptionEndsAt,
-                paid_until: hit.paidUntil,
-            }),
+            // v0.1.338 — pausada también cuenta (no tiene acceso completo).
+            readOnly: accessOf(hit).state !== 'full',
             tenantSettings: (hit.tenantSettings as Record<string, unknown> | null) ?? {},
             tenantName: hit.tenantName,
             timeZone: resolveTimeZone(

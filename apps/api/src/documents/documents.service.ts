@@ -72,6 +72,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { docImageKey, renderDocument, type ItemsTable, type TotalsRowResolved } from './document-render';
 import { computeDesignTotals } from './document-totals';
+import { publicSurfaceOff } from '../billing/tenant-access';
 
 /** Tope por plantillas de una lista (son diseños, no datos). */
 const MAX_TEMPLATES_PER_LIST = 50;
@@ -603,6 +604,11 @@ export class DocumentsService {
             throw templateNotFound(templateId);
         }
         const rendered = await this.withDocTx(tenantId, async (tx, uploads) => {
+            // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Documentos PDF»:
+            // el enlace responde como uno vencido.
+            if (await publicSurfaceOff(tx, tenantId, 'documents')) {
+                throw templateNotFound(templateId);
+            }
             const tpl = await this.findAnyInTx(tx, tenantId, templateId);
             if (!tpl) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);

@@ -25,12 +25,12 @@ import {
     emailDesignSchema,
     FALLBACK_TIME_ZONE,
     formatEmailFieldValue,
-    isEffectivelyReadOnly,
     parseEmailDesign,
     tenantFormatSchema,
     zonedToday,
     type BillingStatus,
 } from '@imagina-base/shared';
+import { accessOf } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
@@ -994,6 +994,8 @@ export class AutomationsService {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                plan: tenants.plan,
+                trialEndsAt: tenants.trialEndsAt,
             })
             .from(automationHooks)
             .innerJoin(tenants, eq(tenants.id, automationHooks.tenantId))
@@ -1008,12 +1010,8 @@ export class AutomationsService {
         return {
             tenantId: row.tenantId,
             automationId: row.automationId,
-            readOnly: isEffectivelyReadOnly({
-                status: row.status as BillingStatus,
-                archived_at: row.archivedAt,
-                subscription_ends_at: row.subscriptionEndsAt,
-                paid_until: row.paidUntil,
-            }),
+            // v0.1.338 — pausada también cuenta (no tiene acceso completo).
+            readOnly: accessOf(row).state !== 'full',
         };
     }
 

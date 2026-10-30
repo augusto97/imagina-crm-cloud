@@ -1,7 +1,8 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { effectiveCapabilities, isEffectivelyReadOnly, type BillingStatus, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
+import { effectiveCapabilities, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
+import { accessOf } from '../billing/tenant-access';
 import { DRIZZLE, type Db } from '../db/client';
 import { customRoles, memberships, oauthClients, personalAccessTokens, tenants, users } from '../db/schema';
 
@@ -197,6 +198,8 @@ export class PersonalTokensService {
                 role: memberships.role,
                 disabledAt: users.disabledAt,
                 tenantStatus: tenants.status,
+                tenantPlan: tenants.plan,
+                trialEndsAt: tenants.trialEndsAt,
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
@@ -232,12 +235,18 @@ export class PersonalTokensService {
         // por ahí: con un token `full` seguía proponiendo y aplicando. En ese
         // estado el token vale como `read` (leer y exportar siguen, como en la
         // interfaz).
-        const readOnly = isEffectivelyReadOnly({
-            status: row.tenantStatus as BillingStatus,
-            archived_at: row.archivedAt,
-            subscription_ends_at: row.subscriptionEndsAt,
-            paid_until: row.paidUntil,
+        // v0.1.338 (ADR-S87) — con la empresa PAUSADA el token no sirve: ni
+        // leer (la interfaz tampoco deja; sólo pagar y descargar los datos).
+        const access = accessOf({
+            plan: row.tenantPlan,
+            status: row.tenantStatus,
+            archivedAt: row.archivedAt,
+            trialEndsAt: row.trialEndsAt,
+            subscriptionEndsAt: row.subscriptionEndsAt,
+            paidUntil: row.paidUntil,
         });
+        if (access.state === 'locked') return null;
+        const readOnly = access.state !== 'full';
         const scope = readOnly ? 'read' : (row.scope as PersonalTokenScope);
         const teamIds = (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
         return {

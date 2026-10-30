@@ -6,7 +6,6 @@ import { AiSettingsService } from '../ai/ai-settings.service';
 import { BadRequestException } from '@nestjs/common';
 import {
     BILLING_STATUSES,
-    isEffectivelyReadOnly,
     isReadOnly,
     type BillingStatus,
     type AddMemberInput,
@@ -34,6 +33,8 @@ import {
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
+import { readLapsedFrom } from '../billing/billing.service';
+import { accessOf } from '../billing/tenant-access';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx, withoutTimeouts } from '../db/client';
 import {
@@ -246,18 +247,18 @@ export class PlatformService {
         usage: PlatformTenant['usage'],
     ): PlatformTenant {
         const status = (t.status ?? 'trialing') as BillingStatus;
+        const plan = (t.plan ?? 'trial') as Plan;
+        const access = accessOf(t);
         return {
             id: t.id,
             slug: t.slug,
             name: t.name,
-            plan: (t.plan ?? 'trial') as Plan,
+            plan,
             status,
-            read_only: isEffectivelyReadOnly({
-                status,
-                archived_at: t.archivedAt,
-                subscription_ends_at: t.subscriptionEndsAt,
-                paid_until: t.paidUntil,
-            }),
+            read_only: access.state !== 'full',
+            access,
+            trial_ends_at: plan === 'trial' && t.trialEndsAt ? t.trialEndsAt.toISOString() : null,
+            lapsed_from: plan === 'trial' ? readLapsedFrom(t.settings) : null,
             archived: t.archivedAt != null,
             subscription_ends_at: t.subscriptionEndsAt ? t.subscriptionEndsAt.toISOString() : null,
             paid_until: t.paidUntil ? t.paidUntil.toISOString() : null,
@@ -354,6 +355,10 @@ export class PlatformService {
         if (input.archived !== undefined) changes.archivedAt = input.archived ? new Date() : null;
         if (input.subscription_ends_at !== undefined) {
             changes.subscriptionEndsAt = input.subscription_ends_at ? new Date(input.subscription_ends_at) : null;
+        }
+        // v0.1.338 — extender, acortar o quitar el fin de la prueba.
+        if (input.trial_ends_at !== undefined) {
+            changes.trialEndsAt = input.trial_ends_at ? new Date(input.trial_ends_at) : null;
         }
         if (Object.keys(changes).length > 0) {
             changes.updatedAt = new Date();
@@ -665,7 +670,17 @@ export class PlatformService {
     /** Foto del negocio para el dashboard del operador. */
     async getStats(): Promise<PlatformStats> {
         const [rows, planList] = await Promise.all([
-            this.db.select({ plan: tenants.plan, status: tenants.status, createdAt: tenants.createdAt }).from(tenants),
+            this.db
+                .select({
+                    plan: tenants.plan,
+                    status: tenants.status,
+                    createdAt: tenants.createdAt,
+                    archivedAt: tenants.archivedAt,
+                    trialEndsAt: tenants.trialEndsAt,
+                    subscriptionEndsAt: tenants.subscriptionEndsAt,
+                    paidUntil: tenants.paidUntil,
+                })
+                .from(tenants),
             this.plans.list(),
         ]);
 
@@ -674,7 +689,11 @@ export class PlatformService {
         const by_plan: Record<string, number> = Object.fromEntries(planList.map((p) => [p.slug, 0]));
         let read_only_tenants = 0;
         let signups_last_30d = 0;
-        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        let locked_tenants = 0;
+        let trials_active = 0;
+        let trials_ending_7d = 0;
+        const now = Date.now();
+        const cutoff = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
         for (const r of rows) {
             const status = (r.status ?? 'trialing') as BillingStatus;
@@ -683,6 +702,14 @@ export class PlatformService {
             by_plan[plan] = (by_plan[plan] ?? 0) + 1;
             if (isReadOnly(status)) read_only_tenants += 1;
             if (r.createdAt >= cutoff) signups_last_30d += 1;
+            // v0.1.338 — pausadas y pruebas vigentes (con la política actual).
+            const access = accessOf(r);
+            if (access.state === 'locked') locked_tenants += 1;
+            if (access.trial && access.state === 'full' && !r.archivedAt) {
+                trials_active += 1;
+                const ends = access.ends_at ? new Date(access.ends_at).getTime() : null;
+                if (ends !== null && ends - now <= 7 * 24 * 60 * 60 * 1000) trials_ending_7d += 1;
+            }
         }
 
         // v0.1.331 — las altas de los últimos 30 días por origen. Sólo se lee
@@ -708,6 +735,9 @@ export class PlatformService {
             by_status,
             by_plan,
             read_only_tenants,
+            locked_tenants,
+            trials_active,
+            trials_ending_7d,
             users_total: u?.n ?? 0,
             records_total: rec?.n ?? 0,
             signups_last_30d,

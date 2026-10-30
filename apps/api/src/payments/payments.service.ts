@@ -1,9 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { currentBillingPolicy } from '../billing/tenant-access';
 import {
     addMonthsClamped,
-    BILLING_GRACE_DAYS,
     extendPaidUntil,
-    paidReadOnlyAt,
+    paidCutAt,
     PROVIDER_CURRENCY,
     type AutoRenew,
     type AutoRenewStatus,
@@ -18,7 +18,7 @@ import {
     type PlatformPaymentRow,
     type SubscriptionInfo,
 } from '@imagina-base/shared';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { PlansService } from '../billing/plans.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
@@ -277,7 +277,8 @@ export class PaymentsService {
             periodEnd = extendPaidUntil(tenant.paidUntil, now, months);
             await tx
                 .update(tenants)
-                .set({ plan, status: 'active', paidUntil: periodEnd, updatedAt: now })
+                // v0.1.338 — al pagar deja de ser «la que pasó a prueba por no renovar».
+                .set({ plan, status: 'active', paidUntil: periodEnd, updatedAt: now, settings: sql`${tenants.settings} - 'lapsed'` })
                 .where(eq(tenants.id, tenantId));
         } else if (n.status === 'refunded') {
             // Devuelto lo que estaba aplicado: se le quitan esos meses al período.
@@ -413,8 +414,9 @@ export class PaymentsService {
             return {
                 plan: t?.plan ?? 'trial',
                 paid_until: t?.paidUntil ? t.paidUntil.toISOString() : null,
-                read_only_at: t?.paidUntil ? paidReadOnlyAt(t.paidUntil).toISOString() : null,
-                grace_days: BILLING_GRACE_DAYS,
+                // v0.1.338 — la gracia es la de la política de la plataforma.
+                read_only_at: t?.paidUntil ? paidCutAt(t.paidUntil, currentBillingPolicy().grace_days).toISOString() : null,
+                grace_days: currentBillingPolicy().grace_days,
                 manual_ends_at: t?.endsAt ? t.endsAt.toISOString() : null,
                 auto_renew: sub ? toAutoRenew(sub) : null,
                 payments: rows.map(toPayment),

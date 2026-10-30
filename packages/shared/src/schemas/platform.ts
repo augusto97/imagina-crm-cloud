@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
 import { idSchema } from './common';
+import { billingPolicySchema, disabledModulesSchema, tenantAccessSchema } from './plan-access';
 import { storedSignupAttributionSchema } from './signup-attribution';
 
 /**
@@ -39,6 +40,12 @@ export const platformTenantSchema = z.object({
     usage: usageSchema,
     /** v0.1.331 — de dónde vino el alta (null = la creó el operador o es anterior). */
     signup_source: storedSignupAttributionSchema.nullable().default(null),
+    /** v0.1.338 — fin de la prueba (null = no vence o no está en prueba). */
+    trial_ends_at: z.string().nullable().default(null),
+    /** v0.1.338 — acceso efectivo: completo, sólo lectura o pausada (y por qué). */
+    access: tenantAccessSchema.optional(),
+    /** v0.1.338 — pasó a prueba por no renovar: de qué plan venía y cuándo. */
+    lapsed_from: z.object({ plan: z.string(), at: z.string() }).nullable().default(null),
 });
 export type PlatformTenant = z.infer<typeof platformTenantSchema>;
 
@@ -116,6 +123,8 @@ export const updateTenantSchema = z
         status: billingStatusSchema.optional(),
         archived: z.boolean().optional(),
         subscription_ends_at: z.string().datetime({ offset: true }).nullable().optional(),
+        /** v0.1.338 — fin de la prueba (extender, acortar o `null` = sin fin). */
+        trial_ends_at: z.string().datetime({ offset: true }).nullable().optional(),
     })
     .refine(
         (v) =>
@@ -123,7 +132,8 @@ export const updateTenantSchema = z
             v.plan !== undefined ||
             v.status !== undefined ||
             v.archived !== undefined ||
-            v.subscription_ends_at !== undefined,
+            v.subscription_ends_at !== undefined ||
+            v.trial_ends_at !== undefined,
         { message: 'Indica al menos un campo a cambiar' },
     );
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
@@ -191,6 +201,8 @@ export const platformPlanSchema = z.object({
     price_cop: z.number().int().nullable(),
     is_active: z.boolean(),
     position: z.number().int(),
+    /** v0.1.338 — módulos que el plan NO incluye (vacío = todos). */
+    disabled_modules: z.array(z.string()).default([]),
 });
 export type PlatformPlan = z.infer<typeof platformPlanSchema>;
 
@@ -224,6 +236,7 @@ export const createPlanSchema = z.object({
     price_usd: nullablePrice.default(null),
     price_cop: nullablePrice.default(null),
     is_active: z.boolean().default(true),
+    disabled_modules: disabledModulesSchema.optional(),
 });
 export type CreatePlanInput = z.infer<typeof createPlanSchema>;
 
@@ -241,9 +254,30 @@ export const updatePlanSchema = z
         price_usd: nullablePrice,
         price_cop: nullablePrice,
         is_active: z.boolean(),
+        disabled_modules: disabledModulesSchema,
     })
     .partial();
 export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
+
+// ─────────── Prueba y vencimientos (v0.1.338, ADR-S87) ───────────
+
+/** La política + cuántas empresas en prueba quedaron SIN fecha de fin. */
+export const platformBillingPolicyViewSchema = z.object({
+    policy: billingPolicySchema,
+    /**
+     * Empresas en el plan de prueba sin fecha de fin (las de antes de esta
+     * versión, o las que el operador dejó sin fin). Sin empresas de un
+     * superadmin: la del operador no se pausa.
+     */
+    trials_without_end: z.number().int(),
+    /** Empresas pausadas ahora mismo. */
+    locked: z.number().int(),
+});
+export type PlatformBillingPolicyView = z.infer<typeof platformBillingPolicyViewSchema>;
+
+/** Darles fecha de fin a las pruebas que no la tienen: `days` desde hoy. */
+export const applyTrialEndsSchema = z.object({ days: z.number().int().min(1).max(365) });
+export type ApplyTrialEndsInput = z.infer<typeof applyTrialEndsSchema>;
 
 // ─────────────── Impersonación de soporte (F5) ───────────────
 
@@ -280,6 +314,11 @@ export interface PlatformStats {
     by_plan: Record<Plan, number>;
     /** Tenants en solo-lectura (impago: past_due/canceled). */
     read_only_tenants: number;
+    /** v0.1.338 — pausadas ahora (prueba terminada o plan vencido). */
+    locked_tenants?: number;
+    /** v0.1.338 — en prueba vigente y cuántas terminan en los próximos 7 días. */
+    trials_active?: number;
+    trials_ending_7d?: number;
     users_total: number;
     records_total: number;
     /** Altas de empresas en los últimos 30 días. */

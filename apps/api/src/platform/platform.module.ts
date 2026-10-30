@@ -4,6 +4,7 @@ import { SuperadminGuard } from '../authz/superadmin.guard';
 import { FilesModule } from '../files/files.module';
 import { MembersModule } from '../members/members.module';
 import { UpdateModule } from '../update/update.module';
+import { PlatformBillingPolicyController } from './billing-policy.controller';
 import { PlatformController } from './platform.controller';
 import { PlatformService } from './platform.service';
 import { TenantTransferController } from './tenant-transfer.controller';
@@ -17,7 +18,7 @@ import { TransferDriveService } from './transfer-drive.service';
  */
 @Module({
     imports: [AuthModule, FilesModule, MembersModule, UpdateModule],
-    controllers: [PlatformController, TenantTransferController],
+    controllers: [PlatformController, PlatformBillingPolicyController, TenantTransferController],
     providers: [PlatformService, TenantTransferService, TransferDriveService, SuperadminGuard],
 })
 export class PlatformModule {}
