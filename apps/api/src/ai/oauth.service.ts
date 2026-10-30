@@ -3,6 +3,7 @@ import { effectiveCapabilities, type OauthApproveInput, type OauthAuthorizationR
 import { and, eq } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
+import { assertPlanModule } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db } from '../db/client';
 import { customRoles, memberships, oauthClients } from '../db/schema';
 import { REDIS } from '../redis/redis.module';
@@ -272,6 +273,8 @@ export class OauthService {
         // v0.1.185 — el usuario del portal (rol client) no autoriza conectores.
         // C2/C3 — ni invitados ni roles propios sin «Usar el asistente IA».
         assertNotClient(member.role as Role, effectiveCapabilities(member.role as Role, Array.isArray(member.customCaps) ? member.customCaps : null));
+        // v0.1.338 (ADR-S87) — el plan de esa empresa tiene que incluir la API.
+        await assertPlanModule(this.db, input.tenant_id, 'api');
         // GETDEL: el pedido se consume — un segundo "Autorizar" (doble click,
         // pestaña duplicada) no emite dos codes.
         const raw = await this.redis.getdel(reqKey(requestId));

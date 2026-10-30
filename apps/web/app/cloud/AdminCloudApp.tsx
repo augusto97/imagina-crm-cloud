@@ -10,6 +10,7 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 import { Button } from '@/components/ui/button';
 import { SuperadminWorkspaceSetup } from '@/cloud/components/SuperadminWorkspaceSetup';
+import { LockedWorkspaceScreen } from '@/cloud/components/LockedWorkspaceScreen';
 import { BootSplashDone } from '@/components/BootSplashDone';
 import { bootSplashVisible } from '@/lib/bootSplash';
 
@@ -172,6 +173,18 @@ export function AdminCloudApp(): JSX.Element {
         );
     }
     if (!booted) return <LoadingScreen />;
+
+    // v0.1.338 (ADR-S87) — empresa PAUSADA (prueba terminada o plan vencido):
+    // en vez de la app, elegir un plan, pagar y descargar los datos.
+    const active = memberships.find((m) => m.tenant_id === activeTenantId) ?? null;
+    if (active?.access?.state === 'locked') {
+        return (
+            <>
+                <BootSplashDone />
+                <LockedWorkspaceScreen key={active.tenant_id} membership={active} />
+            </>
+        );
+    }
 
     // v0.1.286 — `key` por empresa: al cambiar de workspace se remonta TODO el
     // árbol de la app (shell, páginas, realtime), así nada queda con estado o

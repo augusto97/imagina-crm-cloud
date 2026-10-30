@@ -28,6 +28,7 @@ import { aclOf } from '../tenancy/acl-of';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { OnboardingAiService } from './onboarding-ai.service';
 import { OnboardingService } from './onboarding.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * F7 (ADR-S72) — «Empezar fácil». Cerrado a invitados (no lleva
@@ -65,6 +66,7 @@ export class OnboardingController {
     }
 
     /** Arranca el pedido a la IA (corre en segundo plano). */
+    @PlanModule('ai')
     @Post('ai/proposals')
     @HttpCode(202)
     @RequireCapability('manage_lists')
@@ -75,6 +77,7 @@ export class OnboardingController {
         return this.ai.start(toolCtx(req), input);
     }
 
+    @PlanModule('ai')
     @Get('ai/proposals/:id')
     @RequireCapability('manage_lists')
     async proposal(@Req() req: FastifyRequest, @Param('id') id: string): Promise<OnboardingAiJob> {

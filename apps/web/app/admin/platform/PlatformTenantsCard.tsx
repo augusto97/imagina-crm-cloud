@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { signupAttributionLabel, signupSourceKey } from '@imagina-base/shared';
+import { daysLeft, signupAttributionLabel, signupSourceKey } from '@imagina-base/shared';
 import {
     Archive,
     ArchiveRestore,
@@ -319,6 +319,7 @@ export function PlatformTenantsCard(): JSX.Element {
                                                         : [{ value: t.plan, label: t.plan }]),
                                                 ]}
                                             />
+                                            <AccessLine t={t} />
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5">
                                             <QuietSelect
@@ -550,6 +551,8 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
     const [name, setName] = useState('');
     // <input type="date"> quiere YYYY-MM-DD; el backend guarda ISO completo.
     const [until, setUntil] = useState('');
+    // v0.1.338 — fin de la prueba (YYYY-MM-DD; vacío = no vence).
+    const [trialEnd, setTrialEnd] = useState('');
     const [error, setError] = useState<string | null>(null);
 
     const t = detail.data?.tenant;
@@ -557,8 +560,22 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
     useEffect(() => {
         setName(t?.name ?? '');
         setUntil(t?.subscription_ends_at ? t.subscription_ends_at.slice(0, 10) : '');
+        setTrialEnd(t?.trial_ends_at ? t.trial_ends_at.slice(0, 10) : '');
         setError(null);
     }, [t]);
+
+    const saveTrialEnd = (value: string): void => {
+        // Fin de ese día en UTC; vacío = la prueba no vence.
+        const iso = value ? new Date(`${value}T23:59:59.000Z`).toISOString() : null;
+        void run({ trial_ends_at: iso });
+    };
+    const extendTrial = (days: number): void => {
+        // Desde lo que quede de la prueba (o desde hoy si ya terminó).
+        const base = Math.max(Date.now(), t?.trial_ends_at ? new Date(t.trial_ends_at).getTime() : 0);
+        const next = new Date(base + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        setTrialEnd(next);
+        saveTrialEnd(next);
+    };
 
     const run = async (input: Parameters<typeof update.mutateAsync>[0]['input']): Promise<void> => {
         if (id === null) return;
@@ -672,8 +689,38 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                     </Button>
                                 </div>
                                 <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                    {__('Al vencer, la empresa pasa a solo-lectura automáticamente. Vacío = sin vencimiento.')}
+                                    {__('Al vencer, se aplica la política de «Prueba y vencimientos» (Planes). Vacío = sin vencimiento.')}
                                 </p>
+                                {t.plan === 'trial' && (
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3" data-testid="tenant-trial-editor">
+                                        <Label className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs">
+                                            <CalendarClock className="imcrm-h-3 imcrm-w-3" /> {__('Fin de la prueba')}
+                                        </Label>
+                                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-end imcrm-gap-2">
+                                            <Input
+                                                type="date"
+                                                value={trialEnd}
+                                                onChange={(e) => setTrialEnd(e.target.value)}
+                                                className="imcrm-h-9 imcrm-w-44"
+                                                data-testid="tenant-trial-date"
+                                            />
+                                            <Button size="sm" variant="outline" disabled={busy} onClick={() => saveTrialEnd(trialEnd)} data-testid="tenant-trial-save">
+                                                <Save className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Aplicar')}
+                                            </Button>
+                                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => extendTrial(7)} data-testid="tenant-trial-plus7">
+                                                {__('+7 días')}
+                                            </Button>
+                                            <Button size="sm" variant="ghost" disabled={busy} onClick={() => extendTrial(15)}>
+                                                {__('+15 días')}
+                                            </Button>
+                                        </div>
+                                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                            {t.access?.state === 'locked'
+                                                ? __('La prueba terminó y la cuenta está pausada. Extiéndela para que vuelva a funcionar al instante.')
+                                                : __('Vacío = la prueba no vence.')}
+                                        </p>
+                                    </div>
+                                )}
                             </section>
 
                             {/* Uso vs. límites */}
@@ -815,5 +862,31 @@ function TenantMembersSection({
                 </p>
             )}
         </section>
+    );
+}
+
+/**
+ * v0.1.338 (ADR-S87) — Bajo el plan de cada empresa: cuánto le queda de prueba,
+ * si está pausada y por qué, o de qué plan venía si pasó a prueba por no renovar.
+ */
+function AccessLine({ t }: { t: PlatformTenant }): JSX.Element | null {
+    const a = t.access;
+    if (!a) return null;
+    let text: string | null = null;
+    let tone = 'imcrm-text-muted-foreground';
+    if (a.state === 'locked') {
+        text = a.reason === 'trial_ended' ? __('Pausada · terminó la prueba') : __('Pausada · venció el plan');
+        tone = 'imcrm-text-destructive';
+    } else if (a.trial) {
+        const left = daysLeft(a.ends_at);
+        text = left === null ? __('Prueba sin fecha de fin') : left === 1 ? __('Prueba · queda 1 día') : `${__('Prueba · quedan')} ${left} ${__('días')}`;
+        if (left !== null && left <= 3) tone = 'imcrm-text-warning';
+    }
+    if (t.lapsed_from) text = `${text ?? ''}${text ? ' · ' : ''}${__('venía de')} ${t.lapsed_from.plan}`;
+    if (!text) return null;
+    return (
+        <span className={cn('imcrm-mt-0.5 imcrm-block imcrm-text-[11px]', tone)} data-testid="tenant-access-line">
+            {text}
+        </span>
     );
 }

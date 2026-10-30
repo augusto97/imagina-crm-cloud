@@ -28,8 +28,8 @@ import {
     parseEmailDesign,
     tenantFormatSchema,
     zonedToday,
-    type BillingStatus,
 } from '@imagina-base/shared';
+import { connectionModuleStepError, planModuleOff } from '../billing/plan-module-gate';
 import { accessOf } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
@@ -783,6 +783,10 @@ export class AutomationsService {
         let connection = null;
         try {
             if (Number.isFinite(connectionId) && connectionId > 0) {
+                // v0.1.338 (ADR-S87) — el módulo de ESA conexión tiene que estar
+                // en el plan (lo mismo que exige el motor al ejecutar).
+                const off = await connectionModuleStepError(this.db, tenantId, connectionId);
+                if (off) throw new Error(off);
                 connection = await this.connectors.resolveParts(tenantId, connectionId);
             }
         } catch (err) {
@@ -1005,6 +1009,9 @@ export class AutomationsService {
             .where(eq(automationHooks.token, token))
             .limit(1);
         if (!row) return null;
+        // v0.1.338 (ADR-S87) — plan sin «Automatizaciones»: la URL responde
+        // como una desconocida (nada se borra; vuelve al cambiar de plan).
+        if (await planModuleOff(this.db, row.tenantId, 'automations')) return null;
         // SEC-34: el estado de la empresa viaja con el token, así el endpoint
         // público rechaza ANTES de capturar o encolar nada.
         return {

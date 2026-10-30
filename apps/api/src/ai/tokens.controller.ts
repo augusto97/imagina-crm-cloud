@@ -8,6 +8,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { PersonalTokensService } from './tokens.service';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Tokens de acceso personal del usuario EN el workspace activo (ADR-S21
@@ -28,6 +29,7 @@ export class PersonalTokensController {
         return { data: await this.tokens.list(req.authUserId!, req.tenant!.tenantId) };
     }
 
+    @PlanModule('api')
     @Post()
     @HttpCode(201)
     // C2 — conectar Claude/Cursor por MCP es usar el asistente.

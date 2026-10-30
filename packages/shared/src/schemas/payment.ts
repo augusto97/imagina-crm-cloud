@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { tenantAccessSchema } from './plan-access';
 import { planSchema } from './billing';
 
 /**
@@ -176,6 +177,12 @@ export const subscriptionInfoSchema = z.object({
     manual_ends_at: z.string().nullable(),
     auto_renew: autoRenewSchema.nullable(),
     payments: z.array(billingPaymentSchema),
+    /** v0.1.338 — qué pasa al vencer: pausada (`lock`) o solo-lectura. */
+    on_end: z.enum(['lock', 'read_only']).default('read_only'),
+    /** v0.1.338 — fin de la prueba (`null` = no está en prueba o no vence). */
+    trial_ends_at: z.string().nullable().default(null),
+    /** v0.1.338 — acceso efectivo ahora. */
+    access: tenantAccessSchema.optional(),
 });
 export type SubscriptionInfo = z.infer<typeof subscriptionInfoSchema>;
 

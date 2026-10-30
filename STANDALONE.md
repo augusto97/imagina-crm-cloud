@@ -5366,6 +5366,89 @@ app repara el permiso, comprime el archivo y avisa. De paso se corrigieron los
 enlaces de los correos al operador (copia a Drive, dominios), que apuntaban a
 `/platform?tab=…` sin el `#` del router y caían en la lista de listas.
 
+### ADR-S87 — Prueba con fecha de fin, cuenta pausada y módulos por plan (v0.1.338)
+
+**Contexto.** Pedido del operador: "permíteme ajustar el trial: qué se le permite,
+cuántos usuarios… limitarlo a 15 días y después deshabilitar la cuenta hasta que
+contrate un plan; y a los que no renuevan, que tras unos días de gracia pasen al
+plan trial. No quiero cuentas gratis: con pocos clientes, muchos usuarios gratis
+me obligarían a cambiar de servidor sin que paguen". Hasta acá el plan `trial` no
+vencía nunca (era, de hecho, un plan gratis), un plan pagado que vencía quedaba en
+solo lectura PARA SIEMPRE con los límites de su plan, la gracia era una constante
+(`BILLING_GRACE_DAYS = 5`) y los planes sólo diferían en límites numéricos: no
+había forma de vender "sin automatizaciones" o "sin IA".
+
+**Decisión.**
+1. **Política de la plataforma** en Redis `platform:billing-policy` (viaja en el
+   snapshot de ADR-S20), editable en Plataforma → Planes → «Prueba y
+   vencimientos», con lectura tolerante campo por campo
+   (`readBillingPolicy`): `trial_days` (1-365 o `null` = no vence; default 15),
+   `on_end` (`lock` = cuenta PAUSADA, default; o `read_only`), `grace_days`
+   (0-60, default 5), `lapse_to_trial` (default sí) y `lapse_trial_days`
+   (0-90, default 0 = pausada al instante: ya tuvo su prueba).
+   `BillingPolicyService` la mantiene en memoria (refresco cada 60 s) y la
+   publica a nivel de módulo (`setCurrentBillingPolicy`), así el guard y los
+   motores la usan sin inyección.
+2. **Acceso efectivo** = una función pura de shared, `tenantAccess(input,
+   policy)` → `{state: full|read_only|locked, reason, ends_at, trial}`.
+   Archivada o con un estado de cobro no habilitado → solo lectura (lo decide el
+   operador o el proveedor, no el reloj). En el plan de prueba manda
+   `tenants.trial_ends_at` (columna nueva, migración 0096); en un plan pagado,
+   `paid_until + grace`; la fecha manual del operador (`subscription_ends_at`)
+   corta exacto en los dos. Al terminar, `on_end` decide. La usan el
+   `TenantGuard`, `tenantIsReadOnly`/`tenantIsLocked`, los tokens del MCP, los
+   motores (formularios, agenda, automatizaciones), el resumen de cobro, la
+   consola y la app (viaja en cada membresía de `/auth/me`: el front decide sin
+   otra request).
+3. **Cuenta pausada** (`locked`): el `TenantGuard` responde 403
+   `workspace_locked` con el motivo a todo, salvo lo marcado `@AllowLocked()`:
+   ver el resumen y pagar (checkout, suscripción, cancelar la renovación), la
+   lista de listas, la marca y **exportar** (ADR-S09: los datos nunca se
+   secuestran). En solo lectura, las mutaciones pasan sólo con
+   `@AllowReadOnly`/`@AllowLocked`. Lo público (portal, listas y tableros
+   públicos, enlaces de documentos) responde como si no existiera
+   (`publicSurfaceOff`) y lo que corre solo no corre. La app muestra en lugar
+   del shell una pantalla con el motivo, «Elegir un plan» (el panel de pago de
+   siempre) y «Descargar tus datos» (Excel por lista); un no-admin ve a quién
+   pedírselo.
+4. **Paso a prueba al vencer**: el trabajo de recordatorios (ahora cada hora)
+   pasa al plan `trial`, estado `trialing`, `trial_ends_at = ahora +
+   lapse_trial_days`, a las empresas no-prueba con estado habilitado cuyo
+   `paid_until + grace` (o fecha manual) pasó; con UPDATE condicional al plan
+   leído, `settings.lapsed = {from_plan, at, reason}` y bitácora
+   `billing.lapse_to_trial`. Un pago aprobado lo limpia y devuelve el plan
+   pagado. Correos a los admins: prueba por terminar (3 días) y terminada,
+   período por vencer / vencido / cortado, con dedup en Redis.
+5. **Altas**: el registro público nace con `trial_ends_at = ahora +
+   trial_days`; el alta del operador en plan `trial` también, salvo que el admin
+   sea un superadmin. **Las pruebas existentes no se tocan** (quedan sin fin):
+   la consola las cuenta y ofrece «Darles N días desde hoy», que nunca toca una
+   empresa con un superadmin como miembro.
+6. **Módulos por plan**: 15 claves (`PLAN_MODULES`: automatizaciones, IA,
+   integraciones, WooCommerce, WordPress, SQL, portal, formularios, agenda, mesa
+   de ayuda, documentos, compartir hacia afuera, API, dominio propio, roles
+   propios) en `plans.disabled_modules` (jsonb). Se guardan los DESACTIVADOS:
+   un módulo que traiga una versión futura queda incluido en todos los planes
+   hasta que el operador diga lo contrario. Puertas: `@PlanModule(key)` en los
+   controllers (403 `plan_module_disabled`, leído en la misma consulta de la
+   membresía); `plan-module-gate.ts` para lo que no pasa por el guard (webhooks
+   públicos → 404 opaco, barridos con `planIncludesSql`, acciones de
+   automatización que fallan con el motivo); una app conectada cuenta según su
+   integración (`moduleForIntegration`: WooCommerce, WordPress y SQL tienen el
+   suyo; el resto, «Integraciones»). Lo configurado **no se borra**: vuelve al
+   pasar a un plan que lo incluya. En la app, `PlanModuleNotice`/`PlanModuleGate`
+   reemplazan cada sección por «Tu plan no incluye…» y los paneles de la ficha
+   (WhatsApp, SMS, cobros, PDF, mesa de ayuda, acceso al portal) se ocultan.
+7. **No hay plan gratis**: al terminar la prueba hay que elegir un plan. Es una
+   decisión comercial del operador (costo de servidor sin ingreso), no técnica.
+
+**Consecuencias.** El white-label (marca de la empresa) NO es un módulo: se lee
+en ~14 lugares y gatearlo exige su propia pasada. La configuración del portal
+guardada por el PATCH genérico de la lista no se bloquea (sí todo lo que el
+portal sirve). Los avisos de pago que llegan con «Integraciones» apagado se
+descartan y se recuperan con «Verificar». Las empresas con las pruebas de antes
+siguen sin vencer hasta que el operador use la acción en lote.
+
 ---
 
-**Versión del documento:** 1.133.0 (el WAL de Postgres, vigilado y comprimido)
+**Versión del documento:** 1.134.0 (prueba con fecha de fin, cuenta pausada y módulos por plan)

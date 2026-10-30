@@ -24,6 +24,7 @@ import { PlatformHelpCard } from './PlatformHelpCard';
 import { PlatformPaymentsCard } from './PlatformPaymentsCard';
 import { PlatformIntegrationsCard } from './PlatformIntegrationsCard';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
+import { PlatformBillingPolicyCard } from './PlatformBillingPolicyCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformTransfersCard } from './PlatformTransfersCard';
@@ -115,14 +116,21 @@ export function PlatformPage(): JSX.Element {
                             label={__('Activas')}
                             value={formatNumber(s.by_status.active)}
                             tone="mint"
-                            hint={`${s.by_status.trialing} ${__('en prueba')}`}
+                            hint={
+                                // v0.1.338 — pruebas vigentes y cuántas terminan pronto.
+                                s.trials_active !== undefined
+                                    ? `${formatNumber(s.trials_active)} ${__('en prueba')}${
+                                          s.trials_ending_7d ? ` · ${formatNumber(s.trials_ending_7d)} ${__('terminan esta semana')}` : ''
+                                      }`
+                                    : `${s.by_status.trialing} ${__('en prueba')}`
+                            }
                         />
                         <StatTile
                             icon={AlertTriangle}
-                            label={__('Impagas')}
-                            value={formatNumber(s.read_only_tenants)}
+                            label={__('Pausadas')}
+                            value={formatNumber(s.locked_tenants ?? 0)}
                             tone="amber"
-                            hint={__('en solo-lectura')}
+                            hint={`${formatNumber(s.read_only_tenants)} ${__('suspendidas (solo lectura)')}`}
                         />
                         <StatTile
                             icon={Users}
@@ -189,7 +197,12 @@ export function PlatformPage(): JSX.Element {
 
             {tab === 'tenants' && <PlatformTenantsCard />}
             {tab === 'users' && <PlatformUsersCard />}
-            {tab === 'plans' && <PlatformPlansCard />}
+            {tab === 'plans' && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+                    <PlatformBillingPolicyCard />
+                    <PlatformPlansCard />
+                </div>
+            )}
             {tab === 'audit' && <PlatformImpersonationsCard />}
             {tab === 'novedades' && <PlatformWhatsNewCard />}
             {tab === 'marca' && <PlatformBrandCard />}

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 
 import { EmailSubscriptionsPanel } from './EmailSubscriptionsPanel';
 import { PublicLinkPanel } from './PublicLinkPanel';
+import { PlanModuleGate } from '@/components/PlanModuleNotice';
 
 export type ShareTab = 'link' | 'email';
 
@@ -74,7 +75,9 @@ export function ShareDashboardDialog({
                     </div>
                     <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-p-4 sm:imcrm-px-6">
                         {tab === 'link' ? (
-                            <PublicLinkPanel dashboardId={dashboardId} canPublish={canPublish} />
+                            <PlanModuleGate module="public_sharing">
+                                <PublicLinkPanel dashboardId={dashboardId} canPublish={canPublish} />
+                            </PlanModuleGate>
                         ) : (
                             <EmailSubscriptionsPanel dashboardId={dashboardId} dashboardName={dashboardName} />
                         )}

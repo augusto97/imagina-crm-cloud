@@ -38,6 +38,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TeamsService } from '../teams/teams.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { staffRoleInSql, staffRoleSql } from './staff-roles';
+import { planIncludesSql } from '../billing/plan-module-gate';
 
 const SYSTEM_ACTOR: Actor = { userId: 0, role: 'admin' };
 /** Tickets por vuelta del planificador. */
@@ -515,6 +516,8 @@ export class HelpdeskSlaService implements OnModuleInit {
                     lte(helpdeskTickets.nextCheckAt, now),
                     // Papelera: un ticket borrado no avisa (conexión base: el filtro va a mano).
                     sql`NOT EXISTS (SELECT 1 FROM records r WHERE r.id = ${helpdeskTickets.recordId} AND r.deleted_at IS NOT NULL)`,
+                    // v0.1.338 (ADR-S87) — sin «Mesa de ayuda por correo» no hay avisos de SLA.
+                    planIncludesSql(helpdeskTickets.tenantId, 'helpdesk'),
                 ),
             )
             .orderBy(asc(helpdeskTickets.nextCheckAt))

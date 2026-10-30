@@ -28,6 +28,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { AgentProposalsService } from './agent-proposals.service';
 import { AgentRunnerService } from './agent-runner.service';
 import { AiAgentsService, type AgentEditor } from './ai-agents.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 function actor(req: FastifyRequest): Actor & AgentEditor {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
@@ -61,6 +62,7 @@ export class AiAgentsController {
 
     // ── Agentes ──────────────────────────────────────────────────────────
 
+    @PlanModule('ai')
     @Get('ai-agents')
     @RequireCapability('manage_ai_agents')
     async list(@Req() req: FastifyRequest): Promise<{ data: AiAgentDto[] }> {
@@ -68,12 +70,14 @@ export class AiAgentsController {
     }
 
     /** Para el selector de «Pedirle a un agente» del editor de automatizaciones. */
+    @PlanModule('ai')
     @Get('ai-agents/options')
     @RequireCapability('manage_ai_agents', 'manage_automations')
     async options(@Req() req: FastifyRequest): Promise<{ data: Awaited<ReturnType<AiAgentsService['options']>> }> {
         return { data: await this.agents.options(req.tenant!.tenantId) };
     }
 
+    @PlanModule('ai')
     @Post('ai-agents')
     @HttpCode(201)
     @RequireCapability('manage_ai_agents')
@@ -81,12 +85,14 @@ export class AiAgentsController {
         return { data: await this.agents.create(req.tenant!.tenantId, actor(req), input) };
     }
 
+    @PlanModule('ai')
     @Get('ai-agents/:id')
     @RequireCapability('manage_ai_agents')
     async get(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: AiAgentDto }> {
         return { data: await this.agents.get(req.tenant!.tenantId, id) };
     }
 
+    @PlanModule('ai')
     @Patch('ai-agents/:id')
     @RequireCapability('manage_ai_agents')
     async update(
@@ -97,6 +103,7 @@ export class AiAgentsController {
         return { data: await this.agents.update(req.tenant!.tenantId, actor(req), id, input) };
     }
 
+    @PlanModule('ai')
     @Delete('ai-agents/:id')
     @RequireCapability('manage_ai_agents')
     async remove(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: { id: number; name: string; automations_removed: number } }> {
@@ -105,6 +112,7 @@ export class AiAgentsController {
 
     // ── Cuándo trabaja ───────────────────────────────────────────────────
 
+    @PlanModule('ai')
     @Post('ai-agents/:id/triggers')
     @HttpCode(201)
     @RequireCapability('manage_ai_agents')
@@ -116,6 +124,7 @@ export class AiAgentsController {
         return { data: await this.agents.addTrigger(req.tenant!.tenantId, actor(req), id, input) };
     }
 
+    @PlanModule('ai')
     @Patch('ai-agents/:id/triggers/:automationId')
     @RequireCapability('manage_ai_agents')
     async updateTrigger(
@@ -127,6 +136,7 @@ export class AiAgentsController {
         return { data: await this.agents.updateTrigger(req.tenant!.tenantId, actor(req), id, automationId, input) };
     }
 
+    @PlanModule('ai')
     @Delete('ai-agents/:id/triggers/:automationId')
     @RequireCapability('manage_ai_agents')
     async removeTrigger(
@@ -139,6 +149,7 @@ export class AiAgentsController {
 
     // ── Probar, historial y versiones ────────────────────────────────────
 
+    @PlanModule('ai')
     @Post('ai-agents/:id/test')
     @HttpCode(202)
     @RequireCapability('manage_ai_agents')
@@ -150,6 +161,7 @@ export class AiAgentsController {
         return { data: await this.runner.test(req.tenant!.tenantId, actor(req), id, input) };
     }
 
+    @PlanModule('ai')
     @Get('ai-agents/:id/runs')
     @RequireCapability('manage_ai_agents')
     async runs(
@@ -160,12 +172,14 @@ export class AiAgentsController {
         return this.agents.runs(req.tenant!.tenantId, id, optionalId(cursor));
     }
 
+    @PlanModule('ai')
     @Get('ai-agents/:id/runs/:runId')
     @RequireCapability('manage_ai_agents')
     async run(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Param('runId', ParseIntPipe) runId: number): Promise<{ data: AiAgentRunDto }> {
         return { data: await this.agents.run(req.tenant!.tenantId, id, runId) };
     }
 
+    @PlanModule('ai')
     @Get('ai-agents/:id/versions')
     @RequireCapability('manage_ai_agents')
     async versions(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: AiAgentVersionDto[] }> {

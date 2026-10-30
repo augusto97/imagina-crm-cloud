@@ -163,6 +163,11 @@ export const articles: LearnArticle[] = [
                         tip: 'Los datos nunca se secuestran: en solo lectura la empresa puede consultar y exportar todo.',
                     },
                     {
+                        name: 'Fin de la prueba',
+                        what: 'En el detalle de una empresa en prueba: la fecha en que termina, con **+7 días** y **+15 días** para extenderla. Vacío = la prueba no vence.',
+                        tip: 'Si ya terminó y la cuenta quedó pausada, extenderla la devuelve al instante.',
+                    },
+                    {
                         name: 'Detalle',
                         what: 'Sus miembros con su rol y su uso contra el límite del plan. Puedes invitar, cambiar roles, reenviar invitaciones y quitar personas.',
                         tip: 'Como operador puedes sumar personas aunque la empresa esté en el límite de usuarios.',
@@ -188,7 +193,7 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'tip',
                 title: 'El cobro automático cambia el estado solo',
-                md: 'Si cobras con Mercado Pago o PayPal, no hace falta cambiar el estado a mano: cada pago extiende el período pagado, y si vence (después de 5 días de gracia) la empresa pasa sola a solo lectura. El cambio manual queda para acuerdos especiales.',
+                md: 'Si cobras con Mercado Pago o PayPal, no hace falta cambiar el estado a mano: cada pago extiende el período pagado, y si vence (después de los días de gracia) la empresa pasa sola al plan de prueba y se pausa o queda en solo lectura, según **Planes → Prueba y vencimientos**. El cambio manual queda para acuerdos especiales.',
             },
             {
                 t: 'example',
@@ -420,6 +425,54 @@ export const articles: LearnArticle[] = [
                         tip: 'Con clave propia de la empresa, no hay límite.',
                     },
                 ],
+            },
+            { t: 'h', text: 'Qué incluye cada plan' },
+            {
+                t: 'p',
+                md: 'En el mismo formulario del plan, **Qué incluye el plan** tiene una casilla por función: automatizaciones, inteligencia artificial, integraciones, tienda WooCommerce, sitio WordPress, bases de datos SQL, portal de clientes, formularios, agenda de citas, mesa de ayuda, documentos PDF, compartir hacia afuera, acceso por API, dominio propio y roles propios. Lo que desmarcas queda con candado para las empresas de ese plan: ven **«Tu plan no incluye…»** con el botón para ver planes, el servidor lo rechaza y lo que corre solo no se ejecuta. **No se borra nada**: al pasar a un plan que lo incluya, vuelve tal cual. La columna **Incluye** de la grilla lo resume («13/15 módulos»).',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Las funciones nuevas llegan incluidas',
+                md: 'Se guarda lo que un plan NO incluye. Si una actualización trae una función nueva con su casilla, aparece incluida en todos los planes hasta que decidas lo contrario: nada desaparece solo al actualizar.',
+            },
+            { t: 'h', text: 'Prueba y vencimientos' },
+            {
+                t: 'p',
+                md: 'Arriba de los planes, la tarjeta **Prueba y vencimientos** decide cuánto dura la prueba de una empresa nueva y qué pasa cuando termina, o cuando un plan pagado vence sin renovarse. Lo que incluye la prueba (usuarios, registros, módulos) se edita en el plan **Trial**, como cualquier otro plan. No existe un plan gratis para siempre: al terminar la prueba hay que elegir un plan.',
+            },
+            {
+                t: 'settings',
+                title: 'Los ajustes de la prueba',
+                rows: [
+                    {
+                        name: 'Duración de la prueba',
+                        what: 'Días que recibe una empresa que se registra (por defecto 15), o **Sin fecha de fin**.',
+                        tip: 'Aplica a las nuevas. Para una empresa puntual, ábrela en **Empresas** y cambia su fin de prueba.',
+                    },
+                    {
+                        name: 'Cuando termina',
+                        what: '**Pausar la cuenta** (recomendado): sólo puede elegir un plan, pagar y descargar sus datos; el portal, los formularios y los enlaces públicos dejan de funcionar. O **Dejarla en solo lectura**: ve todo pero no cambia nada.',
+                        tip: 'En los dos casos no se borra nada y al pagar vuelve todo al instante.',
+                    },
+                    {
+                        name: 'Días de gracia',
+                        what: 'Días después del vencimiento de un período pagado en los que todo sigue igual (por defecto 5).',
+                        tip: 'La fecha manual que pones en una empresa corta exacto, sin gracia.',
+                    },
+                    {
+                        name: 'Pasada la gracia, pasa al plan de prueba',
+                        what: 'La empresa que no renovó toma el plan Trial con sus límites y módulos, con los **Días de prueba que recibe** (0 = queda pausada al instante).',
+                        tip: 'Al pagar vuelve al plan que pague. En la grilla se ve de qué plan venía.',
+                    },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Las pruebas de antes no tienen fecha de fin',
+                md: 'Las empresas que ya estaban en prueba antes de este ajuste siguen sin vencer. La tarjeta las cuenta y ofrece **Darles 15 días desde hoy** (los días que tengas configurados). Las empresas de un superadministrador nunca se pausan.',
             },
             { t: 'h', text: 'Conectar Mercado Pago' },
             {

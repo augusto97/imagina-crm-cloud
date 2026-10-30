@@ -20,12 +20,14 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { StoreSyncService } from './store-sync.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Sincronización con tiendas (v0.1.206, ADR-S24). Crea listas y trae datos de
  * afuera a nombre de la empresa: exige `manage_lists` y, en el service, poder
  * EDITAR la conexión de la tienda.
  */
+@PlanModule('woocommerce')
 @Controller('connections/:id/sync')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_lists')

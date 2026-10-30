@@ -16,6 +16,8 @@ import { useRealtime } from '@/cloud/useRealtime';
 import { useIsGuest } from '@/lib/guest';
 import { disableTeamsApi } from '@/hooks/useTeams';
 import { usePwaBridge } from '@/cloud/usePwaBridge';
+import { PlanModuleNotice, usePlanModuleOff } from '@/components/PlanModuleNotice';
+import type { PlanModule as PlanModuleKey } from '@imagina-base/shared';
 
 // Lazy-loaded pages. React.lazy + Vite produce un chunk por cada
 // import — esos chunks viven en `dist/assets/*-<hash>.js` y se
@@ -134,13 +136,13 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><RecordPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/automations" element={
-                    <Suspense fallback={<RouteFallback />}><AutomationsPage /></Suspense>
+                    <RouteModuleGate module="automations"><Suspense fallback={<RouteFallback />}><AutomationsPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="lists/:listSlug/automations/new" element={
-                    <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
+                    <RouteModuleGate module="automations"><Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="lists/:listSlug/automations/:automationId" element={
-                    <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
+                    <RouteModuleGate module="automations"><Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="folders/:folderId" element={
                     <Suspense fallback={<RouteFallback />}><FolderPage /></Suspense>
@@ -152,13 +154,13 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><ApprovalConfirmPage /></Suspense>
                 } />
                 <Route path="agents" element={
-                    <Suspense fallback={<RouteFallback />}><AgentsPage /></Suspense>
+                    <RouteModuleGate module="ai"><Suspense fallback={<RouteFallback />}><AgentsPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="agents/new" element={
-                    <Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense>
+                    <RouteModuleGate module="ai"><Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="agents/:agentId" element={
-                    <Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense>
+                    <RouteModuleGate module="ai"><Suspense fallback={<RouteFallback />}><AgentEditorPage /></Suspense></RouteModuleGate>
                 } />
                 {import.meta.env.DEV && (
                     <Route path="aprende/lab" element={
@@ -196,22 +198,22 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><CloudSettingsPage /></Suspense>
                 } />
                 <Route path="settings/stores/:connectionId" element={
-                    <Suspense fallback={<RouteFallback />}><StoreSyncPage /></Suspense>
+                    <RouteModuleGate module="woocommerce"><Suspense fallback={<RouteFallback />}><StoreSyncPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/sites/:connectionId" element={
-                    <Suspense fallback={<RouteFallback />}><SiteSyncPage /></Suspense>
+                    <RouteModuleGate module="wordpress"><Suspense fallback={<RouteFallback />}><SiteSyncPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/sql/:connectionId" element={
-                    <Suspense fallback={<RouteFallback />}><SqlSyncPage /></Suspense>
+                    <RouteModuleGate module="sql"><Suspense fallback={<RouteFallback />}><SqlSyncPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/collections/:connectionId" element={
-                    <Suspense fallback={<RouteFallback />}><CollectionsPage /></Suspense>
+                    <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><CollectionsPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/whatsapp/:connectionId" element={
-                    <Suspense fallback={<RouteFallback />}><WhatsappPage /></Suspense>
+                    <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><WhatsappPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/sms/:connectionId" element={
-                    <Suspense fallback={<RouteFallback />}><SmsPage /></Suspense>
+                    <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><SmsPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="platform" element={
                     <PlatformGate><Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense></PlatformGate>
@@ -219,5 +221,19 @@ export function App(): JSX.Element {
                 <Route path="*" element={<Navigate to="/lists" replace />} />
             </Route>
         </Routes>
+    );
+}
+
+/**
+ * v0.1.338 (ADR-S87) — Una ruta de un módulo que el plan no incluye muestra el
+ * aviso «Tu plan no incluye…» en vez de la pantalla (que fallaría con 403).
+ */
+function RouteModuleGate({ module, children }: { module: PlanModuleKey; children: React.ReactNode }): JSX.Element {
+    const off = usePlanModuleOff(module);
+    if (!off) return <>{children}</>;
+    return (
+        <div className="imcrm-py-6">
+            <PlanModuleNotice module={module} />
+        </div>
     );
 }

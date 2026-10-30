@@ -24,7 +24,6 @@ import {
     jsonbKeyForField,
     tenantFormatSchema,
     validateFieldValue,
-    type BillingStatus,
     type CreateFormInput,
     type Field,
     type FormConfig,
@@ -67,6 +66,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TeamsService } from '../teams/teams.service';
 import { CaptchaService } from './captcha.service';
 import { formConfirmEmail, formCopyEmail, type FormAnswerLine } from './form-email';
+import { planModuleOff } from '../billing/plan-module-gate';
 
 /** El sistema crea el registro: no hay persona del equipo detrás del envío. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
@@ -432,6 +432,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.289 — una respuesta enviada mientras estaba publicado se puede
         // confirmar aunque después lo hayan despublicado (`allowDisabled`).
         if (!hit || (!hit.form.enabled && !opts.allowDisabled) || hit.archivedAt !== null) throw notFound();
+        // v0.1.338 (ADR-S87) — plan sin «Formularios públicos»: el mismo 404 opaco
+        // (el formulario se conserva y vuelve al cambiar de plan).
+        if (await planModuleOff(this.db, hit.form.tenantId, 'forms')) throw notFound();
         return {
             row: hit.form,
             config: readConfig(hit.form.config),

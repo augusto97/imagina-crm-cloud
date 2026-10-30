@@ -27,6 +27,7 @@ import { FieldBuilder } from './FieldBuilder';
 import { PermissionsPanel } from './PermissionsPanel';
 import { PortalConfigPanel } from './PortalConfigPanel';
 import { PublicVisibilityPanel } from './PublicVisibilityPanel';
+import { PlanModuleGate } from '@/components/PlanModuleNotice';
 import {
     LIST_SETTINGS_SECTIONS,
     listSettingsSection,
@@ -256,31 +257,48 @@ export function ListBuilderPage(): JSX.Element {
 
                 {active === 'compartir' && (
                     <>
-                        <PortalConfigPanel list={data} />
-                        <PublicVisibilityPanel listId={data.id} />
+                        {/* v0.1.338 (ADR-S87) — cada parte, si el plan la incluye. */}
+                        <PlanModuleGate module="portal" compact>
+                            <PortalConfigPanel list={data} />
+                        </PlanModuleGate>
+                        <PlanModuleGate module="public_sharing" compact>
+                            <PublicVisibilityPanel listId={data.id} />
+                        </PlanModuleGate>
                     </>
                 )}
 
-                {active === 'documentos' && <DocumentTemplatesPanel listId={data.id} />}
+                {active === 'documentos' && (
+                    <PlanModuleGate module="documents">
+                        <DocumentTemplatesPanel listId={data.id} />
+                    </PlanModuleGate>
+                )}
                 {active === 'aprobaciones' && <ApprovalFlowsPanel listId={data.id} />}
 
                 {active === 'formularios' && (
-                    <FormsPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                    <PlanModuleGate module="forms">
+                        <FormsPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                    </PlanModuleGate>
                 )}
 
                 {active === 'agenda' && (
-                    <BookingPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                    <PlanModuleGate module="booking">
+                        <BookingPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                    </PlanModuleGate>
                 )}
 
                 {active === 'plantillas' && <RecordTemplatesPanel listId={data.id} />}
 
                 {active === 'correo' && (
-                    <>
+                    <PlanModuleGate module="helpdesk">
                         <HelpdeskMailboxPanel listId={data.id} />
                         <HelpdeskSettingsPanel listId={data.id} />
-                    </>
+                    </PlanModuleGate>
                 )}
-                {active === 'sla' && <SlaPolicyPanel listId={data.id} onGoToMail={() => select('correo')} />}
+                {active === 'sla' && (
+                    <PlanModuleGate module="helpdesk">
+                        <SlaPolicyPanel listId={data.id} onGoToMail={() => select('correo')} />
+                    </PlanModuleGate>
+                )}
             </div>
         </div>
     );

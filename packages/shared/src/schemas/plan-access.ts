@@ -228,7 +228,7 @@ export const PLAN_MODULE_CATALOG: readonly PlanModuleInfo[] = [
     { key: 'ai', group: 'work', label: 'Inteligencia artificial', description: 'Asistente, campos con IA y agentes de IA.' },
     { key: 'documents', group: 'work', label: 'Documentos PDF', description: 'Cotizaciones, cuentas de cobro y facturas en PDF.' },
     { key: 'helpdesk', group: 'work', label: 'Mesa de ayuda por correo', description: 'Un buzón que convierte cada correo en un ticket, con SLA.' },
-    { key: 'integrations', group: 'connect', label: 'Integraciones', description: 'Apps conectadas: WhatsApp, SMS, Gmail, Slack, cobros y API personalizada.' },
+    { key: 'integrations', group: 'connect', label: 'Integraciones', description: 'Apps conectadas: WhatsApp, SMS, Gmail, Slack, cobros, almacenamiento propio y API personalizada.' },
     { key: 'woocommerce', group: 'connect', label: 'Tienda WooCommerce', description: 'Productos, pedidos y clientes de la tienda sincronizados.' },
     { key: 'wordpress', group: 'connect', label: 'Sitio WordPress', description: 'Entradas, páginas, SEO y medios del sitio en listas.' },
     { key: 'sql', group: 'connect', label: 'Bases de datos SQL', description: 'Sincronizar consultas de SQL Server con una lista.' },
@@ -243,6 +243,18 @@ export const PLAN_MODULE_CATALOG: readonly PlanModuleInfo[] = [
 
 export function planModuleLabel(key: PlanModule): string {
     return PLAN_MODULE_CATALOG.find((m) => m.key === key)?.label ?? key;
+}
+
+/**
+ * El módulo de una app conectada (por la clave de su integración): la tienda,
+ * el sitio y SQL tienen el suyo; cualquier otra app —y las API personalizadas
+ * (`null`)— son «Integraciones». Lo usan el servidor y la galería.
+ */
+export function moduleForIntegration(key: string | null | undefined): PlanModule {
+    if (key === 'woocommerce') return 'woocommerce';
+    if (key === 'wordpress') return 'wordpress';
+    if (key === 'sqlserver') return 'sql';
+    return 'integrations';
 }
 
 /** Lectura tolerante de `plans.disabled_modules`: sólo claves conocidas, sin repetidos. */

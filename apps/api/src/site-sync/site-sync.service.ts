@@ -54,6 +54,7 @@ import { WordpressPluginService, versionNewer } from './wordpress-plugin.service
 import { ibcColumnToSite, ibcHooksDelete, ibcInfo, ibcSchema, type IbcSchemaObject } from './wordpress/ibc';
 import { wpGet, wpGetPage } from './wordpress/wp-fetch';
 import { discoverExtraColumns, titleColumnOf } from './wordpress/wp-map';
+import { planIncludesSql } from '../billing/plan-module-gate';
 
 /** v0.1.336 — `on_source_delete` es opcional al dar de alta (por defecto, conservar lo borrado). */
 type WithOptionalDelete<T extends { on_source_delete: unknown }> = Omit<T, 'on_source_delete'> & { on_source_delete?: T['on_source_delete'] };
@@ -1133,7 +1134,15 @@ export class SiteSyncService {
         const due = await this.db
             .select({ id: connectionSyncs.id, tenantId: connectionSyncs.tenantId })
             .from(connectionSyncs)
-            .where(and(eq(connectionSyncs.enabled, true), eq(connectionSyncs.provider, SITE_SYNC_PROVIDER), lte(connectionSyncs.nextRunAt, new Date())))
+            .where(
+                and(
+                    eq(connectionSyncs.enabled, true),
+                    eq(connectionSyncs.provider, SITE_SYNC_PROVIDER),
+                    lte(connectionSyncs.nextRunAt, new Date()),
+                    // v0.1.338 (ADR-S87) — sólo si el plan incluye «Sitio WordPress».
+                    planIncludesSql(connectionSyncs.tenantId, 'wordpress'),
+                ),
+            )
             .orderBy(asc(connectionSyncs.nextRunAt))
             .limit(100);
         for (const d of due) {

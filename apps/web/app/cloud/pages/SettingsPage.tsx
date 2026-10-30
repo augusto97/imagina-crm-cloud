@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
-import { Crown, SlidersHorizontal } from 'lucide-react';
-import type { BillingSummary } from '@imagina-base/shared';
+import { Check, Crown, Lock, SlidersHorizontal } from 'lucide-react';
+import { PLAN_MODULE_CATALOG, readDisabledModules, type BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { CAP, useCan } from '@/lib/permissions';
 import {
@@ -37,6 +37,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
+import { PlanModuleGate } from '@/components/PlanModuleNotice';
+import { cn } from '@/lib/utils';
 const STATUS_LABEL: Record<BillingSummary['status'], string> = {
     trialing: 'En prueba',
     active: 'Activa',
@@ -173,7 +175,11 @@ export function SettingsPage(): JSX.Element {
                         <GuestsPanel />
                     </>
                 )}
-                {active === 'roles' && isAdmin && <RolesPanel />}
+                {active === 'roles' && isAdmin && (
+                    <PlanModuleGate module="custom_roles">
+                        <RolesPanel />
+                    </PlanModuleGate>
+                )}
                 {active === 'equipos' && (isAdmin || canManageTeams) && <TeamsPanel />}
                 {/* Branding white-label del workspace (nombre, color, logo) +
                     dominio personalizado (ADR-S17) + dominio del portal de
@@ -181,8 +187,11 @@ export function SettingsPage(): JSX.Element {
                 {active === 'marca' && isAdmin && (
                     <>
                         <BrandingPanel />
-                        <DomainPanel />
-                        <DomainPanel kind="portal" />
+                        {/* v0.1.338 (ADR-S87) — el dominio propio, si el plan lo incluye. */}
+                        <PlanModuleGate module="custom_domain" compact>
+                            <DomainPanel />
+                            <DomainPanel kind="portal" />
+                        </PlanModuleGate>
                     </>
                 )}
                 {/* SMTP propio del workspace (white-label de correo). */}
@@ -191,7 +200,9 @@ export function SettingsPage(): JSX.Element {
                 {active === 'correo' && isAdmin && <TenantMailPanel />}
                 {active === 'portal' && isAdmin && (
                     <div className="imcrm-space-y-4">
-                        <PortalAuthCard />
+                        <PlanModuleGate module="portal" compact>
+                            <PortalAuthCard />
+                        </PlanModuleGate>
                         <CaptchaKeysCard scope="tenant" />
                     </div>
                 )}
@@ -202,9 +213,15 @@ export function SettingsPage(): JSX.Element {
                 {/* v0.1.268 (ADR-S36) — dónde se guardan los archivos. */}
                 {active === 'almacenamiento' && isAdmin && <TenantStoragePanel />}
 
-                {active === 'asistente' && isAdmin && <AiSettingsPanel />}
+                {active === 'asistente' && isAdmin && (
+                    <PlanModuleGate module="ai">
+                        <AiSettingsPanel />
+                    </PlanModuleGate>
+                )}
 
                 {/* v0.1.196 (ADR-S22) — conectores: el panel se auto-oculta ante 403. */}
+                {/* v0.1.338 — la galería pinta con candado lo que el plan no incluye
+                    (la tienda, el sitio y SQL tienen su propio módulo). */}
                 {active === 'conectores' && <IntegrationsPanel />}
 
                 {active === 'problemas' && <IncidentsPanel />}
@@ -251,6 +268,19 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-1">
+                {/* v0.1.338 (ADR-S87) — la prueba y su fin. */}
+                {summary.trial_ends_at && (
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="billing-trial-ends">
+                        Estás en la prueba: termina el{' '}
+                        <span className="imcrm-font-medium imcrm-text-foreground">{formatDate(new Date(summary.trial_ends_at))}</span>
+                        . Elige un plan en Suscripción para seguir sin interrupciones.
+                    </p>
+                )}
+                {summary.lapsed_from && (
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        Pasó a la prueba porque el plan «{summary.lapsed_from.plan}» no se renovó. Al pagar, vuelve con todo lo que tenía.
+                    </p>
+                )}
                 {summary.paid_until && (
                     <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="billing-paid-until">
                         Pagado hasta el{' '}
@@ -308,8 +338,36 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                               : 'Cada mensaje al asistente cuenta como un pedido. ¿Necesitas más? Carga tu propia clave en Ajustes → Asistente IA y no hay límite.'
                     }
                 />
+                <PlanModulesList disabled={summary.disabled_modules} />
             </CardContent>
         </Card>
+    );
+}
+
+/** v0.1.338 (ADR-S87) — Qué incluye el plan: lo incluido con ✓ y lo que no, con candado. */
+function PlanModulesList({ disabled }: { disabled: string[] }): JSX.Element {
+    const off = new Set(readDisabledModules(disabled));
+    return (
+        <div className="imcrm-space-y-2 imcrm-border-t imcrm-border-border imcrm-pt-4" data-testid="billing-plan-modules">
+            <p className="imcrm-text-sm imcrm-font-medium">Qué incluye tu plan</p>
+            <ul className="imcrm-grid imcrm-gap-1.5 sm:imcrm-grid-cols-2">
+                {PLAN_MODULE_CATALOG.map((m) => (
+                    <li
+                        key={m.key}
+                        className={cn('imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm', off.has(m.key) && 'imcrm-text-muted-foreground')}
+                        data-module={m.key}
+                        data-included={off.has(m.key) ? 'no' : 'yes'}
+                    >
+                        {off.has(m.key) ? (
+                            <Lock className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-label="No incluido" />
+                        ) : (
+                            <Check className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-success" aria-label="Incluido" />
+                        )}
+                        {m.label}
+                    </li>
+                ))}
+            </ul>
+        </div>
     );
 }
 

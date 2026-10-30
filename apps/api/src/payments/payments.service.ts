@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import { currentBillingPolicy } from '../billing/tenant-access';
+import { accessOf, currentBillingPolicy } from '../billing/tenant-access';
 import {
     addMonthsClamped,
     extendPaidUntil,
@@ -396,7 +396,14 @@ export class PaymentsService {
     async subscriptionInfo(tenantId: number): Promise<SubscriptionInfo> {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const [t] = await tx
-                .select({ plan: tenants.plan, paidUntil: tenants.paidUntil, endsAt: tenants.subscriptionEndsAt })
+                .select({
+                    plan: tenants.plan,
+                    paidUntil: tenants.paidUntil,
+                    endsAt: tenants.subscriptionEndsAt,
+                    trialEndsAt: tenants.trialEndsAt,
+                    status: tenants.status,
+                    archivedAt: tenants.archivedAt,
+                })
                 .from(tenants)
                 .where(eq(tenants.id, tenantId));
             const [sub] = await tx
@@ -420,6 +427,18 @@ export class PaymentsService {
                 manual_ends_at: t?.endsAt ? t.endsAt.toISOString() : null,
                 auto_renew: sub ? toAutoRenew(sub) : null,
                 payments: rows.map(toPayment),
+                on_end: currentBillingPolicy().on_end,
+                trial_ends_at: t?.plan === 'trial' && t.trialEndsAt ? t.trialEndsAt.toISOString() : null,
+                access: t
+                    ? accessOf({
+                          plan: t.plan,
+                          status: t.status,
+                          archivedAt: t.archivedAt,
+                          trialEndsAt: t.trialEndsAt,
+                          subscriptionEndsAt: t.endsAt,
+                          paidUntil: t.paidUntil,
+                      })
+                    : undefined,
             };
         });
     }

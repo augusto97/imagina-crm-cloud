@@ -21,6 +21,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ConnectorsService } from './connectors.service';
+import { assertReqModule, moduleForIntegration } from '../billing/plan-module-gate';
 
 /**
  * Galería de apps de la empresa (v0.1.203, ADR-S22 fase 4).
@@ -50,6 +51,7 @@ export class IntegrationsController {
         @Param('key') key: string,
         @Body(new ZodValidationPipe(verifyIntegrationSchema)) input: VerifyIntegrationInput,
     ): Promise<{ data: VerifyIntegrationResult }> {
+        assertReqModule(req, moduleForIntegration(parseKey(key)));
         const data = await this.connectors.verifyIntegration(tenantId(req), userId(req), role(req), parseKey(key), input);
         return { data };
     }
@@ -61,6 +63,8 @@ export class IntegrationsController {
         @Param('key') key: string,
         @Body(new ZodValidationPipe(connectIntegrationKeySchema)) input: ConnectIntegrationKeyInput,
     ): Promise<{ data: Connection; meta: { warning: string | null } }> {
+        // v0.1.338 (ADR-S87) — la app tiene que estar en el plan.
+        assertReqModule(req, moduleForIntegration(parseKey(key)));
         const { connection, warning } = await this.connectors.connectIntegrationKey(
             tenantId(req),
             userId(req),
@@ -79,6 +83,7 @@ export class IntegrationsController {
         @Param('key') key: string,
         @Body(new ZodValidationPipe(authorizeIntegrationSchema)) input: AuthorizeIntegrationInput,
     ): Promise<{ data: OAuthStartResult }> {
+        assertReqModule(req, moduleForIntegration(parseKey(key)));
         const data = await this.connectors.startIntegrationOAuth(
             tenantId(req),
             userId(req),

@@ -32,12 +32,14 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { appointmentNotFoundPage, bookingNotAvailablePage, renderBookingPage } from './booking-page';
 import { BookingPublicService } from './booking-public.service';
 import { BookingService, type BookingEditorOptions } from './booking.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * D5 — Páginas de agenda de una lista (Ajustes de la lista → Agenda).
  * Armarlas es de quien arma la lista (`manage_lists`); verlas también de quien
  * arma automatizaciones (el disparador «Cuando se agenda…» las elige).
  */
+@PlanModule('booking')
 @Controller('lists/:list/booking-pages')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class BookingController {

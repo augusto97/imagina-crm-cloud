@@ -25,6 +25,7 @@ import { formatDate } from '@/lib/tenantFormat';
 
 import { IssuedDocumentsDialog } from './IssuedDocuments';
 import { documentLink, downloadPdf, generateDocument, invalidateIssued, useDocumentTemplates, useIssuedDocuments } from './useDocuments';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 // pdf.js pesa: el visor sólo se baja al abrir «Ver».
 const PdfViewDialog = lazy(() => import('./PdfViewDialog'));
@@ -35,7 +36,7 @@ const PdfViewDialog = lazy(() => import('./PdfViewDialog'));
  * un campo Archivo del registro. Sin plantillas no se dibuja (salvo para
  * quien puede crearlas, que ve el atajo a Ajustes → Documentos).
  */
-export function GeneratePdfButton({
+function GeneratePdfButtonInner({
     listId,
     listSlug,
     recordId,
@@ -205,4 +206,10 @@ export function GeneratePdfButton({
             {issuedOpen && <IssuedDocumentsDialog open onOpenChange={setIssuedOpen} listId={listId} listSlug={listSlug} recordId={recordId} />}
         </>
     );
+}
+
+/** v0.1.338 (ADR-S87) — sin el módulo en el plan, el botón no aparece. */
+export function GeneratePdfButton(props: Parameters<typeof GeneratePdfButtonInner>[0]): JSX.Element | null {
+    const off = usePlanModuleOff('documents');
+    return off ? null : <GeneratePdfButtonInner {...props} />;
 }

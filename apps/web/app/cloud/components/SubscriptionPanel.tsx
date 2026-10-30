@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-    BILLING_GRACE_DAYS,
     PERIOD_MONTHS,
+    planModuleLabel,
+    readDisabledModules,
     type BillingPayment,
     type CheckoutMode,
     type PaymentProvider,
@@ -95,7 +96,24 @@ function StatusCard({ info }: { info: SubscriptionInfo }): JSX.Element {
     let tone: 'ok' | 'warn' | 'bad' | 'none' = 'none';
     let headline = 'Todavía no pagaste un período desde la app.';
     let detail: string | null = null;
-    if (paid !== null && cut !== null) {
+    // v0.1.338 (ADR-S87) — qué pasa al vencer depende de la política de la plataforma.
+    const paused = info.on_end === 'lock';
+    const afterCut = paused
+        ? 'Después la cuenta queda pausada hasta elegir un plan (tus datos se conservan y puedes descargarlos).'
+        : 'Después el espacio pasa a solo-lectura (tus datos se conservan).';
+    const trialEnd = info.trial_ends_at ? new Date(info.trial_ends_at).getTime() : null;
+    if (trialEnd !== null) {
+        if (now < trialEnd) {
+            const days = Math.ceil((trialEnd - now) / DAY);
+            tone = days <= 3 ? 'warn' : 'ok';
+            headline = `Estás en la prueba: termina el ${fmtDate(info.trial_ends_at)}`;
+            detail = `${days === 1 ? 'Queda 1 día.' : `Quedan ${days} días.`} Elige un plan antes para seguir sin interrupciones. ${afterCut}`;
+        } else {
+            tone = 'bad';
+            headline = paused ? 'Terminó la prueba: la cuenta está pausada' : 'Terminó la prueba: el espacio está en solo-lectura';
+            detail = 'Tus datos están intactos. Al pagar un plan, todo vuelve a funcionar al instante.';
+        }
+    } else if (paid !== null && cut !== null) {
         if (now < paid) {
             const days = Math.ceil((paid - now) / DAY);
             tone = days <= 3 && ar?.status !== 'authorized' ? 'warn' : 'ok';
@@ -104,11 +122,13 @@ function StatusCard({ info }: { info: SubscriptionInfo }): JSX.Element {
         } else if (now < cut) {
             tone = 'warn';
             headline = `Venció el ${fmtDate(info.paid_until)}`;
-            detail = `Tienes hasta el ${fmtDate(info.read_only_at)} para renovar. Después el espacio pasa a solo-lectura (tus datos se conservan).`;
+            detail = `Tienes hasta el ${fmtDate(info.read_only_at)} para renovar. ${afterCut}`;
         } else {
             tone = 'bad';
-            headline = `Venció el ${fmtDate(info.paid_until)}: el espacio está en solo-lectura`;
-            detail = 'Tus datos están intactos y se pueden consultar y exportar. Al pagar, se reactiva al instante.';
+            headline = paused
+                ? `Venció el ${fmtDate(info.paid_until)}: la cuenta está pausada`
+                : `Venció el ${fmtDate(info.paid_until)}: el espacio está en solo-lectura`;
+            detail = 'Tus datos están intactos y se pueden exportar. Al pagar, se reactiva al instante.';
         }
     }
 
@@ -143,7 +163,7 @@ function StatusCard({ info }: { info: SubscriptionInfo }): JSX.Element {
                     <div>
                         <CardTitle>Tu suscripción</CardTitle>
                         <CardDescription>
-                            Plan <span className="imcrm-font-medium imcrm-capitalize imcrm-text-foreground">{info.plan}</span>. Cada pago extiende el período; al vencer hay {BILLING_GRACE_DAYS} días de gracia.
+                            Plan <span className="imcrm-font-medium imcrm-capitalize imcrm-text-foreground">{info.plan}</span>. Cada pago extiende el período; al vencer hay {info.grace_days} {info.grace_days === 1 ? 'día' : 'días'} de gracia.
                         </CardDescription>
                     </div>
                 </div>
@@ -323,6 +343,8 @@ function PayCard({
                                                 .filter(Boolean)
                                                 .join(' · ')}
                                         </span>
+                                        {/* v0.1.338 — qué incluye el plan, para elegir con la información a la vista. */}
+                                        <PlanIncludes plan={p} />
                                     </button>
                                 );
                             })}
@@ -486,5 +508,20 @@ function HistoryCard({ payments }: { payments: BillingPayment[] }): JSX.Element 
                 )}
             </CardContent>
         </Card>
+    );
+}
+
+/** v0.1.338 (ADR-S87) — Usuarios del plan y lo que NO incluye (si algo). */
+function PlanIncludes({ plan }: { plan: PlanPrice }): JSX.Element {
+    const off = readDisabledModules(plan.disabled_modules ?? []);
+    const users =
+        plan.max_users === undefined ? null : plan.max_users === null ? 'Usuarios ilimitados' : plan.max_users === 1 ? '1 usuario' : `Hasta ${plan.max_users} usuarios`;
+    return (
+        <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground" data-testid="pay-plan-includes">
+            {users && <span className="imcrm-block">{users}</span>}
+            <span className="imcrm-block">
+                {off.length === 0 ? 'Incluye todas las funciones' : `No incluye: ${off.map((k) => planModuleLabel(k)).join(', ')}`}
+            </span>
+        </span>
     );
 }

@@ -16,11 +16,13 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { CollectionsService, type CollectionActor } from './collections.service';
 import { aclOf } from '../tenancy/acl-of';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Cobros de la empresa a sus clientes (v0.1.251, ADR-S31). Crear un link es
  * EDITAR el registro (queda escrito en él); verlo, verlo.
  */
+@PlanModule('integrations')
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class CollectionsController {

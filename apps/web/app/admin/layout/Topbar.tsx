@@ -18,6 +18,7 @@ import { __ } from '@/lib/i18n';
 import { PALETTE_SHORTCUT_LABEL } from '@/lib/shortcuts';
 import { CAP, useCan } from '@/lib/permissions';
 import { useIsGuest } from '@/lib/guest';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 /**
  * Topbar:
@@ -40,6 +41,8 @@ export function Topbar({
     onShowShortcuts?: () => void;
 } = {}): JSX.Element {
     const assistantOpen = useAssistantPanelOpen();
+    // v0.1.338 (ADR-S87) — sin «Inteligencia artificial» en el plan, no hay asistente.
+    const aiOff = usePlanModuleOff('ai');
     const branding = useBrandingData();
     const activeTenantId = useSession((s) => s.activeTenantId);
     const memberships = useSession((s) => s.memberships);
@@ -118,7 +121,7 @@ export function Topbar({
                 )}
 
                 {/* v0.1.181 — asistente IA (ADR-S21). */}
-                {canUseAssistant && !isGuest && (
+                {canUseAssistant && !isGuest && !aiOff && (
                 <Button
                     variant="ghost"
                     size="icon"

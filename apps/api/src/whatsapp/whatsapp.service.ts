@@ -60,6 +60,7 @@ import { safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { redactValues } from '../connectors/connection-parts';
 import { ConnectionUnusableError, ConnectorsService } from '../connectors/connectors.service';
+import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { connections, lists, records, whatsappContacts, whatsappHooks, whatsappTemplates, type WhatsappTemplateRowDb } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
@@ -260,6 +261,9 @@ export class WhatsappService {
             .from(whatsappHooks)
             .where(eq(whatsappHooks.token, token))
             .limit(1);
+        // v0.1.338 (ADR-S87) — plan sin «Integraciones»: la URL responde como
+        // una desconocida (nada se borra; vuelve al cambiar de plan).
+        if (row && (await planModuleOff(this.db, row.tenantId, 'integrations'))) return null;
         return row ?? null;
     }
 

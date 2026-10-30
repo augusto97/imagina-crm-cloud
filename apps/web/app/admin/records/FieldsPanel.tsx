@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
 import { FieldTypePreview } from './FieldTypePreview';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 /**
  * Panel de campos (v0.1.160) — el alta de columnas estilo ClickUp.
@@ -84,16 +85,19 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
         setError(null);
     }, [open]);
 
+    // v0.1.338 (ADR-S87) — sin «Inteligencia artificial» en el plan, no se ofrece el campo con IA.
+    const aiOff = usePlanModuleOff('ai');
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
-        if (q === '') return FIELD_TYPE_OPTIONS;
-        return FIELD_TYPE_OPTIONS.filter(
+        const base = aiOff ? FIELD_TYPE_OPTIONS.filter((o) => o.type !== 'ai') : FIELD_TYPE_OPTIONS;
+        if (q === '') return base;
+        return base.filter(
             (o) =>
                 o.label.toLowerCase().includes(q)
                 || o.description.toLowerCase().includes(q)
                 || o.type.includes(q),
         );
-    }, [search]);
+    }, [search, aiOff]);
 
     const popular = useMemo(
         () => filtered.filter((o) => POPULAR_FIELD_TYPES.includes(o.type)),

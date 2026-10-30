@@ -23,6 +23,7 @@ import { safeWebhookFetch } from '../common/safe-fetch';
 import { REDIS } from '../redis/redis.module';
 import { MailService } from '../mail/mail.service';
 import { domainOperatorNotice, type DomainOperatorEvent } from './domain-notice';
+import { planModuleOff } from '../billing/plan-module-gate';
 
 /**
  * Dominio personalizado por tenant (ADR-S17, white-label completo).
@@ -92,6 +93,9 @@ export class DomainsService {
             .from(tenants)
             .where(or(eq(tenants.customDomain, host), eq(tenants.portalDomain, host)))
             .limit(1);
+        // v0.1.338 (ADR-S87) — plan sin «Dominio propio»: el dominio no se
+        // atiende (ni boot con su marca ni certificado). Se conserva guardado.
+        if (row && (await planModuleOff(this.db, row.id, 'custom_domain'))) row = undefined;
 
         // 2) Subdominio automático `slug.base` (un solo label extra).
         if (!row && base && host.endsWith(`.${base}`)) {
@@ -358,6 +362,9 @@ export class DomainsService {
      * un enlace a un host que no responde deja al cliente afuera.
      */
     async baseUrlFor(tenantId: number, surface: DomainKind = 'app'): Promise<string> {
+        // v0.1.338 (ADR-S87) — sin «Dominio propio» en el plan, los enlaces salen
+        // por la plataforma.
+        if (await planModuleOff(this.db, tenantId, 'custom_domain')) return this.env.APP_BASE_URL;
         const [row] = await this.db
             .select({ app: tenants.customDomain, portal: tenants.portalDomain })
             .from(tenants)

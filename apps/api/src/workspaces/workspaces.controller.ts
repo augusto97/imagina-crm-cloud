@@ -40,6 +40,7 @@ import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { AuditService, type AuditEntryDto } from '../audit/audit.service';
 import { MailAccountService } from '../connectors/mail-account.service';
 import { BrandingService } from './branding.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 @Controller('workspaces')
 @UseGuards(SessionGuard)
@@ -292,12 +293,14 @@ export class WorkspacesController {
      * Dominio personalizado del workspace (ADR-S17). GET lo lee cualquier
      * miembro (muestra el subdominio); mutar y verificar es solo admin.
      */
+    @PlanModule('custom_domain')
     @Get('current/domain')
     @UseGuards(TenantGuard)
     getDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
         return this.domains.getForTenant(req.tenant!.tenantId);
     }
 
+    @PlanModule('custom_domain')
     @Patch('current/domain')
     @UseGuards(TenantGuard)
     async setDomain(
@@ -335,6 +338,7 @@ export class WorkspacesController {
      * SEC-32 (v0.1.228): prueba de propiedad del dominio pedido (TXT). Recién
      * con esto el dominio se activa: certificado, marca y enlaces.
      */
+    @PlanModule('custom_domain')
     @Post('current/domain/verify')
     @HttpCode(200)
     @UseGuards(TenantGuard)
@@ -354,6 +358,7 @@ export class WorkspacesController {
     }
 
     /** Verificación en vivo del CNAME/A del dominio propio. 404 sin dominio. */
+    @PlanModule('custom_domain')
     @Get('current/domain/dns')
     @UseGuards(TenantGuard)
     async domainDnsReport(@Req() req: FastifyRequest): Promise<DomainDnsReport> {
@@ -374,12 +379,14 @@ export class WorkspacesController {
      * (`clientes.acme.com`) que abre directo el portal con la marca de la
      * empresa. Mismo ciclo que el del equipo (pedido → TXT → activo).
      */
+    @PlanModule('custom_domain')
     @Get('current/portal-domain')
     @UseGuards(TenantGuard)
     getPortalDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
         return this.domains.getForTenant(req.tenant!.tenantId, 'portal');
     }
 
+    @PlanModule('custom_domain')
     @Patch('current/portal-domain')
     @UseGuards(TenantGuard)
     async setPortalDomain(
@@ -413,6 +420,7 @@ export class WorkspacesController {
         return domain;
     }
 
+    @PlanModule('custom_domain')
     @Post('current/portal-domain/verify')
     @HttpCode(200)
     @UseGuards(TenantGuard)
@@ -431,6 +439,7 @@ export class WorkspacesController {
         return result;
     }
 
+    @PlanModule('custom_domain')
     @Get('current/portal-domain/dns')
     @UseGuards(TenantGuard)
     async portalDomainDnsReport(@Req() req: FastifyRequest): Promise<DomainDnsReport> {

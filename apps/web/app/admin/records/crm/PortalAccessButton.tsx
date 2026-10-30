@@ -14,6 +14,7 @@ import { CAP, useCan } from '@/lib/permissions';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 interface Props {
     list: ListSummary;
@@ -51,7 +52,7 @@ interface AccessUser {
  * ya tiene otros, se avisa (se SUMA, no se reemplaza); si es del equipo, no se
  * da. Y un registro puede tener más de una persona con acceso.
  */
-export function PortalAccessButton({ list, record }: Props): JSX.Element | null {
+function PortalAccessButtonInner({ list, record }: Props): JSX.Element | null {
     // v0.1.291 — dar y ver accesos al portal exige `manage_lists` (el API
     // responde 403): sin el permiso la tarjeta ni se muestra, en vez de pedir
     // y fallar en la consola.
@@ -353,4 +354,10 @@ function readPortalEnabled(settings: Record<string, unknown>): boolean {
     const raw = settings.portal;
     if (raw === null || raw === undefined || typeof raw !== 'object') return false;
     return (raw as Record<string, unknown>).enabled === true;
+}
+
+/** v0.1.338 (ADR-S87) — sin el módulo en el plan, el botón no aparece. */
+export function PortalAccessButton(props: Props): JSX.Element | null {
+    const off = usePlanModuleOff('portal');
+    return off ? null : <PortalAccessButtonInner {...props} />;
 }

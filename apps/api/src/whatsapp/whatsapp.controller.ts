@@ -23,6 +23,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { aclOf } from '../tenancy/acl-of';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { WhatsappService, type WhatsappActor } from './whatsapp.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 const subscribeSchema = z.object({ override: z.boolean().default(false) });
 
@@ -31,6 +32,7 @@ const subscribeSchema = z.object({ override: z.boolean().default(false) });
  * (el admin, como toda integración); mandar desde un registro exige poder
  * editar ESE registro (ACL de la lista). Ningún endpoint se abre a invitados.
  */
+@PlanModule('integrations')
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class WhatsappController {

@@ -14,6 +14,7 @@ import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { useIsGuest } from '@/lib/guest';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
+import { PlanModuleGate } from '@/components/PlanModuleNotice';
 
 /**
  * v0.1.116 — Seguridad de la cuenta: cambiar la contraseña estando adentro
@@ -199,7 +200,11 @@ export function SecurityCard(): JSX.Element {
             <TwoFactorCard />
 
             {/* ── Tokens de acceso personal / MCP (v0.1.183) ─────────── */}
-            {canUseAssistant && <PersonalTokensCard />}
+            {canUseAssistant && (
+                <PlanModuleGate module="api" compact>
+                    <PersonalTokensCard />
+                </PlanModuleGate>
+            )}
 
             {/* ── Dispositivos ───────────────────────────────────────── */}
             <section className="imcrm-flex imcrm-flex-col imcrm-gap-3">

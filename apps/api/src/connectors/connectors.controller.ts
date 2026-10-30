@@ -1,5 +1,6 @@
 import {
     Body,
+    Inject,
     Controller,
     Delete,
     ForbiddenException,
@@ -40,6 +41,9 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ConnectorsService } from './connectors.service';
+import { assertConnectionModule } from '../billing/plan-module-gate';
+import { DRIZZLE, type Db } from '../db/client';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Conectores (v0.1.196, ADR-S22).
@@ -53,7 +57,10 @@ import { ConnectorsService } from './connectors.service';
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_automations')
 export class ConnectorsController {
-    constructor(private readonly connectors: ConnectorsService) {}
+    constructor(
+        private readonly connectors: ConnectorsService,
+        @Inject(DRIZZLE) private readonly db: Db,
+    ) {}
 
     @Get()
     async all(@Req() req: FastifyRequest): Promise<{ data: Connection[] }> {
@@ -67,6 +74,7 @@ export class ConnectorsController {
         return { data: { ...settings, can_manage: role(req) === 'admin' } };
     }
 
+    @PlanModule('integrations')
     @Patch('settings')
     async updateSettings(
         @Req() req: FastifyRequest,
@@ -84,6 +92,7 @@ export class ConnectorsController {
         return { data };
     }
 
+    @PlanModule('integrations')
     @Post('convert-inline')
     async convert(
         @Req() req: FastifyRequest,
@@ -99,6 +108,7 @@ export class ConnectorsController {
     }
 
     /** Prueba el formulario (con o sin conexión guardada detrás). */
+    @PlanModule('integrations')
     @Post('test')
     @HttpCode(200)
     async test(
@@ -109,6 +119,7 @@ export class ConnectorsController {
         return { data };
     }
 
+    @PlanModule('integrations')
     @Post()
     async create(
         @Req() req: FastifyRequest,
@@ -125,6 +136,8 @@ export class ConnectorsController {
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: OAuthStartResult }> {
+        // v0.1.338 (ADR-S87) — el módulo de la conexión tiene que estar en el plan.
+        await assertConnectionModule(this.db, req, id);
         const data = await this.connectors.startOAuth(tenantId(req), userId(req), role(req), id);
         return { data };
     }
@@ -160,6 +173,7 @@ export class ConnectorsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateConnectionSchema)) input: UpdateConnectionInput,
     ): Promise<{ data: Connection }> {
+        await assertConnectionModule(this.db, req, id);
         const data = await this.connectors.update(tenantId(req), userId(req), role(req), id, input);
         return { data };
     }

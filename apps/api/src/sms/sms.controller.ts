@@ -25,12 +25,14 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { aclOf } from '../tenancy/acl-of';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { SmsService, type SmsActor } from './sms.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * SMS (ADR-S82). Mandar desde un registro exige poder editar ESE registro
  * (ACL de la lista, también en la selección: fila por fila); la página de la
  * conexión es de quien puede editarla. Ningún endpoint se abre a invitados.
  */
+@PlanModule('integrations')
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class SmsController {

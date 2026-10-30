@@ -14,6 +14,7 @@ import type { SiteSyncSettings } from './site-sync.types';
 import { ibcHooksDelete, ibcHooksRegister, ibcHooksStatus } from './wordpress/ibc';
 import { parseSiteHookBody, sameHookUrl, secretFingerprint, verifySiteSignature } from './wordpress/ibc-hooks';
 import { WpApiError } from './wordpress/wp-fetch';
+import { planModuleOff } from '../billing/plan-module-gate';
 
 const APPLY_ERROR_PREFIX = 'Un aviso del sitio no se pudo aplicar:';
 
@@ -178,6 +179,8 @@ export class SiteRealtimeService {
             .limit(1);
         // El token de una TIENDA no sirve aquí (y al revés): cada uno en su ruta.
         if (!hook || hook.provider !== SITE_SYNC_PROVIDER) throw notFound();
+        // v0.1.338 (ADR-S87) — plan sin «Sitio WordPress»: como un token desconocido.
+        if (await planModuleOff(this.db, hook.tenantId, 'wordpress')) throw notFound();
         const secret = this.readSecret(hook.secretEnc);
         const check = secret === null ? 'bad' : verifySiteSignature(secret, headers['x-imagina-timestamp'], rawBody, headers['x-imagina-signature']);
         if (check !== 'ok') {
