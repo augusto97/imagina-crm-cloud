@@ -379,6 +379,28 @@ vigilado y comprimido, v0.1.336 quitar de la app lo que el sitio o la tienda ya
 borró y v0.1.335 la auditoría del complemento para WordPress), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-30 — **Skill «landing-kit» para otros proyectos** (pedido del usuario:
+  "créame una skill para descargar, para usarla en otros proyectos, de lo que hiciste
+  para pasarme todo lo de la landing… imágenes, videos, motion graphics y textos muy
+  completos"). Hecha y entregada como `landing-kit.zip` (sin release, fuera del repo):
+  `SKILL.md` con el procedimiento en 10 fases y 8 reglas que no se negocian;
+  `references/` (descubrimiento, competencia, SEO, datos de ejemplo, capturas, motion,
+  textos, prompt de diseño, empaquetado); scripts **generalizados y probados**:
+  - `shoot.mjs`: capturas en escritorio, oscuro y celular desde un JSON, con login por
+    configuración y `${ENV:…}` para la contraseña.
+  - `record_clips.mjs`: clips con cursor por screencast de CDP.
+  - `record_animation.mjs`: motion graphics cuadro a cuadro con el reloj de WAAPI, en
+    loop exacto.
+  - `fetch_pages.mjs` + `page_audit.py`: la competencia.
+  - `autocomplete.py`: el autocompletado de Google por país.
+  - `brand_colors.py`, `contact_sheet.sh`, `compress_media.sh` (WebP, AVIF, videos
+    livianos y OG).
+  - `check_kit.py`: archivos citados, marcadores, conteo de title y meta, y voseo.
+
+  Además trae `templates/` (configuración, tomas, escenas, una escena de motion en
+  HTML/CSS y esqueletos de los 7 documentos) y `ejemplo/` (los documentos del kit de
+  Imagina Base + muestras de capturas y de una animación). Si pide cambios en otra
+  sesión, el scratchpad ya no existe: pedirle el zip o rehacerla con esta descripción.
 - 2026-10-30 — **Prueba configurable y sin plan gratis → v0.1.338** (ADR-S87).
   Pedido del usuario: "permíteme ajustar el trial: qué se le permite, cuántos
   usuarios… limitarlo, ej. 15 días, y después se le deshabilita todo hasta que
@@ -1041,6 +1063,12 @@ borró y v0.1.335 la auditoría del complemento para WordPress), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-30 · sin versión** — Skill **«landing-kit»** (descargable, para otros
+  proyectos) con el método del kit de landing: procedimiento, guías, scripts probados
+  (capturas, clips con cursor, motion graphics en loop exacto, competencia,
+  autocompletado, control final), plantillas y el kit de Imagina Base como ejemplo.
+  Detalle en §10.
 
 - **2026-10-30 · v0.1.338** — **Prueba con fecha de fin, cuenta pausada y
   módulos por plan** (ADR-S87). Pedido del usuario (ver §10): prueba limitada
