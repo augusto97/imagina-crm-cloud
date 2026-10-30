@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CreditCard, Loader2, Pencil, Plus, Save, Trash2 } from 'lucide-react';
-import type { PlatformPlan } from '@imagina-base/shared';
+import { PLAN_MODULE_CATALOG, readDisabledModules, type PlanModule, type PlatformPlan } from '@imagina-base/shared';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,8 @@ import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 
 import { formatNumber } from '@/lib/tenantFormat';
+
+import { PlanModulesPicker } from './PlanModulesPicker';
 /** `''` (vacío) = ilimitado / sin precio (null); un número = ese valor. */
 function toLimit(v: string): number | null {
     const t = v.trim();
@@ -117,6 +119,7 @@ export function PlatformPlansCard(): JSX.Element {
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('IA/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('USD/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('COP/mes')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Incluye')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium" />
                                 </tr>
                             </thead>
@@ -157,6 +160,16 @@ export function PlatformPlansCard(): JSX.Element {
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
                                             {p.price_cop === null ? <span className="imcrm-text-muted-foreground">—</span> : COP.format(p.price_cop)}
+                                        </td>
+                                        {/* v0.1.338 — módulos que el plan incluye. */}
+                                        <td className="imcrm-px-2 imcrm-py-2.5 imcrm-whitespace-nowrap" data-testid="plan-modules-summary">
+                                            {(p.disabled_modules ?? []).length === 0 ? (
+                                                <span className="imcrm-text-muted-foreground">{__('Todo')}</span>
+                                            ) : (
+                                                <span title={(p.disabled_modules ?? []).map((k) => PLAN_MODULE_CATALOG.find((m) => m.key === k)?.label ?? k).join(', ')}>
+                                                    {PLAN_MODULE_CATALOG.length - (p.disabled_modules ?? []).length}/{PLAN_MODULE_CATALOG.length} {__('módulos')}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5">
                                             <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-1">
@@ -212,6 +225,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
     const [usd, setUsd] = useState('');
     const [cop, setCop] = useState('');
     const [active, setActive] = useState(true);
+    const [modulesOff, setModulesOff] = useState<PlanModule[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -227,6 +241,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
         setUsd(limitStr(plan?.price_usd ?? null));
         setCop(limitStr(plan?.price_cop ?? null));
         setActive(plan?.is_active ?? true);
+        setModulesOff(readDisabledModules(plan?.disabled_modules ?? []));
         setError(null);
     }, [plan, open]);
 
@@ -246,6 +261,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
             price_usd: toLimit(usd),
             price_cop: toLimit(cop),
             is_active: active,
+            disabled_modules: modulesOff,
         };
         try {
             if (plan) {
@@ -343,6 +359,16 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
                                 <Input id="ps-cop" type="number" min={0} value={cop} onChange={(e) => setCop(e.target.value)} placeholder="—" />
                             </div>
                         </div>
+                    </fieldset>
+
+                    <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                        <legend className="imcrm-mb-1 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                            {__('Qué incluye el plan')}
+                        </legend>
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Lo que el plan no incluye se ve con un candado y no funciona; lo que la empresa ya configuró se conserva y vuelve al pasar a un plan que lo incluya.')}
+                        </p>
+                        <PlanModulesPicker disabled={modulesOff} onChange={setModulesOff} />
                     </fieldset>
 
                     <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">

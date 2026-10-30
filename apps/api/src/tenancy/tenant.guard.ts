@@ -8,18 +8,23 @@ import {
 import { Reflector } from '@nestjs/core';
 import {
     effectiveCapabilities,
-    isEffectivelyReadOnly,
     MAX_RECORD_SHARES_PER_GUEST,
+    readDisabledModules,
     type BillingStatus,
     type Capability,
     type GuestLevel,
+    type PlanModule,
+    type TenantAccess,
 } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { memberships, recordShares, tenants } from '../db/schema';
+import { accessOf, planModuleDisabled } from '../billing/tenant-access';
+import { memberships, plans, recordShares, tenants } from '../db/schema';
 import type { GuestShares } from '../lists/list-acl';
 import { ALLOW_GUEST } from './allow-guest.decorator';
+import { ALLOW_LOCKED } from './allow-locked.decorator';
 import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
+import { PLAN_MODULE } from './plan-module.decorator';
 import { TenantDb } from './tenant-db.service';
 
 export interface TenantContext {
@@ -39,6 +44,10 @@ export interface TenantContext {
     capabilities: Capability[];
     /** C3 — sólo invitados: los registros sueltos que le compartieron. */
     shares?: GuestShares;
+    /** v0.1.338 (ADR-S87) — plan, acceso efectivo y módulos que el plan no incluye. */
+    plan?: string;
+    access?: TenantAccess;
+    disabledModules?: PlanModule[];
 }
 
 /** Los magic-link / consumo del portal no pasan por aquí; sí las mutaciones. */
@@ -77,10 +86,14 @@ export class TenantGuard implements CanActivate {
                     tenantId: memberships.tenantId,
                     role: memberships.role,
                     tenantSlug: tenants.slug,
+                    plan: tenants.plan,
                     status: tenants.status,
                     archivedAt: tenants.archivedAt,
+                    trialEndsAt: tenants.trialEndsAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
                     paidUntil: tenants.paidUntil,
+                    // v0.1.338 — los módulos que el plan no incluye (misma consulta).
+                    disabledModules: plans.disabledModules,
                     // C1 — `team_members_self` deja leer los equipos propios
                     // sin empresa activa (mismo plano que `memberships_self`).
                     teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
@@ -90,6 +103,7 @@ export class TenantGuard implements CanActivate {
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+                .leftJoin(plans, eq(plans.slug, tenants.plan))
                 .where(
                     and(
                         eq(memberships.userId, userId),
@@ -130,19 +144,30 @@ export class TenantGuard implements CanActivate {
         }
 
         const status = membership.status as BillingStatus;
+        const targets = [context.getHandler(), context.getClass()];
 
         // ADR-S09: impago/archivada/suscripción-vencida → solo-lectura. Se
         // bloquean las mutaciones; las lecturas y el export siguen disponibles
         // (los datos son del cliente, nunca se secuestran).
-        const readOnly = isEffectivelyReadOnly({
-            status,
-            archived_at: membership.archivedAt,
-            subscription_ends_at: membership.subscriptionEndsAt,
-            paid_until: membership.paidUntil,
-        });
+        // v0.1.338 (ADR-S87) — prueba terminada o plan vencido con la política
+        // "pausar" → la empresa queda PAUSADA: sólo lo marcado @AllowLocked
+        // (elegir plan, pagar, descargar los datos).
+        const access = accessOf(membership);
+        const allowLocked = this.reflector.getAllAndOverride<boolean>(ALLOW_LOCKED, targets) === true;
+        if (access.state === 'locked' && !allowLocked) {
+            throw new ForbiddenException({
+                code: 'workspace_locked',
+                message:
+                    access.reason === 'trial_ended'
+                        ? 'La prueba de esta empresa terminó. Elige un plan para seguir.'
+                        : 'El plan de esta empresa venció. Elige un plan para seguir.',
+                data: { status: 403, reason: access.reason },
+            });
+        }
+        const readOnly = access.state !== 'full';
         const allowed =
             readOnly &&
-            this.reflector.getAllAndOverride<boolean>(ALLOW_READ_ONLY, [context.getHandler(), context.getClass()]) === true;
+            (allowLocked || this.reflector.getAllAndOverride<boolean>(ALLOW_READ_ONLY, targets) === true);
         if (readOnly && MUTATING_METHODS.has(req.method) && !allowed) {
             throw new ForbiddenException({
                 code: 'workspace_read_only',
@@ -151,7 +176,17 @@ export class TenantGuard implements CanActivate {
             });
         }
 
-        const customCaps = Array.isArray(membership.customCaps) && membership.customRoleId ? membership.customCaps : null;
+        // v0.1.338 — el módulo del endpoint tiene que estar en el plan.
+        const disabledModules = readDisabledModules(membership.disabledModules);
+        const module = this.reflector.getAllAndOverride<PlanModule | undefined>(PLAN_MODULE, targets);
+        if (module && disabledModules.includes(module)) throw planModuleDisabled(module);
+
+        // C2 — un rol propio sólo vale si el plan incluye «Roles propios»: si
+        // no, la persona trabaja con su rol base (lo configurado se conserva).
+        const customCaps =
+            Array.isArray(membership.customCaps) && membership.customRoleId && !disabledModules.includes('custom_roles')
+                ? membership.customCaps
+                : null;
         req.tenant = {
             tenantId: membership.tenantId,
             tenantSlug: membership.tenantSlug,
@@ -160,6 +195,9 @@ export class TenantGuard implements CanActivate {
             teamIds: (membership.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
             customRoleId: customCaps ? membership.customRoleId : null,
             capabilities: effectiveCapabilities(membership.role, customCaps),
+            plan: membership.plan,
+            access,
+            disabledModules,
             ...(membership.role === 'guest' ? { shares: await this.guestShares(membership.tenantId, userId) } : {}),
         };
         return true;

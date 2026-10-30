@@ -19,7 +19,6 @@ import {
     formatBookingWhen,
     formItemVisible,
     isBookingQuestionType,
-    isEffectivelyReadOnly,
     isEmptyAnswer,
     isValidTimeZone,
     jsonbKeyForField,
@@ -29,7 +28,6 @@ import {
     timeZoneLabel,
     validateFieldValue,
     zonedDayAndMinute,
-    type BillingStatus,
     type BookAppointmentInput,
     type BookAppointmentResult,
     type BookingConfig,
@@ -47,6 +45,7 @@ import {
     type RescheduleAppointmentInput,
     type TenantFormat,
 } from '@imagina-base/shared';
+import { accessOf } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
@@ -76,6 +75,7 @@ import { appointmentRecordData, isCancelledValue, readBookingConfig, staffKey } 
 import { bookingClientEmail, type BookingMailKind } from './booking-email';
 import { buildIcs } from './booking-ics';
 import type { BookingSimulator } from './booking-simulator';
+import { planModuleOff } from '../billing/plan-module-gate';
 
 /** El sistema crea y mueve el registro: no hay persona del equipo detrás de la reserva. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
@@ -212,6 +212,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             .where(eq(bookingPages.token, token))
             .limit(1);
         if (!hit || (!hit.page.enabled && !opts.allowDisabled) || hit.tenant.archivedAt !== null) throw notFound();
+        // v0.1.338 (ADR-S87) — plan sin «Agenda de citas»: el mismo 404 opaco.
+        if (await planModuleOff(this.db, hit.tenant.id, 'booking')) throw notFound();
         return this.toResolved(hit.page, hit.tenant);
     }
 
@@ -224,6 +226,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             .where(eq(bookingPages.id, pageId))
             .limit(1);
         if (!hit || hit.tenant.archivedAt !== null) return null;
+        if (await planModuleOff(this.db, hit.tenant.id, 'booking')) return null;
         return this.toResolved(hit.page, hit.tenant);
     }
 
@@ -241,12 +244,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             timeZone: resolveTimeZone(fmt.timezone),
             fields: await this.fields.listByListId(page.tenantId, page.listId),
             createdBy: page.createdBy,
-            readOnly: isEffectivelyReadOnly({
-                status: tenant.status as BillingStatus,
-                archived_at: tenant.archivedAt,
-                subscription_ends_at: tenant.subscriptionEndsAt,
-                paid_until: tenant.paidUntil,
-            }),
+            // v0.1.338 — pausada también cuenta (no tiene acceso completo).
+            readOnly: accessOf(tenant).state !== 'full',
             tenantSettings: settings,
             tenantName: tenant.name,
             format: fmt,

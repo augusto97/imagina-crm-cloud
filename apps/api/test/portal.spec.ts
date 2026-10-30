@@ -1215,14 +1215,25 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect((await portal.me(actor(uid))).comments).toBeNull();
             await expect(portal.createMyComment(actor(uid), { content: 'x' })).rejects.toBeInstanceOf(ForbiddenException);
             await setLayout();
-            // Empresa en solo-lectura (ADR-S09): ni comentarios ni ediciones.
-            await pg.db.update(tenants).set({ subscriptionEndsAt: new Date(Date.now() - 1000) }).where(eq(tenants.id, tenantId));
+            // Empresa en solo-lectura (ADR-S09, suspendida): ni comentarios ni ediciones.
+            const [before] = await pg.db.select({ status: tenants.status }).from(tenants).where(eq(tenants.id, tenantId));
+            await pg.db.update(tenants).set({ status: 'past_due' }).where(eq(tenants.id, tenantId));
             try {
                 await expect(portal.createMyComment(actor(uid), { content: 'x' })).rejects.toMatchObject({
                     response: { code: 'workspace_read_only' },
                 });
                 await expect(portal.updateMe(actor(uid), { fields: { email_c: 'z@cliente.test' } })).rejects.toMatchObject({
                     response: { code: 'workspace_read_only' },
+                });
+            } finally {
+                await pg.db.update(tenants).set({ status: before!.status }).where(eq(tenants.id, tenantId));
+            }
+            // v0.1.338 (ADR-S87) — vencida, con la política por defecto la empresa
+            // queda PAUSADA: el portal entero deja de estar disponible.
+            await pg.db.update(tenants).set({ subscriptionEndsAt: new Date(Date.now() - 1000) }).where(eq(tenants.id, tenantId));
+            try {
+                await expect(portal.createMyComment(actor(uid), { content: 'x' })).rejects.toMatchObject({
+                    response: { code: 'portal_disabled' },
                 });
             } finally {
                 await pg.db.update(tenants).set({ subscriptionEndsAt: null }).where(eq(tenants.id, tenantId));

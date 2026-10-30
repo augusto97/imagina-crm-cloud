@@ -17,6 +17,7 @@ import { DomainsService } from '../domains/domains.service';
 import { FilesService } from '../files/files.service';
 import { isExpired } from '../public-lists/public-lists.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { publicSurfaceOff } from '../billing/tenant-access';
 import { DashboardSnapshotService } from './dashboard-snapshot.service';
 
 type Row = typeof publicDashboards.$inferSelect;
@@ -250,6 +251,8 @@ export class PublicDashboardsService {
             .where(eq(publicDashboards.token, token))
             .limit(1);
         if (!hit || hit.archivedAt !== null) throw notFound();
+        // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Enlaces públicos».
+        if (await publicSurfaceOff(this.db, hit.row.tenantId, 'public_sharing')) throw notFound();
         if (hit.row.expiresAt && isExpired(hit.row.expiresAt, await this.zoneOf(hit.row.tenantId))) throw notFound();
         return hit.row;
     }

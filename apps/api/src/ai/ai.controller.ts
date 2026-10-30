@@ -39,6 +39,7 @@ import type { AiToolContext } from './tools/registry';
 import { aclOf } from '../tenancy/acl-of';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Asistente IA por empresa (ADR-S21). Todo con sesión + tenant: el
@@ -68,6 +69,7 @@ export class AiController {
      * serializer). Los errores previos al primer token viajan como evento
      * `error` — el cliente ya está escuchando el stream.
      */
+    @PlanModule('ai')
     @Post('chat')
     @RequireCapability('use_ai_assistant')
     async chat(
@@ -98,6 +100,7 @@ export class AiController {
         }
     }
 
+    @PlanModule('ai')
     @Get('conversations/:id')
     @RequireCapability('use_ai_assistant')
     async conversation(@Req() req: FastifyRequest, @Param('id') id: string): Promise<AiConversation> {
@@ -108,6 +111,7 @@ export class AiController {
         return conv;
     }
 
+    @PlanModule('ai')
     @Post('proposals/:id/apply')
     @RequireCapability('use_ai_assistant')
     async apply(@Req() req: FastifyRequest, @Param('id') id: string): Promise<AiApplyResult> {

@@ -1,9 +1,11 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
     PLAN_LIMITS,
+    readDisabledModules,
     type Currency,
     type CreatePlanInput,
     type PlanLimits,
+    type PlanModule,
     type PlanPrice,
     type PlatformPlan,
     type UpdatePlanInput,
@@ -30,12 +32,12 @@ const UNLIMITED: PlanLimits = {
  */
 @Injectable()
 export class PlansService {
-    private cache: { at: number; map: Map<string, PlanLimits>; list: PlatformPlan[] } | null = null;
+    private cache: { at: number; map: Map<string, PlanLimits>; list: PlatformPlan[]; modules: Map<string, PlanModule[]> } | null = null;
     private readonly ttlMs = 30_000;
 
     constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-    private async load(): Promise<{ map: Map<string, PlanLimits>; list: PlatformPlan[] }> {
+    private async load(): Promise<{ map: Map<string, PlanLimits>; list: PlatformPlan[]; modules: Map<string, PlanModule[]> }> {
         if (this.cache && Date.now() - this.cache.at < this.ttlMs) return this.cache;
         const rows = await this.db.select().from(plans).orderBy(asc(plans.position), asc(plans.slug));
         const list: PlatformPlan[] = rows.map((r) => ({
@@ -52,6 +54,7 @@ export class PlansService {
             price_cop: r.priceCop,
             is_active: r.isActive,
             position: r.position,
+            disabled_modules: readDisabledModules(r.disabledModules),
         }));
         const map = new Map<string, PlanLimits>(
             list.map((p) => [
@@ -67,7 +70,8 @@ export class PlansService {
                 },
             ]),
         );
-        this.cache = { at: Date.now(), map, list };
+        const modules = new Map<string, PlanModule[]>(list.map((p) => [p.slug, p.disabled_modules as PlanModule[]]));
+        this.cache = { at: Date.now(), map, list, modules };
         return this.cache;
     }
 
@@ -77,6 +81,15 @@ export class PlansService {
 
     async list(): Promise<PlatformPlan[]> {
         return (await this.load()).list;
+    }
+
+    /**
+     * v0.1.338 (ADR-S87) — Los módulos que un plan NO incluye (cacheado: lo
+     * consulta el `TenantGuard` en cada pedido). Un plan desconocido no
+     * desactiva nada.
+     */
+    async disabledModules(slug: string): Promise<PlanModule[]> {
+        return (await this.load()).modules.get(slug) ?? [];
     }
 
     async exists(slug: string): Promise<boolean> {
@@ -98,7 +111,15 @@ export class PlansService {
     async sellablePlans(): Promise<PlanPrice[]> {
         return (await this.load()).list
             .filter((p) => p.is_active && (p.price_usd !== null || p.price_cop !== null))
-            .map((p) => ({ slug: p.slug, name: p.name, usd: p.price_usd, cop: p.price_cop }));
+            .map((p) => ({
+                slug: p.slug,
+                name: p.name,
+                usd: p.price_usd,
+                cop: p.price_cop,
+                disabled_modules: p.disabled_modules,
+                max_users: p.max_users,
+                max_records: p.max_records,
+            }));
     }
 
     /** Precio de un plan en una moneda, o `null` si no es vendible con ella. */
@@ -127,6 +148,7 @@ export class PlansService {
             priceUsd: input.price_usd,
             priceCop: input.price_cop,
             isActive: input.is_active,
+            disabledModules: readDisabledModules(input.disabled_modules ?? []),
             position: (posRows[0]?.n ?? -1) + 1,
         });
         this.invalidate();
@@ -146,6 +168,7 @@ export class PlansService {
         if (input.price_usd !== undefined) changes.priceUsd = input.price_usd;
         if (input.price_cop !== undefined) changes.priceCop = input.price_cop;
         if (input.is_active !== undefined) changes.isActive = input.is_active;
+        if (input.disabled_modules !== undefined) changes.disabledModules = readDisabledModules(input.disabled_modules);
         const res = await this.db.update(plans).set(changes).where(eq(plans.slug, slug)).returning();
         if (res.length === 0) {
             throw new NotFoundException({ code: 'plan_not_found', message: `Plan '${slug}' no existe`, data: { status: 404 } });

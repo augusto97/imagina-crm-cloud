@@ -12,7 +12,7 @@ export const meta: LearnModuleMeta = {
     operatorOnly: true,
     highlights: [
         'Dar de alta empresas y cuentas, cambiar planes y suspender por impago',
-        'Planes con límites y precios, y el cobro con Mercado Pago o PayPal',
+        'Planes con límites, módulos y precios, la prueba y el cobro con Mercado Pago o PayPal',
         'Correo de la plataforma y diagnóstico de lo que falla',
         'Registrar Google, Microsoft y Slack una vez para todas las empresas',
         'Copias cifradas en Google Drive y recuperar un servidor desde cero',
@@ -50,11 +50,11 @@ export const meta: LearnModuleMeta = {
         },
         {
             id: 'plataforma-planes-cobros',
-            title: 'Planes, precios y cobros',
-            summary: 'Define los límites y precios de cada plan, conecta Mercado Pago para cobrar y revisa los pagos de todas las empresas.',
-            minutes: 7,
+            title: 'Planes, prueba, precios y cobros',
+            summary: 'Define los límites, lo que incluye y el precio de cada plan, cuánto dura la prueba y qué pasa al terminar o al vencer, conecta Mercado Pago y revisa los pagos.',
+            minutes: 9,
             level: 'intermediate',
-            keywords: 'planes precios limites cobros mercado pago paypal checkout webhook clave secreta pagos recientes renovacion',
+            keywords: 'planes precios limites modulos que incluye prueba trial dias de prueba pausar cuenta pausada gracia vencimiento plan de prueba cobros mercado pago paypal checkout webhook clave secreta pagos recientes renovacion',
             operatorOnly: true,
         },
         {

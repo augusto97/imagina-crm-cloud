@@ -85,6 +85,7 @@ import { MailService } from '../mail/mail.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { publicSurfaceOff } from '../billing/tenant-access';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { NotifyHub } from '../notifications/notify-hub';
 import { RecordChangeHub } from '../records/record-change-hub';
@@ -1172,10 +1173,13 @@ export class PortalService implements OnModuleInit {
 
     /** El portal de la lista fue DESACTIVADO explícitamente (`portal.enabled: false`). */
     private async portalSwitchedOff(tenantId: number, listId: number): Promise<boolean> {
-        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1),
-        );
-        if (!row) return true;
+        // v0.1.338 (ADR-S87) — con la empresa PAUSADA, o con un plan que no
+        // incluye el portal, el portal no está disponible (nada se borra).
+        const [row, off] = await this.tenantDb.withTenant(tenantId, async (tx) => [
+            (await tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1))[0],
+            await publicSurfaceOff(tx, tenantId, 'portal'),
+        ] as const);
+        if (!row || off) return true;
         const portal = (row.settings as Record<string, unknown> | null)?.portal;
         return portal !== null && typeof portal === 'object' && (portal as { enabled?: unknown }).enabled === false;
     }

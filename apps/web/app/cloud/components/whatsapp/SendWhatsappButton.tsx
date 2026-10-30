@@ -25,6 +25,7 @@ import { useIsGuest } from '@/lib/guest';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 /**
  * D3 — «Enviar WhatsApp» desde un registro (modal, página y ficha diseñada).
@@ -33,7 +34,7 @@ import { cn } from '@/lib/utils';
  * aprobada (con sus variables y la vista previa) o, si el contacto escribió en
  * las últimas 24 h, mandar un texto.
  */
-export function SendWhatsappButton({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
+function SendWhatsappButtonInner({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
     const isGuest = useIsGuest();
     const [open, setOpen] = useState(false);
     const key = ['record-whatsapp', listId, recordId] as const;
@@ -327,4 +328,10 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
             </Dialog.Portal>
         </Dialog.Root>
     );
+}
+
+/** v0.1.338 (ADR-S87) — sin el módulo en el plan, el botón no aparece. */
+export function SendWhatsappButton(props: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
+    const off = usePlanModuleOff('integrations');
+    return off ? null : <SendWhatsappButtonInner {...props} />;
 }

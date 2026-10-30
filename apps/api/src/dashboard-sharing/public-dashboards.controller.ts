@@ -17,6 +17,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { devPublicPage, loadBuiltPublicPage, missingBuildPage, publicDashboardCsp, unavailableDashboardPage } from './public-dashboard-page';
 import { PublicDashboardsService } from './public-dashboards.service';
 import { aclOf } from '../tenancy/acl-of';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 function viewer(req: FastifyRequest): DashboardViewer {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
@@ -26,6 +27,7 @@ function viewer(req: FastifyRequest): DashboardViewer {
  * v0.1.292 (ADR-S50) — Compartir → Enlace público (quien puede cambiar el
  * tablero: su creador o un admin, con `manage_dashboards`).
  */
+@PlanModule('public_sharing')
 @Controller('dashboards')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class PublicDashboardsAdminController {

@@ -864,7 +864,7 @@ export const articles: LearnArticle[] = [
                 t: 'anim',
                 key: 'empresa-plan',
                 caption:
-                    'Cada pago extiende la fecha de «Pagado hasta». Si vence, hay unos días de gracia y después la empresa pasa a solo lectura, sin perder nada.',
+                    'Cada pago extiende la fecha de «Pagado hasta». Si vence, hay unos días de gracia y después la cuenta se pausa o queda en solo lectura, sin perder nada.',
             },
             { t: 'h', text: 'Plan y uso' },
             {
@@ -909,6 +909,10 @@ export const articles: LearnArticle[] = [
                 ],
             },
             {
+                t: 'p',
+                md: 'Debajo de las barras, **Qué incluye tu plan** muestra las funciones de tu plan con un check y las que no trae con un candado (por ejemplo, automatizaciones, inteligencia artificial, portal de clientes o documentos PDF). Si una sección de la app dice **«Tu plan no incluye…»**, es eso: lo que hayas configurado ahí **no se borró** y vuelve tal cual al pasar a un plan que lo incluya.',
+            },
+            {
                 t: 'demo',
                 key: 'empresa-plan',
                 caption: 'Ajustes → Plan y uso: el plan actual y cuánto llevas usado.',
@@ -931,10 +935,15 @@ export const articles: LearnArticle[] = [
                 title: 'Pagar antes no te hace perder días',
                 md: 'Cada pago se suma desde donde termina lo que ya tenías pagado. Y la renovación automática arranca cuando vence lo pagado: nadie paga dos veces el mismo mes. En **Historial de pagos** ves cada pago con su medio y hasta cuándo dejó pagado.',
             },
+            { t: 'h', text: 'El período de prueba' },
+            {
+                t: 'p',
+                md: 'Una empresa nueva arranca en el **plan de prueba**, con todo lo que ese plan incluye, durante unos días. Mientras dura, los admins ven arriba de la app **«Te quedan N días de prueba»** con el botón **Elegir plan**; en los últimos días el aviso se marca en ámbar, y también llega un correo. En **Plan y uso** ves la fecha exacta en que termina.\n\nCuando termina sin que se elija un plan, la cuenta queda **pausada**: al entrar se ve una pantalla que explica qué pasó y desde la que puedes **elegir un plan y pagar** o **descargar cada lista en Excel**. El resto del equipo no puede usar la app, y el portal, los formularios y los enlaces públicos dejan de funcionar. Al pagar, todo vuelve **al instante** y tal como estaba.',
+            },
             { t: 'h', text: 'Si un pago se atrasa' },
             {
                 t: 'p',
-                md: 'Unos días antes del vencimiento, al vencer y al pasar a solo lectura, los admins reciben un correo. Después de la fecha hay **5 días de gracia** en los que todo sigue igual. Si no se paga, la empresa pasa a **solo lectura**: puedes entrar, consultar y **exportar todo**, pero no crear ni cambiar nada, y las automatizaciones dejan de correr.\n\nTus datos **nunca se borran ni se secuestran** por un atraso: están intactos y al pagar se reactiva todo al instante. Incluso en solo lectura puedes pagar desde **Ajustes → Suscripción**.',
+                md: 'Unos días antes del vencimiento y al vencer, los admins reciben un correo. Después de la fecha hay unos **días de gracia** en los que todo sigue igual (los ves en **Ajustes → Suscripción**). Si no se paga, la empresa pasa al **plan de prueba** y, según cómo esté configurada la plataforma, la cuenta queda **pausada** o en **solo lectura**: en solo lectura puedes entrar, consultar y exportar, pero no crear ni cambiar nada, y lo que corre solo (automatizaciones, sincronizaciones) se detiene.\n\nTus datos **nunca se borran ni se secuestran** por un atraso: están intactos y al pagar vuelves a tu plan con todo al instante. Siempre puedes pagar y **descargar tus datos**, aunque la cuenta esté pausada.',
             },
             {
                 t: 'callout',
@@ -945,6 +954,14 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
+                    {
+                        q: 'Una sección dice «Tu plan no incluye…». ¿Perdí lo que tenía?',
+                        a: 'No. Lo que configuraste (automatizaciones, formularios, conexiones…) sigue guardado, sólo que no funciona con este plan. Al pasar a un plan que lo incluya, vuelve tal cual.',
+                    },
+                    {
+                        q: 'Terminó la prueba y no puedo entrar. ¿Qué hago?',
+                        a: 'Si eres admin, en esa misma pantalla elige un plan y paga; si ya pagaste, toca **Ya pagué: volver a revisar**. Si no eres admin, pídeselo a quien administra la empresa. Mientras tanto puedes descargar cada lista en Excel.',
+                    },
                     {
                         q: '¿Qué pasa si llego al límite de registros?',
                         a: 'Puedes seguir viendo y editando lo que tienes, pero no crear registros nuevos hasta que borres algunos o cambies de plan. La app te dice el motivo cuando pasa.',

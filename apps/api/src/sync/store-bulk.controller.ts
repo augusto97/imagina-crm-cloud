@@ -23,6 +23,7 @@ import type { Actor } from '../records/records.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { StoreBulkService } from './store-bulk.service';
 import { aclOf } from '../tenancy/acl-of';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Edición masiva de la tienda (v0.1.217): cambia productos y variaciones EN
@@ -30,6 +31,7 @@ import { aclOf } from '../tenancy/acl-of';
  * exige además que la tienda tenga «Editar desde la app» activado y aplica el
  * alcance de edición del rol sobre la lista.
  */
+@PlanModule('woocommerce')
 @Controller('lists/:list/store-bulk')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('bulk_actions')

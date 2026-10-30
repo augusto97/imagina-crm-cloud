@@ -85,10 +85,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'ajustes-empresa-plan',
             title: 'Plan, uso y pagos',
-            summary: 'Qué incluye tu plan, cuánto llevas usado, cómo pagar varios meses o activar la renovación automática, y qué pasa si un pago se atrasa.',
-            minutes: 7,
+            summary: 'Qué incluye tu plan, cuánto llevas usado, el período de prueba, cómo pagar varios meses o activar la renovación automática, y qué pasa si un pago se atrasa.',
+            minutes: 8,
             level: 'basic',
-            keywords: 'plan uso limite suscripcion pagar mercado pago paypal pse tarjeta renovacion automatica vencimiento solo lectura exportar factura',
+            keywords: 'plan uso limite suscripcion pagar mercado pago paypal pse tarjeta renovacion automatica vencimiento solo lectura exportar factura prueba trial dias de prueba cuenta pausada tu plan no incluye modulos',
         },
         {
             id: 'ajustes-empresa-papelera',

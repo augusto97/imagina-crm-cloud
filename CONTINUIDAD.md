@@ -372,13 +372,34 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.337**
-(el WAL de Postgres vigilado y comprimido, y su carpeta con el permiso correcto;
-antes v0.1.336 quitar de la app lo que el sitio o la tienda ya borró, v0.1.335
-la auditoría del complemento para WordPress, v0.1.334 el complemento y v0.1.333
-el sitio sin complemento), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.338**
+(prueba con fecha de fin, cuenta pausada al terminar, paso a prueba de los
+planes que no se renuevan y módulos por plan; antes v0.1.337 el WAL de Postgres
+vigilado y comprimido, v0.1.336 quitar de la app lo que el sitio o la tienda ya
+borró y v0.1.335 la auditoría del complemento para WordPress), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-30 — **Prueba configurable y sin plan gratis → v0.1.338** (ADR-S87).
+  Pedido del usuario: "permíteme ajustar el trial: qué se le permite, cuántos
+  usuarios… limitarlo, ej. 15 días, y después se le deshabilita todo hasta que
+  contrate; los que no renuevan, tras unos días de gracia, pasan al plan trial.
+  No quiero cuentas free: con pocos clientes, muchos usuarios gratis me harían
+  cambiar de servidor sin que paguen". **Valores por defecto** (todo editable en
+  Plataforma → Planes → «Prueba y vencimientos»): 15 días de prueba, al terminar
+  **la cuenta se pausa** (sólo elegir plan, pagar y descargar datos), 5 días de
+  gracia, y pasada la gracia **pasa al plan de prueba con 0 días** (pausada al
+  instante). Lo que incluye la prueba (usuarios, registros, módulos) se edita en
+  el plan **«Trial»**. **Ojo, decisión pendiente del usuario**: las empresas que
+  YA estaban en prueba siguen SIN fecha de fin — la tarjeta las cuenta y ofrece
+  «Darles 15 días desde hoy» (nunca toca la del superadmin); no se aplicó solo
+  para no pausar a nadie por sorpresa. **Quedó fuera**: el white-label (marca de
+  la empresa) como módulo vendible (se lee en ~14 lugares: pasada aparte si lo
+  pide) y la configuración del portal guardada por el PATCH genérico de la lista.
+  **Ideas para sugerir**: borrar automáticamente (tras N días y con aviso) las
+  pruebas abandonadas que nunca pagaron, para no acumular datos en el servidor;
+  y un aviso al operador cuando una prueba termina sin pagar (para hacer
+  seguimiento comercial). Sin novedad en el catálogo: es una función del
+  operador (las empresas ven los avisos de días y la pantalla de pausa).
 - 2026-10-29 — **Kit de landing actualizado con SMS y WordPress** (pedido del
   usuario: "actualiza la información… y las capturas para hacer la landing con lo
   de sms y wordpress; no sé si tengas algo más para añadir"). Hecho sin release
@@ -1020,6 +1041,24 @@ el sitio sin complemento), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-30 · v0.1.338** — **Prueba con fecha de fin, cuenta pausada y
+  módulos por plan** (ADR-S87). Pedido del usuario (ver §10): prueba limitada
+  (default 15 días), al terminar la cuenta queda **pausada** hasta que contrate
+  (o en solo lectura, a elección), los planes que no se renuevan pasan al plan
+  de prueba tras la gracia (default 5 días, antes una constante), y **qué
+  incluye cada plan** con 15 módulos que se marcan por plan (automatizaciones,
+  IA, integraciones, WooCommerce, WordPress, SQL, portal, formularios, agenda,
+  mesa de ayuda, documentos, compartir hacia afuera, API, dominio propio, roles
+  propios). Sin plan gratis. La cuenta pausada siempre puede pagar y descargar
+  sus datos (ADR-S09). Las pruebas de antes no se tocaron (acción en lote en la
+  consola). Las puertas por módulo del servidor las hizo un agente en paralelo
+  (controllers, webhooks públicos, barridos y acciones de automatización); una
+  app conectada cuenta según su integración. Bug atrapado en el E2E: la ficha de
+  la empresa en la consola no se refrescaba tras extender la prueba. Quedó
+  fuera: white-label como módulo. Tests: `trial-access.spec` 12,
+  `plan-modules.spec` 8, `plan-access.test` 11 en shared, `portal.spec`
+  ajustado; E2E navegador 42/42.
 
 - **2026-10-29 · sin versión** — Kit de landing (`docs/landing/`) actualizado con
   SMS (v0.1.332) y WordPress (v0.1.333-336): textos, SEO con autocompletado real,

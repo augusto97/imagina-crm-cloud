@@ -20,6 +20,7 @@ import { parseUtcDate } from '@/lib/utcDate';
 import { cn } from '@/lib/utils';
 
 import { dueIn, SLA_STATUS_VARIANT, slaStatusLabel } from './helpdeskUi';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 /**
  * D2/E5 — En la ficha de un ticket (modal, página y ficha diseñada): de quién
@@ -29,7 +30,7 @@ import { dueIn, SLA_STATUS_VARIANT, slaStatusLabel } from './helpdeskUi';
  * comentario visible para él. Una nota INTERNA se sigue escribiendo en los
  * comentarios: nunca sale por correo.
  */
-export function TicketMailPanel({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
+function TicketMailPanelInner({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
     const list = useList(listId);
     const isGuest = useIsGuest();
     const marker = readHelpdeskMailboxMarker(list.data?.settings);
@@ -284,4 +285,10 @@ function ReplyComposer({
             )}
         </form>
     );
+}
+
+/** v0.1.338 (ADR-S87) — sin el módulo en el plan, no aparece. */
+export function TicketMailPanel(props: Parameters<typeof TicketMailPanelInner>[0]): JSX.Element | null {
+    const off = usePlanModuleOff('helpdesk');
+    return off ? null : <TicketMailPanelInner {...props} />;
 }

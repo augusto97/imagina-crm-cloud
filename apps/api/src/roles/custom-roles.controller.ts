@@ -24,11 +24,13 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { CustomRolesService, type BaseRoleCount } from './custom-roles.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * C2 — Ajustes → Roles. Sólo el admin (como Miembros): un rol propio decide
  * qué puede hacer cada persona en toda la empresa.
  */
+@PlanModule('custom_roles')
 @Controller('workspaces/current/roles')
 @UseGuards(SessionGuard, TenantGuard)
 export class CustomRolesController {

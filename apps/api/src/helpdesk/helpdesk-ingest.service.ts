@@ -38,6 +38,7 @@ import { HelpdeskSlaService } from './helpdesk-sla.service';
 import { HelpdeskQueue } from './helpdesk.queue';
 import { imapErrorDiagnostic, type ImapFetched } from './imap-reader';
 import { bodyToRichDoc, parseInbound, stripQuotedReply, type InboundAttachment, type InboundMail } from './inbound-mail';
+import { planIncludesSql } from '../billing/plan-module-gate';
 
 const SYSTEM_ACTOR: Actor = { userId: 0, role: 'admin' };
 /** Correos por vuelta (si hay más, se encola otra enseguida). */
@@ -127,6 +128,9 @@ export class HelpdeskIngestService {
                     lte(helpdeskMailboxes.nextCheckAt, now),
                     // Papelera: con la lista borrada no se lee (al restaurarla sigue sola).
                     sql`NOT EXISTS (SELECT 1 FROM lists l WHERE l.id = ${helpdeskMailboxes.listId} AND l.deleted_at IS NOT NULL)`,
+                    // v0.1.338 (ADR-S87) — sólo si el plan incluye «Mesa de ayuda por
+                    // correo»: los correos esperan en el buzón (nada se pierde).
+                    planIncludesSql(helpdeskMailboxes.tenantId, 'helpdesk'),
                 ),
             )
             .orderBy(asc(helpdeskMailboxes.nextCheckAt))

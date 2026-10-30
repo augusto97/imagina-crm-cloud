@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+    ApplyTrialEndsInput,
+    PlatformBillingPolicyView,
+    UpdateBillingPolicyInput,
     AddMemberInput,
     AddMemberResult,
     CreatePlanInput,
@@ -38,6 +41,7 @@ export const platformKeys = {
     tenants: () => [...platformKeys.all, 'tenants'] as const,
     users: () => [...platformKeys.all, 'users'] as const,
     plans: () => [...platformKeys.all, 'plans'] as const,
+    billingPolicy: () => [...platformKeys.all, 'billing-policy'] as const,
 };
 
 /**
@@ -105,9 +109,11 @@ export function useUpdateTenant() {
     return useMutation({
         mutationFn: async ({ id, input }: { id: number; input: UpdateTenantInput }): Promise<PlatformTenant> =>
             (await api.patch<PlatformTenant>(`/platform/tenants/${id}`, input)).data,
-        onSuccess: () => {
+        onSuccess: (_t, { id }) => {
             void qc.invalidateQueries({ queryKey: platformKeys.stats() });
             void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+            // La ficha abierta de esa empresa (fin de prueba, acceso, plan).
+            void qc.invalidateQueries({ queryKey: [...platformKeys.all, 'tenant-detail', id] });
         },
     });
 }
@@ -313,6 +319,41 @@ export function useDeletePlan() {
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: platformKeys.plans() });
+        },
+    });
+}
+
+// ─────────── Prueba y vencimientos (v0.1.338, ADR-S87) ───────────
+
+export function useBillingPolicy() {
+    return useQuery({
+        queryKey: platformKeys.billingPolicy(),
+        queryFn: async () => (await api.get<PlatformBillingPolicyView>('/platform/billing-policy')).data,
+    });
+}
+
+export function useUpdateBillingPolicy() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: UpdateBillingPolicyInput): Promise<PlatformBillingPolicyView> =>
+            (await api.put<PlatformBillingPolicyView>('/platform/billing-policy', input)).data,
+        onSuccess: (data) => {
+            qc.setQueryData(platformKeys.billingPolicy(), data);
+            void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+            void qc.invalidateQueries({ queryKey: platformKeys.stats() });
+        },
+    });
+}
+
+export function useApplyTrialEnds() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: ApplyTrialEndsInput): Promise<PlatformBillingPolicyView & { updated: number }> =>
+            (await api.post<PlatformBillingPolicyView & { updated: number }>('/platform/billing-policy/apply-trial-ends', input)).data,
+        onSuccess: (data) => {
+            qc.setQueryData(platformKeys.billingPolicy(), data);
+            void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+            void qc.invalidateQueries({ queryKey: platformKeys.stats() });
         },
     });
 }

@@ -43,6 +43,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { buildButtonUrl } from './button-url';
 import { can } from '../authz/can';
+import { assertPlanModule } from '../billing/plan-module-gate';
 
 const DEFAULT_FORMAT: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'> = {
     number_format: 'comma_dot',
@@ -351,6 +352,8 @@ export class ButtonsService {
                 return { result: { type: 'update_fields', ok: true, changed: labels }, record: updated };
             }
             case 'run_automation': {
+                // v0.1.338 (ADR-S87) — sin «Automatizaciones» en el plan, el botón no las corre.
+                await this.tenantDb.withTenant(tenantId, (tx) => assertPlanModule(tx, tenantId, 'automations'));
                 const listening = prep.listening.get(prep.config.actions.indexOf(action)) ?? [];
                 const pressId = await this.dispatcher.dispatchButton({
                     tenantId,
@@ -367,6 +370,8 @@ export class ButtonsService {
                 return { result: { type: 'run_automation', ok: true, automations: listening, press_id: pressId } };
             }
             case 'generate_pdf': {
+                // v0.1.338 (ADR-S87) — sin «Documentos PDF» en el plan, no se arma.
+                await this.tenantDb.withTenant(tenantId, (tx) => assertPlanModule(tx, tenantId, 'documents'));
                 const templateId = action.document_template_id!;
                 if (scope.portalPdf) {
                     const doc = await scope.portalPdf(templateId);

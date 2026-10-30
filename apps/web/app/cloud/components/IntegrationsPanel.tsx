@@ -6,6 +6,8 @@ import {
     INTEGRATION_CATEGORY_LABEL,
     integrationDef,
     isSmsProvider,
+    moduleForIntegration,
+    readDisabledModules,
     type Connection,
     type IntegrationDef,
     type IntegrationsOverview,
@@ -23,6 +25,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { listsKeys } from '@/hooks/useLists';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
+import { PlanModuleNotice } from '@/components/PlanModuleNotice';
 
 /**
  * Integraciones (v0.1.203, ADR-S22 fase 4) — la galería de apps.
@@ -47,6 +50,10 @@ export function IntegrationsPanel(): JSX.Element | null {
     // v0.1.333 — WordPress se conecta en un clic con su pantalla «Autorizar aplicación».
     const [wpDialog, setWpDialog] = useState<{ connection: Connection | null } | null>(null);
     const [advanced, setAdvanced] = useState(false);
+    // v0.1.338 (ADR-S87) — las apps que el plan no incluye se ven con candado.
+    // (se selecciona el arreglo del store tal cual: uno nuevo en cada lectura re-dibujaría sin fin)
+    const offRaw = useSession((st) => st.memberships.find((m) => m.tenant_id === st.activeTenantId)?.disabled_modules);
+    const offModules = readDisabledModules(offRaw ?? []);
 
     const overview = useQuery({
         queryKey: ['integrations-overview', tenantId],
@@ -204,6 +211,7 @@ export function IntegrationsPanel(): JSX.Element | null {
                             info={info ?? null}
                             connectedCount={connected.filter((c) => c.integration_key === def.key).length}
                             canConnect={canConnect}
+                            planOff={offModules.includes(moduleForIntegration(def.key))}
                             busy={authorize.isPending && authorize.variables?.def.key === def.key}
                             onConnect={() => start(def, null)}
                         />
@@ -240,7 +248,7 @@ export function IntegrationsPanel(): JSX.Element | null {
                 </button>
                 {advanced && (
                     <div className="imcrm-border-t imcrm-border-border imcrm-p-4">
-                        <ConnectorsPanel />
+                        {offModules.includes('integrations') ? <PlanModuleNotice module="integrations" compact /> : <ConnectorsPanel />}
                     </div>
                 )}
             </section>
@@ -282,6 +290,7 @@ function AppTile({
     canConnect,
     busy,
     onConnect,
+    planOff = false,
 }: {
     def: IntegrationDef;
     info: IntegrationsOverview | null;
@@ -289,6 +298,8 @@ function AppTile({
     canConnect: boolean;
     busy: boolean;
     onConnect: () => void;
+    /** v0.1.338 (ADR-S87) — el plan no incluye esta app. */
+    planOff?: boolean;
 }): JSX.Element | null {
     const provider = def.auth.kind === 'oauth' ? def.auth.provider : null;
     const available = provider === null || info?.providers[provider]?.configured === true;
@@ -320,7 +331,12 @@ function AppTile({
                 </div>
             </div>
             <p className="imcrm-flex-1 imcrm-text-sm imcrm-text-muted-foreground">{def.tagline}</p>
-            {available ? (
+            {planOff ? (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-integration-plan-off">
+                    <Lock className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {__('Tu plan no la incluye')}
+                </p>
+            ) : available ? (
                 <Button
                     size="sm"
                     variant={connectedCount > 0 ? 'outline' : 'default'}

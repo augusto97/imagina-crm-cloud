@@ -16,6 +16,8 @@ export const tenants = pgTable('tenants', {
     // v0.1.250 — hasta cuándo pagó por la app (Mercado Pago/PayPal). Vencido +
     // días de gracia → solo-lectura. Lo escribe SÓLO el aviso de pago.
     paidUntil: timestamp('paid_until', { withTimezone: true }),
+    // v0.1.338 (ADR-S87) — fin de la prueba (plan `trial`). NULL = no vence.
+    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
     // Archivada por el operador: deja de operar (solo-lectura) y se oculta de la grilla.
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

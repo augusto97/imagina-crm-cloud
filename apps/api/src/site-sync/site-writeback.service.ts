@@ -7,6 +7,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { SiteSyncEngine } from './site-sync.engine';
 import { SiteSyncQueue, type SiteSyncPushJob } from './site-sync.queue';
 import { readSiteSettings } from './site-sync.types';
+import { planModuleOff } from '../billing/plan-module-gate';
 
 interface WriteTarget {
     syncId: number;
@@ -50,6 +51,8 @@ export class SiteWriteBackService {
         if (change.kind === 'created') return;
         const target = (await this.writeTargets(change.tenantId)).get(change.listId);
         if (!target) return;
+        // v0.1.338 (ADR-S87) — sin «Sitio WordPress» en el plan, no viaja nada.
+        if (await this.tenantDb.withTenant(change.tenantId, (tx) => planModuleOff(tx, change.tenantId, 'wordpress'))) return;
         const changed: number[] = [];
         for (const fieldId of target.fieldIds) {
             const key = `f${fieldId}`;

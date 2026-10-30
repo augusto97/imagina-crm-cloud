@@ -1,6 +1,5 @@
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import {
-    isEffectivelyReadOnly,
     type BillingStatus,
     type BillingSummary,
     type Plan,
@@ -16,6 +15,15 @@ import { EmailQuotaService } from '../mail/email-quota.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PlansService } from './plans.service';
+import { accessOf } from './tenant-access';
+
+/** v0.1.338 — de qué plan venía una empresa que pasó a prueba por no renovar. */
+export function readLapsedFrom(settings: unknown): { plan: string; at: string } | null {
+    const l = settings && typeof settings === 'object' ? (settings as Record<string, unknown>).lapsed : null;
+    if (!l || typeof l !== 'object') return null;
+    const { from_plan, at } = l as Record<string, unknown>;
+    return typeof from_plan === 'string' && typeof at === 'string' ? { plan: from_plan, at } : null;
+}
 
 @Injectable()
 export class BillingService {
@@ -31,7 +39,8 @@ export class BillingService {
     ) {}
 
     async summary(tenantId: number): Promise<BillingSummary> {
-        const { plan, status, archivedAt, subscriptionEndsAt, paidUntil } = await this.planStatus(tenantId);
+        const row = await this.planStatus(tenantId);
+        const { plan, status, subscriptionEndsAt, paidUntil, trialEndsAt } = row;
         const [usage, emails, smtp, aiUsed, ownAiKey] = await Promise.all([
             this.tenantDb.withTenant(tenantId, (tx) => this.usage(tx, tenantId)),
             this.emailQuota.usedThisMonth(tenantId),
@@ -44,21 +53,21 @@ export class BillingService {
         ]);
         usage.emails_month = emails;
         usage.ai_requests_month = aiUsed;
+        const access = accessOf({ ...row, archivedAt: row.archivedAt });
         return {
             own_ai_key: ownAiKey,
             plan,
             status,
-            read_only: isEffectivelyReadOnly({
-                status,
-                archived_at: archivedAt,
-                subscription_ends_at: subscriptionEndsAt,
-                paid_until: paidUntil,
-            }),
+            read_only: access.state !== 'full',
+            access,
             limits: await this.plans.limits(plan),
             usage,
             own_smtp: smtp,
             paid_until: paidUntil ? paidUntil.toISOString() : null,
             subscription_ends_at: subscriptionEndsAt ? subscriptionEndsAt.toISOString() : null,
+            trial_ends_at: plan === 'trial' && trialEndsAt ? trialEndsAt.toISOString() : null,
+            disabled_modules: await this.plans.disabledModules(plan),
+            lapsed_from: plan === 'trial' ? readLapsedFrom(row.settings) : null,
         };
     }
 
@@ -239,7 +248,15 @@ export class BillingService {
 
     private async planStatus(
         tenantId: number,
-    ): Promise<{ plan: Plan; status: BillingStatus; archivedAt: Date | null; subscriptionEndsAt: Date | null; paidUntil: Date | null }> {
+    ): Promise<{
+        plan: Plan;
+        status: BillingStatus;
+        archivedAt: Date | null;
+        subscriptionEndsAt: Date | null;
+        paidUntil: Date | null;
+        trialEndsAt: Date | null;
+        settings: unknown;
+    }> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [t] = await tx
                 .select({
@@ -248,6 +265,8 @@ export class BillingService {
                     archivedAt: tenants.archivedAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
                     paidUntil: tenants.paidUntil,
+                    trialEndsAt: tenants.trialEndsAt,
+                    settings: tenants.settings,
                 })
                 .from(tenants)
                 .where(eq(tenants.id, tenantId))
@@ -260,6 +279,8 @@ export class BillingService {
             archivedAt: row?.archivedAt ?? null,
             subscriptionEndsAt: row?.subscriptionEndsAt ?? null,
             paidUntil: row?.paidUntil ?? null,
+            trialEndsAt: row?.trialEndsAt ?? null,
+            settings: row?.settings ?? {},
         };
     }
 

@@ -20,6 +20,7 @@ import { publicFieldIds } from '@/admin/lists/publicListFields';
 import { ListPeopleAccess } from '@/admin/lists/ListPeopleAccess';
 import { ListTeamAccess } from '@/admin/lists/ListTeamAccess';
 import { ListGuestAccess } from '@/admin/guests/GuestAccess';
+import { PlanModuleNotice, usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 interface ShareDialogProps {
     open: boolean;
@@ -53,7 +54,8 @@ export function ShareDialog({
     listName,
     canPublish,
 }: ShareDialogProps): JSX.Element {
-    const query = usePublicList(canPublish ? listId : undefined);
+    const publicOff = usePlanModuleOff('public_sharing');
+    const query = usePublicList(canPublish && !publicOff ? listId : undefined);
     const update = useUpdatePublicList(listId);
     const fields = useFields(listId);
     const views = useSavedViews(listId);
@@ -218,7 +220,10 @@ export function ShareDialog({
                                 {__('Con cualquiera')}
                             </h3>
 
-                            {!canPublish ? (
+                            {publicOff ? (
+                                // v0.1.338 (ADR-S87) — el plan no incluye enlaces públicos.
+                                <PlanModuleNotice module="public_sharing" compact />
+                            ) : !canPublish ? (
                                 <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2.5 imcrm-text-xs imcrm-text-muted-foreground">
                                     <Lock className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
                                     {__('Publicar la lista hacia afuera lo hace quien administra la lista.')}

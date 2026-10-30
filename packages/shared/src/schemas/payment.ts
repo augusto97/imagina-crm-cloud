@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { tenantAccessSchema } from './plan-access';
 import { planSchema } from './billing';
 
 /**
@@ -29,6 +30,11 @@ export const planPriceSchema = z.object({
     name: z.string(),
     usd: z.number().nullable(),
     cop: z.number().nullable(),
+    /** v0.1.338 — lo que el plan NO incluye (para mostrarlo al elegir). */
+    disabled_modules: z.array(z.string()).optional(),
+    /** Límites del plan, para compararlos al elegir. `null` = ilimitado. */
+    max_users: z.number().nullable().optional(),
+    max_records: z.number().nullable().optional(),
 });
 export type PlanPrice = z.infer<typeof planPriceSchema>;
 
@@ -171,6 +177,12 @@ export const subscriptionInfoSchema = z.object({
     manual_ends_at: z.string().nullable(),
     auto_renew: autoRenewSchema.nullable(),
     payments: z.array(billingPaymentSchema),
+    /** v0.1.338 — qué pasa al vencer: pausada (`lock`) o solo-lectura. */
+    on_end: z.enum(['lock', 'read_only']).default('read_only'),
+    /** v0.1.338 — fin de la prueba (`null` = no está en prueba o no vence). */
+    trial_ends_at: z.string().nullable().default(null),
+    /** v0.1.338 — acceso efectivo ahora. */
+    access: tenantAccessSchema.optional(),
 });
 export type SubscriptionInfo = z.infer<typeof subscriptionInfoSchema>;
 

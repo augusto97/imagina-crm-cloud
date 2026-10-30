@@ -41,12 +41,14 @@ import { DataConsentService } from '../data-consent/data-consent.service';
 import { CaptchaService } from './captcha.service';
 import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, newNonce, renderFormNoticePage, renderFormPage } from './form-page';
 import { FormsService, type ConfirmOutcome } from './forms.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * v0.1.275 (ADR-S39) — Formularios de una lista. Armarlos es de quien arma
  * la lista (`manage_lists`); verlos también de quien arma automatizaciones
  * (el disparador «Cuando se envía un formulario» los elige de esta lista).
  */
+@PlanModule('forms')
 @Controller('lists/:list/forms')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class FormsController {

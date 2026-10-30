@@ -27,6 +27,7 @@ import { ListsService } from '../lists/lists.service';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { publicSurfaceOff } from '../billing/tenant-access';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /**
@@ -204,6 +205,9 @@ export class PublicListsService {
             .where(eq(publicLists.token, token))
             .limit(1);
         if (!row) throw new NotFoundException({ code: 'public_list_not_found', data: { status: 404 } });
+        // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Enlaces públicos»:
+        // el mismo 404 opaco que un token desconocido (nada se borra).
+        if (await publicSurfaceOff(this.db, row.tenantId, 'public_sharing')) throw new NotFoundException({ code: 'public_list_not_found', data: { status: 404 } });
         return row;
     }
 

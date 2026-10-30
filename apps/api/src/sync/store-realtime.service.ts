@@ -15,6 +15,7 @@ import { StoreSyncEngine } from './store-sync.engine';
 import { StoreSyncQueue, type StoreSyncHookJob, type StoreSyncPushJob } from './store-sync.queue';
 import { META_RESOURCES_OF, readSettings, readState, type SyncSettings } from './store-sync.types';
 import { WooApiError, wooGetPage, wooSend } from './woocommerce/woo-fetch';
+import { planModuleOff } from '../billing/plan-module-gate';
 import {
     isWooPing,
     parseWooTopic,
@@ -195,6 +196,8 @@ export class StoreRealtimeService {
         if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) throw notFound();
         const [hook] = await this.db.select().from(storeHooks).where(eq(storeHooks.token, token)).limit(1);
         if (!hook) throw notFound();
+        // v0.1.338 (ADR-S87) — plan sin «Tienda WooCommerce»: como un token desconocido.
+        if (await planModuleOff(this.db, hook.tenantId, 'woocommerce')) throw notFound();
         const topic = headers['x-wc-webhook-topic'];
         // El «ping» al crear el aviso: si no se contesta 2xx la tienda no lo crea.
         if (isWooPing(topic, typeof body === 'object' ? body : rawBody)) return;
@@ -224,6 +227,8 @@ export class StoreRealtimeService {
         if (change.kind === 'created') return;
         const target = (await this.writeTargets(change.tenantId)).get(change.listId);
         if (!target) return;
+        // v0.1.338 (ADR-S87) — sin «Tienda WooCommerce» en el plan, no viaja nada.
+        if (await planModuleOff(this.db, change.tenantId, 'woocommerce')) return;
         const changed: number[] = [];
         for (const fieldId of target.fieldIds) {
             const key = `f${fieldId}`;

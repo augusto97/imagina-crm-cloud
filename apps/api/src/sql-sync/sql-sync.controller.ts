@@ -18,12 +18,14 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { SqlSyncService } from './sql-sync.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Sincronizaciones desde SQL Server / Azure SQL (v0.1.243). Traen datos de una
  * base externa a una lista: `manage_lists` y, en el service, poder EDITAR la
  * conexión (la misma puerta que la sincronización de la tienda).
  */
+@PlanModule('sql')
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_lists')

@@ -62,6 +62,7 @@ import { contentDispositionHeader } from '../files/safe-content-type';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { openPortalSession } from './portal-cookie';
 import { PortalService, type PortalActor } from './portal.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 const portalPreviewSchema = layoutDataRequestSchema.extend({ record_id: idSchema });
 
@@ -81,6 +82,7 @@ export class PortalController {
      * con semántica OR permitiría que un client emitiera links para el record
      * y el email que quisiera → apropiación de sesión de un admin. Ver SEC-01.
      */
+    @PlanModule('portal')
     @Post('lists/:list/portal/magic-link')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
     @RequireCapability('manage_lists')
@@ -96,6 +98,7 @@ export class PortalController {
      * Quién tiene acceso al portal de un record (v0.1.153) — con la fecha de
      * su última entrada. El acceso SIEMPRE quedó guardado; faltaba mostrarlo.
      */
+    @PlanModule('portal')
     @Get('lists/:list/portal/access')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
     @RequireCapability('manage_lists')
@@ -111,6 +114,7 @@ export class PortalController {
      * v0.1.241 — antes de dar acceso: ¿ese email ya tiene acceso a otros
      * registros de ESTA empresa, o es de su equipo? (nunca mira otras empresas)
      */
+    @PlanModule('portal')
     @Get('lists/:list/portal/access/check')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
     @RequireCapability('manage_lists')
@@ -128,6 +132,7 @@ export class PortalController {
      * (v0.1.241: puede tener varios); la membresía y las sesiones caen cuando
      * no le queda ninguno en la empresa.
      */
+    @PlanModule('portal')
     @Delete('lists/:list/portal/access/:userId')
     @HttpCode(204)
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
@@ -151,6 +156,7 @@ export class PortalController {
      * Listas que se PUEDEN mostrar en el portal (tienen un campo relation
      * hacia esta lista, o un campo `user`). Alimenta el panel del portal.
      */
+    @PlanModule('portal')
     @Get('lists/:list/portal/related-options')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
     @RequireCapability('manage_lists')
@@ -162,6 +168,7 @@ export class PortalController {
     }
 
     /** v0.1.233 — el diseño vigente del portal (de aquí arranca el editor). */
+    @PlanModule('portal')
     @Get('lists/:list/portal/layout')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
     @RequireCapability('manage_lists')
@@ -173,6 +180,7 @@ export class PortalController {
      * v0.1.233 — vista previa del editor del portal: los gráficos y tablas del
      * diseño (sin guardar) para un registro, con el alcance de su cliente.
      */
+    @PlanModule('portal')
     @Post('lists/:list/portal/layout-data')
     @HttpCode(200)
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)

@@ -10561,6 +10561,83 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         front 692 y shared 587 en verde — + simulacro de PITR con el compose real (✅ y ❌
         con el viejo) + E2E navegador 22/22 (escritorio y celular en oscuro).
 
+  - [x] **Prueba con fecha de fin, cuenta pausada y módulos por plan
+        (v0.1.338, ADR-S87, pedido del usuario: "permíteme ajustar el trial…
+        limitarlo a 15 días y después se le deshabilita la cuenta hasta que
+        contrate; a los que no renuevan, tras unos días de gracia, que pasen al
+        plan trial. No quiero cuentas gratis")**. Hasta acá la prueba no vencía
+        (era un plan gratis), un plan vencido quedaba en solo lectura para
+        siempre con sus límites y los planes sólo diferían en números.
+        (a) **Política** en Plataforma → Planes → **«Prueba y vencimientos»**
+        (Redis `platform:billing-policy`, viaja en el snapshot, lectura
+        tolerante): duración de la prueba (default **15 días**, o sin fin), qué
+        pasa al terminar (**pausar la cuenta**, default, o solo lectura), días
+        de **gracia** de un plan pagado (default 5, antes una constante) y
+        **pasar al plan de prueba** pasada la gracia (default sí, con 0 días =
+        pausada al instante). `BillingPolicyService` la refresca cada 60 s y la
+        publica a nivel de módulo para el guard y los motores.
+        (b) **Acceso efectivo** = `tenantAccess` (shared, puro) →
+        `full|read_only|locked` con motivo y fecha: prueba por
+        `tenants.trial_ends_at` (migración 0096), plan pagado por `paid_until +
+        gracia`, la fecha manual corta exacto; archivada o impaga = solo
+        lectura. Viaja en cada membresía de `/auth/me`. La usan el guard, los
+        tokens del MCP (pausada = no resuelve; solo lectura = scope `read`), los
+        motores, la consola y la app.
+        (c) **Cuenta pausada**: 403 `workspace_locked` a todo salvo
+        `@AllowLocked()` — resumen y pago, lista de listas, marca y **exportar**
+        (ADR-S09). Lo público (portal, listas y tableros públicos, enlaces de
+        documentos) deja de servirse. En lugar de la app, una pantalla con el
+        motivo, el panel de pago y «Descargar tus datos» (Excel por lista, con
+        `X-Tenant-Id`) y «Ya pagué: volver a revisar»; en solo lectura, una
+        franja arriba; en prueba, «Te quedan N días de prueba» para los admins
+        (ámbar los últimos 3).
+        (d) **Paso a prueba al vencer**: el trabajo de recordatorios (ahora
+        cada hora) mueve al plan `trial` las empresas cuyo período + gracia (o
+        fecha manual) pasó, con UPDATE condicional, `settings.lapsed` (de qué
+        plan venía, se ve en la consola), bitácora `billing.lapse_to_trial` y
+        correos (prueba por terminar/terminada, período por vencer/vencido,
+        con dedup). Un pago aprobado devuelve el plan pagado.
+        (e) **Altas**: el registro y el alta del operador en prueba nacen con
+        fecha de fin (no si el admin es un superadmin). **Las pruebas de antes
+        no se tocan**: la tarjeta las cuenta y ofrece «Darles N días desde hoy»,
+        que nunca toca una empresa con un superadmin.
+        (f) **Módulos por plan**: 15 claves (`PLAN_MODULES`: automatizaciones,
+        IA, integraciones, WooCommerce, WordPress, SQL, portal, formularios,
+        agenda, mesa de ayuda, documentos, compartir hacia afuera, API, dominio
+        propio, roles propios) con casillas en el plan («Qué incluye el plan»,
+        columna «Incluye» 13/15). Se guardan los DESACTIVADOS
+        (`plans.disabled_modules`): lo que traiga una versión futura queda
+        incluido. Puertas: `@PlanModule` en los controllers (403
+        `plan_module_disabled`, leído en la consulta de la membresía),
+        `plan-module-gate.ts` para webhooks públicos (404), barridos
+        (`planIncludesSql`) y acciones de automatización (fallan con el motivo);
+        una app conectada cuenta según su integración (`moduleForIntegration`).
+        Front: «Tu plan no incluye…» en cada sección y ruta, paneles de la ficha
+        ocultos, el asistente y el tipo de campo IA fuera, candado en la galería
+        de Integraciones, y «Qué incluye tu plan» en Plan y uso. Nada se borra.
+        (g) **Consola**: tarjeta de la política con el conteo de pausadas,
+        fila de acceso por empresa («Pausada · terminó la prueba»), editor del
+        fin de prueba en la ficha (fecha, +7, +15), y KPI «Pausadas» y pruebas
+        que terminan esta semana. **Bug atrapado en el E2E**: tras extender la
+        prueba, la ficha de la empresa seguía diciendo «pausada» (la mutación no
+        invalidaba el detalle).
+        **Quedó fuera, a propósito**: el white-label como módulo (se lee en ~14
+        lugares) y la configuración del portal guardada por el PATCH genérico de
+        la lista. Sin novedad en el catálogo (es una función del operador).
+        Ayuda: artículos de Aprende «Plan, uso y pagos» (empresa) y «Planes,
+        prueba, precios y cobros» (operador) al día, y guía nueva «¿Qué pasa
+        cuando termina la prueba o vence mi plan?». Tests: `trial-access.spec`
+        (12, Postgres + Redis reales: pausada y solo lectura, módulo apagado y
+        vuelta, paso a prueba con gracia/estado/fecha manual, correos con dedup,
+        recordatorios de prueba), `plan-modules.spec` (8) y `plan-access.test`
+        en shared (11); `portal.spec` ajustado (una fecha manual vencida ahora
+        pausa) — API 1810 + 1 omitido, front 692 y shared 598 en verde — + E2E
+        navegador 42/42 (política guardada, módulos del plan Trial,
+        empresa nueva con 15 días, candado de automatizaciones por API y en
+        pantalla, cuenta pausada con descarga de Excel y 403 al resto, «+15
+        días» desde la consola, solo lectura, celular en oscuro, acción en lote
+        sin tocar al superadmin).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

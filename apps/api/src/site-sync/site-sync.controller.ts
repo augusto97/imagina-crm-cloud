@@ -32,12 +32,14 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { SiteKitsService } from './site-kits.service';
 import { SiteSyncService } from './site-sync.service';
 import { WordpressConnectService } from './wordpress-connect.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Sincronización con sitios WordPress (v0.1.333, ADR-S83). Crea listas y trae
  * datos de afuera a nombre de la empresa: exige `manage_lists` y, en el
  * service, poder EDITAR la conexión del sitio (igual que la tienda).
  */
+@PlanModule('wordpress')
 @Controller('connections/:id/site-sync')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_lists')
@@ -162,6 +164,7 @@ export class SiteSyncController {
  * aplicación» de WordPress. Mismo gate que el resto de la galería de apps
  * (`manage_automations`; quién conecta para el equipo lo decide el service).
  */
+@PlanModule('wordpress')
 @Controller('integrations/wordpress')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_automations')

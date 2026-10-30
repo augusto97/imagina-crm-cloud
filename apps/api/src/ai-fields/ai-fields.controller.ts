@@ -9,6 +9,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AiFieldsService, type AiFieldStatus } from './ai-fields.service';
 import { aclOf } from '../tenancy/acl-of';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 const fillSchema = z.object({ only_empty: z.boolean().default(true) });
 
@@ -16,6 +17,7 @@ const fillSchema = z.object({ only_empty: z.boolean().default(true) });
  * v0.1.277 (ADR-S41) — Campos con IA: recalcular uno desde la ficha, llenar
  * la columna entera y ver el último error del campo.
  */
+@PlanModule('ai')
 @Controller('lists/:list')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class AiFieldsController {

@@ -25,12 +25,12 @@ import {
     emailDesignSchema,
     FALLBACK_TIME_ZONE,
     formatEmailFieldValue,
-    isEffectivelyReadOnly,
     parseEmailDesign,
     tenantFormatSchema,
     zonedToday,
-    type BillingStatus,
 } from '@imagina-base/shared';
+import { connectionModuleStepError, planModuleOff } from '../billing/plan-module-gate';
+import { accessOf } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
@@ -783,6 +783,10 @@ export class AutomationsService {
         let connection = null;
         try {
             if (Number.isFinite(connectionId) && connectionId > 0) {
+                // v0.1.338 (ADR-S87) — el módulo de ESA conexión tiene que estar
+                // en el plan (lo mismo que exige el motor al ejecutar).
+                const off = await connectionModuleStepError(this.db, tenantId, connectionId);
+                if (off) throw new Error(off);
                 connection = await this.connectors.resolveParts(tenantId, connectionId);
             }
         } catch (err) {
@@ -994,6 +998,8 @@ export class AutomationsService {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                plan: tenants.plan,
+                trialEndsAt: tenants.trialEndsAt,
             })
             .from(automationHooks)
             .innerJoin(tenants, eq(tenants.id, automationHooks.tenantId))
@@ -1003,17 +1009,16 @@ export class AutomationsService {
             .where(eq(automationHooks.token, token))
             .limit(1);
         if (!row) return null;
+        // v0.1.338 (ADR-S87) — plan sin «Automatizaciones»: la URL responde
+        // como una desconocida (nada se borra; vuelve al cambiar de plan).
+        if (await planModuleOff(this.db, row.tenantId, 'automations')) return null;
         // SEC-34: el estado de la empresa viaja con el token, así el endpoint
         // público rechaza ANTES de capturar o encolar nada.
         return {
             tenantId: row.tenantId,
             automationId: row.automationId,
-            readOnly: isEffectivelyReadOnly({
-                status: row.status as BillingStatus,
-                archived_at: row.archivedAt,
-                subscription_ends_at: row.subscriptionEndsAt,
-                paid_until: row.paidUntil,
-            }),
+            // v0.1.338 — pausada también cuenta (no tiene acceso completo).
+            readOnly: accessOf(row).state !== 'full',
         };
     }
 

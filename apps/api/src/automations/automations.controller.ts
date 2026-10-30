@@ -35,8 +35,10 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AutomationsService } from './automations.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /** CRUD de automatizaciones por lista + runs (CONTRACT.md §8). */
+@PlanModule('automations')
 @Controller('lists/:list/automations')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class AutomationsController {

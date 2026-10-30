@@ -26,6 +26,7 @@ import { aclOf } from '../tenancy/acl-of';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { HelpdeskConfigService } from './helpdesk-config.service';
 import { HelpdeskReplyService } from './helpdesk-reply.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 function actor(req: FastifyRequest): Actor {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
@@ -36,6 +37,7 @@ function actor(req: FastifyRequest): Actor {
  * (IMAP) y los ajustes (mapeo, estados, protecciones, respuestas y SLA). Es de
  * quien arma la lista (`manage_lists`).
  */
+@PlanModule('helpdesk')
 @Controller('lists/:list/helpdesk')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class HelpdeskController {
@@ -116,6 +118,7 @@ export class HelpdeskController {
  * correo». Ver pide ver el registro; responder pide editarlo (lo valida el
  * service con el ACL de la lista).
  */
+@PlanModule('helpdesk')
 @Controller('lists/:list/records/:id/helpdesk')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class HelpdeskTicketController {

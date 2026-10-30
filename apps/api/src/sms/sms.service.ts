@@ -53,6 +53,7 @@ import { safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { redactValues } from '../connectors/connection-parts';
 import { ConnectionUnusableError, ConnectorsService } from '../connectors/connectors.service';
+import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { connections, lists, records, smsHooks, smsMessages, type SmsMessageRowDb } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
@@ -215,6 +216,9 @@ export class SmsService {
             .from(smsHooks)
             .where(eq(smsHooks.token, token))
             .limit(1);
+        // v0.1.338 (ADR-S87) — plan sin «Integraciones»: la URL responde como
+        // una desconocida (nada se borra; vuelve al cambiar de plan).
+        if (row && (await planModuleOff(this.db, row.tenantId, 'integrations'))) return null;
         return row ?? null;
     }
 
@@ -1114,6 +1118,10 @@ export class SmsService {
                 return { kind: 'done' as const, write: null };
             };
             if (await tenantIsReadOnly(tx, tenantId)) return fail('La empresa está en solo-lectura: el SMS no se mandó.', 'cancelado');
+            // v0.1.338 (ADR-S87) — el plan dejó de incluir «Integraciones».
+            if (await planModuleOff(tx, tenantId, 'integrations')) {
+                return fail('El plan de la empresa no incluye «Integraciones»: el SMS no se mandó.', 'cancelado');
+            }
             if (row.recordId !== null) {
                 const [rec] = await tx.select({ deletedAt: records.deletedAt }).from(records).where(and(eq(records.tenantId, tenantId), eq(records.id, row.recordId))).limit(1);
                 if (!rec || rec.deletedAt !== null) return fail('El registro está en la papelera: el SMS no se mandó.', 'cancelado');

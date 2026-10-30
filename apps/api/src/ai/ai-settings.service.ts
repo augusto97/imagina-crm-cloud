@@ -22,6 +22,7 @@ import { eq } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { z } from 'zod';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
+import { planModuleOff } from '../billing/plan-module-gate';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { tenants } from '../db/schema';
@@ -297,9 +298,22 @@ export class AiSettingsService {
      * un motivo accionable cuando no se puede.
      */
     async resolve(tenantId: number, opts: { requireOptIn?: boolean } = {}): Promise<ResolvedAiAccess> {
-        const [tenant, platform] = await Promise.all([this.readTenant(tenantId), this.readPlatform()]);
+        const [tenant, platform, moduleOff] = await Promise.all([
+            this.readTenant(tenantId),
+            this.readPlatform(),
+            // v0.1.338 (ADR-S87) — el plan de la empresa tiene que incluir la IA.
+            // Es el único punto por el que pasan el asistente, los campos con
+            // IA, los agentes y la bienvenida: con esto se detiene todo.
+            planModuleOff(this.db, tenantId, 'ai'),
+        ]);
         if (!platform.enabled) {
             throw new AiUnavailableError('El asistente está desactivado en la plataforma.', 'platform_disabled');
+        }
+        if (moduleOff) {
+            throw new AiUnavailableError(
+                'Tu plan no incluye «Inteligencia artificial». Elige un plan que la incluya para usar el asistente, los campos con IA y los agentes.',
+                'plan_module_disabled',
+            );
         }
         // F7 (ADR-S72) — la bienvenida de una empresa nueva hace UN pedido con
         // su propio consentimiento en línea (la empresa todavía no activó el

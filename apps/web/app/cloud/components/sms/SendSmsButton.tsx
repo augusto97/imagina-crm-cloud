@@ -18,6 +18,7 @@ import { CloudApiError } from '@/lib/cloud/client';
 import { useIsGuest } from '@/lib/guest';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 /**
  * SMS (ADR-S82) — «Enviar SMS» desde un registro (modal, página y ficha
@@ -25,7 +26,7 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
  * texto REAL (las variables resueltas por el servidor con este registro) y el
  * contador de SMS con la misma función que usa el envío.
  */
-export function SendSmsButton({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
+function SendSmsButtonInner({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
     const isGuest = useIsGuest();
     const [open, setOpen] = useState(false);
     const q = useQuery({
@@ -245,4 +246,10 @@ function SendSmsDialog({ listId, recordId, info, onClose }: { listId: number; re
             </Dialog.Portal>
         </Dialog.Root>
     );
+}
+
+/** v0.1.338 (ADR-S87) — sin el módulo en el plan, el botón no aparece. */
+export function SendSmsButton(props: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
+    const off = usePlanModuleOff('integrations');
+    return off ? null : <SendSmsButtonInner {...props} />;
 }

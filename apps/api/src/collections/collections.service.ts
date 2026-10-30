@@ -40,6 +40,7 @@ import { safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
+import { assertPlanModule, planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { collectionHooks, connections, fields, lists, paymentLinks, records, type PaymentLinkRowDb } from '../db/schema';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -186,6 +187,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
      * del equipo detrás.
      */
     async teamConnections(tenantId: number): Promise<CollectionConnection[]> {
+        // v0.1.338 (ADR-S87) — sin «Integraciones» en el plan no hay cobros por el portal.
+        if (await planModuleOff(this.db, tenantId, 'integrations')) return [];
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select({
@@ -222,6 +225,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             payerEmail: string | null;
         },
     ): Promise<{ url: string; reused: boolean }> {
+        await assertPlanModule(this.db, tenantId, 'integrations');
         const amount = Math.round(opts.amount * 100) / 100;
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`portalpay:${tenantId}:${opts.recordId}:${opts.connectionId}`}))`);
@@ -686,6 +690,9 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         const [hook] = await this.db.select().from(collectionHooks).where(eq(collectionHooks.token, token)).limit(1);
         if (!hook) return 'unknown_token';
         if (!isCollectionProvider(hook.provider)) return 'ignored';
+        // v0.1.338 (ADR-S87) — plan sin «Integraciones»: el aviso se ignora (el
+        // pago queda en el proveedor; «Verificar» lo trae al volver el módulo).
+        if (await planModuleOff(this.db, hook.tenantId, 'integrations')) return 'ignored';
         await this.db.update(collectionHooks).set({ lastHookAt: new Date() }).where(eq(collectionHooks.token, token));
         const tenantId = hook.tenantId;
         const label = COLLECTION_PROVIDER_LABEL[hook.provider];

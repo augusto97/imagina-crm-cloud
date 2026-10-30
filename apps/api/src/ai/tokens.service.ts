@@ -1,9 +1,10 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { effectiveCapabilities, isEffectivelyReadOnly, type BillingStatus, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
+import { effectiveCapabilities, readDisabledModules, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
+import { accessOf } from '../billing/tenant-access';
 import { DRIZZLE, type Db } from '../db/client';
-import { customRoles, memberships, oauthClients, personalAccessTokens, tenants, users } from '../db/schema';
+import { customRoles, memberships, oauthClients, personalAccessTokens, plans, tenants, users } from '../db/schema';
 
 /** Prefijo reconocible del secreto (como `ghp_` / `sk-ant-`): `ib_pat_`. */
 export const TOKEN_PREFIX = 'ib_pat_';
@@ -197,9 +198,13 @@ export class PersonalTokensService {
                 role: memberships.role,
                 disabledAt: users.disabledAt,
                 tenantStatus: tenants.status,
+                tenantPlan: tenants.plan,
+                trialEndsAt: tenants.trialEndsAt,
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                // v0.1.338 (ADR-S87) — módulos que el plan no incluye.
+                disabledModules: plans.disabledModules,
                 // C2 — rol propio (capacidades) de la persona, leído en vivo.
                 customRoleId: memberships.customRoleId,
                 customCaps: customRoles.capabilities,
@@ -209,6 +214,7 @@ export class PersonalTokensService {
             .from(personalAccessTokens)
             .innerJoin(users, eq(users.id, personalAccessTokens.userId))
             .innerJoin(tenants, eq(tenants.id, personalAccessTokens.tenantId))
+            .leftJoin(plans, eq(plans.slug, tenants.plan))
             .leftJoin(
                 memberships,
                 and(eq(memberships.userId, personalAccessTokens.userId), eq(memberships.tenantId, personalAccessTokens.tenantId)),
@@ -221,8 +227,13 @@ export class PersonalTokensService {
         // fila existiera, jamás entra al MCP (defensa en profundidad del
         // bloqueo de crear/autorizar).
         if (row.role === 'client' || row.role === 'guest') return null;
+        // v0.1.338 (ADR-S87) — plan sin «API y conexión con Claude»: el token
+        // no sirve (se conserva; vuelve a funcionar al cambiar de plan).
+        const disabled = readDisabledModules(row.disabledModules ?? []);
+        if (disabled.includes('api')) return null;
         // C2 — capacidades efectivas: sin «Usar el asistente IA», el token no sirve.
-        const custom = Array.isArray(row.customCaps) ? row.customCaps : null;
+        // Sin «Roles propios» en el plan, la persona usa su rol base.
+        const custom = Array.isArray(row.customCaps) && !disabled.includes('custom_roles') ? row.customCaps : null;
         const capabilities = effectiveCapabilities(row.role as Role, custom);
         if (!capabilities.includes('use_ai_assistant')) return null;
         if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
@@ -232,12 +243,18 @@ export class PersonalTokensService {
         // por ahí: con un token `full` seguía proponiendo y aplicando. En ese
         // estado el token vale como `read` (leer y exportar siguen, como en la
         // interfaz).
-        const readOnly = isEffectivelyReadOnly({
-            status: row.tenantStatus as BillingStatus,
-            archived_at: row.archivedAt,
-            subscription_ends_at: row.subscriptionEndsAt,
-            paid_until: row.paidUntil,
+        // v0.1.338 (ADR-S87) — con la empresa PAUSADA el token no sirve: ni
+        // leer (la interfaz tampoco deja; sólo pagar y descargar los datos).
+        const access = accessOf({
+            plan: row.tenantPlan,
+            status: row.tenantStatus,
+            archivedAt: row.archivedAt,
+            trialEndsAt: row.trialEndsAt,
+            subscriptionEndsAt: row.subscriptionEndsAt,
+            paidUntil: row.paidUntil,
         });
+        if (access.state === 'locked') return null;
+        const readOnly = access.state !== 'full';
         const scope = readOnly ? 'read' : (row.scope as PersonalTokenScope);
         const teamIds = (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
         return {

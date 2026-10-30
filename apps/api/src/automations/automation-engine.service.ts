@@ -85,6 +85,7 @@ import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
 import { automationRuns, documentTemplates, lists, memberships, records, teams, tenants, users } from '../db/schema';
+import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
@@ -591,7 +592,7 @@ export class AutomationEngine {
         }
         const prep = await this.tenantDb.withTenant(event.tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, event.tenantId)) return null;
+            if ((await tenantIsReadOnly(tx, event.tenantId)) || (await planModuleOff(tx, event.tenantId, 'automations'))) return null;
             const triggerTypes = TRIGGERS_FOR_EVENT[event.trigger];
             const autos = (
                 await this.automations.activeByTriggers(tx, event.tenantId, event.listId, triggerTypes)
@@ -637,7 +638,7 @@ export class AutomationEngine {
     async runScheduled(tenantId: number, automationId: number): Promise<void> {
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return null;
+            if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive) return null;
             return { auto, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
@@ -725,7 +726,7 @@ export class AutomationEngine {
         if (ids.length === 0) return;
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return null;
+            if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'scheduled') return null;
             const rows = await tx
@@ -755,7 +756,7 @@ export class AutomationEngine {
     ): Promise<void> {
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return null;
+            if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return null;
             return { auto, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
@@ -791,7 +792,7 @@ export class AutomationEngine {
     async runDueDate(tenantId: number, automationId: number): Promise<void> {
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
-            if (await tenantIsReadOnly(tx, tenantId)) return null;
+            if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'due_date_reached') return null;
             const fieldRows = await this.fields.listByList(tx, tenantId, auto.listId);
@@ -899,17 +900,20 @@ export class AutomationEngine {
             if (!run || run.status !== 'running' || !run.resumeState) return null;
             const auto = await this.automations.findById(tx, tenantId, run.automationId);
             const readOnly = await tenantIsReadOnly(tx, tenantId);
+            // v0.1.338 (ADR-S87) — el plan dejó de incluir «Automatizaciones».
+            const moduleOff = await planModuleOff(tx, tenantId, 'automations');
             const maps = auto ? await this.fieldMaps(tx, tenantId, auto.listId) : null;
             const record = auto && run.recordId !== null ? await this.recordsRepo.findById(tx, tenantId, auto.listId, run.recordId) : null;
-            return { run, auto, readOnly, maps, record };
+            return { run, auto, readOnly, moduleOff, maps, record };
         });
         if (!loaded) return;
-        const { run, auto, readOnly, maps, record } = loaded;
+        const { run, auto, readOnly, moduleOff, maps, record } = loaded;
         const cancel = (reason: string): Promise<void> => this.cancelResumed(tenantId, runId, run.actionsLog ?? [], reason);
         const state = readResumeState(run.resumeState);
         if (!auto || !maps) return cancel('La automatización ya no existe.');
         if (!auto.isActive) return cancel('La automatización está pausada: la espera no siguió.');
         if (readOnly) return cancel('La empresa estaba en solo-lectura (pago pendiente) cuando tocaba seguir: la espera no siguió.');
+        if (moduleOff) return cancel('El plan de la empresa ya no incluía «Automatizaciones» cuando tocaba seguir: la espera no siguió.');
         const waitNode = state ? flowNodeAt(auto.actions, state.wait_path)?.type : undefined;
         if (!state || (waitNode !== 'wait' && waitNode !== 'wait_approval')) {
             return cancel('La automatización cambió mientras esperaba: el paso «Esperar» ya no está en el mismo lugar.');
@@ -2100,6 +2104,11 @@ export class AutomationEngine {
         const { agent_id, instruction } = readAskAgentConfig(cfg);
         if (agent_id === null) return fail('ask_agent', 'Elige el agente de IA al que se le pide el trabajo.');
         if (!this.agents) return fail('ask_agent', 'Los agentes de IA no están disponibles en este servidor.');
+        {
+            // v0.1.338 (ADR-S87) — plan sin «Inteligencia artificial».
+            const off = await this.tenantDb.withTenant(ctx.tenantId, (tx) => planModuleStepError(tx, ctx.tenantId, 'ai'));
+            if (off) return fail('ask_agent', off);
+        }
         const { merge } = this.mergers(ctx);
         const extra = instruction ? merge(instruction, wrapMergedValue).trim() : '';
         if (ctx.sim) {
@@ -2750,6 +2759,11 @@ export class AutomationEngine {
     private async replyEmail(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
         const svc = this.helpdesk();
         if (!svc) return fail('reply_email', 'La mesa de ayuda no está disponible en este servidor.');
+        {
+            // v0.1.338 (ADR-S87) — plan sin «Mesa de ayuda por correo».
+            const off = await this.tenantDb.withTenant(ctx.tenantId, (tx) => planModuleStepError(tx, ctx.tenantId, 'helpdesk'));
+            if (off) return fail('reply_email', off);
+        }
         if (ctx.recordId === null) return skip('reply_email', 'No hay un registro: la respuesta va al hilo de un ticket.');
         const raw = typeof cfg.body === 'string' ? cfg.body : '';
         if (raw.trim() === '') return fail('reply_email', 'La acción no tiene el texto de la respuesta.');
@@ -3001,6 +3015,9 @@ export class AutomationEngine {
                 const connectionId = Number(cfg.connection_id);
                 let connection: ConnectionParts | null = null;
                 if (Number.isFinite(connectionId) && connectionId > 0) {
+                    // v0.1.338 (ADR-S87) — el módulo de ESA conexión tiene que estar en el plan.
+                    const off = await connectionModuleStepError(tx, ctx.tenantId, connectionId);
+                    if (off) return fail('call_webhook', off);
                     connection = await this.connectors.resolvePartsInTx(tx, ctx.tenantId, connectionId);
                     if (!connection) {
                         throw new Error(
@@ -3081,6 +3098,12 @@ export class AutomationEngine {
                     throw new Error(
                         `«${resolved.name}» ya no tiene la acción «${String(cfg.action_key ?? '')}»: se renombró o se borró.`,
                     );
+                }
+                // v0.1.338 (ADR-S87) — la app tiene que estar en el plan (la
+                // tienda, el sitio y SQL tienen su módulo; el resto, «Integraciones»).
+                {
+                    const off = await planModuleStepError(tx, ctx.tenantId, moduleForIntegration(resolved.integration?.key));
+                    if (off) return fail('connector_action', off);
                 }
                 const values = (cfg.values ?? {}) as Record<string, unknown>;
                 // v0.1.203 — app de la galería («Enviar mensaje a Slack»): la
@@ -3290,6 +3313,11 @@ export class AutomationEngine {
                 // Archivo (cuenta contra el almacenamiento del plan) y deja
                 // `{{pdf.link}}` / `{{pdf.nombre}}` para las acciones siguientes.
                 if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
+                {
+                    // v0.1.338 (ADR-S87) — plan sin «Documentos PDF».
+                    const off = await planModuleStepError(tx, ctx.tenantId, 'documents');
+                    if (off) return fail('generate_pdf', off);
+                }
                 if (ctx.recordId === null) return skip('generate_pdf', 'Un PDF necesita un registro.');
                 const templateId = Number(cfg.document_template_id);
                 if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elige la plantilla del documento.');
@@ -3510,6 +3538,11 @@ export class AutomationEngine {
     private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<MailAttachment[]> {
         const ids = pdfTemplateIds(cfg);
         if (ids.length === 0) return [];
+        // v0.1.338 (ADR-S87) — los PDF adjuntos son parte de «Documentos PDF»:
+        // sin el módulo el envío FALLA (mandar el correo sin el documento que
+        // promete sería peor, mismo criterio que un PDF que no se puede armar).
+        const off = await planModuleStepError(tx, ctx.tenantId, 'documents');
+        if (off) throw new Error(off);
         if (ctx.recordId === null) throw new Error('Los PDF adjuntos necesitan un registro.');
         const out: MailAttachment[] = [];
         let total = 0;

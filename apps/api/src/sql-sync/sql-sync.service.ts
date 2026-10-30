@@ -36,6 +36,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { SqlSyncEngine } from './sql-sync.engine';
 import { SqlSyncQueue } from './sql-sync.queue';
+import { planIncludesSql } from '../billing/plan-module-gate';
 
 /**
  * Sincronizaciones desde SQL Server (v0.1.243): alta, cambios, estado, vista
@@ -263,6 +264,8 @@ export class SqlSyncService {
                     // Papelera: con la lista borrada no corre (conexión base:
                     // el filtro va a mano). Al restaurarla sigue sola.
                     sql`NOT EXISTS (SELECT 1 FROM lists l WHERE l.id = ${sqlSyncs.listId} AND l.deleted_at IS NOT NULL)`,
+                    // v0.1.338 (ADR-S87) — sólo si el plan incluye «Bases de datos SQL».
+                    planIncludesSql(sqlSyncs.tenantId, 'sql'),
                 ),
             )
             .orderBy(asc(sqlSyncs.nextRunAt))

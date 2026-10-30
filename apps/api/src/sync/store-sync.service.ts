@@ -42,6 +42,7 @@ import { META_RESOURCES_OF, readLegacyPurchaseLists, readSettings, readState, ty
 import { wooGet } from './woocommerce/woo-fetch';
 import { buildWooPack, WOO_LIST_KEYS, WOO_PACK_VERSION, WOO_ROOT_RESOURCES } from './woocommerce/woo-pack';
 import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
+import { planIncludesSql } from '../billing/plan-module-gate';
 
 /** v0.1.336 — `on_source_delete` es opcional al dar de alta (por defecto, conservar lo borrado). */
 type WithOptionalDelete<T extends { on_source_delete: unknown }> = Omit<T, 'on_source_delete'> & { on_source_delete?: T['on_source_delete'] };
@@ -1034,7 +1035,15 @@ export class StoreSyncService {
         const due = await this.db
             .select({ id: connectionSyncs.id, tenantId: connectionSyncs.tenantId })
             .from(connectionSyncs)
-            .where(and(eq(connectionSyncs.enabled, true), eq(connectionSyncs.provider, 'woocommerce'), lte(connectionSyncs.nextRunAt, new Date())))
+            .where(
+                and(
+                    eq(connectionSyncs.enabled, true),
+                    eq(connectionSyncs.provider, 'woocommerce'),
+                    lte(connectionSyncs.nextRunAt, new Date()),
+                    // v0.1.338 (ADR-S87) — sólo si el plan incluye «Tienda WooCommerce».
+                    planIncludesSql(connectionSyncs.tenantId, 'woocommerce'),
+                ),
+            )
             .orderBy(asc(connectionSyncs.nextRunAt))
             .limit(100);
         for (const d of due) {

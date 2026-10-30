@@ -72,6 +72,8 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { docImageKey, renderDocument, type ItemsTable, type TotalsRowResolved } from './document-render';
 import { computeDesignTotals } from './document-totals';
+import { publicSurfaceOff } from '../billing/tenant-access';
+import { planModuleOff } from '../billing/plan-module-gate';
 
 /** Tope por plantillas de una lista (son diseños, no datos). */
 const MAX_TEMPLATES_PER_LIST = 50;
@@ -603,6 +605,11 @@ export class DocumentsService {
             throw templateNotFound(templateId);
         }
         const rendered = await this.withDocTx(tenantId, async (tx, uploads) => {
+            // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Documentos PDF»:
+            // el enlace responde como uno vencido.
+            if (await publicSurfaceOff(tx, tenantId, 'documents')) {
+                throw templateNotFound(templateId);
+            }
             const tpl = await this.findAnyInTx(tx, tenantId, templateId);
             if (!tpl) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);
@@ -1232,6 +1239,8 @@ export class DocumentsService {
 
     /** v0.1.267 — Los documentos que el cliente puede bajar desde su portal. */
     async portalDocumentsInTx(tx: Tx, tenantId: number, listId: number): Promise<Array<{ id: number; name: string }>> {
+        // v0.1.338 (ADR-S87) — plan sin «Documentos PDF»: el portal no los ofrece.
+        if (await planModuleOff(tx, tenantId, 'documents')) return [];
         return tx
             .select({ id: documentTemplates.id, name: documentTemplates.name })
             .from(documentTemplates)
@@ -1248,6 +1257,7 @@ export class DocumentsService {
      */
     async renderForPortal(tenantId: number, listId: number, recordId: number, templateId: number): Promise<RenderedDocument> {
         return this.withDocTx(tenantId, async (tx, uploads) => {
+            if (await planModuleOff(tx, tenantId, 'documents')) throw templateNotFound(templateId);
             const tpl = await this.findInTx(tx, tenantId, listId, templateId);
             if (!tpl || !tpl.portalVisible) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);

@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 
 import { CopyButton, PaymentStatusChip, formatMoney } from './paymentUi';
 import { parseLocalAmount } from '@/lib/money';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 /**
  * Cobros de un registro (v0.1.251, ADR-S31): los links de pago que se le
@@ -33,7 +34,7 @@ import { parseLocalAmount } from '@/lib/money';
  * (sería ruido en cada registro de cada lista); el bloque «Cobros» de la
  * ficha diseñada sí explica cómo conectar (`showEmptyHint`).
  */
-export function RecordPaymentsPanel({
+function RecordPaymentsPanelInner({
     listId,
     recordId,
     showEmptyHint = false,
@@ -444,4 +445,10 @@ function statusSentence(l: PaymentLink): string {
 function errText(err: unknown): string {
     if (err instanceof CloudApiError) return err.message;
     return err instanceof Error ? err.message : String(err);
+}
+
+/** v0.1.338 (ADR-S87) — sin el módulo en el plan, no aparece. */
+export function RecordPaymentsPanel(props: Parameters<typeof RecordPaymentsPanelInner>[0]): JSX.Element | null {
+    const off = usePlanModuleOff('integrations');
+    return off ? null : <RecordPaymentsPanelInner {...props} />;
 }

@@ -35,6 +35,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { contentDispositionHeader } from '../files/safe-content-type';
 import { DocumentsService } from './documents.service';
 import { aclOf } from '../tenancy/acl-of';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * v0.1.266 (ADR-S35) — Plantillas de documentos PDF de una lista.
@@ -42,6 +43,7 @@ import { aclOf } from '../tenancy/acl-of';
  * de un registro, de quien puede verlo (con su ACL: los campos que tiene
  * ocultos no aparecen en el documento).
  */
+@PlanModule('documents')
 @Controller('lists/:list/documents')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class DocumentsController {

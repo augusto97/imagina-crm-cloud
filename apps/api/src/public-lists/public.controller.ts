@@ -18,6 +18,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { publicListPageCsp, publicListUnavailablePage, renderPublicListPage } from './public-page';
 import { AuditService } from '../audit/audit.service';
 import { PublicListsService } from './public-lists.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Endpoints PÚBLICOS (sin auth ni tenant) de listas publicadas. El acceso se
@@ -87,6 +88,7 @@ export class PublicPageController {
  * Vive aquí (no en ListsController) para evitar dependencia circular: el
  * PublicListsService ya depende de ListsService.
  */
+@PlanModule('public_sharing')
 @Controller('lists')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class PublicAdminController {

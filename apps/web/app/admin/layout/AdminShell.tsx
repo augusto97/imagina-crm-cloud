@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 
 import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
+import { AccessBanner } from '@/admin/layout/AccessBanner';
 import { EmailVerifyBanner } from '@/admin/layout/EmailVerifyBanner';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
@@ -116,6 +117,7 @@ export function AdminShell(): JSX.Element {
                     onSearchClick={openPalette}
                     onShowShortcuts={openShortcuts}
                 />
+                <AccessBanner />
                 <EmailVerifyBanner />
                 {/* Fase 7 — avisos de la plataforma (mantenimiento, etc.). */}
                 <WhatsNewNoticeBanner />

@@ -86,6 +86,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'workload.capacity': { text: 'cambió la capacidad de trabajo de' },
     'member.remove': { text: 'quitó del workspace a', danger: true },
     'billing.plan_change': { text: 'cambió el plan' },
+    'billing.lapse_to_trial': { text: 'pasó al plan de prueba por no renovar' },
     'workspace.smtp_change': { text: 'cambió el correo (SMTP)' },
     'workspace.mail_account_change': { text: 'cambió la cuenta de envío del correo' },
     'workspace.storage_change': { text: 'cambió dónde se guardan los archivos' },

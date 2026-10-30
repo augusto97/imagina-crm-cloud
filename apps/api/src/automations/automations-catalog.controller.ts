@@ -7,6 +7,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { AutomationsService } from './automations.service';
+import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
  * Catálogo de triggers/acciones (para el editor del plugin) + runs por id.
@@ -62,6 +63,7 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'ask_agent', label: 'Pedirle a un agente', config_schema: {} },
 ];
 
+@PlanModule('automations')
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class AutomationsCatalogController {

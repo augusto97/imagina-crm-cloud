@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
 
 /**
  * Planes de suscripción (ADR-S15 F3). Editables por el operador desde la consola.
@@ -26,6 +26,8 @@ export const plans = pgTable('plans', {
     priceUsd: integer('price_usd'),
     priceCop: integer('price_cop'),
     isActive: boolean('is_active').notNull().default(true),
+    /** v0.1.338 (ADR-S87) — módulos que el plan NO incluye. Vacío = todos. */
+    disabledModules: jsonb('disabled_modules').$type<string[]>().notNull().default([]),
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
