@@ -90,6 +90,104 @@ export const articles: LearnArticle[] = [
     },
 
     // ───────────────────────────── 2. Campos con IA ─────────────────────────────
+    // ─────────────────────────── 1b. Sugerencias ───────────────────────────
+    {
+        id: 'ia-sugerencias',
+        route: '/lists',
+        related: ['vistas-que-son', 'tableros-crear', 'automatizaciones-que-son', 'ia-clave-privacidad'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cada lista te puede decir qué conviene armar con lo que ya tiene: una vista por estado si tus registros tienen etapas, un calendario si hay fechas, un tablero con tus números, un aviso cuando algo vence. Son **sugerencias para esa lista**, sacadas de sus campos y de sus registros, no ideas genéricas. Aparecen en el botón **Sugerencias** de la cabecera de la lista, con un número cuando hay alguna nueva.',
+            },
+            { t: 'anim', key: 'sugerencias-lista', caption: 'El aviso abre el panel; una sugerencia se crea con un clic y la IA suma ideas cuando la pides.' },
+            { t: 'h', text: 'Dos clases de sugerencias' },
+            {
+                t: 'cards',
+                items: [
+                    {
+                        icon: 'Wand2',
+                        title: 'Para tu lista (gratis, siempre)',
+                        md: 'La app mira tu lista y propone lo que suele servir: **tablero por estado**, **calendario**, una vista de **vencidos**, **Gantt** o **carga de trabajo** si hay fechas y responsables, un **tablero** con tus números, **convertir un texto en selección** cuando se repiten pocos valores, avisos de **registros repetidos** o de **campos vacíos**, y un **formulario** para recibir registros. No usa IA ni gasta nada.',
+                        tone: 'blue',
+                    },
+                    {
+                        icon: 'Sparkles',
+                        title: 'Con IA (a pedido)',
+                        md: 'Con **Analizar con IA**, la IA lee un resumen de la lista (y, si lo eliges, algunos ejemplos de texto con los datos personales tapados) y propone hasta 6 ideas propias: vistas, tableros, automatizaciones y campos que encajan con tu negocio. Sólo corre cuando tú la pides: nada se analiza solo ni en segundo plano.',
+                        tone: 'violet',
+                    },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Cada sugerencia dice **por qué** con tus datos («6 registros tienen la fecha de pago anterior a hoy y siguen sin cerrar») y, si crea algo grande como un tablero, **Ver qué se crea** te muestra el detalle antes. También aparecen algunas ideas de la galería que encajan con tus campos.',
+            },
+            { t: 'h', text: 'Aplicar, descartar y volver a ver' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre la lista y toca **Sugerencias** en la cabecera (o **Personalizar vista** → **Sugerencias para esta lista**).',
+                    'Lee el porqué de cada una. Si te sirve, toca su botón (**Crear la vista**, **Crear el tablero**, **Crear la automatización**…): se crea al instante y el aviso te lleva a verla.',
+                    'Lo que ya creaste queda en **Aplicadas**, con su enlace.',
+                    'Si una no te sirve, toca la **X**: pasa a **Descartadas** y no vuelve a aparecer. Desde ahí puedes mostrarla de nuevo.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Nada se crea solo',
+                md: 'Ni las reglas ni la IA cambian tu lista: sólo proponen. Lo que apruebas se crea con tu acceso y queda en la actividad como cualquier cambio tuyo. Una automatización que propone la IA se crea **activa**; si prefieres revisarla antes, ábrela desde **Automatizaciones** y páusala.',
+            },
+            { t: 'h', text: 'El análisis con IA y su cupo' },
+            {
+                t: 'settings',
+                title: 'Cómo funciona «Analizar con IA»',
+                rows: [
+                    { name: 'Cupo del mes', what: 'Cada empresa tiene **5 análisis por mes** (el panel dice cuántos quedan). Es aparte de la cuota del asistente. Con una **clave propia** de IA no hay límite.', tip: 'Si un análisis falla, no se descuenta.' },
+                    { name: '¿De qué se trata la lista?', what: 'Opcional: una línea sobre para qué la usas («cobros mensuales a clientes de hosting») hace que las ideas encajen mejor. En una lista con pocos registros, el panel te lo pide.' },
+                    { name: 'Volver a analizar', what: 'Si la lista no cambió, el botón espera 30 días: el resultado sería el mismo. Si agregas campos o vistas, o escribes otro propósito, se habilita al toque.' },
+                    { name: 'Qué viaja a la IA', what: 'La **estructura** de la lista (campos, tipos, opciones, vistas, automatizaciones) y **números** (cuántos registros, cuántos llenos, rangos de fechas y montos). Sin la casilla de abajo, **nunca** los textos de tus registros: ni nombres, ni correos, ni teléfonos, ni documentos.' },
+                    { name: 'Incluir ejemplos de texto', what: 'Opcional y apagada por defecto. Marcada, suma **hasta 5 ejemplos cortos** por campo de texto para que la IA entienda qué guardas («Renovación de hosting por 12 meses»). Antes de enviarlos se tapan correos, enlaces, números largos (documentos, teléfonos, cuentas) y nombres propios, y de los campos que guardan datos de personas (nombre, cliente, documento, dirección…) no se envía ninguno.', tip: 'Úsala si tu lista tiene notas o descripciones que explican el negocio y las ideas te salen genéricas. Con o sin ejemplos cuentan como análisis distintos.' },
+                    { name: 'Qué puede proponer', what: 'Vistas, tableros, campos y automatizaciones que se quedan dentro de la app (cambiar un campo, enviar un correo, esperar, crear un registro). Nunca algo que llame a un servicio externo.' },
+                ],
+            },
+            { t: 'h', text: 'Quién las ve y cómo apagarlas' },
+            {
+                t: 'p',
+                md: 'Las ven **administradores y gerentes**, que son quienes arman la lista. Y cada sugerencia sólo aparece si tu rol puede crear eso (por ejemplo, una automatización exige poder administrar automatizaciones).',
+            },
+            {
+                t: 'settings',
+                title: 'Al pie del panel de sugerencias',
+                rows: [
+                    { name: 'Avisarme en la cabecera de las listas', what: 'Apágalo y el botón **Sugerencias** deja de aparecer en la cabecera **para ti**. El panel se sigue abriendo desde **Personalizar vista**.' },
+                    { name: 'Empresa', what: 'Sólo el administrador: **Con reglas y con IA** (recomendado), **Sólo reglas, sin IA** o **Apagadas** para todo el equipo.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Ejemplo: una lista de cobros',
+                md: 'Una agencia importa sus cobros de un Excel. El panel le sugiere un **tablero por «Estado»** (20 de 30 están en «Pendiente»), una vista **Vencidos** con los 6 que pasaron su fecha y **convertir «Ciudad» en selección** (sólo hay 3 valores distintos). Con **Analizar con IA**, la IA suma «Marca solo lo vencido»: una automatización que pone el estado en «Vencida» al día siguiente de la fecha de pago. Cuatro clics y la lista quedó armada.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: 'No veo el botón «Sugerencias».', a: 'Lo ven administradores y gerentes. Si lo eres, puede que lo hayas ocultado (ábrelo desde **Personalizar vista** y vuelve a marcar «Avisarme en la cabecera») o que el administrador las haya apagado para la empresa.' },
+                    { q: 'El botón de la IA está deshabilitado.', a: 'El panel dice por qué: la IA no está activada en la empresa, tu plan no la incluye, se acabó el cupo del mes o la lista no cambió desde el último análisis.' },
+                    { q: '¿Las sugerencias de la IA cambian solas?', a: 'No. Quedan guardadas hasta el próximo análisis, que sólo corre cuando alguien lo pide.' },
+                    { q: 'Apliqué una por error.', a: 'Lo creado es una vista, un tablero, un campo o una automatización común: bórralo como cualquier otro y va a la papelera.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Activar la IA', article: 'ia-clave-privacidad' },
+                ],
+            },
+        ],
+    },
     {
         id: 'ia-campos',
         route: '/lists',

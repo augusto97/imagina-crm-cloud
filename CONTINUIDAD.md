@@ -382,30 +382,34 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.340**
-(duplicar un registro en un clic, con un aviso que se cierra solo y «Deshacer»;
-antes v0.1.339 crear una lista desde un Excel o CSV, v0.1.338 la prueba con
-fecha de fin y los módulos por plan, y v0.1.337 el WAL de Postgres vigilado y
-comprimido), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.341**
+(sugerencias para cada lista: reglas gratis con el porqué en sus datos y un
+análisis con IA a pedido, con cupo propio de 5 al mes; antes v0.1.340 duplicar
+un registro en un clic, v0.1.339 crear una lista desde un Excel o CSV y v0.1.338
+la prueba con fecha de fin y los módulos por plan), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-10-31 — **Recomendaciones por lista con IA (PROPUESTA, esperando respuesta)**.
-  Pedido del usuario: recomendaciones de automatizaciones, tableros, etc. basadas
-  en la lista concreta (las de hoy son genéricas), sin un motor que gaste tokens
-  todo el tiempo, útiles para listas con datos y recién creadas, y que se puedan
-  apagar. Propuesta enviada: **capa 1 gratis por reglas** (estructura + conteos
-  SQL: vistas que faltan, automatizaciones con evidencia —«23 vencidos sin
-  recordatorio»—, calidad de datos, tablero; cada una aplicable con un clic) +
-  **capa 2 «Recomendar con IA» sólo al tocar el botón** (una llamada con el modelo
-  rápido, estructura + resumen de datos SIN datos personales como en
-  file-import, propuestas validadas con los constructores del asistente;
-  resultado guardado, «Volver a analizar» sólo si la lista cambió, lo descartado
-  no vuelve, cupo propio por empresa/mes, sin límite con clave propia; lista
-  vacía → una pregunta «¿para qué la usas?»). Apagado por persona y por empresa
-  (activadas / sólo gratis / apagadas), chip discreto «Sugerencias (N)», nunca
-  emergentes. **Le pregunté**: cupo por defecto (5/mes propio o el del
-  asistente), quién ve el chip (propuse sólo admin/gerente) y si van las dos capas
-  juntas o primero la gratis.
+- 2026-10-31 — **Sugerencias por lista → v0.1.341** (ADR-S89). Pedido del
+  usuario: recomendaciones de automatizaciones, tableros, etc. basadas en la lista
+  concreta (las de hoy eran genéricas), sin un motor que gaste tokens todo el
+  tiempo, útiles para listas con datos y recién creadas, y que se puedan apagar.
+  Le propuse dos capas (reglas gratis + IA sólo al tocar el botón) y respondió
+  **"5 por mes, solo admin y gerente, las dos juntas"**. **Decisiones**: cupo de IA
+  para esto aparte del asistente (`list_suggest_ai_monthly`, default **5 por
+  empresa y mes**, se cambia en Plataforma → Asistente IA; con clave propia, sin
+  límite; si falla, no se descuenta); lo ven **sólo administradores y gerentes**;
+  la IA ve estructura y números, **nunca** textos de registros, correos,
+  teléfonos ni personas; sólo propone vistas, tableros, campos y
+  automatizaciones internas (nada que llame afuera); si la lista no cambió,
+  volver a analizar espera 30 días; nada se crea solo. Apagado: por persona
+  (aviso de la cabecera) y por empresa (con IA / sólo reglas / apagadas, sólo el
+  admin). Sin migración (Redis + `settings`). **Pregunta del usuario después**:
+  "si la IA no lee los registros, ¿cómo entiende de qué trata la lista?" — le
+  expliqué qué viaja (nombres de campos, opciones con conteos, números, fechas
+  vencidas, vinculadas, lo que ya existe, el propósito) y lo que no ve (el texto
+  libre), y ofrecí una casilla opcional de ejemplos enmascarados → **"sí,
+  agrega la casilla de ejemplos de texto"**: entró en la misma versión
+  (apagada por defecto). **Queda abierto**: nada.
 - 2026-10-31 — **Duplicar en un clic → v0.1.340**. Reporte del usuario: "si un
   registro no tiene subtareas igual pregunta si quiero duplicar subtareas, al
   final sale «registro duplicado» y tengo que hacer clic para aceptar… son 3
@@ -1114,6 +1118,32 @@ comprimido), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-31 · v0.1.341** — **Sugerencias para cada lista** (ADR-S89; pedido
+  del usuario, ver §10). Botón **Sugerencias** en la cabecera de la lista (con el
+  número de nuevas) y en **Personalizar vista**: panel con (a) **sugerencias por
+  reglas, gratis** — tablero por estado (con el total del monto), calendario,
+  vista «Vencidos» (preset nuevo `before_today`), Gantt, carga de trabajo, un
+  tablero con los números, convertir un texto en selección, repetidos, campos
+  vacíos y un formulario — cada una con su porqué en los datos («6 registros…»),
+  más hasta 2 ideas del catálogo que encajan; y (b) **«Analizar con IA»** a
+  pedido: mini bucle con 5 herramientas del asistente filtradas por rol, perfil
+  sin valores de registros (con la casilla opcional «Incluir ejemplos de texto»,
+  hasta 5 ejemplos por campo de texto con correos, números largos, enlaces y
+  nombres propios tapados, nunca de campos de personas), hasta 6 ideas, cupo de 5 por empresa y mes con
+  devolución si falla, huella que evita repetir el análisis si la lista no
+  cambió. Aplicar re-ejecuta la herramienta y aplica la propuesta (mismos
+  caminos que el asistente); descartadas no vuelven, aplicadas quedan con su
+  enlace. Ajustes: aviso de la cabecera por persona y modo de la empresa (con
+  IA / sólo reglas / apagadas). Cupo editable en Plataforma → Asistente IA.
+  **Bug atrapado en el E2E**: los controles del pie del panel eran controlados por
+  la respuesta del servidor y no se movían al tocarlos (otra vez la lección de
+  v0.1.207); ahora son optimistas. Ilustración `sugerencias-lista`, artículo de
+  Aprende, guía de ayuda y novedad. Tests: 12 shared, 6 API (`list-suggestions.spec`; suite completa 1823 + 1 omitido),
+  2 front; E2E navegador 26/26 contra un proveedor de IA simulado (reglas con
+  evidencia, aplicar kanban/tablero/convertir, descartar y restaurar, IA con cupo
+  5→4 sin valores de registros, automatización aplicada, ocultar por persona,
+  sólo reglas, celular en oscuro).
 
 - **2026-10-31 · v0.1.340** — **Duplicar un registro en un clic** (reporte del
   usuario, ver §10). El menú de la fila (clic derecho) y la barra de selección

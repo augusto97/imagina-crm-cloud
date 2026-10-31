@@ -6,6 +6,7 @@ import { AgentHubModule } from './ai-agents/agent-hub';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { FileImportModule } from './file-import/file-import.module';
+import { ListSuggestionsModule } from './list-suggestions/list-suggestions.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { HelpdeskModule } from './helpdesk/helpdesk.module';
@@ -180,6 +181,8 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.
         OnboardingModule,
         FileImportModule,
+        // v0.1.341 (ADR-S89) — sugerencias por lista (reglas gratis + IA a pedido).
+        ListSuggestionsModule,
         // Fase 7 — novedades (catálogo de cada versión + lo que publica el operador).
         WhatsNewModule,
     ],

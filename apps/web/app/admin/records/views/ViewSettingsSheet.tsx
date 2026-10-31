@@ -17,6 +17,7 @@ import {
     Group,
     History,
     Layers,
+    Lightbulb,
     MousePointerClick,
     Paintbrush,
     Pin,
@@ -126,6 +127,8 @@ interface ViewSettingsSheetProps {
     onCsvUpdate?: () => void;
     /** v0.1.220 — eliminar todo lo que coincide con la vista (vista previa + deshacer). */
     onDeleteMatching?: () => void;
+    /** v0.1.341 — sugerencias para esta lista (admin y gerente). */
+    onSuggestions?: () => void;
     /** v0.1.287 — segundo nivel de agrupación («Y luego por»). */
     subGroupByFieldId?: number | null;
     onSubGroupByFieldIdChange?: (next: number | null) => void;
@@ -196,6 +199,7 @@ export function ViewSettingsSheet({
     onBulkHistory,
     onCsvUpdate,
     onDeleteMatching,
+    onSuggestions,
     subGroupByFieldId = null,
     onSubGroupByFieldIdChange,
     colorRules = [],
@@ -647,6 +651,18 @@ export function ViewSettingsSheet({
                         )}
 
                         <Group_ label={__('La lista')}>
+                            {onSuggestions && (
+                                <RowButton
+                                    icon={Lightbulb}
+                                    label={__('Sugerencias para esta lista')}
+                                    tour="view-settings-suggestions"
+                                    value={__('Vistas, tableros y más')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onSuggestions();
+                                    }}
+                                />
+                            )}
                             {canExport && (
                                 <RowButton
                                     icon={Download}

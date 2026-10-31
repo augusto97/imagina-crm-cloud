@@ -9,6 +9,7 @@ import {
     Download,
     FileUp,
     Filter,
+    Lightbulb,
     Loader2,
     MoreHorizontal,
     Plus,
@@ -42,7 +43,7 @@ import { parseMultiBucket } from '@/lib/multiBucket';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { moduleEnabled } from '@/lib/cloudFeatures';
-import { CAP, useCan } from '@/lib/permissions';
+import { CAP, useCan, useCanAny } from '@/lib/permissions';
 import { useGuestAccess } from '@/hooks/useGuests';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
@@ -56,6 +57,7 @@ import { useQuickDuplicate } from './bulk/useQuickDuplicate';
 import { SiteListBanner } from './SiteListBanner';
 import { SourceGoneBar } from './SourceGoneBar';
 import { useSourceGoneCount } from '@/hooks/useSourceGone';
+import { useListSuggestionsSummary } from '@/hooks/useListSuggestions';
 import { StoreListBanner } from './StoreListBanner';
 import { SampleDataBanner } from '@/admin/onboarding/SampleDataBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
@@ -135,6 +137,8 @@ const BulkSmsDialog = lazyWithReload(() => import('./bulk/BulkSmsDialog').then((
 const StoreVariationsDialog = lazyWithReload(() => import('./bulk/StoreVariationsDialog').then((m) => ({ default: m.StoreVariationsDialog })));
 const ImportDialog = lazyWithReload(() => import('./ImportDialog').then((m) => ({ default: m.ImportDialog })));
 const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ default: m.ShareDialog })));
+// v0.1.341 — sugerencias para esta lista (a pedido: sólo se baja al abrirse).
+const ListSuggestionsSheet = lazyWithReload(() => import('./suggestions/ListSuggestionsSheet').then((m) => ({ default: m.ListSuggestionsSheet })));
 // H3 — escáner de códigos de la lista (cámara + lector): sólo se baja al abrirlo.
 const ListScanDialog = lazyWithReload(() => import('@/admin/scan/ListScanDialog'));
 
@@ -404,6 +408,7 @@ export function RecordsPage(): JSX.Element {
     const [viewSettingsFocus, setViewSettingsFocus] = useState<{ section: 'colors'; n: number } | null>(null);
     // Diálogo "Compartir" (v0.1.128) — enlace del equipo + página pública.
     const [shareOpen, setShareOpen] = useState(false);
+    const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
     // Capability gating (Fase 7 — 1.E). El backend ya rechaza acciones
     // sin cap; aquí solo ocultamos los botones para evitar UX de
@@ -447,6 +452,12 @@ export function RecordsPage(): JSX.Element {
     const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
     // v0.1.336 — cuántas filas ya se borraron en la tienda o el sitio (la misma consulta que el aviso).
     const sourceGone = useSourceGoneCount(list.data?.id, storeRules !== null && (canDeleteAny || canDeleteOwn) && !guest.isGuest);
+    // v0.1.341 (ADR-S89) — sugerencias para esta lista: sólo admin y gerente
+    // (lo decide el servidor); el resumen no consulta a la IA.
+    const mayManageStructure = useCanAny(CAP.MANAGE_VIEWS, CAP.MANAGE_DASHBOARDS, CAP.MANAGE_FIELDS, CAP.MANAGE_AUTOMATIONS);
+    const suggestions = useListSuggestionsSummary(list.data?.id, mayManageStructure && !guest.isGuest);
+    const suggestionsAvailable = suggestions.data?.enabled === true;
+    const suggestionsNew = suggestionsAvailable && !suggestions.data!.hidden_for_me ? suggestions.data!.new_count : 0;
     // Mover y duplicar no aplican a las listas de la tienda o del sitio: eso se
     // hace en WooCommerce (o en WordPress). Borrar sí, desde v0.1.336, pero sólo
     // lo que la fuente ya borró (el servidor separa lo que sigue vivo allá).
@@ -1020,6 +1031,22 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </nav>
 
                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5">
+                    {/* v0.1.341 — aviso discreto de sugerencias nuevas (se oculta por persona). */}
+                    {suggestionsNew > 0 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSuggestionsOpen(true)}
+                            className="imcrm-h-7 imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-border-primary/25 imcrm-bg-primary/[0.06] imcrm-px-2.5 imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-bg-primary/10 hover:imcrm-text-primary"
+                            data-testid="list-suggestions-chip"
+                            data-tour="records-suggestions"
+                            aria-label={sprintf(__('%s sugerencias para esta lista'), String(suggestionsNew))}
+                        >
+                            <Lightbulb className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            <span className="imcrm-hidden sm:imcrm-inline">{__('Sugerencias')}</span>
+                            <span className="imcrm-tabular-nums">{suggestionsNew}</span>
+                        </Button>
+                    )}
                     {/* "Compartir" lo ve cualquiera que pueda abrir la lista: el
                         enlace del equipo sirve a todos y publicar hacia afuera
                         se gatea DENTRO del diálogo. */}
@@ -1353,6 +1380,17 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </Suspense>
             )}
 
+            {suggestionsOpen && fields.data && (
+                <Suspense fallback={null}>
+                    <ListSuggestionsSheet
+                        open={suggestionsOpen}
+                        onOpenChange={setSuggestionsOpen}
+                        list={{ id: list.data.id, slug: list.data.slug, name: list.data.name }}
+                        fields={fields.data}
+                    />
+                </Suspense>
+            )}
+
             {/* v0.1.253 — montado SÓLO abierto: cerrado igual pedía la
                 publicación, los campos y las vistas de la lista en cada visita. */}
             {shareOpen && (
@@ -1449,6 +1487,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onDeleteMatching={
                         canBulkEdit && structureActions?.delete ? () => setStructure({ action: 'delete', matching: true }) : undefined
                     }
+                    onSuggestions={suggestionsAvailable ? () => setSuggestionsOpen(true) : undefined}
                     onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
                     onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}

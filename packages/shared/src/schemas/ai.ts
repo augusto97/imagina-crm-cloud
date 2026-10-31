@@ -58,6 +58,13 @@ export const platformAiSettingsSchema = z.object({
      * con clave propia no tiene tope.
      */
     import_ai_monthly: z.number().int().min(0).max(1000),
+    /**
+     * v0.1.341 (ADR-S89) — Análisis «Recomendar con IA» de una lista por
+     * empresa y por mes con la clave de la PLATAFORMA (5 por defecto). Cupo
+     * aparte de la cuota del plan; 0 = sin sugerencias con IA (las reglas
+     * gratuitas siguen); una empresa con clave propia no tiene tope.
+     */
+    list_suggest_ai_monthly: z.number().int().min(0).max(1000),
 });
 export type PlatformAiSettings = z.infer<typeof platformAiSettingsSchema>;
 
@@ -73,6 +80,7 @@ export const updatePlatformAiSettingsSchema = z
         share_platform_key: z.boolean(),
         allow_tenant_keys: z.boolean(),
         import_ai_monthly: z.number().int().min(0).max(1000),
+        list_suggest_ai_monthly: z.number().int().min(0).max(1000),
     })
     .partial()
     .refine((p) => Object.keys(p).length > 0, { message: 'El patch no puede estar vacío' });

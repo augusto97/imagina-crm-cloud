@@ -100,7 +100,7 @@ export function ProposalCard({
             </div>
 
             <div className="imcrm-px-3 imcrm-pt-2">
-                <Preview p={p} Icon={Icon} />
+                <ProposalPreview p={p} Icon={Icon} />
             </div>
 
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-px-3 imcrm-pb-3 imcrm-pt-2">
@@ -164,7 +164,8 @@ export function ProposalCard({
     );
 }
 
-function Preview({ p, Icon }: { p: AiProposal; Icon: typeof fieldTypeIcon }): JSX.Element | null {
+/** La vista previa de una propuesta (también la usan las sugerencias por lista, v0.1.341). */
+export function ProposalPreview({ p, Icon = fieldTypeIcon }: { p: Pick<AiProposal, 'preview' | 'kind' | 'destructive'>; Icon?: typeof fieldTypeIcon }): JSX.Element | null {
     const pv = p.preview;
     const blocks: JSX.Element[] = [];
     for (const l of pv.lists) {

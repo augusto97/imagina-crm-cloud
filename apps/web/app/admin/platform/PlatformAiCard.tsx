@@ -40,6 +40,7 @@ export function PlatformAiCard(): JSX.Element | null {
     const [share, setShare] = useState(true);
     const [allowOwn, setAllowOwn] = useState(true);
     const [importMonthly, setImportMonthly] = useState('3');
+    const [suggestMonthly, setSuggestMonthly] = useState('5');
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
     useEffect(() => {
@@ -51,6 +52,7 @@ export function PlatformAiCard(): JSX.Element | null {
         setShare(s.share_platform_key);
         setAllowOwn(s.allow_tenant_keys);
         setImportMonthly(String(s.import_ai_monthly ?? 3));
+        setSuggestMonthly(String(s.list_suggest_ai_monthly ?? 5));
         setApiKey('');
     }, [q.data]);
 
@@ -63,6 +65,7 @@ export function PlatformAiCard(): JSX.Element | null {
                 share_platform_key: share,
                 allow_tenant_keys: allowOwn,
                 import_ai_monthly: Math.max(0, Math.min(1000, Math.round(Number(importMonthly) || 0))),
+                list_suggest_ai_monthly: Math.max(0, Math.min(1000, Math.round(Number(suggestMonthly) || 0))),
                 ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
             }),
         onSuccess: () => {
@@ -232,6 +235,27 @@ export function PlatformAiCard(): JSX.Element | null {
                     </span>
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Un cupo aparte de la cuota del plan, para que cualquier empresa pueda empezar subiendo su planilla (aunque su plan no incluya IA). Se usa tu clave; 0 lo apaga. Las empresas con clave propia no tienen tope.')}
+                    </span>
+                </label>
+
+                {/* v0.1.341 (ADR-S89) — cupo aparte para «Recomendar con IA» en una lista. */}
+                <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm" htmlFor="pai-suggest-monthly">
+                    <span className="imcrm-font-medium">{__('Sugerencias con IA para una lista')}</span>
+                    <span className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <Input
+                            id="pai-suggest-monthly"
+                            type="number"
+                            min={0}
+                            max={1000}
+                            value={suggestMonthly}
+                            onChange={(e) => setSuggestMonthly(e.target.value)}
+                            className="imcrm-h-8 imcrm-w-24"
+                            data-testid="imcrm-pai-suggest-monthly"
+                        />
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('análisis por empresa y por mes')}</span>
+                    </span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('El botón «Recomendar con IA» del panel de sugerencias de cada lista: un análisis a pedido, que queda guardado. Cupo aparte de la cuota del plan; 0 deja sólo las sugerencias sin IA. Las empresas con clave propia no tienen tope.')}
                     </span>
                 </label>
 

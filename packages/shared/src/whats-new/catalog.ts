@@ -869,4 +869,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.341-sugerencias-por-lista',
+        version: '0.1.341',
+        date: '2026-10-31',
+        kind: 'feature',
+        title: 'Sugerencias para cada lista, con tus propios datos',
+        summary:
+            'El botón «Sugerencias» de la cabecera te dice qué conviene armar en esa lista y por qué: vistas, un tablero, avisos de vencidos o repetidos. Y con «Analizar con IA» suma ideas propias cuando tú lo pides.',
+        media: {
+            slides: [
+                {
+                    title: 'Ideas que salen de tu lista',
+                    text: 'Un tablero por estado si tus registros tienen etapas, un calendario si hay fechas, una vista de vencidos, un tablero con tus números. Cada una dice por qué con tus datos.',
+                    illustration: 'sugerencias-lista',
+                },
+                {
+                    title: 'Un clic y queda armado',
+                    text: 'Toca el botón de la sugerencia y se crea al instante. Lo que no te sirve lo descartas con la X y no vuelve a aparecer.',
+                    illustration: 'archivo-recomendaciones',
+                },
+                {
+                    title: 'La IA, sólo cuando la pides',
+                    text: 'Con «Analizar con IA» llegan hasta 6 ideas para tu negocio. Lee un resumen de la lista y, sólo si lo eliges, algunos ejemplos de texto con los datos personales tapados. Tu empresa tiene 5 análisis por mes.',
+                    illustration: 'ia-campo',
+                },
+            ],
+        },
+        body: 'Abre una lista y toca **Sugerencias** en la cabecera. Si no quieres el aviso, desmárcalo al pie del panel; el administrador puede dejarlas sin IA o apagarlas para toda la empresa.',
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

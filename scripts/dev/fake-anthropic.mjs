@@ -8,6 +8,11 @@
  *     más claros, opciones juntadas con color, descarta lo sugerido, acepta las
  *     listas separadas). Guarda el último pedido en /tmp/fake-anthropic-last.json
  *     para revisar qué se mandó.
+ *   - `submit_suggestions` (v0.1.341, sugerencias por lista): en la primera
+ *     vuelta lee el perfil de la lista y arma propuestas con las herramientas
+ *     `propose_*` (una vista de los montos más altos y, si hay un estado con
+ *     una opción «vencida» y una fecha, una automatización que la marca); en la
+ *     segunda entrega las que validaron con `submit_suggestions`.
  *   - cualquier otra: un texto corto.
  *
  * Uso:  node scripts/dev/fake-anthropic.mjs [puerto=4899]
@@ -64,6 +69,73 @@ function importPlan(text) {
     };
 }
 
+
+function profileFrom(text) {
+    const m = /```json\n([\s\S]*?)\n```/.exec(text);
+    return m ? JSON.parse(m[1]) : null;
+}
+
+/** Primera vuelta de las sugerencias: propuestas armadas con el perfil. */
+function suggestionCalls(profile) {
+    const calls = [];
+    const fields = profile?.campos ?? [];
+    const slug = profile?.lista?.slug;
+    const money = fields.find((f) => f.tipo === 'currency') ?? fields.find((f) => f.tipo === 'number');
+    if (money) {
+        calls.push({
+            name: 'propose_create_view',
+            input: { list: slug, view: { name: `Mayor ${String(money.nombre).toLowerCase()} primero`, type: 'table', sort: [{ field: money.slug, dir: 'desc' }] } },
+        });
+    }
+    const status = fields.find((f) => f.slug === profile?.campo_de_estado);
+    const overdue = status?.opciones?.find((o) => /venc/i.test(o.etiqueta));
+    const due = fields.find((f) => (f.tipo === 'date' || f.tipo === 'datetime') && /venc|pago|entrega|limite/i.test(f.nombre));
+    if (status && overdue && due) {
+        const open = (status.opciones ?? []).filter((o) => !/pagad|cerrad|ganad|termin|venc/i.test(o.etiqueta)).map((o) => o.value);
+        calls.push({
+            name: 'propose_create_automation',
+            input: {
+                list: slug,
+                name: `Marcar como ${overdue.etiqueta.toLowerCase()} al pasar ${String(due.nombre).toLowerCase()}`,
+                trigger_type: 'due_date_reached',
+                trigger_config: { due_field: due.slug, offset_minutes: 1440, field_filters: open.length ? [{ field: status.slug, op: 'in', value: open }] : [] },
+                actions: [{ type: 'update_field', config: { values: { [status.slug]: overdue.value } } }],
+            },
+        });
+    }
+    if (calls.length === 0) {
+        // Sin monto ni vencimiento: una vista ordenada por el primer campo de texto.
+        const text = fields.find((f) => f.tipo === 'text');
+        if (text) calls.push({ name: 'propose_create_view', input: { list: slug, view: { name: `Por ${String(text.nombre).toLowerCase()}`, type: 'table', sort: [{ field: text.slug, dir: 'asc' }] } } });
+    }
+    return calls;
+}
+
+/** Segunda vuelta: entrega lo que validó. */
+function suggestionSubmit(p) {
+    const last = p.messages[p.messages.length - 1];
+    const results = Array.isArray(last?.content) ? last.content.filter((b) => b.type === 'tool_result' && !b.is_error) : [];
+    const ids = [];
+    for (const r of results) {
+        try {
+            const c = JSON.parse(typeof r.content === 'string' ? r.content : r.content.map((x) => x.text ?? '').join(''));
+            if (c.proposal_id) ids.push({ id: c.proposal_id, title: c.title ?? c.message ?? '' });
+        } catch {
+            // no es JSON
+        }
+    }
+    const firstUser = p.messages.find((m) => m.role === 'user');
+    const profile = profileFrom(typeof firstUser.content === 'string' ? firstUser.content : '');
+    const vencidas = (profile?.campos ?? []).map((f) => f.fechas?.vencidas_sin_cerrar ?? 0).reduce((a, b) => Math.max(a, b), 0);
+    return {
+        suggestions: ids.map((x, i) =>
+            i === 0
+                ? { proposal_id: x.id, title: 'Revisa primero lo de mayor valor', why: `Tienes ${profile?.registros ?? 0} registros: ordenarlos por el monto pone arriba los que más pesan en tu caja.` }
+                : { proposal_id: x.id, title: 'Marca solo lo vencido', why: `${vencidas} registros ya pasaron su fecha y siguen abiertos: que el estado cambie solo al día siguiente evita revisarlos a mano.` },
+        ),
+    };
+}
+
 function sse(res, events) {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     for (const [event, data] of events) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -86,7 +158,20 @@ createServer((req, res) => {
             const tool = (p.tools ?? []).find((t) => t.name === 'submit_import_plan');
             const msg = { id: 'msg_fake', type: 'message', role: 'assistant', model: p.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 900, output_tokens: 1 } };
             const events = [['message_start', { type: 'message_start', message: msg }]];
-            if (tool) {
+            const sugg = (p.tools ?? []).find((t) => t.name === 'submit_suggestions');
+            if (sugg) {
+                const last = p.messages[p.messages.length - 1];
+                const firstTurn = typeof last.content === 'string';
+                const blocks = firstTurn
+                    ? suggestionCalls(profileFrom(last.content)).map((c, i) => ({ id: `toolu_s${i}`, name: c.name, input: c.input }))
+                    : [{ id: 'toolu_submit', name: 'submit_suggestions', input: suggestionSubmit(p) }];
+                blocks.forEach((b, i) => {
+                    events.push(['content_block_start', { type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: b.id, name: b.name, input: {} } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: JSON.stringify(b.input) } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: i }]);
+                });
+                events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 300 } }]);
+            } else if (tool) {
                 const user = p.messages.find((m) => m.role === 'user');
                 const text = typeof user.content === 'string' ? user.content : user.content.map((b) => b.text ?? '').join('');
                 const input = JSON.stringify(importPlan(text));
