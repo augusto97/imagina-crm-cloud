@@ -10702,7 +10702,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (`file-import.spec`: entidad y carpeta, duplicados y celdas inválidas,
         dos hojas vinculadas, límite del plan, archivo cambiado, IA con resumen
         protegido y cupo con devolución, disponibilidad), 8 del front — API
-        __API__, front 700 y shared 612 en verde — + E2E navegador 37/37 contra
+        1818 + 1 omitido, front 700 y shared 612 en verde — + E2E navegador 37/37 contra
         un proveedor de IA simulado (`scripts/dev/fake-anthropic.mjs`):
         bienvenida → CSV de facturas → IA sin datos personales → 2 listas con
         60 vínculos y valores limpios → kanban y tablero aprobados; Excel de dos
