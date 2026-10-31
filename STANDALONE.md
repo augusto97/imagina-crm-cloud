@@ -5515,6 +5515,75 @@ juntan mayúsculas y tildes). Las hojas se vinculan por coincidencia de títulos
 un valor que no encuentra su registro entra sin vínculo y se informa. No se
 importan fórmulas como fórmulas ni archivos adjuntos.
 
+
+### ADR-S89 — Sugerencias por lista: reglas gratis siempre, IA sólo a pedido y con cupo (v0.1.341)
+
+**Contexto.** El usuario pidió recomendarle a cada persona qué armar en la
+lista que está usando (vistas, tableros, automatizaciones, «cualquier otra
+cosa») a partir de SU contenido, no ideas genéricas. Pidió además que no
+hubiera un motor permanente leyendo listas y gastando tokens, que sirviera
+tanto en listas con datos como recién creadas, y que quien no quiera
+recomendaciones pueda apagarlas. Decidió: **5 análisis con IA por empresa y
+mes**, **sólo administradores y gerentes**, y las dos capas juntas.
+
+**Decisión.**
+1. **Perfil de la lista** (`packages/shared/src/list-suggestions/profile.ts`,
+   puro): se calcula sobre una muestra de hasta 2.000 registros (los más
+   recientes, primer nivel, sin papelera) leídos con `RecordsService.readScoped`
+   — el ACL y los campos ocultos de quien mira se aplican —, más vistas,
+   automatizaciones, tableros, formularios, portal, marca de espejo y las
+   listas vinculadas en los dos sentidos. Por campo: cuántos llenos, distintos,
+   opciones con su conteo, repetidos, rangos numéricos y de fechas (vencidos,
+   próximos 30 días). Detecta el campo de estado y sus valores de «cerrado».
+   Cacheado 10 min por persona y lista.
+2. **Capa de reglas, gratis y siempre** (`buildRuleSuggestions`, puro): kanban
+   por el estado (con el total del monto), calendario por la fecha de
+   vencimiento, vista «Vencidos» (preset nuevo `before_today` + no cerrados),
+   Gantt, carga de trabajo, un tablero con los números de la lista, convertir
+   en selección un texto con pocos valores, registros repetidos, campos vacíos
+   y un formulario para listas de contactos. Cada una lleva su **porqué con los
+   datos** y una acción: re-ejecutar una herramienta del registro del asistente
+   (`propose_create_view` / `propose_create_dashboard` → `ProposalsService.apply`),
+   convertir el tipo por `FieldsService.update`, o un enlace. Se ofrece sólo lo
+   que el rol puede crear y no está ya hecho. Se suman hasta 2 ideas del
+   catálogo de «Ideas» que encajan con los campos (`ideasThatFit`, en el front).
+3. **Capa de IA, sólo a pedido** («Analizar con IA»): un mini bucle que ofrece
+   SÓLO `propose_create_view`, `propose_create_dashboard`,
+   `propose_create_automation`, `propose_add_fields` y `propose_update_field`
+   (filtradas por rol) + `submit_suggestions`; máximo 6 turnos, el modelo y la
+   clave de la empresa con esfuerzo medio. Las automatizaciones quedan
+   restringidas a acciones internas (correo, cambiar campo, si/sino, esperar,
+   crear registro) y disparadores internos: nada que llame afuera. Corre en
+   segundo plano (estado en Redis, el panel consulta cada 2 s) y guarda el
+   resultado 120 días.
+4. **Lo que ve la IA** (`profileForAi`): estructura y números — nombres de
+   campos, tipos, etiquetas de opciones, conteos y rangos —; **nunca** textos de
+   registros, correos, teléfonos, documentos ni personas. Consentimiento en
+   línea por análisis y bitácora `list_suggestions.ai_request`. No exige el
+   opt-in del asistente, pero sí el módulo «IA» del plan, `use_ai_assistant` y
+   la IA disponible.
+5. **Cupo propio**: `list_suggest_ai_monthly` en `platform:ai` (default 5 por
+   empresa y mes, editable en Plataforma → Asistente IA), contado aparte de la
+   cuota del asistente; con clave propia, sin límite; un análisis que falla
+   devuelve su cupo. **Huella de la lista** (`listFingerprint`): si no cambió
+   (campos, vistas, conteos, tamaño por orden de magnitud y el propósito
+   escrito) y pasaron menos de 30 días, volver a analizar se rechaza (409) —
+   el resultado sería el mismo.
+6. **Quién y cómo apagarlo**: sólo administradores y gerentes (el servicio lo
+   verifica; un agente recibe 403). Modo de la empresa en
+   `tenants.settings.suggestions.mode` (`all` / `rules` / `off`, sólo admin) y
+   aviso de la cabecera ocultable por persona (`memberships.settings.suggestions.hidden`).
+   Aplicadas y descartadas se recuerdan por lista en Redis (las descartadas no
+   vuelven; las aplicadas quedan listadas con su enlace).
+
+**Consecuencias.** Las sugerencias no se recalculan solas: las reglas se miran
+al abrir el panel (con el perfil cacheado) y la IA sólo cuando alguien la
+pide, así no hay costo de fondo. Aplicar usa los mismos caminos que el
+asistente, con el ACL, los límites del plan, la actividad y la bitácora de
+siempre (`list_suggestion.apply`). Una automatización propuesta por la IA se
+crea activa. Las marcas viven en Redis: una restauración de copia que no
+traiga Redis vuelve a mostrar sugerencias ya descartadas.
+
 ---
 
-**Versión del documento:** 1.135.0 (crear una lista desde un archivo)
+**Versión del documento:** 1.136.0 (sugerencias por lista)

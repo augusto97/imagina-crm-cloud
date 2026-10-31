@@ -28,6 +28,7 @@ export type DateRangePresetId =
     | 'this_quarter'
     | 'last_quarter'
     | 'from_today'
+    | 'before_today'
     | 'custom';
 
 export interface DateRangePreset {
@@ -49,6 +50,7 @@ export const DATE_RANGE_PRESETS: DateRangePreset[] = [
     { id: 'next_7_days', label: __('Próximos 7 días') },
     { id: 'next_30_days', label: __('Próximos 30 días') },
     { id: 'from_today', label: __('De hoy en adelante') },
+    { id: 'before_today', label: __('Antes de hoy (vencido)') },
     { id: 'this_quarter', label: __('Este trimestre') },
     { id: 'last_quarter', label: __('Trimestre pasado') },
     { id: 'this_year', label: __('Este año') },
@@ -158,6 +160,10 @@ export function computePresetRange(
         case 'from_today':
             from = today;
             to = new Date(2999, 11, 31);
+            break;
+        case 'before_today':
+            from = new Date(1900, 0, 1);
+            to = addDays(today, -1);
             break;
     }
 

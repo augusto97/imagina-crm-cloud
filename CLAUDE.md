@@ -10739,6 +10739,68 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         bajo el mismo padre, barra con una y dos filas sin diálogo, registro
         borrado y límite del plan en rojo con su motivo, celular en oscuro).
 
+  - [x] **Sugerencias para cada lista: reglas gratis + IA a pedido (v0.1.341,
+        ADR-S89, pedido del usuario: "recomendaciones… orientadas a esa lista en
+        específico… sin un motor que esté leyendo todo y gastando tokens… y
+        habrá usuarios que no quieran recomendaciones" → "5 por mes, solo admin
+        y gerente, las dos juntas")**: botón **«Sugerencias»** en la cabecera de
+        la lista (con el número de nuevas; `data-tour="records-suggestions"`) y
+        en **Personalizar vista → Sugerencias para esta lista**, que abren un
+        panel lateral (`ListSuggestionsSheet`, a pedido).
+        (a) **Perfil de la lista** (`packages/shared/src/list-suggestions/
+        profile.ts`, puro): muestra de hasta 2.000 registros recientes de primer
+        nivel leída con `RecordsService.readScoped` (ACL y campos ocultos de
+        quien mira) + vistas, automatizaciones, tableros, formularios, portal,
+        marca de espejo y listas vinculadas en los dos sentidos; por campo
+        llenos, distintos, opciones con conteo, repetidos, rangos numéricos y de
+        fechas (vencidos, próximos 30 días) y el campo de estado con sus valores
+        de «cerrado». Cacheado 10 min por persona y lista.
+        (b) **Reglas, gratis** (`buildRuleSuggestions`, puro): kanban por estado
+        (con el total del monto), calendario por el vencimiento, vista
+        «Vencidos» (preset nuevo `before_today` en los rangos de fecha + no
+        cerrados, ordenada por fecha), Gantt, carga de trabajo, un tablero con
+        los números (KPIs, dona por estado, barras por mes y por persona),
+        convertir en selección un texto con pocos valores, registros repetidos,
+        campos vacíos y un formulario para listas de contactos — cada una con su
+        **porqué en los datos** y sólo lo que el rol puede crear y no existe ya.
+        Se suman hasta 2 ideas del catálogo que encajan (`ideasThatFit`).
+        (c) **«Analizar con IA», sólo a pedido**: mini bucle en segundo plano
+        (máximo 6 turnos, modelo y clave de la empresa, esfuerzo medio) que
+        ofrece `propose_create_view/dashboard/automation`, `propose_add_fields`
+        y `propose_update_field` filtradas por rol + `submit_suggestions`; las
+        automatizaciones sólo con acciones y disparadores internos (nada que
+        llame afuera). Ve el perfil enmascarado (`profileForAi`: estructura y
+        números, nunca textos de registros, correos, teléfonos ni personas), con
+        consentimiento en línea y bitácora. Campo opcional «¿De qué se trata la
+        lista?» (pedido en listas con menos de 10 registros). **Cupo propio**
+        `list_suggest_ai_monthly` en `platform:ai` (default 5 por empresa y mes,
+        editable en Plataforma → Asistente IA; con clave propia, sin límite; un
+        análisis que falla devuelve su cupo) y **huella de la lista**
+        (`listFingerprint`): sin cambios y antes de 30 días, volver a analizar
+        responde 409.
+        (d) **Aplicar** re-ejecuta la herramienta y aplica la propuesta
+        (`ProposalsService.apply`: ACL, plan, actividad y bitácora del
+        asistente) o convierte el tipo del campo; con candado por sugerencia.
+        Aplicadas quedan listadas con su enlace; descartadas no vuelven y se
+        restauran desde «Descartadas» (marcas por lista en Redis).
+        (e) **Quién y cómo apagarlo**: sólo administradores y gerentes (403 al
+        resto); aviso de la cabecera ocultable por persona
+        (`memberships.settings.suggestions.hidden`) y modo de la empresa
+        (`tenants.settings.suggestions.mode`: con IA / sólo reglas / apagadas,
+        sólo el admin). Endpoints `GET /lists/:l/suggestions` (`?summary=1` para
+        el número de la cabecera), `POST …/suggestions/ai`, `…/:key/apply|
+        dismiss|restore` y `GET/PATCH /suggestions/settings`. Sin migración.
+        **Bug atrapado en el E2E**: los controles del pie del panel eran
+        controlados por la respuesta del servidor y no se movían al tocarlos
+        (otra vez la lección de v0.1.207) — ahora son optimistas. Ilustración
+        `sugerencias-lista`, artículo «Sugerencias para tu lista» en Aprende →
+        Inteligencia artificial, guía de ayuda y novedad. Tests: 10 de shared
+        (perfil, reglas, enmascarado, huella), 5 de API (`list-suggestions.spec`:
+        reglas con evidencia y roles, aplicar vista/tablero/convertir, descartar
+        y restaurar, ajustes, IA con enmascarado/cupo/409/devolución y
+        herramientas por rol) y 2 del front + E2E navegador 26/26 contra un
+        proveedor de IA simulado (escritorio, celular en oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

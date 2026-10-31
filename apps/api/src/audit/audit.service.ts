@@ -196,7 +196,12 @@ export type AuditAction =
     // v0.1.339 (ADR-S88) — «Crear desde un archivo»: el análisis con IA (con
     // su consentimiento en línea) y las listas creadas.
     | 'file_import.ai_request'
-    | 'file_import.apply';
+    | 'file_import.apply'
+    // v0.1.341 (ADR-S89) — sugerencias por lista: el análisis con IA (con su
+    // consentimiento en línea), lo aplicado y el modo de la empresa.
+    | 'list_suggestions.ai_request'
+    | 'list_suggestion.apply'
+    | 'list_suggestions.mode';
 
 export interface AuditEntryDto {
     id: number;

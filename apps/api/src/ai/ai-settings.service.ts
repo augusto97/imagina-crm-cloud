@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nest
 import {
     DEFAULT_AI_EFFORT,
     DEFAULT_AI_MODEL_CHOICE,
+    DEFAULT_LIST_SUGGEST_AI_MONTHLY,
     FAST_AI_MODEL_FAMILY,
     aiEffortSchema,
     aiModelChoiceSchema,
@@ -53,6 +54,8 @@ const storedPlatformSchema = z.object({
     allow_tenant_keys: z.boolean().catch(true).default(true),
     // v0.1.339 (ADR-S88) — cupo de análisis con IA para «Crear desde un archivo».
     import_ai_monthly: z.number().int().min(0).max(1000).catch(3).default(3),
+    // v0.1.341 (ADR-S89) — cupo de «Recomendar con IA» por lista.
+    list_suggest_ai_monthly: z.number().int().min(0).max(1000).catch(DEFAULT_LIST_SUGGEST_AI_MONTHLY).default(DEFAULT_LIST_SUGGEST_AI_MONTHLY),
 });
 type StoredPlatform = z.infer<typeof storedPlatformSchema>;
 
@@ -157,12 +160,18 @@ export class AiSettingsService {
             share_platform_key: stored.share_platform_key,
             allow_tenant_keys: stored.allow_tenant_keys,
             import_ai_monthly: stored.import_ai_monthly,
+            list_suggest_ai_monthly: stored.list_suggest_ai_monthly,
         };
     }
 
     /** v0.1.339 — Análisis con IA por empresa y mes para «Crear desde un archivo» (clave de la plataforma). */
     async importAiMonthly(): Promise<number> {
         return (await this.readPlatform()).import_ai_monthly;
+    }
+
+    /** v0.1.341 — Análisis «Recomendar con IA» por empresa y mes (clave de la plataforma). */
+    async listSuggestAiMonthly(): Promise<number> {
+        return (await this.readPlatform()).list_suggest_ai_monthly;
     }
 
     async updatePlatform(patch: UpdatePlatformAiSettingsInput): Promise<PlatformAiSettings> {
@@ -177,6 +186,7 @@ export class AiSettingsService {
         if (patch.share_platform_key !== undefined) next.share_platform_key = patch.share_platform_key;
         if (patch.allow_tenant_keys !== undefined) next.allow_tenant_keys = patch.allow_tenant_keys;
         if (patch.import_ai_monthly !== undefined) next.import_ai_monthly = patch.import_ai_monthly;
+        if (patch.list_suggest_ai_monthly !== undefined) next.list_suggest_ai_monthly = patch.list_suggest_ai_monthly;
         if (patch.clear_key) next.api_key_enc = null;
         if (patch.api_key) next.api_key_enc = encryptSecret(patch.api_key, this.env.SECRETS_KEY);
         await this.redis.set(PLATFORM_KEY, JSON.stringify(next));

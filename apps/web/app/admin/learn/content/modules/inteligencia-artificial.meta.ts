@@ -11,6 +11,7 @@ export const meta: LearnModuleMeta = {
     hero: 'ia-asistente',
     highlights: [
         'Un asistente que arma listas, vistas, tableros y automatizaciones con lo que le pidas',
+        'Sugerencias para cada lista sacadas de tus propios datos, con un análisis con IA cuando lo pides',
         'Campos que resumen, clasifican, extraen datos o traducen solos, también desde PDF e imágenes',
         'Agentes que trabajan sobre tus registros con las herramientas y el acceso que elijas',
         'Conecta Claude u otro asistente a tus datos con un clic',
@@ -25,6 +26,14 @@ export const meta: LearnModuleMeta = {
             level: 'basic',
             keywords: 'asistente ia chat claude pedir lenguaje natural propuesta aplicar crear lista campos vista tablero automatizacion consultar datos editar registros',
             needs: 'use_ai_assistant',
+        },
+        {
+            id: 'ia-sugerencias',
+            title: 'Sugerencias para tu lista: qué conviene armar con lo que ya tienes',
+            summary: 'Ideas de vistas, tableros, automatizaciones y campos sacadas de tus propios datos, gratis y al instante, y un análisis con IA cuando lo pides.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'sugerencias recomendaciones ideas lista analizar con ia vista tablero automatizacion convertir seleccion repetidos vencidos cupo mes apagar ocultar aviso',
         },
         {
             id: 'ia-campos',

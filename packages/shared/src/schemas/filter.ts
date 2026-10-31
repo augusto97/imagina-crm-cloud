@@ -51,6 +51,9 @@ export const DATE_RANGE_PRESETS = [
     'this_quarter',
     'last_quarter',
     'from_today',
+    // v0.1.341 — «Antes de hoy»: lo vencido (la sugerencia «Vencidos» de una
+    // lista y cualquier filtro de «ya pasó»), resuelto en cada consulta.
+    'before_today',
 ] as const;
 export const dateRangePresetSchema = z.enum(DATE_RANGE_PRESETS);
 export type DateRangePreset = z.infer<typeof dateRangePresetSchema>;

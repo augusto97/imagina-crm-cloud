@@ -116,6 +116,11 @@ export function presetDateRange(preset: DateRangePreset, type: string, clock: Da
             from = today;
             to = '2999-12-31';
             break;
+        case 'before_today':
+            // v0.1.341 — «Antes de hoy» (vencido): desde un piso lejano hasta ayer.
+            from = '1900-01-01';
+            to = addDaysYmd(today, -1);
+            break;
     }
 
     // Un datetime cubre los días completos en el reloj de la empresa.
