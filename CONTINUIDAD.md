@@ -382,14 +382,41 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.339**
-(crear una lista desde un Excel o CSV: tipos y descartes automáticos, listas
-vinculadas, mejora opcional con IA sobre un resumen protegido y recomendaciones
-al final; antes v0.1.338 la prueba con fecha de fin y los módulos por plan,
-v0.1.337 el WAL de Postgres vigilado y comprimido y v0.1.336 quitar de la app lo
-que el sitio o la tienda ya borró), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.340**
+(duplicar un registro en un clic, con un aviso que se cierra solo y «Deshacer»;
+antes v0.1.339 crear una lista desde un Excel o CSV, v0.1.338 la prueba con
+fecha de fin y los módulos por plan, y v0.1.337 el WAL de Postgres vigilado y
+comprimido), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-31 — **Recomendaciones por lista con IA (PROPUESTA, esperando respuesta)**.
+  Pedido del usuario: recomendaciones de automatizaciones, tableros, etc. basadas
+  en la lista concreta (las de hoy son genéricas), sin un motor que gaste tokens
+  todo el tiempo, útiles para listas con datos y recién creadas, y que se puedan
+  apagar. Propuesta enviada: **capa 1 gratis por reglas** (estructura + conteos
+  SQL: vistas que faltan, automatizaciones con evidencia —«23 vencidos sin
+  recordatorio»—, calidad de datos, tablero; cada una aplicable con un clic) +
+  **capa 2 «Recomendar con IA» sólo al tocar el botón** (una llamada con el modelo
+  rápido, estructura + resumen de datos SIN datos personales como en
+  file-import, propuestas validadas con los constructores del asistente;
+  resultado guardado, «Volver a analizar» sólo si la lista cambió, lo descartado
+  no vuelve, cupo propio por empresa/mes, sin límite con clave propia; lista
+  vacía → una pregunta «¿para qué la usas?»). Apagado por persona y por empresa
+  (activadas / sólo gratis / apagadas), chip discreto «Sugerencias (N)», nunca
+  emergentes. **Le pregunté**: cupo por defecto (5/mes propio o el del
+  asistente), quién ve el chip (propuse sólo admin/gerente) y si van las dos capas
+  juntas o primero la gratis.
+- 2026-10-31 — **Duplicar en un clic → v0.1.340**. Reporte del usuario: "si un
+  registro no tiene subtareas igual pregunta si quiero duplicar subtareas, al
+  final sale «registro duplicado» y tengo que hacer clic para aceptar… son 3
+  clics; sólo debería decir si falló y cuál es el error, y si todo está correcto
+  mostrar que se duplicó y cerrarse solo". Hecho: sin diálogo en el menú de la
+  fila ni en la barra de selección; aviso que se cierra solo con «Deshacer»; en
+  rojo con el motivo si falla. **Decisión**: la barra copia con subtareas (lo
+  dice el aviso); el menú de la fila, si el registro tiene subtareas, ofrece
+  «con» y «sin» como dos opciones de un clic. **Regla para el futuro** (pedido
+  implícito): acciones rápidas y reversibles → sin confirmación ni diálogo de
+  resultado; aviso que se cierra solo + «Deshacer», y el error con su motivo.
 - 2026-10-31 — **Crear una lista desde un archivo → v0.1.339** (ADR-S88). Pedido
   del usuario: "que al subir un Excel la IA decida el tipo de cada campo, mapee
   las columnas sola, pregunte qué columnas descartar y al final recomiende el
@@ -1087,6 +1114,21 @@ que el sitio o la tienda ya borró), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-31 · v0.1.340** — **Duplicar un registro en un clic** (reporte del
+  usuario, ver §10). El menú de la fila (clic derecho) y la barra de selección
+  duplican al instante por el endpoint de estructura (`bulk-structure`, sin vista
+  previa): aviso que se cierra solo («Registro duplicado», «Con sus N
+  subtareas», «N registros duplicados»), con «Deshacer» (borra las copias que
+  nadie editó; si alguien editó una, lo dice), y en rojo con el motivo si falla
+  (límite del plan, registro borrado). Con subtareas, el menú ofrece «Duplicar con
+  sus subtareas» / «sin subtareas». Bugs viejos que se fueron con esto: el menú de
+  la fila copiaba sólo las columnas visibles en la vista agrupada, una subtarea
+  duplicada quedaba en el primer nivel y no había «Deshacer»; y los avisos se
+  salían ~10 px por la izquierda en el celular. Ilustración nueva
+  `duplicar-rapido`, artículo de Aprende al día y novedad. Tests: 10 front;
+  E2E navegador 29/29 (menú, barra, subtareas, deshacer, borrado, límite del
+  plan, celular en oscuro).
 
 - **2026-10-31 · v0.1.339** — **Crear una lista desde un archivo** (ADR-S88).
   Pedido del usuario (ver §10): subir un Excel o CSV y que la lista se arme

@@ -10709,6 +10709,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         hojas → 39 tareas vinculadas y la que no encontró su proyecto avisada;
         aviso de límite en un trial casi lleno; oscuro y celular sin desborde.
 
+  - [x] **Duplicar un registro en un clic (v0.1.340, reporte del usuario: "si
+        no tiene subtareas igual pregunta, al final sale «registro duplicado» y
+        tengo que hacer clic para aceptar… sólo debería decir si falló y, si
+        salió, cerrarse solo")**: «Duplicar» abría el diálogo de estructura de
+        v0.1.220 (opciones con «Duplicar también sus subtareas» aunque no
+        hubiera → vista previa → resultado con «Listo»): tres clics para una
+        copia. Ahora el **menú de la fila** (clic derecho) y la **barra de
+        selección** duplican al instante (`useQuickDuplicate`, el mismo
+        `POST /lists/:l/records/bulk-structure` sin vista previa) y un **aviso
+        que se cierra solo** dice cómo salió (`quickDuplicate.ts`, puro):
+        «Registro duplicado» / «N registros duplicados» con «Con sus N
+        subtareas» si vinieron, **«Deshacer»** (preview + revert del historial:
+        borra las copias que nadie editó y, si alguien editó una, lo dice), en
+        ámbar si salió una parte y **en rojo con el motivo** si no salió nada
+        (límite del plan, registro borrado); si tarda, «Duplicando…» mientras
+        tanto. La barra copia con subtareas; el menú, si el registro las tiene,
+        ofrece **«Duplicar con sus subtareas»** y **«Duplicar sin subtareas»**.
+        **Bugs viejos que se fueron con el cambio**: el menú de la fila
+        duplicaba en el navegador con `create`, así que en la vista agrupada
+        copiaba SÓLO las columnas visibles, una subtarea duplicada quedaba en
+        el primer nivel y no había forma de deshacer; ahora copia el servidor
+        (todos los campos escribibles, la copia en el mismo nivel). Y los
+        **avisos se salían ~10 px por la izquierda en el celular**
+        (`w-full` + `right-4`): ahora `w-[calc(100%-2rem)]`. Ilustración nueva
+        `duplicar-rapido`, artículo «Mover, duplicar, asignar y eliminar en
+        lote» al día y novedad. 10 tests del front + E2E navegador 29/29 (menú
+        sin y con subtareas, aviso que se cierra a los 8 s, deshacer, subtarea
+        bajo el mismo padre, barra con una y dos filas sin diálogo, registro
+        borrado y límite del plan en rojo con su motivo, celular en oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

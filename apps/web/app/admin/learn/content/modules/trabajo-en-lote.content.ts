@@ -151,7 +151,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Rellenar hacia abajo', what: 'Copia o continúa la serie (Ctrl + D).' },
                     { name: 'Deshacer · Rehacer', what: 'El último cambio de la tabla.' },
                     { name: 'Abrir registro · Copiar enlace · Copiar ID', what: 'Del registro de esa fila.' },
-                    { name: 'Crear subtarea · Duplicar', what: 'Una subtarea debajo de ese registro o una copia.' },
+                    { name: 'Crear subtarea · Duplicar', what: 'Una subtarea debajo de ese registro, o una copia al instante (con o sin sus subtareas, si tiene).' },
                     { name: 'Agregar una columna · Eliminar', what: 'Un campo nuevo, o mandar el registro a la papelera.' },
                 ],
             },
@@ -368,7 +368,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Además de cambiar valores, la barra de acciones mueve, duplica, asigna y elimina muchos registros a la vez. Igual que la edición masiva, cada acción tiene vista previa y se puede deshacer desde el historial.',
+                md: 'Además de cambiar valores, la barra de acciones mueve, duplica, asigna y elimina muchos registros a la vez. Mover y eliminar tienen vista previa; duplicar es al instante. Todo se puede deshacer desde el historial.',
             },
             { t: 'anim', key: 'lote-estructura', caption: 'Tres tareas sueltas se mueven como subtareas de «Lanzamiento del sitio».' },
             { t: 'h', text: 'La barra de acciones' },
@@ -384,7 +384,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Asignar', what: 'Atajo de la edición masiva con el campo de persona ya elegido (por ejemplo, «Asignar «Responsable»»). Aparece si la lista tiene un campo de persona.' },
                     { name: 'Presionar', what: 'Presiona un campo **Botón** en todos los registros elegidos (por ejemplo, «Marcar como pagado»).' },
                     { name: 'Mover', what: 'Convierte los registros en **subtareas** de otro, o los saca al primer nivel.' },
-                    { name: 'Duplicar', what: 'Crea copias, opcionalmente con sus subtareas.' },
+                    { name: 'Duplicar', what: 'Crea las copias al instante, con sus subtareas. Un aviso dice cómo salió y trae **Deshacer**.' },
                     { name: 'Eliminar', what: 'Los manda a la papelera con sus subtareas.' },
                 ],
             },
@@ -407,12 +407,13 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Duplicar' },
             {
                 t: 'p',
-                md: 'Toca **Duplicar**, decide si marcar **Duplicar también sus subtareas** y aplica. Se copian los datos que se escriben a mano; los calculados se recalculan solos, y los archivos y los vínculos con otras listas no se copian. El límite de registros de tu plan se revisa para todo el lote antes de empezar.',
+                md: 'Toca **Duplicar** y listo: no hay pasos ni vista previa. Las copias aparecen en la tabla y un aviso abajo dice cuántas se crearon (y cuántas subtareas venían con ellas); se cierra solo. Si algo no se pudo, el aviso lo dice en rojo con el motivo, por ejemplo el límite de registros de tu plan. ¿Te equivocaste? Toca **Deshacer** en el mismo aviso: se borran las copias que nadie editó.\n\nSe copian los datos que se escriben a mano; los calculados se recalculan solos, y los archivos y los vínculos con otras listas no se copian. Una subtarea copiada queda debajo del mismo registro.\n\nPara copiar **un solo registro**, también sirve el clic derecho sobre la fila: **Duplicar**. Si el registro tiene subtareas, el menú ofrece **Duplicar con sus subtareas** y **Duplicar sin subtareas**.',
             },
+            { t: 'anim', key: 'duplicar-rapido', caption: 'Clic derecho, «Duplicar»: la copia aparece y el aviso se cierra solo.' },
             {
                 t: 'example',
                 title: 'Una agencia que repite campañas',
-                md: 'Cada mes la agencia arma la campaña de un cliente con las mismas 12 tareas y sus subtareas. Marca las del mes pasado, toca **Duplicar** con **Duplicar también sus subtareas**, y después, con **Editar en lote**, corre las fechas un mes y vacía el estado.',
+                md: 'Cada mes la agencia arma la campaña de un cliente con las mismas 12 tareas y sus subtareas. Marca las del mes pasado y toca **Duplicar**: las 12 se copian con sus subtareas. Después, con **Editar en lote**, corre las fechas un mes y vacía el estado.',
             },
             { t: 'h', text: 'Eliminar en lote' },
             {

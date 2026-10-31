@@ -344,7 +344,10 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         const ok = await svc.submit(token, IP, { values: { [f.nombre!.id]: 'Bot' }, uploads: {}, stamp: oldStamp(id), hp: 'http://spam' });
         expect(ok.ok).toBe(true);
         expect(await countRecords()).toBe(0);
-        const fresh = `${Date.now()}.${files.signParts('formstamp', id, Date.now())}`;
+        // Un solo instante: con dos `Date.now()` el milisegundo puede cambiar
+        // entre el texto y la firma, y el sello sale «vencido» en vez de «apurado».
+        const now = Date.now();
+        const fresh = `${now}.${files.signParts('formstamp', id, now)}`;
         await expect(svc.submit(token, IP, { values: { [f.nombre!.id]: 'Rápido' }, uploads: {}, stamp: fresh })).rejects.toMatchObject({
             response: { code: 'form_too_fast' },
         });
