@@ -218,8 +218,12 @@ function AiSection({ data, list, items }: { data: ListSuggestionsResponse; list:
     const run = useRunListSuggestionsAi(list.id);
     const ai = data.ai;
     const [purpose, setPurpose] = useState(ai.purpose ?? '');
+    // «Incluir ejemplos de texto»: apagado por defecto; se recuerda en este dispositivo.
+    const [examples, setExamples] = useState<boolean>(() => readExamplesChoice());
     const changedPurpose = purpose.trim() !== '' && purpose.trim() !== (ai.purpose ?? '');
-    const canRun = ai.available && ai.state !== 'running' && (ai.analyzed_at === null || ai.can_reanalyze || changedPurpose);
+    // Con o sin ejemplos son análisis distintos: cambiar la casilla habilita repetirlo.
+    const changedExamples = ai.analyzed_at !== null && examples !== ai.with_examples;
+    const canRun = ai.available && ai.state !== 'running' && (ai.analyzed_at === null || ai.can_reanalyze || changedPurpose || changedExamples);
     const error = run.error instanceof Error ? run.error.message : ai.state === 'error' ? ai.error : null;
     const showPurpose = ai.ask_purpose || ai.analyzed_at !== null || purpose !== '';
 
@@ -265,13 +269,31 @@ function AiSection({ data, list, items }: { data: ListSuggestionsResponse; list:
                                 />
                             </label>
                         )}
+                        <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs">
+                            <input
+                                type="checkbox"
+                                checked={examples}
+                                onChange={(e) => {
+                                    setExamples(e.target.checked);
+                                    writeExamplesChoice(e.target.checked);
+                                }}
+                                className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-accent-[hsl(var(--imcrm-primary))]"
+                                data-testid="list-suggestions-examples"
+                            />
+                            <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                                <span className="imcrm-font-medium">{__('Incluir ejemplos de texto')}</span>
+                                <span className="imcrm-text-muted-foreground">
+                                    {__('Hasta 5 ejemplos cortos por campo de texto, para que la IA entienda qué guardas. Se tapan correos, teléfonos, números de documento, enlaces y nombres propios, y no se envía nada de campos como nombre, cliente o documento.')}
+                                </span>
+                            </span>
+                        </label>
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                             <Button
                                 size="sm"
                                 variant={ai.analyzed_at ? 'outline' : 'default'}
                                 className="imcrm-h-8 imcrm-gap-1.5"
                                 disabled={!canRun || run.isPending}
-                                onClick={() => run.mutate({ consent: true, ...(purpose.trim() ? { purpose: purpose.trim() } : {}) })}
+                                onClick={() => run.mutate({ consent: true, include_examples: examples, ...(purpose.trim() ? { purpose: purpose.trim() } : {}) })}
                                 data-testid="list-suggestions-ai-run"
                             >
                                 {run.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" />}
@@ -284,13 +306,15 @@ function AiSection({ data, list, items }: { data: ListSuggestionsResponse; list:
                             )}
                         </div>
                         {!ai.available && ai.reason && <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="list-suggestions-ai-reason">{ai.reason}</p>}
-                        {ai.available && ai.analyzed_at && !ai.can_reanalyze && !changedPurpose && ai.reanalyze_hint && (
+                        {ai.available && ai.analyzed_at && !ai.can_reanalyze && !changedPurpose && !changedExamples && ai.reanalyze_hint && (
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">{ai.reanalyze_hint}</p>
                         )}
                         {error && <p className="imcrm-text-xs imcrm-text-[hsl(var(--imcrm-destructive-ink))]" data-testid="list-suggestions-ai-error">{error}</p>}
                         <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                             <Info className="imcrm-mt-px imcrm-h-3 imcrm-w-3 imcrm-shrink-0" aria-hidden />
-                            {__('Al pedirlo aceptas enviar al proveedor de IA un resumen de la lista: nombres de campos, opciones y conteos. Nunca correos, teléfonos, nombres ni el texto de tus registros.')}
+                            {examples
+                                ? __('Al pedirlo aceptas enviar al proveedor de IA un resumen de la lista (nombres de campos, opciones y conteos) y los ejemplos de texto con los datos personales tapados.')
+                                : __('Al pedirlo aceptas enviar al proveedor de IA un resumen de la lista: nombres de campos, opciones y conteos. Nunca correos, teléfonos, nombres ni el texto de tus registros.')}
                         </p>
                     </>
                 )}
@@ -412,4 +436,23 @@ function Footer({ data }: { data: ListSuggestionsResponse }): JSX.Element {
             )}
         </SheetFooter>
     );
+}
+
+const EXAMPLES_KEY = 'imcrm:suggestions-examples';
+
+function readExamplesChoice(): boolean {
+    try {
+        return window.localStorage.getItem(EXAMPLES_KEY) === '1';
+    } catch {
+        return false;
+    }
+}
+
+function writeExamplesChoice(on: boolean): void {
+    try {
+        if (on) window.localStorage.setItem(EXAMPLES_KEY, '1');
+        else window.localStorage.removeItem(EXAMPLES_KEY);
+    } catch {
+        // Sin almacenamiento (ventana privada): la casilla vale sólo mientras el panel está abierto.
+    }
 }

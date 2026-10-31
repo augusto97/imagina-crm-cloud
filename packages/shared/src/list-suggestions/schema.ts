@@ -80,6 +80,8 @@ export const listSuggestionsAiStateSchema = z.object({
     can_reanalyze: z.boolean(),
     reanalyze_hint: z.string().nullable(),
     purpose: z.string().nullable(),
+    /** El último análisis incluyó ejemplos de texto (enmascarados). */
+    with_examples: z.boolean().default(false),
     /** Pocos registros: conviene contar para qué se usa la lista. */
     ask_purpose: z.boolean(),
 });
@@ -106,6 +108,12 @@ export type ListSuggestionsResponse = z.infer<typeof listSuggestionsResponseSche
 
 export const runListSuggestionsAiSchema = z.object({
     purpose: z.string().trim().max(500).optional(),
+    /**
+     * «Incluir ejemplos de texto»: hasta 5 ejemplos por campo de texto, con
+     * correos, enlaces, números largos y nombres propios tapados. Apagado por
+     * defecto: sin la casilla, a la IA sólo le llegan estructura y números.
+     */
+    include_examples: z.boolean().optional(),
     /** Consentimiento en línea: se manda un resumen de la lista al proveedor de IA. */
     consent: z.literal(true),
 });

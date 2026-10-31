@@ -357,6 +357,8 @@ describe('v0.1.341 — sugerencias por lista (Postgres + Redis reales, modelo fa
         expect(sent).not.toContain('Bogotá');
         expect(sent).not.toContain('Cliente 3');
         expect(sent).toContain('Pagada');
+        // Sin la casilla «Incluir ejemplos de texto», ni un ejemplo.
+        expect(sent).not.toContain('ejemplos');
         expect(calls[0]!.tools.map((t) => t.name).sort()).toEqual(['propose_add_fields', 'propose_create_automation', 'propose_create_dashboard', 'propose_create_view', 'propose_update_field', 'submit_suggestions']);
         expect(JSON.stringify(calls[1]!.messages)).toContain('call_webhook');
 
@@ -386,6 +388,46 @@ describe('v0.1.341 — sugerencias por lista (Postgres + Redis reales, modelo fa
         // El tercero del mes: sin cupo.
         await expect(second.ai.start(admin, 'facturas', { consent: true, purpose: 'Otra cosa distinta' })).rejects.toMatchObject({ status: 503 });
         expect((await svc.get(admin, 'facturas')).ai).toMatchObject({ available: false, remaining: 0 });
+    });
+
+    it('IA con «Incluir ejemplos de texto»: viajan textos con los datos personales tapados, nunca los de campos de personas', async () => {
+        await lists.create(tenantId, { name: 'Proyectos' });
+        const nombre = (await fields.create(tenantId, 'proyectos', { label: 'Nombre del cliente', slug: 'nombre_cliente', type: 'text' } as never)).id;
+        const notas = (await fields.create(tenantId, 'proyectos', { label: 'Notas', slug: 'notas', type: 'long_text' } as never)).id;
+        const valores = [
+            'Renovar hosting de Juan Pérez, escribir a juan@cliente.co o al 300 123 4567',
+            'Migración del sitio a https://www.ejemplo.com antes de marzo',
+            'Cuota 2 de 6 por diseño de logo',
+        ];
+        for (const [i, v] of valores.entries()) {
+            await records.create(tenantId, admin, 'proyectos', { data: { [`f${nombre}`]: i === 0 ? 'María Gómez' : `Empresa ${i}`, [`f${notas}`]: v } } as never);
+        }
+        const script = (): Array<(call: Call) => Block[]> => [
+            () => [{ type: 'tool_use', name: 'propose_create_view', input: { list: 'proyectos', view: { name: 'Por cliente', type: 'table', sort: [{ field: 'nombre_cliente', dir: 'asc' }] } } }],
+            (call) => [{ type: 'tool_use', name: 'submit_suggestions', input: { suggestions: proposalIdsIn(call).map((id) => ({ proposal_id: id, title: 'Ordena por cliente', why: 'Las notas hablan de renovaciones y cuotas: conviene verlas por cliente.' })) } }],
+        ];
+        const { ai, calls } = aiService(script());
+        await ai.start(admin, 'proyectos', { consent: true, include_examples: true });
+        const listId = (await svc.profile(admin, 'proyectos')).list.id;
+        await ai.settle(tenantId, listId);
+
+        const sent = JSON.stringify(calls[0]!.messages);
+        expect(sent).toContain('ejemplos');
+        expect(sent).toContain('Renovar hosting de [nombre], escribir a [correo] o al [número]');
+        expect(sent).toContain('Migración del sitio a [web] antes de marzo');
+        expect(sent).toContain('Cuota 2 de 6 por diseño de logo');
+        for (const secreto of ['Juan Pérez', 'juan@cliente.co', '300 123 4567', 'ejemplo.com', 'María Gómez', 'Empresa 1']) expect(sent).not.toContain(secreto);
+
+        const res = await svc.get(admin, 'proyectos');
+        expect(res.ai).toMatchObject({ state: 'done', with_examples: true, can_reanalyze: false });
+        expect(res.suggestions.filter((s) => s.source === 'ai')).toHaveLength(1);
+        // Igual que antes y con ejemplos: no se repite; sin ejemplos es otro análisis.
+        await expect(ai.start(admin, 'proyectos', { consent: true, include_examples: true })).rejects.toMatchObject({ status: 409 });
+        const plain = aiService(script());
+        await plain.ai.start(admin, 'proyectos', { consent: true });
+        await plain.ai.settle(tenantId, listId);
+        expect(JSON.stringify(plain.calls[0]!.messages)).not.toContain('ejemplos');
+        expect((await svc.get(admin, 'proyectos')).ai.with_examples).toBe(false);
     });
 
     it('IA: si falla, devuelve el cupo; un gerente sólo recibe herramientas de vistas y tableros', async () => {

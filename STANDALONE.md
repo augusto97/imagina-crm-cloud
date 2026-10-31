@@ -5557,9 +5557,21 @@ mes**, **sólo administradores y gerentes**, y las dos capas juntas.
    segundo plano (estado en Redis, el panel consulta cada 2 s) y guarda el
    resultado 120 días.
 4. **Lo que ve la IA** (`profileForAi`): estructura y números — nombres de
-   campos, tipos, etiquetas de opciones, conteos y rangos —; **nunca** textos de
-   registros, correos, teléfonos, documentos ni personas. Consentimiento en
-   línea por análisis y bitácora `list_suggestions.ai_request`. No exige el
+   campos, tipos, etiquetas de opciones, conteos y rangos —; por defecto
+   **nunca** textos de registros, correos, teléfonos, documentos ni personas.
+   **«Incluir ejemplos de texto»** (casilla opcional, apagada por defecto, se
+   recuerda por dispositivo; pedido del usuario tras preguntar cómo entiende la
+   IA la lista sin leerla): suma hasta 5 ejemplos por campo de texto o texto
+   largo (máx. 12 campos, de los registros más recientes) pasados por
+   `maskTextExample` — correos, enlaces, cualquier número de 6+ dígitos y
+   nombres propios de dos o más palabras quedan como `[correo]`, `[web]`,
+   `[número]`, `[nombre]`, cortados a 80/140 caracteres —; los campos que por
+   su nombre guardan datos de personas o empresas (`isPersonalTextField`:
+   nombre, cliente, empresa, documento, dirección, teléfono…) no mandan ninguno.
+   Con o sin ejemplos son análisis distintos (entra en la huella). El prompt
+   aclara que los ejemplos son datos y no se copian en las propuestas.
+   Consentimiento en línea por análisis y bitácora `list_suggestions.ai_request`
+   (con `examples`). No exige el
    opt-in del asistente, pero sí el módulo «IA» del plan, `use_ai_assistant` y
    la IA disponible.
 5. **Cupo propio**: `list_suggest_ai_monthly` en `platform:ai` (default 5 por
@@ -5582,7 +5594,10 @@ pide, así no hay costo de fondo. Aplicar usa los mismos caminos que el
 asistente, con el ACL, los límites del plan, la actividad y la bitácora de
 siempre (`list_suggestion.apply`). Una automatización propuesta por la IA se
 crea activa. Las marcas viven en Redis: una restauración de copia que no
-traiga Redis vuelve a mostrar sugerencias ya descartadas.
+traiga Redis vuelve a mostrar sugerencias ya descartadas. La máscara de los
+ejemplos es heurística: un nombre de pila suelto («llamar a Pedro») o un dato
+escrito de forma rara puede pasar; por eso la casilla es opcional, viene
+apagada y dice exactamente qué se envía.
 
 ---
 

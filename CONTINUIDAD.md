@@ -403,7 +403,13 @@ la prueba con fecha de fin y los módulos por plan), en `main`.
   automatizaciones internas (nada que llame afuera); si la lista no cambió,
   volver a analizar espera 30 días; nada se crea solo. Apagado: por persona
   (aviso de la cabecera) y por empresa (con IA / sólo reglas / apagadas, sólo el
-  admin). Sin migración (Redis + `settings`). **Queda abierto**: nada.
+  admin). Sin migración (Redis + `settings`). **Pregunta del usuario después**:
+  "si la IA no lee los registros, ¿cómo entiende de qué trata la lista?" — le
+  expliqué qué viaja (nombres de campos, opciones con conteos, números, fechas
+  vencidas, vinculadas, lo que ya existe, el propósito) y lo que no ve (el texto
+  libre), y ofrecí una casilla opcional de ejemplos enmascarados → **"sí,
+  agrega la casilla de ejemplos de texto"**: entró en la misma versión
+  (apagada por defecto). **Queda abierto**: nada.
 - 2026-10-31 — **Duplicar en un clic → v0.1.340**. Reporte del usuario: "si un
   registro no tiene subtareas igual pregunta si quiero duplicar subtareas, al
   final sale «registro duplicado» y tengo que hacer clic para aceptar… son 3
@@ -1122,7 +1128,9 @@ la prueba con fecha de fin y los módulos por plan), en `main`.
   vacíos y un formulario — cada una con su porqué en los datos («6 registros…»),
   más hasta 2 ideas del catálogo que encajan; y (b) **«Analizar con IA»** a
   pedido: mini bucle con 5 herramientas del asistente filtradas por rol, perfil
-  sin valores de registros, hasta 6 ideas, cupo de 5 por empresa y mes con
+  sin valores de registros (con la casilla opcional «Incluir ejemplos de texto»,
+  hasta 5 ejemplos por campo de texto con correos, números largos, enlaces y
+  nombres propios tapados, nunca de campos de personas), hasta 6 ideas, cupo de 5 por empresa y mes con
   devolución si falla, huella que evita repetir el análisis si la lista no
   cambió. Aplicar re-ejecuta la herramienta y aplica la propuesta (mismos
   caminos que el asistente); descartadas no vuelven, aplicadas quedan con su
@@ -1131,7 +1139,7 @@ la prueba con fecha de fin y los módulos por plan), en `main`.
   **Bug atrapado en el E2E**: los controles del pie del panel eran controlados por
   la respuesta del servidor y no se movían al tocarlos (otra vez la lección de
   v0.1.207); ahora son optimistas. Ilustración `sugerencias-lista`, artículo de
-  Aprende, guía de ayuda y novedad. Tests: 10 shared, 5 API (`list-suggestions.spec`; suite completa 1823 + 1 omitido),
+  Aprende, guía de ayuda y novedad. Tests: 12 shared, 6 API (`list-suggestions.spec`; suite completa 1823 + 1 omitido),
   2 front; E2E navegador 26/26 contra un proveedor de IA simulado (reglas con
   evidencia, aplicar kanban/tablero/convertir, descartar y restaurar, IA con cupo
   5→4 sin valores de registros, automatización aplicada, ocultar por persona,

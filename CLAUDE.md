@@ -10772,7 +10772,14 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         llame afuera). Ve el perfil enmascarado (`profileForAi`: estructura y
         números, nunca textos de registros, correos, teléfonos ni personas), con
         consentimiento en línea y bitácora. Campo opcional «¿De qué se trata la
-        lista?» (pedido en listas con menos de 10 registros). **Cupo propio**
+        lista?» (pedido en listas con menos de 10 registros). Casilla opcional
+        **«Incluir ejemplos de texto»** (apagada por defecto, recordada por
+        dispositivo; pedido del usuario tras preguntar cómo entiende la IA la
+        lista sin leer los registros): hasta 5 ejemplos por campo de texto,
+        enmascarados por `maskTextExample` (correos, enlaces, números de 6+
+        dígitos y nombres propios de varias palabras → `[correo]`/`[web]`/
+        `[número]`/`[nombre]`) y nunca de campos de personas
+        (`isPersonalTextField`); con o sin ejemplos son análisis distintos. **Cupo propio**
         `list_suggest_ai_monthly` en `platform:ai` (default 5 por empresa y mes,
         editable en Plataforma → Asistente IA; con clave propia, sin límite; un
         análisis que falla devuelve su cupo) y **huella de la lista**
@@ -10794,11 +10801,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         controlados por la respuesta del servidor y no se movían al tocarlos
         (otra vez la lección de v0.1.207) — ahora son optimistas. Ilustración
         `sugerencias-lista`, artículo «Sugerencias para tu lista» en Aprende →
-        Inteligencia artificial, guía de ayuda y novedad. Tests: 10 de shared
-        (perfil, reglas, enmascarado, huella), 5 de API (`list-suggestions.spec`:
+        Inteligencia artificial, guía de ayuda y novedad. Tests: 12 de shared
+        (perfil, reglas, enmascarado, ejemplos y su máscara, huella), 6 de API (`list-suggestions.spec`:
         reglas con evidencia y roles, aplicar vista/tablero/convertir, descartar
         y restaurar, ajustes, IA con enmascarado/cupo/409/devolución y
-        herramientas por rol) y 2 del front + E2E navegador 26/26 contra un
+        herramientas por rol, ejemplos de texto tapados) y 2 del front + E2E navegador 26/26 contra un
         proveedor de IA simulado (escritorio, celular en oscuro).
 
 ## 6. Cómo trabajar con Claude Code en este repo

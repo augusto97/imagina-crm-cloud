@@ -29,6 +29,8 @@ export interface StoredAiResult {
     by: number;
     fingerprint: string;
     purpose: string | null;
+    /** El análisis incluyó ejemplos de texto enmascarados. */
+    with_examples?: boolean;
     suggestions: StoredAiSuggestion[];
 }
 

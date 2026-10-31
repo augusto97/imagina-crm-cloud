@@ -114,7 +114,7 @@ export const articles: LearnArticle[] = [
                     {
                         icon: 'Sparkles',
                         title: 'Con IA (a pedido)',
-                        md: 'Con **Analizar con IA**, la IA lee un resumen de la lista y propone hasta 6 ideas propias: vistas, tableros, automatizaciones y campos que encajan con tu negocio. Sólo corre cuando tú la pides: nada se analiza solo ni en segundo plano.',
+                        md: 'Con **Analizar con IA**, la IA lee un resumen de la lista (y, si lo eliges, algunos ejemplos de texto con los datos personales tapados) y propone hasta 6 ideas propias: vistas, tableros, automatizaciones y campos que encajan con tu negocio. Sólo corre cuando tú la pides: nada se analiza solo ni en segundo plano.',
                         tone: 'violet',
                     },
                 ],
@@ -147,7 +147,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Cupo del mes', what: 'Cada empresa tiene **5 análisis por mes** (el panel dice cuántos quedan). Es aparte de la cuota del asistente. Con una **clave propia** de IA no hay límite.', tip: 'Si un análisis falla, no se descuenta.' },
                     { name: '¿De qué se trata la lista?', what: 'Opcional: una línea sobre para qué la usas («cobros mensuales a clientes de hosting») hace que las ideas encajen mejor. En una lista con pocos registros, el panel te lo pide.' },
                     { name: 'Volver a analizar', what: 'Si la lista no cambió, el botón espera 30 días: el resultado sería el mismo. Si agregas campos o vistas, o escribes otro propósito, se habilita al toque.' },
-                    { name: 'Qué viaja a la IA', what: 'La **estructura** de la lista (campos, tipos, opciones, vistas, automatizaciones) y **números** (cuántos registros, cuántos llenos, rangos de fechas y montos). **Nunca** los textos de tus registros: ni nombres, ni correos, ni teléfonos, ni documentos.' },
+                    { name: 'Qué viaja a la IA', what: 'La **estructura** de la lista (campos, tipos, opciones, vistas, automatizaciones) y **números** (cuántos registros, cuántos llenos, rangos de fechas y montos). Sin la casilla de abajo, **nunca** los textos de tus registros: ni nombres, ni correos, ni teléfonos, ni documentos.' },
+                    { name: 'Incluir ejemplos de texto', what: 'Opcional y apagada por defecto. Marcada, suma **hasta 5 ejemplos cortos** por campo de texto para que la IA entienda qué guardas («Renovación de hosting por 12 meses»). Antes de enviarlos se tapan correos, enlaces, números largos (documentos, teléfonos, cuentas) y nombres propios, y de los campos que guardan datos de personas (nombre, cliente, documento, dirección…) no se envía ninguno.', tip: 'Úsala si tu lista tiene notas o descripciones que explican el negocio y las ideas te salen genéricas. Con o sin ejemplos cuentan como análisis distintos.' },
                     { name: 'Qué puede proponer', what: 'Vistas, tableros, campos y automatizaciones que se quedan dentro de la app (cambiar un campo, enviar un correo, esperar, crear un registro). Nunca algo que llame a un servicio externo.' },
                 ],
             },

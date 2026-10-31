@@ -891,7 +891,7 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
                 },
                 {
                     title: 'La IA, sólo cuando la pides',
-                    text: 'Con «Analizar con IA» llegan hasta 6 ideas para tu negocio. Lee un resumen de la lista, nunca los textos de tus registros, y tu empresa tiene 5 análisis por mes.',
+                    text: 'Con «Analizar con IA» llegan hasta 6 ideas para tu negocio. Lee un resumen de la lista y, sólo si lo eliges, algunos ejemplos de texto con los datos personales tapados. Tu empresa tiene 5 análisis por mes.',
                     illustration: 'ia-campo',
                 },
             ],

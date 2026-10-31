@@ -43,6 +43,12 @@ export interface FieldProfile {
     options?: Array<{ value: string; label: string; count: number }>;
     /** Texto: los valores más repetidos (SÓLO para el servidor y quien mira; nunca viajan a la IA). */
     top?: Array<{ value: string; count: number }>;
+    /**
+     * Texto y texto largo: algunos valores distintos, de los registros más
+     * recientes, CRUDOS. Sólo viajan a la IA si quien analiza marca «Incluir
+     * ejemplos de texto», y entonces enmascarados (`maskTextExample`).
+     */
+    examples?: string[];
     /** Valores repetidos: cuántos valores aparecen más de una vez y en cuántos registros. */
     dupes?: { values: number; records: number; top: string | null; top_count: number };
     num?: { min: number; max: number; avg: number; sum: number };
@@ -215,6 +221,8 @@ export function profileListRecords(
         }
         const counts = new Map<string, number>();
         const display = new Map<string, string>();
+        const examples: string[] = [];
+        const seenExample = new Set<string>();
         let min = Infinity;
         let max = -Infinity;
         let sum = 0;
@@ -241,6 +249,10 @@ export function profileListRecords(
                 if (k === null) continue;
                 counts.set(k, (counts.get(k) ?? 0) + 1);
                 if (!display.has(k)) display.set(k, String(v).trim().slice(0, 80));
+                if (EXAMPLE_TYPES.has(f.type) && examples.length < MAX_RAW_EXAMPLES && !seenExample.has(k)) {
+                    seenExample.add(k);
+                    examples.push(String(v).trim().slice(0, 400));
+                }
             } else if (f.type === 'select') {
                 const k = String(v);
                 counts.set(k, (counts.get(k) ?? 0) + 1);
@@ -289,6 +301,7 @@ export function profileListRecords(
                 };
             }
         }
+        if (examples.length > 0) p.examples = examples;
         if (NUMERIC.has(f.type) && nums > 0) p.num = { min, max, avg: Math.round((sum / nums) * 100) / 100, sum: Math.round(sum * 100) / 100 };
         if ((f.type === 'date' || f.type === 'datetime') && dmin && dmax) p.date = { min: dmin, max: dmax, past, next30, past_open: pastOpen };
         if (f.type === 'checkbox') p.trues = trues;
@@ -297,13 +310,64 @@ export function profileListRecords(
     return { fields: out, status, created_30d: created30, updated_30d: updated30 };
 }
 
+/** Tipos de los que se toman ejemplos de texto (los demás ya viajan como estructura o nunca viajan). */
+const EXAMPLE_TYPES: ReadonlySet<FieldType> = new Set<FieldType>(['text', 'long_text']);
+/** Valores crudos que se guardan por campo en el perfil (del servidor). */
+const MAX_RAW_EXAMPLES = 8;
+/** Ejemplos por campo y campos con ejemplos que viajan a la IA. */
+export const AI_EXAMPLES_PER_FIELD = 5;
+export const AI_EXAMPLE_FIELDS_MAX = 12;
+
+/**
+ * Campos que por su NOMBRE guardan datos de una persona o de una empresa
+ * (nombre, documento, dirección, contacto…): de esos no viaja ningún ejemplo,
+ * ni siquiera enmascarado.
+ */
+const PERSONAL_FIELD_RE =
+    /(nombre|apellido|razon social|cliente|contacto|persona|responsable|titular|paciente|alumno|estudiante|candidato|proveedor|empleado|usuario|empresa|cedula|documento|identificacion|\bnit\b|\bdni\b|\brut\b|\bcuit\b|\brfc\b|\bcurp\b|pasaporte|direccion|domicilio|address|telefono|celular|movil|whatsapp|correo|e-?mail|cuenta|iban|tarjeta|placa|firma)/;
+
+export function isPersonalTextField(label: string): boolean {
+    return PERSONAL_FIELD_RE.test(foldLabel(label));
+}
+
+/**
+ * Un ejemplo de texto con los datos personales tapados: correos, enlaces,
+ * cualquier número de 6 dígitos o más (documentos, teléfonos, cuentas,
+ * fechas) y los nombres propios (dos o más palabras seguidas con mayúscula:
+ * «Juan Pérez», «Acme Andina»). Lo que queda es el tipo de texto que guarda
+ * el campo («Renovación de [web] por 12 meses»), que es lo que la IA necesita
+ * para entender de qué trata la lista. Se corta a `max` caracteres.
+ */
+export function maskTextExample(value: string, max = 80): string {
+    let v = value.replace(/\s+/g, ' ').trim();
+    v = v.replace(/[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]{2,}/g, '[correo]');
+    v = v.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '[web]');
+    v = v.replace(/\+?\d[\d\s().\-/]*\d/g, (m) => (m.replace(/\D/g, '').length >= 6 ? '[número]' : m));
+    v = v.replace(/(?<![\p{L}\p{N}])\p{Lu}[\p{L}'’]+(?:[ \t]+(?:(?:de|del|la|las|los|y|da|dos|van|von)[ \t]+)*\p{Lu}[\p{L}'’]+)+/gu, '[nombre]');
+    const chars = Array.from(v);
+    return chars.length > max ? `${chars.slice(0, max).join('').trimEnd()}…` : v;
+}
+
 /**
  * Lo que viaja a la IA: la estructura y los números, NUNCA valores de texto,
  * correos, teléfonos ni personas (sólo cuántos hay). Las etiquetas de las
  * opciones de una selección sí viajan: son parte de la estructura de la lista.
+ * Con `examples: true` (la casilla «Incluir ejemplos de texto»), los campos
+ * de texto suman hasta 5 ejemplos ENMASCARADOS (`maskTextExample`), salvo los
+ * que por su nombre guardan datos de una persona o empresa.
  */
-export function profileForAi(profile: ListProfile, extras: { purpose?: string | null } = {}): Record<string, unknown> {
+export function profileForAi(profile: ListProfile, extras: { purpose?: string | null; examples?: boolean } = {}): Record<string, unknown> {
     const pct = (n: number): number => (profile.sampled > 0 ? Math.round((n / profile.sampled) * 100) : 0);
+    let exampleFields = 0;
+    const examplesFor = (f: FieldProfile): string[] | null => {
+        if (!extras.examples || !EXAMPLE_TYPES.has(f.type) || !f.examples?.length) return null;
+        if (isPersonalTextField(f.label) || exampleFields >= AI_EXAMPLE_FIELDS_MAX) return null;
+        const max = f.type === 'long_text' ? 140 : 80;
+        const out = [...new Set(f.examples.map((e) => maskTextExample(e, max)))].filter((e) => e !== '').slice(0, AI_EXAMPLES_PER_FIELD);
+        if (out.length === 0) return null;
+        exampleFields++;
+        return out;
+    };
     return {
         lista: { slug: profile.list.slug, nombre: profile.list.name },
         para_que_se_usa: extras.purpose?.trim() || null,
@@ -329,6 +393,8 @@ export function profileForAi(profile: ListProfile, extras: { purpose?: string | 
             if (f.date) base.fechas = { desde: f.date.min, hasta: f.date.max, pasadas: f.date.past, proximos_30_dias: f.date.next30, vencidas_sin_cerrar: f.date.past_open };
             if (f.trues !== undefined) base.marcadas = f.trues;
             if (f.relation) base.vinculada_a = f.relation.slug;
+            const ex = examplesFor(f);
+            if (ex) base.ejemplos = ex;
             return base;
         }),
         vistas: profile.views.map((v) => ({ nombre: v.name, tipo: v.type })),
@@ -362,7 +428,7 @@ export function hashString(s: string): string {
  * de orden de magnitud, o cuando se cuenta otro propósito. Con la misma huella
  * (y antes de 30 días) volver a analizar no tiene sentido: saldría lo mismo.
  */
-export function listFingerprint(profile: ListProfile, purpose?: string | null): string {
+export function listFingerprint(profile: ListProfile, purpose?: string | null, examples = false): string {
     const parts = [
         profile.fields.map((f) => `${f.id}:${f.type}:${f.options?.length ?? 0}`).join(','),
         profile.views.map((v) => `${v.type}:${v.group_by_field_id ?? ''}:${v.date_field_id ?? ''}`).sort().join(','),
@@ -371,6 +437,7 @@ export function listFingerprint(profile: ListProfile, purpose?: string | null): 
         String(profile.forms),
         String(Math.floor(Math.log2(profile.total + 1))),
         foldLabel(purpose ?? ''),
+        examples ? 'ejemplos' : '',
     ];
     return hashString(parts.join('|'));
 }

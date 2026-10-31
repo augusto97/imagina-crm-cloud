@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildRuleSuggestions, dueField, moneyField } from './rules';
-import { detectStatusField, listFingerprint, profileForAi, profileListRecords, type ListProfile, type SuggestFieldInput, type SuggestRowInput } from './profile';
+import { detectStatusField, isPersonalTextField, listFingerprint, maskTextExample, profileForAi, profileListRecords, type ListProfile, type SuggestFieldInput, type SuggestRowInput } from './profile';
 import { listSuggestionsResponseSchema, updateListSuggestionsSettingsSchema } from './schema';
 
 const FIELDS: SuggestFieldInput[] = [
@@ -85,11 +85,39 @@ describe('perfil de la lista', () => {
         expect(ai).toContain('Cobrar a mis clientes');
     });
 
+    it('con ejemplos: sólo campos de texto que no son de personas, enmascarados', () => {
+        const p = profileOf(30);
+        const notas = p.fields.find((f) => f.slug === 'notas')!;
+        notas.examples = ['Llamar a Ana María López al 310 555 1234', 'Enviar propuesta a ana@acme.co'];
+        const ai = profileForAi(p, { examples: true }) as { campos: Array<{ slug: string; ejemplos?: string[] }> };
+        const by = (slug: string) => ai.campos.find((c) => c.slug === slug)!;
+        expect(by('ciudad').ejemplos).toEqual(['Bogotá', 'Medellín', 'Cali']);
+        expect(by('notas').ejemplos).toEqual(['Llamar a [nombre] al [número]', 'Enviar propuesta a [correo]']);
+        // «Cliente» guarda nombres: ni enmascarados viajan.
+        expect(by('cliente').ejemplos).toBeUndefined();
+        expect(by('email').ejemplos).toBeUndefined();
+        // Sin la casilla, ningún ejemplo.
+        expect(JSON.stringify(profileForAi(p))).not.toContain('ejemplos');
+    });
+
+    it('la máscara tapa correos, enlaces, números largos y nombres propios, y corta', () => {
+        expect(maskTextExample('Pagó la factura 12345678 por transferencia')).toBe('Pagó la factura [número] por transferencia');
+        expect(maskTextExample('Visita https://acme.co/precios o www.acme.co')).toBe('Visita [web] o [web]');
+        expect(maskTextExample('Reunión con Pedro de la Torre el martes')).toBe('Reunión con [nombre] el martes');
+        expect(maskTextExample('Cuota 2 de 6, sede Medellín')).toBe('Cuota 2 de 6, sede Medellín');
+        expect(maskTextExample('x'.repeat(100), 20)).toBe(`${'x'.repeat(20)}…`);
+        expect(isPersonalTextField('Razón social')).toBe(true);
+        expect(isPersonalTextField('Nº de documento')).toBe(true);
+        expect(isPersonalTextField('Descripción del servicio')).toBe(false);
+    });
+
     it('la huella cambia con los campos, el orden de magnitud o el propósito, no con un registro más', () => {
         const a = listFingerprint(profileOf(30));
         expect(listFingerprint(profileOf(29))).toBe(a);
         expect(listFingerprint(profileOf(80))).not.toBe(a);
         expect(listFingerprint(profileOf(30), 'otra cosa')).not.toBe(a);
+        // Con o sin ejemplos de texto son análisis distintos.
+        expect(listFingerprint(profileOf(30), null, true)).not.toBe(a);
     });
 });
 

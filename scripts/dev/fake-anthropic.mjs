@@ -103,6 +103,11 @@ function suggestionCalls(profile) {
             },
         });
     }
+    if (calls.length === 0) {
+        // Sin monto ni vencimiento: una vista ordenada por el primer campo de texto.
+        const text = fields.find((f) => f.tipo === 'text');
+        if (text) calls.push({ name: 'propose_create_view', input: { list: slug, view: { name: `Por ${String(text.nombre).toLowerCase()}`, type: 'table', sort: [{ field: text.slug, dir: 'asc' }] } } });
+    }
     return calls;
 }
 

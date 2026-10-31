@@ -400,7 +400,7 @@ export class ListSuggestionsService {
         let hint: string | null = null;
         if (result) {
             const ageDays = (Date.now() - Date.parse(result.analyzed_at)) / 86_400_000;
-            const same = listFingerprint(profile, result.purpose) === result.fingerprint;
+            const same = listFingerprint(profile, result.purpose, result.with_examples === true) === result.fingerprint;
             if (same && ageDays < LIST_SUGGESTIONS_REANALYZE_DAYS) {
                 canReanalyze = false;
                 const left = Math.max(1, Math.ceil(LIST_SUGGESTIONS_REANALYZE_DAYS - ageDays));
@@ -419,6 +419,7 @@ export class ListSuggestionsService {
             can_reanalyze: canReanalyze,
             reanalyze_hint: hint,
             purpose: result?.purpose ?? null,
+            with_examples: result?.with_examples === true,
             ask_purpose: profile.total < LIST_SUGGESTIONS_PURPOSE_BELOW,
         };
     }
@@ -636,6 +637,7 @@ function idleAi(reason: string | null): ListSuggestionsAiState {
         can_reanalyze: false,
         reanalyze_hint: null,
         purpose: null,
+        with_examples: false,
         ask_purpose: false,
     };
 }
