@@ -192,7 +192,11 @@ export type AuditAction =
     // de los datos de ejemplo.
     | 'onboarding.ai_request'
     | 'onboarding.apply'
-    | 'onboarding.samples_delete';
+    | 'onboarding.samples_delete'
+    // v0.1.339 (ADR-S88) — «Crear desde un archivo»: el análisis con IA (con
+    // su consentimiento en línea) y las listas creadas.
+    | 'file_import.ai_request'
+    | 'file_import.apply';
 
 export interface AuditEntryDto {
     id: number;

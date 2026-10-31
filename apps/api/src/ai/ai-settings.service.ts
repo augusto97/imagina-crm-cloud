@@ -51,6 +51,8 @@ const storedPlatformSchema = z.object({
     effort: aiEffortSchema.catch(DEFAULT_AI_EFFORT).default(DEFAULT_AI_EFFORT),
     share_platform_key: z.boolean().catch(true).default(true),
     allow_tenant_keys: z.boolean().catch(true).default(true),
+    // v0.1.339 (ADR-S88) — cupo de análisis con IA para «Crear desde un archivo».
+    import_ai_monthly: z.number().int().min(0).max(1000).catch(3).default(3),
 });
 type StoredPlatform = z.infer<typeof storedPlatformSchema>;
 
@@ -154,7 +156,13 @@ export class AiSettingsService {
             effort: stored.effort,
             share_platform_key: stored.share_platform_key,
             allow_tenant_keys: stored.allow_tenant_keys,
+            import_ai_monthly: stored.import_ai_monthly,
         };
+    }
+
+    /** v0.1.339 — Análisis con IA por empresa y mes para «Crear desde un archivo» (clave de la plataforma). */
+    async importAiMonthly(): Promise<number> {
+        return (await this.readPlatform()).import_ai_monthly;
     }
 
     async updatePlatform(patch: UpdatePlatformAiSettingsInput): Promise<PlatformAiSettings> {
@@ -168,6 +176,7 @@ export class AiSettingsService {
         if (patch.effort !== undefined) next.effort = patch.effort;
         if (patch.share_platform_key !== undefined) next.share_platform_key = patch.share_platform_key;
         if (patch.allow_tenant_keys !== undefined) next.allow_tenant_keys = patch.allow_tenant_keys;
+        if (patch.import_ai_monthly !== undefined) next.import_ai_monthly = patch.import_ai_monthly;
         if (patch.clear_key) next.api_key_enc = null;
         if (patch.api_key) next.api_key_enc = encryptSecret(patch.api_key, this.env.SECRETS_KEY);
         await this.redis.set(PLATFORM_KEY, JSON.stringify(next));
@@ -297,14 +306,16 @@ export class AiSettingsService {
      * Decide con qué clave y modelo se habla. Lanza `AiUnavailableError` con
      * un motivo accionable cuando no se puede.
      */
-    async resolve(tenantId: number, opts: { requireOptIn?: boolean } = {}): Promise<ResolvedAiAccess> {
+    async resolve(tenantId: number, opts: { requireOptIn?: boolean; skipPlanModule?: boolean } = {}): Promise<ResolvedAiAccess> {
         const [tenant, platform, moduleOff] = await Promise.all([
             this.readTenant(tenantId),
             this.readPlatform(),
             // v0.1.338 (ADR-S87) — el plan de la empresa tiene que incluir la IA.
             // Es el único punto por el que pasan el asistente, los campos con
             // IA, los agentes y la bienvenida: con esto se detiene todo.
-            planModuleOff(this.db, tenantId, 'ai'),
+            // v0.1.339 (ADR-S88) — salvo «Crear desde un archivo», que tiene su
+            // propio cupo (un análisis para empezar, aunque el plan no traiga IA).
+            opts.skipPlanModule ? Promise.resolve(false) : planModuleOff(this.db, tenantId, 'ai'),
         ]);
         if (!platform.enabled) {
             throw new AiUnavailableError('El asistente está desactivado en la plataforma.', 'platform_disabled');

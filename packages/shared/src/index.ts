@@ -137,3 +137,5 @@ export * from './whats-new';
 // Fase 7 · entrega 2 — guías rápidas, recorridos y centro de ayuda.
 export * from './schemas/help';
 export * from './help/system-guides';
+// v0.1.339 (ADR-S88) — «Crear desde un archivo»: perfil, borrador y plan de importación.
+export * from './file-import';

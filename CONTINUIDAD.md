@@ -312,6 +312,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
     simula hosting que tira `Authorization`.
   - `scripts/dev/fake-collect.mjs` (puerto 4898) — Mercado Pago + Wompi
     (`start-api.sh` ya apunta `MERCADOPAGO_API_URL`/`WOMPI_*` ahí).
+  - `scripts/dev/fake-anthropic.mjs [puerto=4899]` — proveedor de IA
+    (`/v1/models` + `/v1/messages` en streaming; para «Crear desde un archivo»
+    arma una mejora a partir del resumen y guarda el último pedido en
+    `/tmp/fake-anthropic-last.json`, así se verifica qué viajó). **OJO**: el
+    contenedor trae `ANTHROPIC_BASE_URL=https://api.anthropic.com` en el
+    entorno; para usar el doble hay que arrancar el API con
+    `ANTHROPIC_BASE_URL=http://127.0.0.1:4899 sh scripts/dev/start-api.sh` y
+    habilitar la IA de plataforma con una clave falsa `sk-ant-…` (PATCH
+    `/platform/ai` como superadmin). Y no usar `pkill -f "node dist/main.js"`:
+    también mata la shell que corre el comando (usar `kill $(pgrep -f "^node dist/main.js")`).
   - `scripts/dev/serve-prod.mjs <dist-cloud> [5180]` — sirve el BUILD de
     producción como nginx (para probar CSP, HSTS, OAuth estáticos).
 - `DEV_ALLOW_PRIVATE_EGRESS=1` (ya en `start-api.sh`) deja que webhooks/
@@ -372,13 +382,27 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.338**
-(prueba con fecha de fin, cuenta pausada al terminar, paso a prueba de los
-planes que no se renuevan y módulos por plan; antes v0.1.337 el WAL de Postgres
-vigilado y comprimido, v0.1.336 quitar de la app lo que el sitio o la tienda ya
-borró y v0.1.335 la auditoría del complemento para WordPress), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.339**
+(crear una lista desde un Excel o CSV: tipos y descartes automáticos, listas
+vinculadas, mejora opcional con IA sobre un resumen protegido y recomendaciones
+al final; antes v0.1.338 la prueba con fecha de fin y los módulos por plan,
+v0.1.337 el WAL de Postgres vigilado y comprimido y v0.1.336 quitar de la app lo
+que el sitio o la tienda ya borró), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-31 — **Crear una lista desde un archivo → v0.1.339** (ADR-S88). Pedido
+  del usuario: "que al subir un Excel la IA decida el tipo de cada campo, mapee
+  las columnas sola, pregunte qué columnas descartar y al final recomiende el
+  tablero, las automatizaciones o los ajustes, para aprobarlos". Le propuse el
+  diseño (reglas primero sobre todo el archivo, IA opcional con resumen
+  protegido, consentimiento en línea, cupo propio, varias hojas → listas
+  vinculadas, limpieza de datos, recomendaciones que se aprueban) y respondió
+  "sí, hazlo con las dos entregas juntas". **Decisiones**: la IA nunca ve correos,
+  teléfonos, documentos ni nombres (sí las categorías); cupo de IA para esto
+  aparte del asistente (`import_ai_monthly`, default **3 por empresa y mes**, se
+  cambia en Plataforma → Asistente IA; con clave propia, sin límite); nada de lo
+  recomendado se crea solo. **Queda abierto**: la oferta de guardar la skill
+  «landing-kit» dentro del repo (`.claude/skills/`) sigue sin respuesta.
 - 2026-10-30 — **Skill «landing-kit» para otros proyectos** (pedido del usuario:
   "créame una skill para descargar, para usarla en otros proyectos, de lo que hiciste
   para pasarme todo lo de la landing… imágenes, videos, motion graphics y textos muy
@@ -1063,6 +1087,21 @@ borró y v0.1.335 la auditoría del complemento para WordPress), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-31 · v0.1.339** — **Crear una lista desde un archivo** (ADR-S88).
+  Pedido del usuario (ver §10): subir un Excel o CSV y que la lista se arme
+  sola. «Nueva lista → Desde un archivo» y «Subir un Excel o CSV» en la
+  bienvenida: tipos por los valores, descartes con motivo, lo repetido (el
+  cliente con su correo y teléfono) como lista aparte vinculada, varias hojas →
+  varias listas conectadas, opciones con sus variantes juntas, aviso del límite
+  del plan antes de crear, «Mejorar con IA» opcional (resumen protegido,
+  consentimiento, cupo propio de 3 al mes, lo editado a mano se respeta) y al
+  final recomendaciones que se aprueban con un clic (kanban, calendario,
+  tablero, ideas de la categoría de los datos). Bugs atrapados en el E2E: montos
+  con miles agrupados leídos como teléfono, «Tarea 1» leído como número, la IA
+  pisando lo renombrado a mano, y «Primeros pasos» tapando el botón «Crear».
+  Nuevo doble de prueba `scripts/dev/fake-anthropic.mjs` (ver §7). Tests: 14
+  shared, 8 API, 8 front; E2E navegador 37/37.
 
 - **2026-10-30 · sin versión** — Skill **«landing-kit»** (descargable, para otros
   proyectos) con el método del kit de landing: procedimiento, guías, scripts probados

@@ -5451,4 +5451,70 @@ siguen sin vencer hasta que el operador use la acción en lote.
 
 ---
 
-**Versión del documento:** 1.134.0 (prueba con fecha de fin, cuenta pausada y módulos por plan)
+### ADR-S88 — Crear una lista desde un archivo: reglas primero, IA opcional con un resumen protegido (v0.1.339)
+
+**Contexto.** Pedido del usuario para mejorar la adopción: "que al subir un
+Excel la IA decida el tipo de cada campo, mapee las columnas sola, pregunte si
+quiere descartar las que no hacen falta, y al final recomiende el tablero, las
+automatizaciones o los ajustes que debería tener, para aprobarlos". El
+importador de siempre (dentro de una lista) exige crear la lista primero y
+emparejar columna por columna; la bienvenida de ADR-S72 arma listas desde una
+DESCRIPCIÓN, no desde los datos que la persona ya tiene. Se aprobaron las
+recomendaciones en una sola entrega: cupo propio de IA para esto, resumen
+protegido, consentimiento en línea, varias hojas → listas vinculadas, limpieza
+de datos y recomendaciones finales.
+
+**Decisión.**
+1. **Primero las reglas, gratis y sobre TODO el archivo** (`packages/shared/src/
+   file-import/`): `profileSheet` perfila cada columna (tipo por los valores y
+   el encabezado, formato de fecha y de número, opciones con sus variantes,
+   descartes con motivo: vacías, repetidas, derivadas, números de fila) y
+   `buildDraftPlan` arma el plan determinístico — título, opciones con color,
+   **lo repetido con sus propios datos** como lista aparte (dependencia
+   funcional: el cliente que siempre trae el mismo correo y teléfono) y
+   **vínculos entre hojas** (una columna cuyos valores son títulos de otra hoja,
+   ≥80 %). El plan se indexa por hoja + columna, nunca por nombre.
+2. **Una sola función decide qué se crea**: `resolveFileImportPlan` (pura, en
+   shared) la usan la vista previa del navegador y el servidor al aplicar, y
+   `makeFileImportCellReader` lee cada celda igual en los dos lados: lo que se
+   ve es lo que se crea.
+3. **La IA es opcional y sólo ve un resumen protegido**: nombres de columnas,
+   tipo propuesto y ejemplos con `maskSample` (correos, teléfonos, documentos,
+   enlaces y nombres de personas o empresas reemplazados por su forma); los
+   valores de categorías sí viajan (para juntar «PAGADO» y «pagada»). El modelo
+   (rápido, esfuerzo bajo) sólo devuelve parches por columna y la aceptación de
+   lo propuesto por las reglas, por una herramienta (`submit_import_plan`);
+   `mergeAiIntoPlan` los aplica sin perder valores (`mergeOptions`). Lo que la
+   persona ya cambió a mano se respeta (`keepUserEdits`, merge de tres vías en
+   el navegador) y se puede deshacer. Consentimiento en línea por análisis, con
+   bitácora `file_import.ai_request`.
+4. **Cupo propio**: `import_ai_monthly` en la configuración de IA de la
+   plataforma (default 3 por empresa y mes), contado aparte de la cuota del
+   asistente; con clave propia de la empresa, sin límite. Un análisis que falla
+   devuelve su cupo. Requiere el módulo «IA» del plan y `use_ai_assistant`.
+5. **Aplicar**: el plan resuelto pasa por el constructor de listas del asistente
+   (`buildCreateListBlueprint`) y `BlueprintService.materialize`, en una carpeta
+   si es más de una lista; las filas se insertan por tandas validando cada celda
+   con `validateFieldValue` — una celda que no encaja queda vacía con aviso, la
+   fila entra igual —, después los vínculos por título normalizado. El límite
+   de registros del plan se mira ANTES de crear nada (o se importan sólo los que
+   entran). El archivo se analiza una vez (análisis en Redis, 2 h) y al aplicar
+   se compara la huella de cada hoja: un archivo cambiado se rechaza.
+6. **Transporte**: el navegador lee el Excel (todas las hojas visibles, hasta 5)
+   y manda CSV; tipo de contenido propio `application/vnd.imagina.file-import+json`
+   con tope de 24 MB, aceptado sólo en `/api/v1/file-import/*`.
+7. **Recomendaciones al final** (`buildRecommendations`, puro): vista kanban por
+   el campo de estado, calendario por el de vencimiento, el tablero de la
+   galería que mejor encaja (`suggestRoleMapping`), ideas de automatización de
+   la categoría de los datos (facturas → cobros) y formulario/invitar según el
+   caso. Nada se crea solo: cada una se aprueba con un clic.
+
+**Consecuencias.** El importador de siempre queda para AGREGAR a una lista que
+ya existe. Las variantes de un mismo valor sólo se juntan con la IA (las reglas
+juntan mayúsculas y tildes). Las hojas se vinculan por coincidencia de títulos:
+un valor que no encuentra su registro entra sin vínculo y se informa. No se
+importan fórmulas como fórmulas ni archivos adjuntos.
+
+---
+
+**Versión del documento:** 1.135.0 (crear una lista desde un archivo)

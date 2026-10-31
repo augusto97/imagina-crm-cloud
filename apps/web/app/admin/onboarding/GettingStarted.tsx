@@ -68,7 +68,9 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
     const hasSteps = audience !== 'none' && (data?.steps.length ?? 0) > 0;
     const finished = data ? data.complete && data.prefs.celebrated : false;
     const onWelcomePage = data?.welcome === true && (location.pathname === '/lists' || location.pathname === '/');
-    const visible = hasSteps && !onWelcomePage && (forced || (!data!.prefs.hidden && !finished));
+    // v0.1.339 — «Crear desde un archivo» tiene su propia barra fija abajo (con «Crear»): el botón no la tapa.
+    const ownBottomBar = location.pathname.startsWith('/lists/new/file');
+    const visible = hasSteps && !onWelcomePage && (forced || (!ownBottomBar && !data!.prefs.hidden && !finished));
     const live = hasSteps && !finished;
 
     // ── El helpBus: «Primeros pasos» se puede abrir desde cualquier lado ──

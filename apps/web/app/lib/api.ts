@@ -38,6 +38,12 @@ interface RequestOptions {
     query?: Record<string, unknown>;
     body?: unknown;
     signal?: AbortSignal;
+    /**
+     * v0.1.339 — Tipo de contenido propio (el cuerpo sigue siendo JSON). Lo usa
+     * «Crear desde un archivo», cuyas rutas aceptan un cuerpo más grande que el
+     * resto del API (ver `FILE_IMPORT_CONTENT_TYPE`).
+     */
+    contentType?: string;
 }
 
 function buildUrl(path: string, query?: Record<string, unknown>): string {
@@ -517,7 +523,7 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
 
     let body: BodyInit | undefined;
     if (opts.body !== undefined && method !== 'GET') {
-        headers['Content-Type'] = 'application/json';
+        headers['Content-Type'] = opts.contentType ?? 'application/json';
         let payload: unknown = opts.body;
         if (recordsPathKind(path) !== null) {
             const map = await ensureFieldMap(listKeyFromPath(path) ?? '');

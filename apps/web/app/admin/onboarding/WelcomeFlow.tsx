@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ArrowLeft, FilePlus2, Info, LayoutTemplate, Loader2, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { ArrowLeft, FilePlus2, FileSpreadsheet, Info, LayoutTemplate, Loader2, Sparkles } from 'lucide-react';
 import type { OnboardingApplyResult } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ export function WelcomeFlow({ variant, initialPath = 'choose', onBlank, onCreate
     const [path, setPath] = useState<WelcomePath>(initialPath);
     const ai = useOnboardingAiStatus();
     const aiAvailable = ai.data?.available === true;
+    const navigate = useNavigate();
 
     if (path === 'ai') {
         return (
@@ -66,7 +68,7 @@ export function WelcomeFlow({ variant, initialPath = 'choose', onBlank, onCreate
                 </p>
             )}
 
-            <div className={cn('imcrm-grid imcrm-gap-3', variant === 'page' ? 'md:imcrm-grid-cols-3' : 'md:imcrm-grid-cols-2')}>
+            <div className={cn('imcrm-grid imcrm-gap-3', variant === 'page' ? 'md:imcrm-grid-cols-2 xl:imcrm-grid-cols-4' : 'md:imcrm-grid-cols-3')}>
                 <PathCard
                     testId="welcome-path-ai"
                     icon={Sparkles}
@@ -76,6 +78,16 @@ export function WelcomeFlow({ variant, initialPath = 'choose', onBlank, onCreate
                     loading={ai.isLoading}
                     disabledReason={ai.isLoading ? null : aiAvailable ? null : ai.data?.reason ?? (ai.isError ? __('No se pudo comprobar si la IA está disponible.') : null)}
                     onClick={() => setPath('ai')}
+                />
+                {/* v0.1.339 — quien ya tiene sus datos en una planilla arranca por ahí. */}
+                <PathCard
+                    testId="welcome-path-file"
+                    icon={FileSpreadsheet}
+                    title={__('Subir un Excel o CSV')}
+                    text={__('¿Ya tienes tus datos en una planilla? Súbela y la lista se arma sola: tipos de columna, opciones y listas vinculadas. Revisas antes de crear.')}
+                    badge={__('Si ya tienes datos')}
+                    badgeQuiet
+                    onClick={() => navigate('/lists/new/file')}
                 />
                 <PathCard
                     testId="welcome-path-types"
@@ -119,6 +131,7 @@ function PathCard({
     title,
     text,
     badge = null,
+    badgeQuiet = false,
     loading = false,
     disabledReason = null,
     quiet = false,
@@ -129,6 +142,8 @@ function PathCard({
     title: string;
     text: string;
     badge?: string | null;
+    /** Etiqueta sin el énfasis de «Recomendado». */
+    badgeQuiet?: boolean;
     loading?: boolean;
     disabledReason?: string | null;
     quiet?: boolean;
@@ -149,7 +164,7 @@ function PathCard({
                 'focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/50',
                 disabled
                     ? 'imcrm-cursor-not-allowed imcrm-border-border imcrm-opacity-80'
-                    : badge
+                    : badge && !badgeQuiet
                       ? 'imcrm-border-primary/50 imcrm-shadow-imcrm-sm hover:imcrm-border-primary hover:imcrm-shadow-imcrm-md motion-safe:hover:-imcrm-translate-y-0.5'
                       : 'imcrm-border-border hover:imcrm-border-primary/40 hover:imcrm-shadow-imcrm-sm motion-safe:hover:-imcrm-translate-y-0.5',
             )}
@@ -164,7 +179,12 @@ function PathCard({
                     {loading ? <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin" /> : <Icon className="imcrm-h-5 imcrm-w-5" />}
                 </span>
                 {badge && (
-                    <span className="imcrm-rounded-full imcrm-bg-primary imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-semibold imcrm-text-primary-foreground">
+                    <span
+                        className={cn(
+                            'imcrm-rounded-full imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-semibold',
+                            badgeQuiet ? 'imcrm-bg-muted imcrm-text-foreground' : 'imcrm-bg-primary imcrm-text-primary-foreground',
+                        )}
+                    >
                         {badge}
                     </span>
                 )}

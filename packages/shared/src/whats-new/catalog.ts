@@ -820,4 +820,40 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.339-lista-desde-archivo',
+        version: '0.1.339',
+        date: '2026-10-31',
+        kind: 'feature',
+        title: 'Sube tu Excel y la lista se arma sola',
+        summary:
+            'Desde «Nueva lista → Desde un archivo», sube un Excel o un CSV: cada columna queda con el tipo que le corresponde, lo repetido pasa a su propia lista vinculada y al final te recomienda vistas, un tablero y automatizaciones.',
+        media: {
+            slides: [
+                {
+                    title: 'Cada columna, con su tipo',
+                    text: 'Fechas, montos, teléfonos, correos y opciones con color, según los datos y no sólo el nombre. Te dice por qué, cómo van a quedar los valores y qué columnas conviene descartar.',
+                    illustration: 'archivo-a-lista',
+                },
+                {
+                    title: 'Lo repetido, en su lista',
+                    text: 'Si el cliente se repite con su correo y su teléfono, te propone una lista de Clientes aparte, vinculada. Un Excel con varias hojas se convierte en varias listas conectadas.',
+                    illustration: 'archivo-a-lista',
+                },
+                {
+                    title: 'La IA lo afina, si quieres',
+                    text: 'Con «Mejorar con IA» junta opciones escritas distinto y aclara los nombres. Sólo viaja un resumen: los correos, teléfonos, documentos y nombres van ocultos.',
+                    illustration: 'ia-campo',
+                },
+                {
+                    title: 'Y te recomienda el siguiente paso',
+                    text: 'Un tablero por estado, un calendario, un tablero con tus números y automatizaciones para tus datos. Nada se crea solo: apruebas lo que te sirva.',
+                    illustration: 'archivo-recomendaciones',
+                },
+            ],
+        },
+        body: 'Toca **Nueva lista** y elige **Desde un archivo**. Si tu plan no alcanza para todos los registros del archivo, te avisa antes de crear nada.',
+        action: { label: 'Crear desde un archivo', href: '/lists/new/file' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

@@ -10,6 +10,7 @@ export const meta: LearnModuleMeta = {
     tone: 'mint',
     hero: 'ie-importar',
     highlights: [
+        'Crear listas completas desde un Excel: tipos, opciones y listas vinculadas solos',
         'Importar Excel o CSV, creando los campos que falten',
         'Actualizar precios, cuotas o stock desde un archivo, con vista previa y deshacer',
         'Exportar a Excel con montos y fechas reales, o a CSV',
@@ -17,6 +18,15 @@ export const meta: LearnModuleMeta = {
         'Duplicar una lista con o sin sus registros',
     ],
     articles: [
+        {
+            id: 'importar-exportar-desde-archivo',
+            title: 'Crear una lista a partir de un Excel',
+            summary: 'Sube tu planilla y la lista se arma sola: el tipo de cada columna, opciones limpias, listas vinculadas y recomendaciones para empezar.',
+            minutes: 8,
+            level: 'basic',
+            keywords: 'crear lista desde excel csv archivo planilla hoja de calculo migrar empezar mapeo automatico tipos columnas descartar listas vinculadas varias hojas inteligencia artificial ia recomendaciones tablero vistas automatizaciones',
+            needs: 'manage_lists',
+        },
         {
             id: 'importar-exportar-importar',
             title: 'Importar un Excel o CSV a una lista',
