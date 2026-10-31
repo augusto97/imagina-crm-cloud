@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { DERIVED_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
 import {
     ArrowDownToLine,
     Check,
@@ -29,12 +28,13 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
-import { useCreateRecord, useDeleteRecord } from '@/hooks/useRecords';
+import { useDeleteRecord } from '@/hooks/useRecords';
 import { recordTitleFor, useTrashedToast } from '@/hooks/useTrash';
 import { __, sprintf } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
+import { useQuickDuplicate } from './bulk/useQuickDuplicate';
 import { shortcutLabel, type GridMenuActions } from './grid/useGridController';
 import { mirrorSourceOf, recordGoneInSource, useStoreRules } from './storeRules';
 
@@ -96,7 +96,7 @@ export function RecordRowMenu({
     canCreate,
     cellActions,
 }: RecordRowMenuProps): JSX.Element | null {
-    const create = useCreateRecord(listId);
+    const duplicateRecords = useQuickDuplicate(listId);
     const remove = useDeleteRecord(listId);
     const storeRules = useStoreRules();
     const confirm = useConfirm();
@@ -125,25 +125,14 @@ export function RecordRowMenu({
     };
 
     /**
-     * Duplicar: se copian los valores de los campos que se pueden escribir.
-     * Los `computed` los calcula el backend en cada lectura y los `file` /
-     * `relation` apuntan a otras entidades — copiarlos a ciegas crearía
-     * vínculos compartidos que el usuario no pidió.
+     * Duplicar (v0.1.340): un clic, sin diálogo. Lo hace el servidor (copia
+     * los campos que se escriben a mano —no calculados, archivos ni vínculos—
+     * y deja la copia en el mismo nivel: una subtarea queda como subtarea del
+     * mismo registro). Un aviso que se cierra solo dice cómo salió, con
+     * «Deshacer».
      */
-    const duplicate = async (): Promise<void> => {
-        const values: Record<string, unknown> = {};
-        for (const f of fields) {
-            // v0.1.300 — tampoco el ID automático ni las columnas de sistema (los pone el servidor).
-            if (DERIVED_FIELD_TYPES.has(f.type) || f.type === 'relation' || f.type === 'file') continue;
-            const v = record.fields[f.slug];
-            if (v !== undefined && v !== null && v !== '') values[f.slug] = v;
-        }
-        try {
-            await create.mutateAsync(values);
-            toast.success(__('Registro duplicado'));
-        } catch (err) {
-            if (err instanceof Error) toast.error(__('No se pudo duplicar'), err.message);
-        }
+    const duplicate = (includeSubtasks: boolean): void => {
+        void duplicateRecords([record.id], { includeSubtasks });
     };
 
     const del = async (): Promise<void> => {
@@ -286,11 +275,24 @@ export function RecordRowMenu({
                         {__('Crear subtarea')}
                     </DropdownMenuItem>
                 )}
-                {canCreate && (
-                    <DropdownMenuItem onSelect={() => void duplicate()}>
-                        <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />
-                        {__('Duplicar')}
-                    </DropdownMenuItem>
+                {canCreate && record.subtask_count > 0 ? (
+                    <>
+                        <DropdownMenuItem onSelect={() => duplicate(true)} data-testid="imcrm-row-menu-duplicate">
+                            <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Duplicar con sus subtareas')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => duplicate(false)} data-testid="imcrm-row-menu-duplicate-alone">
+                            <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Duplicar sin subtareas')}
+                        </DropdownMenuItem>
+                    </>
+                ) : (
+                    canCreate && (
+                        <DropdownMenuItem onSelect={() => duplicate(false)} data-testid="imcrm-row-menu-duplicate">
+                            <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Duplicar')}
+                        </DropdownMenuItem>
+                    )
                 )}
                 {onAddColumn && (
                     <DropdownMenuItem onSelect={onAddColumn}>

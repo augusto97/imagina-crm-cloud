@@ -52,6 +52,7 @@ import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { useBulkButtons } from './buttons/ButtonFieldControl';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
+import { useQuickDuplicate } from './bulk/useQuickDuplicate';
 import { SiteListBanner } from './SiteListBanner';
 import { SourceGoneBar } from './SourceGoneBar';
 import { useSourceGoneCount } from '@/hooks/useSourceGone';
@@ -449,13 +450,15 @@ export function RecordsPage(): JSX.Element {
     // Mover y duplicar no aplican a las listas de la tienda o del sitio: eso se
     // hace en WooCommerce (o en WordPress). Borrar sí, desde v0.1.336, pero sólo
     // lo que la fuente ya borró (el servidor separa lo que sigue vivo allá).
+    const quickDuplicate = useQuickDuplicate(list.data?.id ?? 0);
     const structureActions: Partial<Record<BulkStructureAction, () => void>> | undefined = mirror
         ? canDeleteAny || canDeleteOwn
             ? { delete: () => setStructure({ action: 'delete', matching: false }) }
             : undefined
         : {
               ...(canEditAny || canEditOwn ? { move: () => setStructure({ action: 'move', matching: false }) } : {}),
-              ...(canCreateRecords ? { duplicate: () => setStructure({ action: 'duplicate', matching: false }) } : {}),
+              // v0.1.340 — duplicar es un clic: sin diálogo, con un aviso que se cierra solo.
+              ...(canCreateRecords ? { duplicate: () => void quickDuplicate(selectedIds, { onDone: () => setSelectedIds([]) }) } : {}),
               ...(canDeleteAny || canDeleteOwn ? { delete: () => setStructure({ action: 'delete', matching: false }) } : {}),
           };
     // «Asignar»: el primer campo de persona que se pueda escribir.

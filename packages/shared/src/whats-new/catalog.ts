@@ -856,4 +856,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Crear desde un archivo', href: '/lists/new/file' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.340-duplicar-un-clic',
+        version: '0.1.340',
+        date: '2026-10-31',
+        kind: 'improvement',
+        title: 'Duplicar un registro es un solo clic',
+        summary:
+            'Ya no hay pasos ni ventanas que aceptar: la copia se crea al instante y un aviso que se cierra solo te dice cómo salió, con «Deshacer» por si te equivocaste.',
+        media: { illustration: 'duplicar-rapido' },
+        body: 'Haz clic derecho sobre una fila y elige **Duplicar**, o marca varias filas y toca **Duplicar** en la barra de abajo. Si el registro tiene subtareas, el menú te deja elegir **con** o **sin** ellas. Si algo no se pudo copiar, el aviso lo dice en rojo con el motivo.',
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

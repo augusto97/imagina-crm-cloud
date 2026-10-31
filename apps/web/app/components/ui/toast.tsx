@@ -157,7 +157,7 @@ function ToastViewport({
         <ol
             role="region"
             aria-label={__('Notificaciones')}
-            className="imcrm-pointer-events-none imcrm-fixed imcrm-bottom-4 imcrm-right-4 imcrm-z-[100000] imcrm-flex imcrm-w-full imcrm-max-w-sm imcrm-flex-col imcrm-gap-2"
+            className="imcrm-pointer-events-none imcrm-fixed imcrm-bottom-4 imcrm-right-4 imcrm-z-[100000] imcrm-flex imcrm-w-[calc(100%-2rem)] imcrm-max-w-sm imcrm-flex-col imcrm-gap-2"
         >
             {toasts.map((t) => (
                 <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
