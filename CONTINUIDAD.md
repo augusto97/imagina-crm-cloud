@@ -1131,7 +1131,7 @@ la prueba con fecha de fin y los módulos por plan), en `main`.
   **Bug atrapado en el E2E**: los controles del pie del panel eran controlados por
   la respuesta del servidor y no se movían al tocarlos (otra vez la lección de
   v0.1.207); ahora son optimistas. Ilustración `sugerencias-lista`, artículo de
-  Aprende, guía de ayuda y novedad. Tests: 10 shared, 5 API (`list-suggestions.spec`),
+  Aprende, guía de ayuda y novedad. Tests: 10 shared, 5 API (`list-suggestions.spec`; suite completa 1823 + 1 omitido),
   2 front; E2E navegador 26/26 contra un proveedor de IA simulado (reglas con
   evidencia, aplicar kanban/tablero/convertir, descartar y restaurar, IA con cupo
   5→4 sin valores de registros, automatización aplicada, ocultar por persona,

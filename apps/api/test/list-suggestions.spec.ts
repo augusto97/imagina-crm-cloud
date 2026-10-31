@@ -264,8 +264,14 @@ describe('v0.1.341 — sugerencias por lista (Postgres + Redis reales, modelo fa
         expect(kanban.suggestion).toMatchObject({ status: 'applied' });
         const [v] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(savedViews).where(and(eq(savedViews.tenantId, tenantId), eq(savedViews.type, 'kanban'))));
         expect(v!.config).toMatchObject({ group_by_field_id: f.estado });
-        // Ya existe: la regla desaparece de la lista y volver a aplicarla rebota.
-        expect((await svc.get(admin, 'facturas')).suggestions.map((s) => s.key)).not.toContain(`view.kanban.f${f.estado}`);
+        // Ya existe: deja de ser «nueva», queda listada como aplicada (con su
+        // enlace, para la sección «Aplicadas») y volver a aplicarla rebota.
+        const after = await svc.get(admin, 'facturas');
+        const applied = after.suggestions.filter((s) => s.key === `view.kanban.f${f.estado}`);
+        expect(applied).toHaveLength(1);
+        expect(applied[0]).toMatchObject({ status: 'applied' });
+        expect(applied[0]!.applied?.links.length).toBeGreaterThan(0);
+        expect(after.marks[`view.kanban.f${f.estado}`]).toBe('applied');
         await expect(svc.apply(admin, 'facturas', `view.kanban.f${f.estado}`)).rejects.toMatchObject({ status: 409 });
 
         // «Vencidos»: vista con el filtro relativo y sin lo pagado.
