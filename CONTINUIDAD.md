@@ -389,6 +389,23 @@ fecha de fin y los módulos por plan, y v0.1.337 el WAL de Postgres vigilado y
 comprimido), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-31 — **Recomendaciones por lista con IA (PROPUESTA, esperando respuesta)**.
+  Pedido del usuario: recomendaciones de automatizaciones, tableros, etc. basadas
+  en la lista concreta (las de hoy son genéricas), sin un motor que gaste tokens
+  todo el tiempo, útiles para listas con datos y recién creadas, y que se puedan
+  apagar. Propuesta enviada: **capa 1 gratis por reglas** (estructura + conteos
+  SQL: vistas que faltan, automatizaciones con evidencia —«23 vencidos sin
+  recordatorio»—, calidad de datos, tablero; cada una aplicable con un clic) +
+  **capa 2 «Recomendar con IA» sólo al tocar el botón** (una llamada con el modelo
+  rápido, estructura + resumen de datos SIN datos personales como en
+  file-import, propuestas validadas con los constructores del asistente;
+  resultado guardado, «Volver a analizar» sólo si la lista cambió, lo descartado
+  no vuelve, cupo propio por empresa/mes, sin límite con clave propia; lista
+  vacía → una pregunta «¿para qué la usas?»). Apagado por persona y por empresa
+  (activadas / sólo gratis / apagadas), chip discreto «Sugerencias (N)», nunca
+  emergentes. **Le pregunté**: cupo por defecto (5/mes propio o el del
+  asistente), quién ve el chip (propuse sólo admin/gerente) y si van las dos capas
+  juntas o primero la gratis.
 - 2026-10-31 — **Duplicar en un clic → v0.1.340**. Reporte del usuario: "si un
   registro no tiene subtareas igual pregunta si quiero duplicar subtareas, al
   final sale «registro duplicado» y tengo que hacer clic para aceptar… son 3
