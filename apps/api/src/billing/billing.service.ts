@@ -131,6 +131,15 @@ export class BillingService {
      * solo comprobaba que "cabía uno más" y luego insertaba hasta 10 000 →
      * bypass del límite. Un solo conteo cubre todo el lote.
      */
+    /** v0.1.339 — Registros que todavía entran en el plan (`null` = sin límite). */
+    async recordsRemaining(tenantId: number): Promise<number | null> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_records;
+        if (limit === null) return null;
+        const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countRecords(tx, tenantId));
+        return Math.max(0, limit - count);
+    }
+
     async assertCanCreateRecords(tenantId: number, additional: number): Promise<void> {
         if (additional <= 0) return;
         const { plan } = await this.planStatus(tenantId);

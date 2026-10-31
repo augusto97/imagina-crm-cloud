@@ -10638,6 +10638,77 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         días» desde la consola, solo lectura, celular en oscuro, acción en lote
         sin tocar al superadmin).
 
+  - [x] **Crear una lista desde un archivo (v0.1.339, ADR-S88, pedido del
+        usuario: "que al subir un Excel la IA decida el tipo de cada campo,
+        mapee las columnas sola, pregunte qué descartar y al final recomiende
+        tablero, automatizaciones y ajustes para aprobar")**. «Nueva lista →
+        **Desde un archivo**» (y «Subir un Excel o CSV» en la bienvenida de una
+        empresa sin listas; desde una carpeta, las listas nacen ahí): se sube un
+        .xlsx o .csv y sale una lista —o varias, vinculadas— casi sola.
+        (a) **Reglas primero, gratis, sobre todo el archivo**
+        (`packages/shared/src/file-import/`): `profileSheet` decide el tipo por
+        los VALORES y el encabezado (fecha en el orden del país, moneda con
+        punto o coma de miles, teléfono, correo, enlace, porcentaje,
+        calificación, duración, selección y varias opciones con sus variantes
+        juntas), propone descartes con su motivo (vacías, repetidas, derivadas,
+        números de fila) y `buildDraftPlan` arma el plan: título, opciones con
+        color, **lo repetido con sus propios datos como lista aparte**
+        (dependencia funcional: el cliente que siempre trae el mismo correo y
+        teléfono → lista Clientes, cada fila vinculada) y **vínculos entre
+        hojas** (un Excel de varias hojas → varias listas; una columna cuyos
+        valores son títulos de otra hoja se conecta, ≥80 %). (b) **Una sola
+        función decide qué se crea** (`resolveFileImportPlan` +
+        `makeFileImportCellReader`, puras): la vista previa del navegador y el
+        servidor leen cada celda igual. (c) **Revisión**: por columna, nombre,
+        tipo (cambiarlo rearma opciones/moneda), motivo, cómo quedan los
+        primeros valores (lo que no encaja en color), opciones con color y sus
+        variantes; columnas descartadas plegadas; separar o no lo repetido (la
+        columna que se separa se muestra como «Vínculo a «Clientes»»);
+        vínculos entre hojas con su % de coincidencia; carpeta; aviso del
+        límite del plan ANTES de crear (o «importar sólo los que entran»).
+        (d) **Mejorar con IA (opcional)**: consentimiento en línea; viaja un
+        **resumen protegido** (`maskSample`: correos, teléfonos, documentos,
+        enlaces y nombres de personas/empresas reemplazados por su forma; los
+        valores de categorías sí viajan); modelo rápido con esfuerzo bajo y una
+        herramienta `submit_import_plan` que sólo devuelve parches por columna y
+        acepta/rechaza lo propuesto (`mergeAiIntoPlan`/`mergeOptions` nunca
+        pierden un valor). Lo editado a mano antes se respeta (`keepUserEdits`,
+        merge de tres vías) y «Deshacer la mejora» vuelve atrás. **Cupo propio**
+        `import_ai_monthly` (Plataforma → Asistente IA, default 3 por empresa y
+        mes) aparte de la cuota del asistente; con clave propia, sin límite; un
+        análisis fallido devuelve su cupo; bitácora `file_import.ai_request`.
+        (e) **Crear**: plan → `buildCreateListBlueprint` → `materialize` (en
+        carpeta si son varias, nombres que chocan con listas existentes ganan
+        « 2»), filas por tandas validando cada celda con `validateFieldValue`
+        (la que no encaja queda vacía con aviso y la fila entra), duplicados
+        saltados, vínculos por título normalizado (un valor sin registro entra
+        sin vínculo y se informa), huella del archivo contra el análisis (Redis,
+        2 h), candado y bitácora `file_import.apply`. Tipo de contenido propio
+        `application/vnd.imagina.file-import+json` con tope de 24 MB sólo en
+        `/api/v1/file-import/*`. (f) **Recomendaciones al final**
+        (`buildRecommendations`, puro): kanban por el estado, calendario por el
+        vencimiento (gana a una «Fecha» suelta), el tablero de la galería que
+        encaja (`suggestRoleMapping`), hasta 3 ideas de automatización de la
+        categoría de los datos (facturas → cobros) y formulario/invitar; cada
+        una se aprueba con un clic. **Tres bugs atrapados en el E2E**: un monto
+        con miles agrupados («1.013.500») se detectaba como teléfono; «Tarea 1»
+        o «Cliente 7» se leían como número (el lector tolerante de «COP 1.500»
+        les sacaba el 1 → `looksNumeric`); y la IA pisaba lo que la persona ya
+        había renombrado. De paso, el botón «Primeros pasos» se oculta en esta
+        pantalla (tapaba «Crear»). Ayuda: guía «¿Cómo creo una lista a partir de
+        un Excel?», artículo en Aprende → Importar, exportar y plantillas, dos
+        ilustraciones animadas nuevas y novedad con carrusel. Tests: 14 en
+        shared (perfil, borrador, resolver, lector de celdas), 8 de la API
+        (`file-import.spec`: entidad y carpeta, duplicados y celdas inválidas,
+        dos hojas vinculadas, límite del plan, archivo cambiado, IA con resumen
+        protegido y cupo con devolución, disponibilidad), 8 del front — API
+        1818 + 1 omitido, front 700 y shared 612 en verde — + E2E navegador 37/37 contra
+        un proveedor de IA simulado (`scripts/dev/fake-anthropic.mjs`):
+        bienvenida → CSV de facturas → IA sin datos personales → 2 listas con
+        60 vínculos y valores limpios → kanban y tablero aprobados; Excel de dos
+        hojas → 39 tareas vinculadas y la que no encontró su proyecto avisada;
+        aviso de límite en un trial casi lleno; oscuro y celular sin desborde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

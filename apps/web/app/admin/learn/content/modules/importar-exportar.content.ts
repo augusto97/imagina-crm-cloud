@@ -3,6 +3,105 @@ import type { LearnArticle } from '../types';
 export const articles: LearnArticle[] = [
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'importar-exportar-desde-archivo',
+        route: '/lists/new/file',
+        related: ['importar-exportar-importar', 'listas-y-campos-crear', 'importar-exportar-actualizar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Si tus datos ya están en una planilla (facturas, clientes, proyectos, inventario), no hace falta diseñar la lista campo por campo: súbela y la app arma **una propuesta completa** que revisas antes de crear nada. Mira los datos de cada columna, no sólo su nombre, y te dice por qué eligió cada cosa.',
+            },
+            { t: 'anim', key: 'archivo-a-lista', caption: 'De una planilla de facturas sale un plan columna por columna, la IA junta «PAGADO» y «pagada», y quedan dos listas vinculadas: Facturas y Clientes.' },
+            { t: 'h', text: 'Dónde está' },
+            {
+                t: 'p',
+                md: 'Toca **Nueva lista** y elige **Desde un archivo**. Si tu empresa todavía no tiene listas, la bienvenida también ofrece **Subir un Excel o CSV**. Desde el botón **Nueva lista aquí** de una carpeta, las listas nacen dentro de esa carpeta.',
+            },
+            { t: 'h', text: 'Paso a paso' },
+            {
+                t: 'steps',
+                items: [
+                    'Sube tu archivo .xlsx o .csv (arrástralo o haz clic). La primera fila tiene que traer los nombres de las columnas. En un Excel se leen todas las hojas visibles con datos, hasta 5.',
+                    'Al instante ves el plan: cada columna con su **tipo** (fecha, moneda, teléfono, correo, selección con colores…), el **motivo** y cómo van a quedar sus primeros valores. Lo que no encaje se marca en color.',
+                    'Revisa las columnas que se proponen **descartar** (vacías, repetidas, números de fila, fórmulas sueltas): están plegadas al final y vuelven con un clic.',
+                    'Si aparece **Separar «Cliente» en su propia lista**, decide si lo quieres: cada fila queda conectada con su cliente y los datos del cliente (correo, teléfono) se van con él.',
+                    'Si quieres, toca **Mejorar con IA** (abajo te explicamos qué viaja). Después toca **Crear la lista** (o **Crear las listas**).',
+                ],
+            },
+            { t: 'h', text: 'Lo que la app decide por ti' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'El tipo de cada columna', what: 'Según los valores: fechas en el orden de tu país, montos con punto o coma de miles, teléfonos con su indicativo, correos y enlaces. Un encabezado como «Valor» o «Teléfono» ayuda a decidir.', tip: 'Puedes cambiar el tipo de cualquier columna: la vista previa muestra al instante cómo quedan los valores.' },
+                    { name: 'Opciones limpias', what: 'Una columna con pocos valores repetidos pasa a ser una selección con colores, y lo escrito distinto («PAGADO», «pagada») se junta en una sola opción.' },
+                    { name: 'El título de cada registro', what: 'Se elige la columna que mejor identifica cada fila (un nombre o un número de factura). Puedes elegir otra.' },
+                    { name: 'Filas repetidas', what: 'Si el archivo trae filas idénticas, se ofrece saltarlas.' },
+                    { name: 'Celdas que no encajan', what: 'Un valor que no es lo que pide su columna (un texto en una fecha) no frena nada: la fila entra igual, esa celda queda vacía y al final ves la lista de esas celdas.' },
+                    { name: 'Moneda y país', what: 'Se toman de la zona horaria de tu empresa; puedes cambiarlos por columna.' },
+                ],
+            },
+            { t: 'h', text: 'Listas vinculadas' },
+            {
+                t: 'p',
+                md: 'Dos casos se resuelven solos. **Algo repetido con sus propios datos**: en una hoja de facturas donde cada cliente aparece varias veces siempre con el mismo correo y teléfono, la app propone una lista de **Clientes** aparte; cada factura queda vinculada a su cliente. **Un Excel con varias hojas**: cada hoja se convierte en una lista, y una columna que nombra registros de otra hoja (la columna «Proyecto» de la hoja de tareas) queda conectada. Si se crea más de una lista, van juntas en una carpeta.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Si un valor no encuentra su registro',
+                md: 'Una tarea que nombra un proyecto que no está en la otra hoja entra igual, sin vínculo, y al final te dice cuál fue para que lo corrijas a mano.',
+            },
+            { t: 'h', text: 'Mejorar con IA' },
+            {
+                t: 'p',
+                md: 'La IA revisa la propuesta y la afina: nombres más claros, opciones que estaban escritas de varias formas, tipos mejor elegidos y columnas que no hacen falta. Lo que ya cambiaste a mano se respeta, y con **Deshacer la mejora** vuelves a como estaba. Las columnas que cambió quedan marcadas con ✦.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Qué viaja al proveedor de IA',
+                md: 'Sólo un **resumen protegido**: los nombres de las columnas, el tipo que parece tener cada una y ejemplos donde los correos, teléfonos, documentos y nombres de personas o empresas van **ocultos**. Los valores de categorías (estados, ciudades, tipos) sí se envían, para poder ordenarlos. El archivo completo nunca sale de tu navegador, y antes de usarla marcas que estás de acuerdo.',
+            },
+            { t: 'h', text: 'Al terminar: recomendaciones' },
+            { t: 'anim', key: 'archivo-recomendaciones', caption: 'Tras crear las listas, se aprueba un tablero por estado y un tablero de cartera con un clic.' },
+            {
+                t: 'p',
+                md: 'Con las listas creadas, la app te recomienda lo que suele servir para esos datos: un **tablero por estado** para mover las tarjetas, un **calendario** por la fecha de vencimiento, un **tablero de gráficos** que encaja con tus columnas y **automatizaciones** de la galería de ideas (por ejemplo, un recordatorio de pago para facturas). Nada se crea solo: apruebas las que te sirvan y todo se puede cambiar o borrar después.',
+            },
+            {
+                t: 'settings',
+                title: 'Límites',
+                rows: [
+                    { name: 'Filas', what: 'Hasta 5.000 por hoja y 60 columnas. Si el archivo trae más, se avisa y se toman las primeras.' },
+                    { name: 'Registros del plan', what: 'Si el archivo trae más registros de los que le quedan a tu plan, te avisa antes de crear nada y puedes importar sólo los que entran.' },
+                    { name: 'Análisis con IA', what: 'Cada empresa tiene algunos análisis con IA al mes para esto (la cantidad aparece junto al botón), aparte de lo que use el asistente. Con una clave de IA propia no hay límite.' },
+                    { name: 'Formatos', what: 'Excel moderno (.xlsx) y CSV. Un Excel antiguo (.xls) o protegido con contraseña: ábrelo y guárdalo como .xlsx.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una distribuidora que deja su Excel de cartera',
+                md: 'Subió «cartera.xlsx» con N° factura, Cliente, Correo, Teléfono, Fecha, Vence, Valor y Estado. La app propuso Valor como moneda, las fechas en día/mes/año, Estado como selección (juntó «PAGADO», «pagada» y «Pagada») y una lista de Clientes aparte con su correo y teléfono. Al terminar aprobó el tablero por estado y el tablero «Cartera y cobros»: en cinco minutos tenía la cartera ordenada y sus números a la vista.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Y si quiero agregar registros a una lista que ya tengo?', a: 'Para eso está **Importar registros** dentro de la lista: emparejas las columnas con los campos que ya existen.' },
+                    { q: 'No veo «Mejorar con IA».', a: 'Hace falta que la IA esté disponible para tu empresa. Si no lo está, el plan igual se arma con las reglas automáticas y puedes ajustarlo a mano.' },
+                    { q: '¿Se disparan automatizaciones al crear la lista?', a: 'No: las listas son nuevas y todavía no tienen automatizaciones. Las que apruebes al final empiezan a funcionar con los registros que lleguen después.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Crear desde un archivo', to: '/lists/new/file' },
+                    { label: 'Importar a una lista que ya tengo', article: 'importar-exportar-importar' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'importar-exportar-importar',
         route: '/lists',
         related: ['importar-exportar-actualizar', 'importar-exportar-exportar', 'listas-y-campos-crear', 'listas-y-campos-reglas'],

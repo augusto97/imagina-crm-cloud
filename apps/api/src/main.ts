@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { isBlockedCrossSite } from './common/cross-site';
 import { ApiExceptionFilter } from './common/http-exception.filter';
 import { registerRequestInputHooks } from './common/request-input';
+import { FILE_IMPORT_CONTENT_TYPE } from '@imagina-base/shared';
 import { loadEnv } from './config/env';
 import { recordServerError } from './observability/diagnostics';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
@@ -101,6 +102,30 @@ async function bootstrap(): Promise<void> {
     // (El token endpoint OAuth recibe `x-www-form-urlencoded`: el adapter de
     // Nest ya registra @fastify/formbody, no hace falta otro parser.)
     const fastify = app.getHttpAdapter().getInstance();
+    // v0.1.339 (ADR-S88) — «Crear desde un archivo» manda las hojas como texto
+    // y pueden pasar del tope general: un tipo de contenido propio con su
+    // propio tope, que SÓLO aceptan esas rutas. Cualquier otra ruta lo
+    // rechaza antes de leer el cuerpo.
+    const isFileImportUrl = (url: string): boolean => (url.split('?')[0] ?? '').startsWith('/api/v1/file-import/');
+    fastify.addHook('onRequest', (req, reply, done) => {
+        const ct = String(req.headers['content-type'] ?? '');
+        if (ct.startsWith(FILE_IMPORT_CONTENT_TYPE) && !isFileImportUrl(req.url)) {
+            void reply.code(415).send({ code: 'unsupported_media_type', message: 'Tipo de contenido no admitido.', data: { status: 415 } });
+            return;
+        }
+        done();
+    });
+    fastify.addContentTypeParser(FILE_IMPORT_CONTENT_TYPE, { parseAs: 'string', bodyLimit: env.FILE_IMPORT_BODY_LIMIT_BYTES }, (req, body, done) => {
+        if (!isFileImportUrl(req.url)) {
+            done(Object.assign(new Error('Tipo de contenido no admitido.'), { statusCode: 415 }), undefined);
+            return;
+        }
+        try {
+            done(null, JSON.parse(body as string));
+        } catch {
+            done(Object.assign(new Error('El cuerpo del pedido no es JSON válido.'), { statusCode: 400 }), undefined);
+        }
+    });
     // CORS acotado a las superficies OAuth/MCP (v0.1.184): un cliente MCP que
     // corre EN el navegador (MCP Inspector, apps web) descubre la metadata y
     // canjea tokens con fetch cross-origin. No lleva cookies (auth por Bearer),

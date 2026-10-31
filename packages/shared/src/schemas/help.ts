@@ -160,6 +160,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     const out: string[] = [];
     const path = pathname.replace(/\/+$/, '') || '/';
     if (path === '/lists' || /^\/folders\/[^/]+$/.test(path)) out.push('lists-index');
+    // v0.1.339 — «Crear desde un archivo».
+    if (path === '/lists/new/file') out.push('lists-index', 'lists-index:archivo');
     if (/^\/lists\/[^/]+\/records$/.test(path)) {
         out.push('records');
         if (params.record) out.push('record');

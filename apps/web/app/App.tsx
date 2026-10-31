@@ -33,6 +33,8 @@ import type { PlanModule as PlanModuleKey } from '@imagina-base/shared';
 // baja al entrar es el shell + el índice de listas + la tabla de registros.
 const RecordPage = lazyWithReload(() => import('@/admin/records/RecordPage').then(m => ({ default: m.RecordPage })));
 const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(m => ({ default: m.FolderPage })));
+// v0.1.339 — «Crear desde un archivo» (Excel/CSV → listas, con IA opcional).
+const FileImportPage = lazyWithReload(() => import('@/admin/file-import/FileImportPage').then(m => ({ default: m.FileImportPage })));
 const MyWorkPage = lazyWithReload(() => import('@/admin/mywork/MyWorkPage').then(m => ({ default: m.MyWorkPage })));
 // C5 — la pantalla a la que llevan los botones Aprobar / Rechazar del correo.
 const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/ApprovalConfirmPage').then(m => ({ default: m.ApprovalConfirmPage })));
@@ -122,6 +124,9 @@ export function App(): JSX.Element {
             <Route element={<AdminShell />}>
                 <Route index element={<Navigate to="/lists" replace />} />
                 <Route path="lists" element={<ListsIndexPage />} />
+                <Route path="lists/new/file" element={
+                    <Suspense fallback={<RouteFallback />}><FileImportPage /></Suspense>
+                } />
                 <Route path="lists/:listSlug/edit" element={
                     <Suspense fallback={<RouteFallback />}><ListBuilderPage /></Suspense>
                 } />

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Copy, FilePlus2, LayoutTemplate, X } from 'lucide-react';
+import { Copy, FilePlus2, FileSpreadsheet, LayoutTemplate, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ interface ListCreateDialogProps {
     initialMode?: Mode;
 }
 
-type Mode = 'blank' | 'template' | 'duplicate';
+type Mode = 'blank' | 'template' | 'duplicate' | 'file';
 
 /**
  * "Nueva lista" (v0.1.166): tres caminos, como al crear en ClickUp o
@@ -82,6 +82,7 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                                 {mode === 'blank' && __('Define el nombre y los campos llegarán después.')}
                                 {mode === 'template' && __('Elige una plantilla: nace con campos, vistas y automatizaciones listos.')}
                                 {mode === 'duplicate' && __('Una copia de una lista que ya tienes.')}
+                                {mode === 'file' && __('Sube un Excel o un CSV y la lista se arma sola con tus datos.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
@@ -92,8 +93,9 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                     </div>
 
                     {/* Selector de camino */}
-                    <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-3 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1" data-tour="list-create-modes">
+                    <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-2 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1 sm:imcrm-grid-cols-4" data-tour="list-create-modes">
                         <ModeButton active={mode === 'template'} onClick={() => setMode('template')} icon={LayoutTemplate} label={__('Plantilla')} />
+                        <ModeButton active={mode === 'file'} onClick={() => setMode('file')} icon={FileSpreadsheet} label={__('Desde un archivo')} testId="list-create-mode-file" />
                         <ModeButton active={mode === 'blank'} onClick={() => setMode('blank')} icon={FilePlus2} label={__('En blanco')} />
                         <ModeButton active={mode === 'duplicate'} onClick={() => setMode('duplicate')} icon={Copy} label={__('Duplicar')} />
                     </div>
@@ -116,6 +118,26 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                             />
                         )}
                         {mode === 'duplicate' && <DuplicateListForm groupId={groupId} onDone={() => onOpenChange(false)} />}
+                        {mode === 'file' && (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="list-create-file">
+                                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-text-sm imcrm-text-muted-foreground">
+                                    <li>{__('• Elige el tipo de cada columna según los datos (fechas, montos, teléfonos, opciones con color).')}</li>
+                                    <li>{__('• Te sugiere qué columnas no hacen falta y separa lo repetido (los clientes de una hoja de facturas) en otra lista vinculada.')}</li>
+                                    <li>{__('• Revisas todo antes de crear y al final te recomienda vistas, un tablero y automatizaciones.')}</li>
+                                </ul>
+                                <Button
+                                    className="imcrm-gap-2 imcrm-self-start"
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        navigate(`/lists/new/file${groupId ? `?carpeta=${groupId}` : ''}`);
+                                    }}
+                                    data-testid="list-create-file-go"
+                                >
+                                    <Sparkles className="imcrm-h-4 imcrm-w-4" />
+                                    {__('Subir un archivo')}
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </Dialog.Content>
             </Dialog.Portal>
@@ -128,17 +150,20 @@ function ModeButton({
     onClick,
     icon: Icon,
     label,
+    testId,
 }: {
     active: boolean;
     onClick: () => void;
     icon: React.ComponentType<{ className?: string }>;
     label: string;
+    testId?: string;
 }): JSX.Element {
     return (
         <button
             type="button"
             onClick={onClick}
             aria-pressed={active}
+            data-testid={testId}
             className={cn(
                 'imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm imcrm-transition-colors',
                 active

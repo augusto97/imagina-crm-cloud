@@ -50,6 +50,14 @@ export const platformAiSettingsSchema = z.object({
     share_platform_key: z.boolean(),
     /** Las empresas pueden cargar SU propia clave (BYOK). */
     allow_tenant_keys: z.boolean(),
+    /**
+     * v0.1.339 (ADR-S88) — Análisis con IA de «Crear desde un archivo» por
+     * empresa y por mes con la clave de la PLATAFORMA. Es un cupo aparte de la
+     * cuota del plan (sirve para empezar: nadie gasta su cuota en eso) y no
+     * exige el módulo de IA del plan. 0 = sin IA para importar; una empresa
+     * con clave propia no tiene tope.
+     */
+    import_ai_monthly: z.number().int().min(0).max(1000),
 });
 export type PlatformAiSettings = z.infer<typeof platformAiSettingsSchema>;
 
@@ -64,6 +72,7 @@ export const updatePlatformAiSettingsSchema = z
         effort: aiEffortSchema,
         share_platform_key: z.boolean(),
         allow_tenant_keys: z.boolean(),
+        import_ai_monthly: z.number().int().min(0).max(1000),
     })
     .partial()
     .refine((p) => Object.keys(p).length > 0, { message: 'El patch no puede estar vacío' });

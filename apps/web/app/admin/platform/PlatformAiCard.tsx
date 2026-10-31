@@ -39,6 +39,7 @@ export function PlatformAiCard(): JSX.Element | null {
     const [effort, setEffort] = useState<AiEffort>(DEFAULT_AI_EFFORT);
     const [share, setShare] = useState(true);
     const [allowOwn, setAllowOwn] = useState(true);
+    const [importMonthly, setImportMonthly] = useState('3');
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
     useEffect(() => {
@@ -49,6 +50,7 @@ export function PlatformAiCard(): JSX.Element | null {
         setEffort(s.effort);
         setShare(s.share_platform_key);
         setAllowOwn(s.allow_tenant_keys);
+        setImportMonthly(String(s.import_ai_monthly ?? 3));
         setApiKey('');
     }, [q.data]);
 
@@ -60,6 +62,7 @@ export function PlatformAiCard(): JSX.Element | null {
                 effort,
                 share_platform_key: share,
                 allow_tenant_keys: allowOwn,
+                import_ai_monthly: Math.max(0, Math.min(1000, Math.round(Number(importMonthly) || 0))),
                 ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
             }),
         onSuccess: () => {
@@ -210,6 +213,27 @@ export function PlatformAiCard(): JSX.Element | null {
                         <p className="imcrm-text-xs imcrm-text-warning">{__('Con las dos apagadas ninguna empresa puede usar el asistente.')}</p>
                     )}
                 </fieldset>
+
+                {/* v0.1.339 (ADR-S88) — cupo aparte para «Crear desde un archivo». */}
+                <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm" htmlFor="pai-import-monthly">
+                    <span className="imcrm-font-medium">{__('Análisis con IA para crear listas desde un archivo')}</span>
+                    <span className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <Input
+                            id="pai-import-monthly"
+                            type="number"
+                            min={0}
+                            max={1000}
+                            value={importMonthly}
+                            onChange={(e) => setImportMonthly(e.target.value)}
+                            className="imcrm-h-8 imcrm-w-24"
+                            data-testid="imcrm-pai-import-monthly"
+                        />
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('por empresa y por mes')}</span>
+                    </span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Un cupo aparte de la cuota del plan, para que cualquier empresa pueda empezar subiendo su planilla (aunque su plan no incluya IA). Se usa tu clave; 0 lo apaga. Las empresas con clave propia no tienen tope.')}
+                    </span>
+                </label>
 
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                     <Button onClick={() => save.mutate()} disabled={save.isPending || !s} data-testid="imcrm-pai-save">

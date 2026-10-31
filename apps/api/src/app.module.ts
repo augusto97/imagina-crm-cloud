@@ -5,6 +5,7 @@ import { AiModule } from './ai/ai.module';
 import { AgentHubModule } from './ai-agents/agent-hub';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { FileImportModule } from './file-import/file-import.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { HelpdeskModule } from './helpdesk/helpdesk.module';
@@ -178,6 +179,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         AiAgentsModule,
         // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.
         OnboardingModule,
+        FileImportModule,
         // Fase 7 — novedades (catálogo de cada versión + lo que publica el operador).
         WhatsNewModule,
     ],

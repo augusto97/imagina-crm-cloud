@@ -108,6 +108,12 @@ const envSchema = z.object({
     // Tope de tamaño de body (bytes). Acota payloads abusivos; con holgura para
     // imports por lotes.
     BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+    /**
+     * v0.1.339 (ADR-S88) — tope del cuerpo de «Crear desde un archivo» (las
+     * hojas viajan como texto). Sólo lo usan esas rutas, con su propio tipo de
+     * contenido; el resto del API sigue con BODY_LIMIT_BYTES.
+     */
+    FILE_IMPORT_BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(24 * 1024 * 1024),
     /** Directorio de archivos subidos (driver local de FileStorage — ADR-S16). */
     UPLOADS_DIR: z.string().default('./data/uploads'),
     /**
