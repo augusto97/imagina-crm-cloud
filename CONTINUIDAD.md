@@ -382,14 +382,29 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.343**
-(el ícono de la app como ícono de app: fondo de borde a borde con los colores
-del logo, la marca separada del emblema y la apertura de Android elegible;
-antes v0.1.342 navegación del celular con barra de pestañas, v0.1.341
-sugerencias para cada lista y v0.1.340 duplicar un registro en un clic), en
-`main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.344**
+(el QR de cada registro, etiquetas para imprimir, el QR en correos, WhatsApp
+y PDF, y un escáner que se explica; antes v0.1.343 el ícono de la app como
+ícono de app, v0.1.342 navegación del celular con barra de pestañas y v0.1.341
+sugerencias para cada lista), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-02 — **QR de los registros → v0.1.344** (ADR-S92). Pregunta del
+  usuario: "lo de los códigos qr, ¿cómo funciona? no entiendo qué hacen, solo
+  pusiste un icono que escanea qr pero ni idea cómo usarlo o su utilidad". Le
+  expliqué el escáner (busca por el campo «Código» de la lista, escaneo
+  continuo, crear con el código puesto) y reconocí el hueco: la app no generaba
+  códigos y no lo explicaba. Le propuse tres mejoras y respondió **"sí, hazlas
+  las tres"**:
+  1. QR por registro y etiquetas en PDF.
+  2. El QR en correos, WhatsApp y PDF.
+  3. Una explicación del escáner la primera vez.
+
+  **Hecho**: las tres. **Decisión mía, avisada**: el QR guarda por defecto el
+  ENLACE a la ficha (sirve en cualquier lista sin configurar nada). El código
+  del campo es opcional para quien ya tiene SKU o serial. **Queda abierto**:
+  que lo pruebe con etiquetas reales. Si usa otra marca de etiquetas que no
+  coincide con los formatos de carta, A4 o rollo, se agrega su medida.
 - 2026-11-02 — **Ícono de la app y pantalla de apertura → v0.1.343**
   (ADR-S91). Pedido del usuario: "la primera pantalla de la PWA, el fondo con
   sólo el logo y un círculo alrededor, se ve feo; el fondo del ícono de la app
@@ -1154,6 +1169,30 @@ sugerencias para cada lista y v0.1.340 duplicar un registro en un clic), en
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-02 · v0.1.344** — **El QR de cada registro** (ADR-S92; pregunta
+  del usuario, ver §10).
+  - **Botón «Código QR»** en el modal, la página y el menú de la fila. Muestra
+    la imagen y qué hace al escanearla, y deja descargarla, imprimir su
+    etiqueta o copiar. Guarda el enlace a la ficha, o el valor del campo
+    «Código» si se elige.
+  - **Imagen pública firmada** (`/api/v1/public/qr/<token>.png`), sin sesión
+    para Gmail, Outlook y WhatsApp. No vence y un token falso da 404.
+  - **Etiquetas en PDF** desde la selección, desde Personalizar vista o desde
+    el escáner. Formatos carta, A4 y rollo; nombre, código y hasta dos datos;
+    se puede empezar en una etiqueta ya usada; respeta el acceso de quien
+    imprime.
+  - **Variables** `{{registro.enlace}}`, `{{registro.qr}}` y `{{campo|qr}}`
+    en correos, WhatsApp, SMS y PDF, con un botón en cada editor.
+  - **El escáner se explica** la primera vez y no pide la cámara antes de
+    tiempo.
+  - **Bug atrapado en el E2E**: el QR de un enlace largo respondía 414. Fastify
+    corta los parámetros a 100 caracteres; la ruta pasó a comodín.
+  - **Ayuda**: guía, artículo en Aprende con su ilustración, y novedad con
+    carrusel.
+  - **Tests**: shared 630 (6 nuevos), front 727, API `record-qr.spec` 5/5 y
+    los specs de automatizaciones, documentos, SMS y WhatsApp en verde.
+  - **E2E en el navegador**: 41/41. Los QR del PDF y de la imagen descargada
+    se decodificaron con zxing.
 - **2026-11-02 · v0.1.343** — **El ícono de la app como ícono de app**
   (ADR-S91; pedido del usuario, ver §10). Plataforma → Marca arma el ícono con
   fondo de borde a borde (degradado o sólido, sugerido de los colores del logo)

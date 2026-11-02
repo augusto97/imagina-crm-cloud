@@ -935,4 +935,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Abre la app en tu teléfono. Si perteneces a más de una empresa, toca su nombre en la barra de arriba para cambiar. En el computador todo sigue igual: el menú de la izquierda, ahora con Ajustes ordenado por tema.',
         action: { label: 'Ver cómo funciona', href: '/lists', tour: 'welcome' },
     },
+    {
+        key: 'v0.1.344-qr-etiquetas',
+        version: '0.1.344',
+        date: '2026-11-02',
+        kind: 'feature',
+        title: 'Cada registro tiene su código QR: imprime etiquetas y mándalo por correo',
+        summary:
+            'Imprime etiquetas con el QR de tus productos, equipos o carpetas y pégalas: al escanearlas con la app se abre su ficha. El QR de cada registro también viaja en correos, WhatsApp y PDF.',
+        media: {
+            slides: [
+                {
+                    title: 'Etiquetas listas para imprimir',
+                    text: 'Marca los registros y toca «Etiquetas». Hojas Carta o A4 de las medidas comunes, o el rollo de una impresora térmica, con el nombre y hasta dos datos debajo del QR.',
+                    illustration: 'etiquetas-qr',
+                },
+                {
+                    title: 'Escanea y se abre la ficha',
+                    text: 'Con el escáner de la lista o de la búsqueda, cada etiqueta abre su registro. La primera vez que lo abres, el escáner te explica cómo funciona.',
+                    illustration: 'dia-escaner',
+                },
+                {
+                    title: 'El QR en tus mensajes',
+                    text: 'En un correo de una automatización, el bloque Imagen con «Usar el código QR del registro»: cada invitado recibe su entrada con su propio QR.',
+                    illustration: 'correo-editor',
+                },
+            ],
+        },
+        body: 'El QR de un registro está en el ícono **Código QR** de su ficha. Para muchos, márcalos en la tabla y toca **Etiquetas**. En las automatizaciones tienes **{{registro.qr}}** (la imagen del QR) y **{{registro.enlace}}** (el enlace a la ficha).',
+        action: { label: 'Ir a mis listas', href: '/lists' },
+    },
 ];

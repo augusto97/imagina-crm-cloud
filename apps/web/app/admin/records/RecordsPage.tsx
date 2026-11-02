@@ -130,6 +130,7 @@ import { HelpdeskManagedContext, useHelpdeskManagedIds } from '@/admin/helpdesk/
 const BulkEditDialog = lazyWithReload(() => import('./bulk/BulkEditDialog').then((m) => ({ default: m.BulkEditDialog })));
 const BulkHistorySheet = lazyWithReload(() => import('./bulk/BulkHistorySheet').then((m) => ({ default: m.BulkHistorySheet })));
 const BulkStructureDialog = lazyWithReload(() => import('./bulk/BulkStructureDialog').then((m) => ({ default: m.BulkStructureDialog })));
+const RecordLabelsDialog = lazyWithReload(() => import('@/admin/qr/RecordLabelsDialog'));
 const CsvUpdateDialog = lazyWithReload(() => import('./bulk/CsvUpdateDialog').then((m) => ({ default: m.CsvUpdateDialog })));
 const StoreBulkDialog = lazyWithReload(() => import('./bulk/StoreBulkDialog').then((m) => ({ default: m.StoreBulkDialog })));
 const ButtonBulkDialog = lazyWithReload(() => import('./buttons/ButtonBulkDialog').then((m) => ({ default: m.ButtonBulkDialog })));
@@ -392,6 +393,8 @@ export function RecordsPage(): JSX.Element {
     const [bulkHistoryOpen, setBulkHistoryOpen] = useState(false);
     // v0.1.219 — actualizar registros existentes desde un archivo.
     const [csvUpdateOpen, setCsvUpdateOpen] = useState(false);
+    // v0.1.344 — etiquetas con QR: de la selección o de todo lo que muestra la vista.
+    const [labelsFor, setLabelsFor] = useState<'selection' | 'matching' | null>(null);
     // v0.1.220 — mover como subtareas / duplicar / borrar en lote, y el
     // atajo «Asignar» (la edición masiva ya apuntada al campo de persona).
     const [structure, setStructure] = useState<{ action: BulkStructureAction; matching: boolean } | null>(null);
@@ -1415,6 +1418,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         canCreate={canCreateRecords}
                         canManageList={canManageList}
                         onOpenRecord={(id) => setDrawerRecordId(id)}
+                        onPrintLabels={!guest.isGuest ? () => setLabelsFor('matching') : undefined}
                         onCreate={(prefill) => {
                             setCreateDefaults(prefill);
                             setCreateParentId(null);
@@ -1492,6 +1496,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
                     onCsvUpdate={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
+                    onPrintLabels={!guest.isGuest ? () => setLabelsFor('matching') : undefined}
                     onConfigureBoard={
                         isKanban && activeView && canManageViews && canWriteView(activeView)
                             ? () => {
@@ -1632,6 +1637,26 @@ const applyView = (view: SavedViewEntity | null): void => {
                         canActMatching={canBulkEdit}
                         goneFrom={{ source: mirrorSourceName(storeRules.marker), statusFieldId: mirrorGoneFieldId(storeRules.marker)!, count: sourceGone.data ?? 0 }}
                         onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
+            )}
+
+            {list.data && labelsFor !== null && (
+                <Suspense fallback={null}>
+                    <RecordLabelsDialog
+                        listId={list.data.id}
+                        fields={fields.data ?? []}
+                        listSettings={list.data.settings as Record<string, unknown>}
+                        target={
+                            labelsFor === 'selection'
+                                ? { ids: selectedIds }
+                                : {
+                                      filter_tree: state.filterTree,
+                                      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+                                  }
+                        }
+                        count={labelsFor === 'selection' ? selectedIds.length : (matchingCount ?? null)}
+                        onClose={() => setLabelsFor(null)}
                     />
                 </Suspense>
             )}
@@ -1906,6 +1931,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         pressButtons={bulkButtons.map((b) => ({ id: b.field.id, label: b.label, reason: b.reason }))}
                         onPressButton={setBulkButtonId}
                         onSendSms={smsConnections.length > 0 ? () => setBulkSmsOpen(true) : undefined}
+                        onPrintLabels={!guest.isGuest ? () => setLabelsFor('selection') : undefined}
                         onAssign={
                             assignField
                                 ? () => {

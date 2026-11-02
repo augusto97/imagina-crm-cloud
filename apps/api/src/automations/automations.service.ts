@@ -45,6 +45,7 @@ import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { EmailComposer, type ComposedEmail } from './email-composer';
 import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
+import { recordLinkFor, recordTokenValue } from '../qr/qr-runtime';
 import { DocumentsService } from '../documents/documents.service';
 import { MailService } from '../mail/mail.service';
 import type { MailAttachment } from '../mail/mail.types';
@@ -637,9 +638,13 @@ export class AutomationsService {
 
         const data = (sample.record?.data ?? {}) as Record<string, unknown>;
         const tz = this.timeZones ? await this.timeZones.orUtc(tenantId) : FALLBACK_TIME_ZONE;
+        // v0.1.344 — {{registro.enlace}} / {{registro.qr}} del registro de muestra.
+        const link = sample.record ? await recordLinkFor(tenantId, list.slug, sample.record.id) : '';
         const accessor = (token: string): unknown => {
             if (token === 'date.now') return new Date().toISOString().slice(0, 19).replace('T', ' ');
             if (token === 'date.today') return zonedToday(tz);
+            const recordToken = recordTokenValue(token, link);
+            if (recordToken !== undefined) return recordToken;
             const key = sample.slugToKey.get(token.replace(/^before\./, ''));
             return key !== undefined ? data[key] : undefined;
         };

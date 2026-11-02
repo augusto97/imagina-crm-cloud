@@ -368,7 +368,7 @@ export function safeEmailUrl(raw: string, kind: 'link' | 'image' = 'link'): stri
     return null;
 }
 
-const TAG_RE = /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga))*)\s*\}\}/g;
+const TAG_RE = /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga|fecha|fechahora|moneda|numero|qr))*)\s*\}\}/g;
 
 /** ¿El texto tiene alguna variable `{{…}}`? */
 export function hasMergeTag(s: string): boolean {

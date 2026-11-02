@@ -157,7 +157,9 @@ describe('H3 — códigos escaneados', () => {
     it('un QR con el enlace de un registro de ESTA app se abre directo', () => {
         expect(parseRecordLinkCode(`${origin}/#/lists/inventario/records/42`, origin)).toEqual({ listSlug: 'inventario', recordId: 42 });
         expect(parseRecordLinkCode(`${origin}/#/lists/inventario/records?view=3&record=9`, origin)).toEqual({ listSlug: 'inventario', recordId: 9 });
-        expect(parseRecordLinkCode('https://otro.test/#/lists/x/records/1', origin)).toBeNull();
+        // v0.1.344 — también por otro dominio (el de la empresa en una etiqueta impresa).
+        expect(parseRecordLinkCode('https://crm.acme.co/lists/x/records/1', origin)).toEqual({ listSlug: 'x', recordId: 1 });
+        expect(parseRecordLinkCode('https://otro.test/una/pagina', origin)).toBeNull();
         expect(parseRecordLinkCode('7701234567890', origin)).toBeNull();
     });
 

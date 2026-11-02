@@ -134,6 +134,9 @@ importers:
       pg:
         specifier: ^8.16.0
         version: 8.22.0
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -177,6 +180,9 @@ importers:
       '@types/pg':
         specifier: ^8.15.4
         version: 8.20.0
+      '@types/qrcode':
+        specifier: ^1.5.6
+        version: 1.5.6
       drizzle-kit:
         specifier: ^0.31.1
         version: 0.31.10

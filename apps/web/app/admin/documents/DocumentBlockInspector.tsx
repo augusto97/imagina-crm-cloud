@@ -198,6 +198,19 @@ function contentFor(p: DocInspectorProps): React.ReactNode {
                     >
                         {tagInput(p, block.value, (v) => onPatch({ value: v }), { placeholder: 'https://…  o  {{link_de_pago}}' })}
                     </Field>
+                    {/* v0.1.344 — el QR del registro: escaneado con la app, abre su ficha. */}
+                    {block.value.trim() !== '{{registro.enlace}}' && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="imcrm-justify-start imcrm-gap-1.5 imcrm-text-xs"
+                            onClick={() => onPatch({ value: '{{registro.enlace}}' })}
+                            data-testid="doc-qr-use-record"
+                        >
+                            {__('Usar el enlace a la ficha del registro')}
+                        </Button>
+                    )}
                     <Field label={__('Texto debajo (opcional)')}>
                         {tagInput(p, block.caption, (v) => onPatch({ caption: v }), { placeholder: __('Escanea para pagar') })}
                     </Field>

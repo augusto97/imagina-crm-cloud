@@ -46,6 +46,8 @@ import {
     type SmsListColumns,
     type SmsListFields,
     type SmsRecordInfo,
+    type RecordQrInfo,
+    type RecordLabelsInput,
     type SmsSendInput,
     type SmsSendResult,
     type SmsTestSendInput,
@@ -1199,6 +1201,31 @@ export class CloudClient {
     }
     smsSetupListColumns(list: string | number): Promise<SmsListColumns> {
         return this.request('POST', `/lists/${list}/sms/setup`, { body: {}, schema: z.custom<SmsListColumns>() });
+    }
+    /** v0.1.344 — El QR de un registro (enlace a la ficha y su código, si tiene). */
+    recordQr(list: string | number, recordId: number): Promise<RecordQrInfo> {
+        return this.request('GET', `/lists/${list}/qr/${recordId}`, { schema: z.custom<RecordQrInfo>() });
+    }
+    /** v0.1.344 — El PDF de etiquetas con QR (una selección o lo que muestra la vista). */
+    async recordLabelsPdf(list: string | number, input: RecordLabelsInput): Promise<{ blob: Blob; filename: string; count: number }> {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json', ...this.getExtraHeaders() };
+        const tenantId = this.getTenantId();
+        if (tenantId !== null && tenantId !== undefined) headers['X-Tenant-Id'] = String(tenantId);
+        const res = await fetch(buildUrl(this.baseUrl, `/lists/${list}/labels`), {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify(input),
+        });
+        if (!res.ok) throw toApiError(await res.json().catch(() => null), res.status);
+        const cd = res.headers.get('content-disposition') ?? '';
+        const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+        const plain = /filename="?([^";]+)"?/i.exec(cd)?.[1];
+        return {
+            blob: await res.blob(),
+            filename: star ? decodeURIComponent(star) : (plain ?? 'Etiquetas.pdf'),
+            count: Number(res.headers.get('x-label-count') ?? '0'),
+        };
     }
     smsRecord(list: string | number, recordId: number): Promise<SmsRecordInfo> {
         return this.request('GET', `/lists/${list}/records/${recordId}/sms`, { schema: z.custom<SmsRecordInfo>() });

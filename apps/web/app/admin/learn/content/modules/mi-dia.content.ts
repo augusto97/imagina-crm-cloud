@@ -393,7 +393,7 @@ export const articles: LearnArticle[] = [
     {
         id: 'mi-dia-escaner',
         route: '/lists',
-        related: ['primeros-pasos-buscar', 'mi-dia-instalar', 'listas-y-campos-administrar'],
+        related: ['mi-dia-etiquetas-qr', 'primeros-pasos-buscar', 'mi-dia-instalar', 'listas-y-campos-administrar'],
         blocks: [
             {
                 t: 'p',
@@ -451,6 +451,7 @@ export const articles: LearnArticle[] = [
                     { q: 'No veo el botón de escanear en una lista.', a: 'Aparece cuando la lista tiene algún campo de texto o número donde buscar. Los invitados externos no lo ven.' },
                     { q: '¿Necesito un lector de códigos?', a: 'No: alcanza la cámara del teléfono o la del computador.' },
                     { q: '¿Funciona con códigos de cualquier tipo?', a: 'Lee los QR y los códigos de barras de productos más comunes (EAN, UPC, Code 128, entre otros).' },
+                    { q: 'Mis cosas no tienen código. ¿Sirve igual?', a: 'Sí: imprime etiquetas con el QR de cada registro (marca los registros → Etiquetas) y pégalas. Al escanearlas se abre su ficha. Ver «El código QR de cada registro».' },
                 ],
             },
             {
@@ -458,6 +459,85 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Instalar la app en el teléfono', article: 'mi-dia-instalar' },
+                ],
+            },
+        ],
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'mi-dia-etiquetas-qr',
+        route: '/lists',
+        related: ['mi-dia-escaner', 'automatizaciones-correos', 'documentos-pdf-editor'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cada registro tiene su **código QR**. Escaneado con el escáner de la app, abre su ficha al instante. Sirve para lo que no trae un código de fábrica —los computadores de la oficina, las herramientas, las carpetas de un archivo, las entradas de un evento— y también para lo que sí lo trae, si prefieres que el QR guarde tu propio código (el SKU, el serial, el número de boleta).',
+            },
+            { t: 'anim', key: 'etiquetas-qr', caption: 'Una hoja de etiquetas con el QR de cada producto; al escanear una, se abre su ficha.' },
+            { t: 'h', text: 'El QR de un registro' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el registro y toca el ícono **Código QR** de su barra (o haz clic derecho sobre la fila → **Código QR**).',
+                    'Elige qué guarda: **Enlace a la ficha** (funciona en cualquier lista) o, si la lista tiene un campo «Código», **su código** (SKU, serial…).',
+                    'Descárgalo como **imagen**, imprime **su etiqueta** o **copia** el enlace o el código.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'El enlace sólo abre la ficha a quien tiene cuenta en la empresa y permiso para ver ese registro: alguien de afuera que escanee la etiqueta ve la pantalla de entrar.',
+            },
+            { t: 'h', text: 'Imprimir etiquetas de muchos registros' },
+            {
+                t: 'steps',
+                items: [
+                    'Marca los registros en la tabla y toca **Etiquetas** en la barra de abajo. Para todos los que muestra la vista: **Personalizar vista → Imprimir etiquetas con QR**.',
+                    'Elige la **hoja de etiquetas**: Carta o A4 en las medidas de las hojas adhesivas comunes (30, 21, 10, 8 o 4 por hoja), o el **rollo** de una impresora térmica.',
+                    'Decide **qué guarda el QR** y **qué más se imprime**: el nombre, el código escrito debajo (por si el QR se daña) y hasta dos datos más, como el precio o la ubicación.',
+                    'Si la hoja ya está empezada, cambia **Empezar en la etiqueta**: las primeras quedan en blanco.',
+                    'Toca **Descargar PDF** e imprímelo **al 100 %** (sin «Ajustar a la página»), así cada QR cae en su etiqueta.',
+                ],
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Carta · 30 por hoja', what: '6,7 × 2,5 cm, como las Avery 5160.', tip: 'Productos chicos, carpetas, repuestos.' },
+                    { name: 'Carta · 10 por hoja', what: '10,2 × 5,1 cm, como las Avery 5163.', tip: 'Equipos y cajas: el QR se lee desde más lejos.' },
+                    { name: 'Carta · 4 por hoja', what: '10,8 × 14 cm, con el QR grande arriba.', tip: 'Escarapelas y entradas de un evento.' },
+                    { name: 'A4 · 21 u 8 por hoja', what: 'Las medidas de las Avery L7160 y L7165.', tip: 'Si tu papelería vende A4.' },
+                    { name: 'Rollo 5 × 3 cm o 10 × 5 cm', what: 'Una etiqueta por página, para impresoras térmicas.', tip: 'Imprime en el tamaño del rollo, sin márgenes.' },
+                ],
+            },
+            { t: 'h', text: 'El QR en un correo, un WhatsApp o un PDF' },
+            {
+                t: 'p',
+                md: 'En las automatizaciones hay dos variables nuevas. **{{registro.qr}}** es la imagen del QR del registro: ponla en un bloque **Imagen** del correo (el botón **Usar el código QR del registro** lo hace por ti) o como encabezado de una plantilla de WhatsApp. **{{registro.enlace}}** es el enlace a la ficha: ponlo en un bloque **QR** de un documento PDF (botón **Usar el enlace a la ficha del registro**). Y **{{campo|qr}}** arma el QR de cualquier campo, por ejemplo **{{boleta|qr}}**.',
+            },
+            {
+                t: 'example',
+                title: 'Las entradas de un evento',
+                md: 'Una lista **Invitados** con una automatización «Cuando se crea un registro → Enviar email» cuyo diseño lleva un bloque Imagen con **{{registro.qr}}**. Cada invitado recibe su entrada con su propio QR. En la puerta, el equipo abre el escáner de la lista en **escaneo continuo**: cada QR abre la ficha del invitado y se marca «Asistió».',
+            },
+            {
+                t: 'example',
+                title: 'El inventario de equipos de una oficina',
+                md: 'Una lista **Equipos** (computadores, impresoras, sillas). Se marcan todos, **Etiquetas**, hoja de 30, y se pega una en cada equipo. Cuando alguien reporta una falla, escanea la etiqueta y abre la ficha del equipo para dejar el comentario: sin buscar el serial.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Qué conviene que guarde el QR, el enlace o el código?', a: 'El enlace funciona siempre y abre la ficha directo. El código conviene si ya identificas tus cosas con un SKU o un serial y quieres que el QR impreso sea ese mismo número.' },
+                    { q: '¿Si cambio el nombre del registro tengo que imprimir de nuevo?', a: 'No: el QR guarda el enlace (o el código), no el nombre. Sólo cambia el texto impreso debajo.' },
+                    { q: 'Las etiquetas salen corridas.', a: 'Revisa que la impresora esté al 100 % y sin «Ajustar a la página», y que la hoja elegida sea la que tienes (Carta o A4, y cuántas por hoja).' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Cómo escanear códigos', article: 'mi-dia-escaner' },
                 ],
             },
         ],

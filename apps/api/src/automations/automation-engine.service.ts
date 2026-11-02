@@ -128,6 +128,7 @@ import {
     singleTagToken,
     type LabelFieldLike,
 } from './merge-tags';
+import { recordLinkPrefix, recordTokenValue } from '../qr/qr-runtime';
 
 const SYSTEM_USER = 0;
 /** Lo que escribe una automatización lo escribe el sistema, con permisos de admin. */
@@ -207,6 +208,12 @@ interface RunContext {
     sla?: SlaEventInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
+    /**
+     * v0.1.344 — `https://…/lists/<slug>/records/` de la lista del run:
+     * `{{registro.enlace}}` le suma el id y `{{registro.qr}}` es la imagen de
+     * su QR (por el dominio de la empresa si responde).
+     */
+    recordLinkPrefix?: string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
     format?: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'>;
     /**
@@ -1358,15 +1365,17 @@ export class AutomationEngine {
         tx: Tx,
         tenantId: number,
         listId: number,
-    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone' | 'format'>> {
+    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone' | 'format' | 'recordLinkPrefix'>> {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
         const [tenant] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const [listRow] = await tx.select({ slug: lists.slug }).from(lists).where(eq(lists.id, listId)).limit(1);
         const parsed = tenantFormatSchema.safeParse((tenant?.settings as Record<string, unknown> | null | undefined)?.format ?? {});
         return {
             slugToKey: new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)])),
             fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config, label: f.label }])),
             timeZone: await this.tenantTimeZone(tx, tenantId),
             format: parsed.success ? parsed.data : DEFAULT_FORMAT,
+            recordLinkPrefix: listRow ? await recordLinkPrefix(tenantId, listRow.slug) : '',
         };
     }
 
@@ -1471,6 +1480,9 @@ export class AutomationEngine {
                 return opts.isoNow ? now : now.slice(0, 19).replace('T', ' ');
             }
             if (token === 'date.today') return zonedToday(ctx.timeZone ?? FALLBACK_TIME_ZONE);
+            // v0.1.344 — {{registro.enlace}} y {{registro.qr}} (la imagen de su QR).
+            const recordToken = recordTokenValue(token, ctx.recordLinkPrefix && ctx.recordId ? `${ctx.recordLinkPrefix}${ctx.recordId}` : '');
+            if (recordToken !== undefined) return recordToken;
             // v0.1.288 — el registro vinculado en curso de un bucle.
             if (token.startsWith('item.')) return this.itemValue(ctx, token.slice('item.'.length));
             // v0.1.288 — la respuesta del último webhook / conector y las guardadas con nombre.

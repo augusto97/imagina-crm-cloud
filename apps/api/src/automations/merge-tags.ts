@@ -1,4 +1,5 @@
 import { applyWordModifiers, formatEmailFieldValue, zonedToday, type TenantFormat } from '@imagina-base/shared';
+import { qrImageUrl } from '../qr/qr-runtime';
 
 /**
  * Resuelve merge tags `{{slug}}` en un template contra los valores de un
@@ -36,6 +37,12 @@ import { applyWordModifiers, formatEmailFieldValue, zonedToday, type TenantForma
  * el valor tal cual. El default sigue siendo el valor CRUDO (v0.1.178): es
  * lo que otro sistema espera.
  *
+ * Modificador de QR (v0.1.344): `{{campo|qr}}` devuelve la URL de una imagen
+ * PNG con el código QR del valor (un SKU, el número de una entrada) —para un
+ * bloque Imagen de un correo o el encabezado de una plantilla de WhatsApp—.
+ * `{{registro.qr}}` es el QR del enlace a la ficha (lo resuelve el accessor).
+ * Encadenable al final (`{{boleta|mayusculas|qr}}`); sin contenido, sale vacío.
+ *
  * `escapeValue` (SEC-08): cuando el destino es HTML (email is_html), se pasa un
  * escapador para que los VALORES interpolados (datos del registro, que pueden
  * venir de un cliente del portal o de un import) no inyecten HTML/JS. El
@@ -64,7 +71,11 @@ export function applyMergeTags(
         if (v === null || v === undefined) return '';
         const list = mods ? mods.split('|').filter(Boolean) : [];
         const fmt = list.find((m): m is FormatModifier => (FORMAT_MODIFIERS as readonly string[]).includes(m));
-        if (Array.isArray(v)) return esc(applyWordModifiers(v.map((x) => String(x)).join(', '), v, list));
+        const wantsQr = list.includes('qr');
+        if (Array.isArray(v)) {
+            const joined = applyWordModifiers(v.map((x) => String(x)).join(', '), v, list);
+            return esc(wantsQr ? qrImageUrl(joined) : joined);
+        }
         let out = String(v);
         if (mods) out = applyDateModifiers(out, mods);
         if (fmt && formatValue) {
@@ -74,6 +85,7 @@ export function applyMergeTags(
         }
         // v0.1.266 — `|letras`, `|pesos`, `|larga`, `|mayusculas`.
         if (list.length > 0) out = applyWordModifiers(out, typeof v === 'number' ? v : out, list);
+        if (wantsQr) out = qrImageUrl(out);
         return esc(out);
     });
 }
@@ -85,7 +97,7 @@ export type MergeFormatter = (token: string, value: unknown, mod: FormatModifier
 
 /** `{{token|mod|mod}}` — el mismo patrón en el motor, el probador y los tests. */
 export const MERGE_TAG_RE =
-    /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga|fecha|fechahora|moneda|numero))*)\s*\}\}/g;
+    /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga|fecha|fechahora|moneda|numero|qr))*)\s*\}\}/g;
 
 /**
  * Si la plantilla es UNA sola variable sin modificadores (`{{monto}}`),

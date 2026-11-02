@@ -48,6 +48,7 @@ import type { RecordEntity } from '@/types/record';
 import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
+import { RecordQrButton } from '@/admin/qr/RecordQrButton';
 import { RecordShareButton } from '@/admin/guests/RecordShareButton';
 import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
@@ -476,6 +477,9 @@ export function RecordDetailDrawer({
                                     {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
                                     {!isGuest && (
                                         <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
+                                    )}
+                                    {!isGuest && (
+                                        <RecordQrButton listId={listId} recordId={record.id} fields={fields} listSettings={listData.data?.settings as Record<string, unknown> | undefined} compact />
                                     )}
                                     {!isGuest && <SendWhatsappButton listId={listId} recordId={record.id} compact />}
                                     {!isGuest && <SendSmsButton listId={listId} recordId={record.id} compact />}

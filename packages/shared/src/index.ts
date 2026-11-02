@@ -27,6 +27,7 @@ export * from './schemas/record';
 export * from './schemas/bulk-edit';
 export * from './schemas/bulk-history';
 export * from './schemas/bulk-structure';
+export * from './schemas/record-labels';
 export * from './schemas/rich-text';
 export * from './schemas/markdown-lite';
 export * from './schemas/embeds';

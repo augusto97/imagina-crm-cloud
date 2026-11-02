@@ -86,7 +86,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | A7 · Campos condicionales en la ficha y en el alta («NIT» sólo si «Tipo = Empresa») | medio · M | Los formularios públicos ya tienen condiciones. |
 | A10 · Campo Firma (dibujar la firma en la ficha, un formulario o el portal) | medio · S-M | Ver D6. |
 | A11 · Ubicación / dirección con autocompletado, latitud y longitud | medio · M | Base de B3 (mapa). OpenStreetMap o la clave de Google de cada empresa. |
-| A12 · Código de barras / QR como campo | medio · S | Con H3 se escanea con la cámara. |
+| A12 · Código de barras / QR como campo | medio · S | Con H3 se escanea con la cámara. **En parte hecho en v0.1.344**: cada registro tiene su QR (enlace o el valor del campo «Código»), con etiquetas en PDF y variables para correos y documentos. Lo que queda es un tipo de campo que dibuje el código de barras (EAN/Code 128) dentro de la tabla. |
 | A13 · Moneda múltiple con conversión y tasa del día | medio · M | |
 | A14 · Duplicados: avisar al crear y herramienta «Fusionar» | alto (CRM) · M-L | |
 | A15 · Etiquetas compartidas entre listas | medio · S-M | |

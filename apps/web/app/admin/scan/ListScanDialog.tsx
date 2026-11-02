@@ -24,6 +24,7 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
 import { ScanHitList } from './ScanHitList';
+import { ScanIntro, scanIntroSeen } from './ScanIntro';
 
 const MODE_KEY = 'imcrm:scan:mode';
 
@@ -67,6 +68,7 @@ export default function ListScanDialog({
     canManageList,
     onOpenRecord,
     onCreate,
+    onPrintLabels,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -76,6 +78,8 @@ export default function ListScanDialog({
     canManageList: boolean;
     onOpenRecord: (recordId: number) => void;
     onCreate: (prefill: Record<string, unknown>) => void;
+    /** v0.1.344 — imprimir etiquetas con el QR de los registros (desde la explicación). */
+    onPrintLabels?: () => void;
 }): JSX.Element {
     const navigate = useNavigate();
     const toast = useToast();
@@ -85,6 +89,8 @@ export default function ListScanDialog({
     const [round, setRound] = useState(0);
     const [log, setLog] = useState<LogEntry[]>([]);
     const [feedback, setFeedback] = useState<ScanFeedbackPrefs>(readFeedbackPrefs);
+    // v0.1.344 — la primera vez, qué hace el escáner (la cámara no se pide hasta «Empezar»).
+    const [intro, setIntro] = useState(() => !scanIntroSeen());
     const settings = useMemo(() => list.settings ?? {}, [list.settings]);
 
     const scannable = useMemo(() => fields.filter((f) => (SCAN_SEARCH_FIELD_TYPES as readonly string[]).includes(f.type)), [fields]);
@@ -206,6 +212,21 @@ export default function ListScanDialog({
             description={where}
             testId="list-scan-dialog"
         >
+            {intro ? (
+                <ScanIntro
+                    scope="list"
+                    fieldLabel={scanField?.label ?? null}
+                    onStart={() => setIntro(false)}
+                    onPrintLabels={
+                        onPrintLabels
+                            ? () => {
+                                  close();
+                                  window.setTimeout(onPrintLabels, 0);
+                              }
+                            : undefined
+                    }
+                />
+            ) : (
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                     <div className="imcrm-inline-flex imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5" role="group" aria-label={__('Modo')}>
@@ -386,7 +407,17 @@ export default function ListScanDialog({
                         </div>
                     </div>
                 )}
+                <button
+                    type="button"
+                    onClick={() => setIntro(true)}
+                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                    data-testid="scan-how"
+                >
+                    <CircleHelp className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('¿Cómo funciona el escáner?')}
+                </button>
             </div>
+            )}
         </ScanDialog>
     );
 }

@@ -56,6 +56,7 @@ import { AuditService } from '../audit/audit.service';
 import { can } from '../authz/can';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { applyMergeTags, labelResolverFor, regionalFormatterFor, type LabelFieldLike } from '../automations/merge-tags';
+import { recordLinkFor, recordTokenValue } from '../qr/qr-runtime';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { redactValues } from '../connectors/connection-parts';
@@ -1283,11 +1284,14 @@ export class WhatsappService {
         const format = await readTenantFormat(this.tenantDb, tenantId);
         const labels = labelResolverFor(bySlug);
         const formatter = regionalFormatterFor(bySlug, format, format.timezone ?? 'UTC');
+        // v0.1.344 — {{registro.enlace}} / {{registro.qr}} (la imagen del QR sirve de encabezado).
+        const link = recordId > 0 ? await recordLinkFor(tenantId, list.slug, recordId) : '';
         const fv = (token: string): unknown => {
+            const recordToken = recordTokenValue(token, link);
+            if (recordToken !== undefined) return recordToken;
             const key = keyOf.get(token);
             return key ? data[key] : undefined;
         };
-        void list;
         return (s: string) => applyMergeTags(s, fv, recordId, undefined, labels, formatter);
     }
 
