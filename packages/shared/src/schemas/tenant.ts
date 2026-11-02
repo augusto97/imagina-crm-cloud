@@ -58,10 +58,22 @@ export function resolveAppBarColor(
     primaryColor: string | null | undefined,
     theme: 'light' | 'dark' = 'light',
 ): string {
+    return chosenAppBarColor(setting, primaryColor) ?? APP_BAR_NEUTRAL[theme];
+}
+
+/**
+ * v0.1.346 — el color que la empresa ELIGIÓ para las barras (su primario o un
+ * hex), o `null` si las dejó neutras. El manifiesto sólo lleva `theme_color`
+ * cuando hay una elección: Chrome pinta con él la barra de abajo de la app
+ * instalada en Android en los DOS modos (no lee un color para el oscuro), así
+ * que un blanco neutro quedaba como franja blanca en modo oscuro; sin
+ * `theme_color`, Android usa la barra del sistema, que sigue el modo.
+ */
+export function chosenAppBarColor(setting: string | null | undefined, primaryColor: string | null | undefined): string | null {
     const hex = /^#[0-9a-fA-F]{6}$/;
     if (setting === APP_BAR_BRAND && primaryColor && hex.test(primaryColor)) return primaryColor.toLowerCase();
     if (setting && hex.test(setting)) return setting.toLowerCase();
-    return APP_BAR_NEUTRAL[theme];
+    return null;
 }
 
 export const brandingSchema = z.object({

@@ -52,24 +52,31 @@ function browserKeys() {
 describe('H1 — manifiesto (puro)', () => {
     it('plataforma: Imagina Base; empresa: su nombre de app; barras neutras salvo que elija; iconos genéricos', () => {
         const base = buildManifest({ tenant: null });
-        expect(base).toMatchObject({ id: '/', name: 'Imagina Base', short_name: 'Imagina Base', start_url: '/', scope: '/', display: 'standalone', theme_color: '#ffffff', background_color: '#ffffff', lang: 'es' });
+        expect(base).toMatchObject({ id: '/', name: 'Imagina Base', short_name: 'Imagina Base', start_url: '/', scope: '/', display: 'standalone', background_color: '#ffffff', lang: 'es' });
+        // v0.1.346 — barras neutras = SIN theme_color: Chrome pinta con él la
+        // barra de abajo de Android en los dos modos (blanca en modo oscuro).
+        expect(base).not.toHaveProperty('theme_color');
         expect(base.icons.map((i) => `${i.sizes}:${i.purpose}`)).toEqual(['192x192:any', '512x512:any', '192x192:maskable', '512x512:maskable']);
         const acme = buildManifest({ tenant: { name: 'Acme S.A.S.', app_name: 'Acme Gestión Comercial', primary_color: '#AA2200' } });
         // v0.1.326 — el primario ya no pinta las barras del sistema por defecto.
-        expect(acme).toMatchObject({ name: 'Acme Gestión Comercial', short_name: 'Acme', theme_color: '#ffffff' });
+        expect(acme).toMatchObject({ name: 'Acme Gestión Comercial', short_name: 'Acme' });
+        expect(acme).not.toHaveProperty('theme_color');
         const brand = buildManifest({ tenant: { name: 'Acme', app_name: null, primary_color: '#AA2200', app_bar_color: 'brand' } });
         expect(brand.theme_color).toBe('#aa2200');
         const custom = buildManifest({ tenant: { name: 'Acme', app_name: null, primary_color: '#AA2200', app_bar_color: '#1F2937' } });
         expect(custom).toMatchObject({ theme_color: '#1f2937', background_color: '#ffffff' });
         // El id no cambia con la marca: el navegador reconoce la MISMA app.
         expect(acme.id).toBe(base.id);
-        expect(buildManifest({ tenant: { name: 'Beta', app_name: null, primary_color: 'rojo', app_bar_color: 'brand' } })).toMatchObject({ name: 'Beta', theme_color: '#ffffff' });
+        const beta = buildManifest({ tenant: { name: 'Beta', app_name: null, primary_color: 'rojo', app_bar_color: 'brand' } });
+        expect(beta).toMatchObject({ name: 'Beta' });
+        expect(beta).not.toHaveProperty('theme_color');
         expect(shortAppName('Supercalifragilístico')).toBe('Supercalifr…');
     });
 
-    it('v0.1.328: con ?scheme=dark la barra de abajo y el fondo de inicio son oscuros (el id no cambia)', () => {
+    it('v0.1.328/v0.1.346: con ?scheme=dark el fondo de inicio es oscuro y las barras neutras no fijan color (el id no cambia)', () => {
         const dark = buildManifest({ tenant: null, scheme: 'dark' });
-        expect(dark).toMatchObject({ id: '/', theme_color: '#121212', background_color: '#121212' });
+        expect(dark).toMatchObject({ id: '/', background_color: '#121212' });
+        expect(dark).not.toHaveProperty('theme_color');
         // Un color elegido por la empresa se respeta; el fondo de inicio sigue el tema.
         const custom = buildManifest({ tenant: { name: 'Acme', app_name: null, primary_color: '#AA2200', app_bar_color: '#1F2937' }, scheme: 'dark' });
         expect(custom).toMatchObject({ theme_color: '#1f2937', background_color: '#121212' });

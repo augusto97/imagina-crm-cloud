@@ -10992,6 +10992,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el ícono real del usuario (escritorio claro y oscuro, celular), y el
         manifiesto guardado abre con `#00a7cd`.
 
+  - [x] **La barra de abajo de la app instalada sigue el modo oscuro
+        (v0.1.346, addendum ADR-S79, reporte del usuario con captura: "en el
+        modo oscuro quedó una barra blanca abajo en la app debajo del
+        menú")**: la franja era la barra de navegación de Android, y la causa
+        no era la que se creía desde v0.1.328 (que esa barra sale del
+        `background_color`). Leyendo Chromium (`WebappIntentDataProvider`,
+        `CustomTabNavigationBarController`, `BaseCustomTabActivity`): con la
+        función `WebAppNavigationBarThemeColor` (activa por defecto) Chrome
+        pinta esa barra con el **`theme_color` del manifiesto** que guardó la
+        app instalada, y como no lee un color para el modo oscuro (los campos
+        oscuros quedaron obsoletos) usa el MISMO en los dos modos: el blanco
+        neutro (#ffffff) quedaba como una franja blanca bajo la barra de
+        pestañas en modo oscuro. Sin `theme_color`, la barra es la del sistema
+        y sigue el modo del teléfono; la de arriba la sigue pintando la meta
+        `theme-color` de la página, que la app ajusta al tema. Ahora el
+        manifiesto **sólo lleva `theme_color` cuando la empresa eligió un color**
+        para las barras (su primario u otro: `chosenAppBarColor`, shared; con
+        un color elegido se usa también en modo oscuro, y Ajustes → Marca lo
+        dice). Las dos variantes del manifiesto (claro y `?scheme=dark`) quedan
+        con el mismo `theme_color`, así la app instalada deja de cambiar de
+        colores según el modo con el que se actualizó. Comentarios de
+        `appMeta.ts` y `manifest.ts` corregidos y novedad «Sin franja blanca
+        abajo en modo oscuro». Tests: manifiesto (sin `theme_color` neutro, con
+        el elegido) y `chosenAppBarColor` — shared 630 y front en verde.
+        La app instalada se actualiza sola en uno o dos días; reinstalarla lo
+        muestra al momento.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { resolveAppBarColor } from '@imagina-base/shared';
+import { chosenAppBarColor, resolveAppBarColor } from '@imagina-base/shared';
 
 import { describeDevice } from '@/lib/deviceLabel';
 import { codeForField, parseRecordLinkCode } from '@/lib/scan/codeSearch';
@@ -114,6 +114,11 @@ describe('H1 — puente con el service worker', () => {
         expect(resolveAppBarColor('brand', '#FF00AA', 'dark')).toBe('#ff00aa');
         expect(resolveAppBarColor('brand', null, 'light')).toBe('#ffffff');
         expect(resolveAppBarColor('#1F2937', '#FF00AA', 'light')).toBe('#1f2937');
+        // v0.1.346 — lo ELEGIDO (lo que va al manifiesto como theme_color).
+        expect(chosenAppBarColor(null, '#FF00AA')).toBeNull();
+        expect(chosenAppBarColor('brand', null)).toBeNull();
+        expect(chosenAppBarColor('brand', '#FF00AA')).toBe('#ff00aa');
+        expect(chosenAppBarColor('#1F2937', null)).toBe('#1f2937');
         expect(resolveAppBarColor('rojo', '#FF00AA', 'light')).toBe('#ffffff');
     });
 });

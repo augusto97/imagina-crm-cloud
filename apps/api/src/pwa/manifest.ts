@@ -15,8 +15,10 @@
  * superior de la app) y la empresa elige en Ajustes → Marca si quiere el de
  * su marca u otro (`branding.app_bar_color`). En modo oscuro la app ajusta la
  * meta `theme-color` al cargar; el manifiesto no sabe del tema de la persona.
+ * v0.1.346 — con las barras neutras el manifiesto NO lleva `theme_color`
+ * (Chrome lo usaría para la barra de abajo también en modo oscuro).
  */
-import { APP_BAR_NEUTRAL, DEFAULT_PLATFORM_APP_NAME, iconSplashColor, resolveAppBarColor, type PlatformBrand } from '@imagina-base/shared';
+import { APP_BAR_NEUTRAL, chosenAppBarColor, DEFAULT_PLATFORM_APP_NAME, iconSplashColor, type PlatformBrand } from '@imagina-base/shared';
 
 
 export const DEFAULT_APP_NAME = DEFAULT_PLATFORM_APP_NAME;
@@ -32,10 +34,10 @@ export interface ManifestInput {
      */
     platform?: (Pick<PlatformBrand, 'app_name' | 'icons'> & Partial<Pick<PlatformBrand, 'icon_design'>>) | null;
     /**
-     * v0.1.328 — tema del dispositivo que pide el manifiesto (`?scheme=dark`).
-     * En Android la barra de abajo de la app instalada y el fondo de su
-     * pantalla de inicio salen del `background_color`, no de la meta de la
-     * página: sin esto quedaban blancos en modo oscuro.
+     * v0.1.328 — tema del dispositivo que pide el manifiesto (`?scheme=dark`):
+     * el fondo de la pantalla de inicio (`background_color`) sigue el modo con
+     * el que se instaló. La barra de abajo de Android NO sale de ahí sino del
+     * `theme_color` (v0.1.346, ver más abajo).
      */
     scheme?: 'light' | 'dark';
 }
@@ -52,7 +54,8 @@ export interface WebAppManifest {
     display: 'standalone';
     orientation: 'any';
     background_color: string;
-    theme_color: string;
+    /** Sólo si la empresa eligió un color para las barras (ver `buildManifest`). */
+    theme_color?: string;
     categories: string[];
     icons: Array<{ src: string; sizes: string; type: string; purpose: 'any' | 'maskable' }>;
     shortcuts: Array<{ name: string; short_name: string; url: string; icons: Array<{ src: string; sizes: string; type: string }> }>;
@@ -73,7 +76,15 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
     const name = (t ? t.app_name?.trim() || t.name?.trim() || DEFAULT_APP_NAME : platformName).slice(0, 60);
     const own = t === null ? (input.platform?.icons ?? null) : null;
     const scheme = input.scheme ?? 'light';
-    const theme = resolveAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null, scheme);
+    // v0.1.346 — `theme_color` sólo con un color ELEGIDO. Chrome pinta con él
+    // la barra de abajo de la app instalada en Android (feature
+    // WebAppNavigationBarThemeColor, activa por defecto), y como no lee un
+    // color para el modo oscuro usa el mismo en los dos: el blanco neutro
+    // quedaba como una franja blanca bajo la app en modo oscuro. Sin
+    // `theme_color` la barra es la del sistema y sigue el modo del teléfono;
+    // la de arriba la sigue pintando la meta `theme-color` de la página, que
+    // la app ajusta al tema.
+    const theme = chosenAppBarColor(t?.app_bar_color ?? null, t?.primary_color ?? null);
     const icon = { src: own?.icon_96 ?? '/pwa/icon-96.png', sizes: '96x96', type: 'image/png' };
     // v0.1.329 — Android 12+ abre la app con el ícono maskable en un círculo
     // sobre `background_color`: en oscuro va el juego con fondo oscuro (si el
@@ -99,7 +110,7 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
         // apertura de Android es ese color (y el ícono, sólido del mismo):
         // se ve sólo la marca, sin un círculo alrededor.
         background_color: (t === null && input.platform ? iconSplashColor({ icon_design: input.platform.icon_design ?? null, icons: own }) : null) ?? APP_BAR_NEUTRAL[scheme],
-        theme_color: theme,
+        ...(theme ? { theme_color: theme } : {}),
         categories: ['business', 'productivity'],
         icons: own
             ? [

@@ -965,4 +965,15 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'El QR de un registro está en el ícono **Código QR** de su ficha. Para muchos, márcalos en la tabla y toca **Etiquetas**. En las automatizaciones tienes **{{registro.qr}}** (la imagen del QR) y **{{registro.enlace}}** (el enlace a la ficha).',
         action: { label: 'Ir a mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.346-barra-abajo-oscura',
+        version: '0.1.346',
+        date: '2026-11-02',
+        kind: 'fix',
+        title: 'Sin franja blanca abajo en modo oscuro',
+        summary:
+            'En Android, la barra de abajo de la app instalada ya no queda blanca cuando el teléfono está en modo oscuro: sigue el modo del teléfono.',
+        media: { illustration: 'celular-pestanas' },
+        body: 'Si ya tenías la app instalada, el teléfono la actualiza solo en uno o dos días. Para verlo ya, quita la app y vuelve a instalarla desde **Más → Instalar la app**.',
+    },
 ];
