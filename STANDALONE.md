@@ -5599,6 +5599,70 @@ ejemplos es heurística: un nombre de pila suelto («llamar a Pedro») o un dato
 escrito de forma rara puede pasar; por eso la casilla es opcional, viene
 apagada y dice exactamente qué se envía.
 
+### ADR-S90 — Navegación del celular: barra de pestañas fija, «Más» y secciones como índice (v0.1.342)
+
+**Contexto.** El usuario pidió revisar a fondo la navegación: "en celular el
+menú aparece como un desplegable o puede ser confuso… en la PWA debería tener
+un menú fijo o flotante como las apps". La revisión encontró: (1) en el
+teléfono todo vivía detrás de una hamburguesa que abría el riel + el panel del
+escritorio como un cajón (dos columnas apretadas, y había que abrirlo para
+cualquier cosa); (2) Ajustes y Plataforma cambiaban de sección con un
+`<select>` nativo, sin ver qué hay en cada una; (3) la barra de arriba tenía
+campana, ayuda, novedades, búsqueda, tema y avatar compitiendo por 390 px, y el
+nombre de la empresa se cortaba; (4) las tarjetas de listas ocupaban media
+pantalla cada una; (5) `100vh` en Safari de iPhone dejaba contenido debajo de
+la barra del navegador; (6) Ajustes era una lista plana de 15 secciones bajo
+«Empresa», y Plataforma 16 pestañas sin agrupar.
+
+**Decisión.**
+1. **Barra de pestañas inferior** (`MobileTabBar`, sólo < 1024 px, también en
+   la app instalada): **Listas · Mi trabajo · Buscar · Avisos · Más**. Es el
+   último hijo flex de la columna derecha (no `position: fixed`): el `<main>` se
+   acorta solo y nada queda tapado. Publica su alto en `--imcrm-bottom-nav`;
+   lo flotante (avisos, barra de selección, «Primeros pasos», ofrecimientos)
+   lleva `.imcrm-above-tabbar` y sube por encima. Pestaña activa con pastilla de
+   color y `aria-current`; tocar la activa sube al principio. Avisos muestra el
+   número sin leer; Más, un punto si hay novedades sin ver. Qué pestaña marca
+   cada ruta lo decide una función pura (`mobileNav.ts`): todo lo que no es
+   Listas/Mi trabajo/Avisos deja marcada **Más**, así siempre se sabe de dónde
+   se viene. Sin el módulo de menciones, Avisos pasa a ser Favoritos.
+2. **El riel y el cajón no se montan en el celular**: se eliminó el modo
+   cajón del `Sidebar` (sólo escritorio). La barra de arriba queda con el logo
+   y el nombre de la empresa (que cambia de empresa si hay más de una),
+   «Problemas» y el asistente. El invitado (`GuestShell`) conserva su
+   hamburguesa: su shell no tiene pestañas.
+3. **«Más»** (`/menu`, `MenuPage`): una página de filas grandes, por tema —
+   cuenta, empresas, Ir a (Favoritos, Tableros, Agentes, Aprende, Ideas,
+   Novedades), Configuración (Ajustes, Problemas, Papelera, Plataforma),
+   Preferencias (tema en tres botones, instalar la app, avisos), Ayuda y
+   Cerrar sesión. Reemplaza al menú de la persona en el teléfono (en el
+   escritorio sigue el desplegable del avatar).
+4. **Avisos a pantalla completa** (`/avisos`): la bandeja se extrajo de la
+   campana (`NotificationInbox`, variantes `popover` y `page`); en el
+   escritorio sigue en el desplegable de la campana.
+5. **Ajustes y Plataforma sin desplegables**: en el teléfono la ruta sin
+   sección muestra un **índice** (`SectionIndex`) de filas con ícono, nombre y
+   una línea que dice para qué sirve, por tema; dentro de una sección, «‹
+   Ajustes» / «‹ Plataforma» vuelve. Ajustes se reagrupó en **Empresa,
+   Personas, Conexiones, Clientes, Mantenimiento y Cuenta** (un grupo vacío
+   para el rol no se muestra) y Plataforma en **Clientes, La app y Servidor**,
+   igual en el panel del escritorio.
+6. **Listas en el teléfono**: filas compactas (< 640 px) en vez de tarjetas, y
+   **Recientes** y **Favoritos** arriba.
+7. **Alto real y zonas seguras**: `100dvh` (con `100vh` de respaldo),
+   `viewport-fit=cover` y `env(safe-area-inset-*)` en el shell y en la barra; la
+   pantalla de arranque dibuja también el esqueleto de la barra.
+8. **Recorridos y ayuda**: los pasos del riel en el celular apuntan a las
+   pestañas (`tabbar-*`), guía nueva «¿Cómo me muevo por la app en el
+   celular?», pantallas de ayuda `inbox` y `menu`, Aprende al día y novedad.
+
+**Consecuencias.** En el teléfono hay una sola forma de moverse, siempre a la
+vista y al alcance del pulgar; nada de lo que existía se perdió (todo lo del
+riel está en Más). El escritorio no cambia salvo por Ajustes y Plataforma
+agrupados por tema. Lo que se agregue al riel tiene que aparecer también en
+«Más» (o en una pestaña): no hay un único componente que dibuje los dos, a
+propósito, porque en el teléfono cada entrada lleva una línea de ayuda.
+
 ---
 
-**Versión del documento:** 1.136.0 (sugerencias por lista)
+**Versión del documento:** 1.137.0 (navegación del celular)

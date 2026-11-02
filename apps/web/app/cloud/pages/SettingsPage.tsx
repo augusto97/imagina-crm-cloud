@@ -34,10 +34,13 @@ import { PortalAuthCard } from '@/cloud/components/PortalAuthCard';
 import { DataConsentPanel } from '@/cloud/components/DataConsentPanel';
 import { TenantStoragePanel } from '@/cloud/components/TenantStoragePanel';
 import { Badge } from '@/components/ui/badge';
+import { BackToIndex, SectionIndex } from '@/components/nav/SectionIndex';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { PlanModuleGate } from '@/components/PlanModuleNotice';
+import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 const STATUS_LABEL: Record<BillingSummary['status'], string> = {
     trialing: 'En prueba',
@@ -48,10 +51,11 @@ const STATUS_LABEL: Record<BillingSummary['status'], string> = {
 
 /**
  * Ajustes del workspace: renderiza UNA sección a la vez. La NAV de secciones
- * vive en el panel contextual del Sidebar (estilo ClickUp) — aquí sólo queda
- * el select mobile (<lg) como fallback cuando el panel no está visible. La
- * sección activa se persiste en el query param `?s=` (sobrevive refresh y es
- * linkeable). Los gates de visibilidad (compartidos con el Sidebar vía
+ * vive en el panel contextual del Sidebar (estilo ClickUp) en escritorio. En
+ * el celular (v0.1.342) `/settings` es un ÍNDICE de filas tocables agrupadas
+ * por tema (antes, un desplegable) y cada sección lleva «‹ Ajustes» para
+ * volver. La sección activa se persiste en el query param `?s=` (sobrevive
+ * refresh y es linkeable). Los gates de visibilidad (compartidos con el Sidebar vía
  * `settingsSectionGroups`) son los mismos de siempre: rol admin del workspace
  * para Suscripción/Miembros/Marca/Correo (los paneles además se auto-ocultan
  * ante 403). Los ajustes globales de la app viven en la consola de Plataforma.
@@ -61,7 +65,8 @@ export function SettingsPage(): JSX.Element {
     const isAdmin = useSession(
         (s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin',
     );
-    const [params, setParams] = useSearchParams();
+    const [params] = useSearchParams();
+    const isNarrow = useMediaQuery('(max-width: 1023px)');
     const checkout = params.get('checkout');
     // `GET /billing` es sólo para admins (v0.1.286: antes se pedía igual y a
     // cualquier otro rol le devolvía 403 en cada visita a Ajustes).
@@ -80,17 +85,8 @@ export function SettingsPage(): JSX.Element {
     // una sección que este rol no ve.
     const active: SettingsSectionId = resolveSettingsSection(groups, params.get('s'));
     const activeItem = visible.find((i) => i.id === active) ?? visible[0];
-
-    const select = (id: SettingsSectionId): void => {
-        setParams(
-            (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set('s', id);
-                return next;
-            },
-            { replace: true },
-        );
-    };
+    // v0.1.342 — en el celular, sin sección pedida se ve el índice.
+    const showIndex = isNarrow && !params.get('s');
 
     const billingSkeleton = billing.isLoading && (
         <div className="imcrm-h-56 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
@@ -98,7 +94,8 @@ export function SettingsPage(): JSX.Element {
 
     return (
         <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-5xl imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-items-center imcrm-gap-4">
+            {isNarrow && !showIndex && <BackToIndex to="/settings" label={__('Ajustes')} className="-imcrm-mb-4" />}
+            <header className={cn('imcrm-flex imcrm-items-center imcrm-gap-4', isNarrow && !showIndex && 'imcrm-hidden')}>
                 <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                     <SlidersHorizontal className="imcrm-h-5 imcrm-w-5" aria-hidden />
                 </span>
@@ -128,33 +125,26 @@ export function SettingsPage(): JSX.Element {
                 </div>
             )}
 
-            {/* Nav mobile (<lg): select compacto — fallback cuando el panel
-                contextual del Sidebar (LA nav de Ajustes) no está visible. */}
-            <div className="lg:imcrm-hidden">
-                <select
-                    aria-label="Sección de ajustes"
-                    className="imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-py-2 imcrm-text-sm"
-                    value={active}
-                    onChange={(e) => select(e.target.value as SettingsSectionId)}
-                >
-                    {groups.map((g) => (
-                        <optgroup key={g.label} label={g.label}>
-                            {g.items.map((i) => (
-                                <option key={i.id} value={i.id}>
-                                    {i.label}
-                                </option>
-                            ))}
-                        </optgroup>
-                    ))}
-                </select>
-            </div>
+            {showIndex && (
+                <SectionIndex
+                    testId="settings-index"
+                    groups={groups.map((g) => ({
+                        label: g.label,
+                        items: g.items.map((i) => ({ ...i, to: `/settings?s=${i.id}` })),
+                    }))}
+                />
+            )}
 
             {/* Sección activa, una a la vez (la nav vive en el Sidebar). */}
-            <section className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-4">
+            {!showIndex && (
+            <section className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-4" data-testid="settings-section" data-section={active}>
                 {activeItem && (
-                    <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
-                        {activeItem.label}
-                    </h2>
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                        <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
+                            {__(activeItem.label)}
+                        </h2>
+                        <p className="imcrm-text-[13px] imcrm-text-muted-foreground">{__(activeItem.hint)}</p>
+                    </div>
                 )}
                 {active === 'plan' && isAdmin && (
                     <>
@@ -239,6 +229,7 @@ export function SettingsPage(): JSX.Element {
                 {/* Per-usuario y por dispositivo: tema claro/oscuro/sistema. */}
                 {active === 'apariencia' && <AppearanceCard />}
             </section>
+            )}
         </div>
     );
 }

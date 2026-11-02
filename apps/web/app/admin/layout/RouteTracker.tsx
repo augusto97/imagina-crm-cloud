@@ -66,6 +66,8 @@ export function RouteTracker(): null {
         if (folder) return groups.data?.find((g) => g.id === Number(folder[1]))?.name ?? __('Carpeta');
         if (pathname.startsWith('/my-work')) return __('Mi trabajo');
         if (pathname.startsWith('/favorites')) return __('Favoritos');
+        if (pathname.startsWith('/avisos')) return __('Avisos');
+        if (pathname.startsWith('/menu')) return __('Más');
         if (pathname.startsWith('/novedades')) return __('Novedades');
         if (pathname.startsWith('/aprende')) return __('Centro de aprendizaje');
         if (pathname.startsWith('/ideas')) return __('Ideas para tu negocio');

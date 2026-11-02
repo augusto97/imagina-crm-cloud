@@ -9,7 +9,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Todo lo que es **tuyo** —no de la empresa— está a un clic: en el **círculo con tus iniciales**, arriba a la derecha. Ese menú es el mismo para todos los roles, y desde ahí llegas a tu seguridad, a tus avisos, al modo claro u oscuro y a cerrar sesión. Lo que cambies aquí sólo te afecta a ti: tu equipo no lo ve.',
+                md: 'Todo lo que es **tuyo** —no de la empresa— está a un clic: en el **círculo con tus iniciales**, arriba a la derecha. Ese menú es el mismo para todos los roles, y desde ahí llegas a tu seguridad, a tus avisos, al modo claro u oscuro y a cerrar sesión. En el celular y en la app instalada está en la pestaña **Más**, abajo a la derecha, con lo mismo en filas grandes. Lo que cambies aquí sólo te afecta a ti: tu equipo no lo ve.',
             },
             {
                 t: 'anim',

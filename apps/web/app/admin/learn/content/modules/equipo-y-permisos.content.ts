@@ -20,7 +20,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre **Ajustes** desde el menú de tu cuenta (tu avatar, arriba a la derecha) y entra a **Miembros**.',
+                    'Abre **Ajustes** desde el menú de tu cuenta (tu avatar, arriba a la derecha; en el celular, **Más → Ajustes**) y entra a **Miembros**.',
                     'En **Email** escribe el correo de la persona. Si no tiene cuenta, completa también **Nombre (si no tiene cuenta)**: así la reconoces en la lista desde el primer día.',
                     'En **Rol** elige qué va a poder hacer (abajo te explicamos cada uno). Si creaste roles propios, aparecen en el mismo menú bajo **Roles propios**.',
                     'Toca **Invitar**. Verás el aviso «Invitación enviada a…» y la persona aparece en la lista con la etiqueta **Invitación pendiente**.',

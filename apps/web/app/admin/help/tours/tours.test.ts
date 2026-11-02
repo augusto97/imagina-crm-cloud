@@ -140,7 +140,7 @@ describe('recorridos', () => {
         // En el celular no se señala el riel (vive en el cajón cerrado).
         const mobile = resolveSteps(welcome, ctx({ isMobile: true }));
         expect(mobile.map((s) => s.target)).not.toContain('rail-lists');
-        expect(mobile.find((s) => s.id === 'rail')?.target).toBe('topbar-menu');
+        expect(mobile.find((s) => s.id === 'rail')?.target).toBe('tabbar-lists');
     });
 
     it('sin listas, los recorridos que las necesitan no se ofrecen', () => {

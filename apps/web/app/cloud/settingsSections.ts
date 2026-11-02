@@ -25,7 +25,7 @@ import type { LucideIcon } from 'lucide-react';
 
 /**
  * Secciones de la página de Ajustes — ÚNICA fuente de verdad, compartida por
- * SettingsPage (render del panel activo + select mobile) y el Sidebar (el
+ * SettingsPage (render de la sección activa + el índice del celular) y el Sidebar (el
  * panel contextual del shell es LA nav de Ajustes en escritorio). El gate es
  * el de siempre: rol admin del workspace para Suscripción/Miembros/Marca/
  * Correo. Los ajustes GLOBALES (SMTP de plataforma, actualizaciones) viven en
@@ -54,9 +54,40 @@ export type SettingsSectionId =
     | 'seguridad'
     | 'avisos';
 
-export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
+/** `hint`: una línea que dice para qué sirve (el índice del celular y el subtítulo de la sección). */
+export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon; hint: string };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
 
+const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
+    plan: { id: 'plan', label: 'Plan y uso', icon: Gauge, hint: 'Lo que incluye tu plan y cuánto estás usando' },
+    suscripcion: { id: 'suscripcion', label: 'Suscripción', icon: CreditCard, hint: 'Pagar, renovar y ver tus pagos' },
+    marca: { id: 'marca', label: 'Marca', icon: Palette, hint: 'Logo, colores, nombre y dominio propio' },
+    formato: { id: 'formato', label: 'Formato regional', icon: Globe, hint: 'Números, fechas y zona horaria' },
+    miembros: { id: 'miembros', label: 'Miembros', icon: Users, hint: 'Invitar a tu equipo y elegir su rol' },
+    equipos: { id: 'equipos', label: 'Equipos', icon: UsersRound, hint: 'Grupos como Ventas o Soporte' },
+    roles: { id: 'roles', label: 'Roles', icon: KeyRound, hint: 'Qué puede hacer cada rol' },
+    conectores: { id: 'conectores', label: 'Integraciones', icon: Plug, hint: 'WhatsApp, Google, tu tienda y otras apps' },
+    correo: { id: 'correo', label: 'Correo', icon: Mail, hint: 'Desde qué cuenta salen tus correos' },
+    almacenamiento: { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive, hint: 'Dónde se guardan los archivos' },
+    asistente: { id: 'asistente', label: 'Asistente IA', icon: Sparkles, hint: 'Activar el asistente y usar tu propia clave' },
+    portal: { id: 'portal', label: 'Portal y formularios', icon: DoorOpen, hint: 'Cómo entran tus clientes y el captcha' },
+    privacidad: { id: 'privacidad', label: 'Datos personales', icon: Scale, hint: 'Autorización de tratamiento de datos' },
+    problemas: { id: 'problemas', label: 'Problemas', icon: TriangleAlert, hint: 'Lo que corre solo y dejó de funcionar' },
+    auditoria: { id: 'auditoria', label: 'Registro de actividad', icon: History, hint: 'Quién cambió qué en la empresa' },
+    papelera: { id: 'papelera', label: 'Papelera', icon: Trash2, hint: 'Recupera lo borrado en los últimos 30 días' },
+    seguridad: { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck, hint: 'Contraseña, verificación en dos pasos y dispositivos' },
+    avisos: { id: 'avisos', label: 'Avisos', icon: Bell, hint: 'Qué te llega al correo y al teléfono' },
+    firma: { id: 'firma', label: 'Firma de email', icon: PenLine, hint: 'La firma de tus correos' },
+    datos: { id: 'datos', label: 'Tus datos', icon: DatabaseZap, hint: 'Descargar o borrar tu cuenta' },
+    apariencia: { id: 'apariencia', label: 'Apariencia', icon: SunMoon, hint: 'Modo claro u oscuro' },
+};
+
+/**
+ * v0.1.342 — Secciones agrupadas por TEMA (antes «Empresa» era una lista
+ * plana de 15 cosas): la empresa, las personas, las conexiones, los
+ * clientes, el mantenimiento y tu cuenta. El gate de cada sección es el de
+ * siempre; un grupo que queda vacío para un rol no se muestra.
+ */
 export function settingsSectionGroups({
     isAdmin,
     canManageAutomations = false,
@@ -71,86 +102,36 @@ export function settingsSectionGroups({
     /** C3 — un invitado de afuera sólo ve SU cuenta. */
     isGuest?: boolean;
 }): SettingsSectionGroup[] {
+    const pick = (...ids: Array<SettingsSectionId | false>): SettingsSectionItem[] =>
+        ids.filter((id): id is SettingsSectionId => id !== false).map((id) => ITEMS[id]);
     if (isGuest) {
-        return [
-            {
-                label: 'Cuenta',
-                items: [
-                    { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
-                    { id: 'avisos', label: 'Avisos', icon: Bell },
-                    { id: 'datos', label: 'Tus datos', icon: DatabaseZap },
-                    { id: 'apariencia', label: 'Apariencia', icon: SunMoon },
-                ],
-            },
-        ];
+        return [{ label: 'Cuenta', items: pick('seguridad', 'avisos', 'datos', 'apariencia') }];
     }
     const groups: SettingsSectionGroup[] = [
+        // v0.1.286 — `GET /billing` es sólo para admins: a cualquier otro rol
+        // "Plan y uso" le quedaba en blanco (403).
+        { label: 'Empresa', items: pick(isAdmin && 'plan', isAdmin && 'suscripcion', isAdmin && 'marca', isAdmin && 'formato') },
         {
-            label: 'Empresa',
-            items: [
-                ...(isAdmin
-                    ? ([
-                          // v0.1.286 — `GET /billing` es sólo para admins: a
-                          // cualquier otro rol "Plan y uso" le quedaba en blanco
-                          // (403), y era la sección POR DEFECTO de Ajustes.
-                          { id: 'plan', label: 'Plan y uso', icon: Gauge },
-                          { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
-                          { id: 'miembros', label: 'Miembros', icon: Users },
-                          // C2 — roles propios (capacidades por módulo).
-                          { id: 'roles', label: 'Roles', icon: KeyRound },
-                          { id: 'marca', label: 'Marca', icon: Palette },
-                          { id: 'formato', label: 'Formato regional', icon: Globe },
-                          { id: 'correo', label: 'Correo', icon: Mail },
-                          // v0.1.289 — entrar al portal con contraseña y captcha de formularios.
-                          { id: 'portal', label: 'Portal y formularios', icon: DoorOpen },
-                          // Ley 1581 — autorización de tratamiento de datos (formularios y portal).
-                          { id: 'privacidad', label: 'Datos personales', icon: Scale },
-                          // v0.1.268 (ADR-S36) — archivos en el bucket propio de la empresa.
-                          { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive },
-                          // v0.1.181 — asistente IA (ADR-S21): opt-in, clave propia, modelo.
-                          { id: 'asistente', label: 'Asistente IA', icon: Sparkles },
-                          // v0.1.114 — quién cambió qué en el workspace.
-                          { id: 'auditoria', label: 'Registro de actividad', icon: History },
-                      ] satisfies SettingsSectionItem[])
-                    : []),
-                // C1 — equipos (Ventas, Soporte…): el admin o quien los gestiona.
-                ...(isAdmin || canManageTeams
-                    ? ([{ id: 'equipos', label: 'Equipos', icon: UsersRound }] satisfies SettingsSectionItem[])
-                    : []),
-                // v0.1.196 (ADR-S22) — apps conectadas; v0.1.203 pasa a ser la
-                // galería «Integraciones» (el id `conectores` se conserva: es
-                // la ruta a la que vuelve el callback OAuth). No es admin-only:
-                // quien arma automatizaciones ve qué hay conectado, aunque
-                // conectar para el equipo sea del admin (lo decide el backend).
-                ...(isAdmin || canManageAutomations
-                    ? ([
-                          { id: 'conectores', label: 'Integraciones', icon: Plug },
-                          // v0.1.285 (ADR-S44) — lo que corre solo y dejó de funcionar.
-                          { id: 'problemas', label: 'Problemas', icon: TriangleAlert },
-                      ] satisfies SettingsSectionItem[])
-                    : []),
-                // Papelera: TODO miembro la abre (ve lo que borró y los
-                // registros borrados de las listas que puede ver); restaurar
-                // y vaciar se deciden en el backend.
-                { id: 'papelera', label: 'Papelera', icon: Trash2 },
-            ],
+            label: 'Personas',
+            // C1 — equipos: el admin o quien los gestiona. C2 — roles propios.
+            items: pick(isAdmin && 'miembros', (isAdmin || canManageTeams) && 'equipos', isAdmin && 'roles'),
         },
         {
-            label: 'Cuenta',
-            items: [
-                // v0.1.116 — contraseña + dispositivos conectados.
-                { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
-                // v0.1.276 — qué avisos llegan por correo y el resumen diario.
-                { id: 'avisos', label: 'Avisos', icon: Bell },
-                { id: 'firma', label: 'Firma de email', icon: PenLine },
-                // v0.1.121 — descarga y borrado de datos personales (GDPR).
-                { id: 'datos', label: 'Tus datos', icon: DatabaseZap },
-                // v0.1.112 — per-usuario y por dispositivo (no viaja al backend).
-                { id: 'apariencia', label: 'Apariencia', icon: SunMoon },
-            ],
+            label: 'Conexiones',
+            // v0.1.196 (ADR-S22) — Integraciones no es admin-only: quien arma
+            // automatizaciones ve qué hay conectado (conectar lo decide el backend).
+            // El id `conectores` se conserva: es la ruta del callback OAuth.
+            items: pick((isAdmin || canManageAutomations) && 'conectores', isAdmin && 'correo', isAdmin && 'almacenamiento', isAdmin && 'asistente'),
         },
+        { label: 'Clientes', items: pick(isAdmin && 'portal', isAdmin && 'privacidad') },
+        {
+            label: 'Mantenimiento',
+            // Papelera: TODO miembro la abre (lo que borró y lo de las listas que ve).
+            items: pick((isAdmin || canManageAutomations) && 'problemas', isAdmin && 'auditoria', 'papelera'),
+        },
+        { label: 'Cuenta', items: pick('seguridad', 'avisos', 'firma', 'datos', 'apariencia') },
     ];
-    // Un rol sin nada de la empresa (agente/lector) no ve un grupo vacío.
+    // Un rol sin nada de un tema (agente/lector) no ve un grupo vacío.
     return groups.filter((g) => g.items.length > 0);
 }
 

@@ -982,12 +982,33 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
 
     // ── Celular y avisos ──────────────────────────────────────────────────
     {
+        id: 'mobile-navigation',
+        title: '¿Cómo me muevo por la app en el celular?',
+        category: 'mobile',
+        minutes: 1,
+        body: [
+            'En el teléfono (y en la app instalada) todo está en la **barra de abajo**, al alcance del pulgar:',
+            '- **Listas:** tus listas por carpeta, con **Recientes** y **Favoritos** arriba.',
+            '- **Mi trabajo:** lo que tienes asignado en todas las listas, por fecha.',
+            '- **Buscar:** encuentra listas, registros, tableros y guías, o lee un código con la cámara.',
+            '- **Avisos:** menciones, asignaciones, recordatorios y aprobaciones. El número rojo son los que no leíste.',
+            '- **Más:** tu cuenta, el cambio de empresa, **Favoritos**, **Tableros**, **Aprende**, **Ajustes**, el tema, instalar la app, la ayuda y cerrar sesión.',
+            'La pestaña en la que estás se ve resaltada. Tocarla otra vez te sube al principio de la página.',
+            'En **Ajustes** y en **Plataforma** las secciones se ven como una lista por tema; dentro de una, **‹ Ajustes** te devuelve a la lista.',
+        ].join('\n'),
+        tip: 'Si perteneces a más de una empresa, toca su nombre en la barra de arriba para cambiar.',
+        screens: ['menu', 'lists-index'],
+        keywords: 'celular telefono movil tablet navegar menu barra inferior pestañas abajo mas avisos buscar mi trabajo listas app instalada donde esta',
+        tour: 'welcome',
+        related: ['install-app', 'notifications'],
+    },
+    {
         id: 'install-app',
         title: '¿Cómo instalo la app en el teléfono o el computador?',
         category: 'mobile',
         minutes: 1,
         body: [
-            '1. La primera vez que usas la app en un dispositivo, te la ofrece sola abajo a la derecha. Si dijiste **Ahora no**, abre tu menú (tu inicial, arriba a la derecha) y elige **Instalar la app**. También está en **Ajustes → Cuenta → Avisos**, en la tarjeta **App en este dispositivo**.',
+            '1. La primera vez que usas la app en un dispositivo, te la ofrece sola abajo a la derecha. Si dijiste **Ahora no**, abre tu menú (tu inicial, arriba a la derecha; en el celular, **Más**, abajo a la derecha) y elige **Instalar la app**. También está en **Ajustes → Cuenta → Avisos**, en la tarjeta **App en este dispositivo**.',
             '2. Si tu navegador la instala con un clic, confirma con **Instalar**. Si no, verás los pasos para tu navegador:',
             '- **Chrome o Edge en el computador:** el ícono de instalar a la derecha de la barra de direcciones.',
             '- **Android:** menú **⋮** → **Instalar app** (o **Agregar a la pantalla principal**).',
@@ -1013,7 +1034,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
             'Para recibirlos como notificación del teléfono o del computador, actívalo arriba, en **Notificaciones en este dispositivo**.',
         ].join('\n'),
         tip: 'Todos los avisos llegan siempre a la campana, arriba a la derecha.',
-        screens: ['settings:avisos', 'my-work'],
+        screens: ['settings:avisos', 'my-work', 'inbox'],
         keywords: 'avisos notificaciones correo push campana resumen diario alertas',
         route: '/settings?s=avisos',
         related: ['install-app', 'follow-reminders', 'my-work'],

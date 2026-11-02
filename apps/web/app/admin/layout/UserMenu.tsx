@@ -18,13 +18,13 @@ import { useTheme } from '@/lib/theme';
 import { InstallAppDialog } from '@/components/pwa/InstallAppDialog';
 import { currentAppName } from '@/lib/pwa/appMeta';
 import { promptInstall, useInstallMode } from '@/lib/pwa/install';
-import { forgetPushOnLogout } from '@/lib/pwa/push';
 import { whatsNewPanel } from '@/admin/whats-new/whatsNewStore';
 import { useWhatsNewFeed } from '@/hooks/useWhatsNew';
 import { useIsGuest } from '@/lib/guest';
 
 import { HelpMenuItem } from '@/admin/help/HelpTopbarButton';
 
+import { logoutAndReload } from './logout';
 import { initials, WorkspaceMenuItems } from './WorkspaceSwitcher';
 
 /**
@@ -49,19 +49,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
     const displayName = user.name.trim() !== '' ? user.name : user.email;
     const isDark = theme.resolved === 'dark';
 
-    const logout = async (): Promise<void> => {
-        const { api, useSession: store } = await import('@/cloud/session');
-        // H1 — quien entre después en este equipo no hereda los avisos push
-        // (el servidor ya borra los dispositivos de la sesión al cerrarla).
-        if (!impersonating) await forgetPushOnLogout().catch(() => undefined);
-        try {
-            await api.logout();
-        } catch {
-            // igual limpiamos la sesión local y recargamos
-        }
-        store.getState().clear();
-        window.location.assign('/');
-    };
+    const logout = (): Promise<void> => logoutAndReload(Boolean(impersonating));
 
     return (
         <>

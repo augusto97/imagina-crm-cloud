@@ -136,6 +136,8 @@ export function InstallOffer({ disabled = false }: { disabled?: boolean }): JSX.
                         className={cn(
                             'imcrm-fixed imcrm-z-[45] imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
                             narrow ? 'imcrm-inset-x-3 imcrm-bottom-3' : 'imcrm-bottom-5 imcrm-right-5 imcrm-w-[340px]',
+                // v0.1.342 — arriba de la barra de pestañas (si no se acomodó ya sobre «Primeros pasos»).
+                bottom === null && 'imcrm-above-tabbar',
                             !reducedMotion && 'imcrm-animate-imcrm-fade-in',
                         )}
                     >

@@ -189,14 +189,14 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
         setOpen(false);
         setForced(false);
         prefs.mutate({ hidden: true });
-        toast?.info(__('Primeros pasos quedó oculto'), __('Lo vuelves a abrir desde tu menú, arriba a la derecha.'));
+        toast?.info(__('Primeros pasos quedó oculto'), __('Lo vuelves a abrir desde tu menú (arriba a la derecha) o, en el celular, desde «Más».'));
     };
 
     return (
         <>
             <Popover open={open || celebrating} onOpenChange={onOpenChange}>
                 <PopoverAnchor asChild>
-                    <div className="imcrm-pointer-events-none imcrm-fixed imcrm-bottom-3 imcrm-right-3 imcrm-z-30 sm:imcrm-bottom-4 sm:imcrm-right-4">
+                    <div className="imcrm-above-tabbar imcrm-pointer-events-none imcrm-fixed imcrm-bottom-3 imcrm-right-3 imcrm-z-30 sm:imcrm-bottom-4 sm:imcrm-right-4">
                         <button
                             ref={pillRef}
                             type="button"
@@ -502,7 +502,7 @@ function Celebration({ onClose }: { onClose: () => void }): JSX.Element {
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                 <p className="imcrm-text-base imcrm-font-semibold imcrm-text-foreground">{__('¡Completaste los primeros pasos!')}</p>
                 <p className="imcrm-text-[13px] imcrm-text-muted-foreground">
-                    {__('Ya conoces lo más importante. Si los quieres ver otra vez, están en tu menú.')}
+                    {__('Ya conoces lo más importante. Si los quieres ver otra vez, están en tu menú (en el celular, en «Más»).')}
                 </p>
             </div>
             <Button size="sm" variant="outline" onClick={onClose}>
