@@ -49,6 +49,7 @@ import { AiFieldsService } from '../ai-fields/ai-fields.service';
 import { AuditService } from '../audit/audit.service';
 import { can } from '../authz/can';
 import { applyMergeTags, labelResolverFor, regionalFormatterFor, type LabelFieldLike } from '../automations/merge-tags';
+import { recordLinkFor, recordTokenValue } from '../qr/qr-runtime';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { redactValues } from '../connectors/connection-parts';
@@ -714,14 +715,18 @@ export class SmsService {
     }
 
     /** Merge de variables contra un registro, SIN los campos ocultos para quien pide. */
-    private async mergerFor(tenantId: number, fields: Field[], data: Record<string, unknown>, recordId: number, hidden: Set<string>): Promise<(s: string) => string> {
+    private async mergerFor(tenantId: number, listSlug: string, fields: Field[], data: Record<string, unknown>, recordId: number, hidden: Set<string>): Promise<(s: string) => string> {
         const visible = fields.filter((f) => !hidden.has(f.slug));
         const bySlug = new Map<string, LabelFieldLike>(visible.map((f) => [f.slug, { type: f.type, config: f.config }]));
         const keyOf = new Map(visible.map((f) => [f.slug, jsonbKeyForField(f.id)]));
         const format = await readTenantFormat(this.tenantDb, tenantId);
         const labels = labelResolverFor(bySlug);
         const formatter = regionalFormatterFor(bySlug, format, format.timezone ?? 'UTC');
+        // v0.1.344 — {{registro.enlace}} / {{registro.qr}}.
+        const link = recordId > 0 ? await recordLinkFor(tenantId, listSlug, recordId) : '';
         const fv = (token: string): unknown => {
+            const recordToken = recordTokenValue(token, link);
+            if (recordToken !== undefined) return recordToken;
             const key = keyOf.get(token);
             return key ? data[key] : undefined;
         };
@@ -738,7 +743,7 @@ export class SmsService {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'edit');
         await this.assertUsable(tenantId, actor, input.connection_id);
         const hidden = hiddenFieldsFor(list.settings, actor);
-        const merge = await this.mergerFor(tenantId, fields, data, recordId, hidden);
+        const merge = await this.mergerFor(tenantId, list.slug, fields, data, recordId, hidden);
         const phoneRaw = visiblePhone(list, fields, data, hidden);
         const to = (input.to ?? '').trim() !== '' ? merge(input.to!) : typeof phoneRaw === 'string' ? phoneRaw : '';
         return this.sendNow(tenantId, {
@@ -762,7 +767,7 @@ export class SmsService {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'view');
         await this.assertUsable(tenantId, actor, input.connection_id);
         const hidden = hiddenFieldsFor(list.settings, actor);
-        const merge = await this.mergerFor(tenantId, fields, data, recordId, hidden);
+        const merge = await this.mergerFor(tenantId, list.slug, fields, data, recordId, hidden);
         const phoneRaw = visiblePhone(list, fields, data, hidden);
         const to = (input.to ?? '').trim() !== '' ? merge(input.to!) : typeof phoneRaw === 'string' ? phoneRaw : '';
         const message = merge(input.message);
@@ -810,7 +815,7 @@ export class SmsService {
         });
         const data = (sample?.data ?? {}) as Record<string, unknown>;
         const hidden = hiddenFieldsFor(list.settings, actor);
-        const merge = await this.mergerFor(tenantId, fields, data, sample?.id ?? 0, hidden);
+        const merge = await this.mergerFor(tenantId, list.slug, fields, data, sample?.id ?? 0, hidden);
         const v = input.values as Record<string, unknown>;
         const message = merge(str(v.message));
         const sender = merge(str(v.sender));
@@ -914,7 +919,7 @@ export class SmsService {
                 items.push({ recordId: id, title, p: null, reason: 'No tiene teléfono.' });
                 continue;
             }
-            const merge = await this.mergerFor(tenantId, fields, data, id, hidden);
+            const merge = await this.mergerFor(tenantId, list.slug, fields, data, id, hidden);
             try {
                 const p = this.prepare(conn, { to: phone, message: merge(input.message), sender: input.sender ? merge(input.sender) : '', stripAccents: input.strip_accents });
                 items.push({ recordId: id, title, p, reason: null });

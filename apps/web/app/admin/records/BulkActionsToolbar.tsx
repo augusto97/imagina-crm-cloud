@@ -1,4 +1,4 @@
-import { Copy, CornerDownRight, Layers, MessageSquareText, MousePointerClick, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import { Copy, CornerDownRight, Layers, MessageSquareText, MousePointerClick, QrCode, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
 import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,8 @@ interface BulkActionsToolbarProps {
     onPressButton?: (fieldId: number) => void;
     /** SMS (ADR-S82): mandar un SMS a la selección (con vista previa y confirmación). */
     onSendSms?: () => void;
+    /** v0.1.344 — imprimir etiquetas con el QR de cada registro seleccionado. */
+    onPrintLabels?: () => void;
 }
 
 /**
@@ -56,6 +58,7 @@ export function BulkActionsToolbar({
     pressButtons = [],
     onPressButton,
     onSendSms,
+    onPrintLabels,
 }: BulkActionsToolbarProps): JSX.Element | null {
     if (selectedIds.length === 0) return null;
 
@@ -165,6 +168,22 @@ export function BulkActionsToolbar({
                 >
                     <MessageSquareText className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('SMS')}</span>
+                </Button>
+            )}
+
+            {onPrintLabels && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    onClick={onPrintLabels}
+                    data-testid="imcrm-bulk-labels-open"
+                    data-tour="bulk-labels"
+                    aria-label={__('Imprimir etiquetas con QR')}
+                    title={__('Imprimir etiquetas con QR')}
+                >
+                    <QrCode className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Etiquetas')}</span>
                 </Button>
             )}
 

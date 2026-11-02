@@ -19,6 +19,7 @@ import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
+import { RecordQrButton } from '@/admin/qr/RecordQrButton';
 import { RecordShareButton } from '@/admin/guests/RecordShareButton';
 import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
@@ -264,6 +265,15 @@ export function RecordPage(): JSX.Element {
                                     compact
                                 />
                             )}
+                            {!isGuest && (
+                                <RecordQrButton
+                                    listId={list.data.id}
+                                    recordId={record.data.id}
+                                    fields={fields.data}
+                                    listSettings={list.data.settings as Record<string, unknown>}
+                                    compact
+                                />
+                            )}
                             {!isGuest && <SendWhatsappButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!isGuest && <SendSmsButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!storeRules && !isGuest && (
@@ -342,6 +352,9 @@ export function RecordPage(): JSX.Element {
                         {!isGuest && <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />}
                         {!isGuest && (
                             <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
+                        )}
+                        {!isGuest && (
+                            <RecordQrButton listId={listInfo.id} recordId={rec.id} fields={fields.data ?? []} listSettings={listInfo.settings as Record<string, unknown>} compact />
                         )}
                         {!isGuest && <SendWhatsappButton listId={listInfo.id} recordId={rec.id} compact />}
                         {!isGuest && <SendSmsButton listId={listInfo.id} recordId={rec.id} compact />}

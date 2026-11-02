@@ -10,6 +10,7 @@ import {
     ImagePlus,
     Loader2,
     Plus,
+    QrCode,
     Trash2,
 } from 'lucide-react';
 import {
@@ -622,6 +623,25 @@ function ImageContent(p: InspectorProps): JSX.Element {
                         {__('Subir imagen')}
                     </Button>
                     <MergeTagInput value={block.src} onChange={(v) => p.onPatch({ src: v })} fields={p.fields} placeholder={__('o pega la dirección https://…')} />
+                    {/* v0.1.344 — el QR del registro (una entrada, una etiqueta de envío). */}
+                    {block.src.trim() !== '{{registro.qr}}' && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="imcrm-justify-start imcrm-gap-1.5 imcrm-text-xs"
+                            onClick={() => p.onPatch({ src: '{{registro.qr}}', alt: block.alt || __('Código QR'), width: Math.min(block.width, 45) })}
+                            data-testid="email-image-use-qr"
+                        >
+                            <QrCode className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Usar el código QR del registro')}
+                        </Button>
+                    )}
+                    {block.src.trim() === '{{registro.qr}}' && (
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {__('Cada correo lleva el QR de SU registro: al escanearlo con la app se abre la ficha (por ejemplo, para registrar la entrada de un invitado).')}
+                        </p>
+                    )}
                 </div>
             </Field>
             <Field label={__('Texto alternativo')} hint={__('Lo que se lee si el programa de correo no muestra imágenes.')}>

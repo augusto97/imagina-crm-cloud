@@ -66,6 +66,14 @@ export const meta: LearnModuleMeta = {
             keywords: 'escanear escaner camara codigo de barras qr sku inventario entradas boleta',
         },
         {
+            id: 'mi-dia-etiquetas-qr',
+            title: 'El código QR de cada registro: etiquetas, correos y entradas',
+            summary: 'Imprime etiquetas con el QR de tus productos o equipos y manda el QR de cada registro por correo, WhatsApp o en un PDF.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'qr codigo etiqueta etiquetas imprimir avery carta a4 rollo termica inventario activos entradas boleta evento correo whatsapp pdf registro.qr registro.enlace',
+        },
+        {
             id: 'mi-dia-favoritos',
             title: 'Favoritos y recientes: ten a mano lo que más usas',
             summary: 'Ancla listas, tableros y vistas, y vuelve en un clic a lo que abriste hace poco.',

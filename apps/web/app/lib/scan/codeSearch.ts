@@ -1,4 +1,4 @@
-import type { CodeSearchResult } from '@imagina-base/shared';
+import { parseRecordLink, type CodeSearchResult } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -11,24 +11,15 @@ export async function searchCode(code: string, opts: { list?: number | string; f
 }
 
 /**
- * Un QR con el enlace a un registro de ESTA app (`…/#/lists/x/records/5` o
- * `…/#/lists/x/records?record=5`) se abre directo, sin buscar. Sólo del mismo
- * origen: un QR con otro dominio se busca como texto.
+ * Un QR con el enlace a un registro de ESTA app (`…/lists/x/records/5`,
+ * `…/lists/x/records?record=5` o las viejas con `#`) se abre directo, sin
+ * buscar. v0.1.344 — venga del dominio que venga: las etiquetas impresas y
+ * los correos llevan el dominio de la empresa (o el de la plataforma) y la
+ * persona puede estar entrando por otro. Lo que decide es la ruta; abrirla
+ * pasa por los permisos de siempre. `_origin` queda por compatibilidad.
  */
-export function parseRecordLinkCode(code: string, origin: string): { listSlug: string; recordId: number } | null {
-    let url: URL;
-    try {
-        url = new URL(code.trim());
-    } catch {
-        return null;
-    }
-    if (url.origin !== origin) return null;
-    const route = url.hash.startsWith('#') ? url.hash.slice(1) : url.pathname + url.search;
-    const direct = /^\/lists\/([a-z0-9_-]+)\/records\/(\d+)(?:[/?#]|$)/i.exec(route);
-    if (direct) return { listSlug: direct[1]!, recordId: Number(direct[2]) };
-    const query = /^\/lists\/([a-z0-9_-]+)\/records\?(?:.*&)?record=(\d+)/i.exec(route);
-    if (query) return { listSlug: query[1]!, recordId: Number(query[2]) };
-    return null;
+export function parseRecordLinkCode(code: string, _origin?: string): { listSlug: string; recordId: number } | null {
+    return parseRecordLink(code);
 }
 
 /** El código para llenar un campo: texto tal cual; número sólo si lo es. */

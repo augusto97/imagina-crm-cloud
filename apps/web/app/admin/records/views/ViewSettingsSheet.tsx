@@ -29,6 +29,7 @@ import {
     Zap,
     Wand2,
     Timer,
+    QrCode,
 } from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -127,6 +128,8 @@ interface ViewSettingsSheetProps {
     onCsvUpdate?: () => void;
     /** v0.1.220 — eliminar todo lo que coincide con la vista (vista previa + deshacer). */
     onDeleteMatching?: () => void;
+    /** v0.1.344 — imprimir etiquetas con QR de todo lo que muestra la vista. */
+    onPrintLabels?: () => void;
     /** v0.1.341 — sugerencias para esta lista (admin y gerente). */
     onSuggestions?: () => void;
     /** v0.1.287 — segundo nivel de agrupación («Y luego por»). */
@@ -199,6 +202,7 @@ export function ViewSettingsSheet({
     onBulkHistory,
     onCsvUpdate,
     onDeleteMatching,
+    onPrintLabels,
     onSuggestions,
     subGroupByFieldId = null,
     onSubGroupByFieldIdChange,
@@ -731,6 +735,18 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onCsvUpdate();
+                                    }}
+                                />
+                            )}
+                            {onPrintLabels && (
+                                <RowButton
+                                    icon={QrCode}
+                                    label={__('Imprimir etiquetas con QR')}
+                                    tour="view-settings-labels"
+                                    value={__('Todo lo que coincide')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onPrintLabels();
                                     }}
                                 />
                             )}

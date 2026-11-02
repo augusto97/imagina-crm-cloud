@@ -270,6 +270,9 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
         { tag: 'record.id', label: __('ID del registro'), hint: '#42' },
         { tag: 'date.now', label: __('Fecha y hora del disparo'), hint: 'AAAA-MM-DD HH:MM:SS (UTC)' },
         { tag: 'date.today', label: __('Fecha de hoy'), hint: 'AAAA-MM-DD' },
+        // v0.1.344 — el enlace a la ficha y la imagen de su código QR.
+        { tag: 'registro.enlace', label: __('Enlace a la ficha del registro'), hint: 'https://…/lists/…/records/42' },
+        { tag: 'registro.qr', label: __('Código QR del registro (imagen)'), hint: __('Para un bloque Imagen o el encabezado de WhatsApp') },
     ];
     const visibleSystem = systemTags.filter((t) => matches(t.label) || matches(t.tag));
 
@@ -323,7 +326,11 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                       .filter((f) => f.type === 'datetime')
                       .map((f) => ({ tag: `${f.slug}|fechahora`, label: `${f.label} · ${__('fecha y hora')}`, hint: '21/10/2026 14:30' })),
                   { tag: 'date.now|fechahora', label: __('Ahora · fecha y hora'), hint: '21/10/2026 14:30' },
-              ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('formato')))
+                  // v0.1.344 — el QR de un código (SKU, boleta) como imagen.
+                  ...fields
+                      .filter((f) => f.type === 'text' || f.type === 'autonumber' || f.type === 'number')
+                      .map((f) => ({ tag: `${f.slug}|qr`, label: `${f.label} · ${__('código QR (imagen)')}`, hint: __('Imagen PNG del QR') })),
+              ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('formato')) || matches('qr'))
             : [];
     const extraSections = extra
         .map((sec) => ({ ...sec, items: sec.items.filter((t) => matches(t.label) || matches(t.tag)) }))

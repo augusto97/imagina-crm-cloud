@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { CodeSearchHit, CodeSearchResult } from '@imagina-base/shared';
-import { Loader2, ScanLine, Search } from 'lucide-react';
+import { CircleHelp, Loader2, ScanLine, Search } from 'lucide-react';
 
 import { useSession } from '@/cloud/session';
 import { CodeScanner } from '@/components/scan/CodeScanner';
@@ -12,6 +12,7 @@ import { pushRecent } from '@/lib/recents';
 import { parseRecordLinkCode, searchCode } from '@/lib/scan/codeSearch';
 
 import { ScanHitList } from './ScanHitList';
+import { ScanIntro, scanIntroSeen } from './ScanIntro';
 
 type Phase =
     | { kind: 'scan' }
@@ -39,6 +40,8 @@ export default function GlobalScanDialog({
     const tenantId = useSession((s) => s.activeTenantId);
     const [phase, setPhase] = useState<Phase>({ kind: 'scan' });
     const [round, setRound] = useState(0);
+    // v0.1.344 — la primera vez, qué hace el escáner (la cámara espera a «Empezar»).
+    const [intro, setIntro] = useState(() => !scanIntroSeen());
 
     const close = (): void => onOpenChange(false);
     const openHit = (hit: CodeSearchHit): void => {
@@ -92,8 +95,21 @@ export default function GlobalScanDialog({
             description={__('Busca el código en los campos de texto y número de todas tus listas.')}
             testId="global-scan-dialog"
         >
-            {phase.kind === 'scan' ? (
-                <CodeScanner key={round} onCode={(c) => void onCode(c)} />
+            {intro ? (
+                <ScanIntro scope="global" onStart={() => setIntro(false)} />
+            ) : phase.kind === 'scan' ? (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    <CodeScanner key={round} onCode={(c) => void onCode(c)} />
+                    <button
+                        type="button"
+                        onClick={() => setIntro(true)}
+                        className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                        data-testid="scan-how"
+                    >
+                        <CircleHelp className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('¿Cómo funciona el escáner?')}
+                    </button>
+                </div>
             ) : phase.kind === 'searching' ? (
                 <p className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-py-10 imcrm-text-sm imcrm-text-muted-foreground">
                     <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />

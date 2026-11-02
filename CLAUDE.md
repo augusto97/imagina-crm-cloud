@@ -10904,6 +10904,64 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `background_color` del manifiesto) + E2E navegador 23/23 con el logo
         real del usuario.
 
+  - [x] **El QR de cada registro, etiquetas para imprimir y un escáner que se
+        explica (v0.1.344, ADR-S92, pregunta del usuario: "lo de los códigos qr,
+        ¿cómo funciona? solo pusiste un icono que escanea qr pero ni idea cómo
+        usarlo o su utilidad" → "sí, hazlas las tres")**. El escáner de v0.1.314
+        leía códigos, pero la app no los generaba y la cámara se abría sin decir
+        para qué.
+        (a) **QR de la ficha**: botón «Código QR» en el modal y la página del
+        registro (y en el menú de la fila). El diálogo muestra la imagen, qué
+        pasa al escanearla, «Imagen» (PNG), «Etiqueta» y copiar. Por defecto
+        guarda el **enlace a la ficha** (sirve en cualquier lista sin
+        configurar nada). Con un campo «Código» en la lista (SKU, serial)
+        también se puede elegir su valor.
+        (b) **Imagen pública firmada** (`GET /api/v1/public/qr/<token>.png?s=`,
+        96-1024 px). Es sin sesión porque Gmail, Outlook y WhatsApp piden la
+        imagen sin cookies. Token `base64url(contenido).hmac` con clave
+        derivada de `FILES_SIGNING_SECRET`. No vence (cache inmutable) y un
+        token alterado da 404 opaco.
+        (c) **Etiquetas en PDF** (`POST /lists/:l/labels`, pdfmake con el QR en
+        vector), desde la selección, desde Personalizar vista («Imprimir
+        etiquetas con QR»: todo lo que coincide) o desde la explicación del
+        escáner. Formatos: carta 30/10/4 por hoja, A4 21/8 y rollo 50×30 o
+        100×50 mm. Cada etiqueta lleva el nombre, el código escrito debajo y
+        hasta dos datos con el formato regional. Se puede empezar en una
+        etiqueta ya usada de la hoja. Tope de 1000 etiquetas, con el ACL de
+        quien imprime. Vista previa de la hoja con la misma geometría pura
+        (`labelSlots`/`labelInnerLayout`, shared).
+        (d) **Variables** `{{registro.enlace}}`, `{{registro.qr}}` y el
+        modificador `{{campo|qr}}`, en correos, WhatsApp, SMS, PDF y el
+        probador. Los editores suman «Usar el código QR del registro» (bloque
+        imagen del correo) y «Usar el enlace a la ficha del registro» (bloque QR
+        del PDF).
+        (e) **El escáner se explica la primera vez** en cada dispositivo
+        (apuntar → cómo busca → qué abre, con «Imprimir etiquetas con QR»). **No
+        pide la cámara hasta «Empezar a escanear»**, y «¿Cómo funciona el
+        escáner?» vuelve a mostrar la explicación. Un QR impreso con otro
+        dominio de la empresa sigue abriendo la ficha (`parseRecordLink` mira la
+        ruta).
+        **Bug atrapado en el E2E**: el QR del enlace respondía **414**. El router
+        de Fastify corta los parámetros de ruta a 100 caracteres y el token de
+        una URL completa los pasa. La ruta pasó a comodín, con el largo acotado
+        por la expresión del controller. De paso se corrigió «3 etiquetas en 1
+        hojas».
+        Ayuda: guía «¿Cómo imprimo etiquetas con el código QR de mis
+        registros?», artículo «Etiquetas con QR» en Aprende → Mi día a día con
+        la ilustración `etiquetas-qr`, y novedad con carrusel.
+        Tests: 6 de shared (geometría, enlaces de otro dominio, texto que entra)
+        + 5 de API (`record-qr.spec`: firma, variables, PDF por hoja/rollo/salto,
+        ACL y orden) — shared 630, front 727 — + E2E navegador 41/41: imagen
+        sin sesión con su CSP, 404 de un token falso, diálogo desde la fila y la
+        ficha, descarga con nombre, etiquetas desde la selección (pedido con los
+        ids, PDF A4 de 1 hoja con nombre y código) y desde Personalizar vista,
+        explicación sin cámara la primera vez y directa la segunda, enlace de
+        otro dominio que abre la ficha, correo armado con dos QR que responden
+        200, PDF que resuelve `{{registro.enlace}}`, los dos botones de los
+        editores, y celular en oscuro sin desborde. Los QR del PDF y de la
+        imagen descargada se decodificaron con zxing: dan el enlace y
+        «BOL-0001».
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

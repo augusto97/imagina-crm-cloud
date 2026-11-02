@@ -11,6 +11,7 @@ import {
     Link2,
     ListTree,
     PencilLine,
+    QrCode,
     Redo2,
     Scissors,
     SquareArrowOutUpRight,
@@ -28,7 +29,9 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/components/ui/toast';
+import { RecordQrDialog } from '@/admin/qr/RecordQrButton';
 import { useDeleteRecord } from '@/hooks/useRecords';
+import { useIsGuest } from '@/lib/guest';
 import { recordTitleFor, useTrashedToast } from '@/hooks/useTrash';
 import { __, sprintf } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
@@ -103,8 +106,13 @@ export function RecordRowMenu({
     const toast = useToast();
     const trashed = useTrashedToast();
     const [copied, setCopied] = useState<'link' | 'id' | null>(null);
+    // v0.1.344 — el diálogo del QR sobrevive al cierre del menú.
+    const [qrFor, setQrFor] = useState<number | null>(null);
+    const isGuest = useIsGuest();
+    const qrDialog =
+        qrFor !== null ? <RecordQrDialog listId={listId} recordId={qrFor} fields={fields} onClose={() => setQrFor(null)} /> : null;
 
-    if (target === null) return null;
+    if (target === null) return qrDialog;
     const record = target.record;
     // v0.1.336 — en una lista de la tienda o del sitio sólo se quita lo que la fuente ya borró.
     const gone = recordGoneInSource(storeRules, record);
@@ -164,7 +172,8 @@ export function RecordRowMenu({
     };
 
     return (
-        <DropdownMenu
+        <>
+            <DropdownMenu
             open
             onOpenChange={(open) => {
                 if (!open) onClose();
@@ -267,6 +276,12 @@ export function RecordRowMenu({
                     )}
                     {__('Copiar ID')}
                 </DropdownMenuItem>
+                {!isGuest && (
+                    <DropdownMenuItem onSelect={() => setQrFor(record.id)} data-testid="imcrm-row-menu-qr">
+                        <QrCode className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Código QR')}
+                    </DropdownMenuItem>
+                )}
 
                 {(canCreate || onAddColumn) && <DropdownMenuSeparator />}
                 {canCreate && onCreateSubtask && record.parent_id === null && (
@@ -312,5 +327,7 @@ export function RecordRowMenu({
                 )}
             </DropdownMenuContent>
         </DropdownMenu>
+            {qrDialog}
+        </>
     );
 }

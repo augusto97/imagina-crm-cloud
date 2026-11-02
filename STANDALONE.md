@@ -5717,6 +5717,93 @@ emblema desenfocado (impredecible). Abrir siempre con el color de la marca
 (contradice las barras neutras que pidió el usuario). Generar los íconos en el
 servidor (ver ADR-S80).
 
+### ADR-S92 — El QR de cada registro: imagen firmada, etiquetas para imprimir y un escáner que se explica (v0.1.344)
+
+**Contexto.** El escáner de v0.1.314 (ADR-S68) leía códigos, pero la app no
+sabía GENERARLOS y el ícono de la cámara no decía para qué servía. El usuario lo
+dijo así: "solo pusiste un icono que escanea qr pero ni idea cómo usarlo o su
+utilidad". Sin una forma de poner un código en lo que no lo trae (un equipo, una
+carpeta, un mueble), el escáner sólo le servía a quien ya tenía códigos de
+barras de fábrica. El usuario aprobó las tres mejoras propuestas.
+
+**Decisión.**
+
+1. **Qué guarda el QR de un registro.** Por defecto, el enlace ABSOLUTO a su
+   ficha (`{base}/lists/<slug>/records/<id>`, base = `baseUrlFor(tenant,
+   'app')`). Así sirve en cualquier lista sin configurar nada. Si la lista tiene
+   un campo «Código» (`pickScanField`, ADR-S68), se puede elegir su valor, que
+   el escáner busca igual que un código de barras de fábrica. Al escanear, el
+   enlace se reconoce por la RUTA y no por el dominio: un QR impreso cuando la
+   empresa usaba otro dominio (o el de la plataforma) sigue abriendo la ficha.
+2. **La imagen es pública y firmada.** `GET /api/v1/public/qr/<token>.png?s=`
+   (96 a 1024 px), sin sesión. Gmail, Outlook y los servidores de WhatsApp
+   piden la imagen sin cookies. El token es `base64url(contenido).hmac` con una
+   clave derivada de `FILES_SIGNING_SECRET`. Un token alterado o inventado da
+   el mismo 404 opaco. No vence: el contenido está en la URL, así que la misma
+   URL es siempre la misma imagen, con cache inmutable, `nosniff` y
+   `CSP: sandbox`. El token NO es secreto: quien tiene la imagen lee el
+   contenido de todos modos (está dibujado). La firma sólo impide que el
+   servidor dibuje QR de lo que pida un tercero. Contenido hasta 1000
+   caracteres.
+3. **Ruta con comodín, no con parámetro.** El router de Fastify corta los
+   parámetros de ruta a 100 caracteres (`maxParamLength`) y responde 414, y el
+   token de un enlace completo los pasa. Lo atrapó el E2E: el QR del código
+   cargaba y el del enlace no. Se usa `@Get('*')`, con el largo acotado por la
+   expresión del controller. Subir `maxParamLength` en todo el router se
+   descartó: es una protección general.
+4. **Etiquetas en PDF.** `POST /lists/:l/labels` arma con pdfmake una hoja de
+   etiquetas para una selección (ids) o para todo lo que muestra la vista
+   (filtros + búsqueda). La lectura pasa por `RecordsService.list`, con el ACL
+   de quien imprime: no salen registros ni campos que no ve.
+   - **Formatos** (`LABEL_PRESETS`, en puntos y medidos sobre las hojas
+     comerciales): carta 30, 10 y 4 por hoja; A4 21 y 8; rollo 50×30 y
+     100×50 mm.
+   - Se puede empezar en una etiqueta ya usada de la hoja.
+   - **Contenido de cada etiqueta**: el QR dibujado como vector por pdfmake
+     (nítido a cualquier escala), el nombre, el código escrito debajo (por si
+     el QR se daña) y hasta dos datos con el formato regional de la empresa.
+   - Tope: 1000 etiquetas por PDF.
+   - La geometría (`labelSlots`, `labelInnerLayout`) es pura y está en shared.
+     El SVG de la vista previa del diálogo y el PDF la comparten.
+5. **Variables nuevas para el correo, el WhatsApp, el SMS y el PDF.**
+   - `{{registro.enlace}}` da el enlace a la ficha.
+   - `{{registro.qr}}` da la URL de la imagen de su QR, lista para un bloque
+     imagen.
+   - El modificador `{{campo|qr}}` da el QR del valor de un campo. Va al final
+     de una cadena, así `{{fecha|+1m|qr}}` codifica la fecha ya corrida.
+   - Se resuelven en el motor de automatizaciones, el probador, el SMS, el
+     WhatsApp y los documentos por un runtime de módulo
+     (`configureQrRuntime`, lo registra `QrService`), sin inyectar
+     dependencias en cada servicio. Sin runtime, la variable queda vacía en vez
+     de inventar una URL.
+   - En los editores: «Usar el código QR del registro» en el bloque imagen del
+     correo y «Usar el enlace a la ficha del registro» en el bloque QR del PDF,
+     más las variables en el selector.
+6. **El escáner se explica la primera vez.** La primera vez en cada
+   dispositivo (`imcrm:scan:intro:v1`), una pantalla con tres pasos dice qué
+   hace: apuntar, cómo busca y qué abre. Ofrece imprimir etiquetas. **La cámara
+   no se pide hasta «Empezar a escanear»**, porque pedir permiso sin explicar
+   para qué es la causa típica de que la gente lo niegue. Después, «¿Cómo
+   funciona el escáner?» la vuelve a mostrar.
+7. **Dónde está.** Botón «Código QR» en el modal y la página del registro (y
+   en el menú de la fila). El diálogo tiene la imagen, qué hace al escanearlo,
+   descargar la imagen, imprimir su etiqueta y copiar. «Etiquetas» está en la
+   barra de selección, en Personalizar vista («Imprimir etiquetas con QR»: todo
+   lo que coincide) y en la explicación del escáner. Las imágenes de la app se
+   piden por la ruta local (`localQrUrl`), así cumplen `img-src 'self'` sin
+   tocar la CSP.
+
+**Alternativas descartadas.**
+- **Un tipo de campo «Código QR»** (A12 del banco de ideas): el QR no es un
+  dato, es una forma de mostrar el enlace o un código que ya existe. Un campo
+  más obligaba a llenarlo.
+- **Generar el QR en el navegador** (librería `qrcode` del front): no sirve
+  para correos ni WhatsApp, que necesitan una URL.
+- **URL firmada con vencimiento**: un correo se relee meses después y una
+  etiqueta impresa dura años.
+- **Un servicio externo de QR** (Google Charts y similares): manda los enlaces
+  de la empresa a un tercero y depende de que siga existiendo.
+
 ---
 
-**Versión del documento:** 1.138.0 (ícono de la app)
+**Versión del documento:** 1.139.0 (QR de los registros)

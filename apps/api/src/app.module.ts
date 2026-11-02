@@ -20,6 +20,7 @@ import { BrandModule } from './brand/brand.module';
 import { DomainsModule } from './domains/domains.module';
 import { BillingModule } from './billing/billing.module';
 import { ExportModule } from './export/export.module';
+import { QrModule } from './qr/qr.module';
 import { ImportModule } from './import/import.module';
 import { AuthzModule } from './authz/authz.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
@@ -162,6 +163,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         BillingModule,
         PaymentsModule,
         ExportModule,
+        QrModule,
         ImportModule,
         BootstrapModule,
         SlugsModule,

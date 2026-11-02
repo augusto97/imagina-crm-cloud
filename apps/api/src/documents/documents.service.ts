@@ -71,6 +71,7 @@ import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { docImageKey, renderDocument, type ItemsTable, type TotalsRowResolved } from './document-render';
+import { recordLinkFor, recordTokenValue } from '../qr/qr-runtime';
 import { computeDesignTotals } from './document-totals';
 import { publicSurfaceOff } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
@@ -954,6 +955,8 @@ export class DocumentsService {
         // Las fórmulas de totales usan el prefijo/decimales de su bloque.
         const moneyOf = new Map<string, { prefix: string; decimals: number }>();
         for (const b of design.blocks) if (b.type === 'totals') for (const r of b.rows) moneyOf.set(r.id, { prefix: b.prefix, decimals: b.decimals });
+        // v0.1.344 — {{registro.enlace}}: un bloque QR con el enlace a la ficha.
+        const recordLink = record ? await recordLinkFor(tenantId, list.slug, record.id) : '';
         const resolve = (template: string): string =>
             resolveDocTemplate(template, {
                 recordId: record?.id ?? null,
@@ -973,6 +976,7 @@ export class DocumentsService {
                 },
                 dateFormat: (ymd) => formatValue({ type: 'date' }, ymd, format, userName),
                 docNumber: numbering.label,
+                recordLink,
                 extra: req.extra,
             });
         const totals = computeDesignTotals(design, {
@@ -1721,6 +1725,8 @@ export interface DocTagContext {
     dateFormat: (ymd: string) => string;
     /** v0.1.267 — `{{documento.numero}}` ("CC-0042"); null si no numera. */
     docNumber?: string | null;
+    /** v0.1.344 — `{{registro.enlace}}` (y `{{registro.qr}}`, la imagen de su QR). */
+    recordLink?: string;
     extra?: (token: string) => unknown;
 }
 
@@ -1748,6 +1754,7 @@ export function resolveDocTemplate(template: string, ctx: DocTagContext): string
         } else if (token === 'date.now') raw = new Date().toISOString().slice(0, 16).replace('T', ' ');
         else if (token === 'empresa.nombre') raw = ctx.tenantName;
         else if (token === 'documento.numero') raw = ctx.docNumber ?? '';
+        else if (recordTokenValue(token, '') !== undefined) raw = recordTokenValue(token, ctx.recordLink ?? '') ?? '';
         else if (token.startsWith('totales.')) {
             const id = token.slice('totales.'.length);
             const n = ctx.totals(id);

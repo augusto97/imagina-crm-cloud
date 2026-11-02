@@ -1072,7 +1072,24 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         screens: ['records'],
         keywords: 'escanear escaner qr codigo de barras camara inventario sku',
         route: '/lists/{list}/records',
-        related: ['install-app', 'search-shortcuts'],
+        related: ['record-qr-labels', 'install-app', 'search-shortcuts'],
+    },
+    {
+        id: 'record-qr-labels',
+        title: '¿Cómo imprimo etiquetas con el código QR de mis registros?',
+        category: 'mobile',
+        minutes: 2,
+        body: [
+            '1. En la tabla, marca los registros y toca **Etiquetas** en la barra de abajo (para todos los de la vista: **Personalizar vista → Imprimir etiquetas con QR**).',
+            '2. Elige la hoja (Carta o A4 en las medidas de las hojas adhesivas comunes, o el rollo de una impresora térmica) y qué guarda el QR: el **enlace a la ficha** o **el código** de un campo como el SKU.',
+            '3. Toca **Descargar PDF** e imprímelo al 100 %. Al escanear una etiqueta con la app se abre su ficha.',
+            'El QR de un solo registro está en el ícono **Código QR** de su ficha. En un correo o un WhatsApp de una automatización usa **{{registro.qr}}** (la imagen del QR) y en un PDF, **{{registro.enlace}}** en un bloque QR.',
+        ].join('\n'),
+        tip: 'Si la hoja ya está empezada, cambia **Empezar en la etiqueta** para no desperdiciarla.',
+        screens: ['records', 'record'],
+        keywords: 'qr codigo etiquetas imprimir avery carta a4 rollo termica inventario activos entradas evento boleta registro.qr registro.enlace',
+        route: '/lists/{list}/records',
+        related: ['scanner', 'email-design'],
     },
 
     // ── Cuenta y seguridad ────────────────────────────────────────────────
