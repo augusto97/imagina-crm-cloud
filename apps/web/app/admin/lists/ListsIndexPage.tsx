@@ -7,6 +7,7 @@ import {
     ChevronRight,
     Database,
     FileStack,
+    FileText,
     Folder,
     FolderOpen,
     LayoutGrid,
@@ -28,10 +29,13 @@ import { useOnboardingStatus, useUpdateOnboardingPrefs } from '@/hooks/useOnboar
 import { useIsGuest } from '@/lib/guest';
 import { matchesListQuery, sectionsByFolder } from '@/lib/folderSections';
 import { __, sprintf } from '@/lib/i18n';
-import { DEFAULT_LIST_ICON } from '@/lib/listIcons';
+import { DEFAULT_DASHBOARD_ICON, DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { CAP, useCan } from '@/lib/permissions';
 import { formatNumber } from '@/lib/tenantFormat';
 import { usePersistedChoice } from '@/lib/usePersistedChoice';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useRecents } from '@/lib/recents';
+import { useSession } from '@/cloud/session';
 import { parseUtcDate } from '@/lib/utcDate';
 import type { ListGroup, ListSummary } from '@/types/list';
 import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
@@ -160,12 +164,12 @@ export function ListsIndexPage(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-end imcrm-justify-between imcrm-gap-4">
+            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-x-4 imcrm-gap-y-2 sm:imcrm-items-end">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                     <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-leading-none imcrm-tracking-tight imcrm-text-foreground">
                         {__('Listas')}
                     </h1>
-                    <p className="imcrm-text-[13px] imcrm-text-muted-foreground">
+                    <p className="imcrm-hidden imcrm-text-[13px] imcrm-text-muted-foreground sm:imcrm-block">
                         {hasFolders
                             ? __('Tus listas, ordenadas por carpeta como en el menú. Cada una es un contenedor de registros con campos y vistas.')
                             : __('Haz clic en una lista para abrirla. Cada una guarda registros con sus campos y vistas.')}
@@ -179,7 +183,9 @@ export function ListsIndexPage(): JSX.Element {
                 )}
             </header>
 
-            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 md:imcrm-grid-cols-4">
+            {/* v0.1.342 — en el celular estas cifras ocupaban toda la primera
+                pantalla antes de mostrar una sola lista: ahí no van. */}
+            <div className="imcrm-hidden imcrm-grid-cols-2 imcrm-gap-3 md:imcrm-grid md:imcrm-grid-cols-4">
                 <StatTile icon={FileStack} label={__('Total')} value={stats.total} tone="cyan" />
                 <StatTile
                     icon={Calendar}
@@ -227,6 +233,12 @@ export function ListsIndexPage(): JSX.Element {
                 />
             ) : (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+                    {!searching && (
+                        <QuickAccess
+                            lists={allLists}
+                            pinnedIds={favs.lists}
+                        />
+                    )}
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                         <div className="imcrm-relative imcrm-min-w-[12rem] imcrm-flex-1 sm:imcrm-max-w-xs">
                             <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-1/2 imcrm-h-3.5 imcrm-w-3.5 -imcrm-translate-y-1/2 imcrm-text-muted-foreground" />
@@ -350,7 +362,7 @@ function SkeletonGrid(): JSX.Element {
     return (
         <CardGrid>
             {[0, 1, 2].map((i) => (
-                <div key={i} className="imcrm-h-44 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
+                <div key={i} className="imcrm-h-16 sm:imcrm-h-44 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
             ))}
         </CardGrid>
     );
@@ -394,5 +406,76 @@ function ListsEmpty({
                 ) : undefined
             }
         />
+    );
+}
+
+/**
+ * v0.1.342 — En el celular (y en tablet, donde no está el panel lateral), lo
+ * abierto hace poco y las listas ancladas, ARRIBA del índice: es lo que el
+ * panel lateral del escritorio muestra y lo que más se vuelve a abrir. Con un
+ * toque se llega, sin buscar entre todas las carpetas.
+ */
+function QuickAccess({ lists, pinnedIds }: { lists: ListSummary[]; pinnedIds: number[] }): JSX.Element | null {
+    const narrow = useMediaQuery('(max-width: 1023px)');
+    const tenantId = useSession((st) => st.activeTenantId);
+    const recents = useRecents(tenantId).slice(0, 4);
+    if (!narrow) return null;
+    const byId = new Map(lists.map((l) => [l.id, l]));
+    const pinned = pinnedIds.map((id) => byId.get(id)).filter((l): l is ListSummary => l !== undefined).slice(0, 6);
+    if (recents.length === 0 && pinned.length === 0) return null;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="lists-quick-access">
+            {recents.length > 0 && (
+                <QuickGroup label={__('Recientes')}>
+                    {recents.map((r) => {
+                        const Icon =
+                            r.kind === 'record'
+                                ? FileText
+                                : (listIcon(r.icon) ?? (r.kind === 'dashboard' ? DEFAULT_DASHBOARD_ICON : DEFAULT_LIST_ICON));
+                        const color = r.kind === 'record' ? undefined : listColor(r.color);
+                        return (
+                            <QuickRow key={`${r.kind}-${r.id}`} to={r.href} label={r.label} sub={r.context ?? null}>
+                                <Icon className="imcrm-h-[18px] imcrm-w-[18px]" style={color ? { color } : undefined} aria-hidden />
+                            </QuickRow>
+                        );
+                    })}
+                </QuickGroup>
+            )}
+            {pinned.length > 0 && (
+                <QuickGroup label={__('Favoritos')}>
+                    {pinned.map((l) => (
+                        <QuickRow key={l.id} to={`/lists/${l.slug}/records`} label={l.name} sub={null}>
+                            <IconSquare icon={listIcon(l.icon) ?? DEFAULT_LIST_ICON} color={listColor(l.color)} size="sm" />
+                        </QuickRow>
+                    ))}
+                </QuickGroup>
+            )}
+        </div>
+    );
+}
+
+function QuickGroup({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+    return (
+        <section className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <h2 className="imcrm-px-1 imcrm-text-[12px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">{label}</h2>
+            <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card">
+                {children}
+            </ul>
+        </section>
+    );
+}
+
+function QuickRow({ to, label, sub, children }: { to: string; label: string; sub: string | null; children: React.ReactNode }): JSX.Element {
+    return (
+        <li>
+            <Link
+                to={to}
+                className="imcrm-flex imcrm-min-h-12 imcrm-items-center imcrm-gap-3 imcrm-px-3.5 imcrm-py-2 imcrm-transition-colors active:imcrm-bg-muted/60"
+            >
+                <span className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground">{children}</span>
+                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[15px]">{label}</span>
+                {sub && <span className="imcrm-max-w-[40%] imcrm-shrink-0 imcrm-truncate imcrm-text-[12px] imcrm-text-muted-foreground">{sub}</span>}
+            </Link>
+        </li>
     );
 }

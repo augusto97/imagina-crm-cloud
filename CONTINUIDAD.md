@@ -382,13 +382,29 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.341**
-(sugerencias para cada lista: reglas gratis con el porqué en sus datos y un
-análisis con IA a pedido, con cupo propio de 5 al mes; antes v0.1.340 duplicar
-un registro en un clic, v0.1.339 crear una lista desde un Excel o CSV y v0.1.338
-la prueba con fecha de fin y los módulos por plan), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.342**
+(navegación del celular: barra de pestañas fija abajo, «Más», avisos a pantalla
+completa y Ajustes/Plataforma como índice táctil agrupado por tema; antes
+v0.1.341 sugerencias para cada lista, v0.1.340 duplicar un registro en un clic y
+v0.1.339 crear una lista desde un Excel o CSV), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-02 — **Navegación → v0.1.342** (ADR-S90). Pedido del usuario:
+  "revisa la navegación y los menús… en celular el menú aparece como un
+  desplegable o puede ser confuso… en la PWA debería tener un menú fijo o
+  flotante como las apps… que sea súper fácil para casi cualquier usuario".
+  Diagnóstico que le di: en el teléfono todo estaba detrás de una hamburguesa
+  que abría el menú del escritorio como cajón; Ajustes y Plataforma usaban un
+  desplegable nativo; la barra de arriba tenía seis botones; las listas
+  ocupaban media pantalla cada una; Ajustes era una lista plana de 15
+  secciones. **Hecho**: barra de pestañas abajo (Listas · Mi trabajo · Buscar ·
+  Avisos · Más), «Más» con todo lo demás, avisos a pantalla completa, Ajustes y
+  Plataforma con índice táctil y «‹ Volver», agrupados por tema (también en el
+  escritorio), listas en filas con Recientes y Favoritos arriba, alto real en
+  iPhone. **Decisión mía, avisada**: «Más» dice «Tableros» como el riel (la
+  página sigue titulada «Dashboards»). **Queda abierto**: nada; sugerencia
+  para más adelante si el usuario la pide: unificar «Dashboards»/«Tableros» en
+  toda la app.
 - 2026-10-31 — **Sugerencias por lista → v0.1.341** (ADR-S89). Pedido del
   usuario: recomendaciones de automatizaciones, tableros, etc. basadas en la lista
   concreta (las de hoy eran genéricas), sin un motor que gaste tokens todo el
@@ -1118,6 +1134,22 @@ la prueba con fecha de fin y los módulos por plan), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-02 · v0.1.342** — **Navegación del celular** (ADR-S90; pedido del
+  usuario, ver §10). Barra de pestañas fija abajo en el teléfono y la app
+  instalada (Listas · Mi trabajo · Buscar · Avisos con el número sin leer ·
+  Más con un punto si hay novedades), sin hamburguesa ni cajón; barra de arriba
+  con el logo y el nombre de la empresa (cambia de empresa); página **Más**
+  (`/menu`) con cuenta, empresas, accesos, tema, instalar, ayuda y cerrar
+  sesión; **Avisos** a pantalla completa (`/avisos`, la bandeja se extrajo de
+  la campana); **Ajustes y Plataforma** con índice táctil en el teléfono y
+  «‹ Volver», reagrupados por tema (Empresa · Personas · Conexiones · Clientes ·
+  Mantenimiento · Cuenta; Clientes · La app · Servidor); listas en filas con
+  Recientes y Favoritos arriba; `100dvh` y zonas seguras. Recorridos con los
+  pasos del celular sobre las pestañas, guía nueva, pantallas de ayuda
+  `inbox`/`menu`, ilustración `celular-pestanas`, Aprende y novedad. Tests: 6
+  front + 2 shared nuevos (front 718, shared 624); E2E navegador 78/78 en
+  celular claro/oscuro y escritorio.
 
 - **2026-10-31 · v0.1.341** — **Sugerencias para cada lista** (ADR-S89; pedido
   del usuario, ver §10). Botón **Sugerencias** en la cabecera de la lista (con el

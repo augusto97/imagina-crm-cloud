@@ -143,6 +143,9 @@ export const HELP_SCREENS = [
     { id: 'dashboards', label: 'Tableros' },
     { id: 'agents', label: 'Agentes de IA' },
     { id: 'settings', label: 'Ajustes' },
+    // v0.1.342 — las pestañas del celular.
+    { id: 'inbox', label: 'Avisos' },
+    { id: 'menu', label: 'Más (menú del celular)' },
 ] as const;
 export type HelpScreenId = (typeof HELP_SCREENS)[number]['id'];
 
@@ -175,6 +178,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     if (/^\/lists\/[^/]+\/(template-editor|portal-editor)$/.test(path)) out.push('layout-editor');
     if (path === '/my-work') out.push('my-work');
     if (path === '/favorites') out.push('favorites');
+    if (path === '/avisos') out.push('inbox');
+    if (path === '/menu') out.push('menu');
     if (/^\/dashboards(\/.*)?$/.test(path)) out.push('dashboards');
     if (/^\/agents(\/.*)?$/.test(path)) out.push('agents');
     if (/^\/settings(\/.*)?$/.test(path)) {

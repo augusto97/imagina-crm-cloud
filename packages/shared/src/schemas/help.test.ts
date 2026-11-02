@@ -61,6 +61,9 @@ describe('pantallas de la app', () => {
         expect(helpScreensFor('/settings', '?s=miembros')).toEqual(['settings', 'settings:miembros']);
         expect(helpScreensFor('/settings/whatsapp/3')).toEqual(['settings', 'settings:conectores']);
         expect(helpScreensFor('/dashboards/4')).toEqual(['dashboards']);
+        // v0.1.342 — las pestañas del celular.
+        expect(helpScreensFor('/avisos')).toEqual(['inbox']);
+        expect(helpScreensFor('/menu')).toEqual(['menu']);
     });
 });
 

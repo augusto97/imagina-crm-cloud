@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { Outlet, useNavigate } from 'react-router';
 
 import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
 import { AccessBanner } from '@/admin/layout/AccessBanner';
@@ -11,11 +11,13 @@ import { GettingStarted } from '@/admin/onboarding/GettingStarted';
 import { ActivePathSync } from './activePath';
 import { RouteTracker } from './RouteTracker';
 import { ShortcutsDialog } from './ShortcutsDialog';
+import { MobileTabBar } from '@/admin/layout/MobileTabBar';
 import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
 import { Topbar } from '@/admin/layout/Topbar';
 import { WhatsNewHost } from '@/admin/whats-new/WhatsNewHost';
 import { WhatsNewNoticeBanner } from '@/admin/whats-new/WhatsNewNoticeBanner';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { __ } from '@/lib/i18n';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { CHORD_TIMEOUT_MS, isTypingTarget, resolveGoChord } from '@/lib/shortcuts';
@@ -28,28 +30,14 @@ export function AdminShell(): JSX.Element {
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
     const [createListOpen, setCreateListOpen] = useState(false);
-    const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [scanOpen, setScanOpen] = useState(false);
     const [paletteQuery, setPaletteQuery] = useState('');
-    const location = useLocation();
     const navigate = useNavigate();
-
-    // Cerrar el drawer del sidebar al navegar (mobile).
-    useEffect(() => {
-        setMobileNavOpen(false);
-    }, [location.pathname]);
-
-    // v0.1.169 — Escape cierra el drawer (teclado físico en tablet / lector
-    // de pantalla). El velo tapa el contenido; el shell es h-screen con
-    // overflow-hidden, así que no hay scroll de documento que bloquear.
-    useEffect(() => {
-        if (!mobileNavOpen) return;
-        const onKey = (e: KeyboardEvent): void => {
-            if (e.key === 'Escape') setMobileNavOpen(false);
-        };
-        document.addEventListener('keydown', onKey);
-        return () => document.removeEventListener('keydown', onKey);
-    }, [mobileNavOpen]);
+    // v0.1.342 — el riel + panel es del escritorio. Bajo 1024 px manda la
+    // barra de pestañas de abajo (Listas · Mi trabajo · Buscar · Avisos · Más),
+    // como en las apps del teléfono: antes había que abrir un cajón de dos
+    // columnas para cualquier cosa. El Sidebar ni se monta en el celular.
+    const isDesktop = useMediaQuery('(min-width: 1024px)');
 
     // Atajos globales (v0.1.286):
     //  - Ctrl/⌘+K abre la paleta desde CUALQUIER lugar, también con el foco en
@@ -96,27 +84,18 @@ export function AdminShell(): JSX.Element {
     const openScan = useCallback(() => setScanOpen(true), []);
 
     return (
-        <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-overflow-hidden imcrm-bg-background imcrm-text-foreground">
+        // `imcrm-app-height` = 100dvh (con 100vh de respaldo): en Safari del
+        // iPhone 100vh es MÁS alto que lo visible y la barra de abajo quedaba
+        // tapada por la del navegador. Los rellenos `safe-area` respetan la
+        // muesca y la barra del inicio en la app instalada (viewport-fit=cover).
+        <div className="imcrm-app-shell imcrm-flex imcrm-app-height imcrm-w-full imcrm-overflow-hidden imcrm-bg-background imcrm-text-foreground">
             <SkipLink />
-            {/* Backdrop del drawer en mobile. */}
-            {mobileNavOpen && (
-                <div
-                    className="imcrm-fixed imcrm-inset-0 imcrm-z-40 imcrm-bg-black/40 lg:imcrm-hidden"
-                    aria-hidden
-                    data-testid="imcrm-drawer-backdrop"
-                    onClick={() => setMobileNavOpen(false)}
-                />
-            )}
             <ActivePathSync />
             <RouteTracker />
-            <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+            {isDesktop && <Sidebar />}
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                 <ImpersonationBanner />
-                <Topbar
-                    onMenuClick={() => setMobileNavOpen(true)}
-                    onSearchClick={openPalette}
-                    onShowShortcuts={openShortcuts}
-                />
+                <Topbar onSearchClick={openPalette} onShowShortcuts={openShortcuts} />
                 <AccessBanner />
                 <EmailVerifyBanner />
                 {/* Fase 7 — avisos de la plataforma (mantenimiento, etc.). */}
@@ -134,6 +113,7 @@ export function AdminShell(): JSX.Element {
                         <Outlet />
                     </div>
                 </main>
+                <MobileTabBar onSearch={openPalette} />
             </div>
             <GlobalCommandPalette
                 open={paletteOpen}

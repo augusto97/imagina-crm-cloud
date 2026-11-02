@@ -319,7 +319,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Instalarla' },
             {
                 t: 'p',
-                md: 'Abre el menú de tu cuenta (tu avatar) → **Instalar la app**, o ve a **Ajustes → Cuenta → Avisos**, tarjeta **App en este dispositivo**. Si tu navegador puede instalarla con un clic, se abre su ventana de instalación; si no, la app te muestra los pasos exactos para ese navegador.',
+                md: 'Abre el menú de tu cuenta (tu avatar; en el celular, la pestaña **Más**) → **Instalar la app**, o ve a **Ajustes → Cuenta → Avisos**, tarjeta **App en este dispositivo**. Si tu navegador puede instalarla con un clic, se abre su ventana de instalación; si no, la app te muestra los pasos exactos para ese navegador.',
             },
             {
                 t: 'settings',

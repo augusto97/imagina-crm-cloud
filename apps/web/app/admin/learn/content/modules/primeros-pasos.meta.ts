@@ -28,10 +28,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'primeros-pasos-moverte',
             title: 'Cómo moverte por la app: el menú, el panel y la barra superior',
-            summary: 'El riel de la izquierda, el panel con tus listas, la barra de arriba y el menú de tu cuenta: qué hay en cada lugar.',
+            summary: 'El riel y el panel del computador, la barra de pestañas del celular y el menú de tu cuenta: qué hay en cada lugar.',
             minutes: 7,
             level: 'basic',
-            keywords: 'menu navegacion riel panel lateral barra superior topbar celular movil colapsar',
+            keywords: 'menu navegacion riel panel lateral barra superior topbar celular movil colapsar pestañas barra inferior mas avisos app instalada',
         },
         {
             id: 'primeros-pasos-empezar',

@@ -1,5 +1,4 @@
 import { PlatformBrandCard } from './PlatformBrandCard';
-import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
     AlertTriangle,
@@ -11,12 +10,14 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { BackToIndex, SectionIndex } from '@/components/nav/SectionIndex';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { StatTile } from '@/components/ui/stat-tile';
 import { usePlatformStats } from '@/hooks/usePlatform';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-import { isPlatformTab, PLATFORM_TABS, type PlatformTabId } from './platformTabs';
+import { isPlatformTab, platformTabGroups, PLATFORM_TABS, type PlatformTabId } from './platformTabs';
 import { PlatformAiCard } from './PlatformAiCard';
 import { PlatformDiagnosticsCard } from './PlatformDiagnosticsCard';
 import { PlatformDomainsCard } from './PlatformDomainsCard';
@@ -48,52 +49,24 @@ import { formatNumber } from '@/lib/tenantFormat';
  */
 export function PlatformPage(): JSX.Element {
     const stats = usePlatformStats();
-    const [params, setParams] = useSearchParams();
-    const [fallbackTab, setFallbackTab] = useState<PlatformTabId>('tenants');
+    const [params] = useSearchParams();
     const requested = params.get('tab');
-    const tab: PlatformTabId = isPlatformTab(requested) ? requested : fallbackTab;
-    const setTab = (id: PlatformTabId): void => {
-        setFallbackTab(id);
-        setParams(
-            (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set('tab', id);
-                return next;
-            },
-            { replace: true },
-        );
-    };
+    const tab: PlatformTabId = isPlatformTab(requested) ? requested : 'tenants';
+    // v0.1.342 — en el celular `/platform` es un índice (antes, una tira de 16
+    // pestañas que se deslizaba de costado) y cada sección lleva «‹ Plataforma».
+    const isNarrow = useMediaQuery('(max-width: 1023px)');
+    const showIndex = isNarrow && !isPlatformTab(requested);
+    const current = PLATFORM_TABS.find((t) => t.id === tab);
+    /** La sección que se dibuja (ninguna mientras se ve el índice del celular). */
+    const shown: PlatformTabId | null = showIndex ? null : tab;
     const s = stats.data;
 
     const counts: Partial<Record<PlatformTabId, number | undefined>> = {
         tenants: s?.tenants_total,
         users: s?.users_total,
     };
-    const TABS = PLATFORM_TABS.map((t) => ({ ...t, label: __(t.label), count: counts[t.id] }));
 
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
-            {/* Header de operador */}
-            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-4">
-                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
-                    <ShieldCheck className="imcrm-h-5 imcrm-w-5" aria-hidden />
-                </span>
-                <div className="imcrm-min-w-0 imcrm-flex-1">
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
-                        <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                            {__('Plataforma')}
-                        </h1>
-                        <Badge dot>{__('Superadmin')}</Badge>
-                    </div>
-                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Consola del operador — empresas, usuarios, planes y auditoría de soporte.')}
-                    </p>
-                </div>
-            </header>
-
-            {/* KPIs del negocio — v0.1.252: sólo en Empresas (antes se repetían
-                arriba de CADA sección, empujando el contenido hacia abajo). */}
-            {tab === 'tenants' && (
+    const statsBlock = (
             <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 md:imcrm-grid-cols-3 xl:imcrm-grid-cols-5">
                 {stats.isLoading &&
                     Array.from({ length: 5 }).map((_, i) => (
@@ -149,80 +122,86 @@ export function PlatformPage(): JSX.Element {
                     </>
                 )}
             </div>
+    );
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
+            {isNarrow && !showIndex && <BackToIndex to="/platform" label={__('Plataforma')} className="-imcrm-mb-4" />}
+            {/* Header de operador */}
+            <header className={cn('imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-4', isNarrow && !showIndex && 'imcrm-hidden')}>
+                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
+                    <ShieldCheck className="imcrm-h-5 imcrm-w-5" aria-hidden />
+                </span>
+                <div className="imcrm-min-w-0 imcrm-flex-1">
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
+                        <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
+                            {__('Plataforma')}
+                        </h1>
+                        <Badge dot>{__('Superadmin')}</Badge>
+                    </div>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        {__('Consola del operador — empresas, usuarios, planes y auditoría de soporte.')}
+                    </p>
+                </div>
+            </header>
+
+            {/* KPIs del negocio — v0.1.252: sólo en Empresas (antes se repetían
+                arriba de CADA sección). v0.1.342: en el celular van DEBAJO del
+                índice, que es lo que se viene a buscar. */}
+            {!isNarrow && tab === 'tenants' && statsBlock}
+
+            {showIndex && (
+                <SectionIndex
+                    testId="platform-index"
+                    groups={platformTabGroups().map((g) => ({
+                        label: g.label,
+                        items: g.items.map((t) => ({
+                            ...t,
+                            to: `/platform?tab=${t.id}`,
+                            count: counts[t.id] !== undefined ? formatNumber(counts[t.id]!) : null,
+                        })),
+                    }))}
+                />
+            )}
+            {showIndex && statsBlock}
+
+            {/* Celular: la sección elegida con su título y para qué sirve (en
+                escritorio lo marca el panel lateral y cada tarjeta trae su título). */}
+            {isNarrow && !showIndex && current && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="platform-section" data-section={tab}>
+                    <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">{__(current.label)}</h2>
+                    <p className="imcrm-text-[13px] imcrm-text-muted-foreground">{__(current.hint)}</p>
+                </div>
             )}
 
-            {/* Pestañas de gestión */}
-            <div
-                role="tablist"
-                aria-label={__('Secciones de la consola')}
-                // v0.1.252 — en escritorio el panel lateral ya lista las
-                // secciones: las pestañas sólo hacen falta en el celular, y ahí
-                // van en una fila que scrollea en vez de ocupar media pantalla.
-                className="imcrm-flex imcrm-gap-1 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border lg:imcrm-hidden"
-            >
-                {TABS.map((t) => {
-                    const Icon = t.icon;
-                    const active = tab === t.id;
-                    return (
-                        <button
-                            key={t.id}
-                            role="tab"
-                            aria-selected={active}
-                            onClick={() => setTab(t.id)}
-                            className={cn(
-                                'imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-font-medium imcrm-transition-colors',
-                                active
-                                    ? 'imcrm-border-primary imcrm-text-foreground'
-                                    : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                            )}
-                        >
-                            <Icon className={cn('imcrm-h-4 imcrm-w-4', active && 'imcrm-text-primary')} aria-hidden />
-                            {t.label}
-                            {t.count !== undefined && (
-                                <span
-                                    className={cn(
-                                        'imcrm-rounded-full imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-semibold imcrm-tabular-nums imcrm-leading-none',
-                                        active
-                                            ? 'imcrm-bg-primary/10 imcrm-text-primary'
-                                            : 'imcrm-bg-muted imcrm-text-muted-foreground',
-                                    )}
-                                >
-                                    {formatNumber(t.count)}
-                                </span>
-                            )}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {tab === 'tenants' && <PlatformTenantsCard />}
-            {tab === 'users' && <PlatformUsersCard />}
-            {tab === 'plans' && (
+            {shown === 'tenants' && <PlatformTenantsCard />}
+            {shown === 'users' && <PlatformUsersCard />}
+            {shown === 'plans' && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                     <PlatformBillingPolicyCard />
                     <PlatformPlansCard />
                 </div>
             )}
-            {tab === 'audit' && <PlatformImpersonationsCard />}
-            {tab === 'novedades' && <PlatformWhatsNewCard />}
-            {tab === 'marca' && <PlatformBrandCard />}
+            {shown === 'audit' && <PlatformImpersonationsCard />}
+            {shown === 'novedades' && <PlatformWhatsNewCard />}
+            {shown === 'marca' && <PlatformBrandCard />}
             {/* Ajustes GLOBALES de la app (antes vivían en Ajustes del workspace). */}
-            {tab === 'correo' && <SmtpSettingsPanel />}
-            {tab === 'diagnostico' && <PlatformDiagnosticsCard />}
-            {tab === 'dominios' && <PlatformDomainsCard />}
-            {tab === 'cobros' && <PlatformPaymentsCard />}
-            {tab === 'ai' && <PlatformAiCard />}
-            {tab === 'integraciones' && (
+            {shown === 'correo' && <SmtpSettingsPanel />}
+            {shown === 'diagnostico' && <PlatformDiagnosticsCard />}
+            {shown === 'dominios' && <PlatformDomainsCard />}
+            {shown === 'cobros' && <PlatformPaymentsCard />}
+            {shown === 'ai' && <PlatformAiCard />}
+            {shown === 'integraciones' && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
                     <PlatformIntegrationsCard />
                     {/* v0.1.289 — llaves de captcha para los formularios de todas las empresas. */}
                     <CaptchaKeysCard scope="platform" />
                 </div>
             )}
-            {tab === 'ayuda' && <PlatformHelpCard />}
-            {tab === 'updates' && <SystemUpdatesPanel />}
-            {tab === 'backups' && <BackupsPanel />}
-            {tab === 'transfers' && <PlatformTransfersCard />}
+            {shown === 'ayuda' && <PlatformHelpCard />}
+            {shown === 'updates' && <SystemUpdatesPanel />}
+            {shown === 'backups' && <BackupsPanel />}
+            {shown === 'transfers' && <PlatformTransfersCard />}
         </div>
     );
 }

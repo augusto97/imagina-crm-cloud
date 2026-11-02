@@ -4,8 +4,9 @@ import type { TourContext, TourDef } from '../tour/tourTypes';
  * Los recorridos de la app (fase 7, rediseñados en v0.1.324). Cada paso
  * señala un elemento por su `data-tour` (un test verifica que cada uno exista
  * en el código) y se adapta a quien mira: los pasos que su rol no puede usar
- * se omiten, y en el celular los que señalan el riel o el panel lateral
- * cambian por el botón del menú.
+ * se omiten, y en el celular los que señalan el riel, el panel lateral o la
+ * barra de arriba cambian por la barra de pestañas de abajo (v0.1.342:
+ * Listas · Mi trabajo · Buscar · Avisos · Más).
  *
  * Cada recorrido tiene su portada (ilustración, minutos, «Vas a ver») y su
  * cierre (lo que se vio, el recorrido que sigue y la guía completa en
@@ -45,9 +46,10 @@ export const TOURS: TourDef[] = [
                 body: 'Aquí vive la información de tu empresa: cada lista guarda registros (clientes, tareas, pedidos…). En el panel de al lado las ordenas en carpetas y anclas a **Favoritos** las que más usas.',
                 tip: 'Arrastra una lista sobre una carpeta para guardarla ahí.',
                 mobile: {
-                    target: 'topbar-menu',
-                    title: 'El menú',
-                    body: 'Toca aquí para moverte entre las secciones: tus listas, **Mi trabajo**, **Favoritos** y **Ajustes**.',
+                    target: 'tabbar-lists',
+                    placement: 'top',
+                    title: 'Todo a un toque, abajo',
+                    body: 'La barra de abajo te lleva a todo: **Listas**, **Mi trabajo**, **Buscar**, **Avisos** y **Más**. En **Listas** está la información de tu empresa.',
                 },
             },
             {
@@ -102,8 +104,9 @@ export const TOURS: TourDef[] = [
                 title: 'Mi trabajo',
                 body: 'Lo que tienes asignado en todas las listas, ordenado por fecha: lo vencido, lo de hoy y lo que viene.',
                 mobile: {
-                    target: null,
-                    body: 'En el menú, **Mi trabajo** reúne lo que tienes asignado en todas las listas, ordenado por fecha.',
+                    target: 'tabbar-mywork',
+                    placement: 'top',
+                    body: '**Mi trabajo** reúne lo que tienes asignado en todas las listas, ordenado por fecha.',
                 },
             },
             {
@@ -113,6 +116,11 @@ export const TOURS: TourDef[] = [
                 art: 'dia-campana',
                 title: 'Avisos',
                 body: 'La campana te avisa cuando te mencionan, te asignan algo, te piden una aprobación o cambia un registro que sigues.',
+                mobile: {
+                    target: 'tabbar-inbox',
+                    placement: 'top',
+                    body: 'En **Avisos** te enteras cuando te mencionan, te asignan algo, te piden una aprobación o cambia un registro que sigues. El número dice cuántos no leíste.',
+                },
             },
             {
                 id: 'dashboards',
@@ -151,7 +159,12 @@ export const TOURS: TourDef[] = [
                 art: 'learn-hero',
                 title: 'Aprende todo lo demás',
                 body: 'En **Aprende** está el manual de cada módulo con animaciones y capturas, y **Ideas para tu negocio**: automatizaciones listas que se activan con un clic.',
-                mobile: 'skip',
+                mobile: {
+                    target: 'tabbar-more',
+                    placement: 'top',
+                    title: 'Todo lo demás, en Más',
+                    body: 'En **Más** están los **Tableros**, **Favoritos**, **Aprende**, **Ajustes**, tu cuenta y la ayuda.',
+                },
             },
             {
                 id: 'search',
@@ -160,6 +173,11 @@ export const TOURS: TourDef[] = [
                 art: 'pp-buscar',
                 title: 'Encuentra cualquier cosa',
                 body: 'Busca listas, registros, tableros y guías, o salta a cualquier sección. Atajo: **Ctrl+K** (⌘K en Mac).',
+                mobile: {
+                    target: 'tabbar-search',
+                    placement: 'top',
+                    body: 'Con **Buscar** encuentras listas, registros, tableros y guías por su nombre. También lee códigos QR y de barras con la cámara.',
+                },
             },
             {
                 id: 'help',
@@ -169,8 +187,9 @@ export const TOURS: TourDef[] = [
                 title: 'Ayuda cuando la necesites',
                 body: 'Aquí tienes guías rápidas «¿Cómo hago…?» y puedes repetir este recorrido o hacer los de cada tarea.',
                 mobile: {
-                    target: 'topbar-user',
-                    body: 'En tu menú, **Ayuda** tiene guías rápidas «¿Cómo hago…?» y los recorridos de cada tarea.',
+                    target: 'tabbar-more',
+                    placement: 'top',
+                    body: 'En **Más → Centro de ayuda** tienes guías rápidas «¿Cómo hago…?» y los recorridos de cada tarea.',
                 },
             },
         ],
@@ -198,8 +217,9 @@ export const TOURS: TourDef[] = [
                 body: 'Todo lo que tienes asignado, de todas las listas, agrupado en **Vencido**, **Hoy**, **Próximos 7 días** y **Más adelante**. Lo terminado sale solo.',
                 tip: 'También aparecen aquí tus recordatorios, los ítems de checklist que te asignaron y las aprobaciones que esperan tu decisión.',
                 mobile: {
-                    target: null,
-                    body: 'En el menú, **Mi trabajo** reúne todo lo que tienes asignado, de todas las listas, ordenado por fecha.',
+                    target: 'tabbar-mywork',
+                    placement: 'top',
+                    body: '**Mi trabajo** reúne todo lo que tienes asignado, de todas las listas, ordenado por fecha.',
                 },
             },
             {
@@ -209,6 +229,12 @@ export const TOURS: TourDef[] = [
                 art: 'dia-campana',
                 title: 'La campana',
                 body: 'Te avisa al instante cuando te mencionan, te asignan algo o cambia un registro que sigues. Un clic en el aviso te lleva al registro.',
+                mobile: {
+                    target: 'tabbar-inbox',
+                    placement: 'top',
+                    title: 'Avisos',
+                    body: 'Te avisa al instante cuando te mencionan, te asignan algo o cambia un registro que sigues. Tocar un aviso te lleva al registro.',
+                },
             },
             {
                 id: 'follow',
@@ -223,7 +249,11 @@ export const TOURS: TourDef[] = [
                 art: 'dia-favoritos',
                 title: 'Favoritos',
                 body: 'Ancla las listas, vistas y tableros que más usas: quedan a un clic, sin buscarlos en el menú.',
-                mobile: 'skip',
+                mobile: {
+                    target: 'tabbar-more',
+                    placement: 'top',
+                    body: 'Ancla las listas, vistas y tableros que más usas: los encuentras en **Más → Favoritos**, y las listas también arriba de **Listas**.',
+                },
             },
             {
                 id: 'push',
@@ -256,8 +286,9 @@ export const TOURS: TourDef[] = [
                 body: 'Un manual por módulo —listas, vistas, automatizaciones, portal, tableros…— con animaciones y capturas reales paso a paso.',
                 tip: 'Usa el buscador de arriba del manual: encuentra por cualquier palabra, sin importar las tildes.',
                 mobile: {
-                    target: null,
-                    body: 'En el menú, **Aprende** tiene el manual de cada módulo, con animaciones y capturas reales paso a paso.',
+                    target: 'tabbar-more',
+                    placement: 'top',
+                    body: 'En **Más → Aprende** está el manual de cada módulo, con animaciones y capturas reales paso a paso.',
                 },
             },
             {
@@ -287,8 +318,9 @@ export const TOURS: TourDef[] = [
                 title: 'Novedades',
                 body: 'El megáfono te cuenta qué trae cada versión nueva, con un botón para probarlo. El punto indica que hay algo que todavía no viste.',
                 mobile: {
-                    target: 'topbar-user',
-                    body: 'En tu menú, **Novedades** te cuenta qué trae cada versión, con un botón para probarlo.',
+                    target: 'tabbar-more',
+                    placement: 'top',
+                    body: 'En **Más → Novedades** te contamos qué trae cada versión, con un botón para probarlo. El punto en **Más** indica que hay algo que todavía no viste.',
                 },
             },
         ],
@@ -872,7 +904,7 @@ export const TOURS: TourDef[] = [
                 route: '/settings?s=avisos',
                 target: 'install-card',
                 title: 'Instala la app',
-                body: 'Aquí la instalas en este dispositivo: con un clic si tu navegador lo permite, o con los pasos para tu navegador. También está en tu menú → **Instalar la app**.',
+                body: 'Aquí la instalas en este dispositivo: con un clic si tu navegador lo permite, o con los pasos para tu navegador. También está en tu menú → **Instalar la app** (en el celular, en **Más**).',
             },
             {
                 id: 'push',
@@ -912,6 +944,11 @@ export const TOURS: TourDef[] = [
                 art: 'pp-buscar',
                 title: 'Búsqueda global',
                 body: 'Encuentra listas, registros, tableros y guías por su nombre, o salta a una sección. Atajo: **Ctrl+K** (⌘K en Mac).',
+                mobile: {
+                    target: 'tabbar-search',
+                    placement: 'top',
+                    body: 'Toca **Buscar** para encontrar listas, registros, tableros y guías por su nombre, o leer un código con la cámara.',
+                },
             },
             {
                 id: 'keys',
@@ -927,7 +964,7 @@ export const TOURS: TourDef[] = [
                 art: 'pp-ayuda',
                 title: 'Y la ayuda, aquí',
                 body: 'Busca «cómo…» en la ayuda o en la búsqueda global: las guías también aparecen ahí.',
-                mobile: { target: 'topbar-user', body: 'En tu menú está **Ayuda**: busca «cómo…» y encuentra la guía.' },
+                mobile: { target: 'tabbar-more', placement: 'top', body: 'En **Más → Centro de ayuda** busca «cómo…» y encuentra la guía.' },
             },
         ],
     },

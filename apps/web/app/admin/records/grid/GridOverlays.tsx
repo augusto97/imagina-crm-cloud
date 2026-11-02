@@ -344,7 +344,7 @@ function SelectionBar({ grid }: { grid: GridController }): JSX.Element | null {
     if (!info) return null;
     return (
         <div
-            className="imcrm-pointer-events-none imcrm-fixed imcrm-bottom-4 imcrm-left-1/2 imcrm-z-30 imcrm--translate-x-1/2 imcrm-px-3"
+            className="imcrm-above-tabbar imcrm-pointer-events-none imcrm-fixed imcrm-bottom-4 imcrm-left-1/2 imcrm-z-30 imcrm--translate-x-1/2 imcrm-px-3"
             role="status"
             aria-live="polite"
             data-testid="imcrm-grid-selection-bar"

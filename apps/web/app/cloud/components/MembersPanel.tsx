@@ -37,7 +37,7 @@ export function MembersPanel(): JSX.Element {
                         <Users className="imcrm-h-4 imcrm-w-4" aria-hidden />
                     </span>
                     <div>
-                        <CardTitle>Miembros del workspace</CardTitle>
+                        <CardTitle>Miembros de la empresa</CardTitle>
                         <CardDescription>
                             Invita a tu equipo por email y elige su rol. Si la persona no tiene cuenta, le llega un correo
                             para definir su contraseña; si ya tiene, queda sumada al instante. Los clientes del portal se

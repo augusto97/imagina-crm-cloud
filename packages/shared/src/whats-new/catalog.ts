@@ -900,4 +900,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.342-navegacion-celular',
+        version: '0.1.342',
+        date: '2026-11-02',
+        kind: 'improvement',
+        title: 'En el celular, todo a un toque desde la barra de abajo',
+        summary:
+            'En el teléfono y en la app instalada ya no hay menú escondido: abajo tienes Listas, Mi trabajo, Buscar, Avisos y Más, como en las apps. Ajustes y Plataforma se ven como una lista ordenada por tema.',
+        media: {
+            slides: [
+                {
+                    title: 'Una barra fija, al alcance del pulgar',
+                    text: 'Listas, Mi trabajo, Buscar, Avisos con el número de los que no has leído, y Más. La pestaña en la que estás se ve resaltada; tocarla otra vez te sube al principio.',
+                    illustration: 'celular-pestanas',
+                },
+                {
+                    title: 'Tus avisos, a pantalla completa',
+                    text: 'Menciones, asignaciones, recordatorios y aprobaciones en su propia pestaña, con «Sin leer» y «Marcar todo leído».',
+                    illustration: 'dia-campana',
+                },
+                {
+                    title: 'Todo lo demás, en «Más»',
+                    text: 'Tu cuenta, cambiar de empresa, Favoritos, Tableros, Aprende, Ajustes, el tema claro u oscuro, instalar la app, la ayuda y cerrar sesión.',
+                    illustration: 'cuenta-menu',
+                },
+                {
+                    title: 'Ajustes sin listas desplegables',
+                    text: 'Las secciones se ven como una lista por tema: Empresa, Personas, Conexiones, Clientes, Mantenimiento y Cuenta. Dentro de una, «‹ Ajustes» te devuelve.',
+                    illustration: 'pp-menu',
+                },
+            ],
+        },
+        body: 'Abre la app en tu teléfono. Si perteneces a más de una empresa, toca su nombre en la barra de arriba para cambiar. En el computador todo sigue igual: el menú de la izquierda, ahora con Ajustes ordenado por tema.',
+        action: { label: 'Ver cómo funciona', href: '/lists', tour: 'welcome' },
+    },
 ];

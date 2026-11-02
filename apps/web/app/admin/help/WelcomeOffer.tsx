@@ -121,7 +121,7 @@ export function WelcomeOffer({
     const later = (): void => {
         setClosed(true);
         update.mutate({ welcome_offered: true });
-        toast?.info(__('Cuando quieras, lo encuentras en Ayuda'), __('Arriba a la derecha, o en tu menú en el celular.'));
+        toast?.info(__('Cuando quieras, lo encuentras en Ayuda'), __('Arriba a la derecha, o en «Más» en el celular.'));
     };
     const start = (): void => {
         setClosed(true);
@@ -140,6 +140,8 @@ export function WelcomeOffer({
             className={cn(
                 'imcrm-fixed imcrm-z-[45] imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
                 narrow ? 'imcrm-inset-x-3 imcrm-bottom-3' : 'imcrm-bottom-5 imcrm-right-5 imcrm-w-[340px]',
+                // v0.1.342 — arriba de la barra de pestañas (si no se acomodó ya sobre «Primeros pasos»).
+                bottom === null && 'imcrm-above-tabbar',
                 !reducedMotion && 'imcrm-animate-imcrm-fade-in',
             )}
         >

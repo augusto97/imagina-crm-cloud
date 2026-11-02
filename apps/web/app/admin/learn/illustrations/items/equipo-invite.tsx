@@ -90,7 +90,7 @@ export default function EquipoInvite(): JSX.Element {
             <Win x={16} y={34} w={300} h={234} title="Ajustes · Miembros">
                 <At x={12} y={10}>
                     <T size={11} weight={700}>
-                        Miembros del workspace
+                        Miembros de la empresa
                     </T>
                 </At>
                 {/* Formulario */}

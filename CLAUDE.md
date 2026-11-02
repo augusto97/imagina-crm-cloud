@@ -10808,6 +10808,62 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         herramientas por rol, ejemplos de texto tapados) y 2 del front + E2E navegador 26/26 contra un
         proveedor de IA simulado (escritorio, celular en oscuro).
 
+  - [x] **Navegación del celular: barra de pestañas fija, «Más» y secciones
+        como índice (v0.1.342, ADR-S90, pedido del usuario: "en celular el menú
+        aparece como un desplegable o puede ser confuso… en la PWA debería tener
+        un menú fijo como las apps… que sea súper fácil para casi cualquier
+        usuario")**. La revisión encontró que en el teléfono todo vivía detrás
+        de una hamburguesa que abría el riel y el panel del escritorio como un
+        cajón de dos columnas, que Ajustes y Plataforma cambiaban de sección con
+        un `<select>` nativo, que la barra de arriba amontonaba seis botones y
+        cortaba el nombre de la empresa, que cada lista ocupaba media pantalla y
+        que `100vh` dejaba contenido bajo la barra de Safari. Ahora:
+        (a) **barra de pestañas abajo** (`MobileTabBar`, < 1024 px, también en
+        la app instalada): **Listas · Mi trabajo · Buscar · Avisos · Más**, con
+        pastilla en la activa (`aria-current`), el número de avisos sin leer, un
+        punto en Más si hay novedades, y tocar la activa sube al principio. Es
+        el último hijo flex de la columna (no `fixed`): el contenido se acorta
+        solo; publica su alto en `--imcrm-bottom-nav` y lo flotante (avisos,
+        barra de selección, «Primeros pasos», ofrecimientos) usa
+        `.imcrm-above-tabbar`. Qué pestaña marca cada ruta lo decide
+        `mobileNav.ts` (puro): todo lo que se alcanza desde Más deja Más
+        marcada. Sin menciones, Avisos pasa a ser Favoritos.
+        (b) **El riel y el cajón no existen en el teléfono** (el `Sidebar` es
+        sólo de escritorio); la barra de arriba queda con el logo y el nombre
+        de la empresa (que cambia de empresa si hay varias), «Problemas» y el
+        asistente. El invitado conserva su hamburguesa (su shell no tiene
+        pestañas).
+        (c) **«Más»** (`/menu`): cuenta, tus empresas, Favoritos, Tableros,
+        Agentes, Aprende, Ideas, Novedades, Ajustes, Problemas, Papelera,
+        Plataforma, tema en tres botones, instalar la app, avisos, ayuda,
+        Primeros pasos y cerrar sesión (`logout.ts`, compartido con el menú del
+        avatar).
+        (d) **Avisos a pantalla completa** (`/avisos`): la bandeja se extrajo
+        de la campana (`NotificationInbox`, `popover` | `page`).
+        (e) **Ajustes y Plataforma sin desplegables**: en el teléfono la ruta
+        sin sección muestra un **índice táctil** (`SectionIndex`: ícono, nombre
+        y para qué sirve) y dentro de una sección «‹ Ajustes» / «‹ Plataforma»
+        vuelve; Ajustes se reagrupó en Empresa · Personas · Conexiones ·
+        Clientes · Mantenimiento · Cuenta (antes 15 secciones bajo «Empresa») y
+        Plataforma en Clientes · La app · Servidor, también en el panel del
+        escritorio.
+        (f) **Listas** en filas compactas bajo 640 px, con **Recientes** y
+        **Favoritos** arriba.
+        (g) `100dvh`, `viewport-fit=cover` y zonas seguras; la pantalla de
+        arranque dibuja también la barra.
+        (h) Recorridos con los pasos del celular sobre las pestañas
+        (`tabbar-*`), guía «¿Cómo me muevo por la app en el celular?»,
+        pantallas de ayuda `inbox` y `menu`, ilustración `celular-pestanas`,
+        Aprende al día y novedad. «Más» dice **Tableros**, como el riel.
+        Tests: 6 nuevos del front (pestañas por ruta, temas de Ajustes por rol,
+        Plataforma cubre todas sus pestañas) + 2 de pantallas en shared (front
+        718, shared 624 en verde) — E2E navegador 78/78 en celular claro y
+        oscuro y escritorio (pestañas, búsqueda, avisos con el mismo número que
+        la bandeja, Más completo, Ajustes y Plataforma por índice y volver, el
+        recorrido sobre las pestañas, tema, subir al principio, cerrar sesión,
+        sin scroll horizontal ni errores de JS; escritorio sin barra, con la
+        campana y Ajustes de siempre).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

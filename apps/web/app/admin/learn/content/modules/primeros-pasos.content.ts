@@ -117,7 +117,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'La pantalla tiene cuatro zonas que se repiten en toda la app: el **riel** de la izquierda (las secciones), el **panel** de al lado (el contenido de la sección), la **barra superior** (buscar, avisos, ayuda y tu cuenta) y el **área de trabajo** (lo que estás viendo). Con eso claro, nunca te pierdes.',
+                md: 'En el computador la pantalla tiene cuatro zonas que se repiten en toda la app: el **riel** de la izquierda (las secciones), el **panel** de al lado (el contenido de la sección), la **barra superior** (buscar, avisos, ayuda y tu cuenta) y el **área de trabajo** (lo que estás viendo). En el celular todo eso cabe en **una barra de pestañas abajo**, como en cualquier app del teléfono (lo ves más abajo). Con eso claro, nunca te pierdes.',
             },
             { t: 'anim', key: 'pp-menu', caption: 'El riel cambia de sección y el panel de al lado muestra lo de cada una.' },
             { t: 'h', text: 'El riel: las secciones de la app' },
@@ -160,7 +160,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Buscar listas, registros, dashboards…', what: 'Abre la búsqueda global. También con **Ctrl K** (o **⌘K** en Mac).', tip: 'Es la forma más rápida de llegar a un registro.' },
                     { name: '✨ Asistente IA', what: 'Le pides en tus palabras una lista, un tablero, una automatización o un dato.', tip: 'Aparece si la empresa lo activó y tu rol lo permite.' },
-                    { name: 'Megáfono (Novedades)', what: 'Lo nuevo que llegó a la app, con un número cuando hay algo sin ver.', tip: 'En el celular está en el menú de tu cuenta.' },
+                    { name: 'Megáfono (Novedades)', what: 'Lo nuevo que llegó a la app, con un número cuando hay algo sin ver.', tip: 'En el celular está en **Más → Novedades**.' },
                     { name: 'Campana (Avisos)', what: 'Tus avisos: menciones, asignaciones, recordatorios, aprobaciones.', tip: 'El número rojo son los que no leíste.' },
                     { name: '? (Ayuda)', what: 'Guías rápidas, recorridos guiados y el contacto de soporte.' },
                     { name: 'Sol / luna', what: 'Cambia entre modo claro y oscuro.' },
@@ -171,10 +171,26 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'A veces aparecen dos indicadores más: un **cronómetro** en marcha (si estás registrando tiempo en un registro) y una pastilla roja **«N problemas»** cuando algo que corre solo dejó de funcionar (una automatización, el correo o un conector). Tócala para ver qué pasó.',
             },
-            { t: 'h', text: 'En el celular' },
+            { t: 'h', text: 'En el celular y en la app instalada' },
             {
                 t: 'p',
-                md: 'En una pantalla angosta el riel y el panel se esconden detrás del botón **Abrir menú** (las tres rayas, arriba a la izquierda). Al abrirlo, tocar un ícono del riel **cambia el panel** sin salir de donde estás; el menú se cierra cuando tocas una lista, un tablero o una opción. Para cerrarlo sin elegir nada, toca la **X**, fuera del menú o la tecla Escape.',
+                md: 'En una pantalla angosta (el teléfono o una tablet en vertical) la navegación es una **barra de pestañas abajo**, siempre a la vista y al alcance del pulgar. La pestaña en la que estás se ve resaltada en el color de tu empresa.',
+            },
+            { t: 'anim', key: 'celular-pestanas', caption: 'La barra de abajo: «Más» muestra todo lo demás y «Listas» te devuelve a tus listas.' },
+            {
+                t: 'settings',
+                title: 'Las cinco pestañas',
+                rows: [
+                    { name: 'Listas', what: 'Tus listas por carpeta, con **Recientes** y **Favoritos** arriba para llegar de un toque.', tip: 'Si ya estás en Listas, tocarla otra vez te sube al principio.' },
+                    { name: 'Mi trabajo', what: 'Lo que tienes asignado en todas las listas, por vencimiento, más recordatorios y aprobaciones.' },
+                    { name: 'Buscar', what: 'La búsqueda global: listas, registros, tableros y guías. También lee códigos con la cámara.' },
+                    { name: 'Avisos', what: 'Tus menciones, asignaciones, recordatorios y aprobaciones, a pantalla completa.', tip: 'El número rojo son los que no leíste.' },
+                    { name: 'Más', what: 'Tu cuenta, el cambio de empresa, Favoritos, Tableros, Aprende, Ajustes, el tema, instalar la app, la ayuda y cerrar sesión.', tip: 'Un punto en «Más» indica que hay novedades sin ver.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Arriba queda el nombre de tu empresa (si perteneces a más de una, tócalo para cambiar), la pastilla de **problemas** si algo dejó de funcionar y el **asistente ✨**. **Ajustes** y **Plataforma** se ven como una lista de secciones por tema; dentro de una sección, **‹ Ajustes** te devuelve a la lista.',
             },
             {
                 t: 'example',
@@ -184,7 +200,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: 'No veo «Tableros» ni «Agentes» en el riel. ¿Por qué?', a: 'Dependen de tu rol. Si los necesitas, pídeselo a quien administra la empresa.' },
+                    { q: 'No veo «Tableros» ni «Agentes» en el riel (o en «Más»). ¿Por qué?', a: 'Dependen de tu rol. Si los necesitas, pídeselo a quien administra la empresa.' },
+                    { q: 'En el celular, ¿dónde está mi cuenta y cerrar sesión?', a: 'En la pestaña **Más**: arriba está tu nombre (tu cuenta y seguridad) y al final, **Cerrar sesión**.' },
                     { q: '¿El panel colapsado se recuerda?', a: 'Sí, en ese dispositivo. La próxima vez que entres lo encontrarás igual.' },
                     { q: '¿Puedo cambiar el orden de las listas del menú?', a: 'Sí, si puedes administrar listas: arrástralas en el panel. El orden es el mismo para todo el equipo.' },
                 ],
@@ -460,7 +477,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Pasar de una empresa a otra' },
             {
                 t: 'p',
-                md: 'Si trabajas en más de una empresa (por ejemplo, una agencia que lleva a varios clientes), el nombre de la empresa arriba del panel tiene una flechita: tócalo y elige en **Tus empresas**. También puedes cambiar desde el menú de tu cuenta (tu avatar), sección **Empresa**. Cada empresa tiene sus propias listas, miembros, ajustes y avisos; tu cuenta y tu contraseña son las mismas.',
+                md: 'Si trabajas en más de una empresa (por ejemplo, una agencia que lleva a varios clientes), el nombre de la empresa arriba del panel tiene una flechita: tócalo y elige en **Tus empresas**. También puedes cambiar desde el menú de tu cuenta (tu avatar), sección **Empresa**. En el celular, toca el nombre de la empresa en la barra de arriba o entra a **Más → Tus empresas**. Cada empresa tiene sus propias listas, miembros, ajustes y avisos; tu cuenta y tu contraseña son las mismas.',
             },
             {
                 t: 'example',
@@ -538,7 +555,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Modo claro, oscuro o el del sistema' },
             {
                 t: 'p',
-                md: 'El botón de **sol/luna** de la barra superior cambia entre claro y oscuro al instante (en el celular está en el menú de tu cuenta: **Modo oscuro** / **Modo claro**). Para elegir con más detalle, ve a **Ajustes → Cuenta → Apariencia**:',
+                md: 'El botón de **sol/luna** de la barra superior cambia entre claro y oscuro al instante (en el celular está en **Más → Apariencia**). Para elegir con más detalle, ve a **Ajustes → Cuenta → Apariencia**:',
             },
             {
                 t: 'settings',
@@ -599,7 +616,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'El panel de Ayuda' },
             {
                 t: 'p',
-                md: 'El botón **?** de la barra superior (en el celular, en el menú de tu cuenta) abre un panel a la derecha, sin salir de donde estás:',
+                md: 'El botón **?** de la barra superior (en el celular, en **Más → Centro de ayuda**) abre un panel a la derecha, sin salir de donde estás:',
             },
             {
                 t: 'settings',

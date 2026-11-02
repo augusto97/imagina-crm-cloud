@@ -67,7 +67,7 @@ export function BulkActionsToolbar({
             // Aria-live para que screen readers anuncien los cambios
             // de selección.
             className={cn(
-                'imcrm-fixed imcrm-bottom-6 imcrm-left-1/2 imcrm-z-40 imcrm--translate-x-1/2',
+                'imcrm-above-tabbar imcrm-fixed imcrm-bottom-6 imcrm-left-1/2 imcrm-z-40 imcrm--translate-x-1/2',
                 // En el teléfono las acciones quedan sólo con su icono y, si
                 // aun así no entran, la barra scrollea en horizontal.
                 'imcrm-max-w-[calc(100vw-1rem)] imcrm-overflow-x-auto',

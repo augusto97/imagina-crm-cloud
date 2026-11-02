@@ -349,7 +349,7 @@ function IdeaDetail({ idea }: { idea: IdeaDef }): JSX.Element {
                 <button
                     type="button"
                     onClick={() => panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                    className="imcrm-fixed imcrm-bottom-4 imcrm-left-1/2 imcrm-z-30 imcrm-inline-flex imcrm--translate-x-1/2 imcrm-items-center imcrm-gap-2 imcrm-rounded-full imcrm-bg-primary imcrm-px-5 imcrm-py-3 imcrm-text-sm imcrm-font-semibold imcrm-text-primary-foreground imcrm-shadow-imcrm-lg lg:imcrm-hidden"
+                    className="imcrm-above-tabbar imcrm-fixed imcrm-bottom-4 imcrm-left-1/2 imcrm-z-30 imcrm-inline-flex imcrm--translate-x-1/2 imcrm-items-center imcrm-gap-2 imcrm-rounded-full imcrm-bg-primary imcrm-px-5 imcrm-py-3 imcrm-text-sm imcrm-font-semibold imcrm-text-primary-foreground imcrm-shadow-imcrm-lg lg:imcrm-hidden"
                     data-testid="idea-jump-activate"
                 >
                     <Sparkles className="imcrm-h-4 imcrm-w-4" aria-hidden />

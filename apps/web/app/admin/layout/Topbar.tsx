@@ -1,5 +1,5 @@
 import { ActiveTimerChip } from '@/admin/layout/ActiveTimerChip';
-import { Menu, Search, Sparkles } from 'lucide-react';
+import { Building2, ChevronsUpDown, Menu, Search, Sparkles } from 'lucide-react';
 
 import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assistantPanelStore';
 import { HelpTopbarButton } from '@/admin/help/HelpTopbarButton';
@@ -19,6 +19,15 @@ import { PALETTE_SHORTCUT_LABEL } from '@/lib/shortcuts';
 import { CAP, useCan } from '@/lib/permissions';
 import { useIsGuest } from '@/lib/guest';
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
+import { useWorkspaces } from '@/cloud/workspaceSwitch';
+import { WorkspaceMenuItems } from '@/admin/layout/WorkspaceSwitcher';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 /**
  * Topbar:
@@ -30,6 +39,11 @@ import { usePlanModuleOff } from '@/components/PlanModuleNotice';
  *  - Centro/derecha (v0.1.286): el BUSCADOR visible (abre la paleta, también
  *    en táctil, donde no hay Ctrl+K), problemas, asistente, avisos, tema y el
  *    menú de la persona (cuenta, empresa, atajos, cerrar sesión).
+ *  - v0.1.342 — con la barra de pestañas de abajo (`onMenuClick` ausente, el
+ *    shell de la empresa), en el celular la barra superior queda limpia: la
+ *    empresa (tocarla cambia de empresa si hay más de una), problemas, el
+ *    cronómetro y el asistente. Buscar, Avisos y la cuenta viven abajo. La
+ *    hamburguesa sólo queda para el shell de invitados (que no tiene pestañas).
  */
 export function Topbar({
     onMenuClick,
@@ -40,6 +54,7 @@ export function Topbar({
     onSearchClick?: () => void;
     onShowShortcuts?: () => void;
 } = {}): JSX.Element {
+    const hasTabBar = onMenuClick === undefined;
     const assistantOpen = useAssistantPanelOpen();
     // v0.1.338 (ADR-S87) — sin «Inteligencia artificial» en el plan, no hay asistente.
     const aiOff = usePlanModuleOff('ai');
@@ -56,27 +71,24 @@ export function Topbar({
     return (
         <header className="imcrm-admin-topbar imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-2 sm:imcrm-gap-4 sm:imcrm-px-6 lg:imcrm-h-10 lg:imcrm-px-4">
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1">
-                {/* Hamburguesa: abre el sidebar (riel+panel) como drawer (sólo mobile). */}
-                <button
-                    type="button"
-                    onClick={onMenuClick}
-                    aria-label={__('Abrir menú')}
-                    data-testid="imcrm-menu-button"
-                    data-tour="topbar-menu"
-                    className="imcrm-inline-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-text-foreground/80 imcrm-transition-colors hover:imcrm-bg-accent lg:imcrm-hidden"
-                >
-                    <Menu className="imcrm-h-5 imcrm-w-5" />
-                </button>
-                {/* Marca del workspace (sólo mobile). */}
-                <span
-                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 lg:imcrm-hidden"
-                    data-testid="imcrm-topbar-brand"
-                >
-                    <BrandMark url={identity.markUrl} name={workspaceTitle} className="imcrm-h-7 imcrm-w-7 imcrm-text-[11px]" />
-                    <span className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground">
-                        {workspaceTitle}
-                    </span>
-                </span>
+                {/* Hamburguesa: sólo el shell de invitados, que no tiene pestañas abajo. */}
+                {onMenuClick && (
+                    <button
+                        type="button"
+                        onClick={onMenuClick}
+                        aria-label={__('Abrir menú')}
+                        data-testid="imcrm-menu-button"
+                        className="imcrm-inline-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-text-foreground/80 imcrm-transition-colors hover:imcrm-bg-accent lg:imcrm-hidden"
+                    >
+                        <Menu className="imcrm-h-5 imcrm-w-5" />
+                    </button>
+                )}
+                {/* Marca de la empresa (sólo celular); con varias empresas, tocarla cambia de empresa. */}
+                <MobileWorkspaceTitle
+                    markUrl={identity.markUrl}
+                    title={workspaceTitle}
+                    switchable={hasTabBar}
+                />
                 {/* Buscador (escritorio): parece un campo, abre la paleta. */}
                 {onSearchClick && (
                     <button
@@ -104,8 +116,8 @@ export function Topbar({
                 {/* v0.1.285 — algo que corre solo dejó de funcionar. */}
                 {!isGuest && <IncidentsPill />}
 
-                {/* Buscador (mobile/tablet): sólo la lupa. */}
-                {onSearchClick && (
+                {/* Buscador (mobile/tablet): sólo la lupa — con pestañas abajo vive allá. */}
+                {onSearchClick && !hasTabBar && (
                     <Button
                         variant="ghost"
                         size="icon"
@@ -140,7 +152,12 @@ export function Topbar({
                 {/* Fase 7 — novedades (en el teléfono van en el menú de la persona). */}
                 {!isGuest && <WhatsNewButton className="imcrm-hidden sm:imcrm-flex" />}
 
-                {moduleEnabled('mentions') && <NotificationBell />}
+                {/* Con pestañas abajo, en el celular los avisos tienen su pestaña. */}
+                {moduleEnabled('mentions') && (
+                    <div className={cn(hasTabBar && 'imcrm-hidden lg:imcrm-block')}>
+                        <NotificationBell />
+                    </div>
+                )}
 
                 {/* Fase 7 — Ayuda (a la derecha de la campana; en el teléfono, en el menú). */}
                 {!isGuest && <HelpTopbarButton />}
@@ -149,8 +166,64 @@ export function Topbar({
                     de la persona: la barra no tiene lugar para todo). */}
                 <ThemeToggle className="imcrm-hidden imcrm-text-foreground sm:imcrm-inline-flex" />
 
-                <UserMenu onShowShortcuts={onShowShortcuts} />
+                {/* Con pestañas abajo, en el celular la cuenta está en «Más». */}
+                <div className={cn('imcrm-flex', hasTabBar && 'imcrm-hidden lg:imcrm-flex')}>
+                    <UserMenu onShowShortcuts={onShowShortcuts} />
+                </div>
             </div>
         </header>
+    );
+}
+
+/**
+ * v0.1.342 — La empresa en la barra superior del celular. Con más de una (y
+ * sin dominio propio que la fije), es el botón para pasar a otra: antes eso
+ * sólo se podía desde el menú de la cuenta.
+ */
+function MobileWorkspaceTitle({
+    markUrl,
+    title,
+    switchable,
+}: {
+    markUrl: string | null;
+    title: string;
+    switchable: boolean;
+}): JSX.Element {
+    const { memberships, locked } = useWorkspaces();
+    const canSwitch = switchable && memberships.length > 1 && !locked;
+    const body = (
+        <>
+            <BrandMark url={markUrl} name={title} className="imcrm-h-7 imcrm-w-7 imcrm-text-[11px]" />
+            <span className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground">{title}</span>
+        </>
+    );
+    if (!canSwitch) {
+        return (
+            <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-pl-1 lg:imcrm-hidden" data-testid="imcrm-topbar-brand">
+                {body}
+            </span>
+        );
+    }
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <button
+                    type="button"
+                    data-testid="imcrm-topbar-brand"
+                    aria-label={`${__('Cambiar de empresa')} · ${title}`}
+                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-py-1 imcrm-pl-1 imcrm-pr-1.5 imcrm-text-left imcrm-transition-colors active:imcrm-bg-muted data-[state=open]:imcrm-bg-muted lg:imcrm-hidden"
+                >
+                    {body}
+                    <ChevronsUpDown className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="imcrm-w-72">
+                <DropdownMenuLabel className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                    <Building2 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {__('Tus empresas')}
+                </DropdownMenuLabel>
+                <WorkspaceMenuItems />
+            </DropdownMenuContent>
+        </DropdownMenu>
     );
 }
