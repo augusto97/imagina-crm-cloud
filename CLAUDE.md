@@ -10864,6 +10864,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sin scroll horizontal ni errores de JS; escritorio sin barra, con la
         campana y Ajustes de siempre).
 
+  - [x] **El ícono de la app como ícono de app (v0.1.343, ADR-S91, pedido del
+        usuario: "la primera pantalla de la PWA con el logo y un círculo
+        alrededor se ve fea, y el fondo del ícono de la app instalada tampoco me
+        gusta: que se vea bonito y premium")**. Revisando lo que servía su
+        servidor: su logo es un emblema redondo y la app lo reducía al 60 % sobre
+        un fondo liso → un plato blanco con un círculo más pequeño adentro. La
+        primera pantalla la dibuja Android 12+ (el ícono maskable en un círculo
+        sobre el `background_color`) y no se puede quitar: lo que se controla es
+        el ícono. (a) **Estudio del ícono** en Plataforma → Marca
+        (`platform_brand.icon_design`, `iconDesignSchema` en shared; null = el
+        estilo de antes): fondo **de borde a borde** —un color o un degradado de
+        dos colores con su dirección— y el dibujo centrado dentro del círculo que
+        ve el teléfono que más recorta (radio 0,27 del lado). El dibujo es el logo
+        completo, su silueta en blanco o **sólo la marca**: de un emblema redondo
+        o cuadrado con un dibujo claro se separan las capas (`extractLightMark`:
+        cada píxel como mezcla de fondo y blanco por su canal más bajo, el gris
+        claro de los sombreados queda opaco, el 5 % del borde del emblema se
+        descarta con corte de 1 px) y el color del emblema pasa a ser el fondo.
+        (b) **Sugerencia automática** al subir el ícono (`analyzeArtwork` +
+        `suggestIconDesign`, puros en `lib/iconDesign.ts`): forma, tono y los
+        colores del degradado con su dirección (dos grupos de color sobre su eje
+        principal y hacia dónde queda cada uno). (c) **Un encuadre por uso**:
+        Android (maskable, de borde a borde; claro y oscuro apuntan a las mismas
+        imágenes), iPhone, computador (baldosa con esquinas transparentes) y
+        pestaña. (d) **Apertura de Android elegible**: sobre el fondo de la app
+        (default, barras neutras) o con el color del ícono a pantalla completa —
+        el manifiesto de la plataforma usa ese color como `background_color`
+        (`iconSplashColor`) y el fondo del ícono queda sólido para que no se vea
+        el borde del círculo. (e) **Nada se sube hasta guardar**: subir el ícono
+        guarda sólo el original y las vistas previas en vivo (inicio en círculo
+        y cuadrado redondeado, iPhone, apertura clara y oscura, computador y
+        pestaña) salen de las mismas funciones de canvas que generan los PNG; un
+        juego guardado antes sigue valiendo y el panel ofrece «Ver el ícono
+        sugerido». Artículo «La marca de la app: nombre, logo e ícono» en Aprende
+        → Consola de la plataforma con la ilustración `icono-app`. Sin novedad
+        en el catálogo (función del operador). Tests: 9 del motor del ícono
+        (front 727 en verde), 1 de API (diseño guardado, lectura tolerante y
+        `background_color` del manifiesto) + E2E navegador 23/23 con el logo
+        real del usuario.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

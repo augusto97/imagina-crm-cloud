@@ -106,6 +106,16 @@ export const meta: LearnModuleMeta = {
             operatorOnly: true,
         },
         {
+            id: 'plataforma-marca',
+            title: 'La marca de la app: nombre, logo e ícono',
+            summary:
+                'El nombre y el logo del inicio de sesión, y el ícono de la app instalada: la app lo arma con los colores de tu logo, como el de una app nativa.',
+            minutes: 4,
+            level: 'basic',
+            keywords: 'marca logo icono app instalada pwa celular pantalla de inicio apertura splash fondo degradado favicon pestaña',
+            operatorOnly: true,
+        },
+        {
             id: 'plataforma-novedades-ayuda',
             title: 'Novedades y ayuda para tus clientes',
             summary: 'Publica avisos y novedades para las personas que usan la app, mide quién los vio, y ajusta el contacto de soporte y las guías de ayuda.',

@@ -74,6 +74,46 @@ export const platformIconSetSchema = z.object({
 });
 export type PlatformIconSet = z.infer<typeof platformIconSetSchema>;
 
+/**
+ * v0.1.343 — El ícono como ÍCONO DE APP, no como un logo pegado sobre un
+ * plato blanco. El fondo va de borde a borde (un degradado sacado de los
+ * colores del logo, o un color sólido) y encima el dibujo, dentro de la zona
+ * que ningún teléfono recorta:
+ *  - `mark`: sólo la parte clara del logo (la marca blanca de un emblema
+ *    redondo o cuadrado): el fondo de color del emblema pasa a ser el fondo
+ *    del ícono, así no queda «un círculo dentro de otro».
+ *  - `logo`: el logo completo, con sus colores.
+ *  - `white`: la silueta del logo en blanco (un símbolo de un solo color).
+ * `splash` decide la pantalla con que abre Android 12+: sobre el fondo de la
+ * app (el ícono se ve como un círculo de color, como en las apps nativas) o
+ * con el color del ícono de pantalla completa (sólo la marca, sin círculo;
+ * entonces el fondo del ícono es sólido, si no se vería el borde).
+ * null = el estilo de antes (el logo sobre el fondo de la app, ver
+ * `icon_background_auto`).
+ */
+export const ICON_ART_KINDS = ['mark', 'logo', 'white'] as const;
+export type IconArtKind = (typeof ICON_ART_KINDS)[number];
+export const ICON_SCALE_MIN = 0.6;
+export const ICON_SCALE_MAX = 1.4;
+
+export const iconDesignSchema = z.object({
+    art: z.enum(ICON_ART_KINDS).default('logo'),
+    bg_from: hexColorSchema.default('#0f766e'),
+    /** Segundo color del degradado (null = color sólido). */
+    bg_to: hexColorSchema.nullable().default(null),
+    /** Hacia dónde va el degradado, en grados (0 = a la derecha, 90 = hacia abajo). */
+    bg_angle: z.number().int().min(0).max(359).default(135),
+    /** Tamaño del dibujo: 1 = el que sugiere la app. */
+    scale: z.number().min(ICON_SCALE_MIN).max(ICON_SCALE_MAX).default(1),
+    splash: z.enum(['app', 'icon']).default('app'),
+});
+export type IconDesign = z.infer<typeof iconDesignSchema>;
+
+/** El fondo con que se pinta el ícono: con la apertura en el color del ícono, sólido. */
+export function iconDesignBackground(design: IconDesign): { from: string; to: string | null; angle: number } {
+    return { from: design.bg_from, to: design.splash === 'icon' ? null : design.bg_to, angle: design.bg_angle };
+}
+
 export const platformBrandSchema = z.object({
     app_name: z.string().trim().min(1).max(60).default(DEFAULT_PLATFORM_APP_NAME),
     /** Logo horizontal (login, pantalla de arranque). */
@@ -96,6 +136,8 @@ export const platformBrandSchema = z.object({
      * color de `icon_background` (útil si el logo necesita un fondo propio).
      */
     icon_background_auto: z.boolean().default(true),
+    /** v0.1.343 — el ícono diseñado (ver `iconDesignSchema`); null = el estilo de antes. */
+    icon_design: iconDesignSchema.nullable().default(null),
     /**
      * v0.1.331 — el sitio del producto (la landing, p. ej.
      * `https://imagina.cloud/base`). El login muestra «Conoce …» con un enlace
@@ -134,6 +176,16 @@ export function platformBrandImageUrls(brand: PlatformBrand): string[] {
     if (brand.icon_source_url) urls.push(brand.icon_source_url);
     if (brand.icons) urls.push(...Object.values(brand.icons).filter((u): u is string => typeof u === 'string'));
     return urls;
+}
+
+/**
+ * v0.1.343 — El color de la pantalla con que abre la app instalada en
+ * Android (el `background_color` del manifiesto) cuando el operador eligió
+ * abrir con el color del ícono. null = el fondo de la app (blanco / #121212).
+ */
+export function iconSplashColor(brand: Pick<PlatformBrand, 'icon_design' | 'icons'>): string | null {
+    const d = brand.icon_design;
+    return d && brand.icons && d.splash === 'icon' ? d.bg_from.toLowerCase() : null;
 }
 
 /**

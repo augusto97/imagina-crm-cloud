@@ -16,7 +16,7 @@
  * su marca u otro (`branding.app_bar_color`). En modo oscuro la app ajusta la
  * meta `theme-color` al cargar; el manifiesto no sabe del tema de la persona.
  */
-import { APP_BAR_NEUTRAL, DEFAULT_PLATFORM_APP_NAME, resolveAppBarColor, type PlatformBrand } from '@imagina-base/shared';
+import { APP_BAR_NEUTRAL, DEFAULT_PLATFORM_APP_NAME, iconSplashColor, resolveAppBarColor, type PlatformBrand } from '@imagina-base/shared';
 
 
 export const DEFAULT_APP_NAME = DEFAULT_PLATFORM_APP_NAME;
@@ -30,7 +30,7 @@ export interface ManifestInput {
      * ícono valen en el dominio de la PLATAFORMA. En el dominio de una empresa
      * nunca (white-label): ahí van su nombre y el ícono neutro.
      */
-    platform?: Pick<PlatformBrand, 'app_name' | 'icons'> | null;
+    platform?: (Pick<PlatformBrand, 'app_name' | 'icons'> & Partial<Pick<PlatformBrand, 'icon_design'>>) | null;
     /**
      * v0.1.328 — tema del dispositivo que pide el manifiesto (`?scheme=dark`).
      * En Android la barra de abajo de la app instalada y el fondo de su
@@ -95,7 +95,10 @@ export function buildManifest(input: ManifestInput): WebAppManifest {
         scope: '/',
         display: 'standalone',
         orientation: 'any',
-        background_color: APP_BAR_NEUTRAL[scheme],
+        // v0.1.343 — con «abrir con el color del ícono», la pantalla de
+        // apertura de Android es ese color (y el ícono, sólido del mismo):
+        // se ve sólo la marca, sin un círculo alrededor.
+        background_color: (t === null && input.platform ? iconSplashColor({ icon_design: input.platform.icon_design ?? null, icons: own }) : null) ?? APP_BAR_NEUTRAL[scheme],
         theme_color: theme,
         categories: ['business', 'productivity'],
         icons: own
