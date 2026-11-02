@@ -5717,6 +5717,37 @@ emblema desenfocado (impredecible). Abrir siempre con el color de la marca
 (contradice las barras neutras que pidió el usuario). Generar los íconos en el
 servidor (ver ADR-S80).
 
+**Addendum v0.1.345 — la apertura en modo oscuro y un estudio que se entiende.**
+El usuario reportó que, con «abrir con el color del ícono», la primera pantalla
+de la app instalada salía negra con su teléfono en modo oscuro, aunque la vista
+previa mostraba su color. Se verificó en el código de Chrome (WebAPK,
+`res/values-night-v31/styles.xml` y `SplashUtilsForS`): en modo oscuro la
+apertura usa un color propio de la app instalada (`dark_background_color`), no
+el `background_color` del manifiesto, y el parser de Chrome ya no lee ningún
+campo de colores oscuros (el experimento quedó obsoleto: `TODO(b:340126786):
+Remove these obsolete fields`). O sea, **en modo oscuro Android pone siempre su
+propio fondo casi negro y el ícono encima, y ninguna app web lo puede cambiar**.
+El manifiesto del servidor del usuario ya entregaba `#00a7cd` en los dos modos.
+Además, el estudio confundía: el dibujo, el fondo y la apertura estaban en una
+sola caja, y un degradado elegido quedaba guardado pero sin dibujarse (con la
+apertura en el color del ícono el fondo va de un color), así que no se sabía
+qué estaba elegido.
+**Decisión.** (1) La vista previa de la apertura en oscuro muestra el fondo de
+Android (`ANDROID_DARK_SPLASH`, `#202020`, el de la configuración de ejemplo de
+Chromium) y no el elegido, con la explicación en el panel, en Aprende y en el
+pie de la tarjeta («para comprobar tu color, abre la app en modo claro»). (2)
+El estudio se rehace en **tres pasos numerados**, cada uno con su vista previa
+al lado: qué lleva encima (opciones con miniatura), el fondo («Un color»,
+«Degradado» o «Sin fondo», que absorbe el estilo anterior «logo sobre el fondo
+de la app») y la apertura; opciones excluyentes con un círculo con check, un
+resumen «Elegido: …» en palabras, colores del logo primero y código hex
+escribible. (3) **Lo elegido es lo que se dibuja** (`iconStudioState.ts`, puro,
+con tests): con la apertura en el color del ícono el tipo de fondo se muestra
+como «Un color»; elegir «Degradado» pasa la apertura a «sobre el fondo de la
+app» y elegir abrir con tu color deja el fondo de un color, y cada cruce se
+avisa en el paso afectado; el segundo color del degradado y el último diseño se
+recuerdan para volver. Sin cambios en el servidor ni en los datos guardados.
+
 ### ADR-S92 — El QR de cada registro: imagen firmada, etiquetas para imprimir y un escáner que se explica (v0.1.344)
 
 **Contexto.** El escáner de v0.1.314 (ADR-S68) leía códigos, pero la app no
@@ -5806,4 +5837,4 @@ barras de fábrica. El usuario aprobó las tres mejoras propuestas.
 
 ---
 
-**Versión del documento:** 1.139.0 (QR de los registros)
+**Versión del documento:** 1.139.1 (apertura en modo oscuro y estudio del ícono)

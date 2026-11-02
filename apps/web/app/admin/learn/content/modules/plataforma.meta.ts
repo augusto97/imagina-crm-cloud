@@ -112,7 +112,7 @@ export const meta: LearnModuleMeta = {
                 'El nombre y el logo del inicio de sesión, y el ícono de la app instalada: la app lo arma con los colores de tu logo, como el de una app nativa.',
             minutes: 4,
             level: 'basic',
-            keywords: 'marca logo icono app instalada pwa celular pantalla de inicio apertura splash fondo degradado favicon pestaña',
+            keywords: 'marca logo icono app instalada pwa celular pantalla de inicio apertura splash fondo degradado modo oscuro negro favicon pestaña',
             operatorOnly: true,
         },
         {

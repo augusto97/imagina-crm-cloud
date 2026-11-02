@@ -10962,6 +10962,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         imagen descargada se decodificaron con zxing: dan el enlace y
         «BOL-0001».
 
+  - [x] **La apertura en modo oscuro, dicha como es, y un estudio del ícono
+        que se entiende (v0.1.345, addendum ADR-S91, reporte del usuario: "el
+        color de fondo no lo toma, queda en un cuadrado blanco o negro… los
+        ajustes son confusos, no sé si se seleccionó un color, un degradado o
+        una imagen… mi celular está en modo oscuro y sigo viendo el fondo
+        negro en lugar del de la vista previa")**. (a) **La causa**: el
+        manifiesto de su servidor ya entregaba `#00a7cd` en los dos modos; lo
+        que pasa es que en **modo oscuro** la app instalada de Android (WebAPK)
+        abre con su PROPIO fondo oscuro (`dark_background_color`, verificado en
+        `res/values-night-v31` y `SplashUtilsForS` de Chromium) y Chrome ya no
+        lee ningún campo del manifiesto que lo cambie. Ninguna app web puede
+        cambiarlo. (b) **Vista previa fiel**: la apertura en oscuro se dibuja
+        con el fondo de Android (`ANDROID_DARK_SPLASH`, `#202020`) y la
+        pantalla lo explica junto a la elección, en Aprende y en el pie de la
+        tarjeta. (c) **El estudio, en tres pasos numerados** con su vista
+        previa al lado: qué lleva encima (cada opción con su miniatura), el
+        fondo («Un color», «Degradado» o «Sin fondo», que reemplaza al estilo
+        «logo sobre el fondo de la app») y la apertura; opciones excluyentes
+        con un círculo con check, un resumen «Elegido: …» en palabras, los
+        colores del logo primero y el código hex escribible. (d) **Lo elegido
+        es lo que se dibuja** (`iconStudioState.ts`, puro): antes un degradado
+        quedaba guardado pero sin dibujarse con la apertura en el color del
+        ícono. Ahora eso se muestra como «Un color», elegir «Degradado» pasa
+        la apertura a «sobre el fondo de la app» (y lo avisa), elegir abrir
+        con tu color deja el fondo de un color (y lo avisa), y se recuerdan el
+        segundo color y el último diseño para volver. Sin cambios en el
+        servidor. 7 tests del front (734 en verde) + E2E navegador 32/32 con
+        el ícono real del usuario (escritorio claro y oscuro, celular), y el
+        manifiesto guardado abre con `#00a7cd`.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

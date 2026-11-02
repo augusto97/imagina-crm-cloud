@@ -260,7 +260,9 @@ function BrandEditor({ initial }: { initial: PlatformBrand }): JSX.Element {
                         <span>
                             Si la app ya estaba instalada en un teléfono, el teléfono guarda el ícono y los colores de
                             cuando se instaló y los actualiza por su cuenta (Android puede tardar hasta un par de días).
-                            Para verlo de inmediato, quita la app del teléfono y vuelve a instalarla.
+                            Para verlo de inmediato, quita la app del teléfono y vuelve a instalarla. Para comprobar el
+                            color de apertura, abre la app con el teléfono en <strong>modo claro</strong>: en modo oscuro
+                            Android siempre usa su propio fondo.
                         </span>
                     </p>
                 </section>
