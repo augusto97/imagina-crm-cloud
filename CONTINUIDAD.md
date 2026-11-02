@@ -382,13 +382,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.345**
-(la apertura de la app en modo oscuro explicada como es y el estudio del ícono
-en tres pasos claros; antes v0.1.344 el QR de cada registro con etiquetas,
-v0.1.343 el ícono de la app como ícono de app y v0.1.342 navegación del
-celular con barra de pestañas), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.346**
+(la barra de abajo de la app instalada sigue el modo oscuro; antes v0.1.345 la
+apertura de la app en modo oscuro explicada como es y el estudio del ícono en
+tres pasos claros, v0.1.344 el QR de cada registro con etiquetas y v0.1.343 el
+ícono de la app como ícono de app), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-02 — **Franja blanca abajo en modo oscuro → v0.1.346** (addendum
+  ADR-S79). Reporte del usuario con captura tras v0.1.345: "en el modo oscuro
+  quedó una barra blanca abajo en la app debajo del menú". Era la barra de
+  navegación de Android: Chrome la pinta con el `theme_color` del manifiesto en
+  los dos modos (verificado en Chromium), y el neutro era #ffffff. Ahora el
+  manifiesto no lleva `theme_color` salvo que la empresa elija un color, y la
+  barra sigue el modo del teléfono. **Pendiente del usuario**: la app instalada
+  se actualiza sola en uno o dos días; para verlo ya, quitarla y volver a
+  instalarla.
 - 2026-11-02 — **Apertura de la app y estudio del ícono → v0.1.345** (addendum
   ADR-S91). Reporte del usuario: el color de fondo de la primera pantalla no se
   aplicaba ("queda en un cuadrado, con fondo blanco o negro"), los ajustes eran
@@ -1181,6 +1190,18 @@ celular con barra de pestañas), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-02 · v0.1.346** — **La barra de abajo de la app instalada sigue el
+  modo oscuro** (addendum ADR-S79; reporte del usuario, ver §10).
+  - **Causa real**: con `WebAppNavigationBarThemeColor` (activa por defecto)
+    Chrome pinta la barra de navegación de Android con el `theme_color` del
+    manifiesto guardado en la app instalada, el mismo en los dos modos. La
+    nota de v0.1.328 (que salía del `background_color`) estaba mal.
+  - **Arreglo**: sin `theme_color` cuando las barras son neutras
+    (`chosenAppBarColor` en shared); con un color elegido se usa en los dos
+    modos y Ajustes → Marca lo dice. Novedad en el catálogo.
+  - **Tests**: manifiesto y `chosenAppBarColor` (shared 630, front en verde).
+  - **Queda**: que el usuario reinstale la app (o espere la actualización
+    automática) y confirme.
 - **2026-11-02 · v0.1.345** — **La apertura en modo oscuro y un estudio del
   ícono que se entiende** (addendum ADR-S91; reporte del usuario, ver §10).
   - **Causa**: en modo oscuro la app instalada de Android abre con su propio

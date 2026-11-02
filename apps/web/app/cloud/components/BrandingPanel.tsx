@@ -199,8 +199,8 @@ export function BrandingPanel(): JSX.Element {
     const previewBar = barMode === 'brand' ? brandHex : barMode === 'custom' ? barPickerValue : APP_BAR_NEUTRAL.light;
     const barOptions: Array<{ mode: AppBarMode; title: string; text: string; swatch: string }> = [
         { mode: 'neutral', title: 'Neutras (recomendado)', text: 'Blancas en modo claro y negras en oscuro, como la barra de la app.', swatch: APP_BAR_NEUTRAL.light },
-        { mode: 'brand', title: 'Color de la marca', text: 'El color primario. Con un color muy vivo se ve llamativo.', swatch: brandHex },
-        { mode: 'custom', title: 'Otro color', text: 'Uno que elijas: un gris o un tono suave de tu marca.', swatch: barPickerValue },
+        { mode: 'brand', title: 'Color de la marca', text: 'El color primario, también en modo oscuro. Con un color muy vivo se ve llamativo.', swatch: brandHex },
+        { mode: 'custom', title: 'Otro color', text: 'Uno que elijas, también en modo oscuro: un gris o un tono suave de tu marca.', swatch: barPickerValue },
     ];
 
     return (

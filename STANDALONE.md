@@ -4744,6 +4744,19 @@ barra superior blanca/negra de la app). Mostrar el aviso nativo del navegador
 (`beforeinstallprompt` sin `preventDefault`): no existe en Safari ni Firefox y
 en Chrome es una barra genérica que no explica para qué sirve instalarla.
 
+**Addendum v0.1.346 — de dónde sale la barra de abajo en Android.** Lo que se
+asumió en v0.1.328 (que la barra de navegación de la app instalada sale del
+`background_color`) era falso. En Chrome (`WebappIntentDataProvider`,
+`CustomTabNavigationBarController`), con `WebAppNavigationBarThemeColor`
+activo por defecto, esa barra se pinta con el **`theme_color` del manifiesto**
+guardado en la WebAPK, y como Chrome no lee un color para el modo oscuro usa el
+mismo en los dos modos: el blanco neutro dejaba una franja blanca en modo
+oscuro. **Decisión**: el manifiesto lleva `theme_color` sólo si la empresa
+eligió un color (`chosenAppBarColor`, shared). Con las barras neutras no lo
+lleva y Android usa su barra del sistema, que sigue el modo del teléfono; la
+barra de arriba la sigue pintando la meta `theme-color`, que la app ajusta al
+tema. Un color elegido se usa en los dos modos (se avisa en Ajustes → Marca).
+
 ---
 
 ### ADR-S80 — Marca de la plataforma, inicio de sesión y pantalla de arranque (v0.1.327)
@@ -5837,4 +5850,4 @@ barras de fábrica. El usuario aprobó las tres mejoras propuestas.
 
 ---
 
-**Versión del documento:** 1.139.1 (apertura en modo oscuro y estudio del ícono)
+**Versión del documento:** 1.139.2 (la barra de abajo de Android sigue el modo oscuro)

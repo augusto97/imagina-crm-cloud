@@ -29,13 +29,16 @@ export function applyAppMeta(barColor: string | null, appName: string | null, do
 }
 
 /**
- * v0.1.328 — En Android la barra de ABAJO de la app instalada (y el fondo de
- * su pantalla de inicio) los pinta el `background_color` del MANIFIESTO, no la
- * meta `theme-color` de la página, y un manifiesto tiene un solo color fijo.
- * Por eso el enlace al manifiesto lleva el tema de ESTE dispositivo
- * (`?scheme=dark`): el teléfono lo lee al instalar y, en sus revisiones
- * periódicas, se entera si la persona cambió de tema. El `id` del manifiesto
- * no cambia, así que sigue siendo la misma app instalada.
+ * v0.1.328 — El enlace al manifiesto lleva el tema de ESTE dispositivo
+ * (`?scheme=dark`) para que el fondo de la pantalla de inicio coincida con el
+ * modo al instalar. El `id` del manifiesto no cambia, así que sigue siendo la
+ * misma app instalada.
+ *
+ * v0.1.346 — La barra de ABAJO de la app instalada en Android NO sale del
+ * `background_color`: Chrome la pinta con el `theme_color` del manifiesto en
+ * los dos modos (no lee un color para el oscuro). Por eso, con las barras
+ * neutras, el manifiesto no lleva `theme_color` y Android usa su barra del
+ * sistema, que sigue el modo del teléfono (ver `apps/api/src/pwa/manifest.ts`).
  */
 export const MANIFEST_PATH = '/api/v1/public/manifest.webmanifest';
 
