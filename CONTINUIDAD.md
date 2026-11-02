@@ -382,13 +382,25 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.344**
-(el QR de cada registro, etiquetas para imprimir, el QR en correos, WhatsApp
-y PDF, y un escáner que se explica; antes v0.1.343 el ícono de la app como
-ícono de app, v0.1.342 navegación del celular con barra de pestañas y v0.1.341
-sugerencias para cada lista), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.345**
+(la apertura de la app en modo oscuro explicada como es y el estudio del ícono
+en tres pasos claros; antes v0.1.344 el QR de cada registro con etiquetas,
+v0.1.343 el ícono de la app como ícono de app y v0.1.342 navegación del
+celular con barra de pestañas), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-02 — **Apertura de la app y estudio del ícono → v0.1.345** (addendum
+  ADR-S91). Reporte del usuario: el color de fondo de la primera pantalla no se
+  aplicaba ("queda en un cuadrado, con fondo blanco o negro"), los ajustes eran
+  confusos ("no sé si se seleccionó un color, un degradado o una imagen, se
+  mezclan secciones") y con el celular en modo oscuro veía negro en vez del
+  color de la vista previa. Diagnóstico: su servidor ya mandaba `#00a7cd` en los
+  dos modos. **En modo oscuro Android usa su propio fondo para abrir la app
+  instalada y no se puede cambiar desde la web** (verificado en el código de
+  Chromium). Se rehízo el estudio en tres pasos, con la vista previa fiel del
+  modo oscuro. **Pendiente del usuario**: probar con el teléfono en modo claro.
+  Si en claro tampoco sale el color, la app instalada no tomó el cambio y hay
+  que quitarla y volver a instalarla.
 - 2026-11-02 — **QR de los registros → v0.1.344** (ADR-S92). Pregunta del
   usuario: "lo de los códigos qr, ¿cómo funciona? no entiendo qué hacen, solo
   pusiste un icono que escanea qr pero ni idea cómo usarlo o su utilidad". Le
@@ -1169,6 +1181,24 @@ sugerencias para cada lista), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-02 · v0.1.345** — **La apertura en modo oscuro y un estudio del
+  ícono que se entiende** (addendum ADR-S91; reporte del usuario, ver §10).
+  - **Causa**: en modo oscuro la app instalada de Android abre con su propio
+    fondo oscuro (`dark_background_color` del WebAPK). Chrome ya no lee ningún
+    campo del manifiesto que lo cambie. El manifiesto del usuario estaba bien.
+  - **Vista previa fiel**: la apertura en oscuro se dibuja con el fondo de
+    Android (`#202020`) y se explica en el panel, en Aprende y en el pie de la
+    tarjeta.
+  - **Tres pasos numerados** con su vista previa: qué lleva encima, el fondo
+    («Un color» / «Degradado» / «Sin fondo») y la apertura. Lo elegido lleva un
+    check y hay un resumen «Elegido: …».
+  - **Lo elegido es lo que se dibuja**: antes un degradado quedaba guardado sin
+    dibujarse si la app abría con el color del ícono. Ahora cada cruce entre el
+    fondo y la apertura se avisa.
+  - **Tests**: 7 nuevos del front (734 en verde) y E2E 32/32 con el ícono real
+    del usuario.
+  - **Queda**: que el usuario pruebe con el teléfono en modo claro (y, si hace
+    falta, reinstale la app).
 - **2026-11-02 · v0.1.344** — **El QR de cada registro** (ADR-S92; pregunta
   del usuario, ver §10).
   - **Botón «Código QR»** en el modal, la página y el menú de la fila. Muestra

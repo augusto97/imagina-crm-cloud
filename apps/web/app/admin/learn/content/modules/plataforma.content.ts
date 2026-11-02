@@ -1062,7 +1062,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     'Toca **Subir ícono** y elige tu isotipo (el símbolo de tu marca, cuadrado, de 512 × 512 px o más; PNG o SVG).',
                     'La app lo analiza y te **sugiere** un ícono: si tu logo es un emblema (un círculo o un cuadrado de color con un dibujo blanco adentro), su color pasa a ser el fondo del ícono y el dibujo blanco queda encima, centrado.',
-                    'Mira las vistas previas: el inicio del teléfono (en círculo y en cuadrado redondeado, como lo recortan los distintos teléfonos), el iPhone, la pantalla con que abre la app y la pestaña del navegador.',
+                    'Revisa los **tres pasos**, cada uno con su vista previa al lado: **1. Qué lleva el ícono encima**, **2. El fondo del ícono** y **3. Al abrir la app en Android**. Arriba, «Elegido» resume en palabras lo que tienes elegido.',
                     'Ajusta lo que quieras y toca **Guardar**. La app genera sola todos los tamaños.',
                 ],
             },
@@ -1070,11 +1070,10 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 title: 'Lo que puedes ajustar',
                 rows: [
-                    { name: 'Estilo', what: '«Ícono de app» (fondo de color de borde a borde) o «Logo sobre el fondo de la app» (tu logo pequeño sobre blanco o gris oscuro).', tip: 'El primero se ve como el de una app nativa; el segundo sirve para logos de muchos colores.' },
-                    { name: 'Dibujo', what: 'Sólo la marca en blanco, el logo completo o, para un símbolo de un color, su silueta en blanco.', tip: 'Con un emblema, «Sólo la marca» evita que se vea un círculo dentro de otro.' },
-                    { name: 'Fondo', what: 'Un color o un degradado de dos colores, con su dirección. «Usar los colores de tu logo» los toma del propio logo.', tip: 'Si el dibujo es blanco, el fondo tiene que ser oscuro o de color para que se lea.' },
+                    { name: '1. Qué lleva encima', what: 'Sólo la marca en blanco, el logo completo o, para un símbolo de un color, su silueta en blanco. Cada opción muestra cómo queda tu ícono.', tip: 'Con un emblema, «Sólo la marca» evita que se vea un círculo dentro de otro.' },
                     { name: 'Tamaño del dibujo', what: 'Agranda o reduce el dibujo dentro del ícono.', tip: 'Deja aire: algunos teléfonos recortan el ícono en un círculo pequeño.' },
-                    { name: 'Al abrir la app en Android', what: '«Sobre el fondo de la app» muestra tu ícono en un círculo sobre blanco o gris oscuro. «Con el color de tu ícono» llena la pantalla con tu color y deja sólo la marca en el centro.', tip: 'Con la segunda, el fondo del ícono queda de un solo color, y en algunos teléfonos la barra de abajo de la app también toma ese color.' },
+                    { name: '2. Tipo de fondo', what: '«Un color», «Degradado» (dos colores, con su dirección) o «Sin fondo» (tu logo más pequeño sobre blanco). El elegido lleva un círculo con un check.', tip: 'En «Un color» los primeros círculos son los colores de tu logo; también puedes escribir el código del color.' },
+                    { name: '3. Al abrir la app en Android', what: '«Con el color de tu ícono» llena la pantalla con tu color y deja sólo la marca en el centro. «Sobre el fondo de la app» muestra tu ícono sobre blanco.', tip: 'Con la primera, el fondo del ícono va de un solo color: si elegiste un degradado, la app te avisa y lo cambia.' },
                 ],
             },
             {
@@ -1082,6 +1081,12 @@ export const articles: LearnArticle[] = [
                 tone: 'info',
                 title: 'La primera pantalla la dibuja el teléfono',
                 md: 'Al abrir la app instalada, Android muestra el ícono en el centro antes de que la app cargue: no se puede quitar, pero sí elegir cómo se ve. Por eso conviene que el ícono esté bien armado.',
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'En modo oscuro, Android pone su propio fondo',
+                md: 'Si el teléfono está en **modo oscuro**, Android abre la app con su propio fondo, casi negro, y tu ícono encima, elijas lo que elijas. Ninguna app instalada desde la web puede cambiarlo: Chrome no lo permite. Tu color de apertura se ve con el teléfono en **modo claro**. La vista previa del paso 3 muestra los dos casos.',
             },
             {
                 t: 'callout',
@@ -1093,7 +1098,8 @@ export const articles: LearnArticle[] = [
                 t: 'faq',
                 items: [
                     { q: '¿Qué imagen subo como ícono?', a: 'El símbolo de tu marca, no el logo con el nombre escrito: dentro de un cuadrado pequeño las letras no se leen. Si tu logo es un emblema redondo o cuadrado, súbelo tal cual.' },
-                    { q: '¿Por qué mi logo de varios colores se ve sobre blanco?', a: 'Porque un dibujo de muchos colores no se lee bien encima de otro color. Puedes cambiar el fondo igual, o elegir «Logo sobre el fondo de la app».' },
+                    { q: '¿Por qué mi logo de varios colores se ve sobre blanco?', a: 'Porque un dibujo de muchos colores no se lee bien encima de otro color. Puedes cambiar el fondo igual, o elegir «Sin fondo» en el paso 2.' },
+                    { q: 'Elegí mi color para la apertura y en mi celular sale negro.', a: 'Seguramente el teléfono está en modo oscuro: ahí Android usa su propio fondo. Ponlo en modo claro y abre la app. Si en modo claro tampoco sale tu color, el teléfono todavía no tomó el cambio: quita la app y vuelve a instalarla.' },
                 ],
             },
         ],
