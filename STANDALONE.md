@@ -5663,6 +5663,60 @@ agrupados por tema. Lo que se agregue al riel tiene que aparecer también en
 «Más» (o en una pestaña): no hay un único componente que dibuje los dos, a
 propósito, porque en el teléfono cada entrada lleva una línea de ayuda.
 
+### ADR-S91 — El ícono de la app como ícono de app: fondo de borde a borde y la marca separada del emblema (v0.1.343)
+
+**Contexto.** Al usuario no le gustaba ni la pantalla con que abre la app
+instalada («el logo y un círculo alrededor») ni el ícono del inicio del
+teléfono. Revisando lo que servía su servidor: su logo es un **emblema
+redondo** (un círculo con degradado azul-cian y una montaña blanca con rayas
+adentro), y la app lo reducía al 60 % y lo pegaba sobre un fondo liso
+(blanco, o #121212 en oscuro, ADR-S80 addendum v0.1.329). En el inicio quedaba
+un plato blanco con un círculo más pequeño adentro, y al abrir, el emblema con un
+anillo del fondo alrededor. Ninguna app web puede quitar esa primera pantalla
+de Android 12+ (el ícono maskable recortado en círculo sobre el
+`background_color`): lo que se controla es el ícono.
+
+**Decisión.** (1) El ícono pasa a armarse como **ícono de app**
+(`platform_brand.icon_design`, `iconDesignSchema` en shared, null = el estilo de
+antes): un **fondo de borde a borde** —un color o un degradado de dos colores
+con su dirección— y encima el **dibujo**, centrado dentro del círculo que ve el
+teléfono que más recorta (radio 0,27 del lado: Android muestra los 2/3
+centrales). El dibujo puede ser el logo completo, su silueta en blanco o —lo
+nuevo— **sólo la marca**: de un emblema redondo o cuadrado con un dibujo claro
+se separan las dos capas; su color pasa a ser el fondo del ícono y la parte
+clara, el dibujo. La separación lee cada píxel como mezcla del fondo y blanco
+(el canal más bajo dice cuánto blanco tiene, así los bordes suaves se
+conservan), vuelve opaco el gris claro de los sombreados (si no, quedan franjas
+translúcidas) y descarta el 5 % del borde del emblema (donde suele haber un
+brillo o un bisel), con un corte de 1 px. (2) **La app sugiere sola** el diseño
+al subir el ícono (`analyzeArtwork` + `suggestIconDesign`, puros, con tests):
+forma (redondo/cuadrado/libre), tono (color, oscuro, claro, multicolor), y los
+colores del degradado con su dirección — dos grupos de color sobre su eje
+principal y hacia dónde queda cada uno en la imagen —; emblema con marca clara
+→ marca blanca sobre sus colores, símbolo de un color → silueta blanca sobre
+ese color, negro o multicolor → sobre blanco, blanco → sobre casi negro.
+(3) Cada uso tiene su encuadre (`iconLayout`): Android (maskable, de borde a
+borde), iPhone (de borde a borde, iOS redondea), computador (baldosa con
+esquinas redondeadas y transparentes) y pestaña (el dibujo más grande, se ve a
+16 px). En el diseño el fondo es el mismo en claro y en oscuro: los dos juegos
+de Android apuntan a las mismas imágenes. (4) **La apertura en Android** se
+elige: sobre el fondo de la app (el ícono en un círculo, como las apps
+nativas; barras neutras, lo que el usuario pidió en v0.1.326) o **con el color
+del ícono** a pantalla completa (`splash: 'icon'` → el manifiesto de la
+plataforma usa ese color como `background_color` y el fondo del ícono queda
+sólido, si no se vería el borde del círculo); el panel avisa que en algunos
+teléfonos la barra de abajo también toma ese color. (5) Todo se dibuja en el
+navegador (canvas, como en ADR-S80) y **nada se sube hasta guardar**: subir
+el ícono guarda sólo el original y las vistas previas se calculan en vivo con
+las mismas funciones que generan los PNG. Un juego guardado antes sigue valiendo
+tal cual; el panel ofrece «Ver el ícono sugerido».
+
+**Alternativas descartadas.** Recortar el emblema para que cubra todo el ícono
+(el teléfono que recorta en un círculo pequeño cortaba la marca). Un fondo con el
+emblema desenfocado (impredecible). Abrir siempre con el color de la marca
+(contradice las barras neutras que pidió el usuario). Generar los íconos en el
+servidor (ver ADR-S80).
+
 ---
 
-**Versión del documento:** 1.137.0 (navegación del celular)
+**Versión del documento:** 1.138.0 (ícono de la app)

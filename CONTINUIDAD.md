@@ -382,13 +382,32 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.342**
-(navegación del celular: barra de pestañas fija abajo, «Más», avisos a pantalla
-completa y Ajustes/Plataforma como índice táctil agrupado por tema; antes
-v0.1.341 sugerencias para cada lista, v0.1.340 duplicar un registro en un clic y
-v0.1.339 crear una lista desde un Excel o CSV), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.343**
+(el ícono de la app como ícono de app: fondo de borde a borde con los colores
+del logo, la marca separada del emblema y la apertura de Android elegible;
+antes v0.1.342 navegación del celular con barra de pestañas, v0.1.341
+sugerencias para cada lista y v0.1.340 duplicar un registro en un clic), en
+`main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-02 — **Ícono de la app y pantalla de apertura → v0.1.343**
+  (ADR-S91). Pedido del usuario: "la primera pantalla de la PWA, el fondo con
+  sólo el logo y un círculo alrededor, se ve feo; el fondo del ícono de la app
+  instalada tampoco me gusta; necesito que se vea bonito y premium". Diagnóstico
+  (miré lo que sirve su servidor): su logo es un emblema redondo (degradado
+  azul-cian con una montaña blanca) y la app lo reducía al 60 % sobre blanco →
+  plato blanco con un círculo más pequeño adentro. **Hecho**: «estudio del
+  ícono» en Plataforma → Marca; la app sugiere sola un ícono de app (fondo con
+  los colores del logo de borde a borde + sólo la marca blanca), vistas previas
+  en vivo (inicio en círculo y cuadrado, iPhone, apertura clara y oscura,
+  computador y pestaña), y la apertura de Android elegible: sobre el fondo de
+  la app (default, barras neutras) o con el color del ícono a pantalla
+  completa (avisa que en algunos teléfonos la barra de abajo toma ese color).
+  **Para el usuario**: actualizar, entrar a Plataforma → Marca, tocar «Ver el
+  ícono sugerido» (o subir de nuevo el ícono), guardar, y quitar y volver a
+  instalar la app del teléfono. **Queda abierto**: que lo vea en su teléfono y
+  diga si prefiere la apertura con el color del ícono; la primera pantalla la
+  sigue dibujando Android (no se puede quitar).
 - 2026-11-02 — **Navegación → v0.1.342** (ADR-S90). Pedido del usuario:
   "revisa la navegación y los menús… en celular el menú aparece como un
   desplegable o puede ser confuso… en la PWA debería tener un menú fijo o
@@ -1135,6 +1154,21 @@ v0.1.339 crear una lista desde un Excel o CSV), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-02 · v0.1.343** — **El ícono de la app como ícono de app**
+  (ADR-S91; pedido del usuario, ver §10). Plataforma → Marca arma el ícono con
+  fondo de borde a borde (degradado o sólido, sugerido de los colores del logo)
+  y el dibujo centrado en la zona que no recorta ningún teléfono; de un emblema
+  separa la marca blanca (el color pasa a ser el fondo). Sugerencia automática
+  por forma y tono, vistas previas en vivo, apertura de Android sobre el fondo
+  de la app o con el color del ícono (el manifiesto usa ese color y el ícono
+  queda sólido). Nada se sube hasta guardar. Artículo nuevo en Aprende →
+  Consola de la plataforma con su ilustración. Sin novedad en el catálogo (es
+  una función del operador). Tests: 9 del motor del ícono (front 727) + 1 de
+  API (manifiesto y guardado) + E2E navegador 23/23 con el logo real del
+  usuario (sugerencia, guardado, manifiesto, fondo al borde, esquinas
+  transparentes en el computador, apertura con el color del ícono en claro y
+  oscuro, cambio de dibujo y tamaño, estilo de antes, un símbolo de un color,
+  celular en oscuro).
 - **2026-11-02 · v0.1.342** — **Navegación del celular** (ADR-S90; pedido del
   usuario, ver §10). Barra de pestañas fija abajo en el teléfono y la app
   instalada (Listas · Mi trabajo · Buscar · Avisos con el número sin leer ·

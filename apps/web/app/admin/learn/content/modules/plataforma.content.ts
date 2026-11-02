@@ -1043,6 +1043,63 @@ export const articles: LearnArticle[] = [
 
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'plataforma-marca',
+        route: '/platform?tab=marca',
+        related: ['plataforma-consola', 'plataforma-novedades-ayuda'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'En **Plataforma → Marca** decides cómo se presenta la app ante las empresas que no tienen marca propia: el **nombre**, el **logo** del inicio de sesión y el **ícono** que se ve en el inicio del teléfono cuando instalan la app, en el computador y en la pestaña del navegador. En el dominio propio de una empresa esta marca nunca aparece: ahí manda la de la empresa.',
+            },
+            {
+                t: 'anim',
+                key: 'icono-app',
+                caption: 'El ícono deja de ser el logo sobre un plato blanco: es un ícono de app, con el color de tu logo de borde a borde.',
+            },
+            { t: 'h', text: 'El ícono de la app' },
+            {
+                t: 'steps',
+                items: [
+                    'Toca **Subir ícono** y elige tu isotipo (el símbolo de tu marca, cuadrado, de 512 × 512 px o más; PNG o SVG).',
+                    'La app lo analiza y te **sugiere** un ícono: si tu logo es un emblema (un círculo o un cuadrado de color con un dibujo blanco adentro), su color pasa a ser el fondo del ícono y el dibujo blanco queda encima, centrado.',
+                    'Mira las vistas previas: el inicio del teléfono (en círculo y en cuadrado redondeado, como lo recortan los distintos teléfonos), el iPhone, la pantalla con que abre la app y la pestaña del navegador.',
+                    'Ajusta lo que quieras y toca **Guardar**. La app genera sola todos los tamaños.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que puedes ajustar',
+                rows: [
+                    { name: 'Estilo', what: '«Ícono de app» (fondo de color de borde a borde) o «Logo sobre el fondo de la app» (tu logo pequeño sobre blanco o gris oscuro).', tip: 'El primero se ve como el de una app nativa; el segundo sirve para logos de muchos colores.' },
+                    { name: 'Dibujo', what: 'Sólo la marca en blanco, el logo completo o, para un símbolo de un color, su silueta en blanco.', tip: 'Con un emblema, «Sólo la marca» evita que se vea un círculo dentro de otro.' },
+                    { name: 'Fondo', what: 'Un color o un degradado de dos colores, con su dirección. «Usar los colores de tu logo» los toma del propio logo.', tip: 'Si el dibujo es blanco, el fondo tiene que ser oscuro o de color para que se lea.' },
+                    { name: 'Tamaño del dibujo', what: 'Agranda o reduce el dibujo dentro del ícono.', tip: 'Deja aire: algunos teléfonos recortan el ícono en un círculo pequeño.' },
+                    { name: 'Al abrir la app en Android', what: '«Sobre el fondo de la app» muestra tu ícono en un círculo sobre blanco o gris oscuro. «Con el color de tu ícono» llena la pantalla con tu color y deja sólo la marca en el centro.', tip: 'Con la segunda, el fondo del ícono queda de un solo color, y en algunos teléfonos la barra de abajo de la app también toma ese color.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'La primera pantalla la dibuja el teléfono',
+                md: 'Al abrir la app instalada, Android muestra el ícono en el centro antes de que la app cargue: no se puede quitar, pero sí elegir cómo se ve. Por eso conviene que el ícono esté bien armado.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Si la app ya estaba instalada',
+                md: 'El teléfono guarda el ícono de cuando se instaló y lo actualiza por su cuenta (Android puede tardar un par de días). Para verlo de inmediato, quita la app del teléfono y vuelve a instalarla.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Qué imagen subo como ícono?', a: 'El símbolo de tu marca, no el logo con el nombre escrito: dentro de un cuadrado pequeño las letras no se leen. Si tu logo es un emblema redondo o cuadrado, súbelo tal cual.' },
+                    { q: '¿Por qué mi logo de varios colores se ve sobre blanco?', a: 'Porque un dibujo de muchos colores no se lee bien encima de otro color. Puedes cambiar el fondo igual, o elegir «Logo sobre el fondo de la app».' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'plataforma-novedades-ayuda',
         route: '/platform?tab=novedades',
         related: ['plataforma-actualizaciones-dominios', 'plataforma-consola'],

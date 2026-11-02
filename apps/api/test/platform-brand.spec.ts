@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { iconBackgrounds, parsePlatformBrand, PLATFORM_ICON_BASE_KEYS, PLATFORM_ICON_KEYS } from '@imagina-base/shared';
+import { iconBackgrounds, iconDesignBackground, iconSplashColor, parsePlatformBrand, PLATFORM_ICON_BASE_KEYS, PLATFORM_ICON_KEYS } from '@imagina-base/shared';
 import { PlatformBrandService, pngSize, type BrandStore } from '../src/brand/platform-brand.service';
 import { PublicDomainsController } from '../src/domains/domains.controller';
 import type { DomainsService } from '../src/domains/domains.service';
@@ -167,5 +167,39 @@ describe('v0.1.327 — marca de la plataforma', () => {
     it('v0.1.329: fondo del ícono igual al de la app (blanco / #121212) o el color elegido', () => {
         expect(iconBackgrounds({ icon_background: '#f4f4f5', icon_background_auto: true })).toEqual({ light: '#ffffff', dark: '#121212' });
         expect(iconBackgrounds({ icon_background: '#00c2d8', icon_background_auto: false })).toEqual({ light: '#00c2d8', dark: '#00c2d8' });
+    });
+    it('v0.1.343: el ícono diseñado se guarda, se lee con tolerancia y decide la pantalla de apertura', async () => {
+        const url = (k: string) => `/api/v1/public/brand/images/${k.padEnd(32, '0').slice(0, 32).replace(/[^a-f0-9]/g, 'a')}.png`;
+        const icons = Object.fromEntries(PLATFORM_ICON_KEYS.map((k) => [k, url(k)])) as never;
+        const design = { art: 'mark', bg_from: '#00A7CD', bg_to: '#0dd8dd', bg_angle: 12, scale: 1, splash: 'app' } as const;
+
+        // Viaja y vuelve por el servicio (con imágenes subidas de verdad: no acepta URLs inventadas).
+        const svc = new PlatformBrandService(new MemStore(), new MemFiles());
+        const uploaded = Object.fromEntries(
+            await Promise.all(PLATFORM_ICON_KEYS.map(async (k) => [k, (await svc.uploadImage(Readable.from(png(192, 192)))).url])),
+        );
+        const saved = await svc.update({ app_name: 'Acme', icons: uploaded, icon_design: design });
+        expect(saved.icon_design).toEqual(design);
+        expect((await svc.get()).icon_design).toEqual(design);
+
+        // Un valor roto (de otra versión) cae a null sin tumbar el resto.
+        expect(parsePlatformBrand({ app_name: 'Acme', icon_design: { art: 'raro', scale: 9 } }).icon_design).toBeNull();
+        expect(parsePlatformBrand({ app_name: 'Acme' }).icon_design).toBeNull();
+
+        // Abrir «sobre el fondo de la app»: el manifiesto sigue neutro en los dos temas.
+        const app = { app_name: 'Acme', icons, icon_design: design };
+        expect(buildManifest({ tenant: null, platform: app }).background_color).toBe('#ffffff');
+        expect(buildManifest({ tenant: null, platform: app, scheme: 'dark' }).background_color).toBe('#121212');
+
+        // Abrir «con el color del ícono»: ese color en los dos temas, y el fondo del ícono sólido.
+        const own = { ...app, icon_design: { ...design, splash: 'icon' as const } };
+        expect(iconSplashColor(own)).toBe('#00a7cd');
+        expect(buildManifest({ tenant: null, platform: own }).background_color).toBe('#00a7cd');
+        expect(buildManifest({ tenant: null, platform: own, scheme: 'dark' }).background_color).toBe('#00a7cd');
+        expect(iconDesignBackground(own.icon_design)).toEqual({ from: '#00A7CD', to: null, angle: 12 });
+        expect(iconDesignBackground(design).to).toBe('#0dd8dd');
+        // Sin íconos guardados no aplica; en el dominio de una empresa, nunca.
+        expect(iconSplashColor({ icon_design: own.icon_design, icons: null })).toBeNull();
+        expect(buildManifest({ tenant: { name: 'Beta', app_name: null, primary_color: null }, platform: own }).background_color).toBe('#ffffff');
     });
 });

@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+    iconBackgrounds,
     PLATFORM_ICON_KEYS,
     PLATFORM_ICON_SIZES,
     platformBrandImageSchema,
     type PlatformBrand,
     type PlatformBrandImage,
+    type PlatformIconKey,
     type PlatformIconSet,
     type UpdatePlatformBrandInput,
 } from '@imagina-base/shared';
@@ -12,7 +14,16 @@ import {
 import { useSession } from '@/cloud/session';
 import { api } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
-import { loadImageFile, loadImageUrl, renderIconPng, renderIconSourcePng, renderLogoPng } from '@/lib/brandAssets';
+import {
+    analyzeIconImage,
+    loadImageFile,
+    loadImageUrl,
+    prepareIconArt,
+    renderDesignedIconPng,
+    renderIconPng,
+    renderIconSourcePng,
+    renderLogoPng,
+} from '@/lib/brandAssets';
 
 /** v0.1.327 — Plataforma → Marca (superadmin). */
 export const platformBrandKey = ['platform', 'brand'] as const;
@@ -126,4 +137,58 @@ export async function iconSetFromSavedImage(
 /** Vuelve a generar los tamaños desde el original guardado (cambió el color de fondo). */
 export async function regenerateIconSet(sourceUrl: string, background: IconBackgrounds): Promise<PlatformIconSet> {
     return uploadSizes(await loadImageUrl(sourceUrl), background);
+}
+
+// ─── v0.1.343 — El ícono diseñado ───────────────────────────────────────────
+
+/**
+ * Sube sólo el original del ícono (512, transparente). Los tamaños se generan
+ * al guardar, con el diseño elegido: así se puede probar sin subir nada.
+ */
+export async function uploadIconSourceFromImage(img: HTMLImageElement): Promise<string> {
+    return (await uploadBrandPng(await renderIconSourcePng(img), 'icon-source.png')).url;
+}
+
+export async function uploadIconSource(file: File): Promise<string> {
+    return uploadIconSourceFromImage(await loadImageFile(file));
+}
+
+/** Sube el logo y, si es casi cuadrado y no hay ícono, también su original como ícono. */
+export async function uploadLogoMaybeIconSource(
+    file: File,
+    wantIcon: boolean,
+): Promise<{ logo_url: string; icon_source_url: string | null }> {
+    const img = await loadImageFile(file);
+    const logo = (await uploadBrandPng(await renderLogoPng(img), 'logo.png')).url;
+    const icon = wantIcon && isSquarish(img) ? await uploadIconSourceFromImage(img) : null;
+    return { logo_url: logo, icon_source_url: icon };
+}
+
+/** El logo ya guardado como original del ícono. */
+export async function iconSourceFromSavedImage(url: string): Promise<string> {
+    return uploadIconSourceFromImage(await loadImageUrl(url));
+}
+
+/**
+ * Todos los tamaños del ícono desde el original guardado, con el diseño de la
+ * marca (o, sin diseño, el logo sobre el fondo de la app como antes). En el
+ * diseño el fondo es el mismo en claro y en oscuro: los dos juegos de
+ * Android apuntan a las mismas imágenes.
+ */
+export async function generateIconSet(
+    sourceUrl: string,
+    brand: Pick<PlatformBrand, 'icon_design' | 'icon_background' | 'icon_background_auto'>,
+): Promise<PlatformIconSet> {
+    const design = brand.icon_design;
+    if (!design) return regenerateIconSet(sourceUrl, iconBackgrounds(brand));
+    const { pixels, analysis } = analyzeIconImage(await loadImageUrl(sourceUrl));
+    const art = prepareIconArt(pixels, analysis, design.art);
+    const out: Partial<Record<PlatformIconKey, string>> = {};
+    for (const key of PLATFORM_ICON_KEYS) {
+        if (PLATFORM_ICON_SIZES[key].dark) continue;
+        out[key] = (await uploadBrandPng(await renderDesignedIconPng(art, key, design), `${key}.png`)).url;
+    }
+    out.maskable_dark_192 = out.maskable_192;
+    out.maskable_dark_512 = out.maskable_512;
+    return out as PlatformIconSet;
 }
