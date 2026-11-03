@@ -11062,6 +11062,82 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         633, front 739 en verde — + E2E navegador 38/38 en celular claro y
         oscuro y escritorio, y 5/5 del recorrido.
 
+  - [x] **Microsoft Teams + la ayuda debajo de cada credencial (v0.1.348,
+        addendum ADR-S22).** Lo pidió el usuario mientras registraba la app de
+        Microsoft: "la guía no está muy clara, no sé de dónde sacar los valores
+        de abajo" → "pon la indicación debajo de cada campo; también quiero
+        conectar el calendario de Outlook y Microsoft Teams, creo que esta
+        integración es sólo para correos". El calendario ya venía en la
+        conexión de Outlook; Teams no existía.
+        (a) **Ayuda debajo de cada credencial** en Plataforma → Integraciones
+        (Google, Microsoft y Slack). Dice dónde se copia el valor y cómo se
+        ve: el «Id. de aplicación (cliente)» y no el «Id. de objeto»; la
+        columna «Valor» y no el «Id. de secreto»; `GOCSPX-…`; el «Client
+        Secret» de Slack y no el «Signing Secret». Lo declara cada guía
+        (`credentials`). `credentialWarning` (shared, puro) avisa en ámbar,
+        sin bloquear el guardado, si lo pegado tiene otra forma: un GUID en el
+        secreto de Microsoft, un secreto tapado con asteriscos, el Client ID
+        pegado como secreto, espacios o un token de Slack. La tarjeta del
+        proveedor dice qué habilita cada app: «Outlook (correo y calendario de
+        Microsoft 365) · Microsoft Teams (mensajes a canales y chats)». La guía
+        de Microsoft suma los permisos de Teams («si no vas a usar Teams,
+        déjalos fuera»).
+        (b) **Integración «Microsoft Teams»** (`teams`, categoría Mensajería).
+        Usa la MISMA app de Microsoft que registra el operador, pero es otra
+        conexión porque los permisos son otros: `Team.ReadBasic.All`,
+        `Channel.ReadBasic.All`, `ChannelMessage.Send`, `Chat.Create` y
+        `ChatMessage.Send`. Son delegados y ninguno pide consentimiento del
+        administrador (verificado en la referencia de Graph). Sólo funciona con
+        cuentas de trabajo o estudiantiles. Tres acciones:
+        - **Mensaje a un canal.** Botón **«Elegir canal»**:
+          `GET /connections/:id/teams/channels` trae los equipos y canales de
+          la cuenta, sólo nombres e ids, con «General» primero, los privados
+          con candado y un buscador. También se puede pegar el vínculo que da
+          Teams, y debajo se ve «Canal «General» de «Comercial»» o por qué no
+          se entiende.
+        - **Mensaje directo** a una persona por su correo de trabajo (sirve
+          una variable).
+        - **Mensaje a un chat de grupo**, con el vínculo de cualquier mensaje
+          del chat.
+
+        Detalles de la implementación:
+        - Los vínculos los leen `parseTeamsChannelRef` y `parseTeamsChatRef`
+          (shared, puros) en el servidor y en el editor. Un vínculo a un
+          mensaje de canal no se confunde con un chat.
+        - El mensaje directo necesita dos pasos previos: el id de la cuenta y
+          el chat uno a uno (Microsoft no lo duplica). Viven en
+          `prepareIntegrationRequest` (`connectors/integration-prepare.ts`),
+          así el motor y «Probar ahora» hacen lo mismo. En la simulación no se
+          ejecutan.
+        - El texto va como HTML escapado con sus saltos de línea: un registro
+          no mete enlaces.
+        - Los errores de Graph se traducen: no es miembro del canal (403),
+          canal o chat inexistente (404), cuenta personal, la persona no está
+          en la organización, mandarse un mensaje a uno mismo.
+
+        (c) **Reunión en el evento.** «Crear evento en Outlook» gana «Agregar
+        reunión de Teams» (`isOnlineMeeting` + `teamsForBusiness`). «Crear
+        evento en Google Calendar» gana «Agregar videollamada de Google Meet»
+        (`conferenceData` + `conferenceDataVersion=1`). El enlace les llega a
+        los invitados y no hizo falta ningún permiso nuevo.
+        (d) `MS_GRAPH_API_URL` también re-apunta las acciones de Graph (sólo
+        para tests).
+        (e) Ayuda al día: guía «¿Cómo aviso a mi equipo en Microsoft Teams?»,
+        sección «Microsoft Teams» y filas de reunión en Aprende →
+        Integraciones, y novedad con carrusel.
+
+        Tests:
+        - shared: `teams-links` 5 y `provider-guides` +3 (ayuda y avisos, los
+          permisos de Teams en la guía).
+        - API: `integration-calls` +7 (canal, chat, mensaje directo con pasos
+          previos, errores, Teams/Meet en eventos) e `integrations.spec` +1 de
+          punta a punta (conectar con los scopes, listar canales, «Probar
+          ahora» del canal y del mensaje directo, 403 legible).
+        - E2E navegador 29/29 contra un Graph simulado: consola con la ayuda y
+          los avisos, galería, elegir canal, «Probar ahora» que publica el
+          texto escapado, mensaje directo, Outlook con reunión, guardado, y
+          celular en oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

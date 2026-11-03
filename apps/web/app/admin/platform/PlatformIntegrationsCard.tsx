@@ -5,6 +5,7 @@ import {
     INTEGRATION_PROVIDER_DEFS,
     PROVIDER_GUIDES,
     appDescriptionText,
+    credentialWarning,
     integrationScopes,
     registrableDomain,
     scopeJustificationText,
@@ -13,7 +14,7 @@ import {
     type PlatformIntegrationApp,
     type PlatformLegalView,
 } from '@imagina-base/shared';
-import { Check, Copy, KeyRound } from 'lucide-react';
+import { AlertTriangle, Check, Copy, KeyRound } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -103,6 +104,7 @@ function ProviderCard({
         ),
     ].filter(Boolean);
     const values = guideValues(redirectUri, scopes, legal);
+    const guide = PROVIDER_GUIDES[app.provider];
 
     const save = useMutation({
         mutationFn: (input: { client_id?: string; client_secret?: string; clear?: boolean }) =>
@@ -133,7 +135,14 @@ function ProviderCard({
                     )}
                 </div>
                 <CardDescription>
-                    {__('Habilita')}: {unlocks.map((i) => i.name).join(', ')}.
+                    {__('Habilita')}:{' '}
+                    {unlocks.map((i, n) => (
+                        <span key={i.key}>
+                            {n > 0 && ' · '}
+                            <span className="imcrm-font-medium imcrm-text-foreground">{i.name}</span> ({lowerFirst(__(i.tagline).replace(/\.$/, ''))})
+                        </span>
+                    ))}
+                    .
                     {app.connections > 0 && (
                         <>
                             {' '}
@@ -145,7 +154,7 @@ function ProviderCard({
                 </CardDescription>
             </CardHeader>
             <CardContent className="imcrm-space-y-4">
-                <ProviderGuideView provider={app.provider} guide={PROVIDER_GUIDES[app.provider]} values={values} />
+                <ProviderGuideView provider={app.provider} guide={guide} values={values} />
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-4">
                     <KeyRound className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                     <span className="imcrm-text-sm imcrm-font-medium">{__('Credenciales de la app')}</span>
@@ -168,7 +177,14 @@ function ProviderCard({
                             value={clientId}
                             onChange={(e) => setClientId(e.target.value)}
                             autoComplete="off"
+                            aria-describedby={`pi-${app.provider}-id-help`}
                             data-testid="imcrm-platform-client-id"
+                        />
+                        <CredentialHint
+                            id={`pi-${app.provider}-id-help`}
+                            help={guide.credentials.client_id}
+                            warning={credentialWarning(app.provider, 'client_id', clientId, secret)}
+                            testId="imcrm-platform-client-id-help"
                         />
                     </div>
                     <div className="imcrm-space-y-1">
@@ -184,7 +200,14 @@ function ProviderCard({
                                     ? `${app.secret_hint ?? '••••'} — ${__('deja vacío para conservarlo')}`
                                     : ''
                             }
+                            aria-describedby={`pi-${app.provider}-secret-help`}
                             data-testid="imcrm-platform-client-secret"
+                        />
+                        <CredentialHint
+                            id={`pi-${app.provider}-secret-help`}
+                            help={guide.credentials.client_secret}
+                            warning={credentialWarning(app.provider, 'client_secret', secret, clientId)}
+                            testId="imcrm-platform-client-secret-help"
                         />
                         {app.secret_unreadable && (
                             <p className="imcrm-text-xs imcrm-text-destructive">
@@ -306,4 +329,44 @@ function guideValues(redirectUri: string, scopes: string[], legal: PlatformLegal
 function errText(err: unknown): string {
     if (err instanceof CloudApiError) return err.message;
     return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * v0.1.348 — debajo de cada credencial: dónde se copia y cómo se ve el valor
+ * correcto, y un aviso (que no bloquea) si lo pegado tiene otra forma. La
+ * guía lo decía, pero escondido en una fase.
+ */
+function CredentialHint({
+    id,
+    help,
+    warning,
+    testId,
+}: {
+    id: string;
+    help: { where: string; looks_like: string };
+    warning: string | null;
+    testId: string;
+}): JSX.Element {
+    return (
+        <div id={id} className="imcrm-space-y-1" data-testid={testId}>
+            <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">{__(help.where)}</p>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                <span className="imcrm-font-medium">{__('Se ve así')}:</span> {__(help.looks_like)}
+            </p>
+            {warning && (
+                <p
+                    role="status"
+                    className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-px-2 imcrm-py-1.5 imcrm-text-xs imcrm-text-foreground"
+                    data-testid={`${testId}-warning`}
+                >
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-warning" aria-hidden />
+                    <span>{__(warning)}</span>
+                </p>
+            )}
+        </div>
+    );
+}
+
+function lowerFirst(text: string): string {
+    return text.charAt(0).toLowerCase() + text.slice(1);
 }

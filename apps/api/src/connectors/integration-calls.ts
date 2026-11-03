@@ -1,4 +1,11 @@
-import type { ConnectorAction, IntegrationKey, IntegrationProvider } from '@imagina-base/shared';
+import { randomUUID } from 'node:crypto';
+import {
+    parseTeamsChannelRef,
+    parseTeamsChatRef,
+    type ConnectorAction,
+    type IntegrationKey,
+    type IntegrationProvider,
+} from '@imagina-base/shared';
 import { buildWooRequest, checkWooResponse } from './woocommerce/wc-api';
 
 /**
@@ -146,6 +153,15 @@ export function emailList(raw: string): string[] {
 
 function isTrue(value: string | undefined): boolean {
     return ['true', '1', 'si', 'sí', 'yes'].includes((value ?? '').trim().toLowerCase());
+}
+
+/** El `error.message` de una respuesta de Microsoft Graph (vacío si no hay). */
+export function graphErrorMessage(json: Record<string, unknown> | null): string {
+    const err = json?.error;
+    if (err && typeof err === 'object' && typeof (err as Record<string, unknown>).message === 'string') {
+        return String((err as Record<string, unknown>).message).trim();
+    }
+    return '';
 }
 
 function parseJson(body: string): Record<string, unknown> | null {
@@ -327,6 +343,11 @@ function eventBodyGoogle(v: Record<string, string>): Record<string, unknown> {
     }
     const attendees = emailList(v.attendees ?? '');
     if (attendees.length > 0) body.attendees = attendees.map((email) => ({ email }));
+    // v0.1.348 — Google crea la sala de Meet si se le pide con un id único
+    // por pedido (reusar uno hace que ignore el pedido).
+    if (isTrue(v.meet)) {
+        body.conferenceData = { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: 'hangoutsMeet' } } };
+    }
     return body;
 }
 
@@ -349,7 +370,73 @@ function eventBodyGraph(v: Record<string, string>): Record<string, unknown> {
     if (attendees.length > 0) {
         body.attendees = attendees.map((address) => ({ emailAddress: { address }, type: 'required' }));
     }
+    // v0.1.348 — reunión de Teams en el evento: Outlook le pone el enlace y se
+    // lo manda a los invitados. Sólo cuentas de trabajo o estudiantiles.
+    if (isTrue(v.teams_meeting)) {
+        body.isOnlineMeeting = true;
+        body.onlineMeetingProvider = 'teamsForBusiness';
+    }
     return body;
+}
+
+// --- Microsoft Teams (v0.1.348) -----------------------------------------------
+
+export const GRAPH_BASE = 'https://graph.microsoft.com';
+
+/**
+ * El texto del mensaje como HTML de Teams: escapado (un registro no mete HTML
+ * ni enlaces falsos en un mensaje que sale con la cuenta de la empresa) y con
+ * los saltos de línea respetados. Teams colapsa los saltos de un mensaje de
+ * texto plano.
+ */
+export function teamsHtml(text: string): string {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/\r?\n/g, '<br>');
+}
+
+function teamsMessageBody(v: Record<string, string>, withSubject: boolean): string {
+    const message = v.message ?? '';
+    if (message.trim() === '') throw new IntegrationInputError('El mensaje está vacío.');
+    const subject = withSubject ? headerSafe(v.subject ?? '') : '';
+    return JSON.stringify({
+        ...(subject !== '' ? { subject } : {}),
+        body: { contentType: 'html', content: teamsHtml(message) },
+    });
+}
+
+/** Lo que va en la URL del mensaje directo hasta saber el chat (sólo se ve en la simulación). */
+export const TEAMS_DM_CHAT_PLACEHOLDER = '{chat-uno-a-uno}';
+
+/** ¿Quién es la cuenta conectada? (el chat uno a uno se arma con su id). */
+export function teamsMeRequest(accessToken: string): IntegrationRequest {
+    return {
+        url: `${GRAPH_BASE}/v1.0/me?$select=id,userPrincipalName`,
+        method: 'GET',
+        headers: { accept: 'application/json', ...bearer(accessToken) },
+    };
+}
+
+/**
+ * Crea —o devuelve, si ya existe— el chat uno a uno entre la cuenta conectada
+ * y la persona. Microsoft no duplica los chats uno a uno: pedirlo de nuevo
+ * devuelve el mismo, así que no hace falta recordarlo.
+ */
+export function teamsOneOnOneRequest(accessToken: string, meId: string, email: string): IntegrationRequest {
+    const member = (who: string): Record<string, unknown> => ({
+        '@odata.type': '#microsoft.graph.aadUserConversationMember',
+        roles: ['owner'],
+        'user@odata.bind': `${GRAPH_BASE}/v1.0/users('${who.replace(/'/g, "''")}')`,
+    });
+    return {
+        url: `${GRAPH_BASE}/v1.0/chats`,
+        method: 'POST',
+        headers: { ...JSON_HEADERS, ...bearer(accessToken) },
+        body: JSON.stringify({ chatType: 'oneOnOne', members: [member(meId), member(email)] }),
+    };
 }
 
 function mailRecipients(v: Record<string, string>): { to: string[]; cc: string[]; bcc: string[] } {
@@ -449,9 +536,12 @@ export function buildIntegrationRequest(
         case 'google_calendar.create_event': {
             const calendar = (v.calendar ?? '').trim() || 'primary';
             const body = eventBodyGoogle(v);
-            const invite = Array.isArray(body.attendees) ? '?sendUpdates=all' : '';
+            const q = new URLSearchParams();
+            if (Array.isArray(body.attendees)) q.set('sendUpdates', 'all');
+            if (body.conferenceData) q.set('conferenceDataVersion', '1');
+            const query = q.toString() !== '' ? `?${q.toString()}` : '';
             return {
-                url: `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar)}/events${invite}`,
+                url: `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar)}/events${query}`,
                 method: 'POST',
                 headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
                 body: JSON.stringify(body),
@@ -498,6 +588,50 @@ export function buildIntegrationRequest(
                 headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
                 body: JSON.stringify(eventBodyGraph(v)),
             };
+        case 'teams.send_channel_message': {
+            const ref = parseTeamsChannelRef(v.channel ?? '');
+            if (!ref) {
+                throw new IntegrationInputError(
+                    'No reconocemos ese canal. Elígelo con «Elegir canal» o pega el vínculo del canal (en Teams: «…» junto al canal → «Obtener vínculo al canal»).',
+                );
+            }
+            return {
+                url: `${GRAPH_BASE}/v1.0/teams/${encodeURIComponent(ref.teamId)}/channels/${encodeURIComponent(ref.channelId)}/messages`,
+                method: 'POST',
+                headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
+                body: teamsMessageBody(v, true),
+            };
+        }
+        case 'teams.send_chat_message': {
+            const ref = parseTeamsChatRef(v.chat ?? '');
+            if (!ref) {
+                throw new IntegrationInputError(
+                    'No reconocemos ese chat. Pega el vínculo de un mensaje del chat (en Teams: «…» sobre un mensaje → «Copiar vínculo»).',
+                );
+            }
+            return {
+                url: `${GRAPH_BASE}/v1.0/chats/${encodeURIComponent(ref.chatId)}/messages`,
+                method: 'POST',
+                headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
+                body: teamsMessageBody(v, false),
+            };
+        }
+        case 'teams.send_direct_message': {
+            // El chat se resuelve antes de mandar (`prepareIntegrationRequest`):
+            // aquí queda el envío, con el chat por completar.
+            const to = emailList(v.to ?? '');
+            if (to.length !== 1) {
+                throw new IntegrationInputError(
+                    `«${(v.to ?? '').trim() || '(vacío)'}» no es un correo válido. Va UN correo: el de trabajo de la persona.`,
+                );
+            }
+            return {
+                url: `${GRAPH_BASE}/v1.0/chats/${TEAMS_DM_CHAT_PLACEHOLDER}/messages`,
+                method: 'POST',
+                headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
+                body: teamsMessageBody(v, false),
+            };
+        }
         default:
             throw new IntegrationInputError(`La acción «${actionKey}» no existe en esta app.`);
     }
@@ -557,6 +691,27 @@ export function checkIntegrationResponse(
     }
     if (status === 401) {
         return 'La autorización venció o se revocó: reconecta la app en Ajustes → Integraciones.';
+    }
+    if (status >= 400 && (integration === 'teams' || integration === 'outlook')) {
+        const said = graphErrorMessage(json);
+        // Teams no tiene API para cuentas personales (outlook.com, hotmail).
+        if (/MSA|personal Microsoft account|consumer|not supported for (this|the) (account|user)/i.test(said)) {
+            return integration === 'teams'
+                ? 'Teams sólo funciona con cuentas de trabajo o estudiantiles de Microsoft 365, no con outlook.com o hotmail.'
+                : 'La reunión de Teams sólo se puede crear con cuentas de trabajo o estudiantiles de Microsoft 365, no con outlook.com o hotmail.';
+        }
+        if (integration === 'outlook' && /onlineMeeting/i.test(said)) {
+            return 'Microsoft no pudo crear la reunión de Teams: hace falta una cuenta de trabajo o estudiantil con Teams. Apaga «Agregar reunión de Teams» o conecta otra cuenta.';
+        }
+        if (integration === 'teams') {
+            if (status === 403) {
+                return 'La cuenta conectada no puede escribir ahí: tiene que ser miembro del equipo y del canal (o del chat). ' +
+                    (said !== '' ? `Microsoft dijo: «${said}».` : '');
+            }
+            if (status === 404) {
+                return 'No encontramos ese canal o chat: puede que lo hayan borrado o que la cuenta conectada ya no sea miembro.';
+            }
+        }
     }
     if (status >= 400) {
         const err = json?.error;

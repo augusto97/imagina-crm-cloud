@@ -58,8 +58,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'cards',
                 items: [
-                    { icon: 'MessageCircle', title: 'Mensajería', md: 'WhatsApp (WAS), WhatsApp Business oficial, Telegram y Slack.', tone: 'mint' },
-                    { icon: 'Mail', title: 'Correo y calendario', md: 'Gmail, Outlook (correo y calendario) y Google Calendar.', tone: 'blue' },
+                    { icon: 'MessageCircle', title: 'Mensajería', md: 'WhatsApp (WAS), WhatsApp Business oficial, Telegram, Slack y Microsoft Teams.', tone: 'mint' },
+                    { icon: 'Mail', title: 'Correo y calendario', md: 'Gmail, Outlook (correo y calendario, con reunión de Teams) y Google Calendar (con Meet).', tone: 'blue' },
                     { icon: 'FileSpreadsheet', title: 'Hojas de cálculo', md: 'Google Sheets: una fila nueva por cada cosa que pase.', tone: 'mint' },
                     { icon: 'Store', title: 'Tienda y cobros', md: 'WooCommerce, Mercado Pago y Wompi, con pantallas propias.', tone: 'violet' },
                     { icon: 'Database', title: 'Bases de datos', md: 'SQL Server y Azure SQL: trae datos a una lista sin duplicar.', tone: 'rose' },
@@ -152,6 +152,17 @@ export const articles: LearnArticle[] = [
                 title: 'Canales privados',
                 md: 'En un canal privado, primero invita la app con `/invite` dentro del canal. Si no está adentro, Slack responde con un error y la corrida de la automatización queda **fallida** con el motivo («la app no está en ese canal»): no se pierde en silencio.',
             },
+            { t: 'h', text: 'Microsoft Teams' },
+            {
+                t: 'p',
+                md: 'Teams se conecta con un clic, con la cuenta de trabajo de Microsoft 365 que va a mandar los mensajes: **Conectar**, eliges la cuenta y tocas **Aceptar**. Trae tres acciones:\n- **Enviar mensaje a un canal de Teams**: toca **Elegir canal** y aparecen los equipos y canales de esa cuenta (o pega el vínculo que da Teams en «…» junto al canal → «Obtener vínculo al canal»). Lleva un **Título** opcional y el **Mensaje**.\n- **Enviar mensaje directo en Teams**: un chat uno a uno con una persona de tu organización. En **Para** va su correo de trabajo, o una variable con el correo del responsable del registro.\n- **Enviar mensaje a un chat de Teams**: a un chat de grupo que ya existe; pega el vínculo de cualquier mensaje de ese chat («…» sobre un mensaje → «Copiar vínculo»).',
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Sólo cuentas de trabajo',
+                md: 'Teams sólo tiene esta conexión para cuentas de trabajo o estudiantiles de Microsoft 365, no para outlook.com o hotmail. Los mensajes salen a nombre de la cuenta conectada, que tiene que ser miembro del equipo y del canal: si no lo es, la corrida queda **fallida** con ese motivo.',
+            },
             {
                 t: 'example',
                 title: 'Una distribuidora de alimentos',
@@ -238,6 +249,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Zona horaria', what: 'En qué hora están la fecha y la hora (Bogotá, Ciudad de México, Santiago…).', tip: 'Si tu campo es «Fecha y hora», la hora ya viaja exacta y la zona sólo importa para fechas sin hora.' },
                     { name: 'Descripción', what: 'El detalle del evento.' },
                     { name: 'Invitados', what: 'Correos separados por coma. Reciben la invitación del calendario.' },
+                    { name: 'Agregar reunión de Teams', what: 'Sólo en Outlook. El evento lleva el enlace para unirse por Teams y les llega a los invitados. Necesita una cuenta de trabajo o estudiantil de Microsoft 365.' },
+                    { name: 'Agregar videollamada de Google Meet', what: 'Sólo en Google Calendar. El evento lleva el enlace de Meet y les llega a los invitados.' },
                 ],
             },
             { t: 'h', text: 'Google Sheets: una fila por cada cosa que pase' },

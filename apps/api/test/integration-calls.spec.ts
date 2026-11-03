@@ -16,6 +16,7 @@ import {
     verifyRequest,
     type IntegrationCreds,
 } from '../src/connectors/integration-calls';
+import { prepareIntegrationRequest } from '../src/connectors/integration-prepare';
 
 /**
  * v0.1.203 — las peticiones de las apps de la galería. Son puras: aquí se
@@ -364,5 +365,143 @@ describe('respuestas de Google / Microsoft', () => {
             'ana@acme.onmicrosoft.com',
         );
         expect(identityLabel('google', '{"email":"ana@acme.co"}')).toBe('ana@acme.co');
+    });
+});
+
+describe('Microsoft Teams (v0.1.348)', () => {
+    const TEAM = '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b';
+    const CHANNEL = '19:a1b2c3d4e5f6@thread.tacv2';
+    const CHAT = '19:9f8e7d6c5b4a@thread.v2';
+    const channelLink = `https://teams.microsoft.com/l/channel/${encodeURIComponent(CHANNEL)}/General?groupId=${TEAM}&tenantId=x`;
+
+    it('pide sólo permisos sin consentimiento del administrador', () => {
+        expect(integrationScopes(integrationDef('teams')!)).toBe(
+            'openid email offline_access User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send',
+        );
+    });
+
+    it('mensaje a un canal: equipo y canal del vínculo, texto escapado con sus saltos de línea', () => {
+        const req = buildIntegrationRequest(
+            'teams',
+            'send_channel_message',
+            vals({ channel: channelLink, subject: 'Venta\r\ncerrada', message: 'Cliente <b>Acme</b>\nMonto: 1.500 & más' }),
+            creds(),
+        );
+        expect(req.method).toBe('POST');
+        expect(req.url).toBe(`https://graph.microsoft.com/v1.0/teams/${TEAM}/channels/${encodeURIComponent(CHANNEL)}/messages`);
+        expect(req.headers.authorization).toBe('Bearer ya29.token-de-prueba');
+        expect(JSON.parse(req.body!)).toEqual({
+            subject: 'Venta cerrada',
+            body: { contentType: 'html', content: 'Cliente &lt;b&gt;Acme&lt;/b&gt;<br>Monto: 1.500 &amp; más' },
+        });
+        expect(() =>
+            buildIntegrationRequest('teams', 'send_channel_message', vals({ channel: 'General', message: 'hola' }), creds()),
+        ).toThrow(/No reconocemos ese canal/);
+        expect(() =>
+            buildIntegrationRequest('teams', 'send_channel_message', vals({ channel: channelLink, message: '  ' }), creds()),
+        ).toThrow(/vacío/);
+    });
+
+    it('mensaje a un chat por el vínculo de un mensaje', () => {
+        const req = buildIntegrationRequest(
+            'teams',
+            'send_chat_message',
+            vals({ chat: `https://teams.microsoft.com/l/message/${encodeURIComponent(CHAT)}/1700000000000?context=%7B%7D`, message: 'hola' }),
+            creds(),
+        );
+        expect(req.url).toBe(`https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(CHAT)}/messages`);
+        expect(JSON.parse(req.body!).subject).toBeUndefined();
+        // Un canal pegado donde va un chat se rechaza.
+        expect(() =>
+            buildIntegrationRequest('teams', 'send_chat_message', vals({ chat: channelLink, message: 'hola' }), creds()),
+        ).toThrow(/No reconocemos ese chat/);
+    });
+
+    it('mensaje directo: busca la cuenta, abre el chat uno a uno y manda ahí', async () => {
+        const calls: Array<{ url: string; method: string; body?: string }> = [];
+        const fetch = async (req: { url: string; method: string; body?: string }) => {
+            calls.push(req);
+            if (req.url.includes('/me?')) return { status: 200, body: '{"id":"me-123","userPrincipalName":"yo@acme.co"}' };
+            if (req.url.endsWith('/chats')) return { status: 201, body: `{"id":"${CHAT}"}` };
+            return { status: 500, body: '' };
+        };
+        const compiled = vals({ to: 'Ana@Acme.co', message: 'Tienes un ticket urgente' });
+        const req = await prepareIntegrationRequest('teams', 'send_direct_message', compiled, creds(), {
+            fetch,
+            graphBase: 'http://127.0.0.1:9999/',
+        });
+        expect(req.url).toBe(`http://127.0.0.1:9999/v1.0/chats/${encodeURIComponent(CHAT)}/messages`);
+        expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+            'GET http://127.0.0.1:9999/v1.0/me?$select=id,userPrincipalName',
+            'POST http://127.0.0.1:9999/v1.0/chats',
+        ]);
+        const chat = JSON.parse(calls[1]!.body!);
+        expect(chat.chatType).toBe('oneOnOne');
+        expect(chat.members.map((m: Record<string, string>) => m['user@odata.bind'])).toEqual([
+            "https://graph.microsoft.com/v1.0/users('me-123')",
+            "https://graph.microsoft.com/v1.0/users('ana@acme.co')",
+        ]);
+
+        // La simulación no toca la red: queda el chat por completar.
+        const sim = await prepareIntegrationRequest('teams', 'send_direct_message', compiled, creds());
+        expect(sim.url).toContain('{chat-uno-a-uno}');
+    });
+
+    it('mensaje directo: a uno mismo o a alguien que no está en la organización, con el motivo', async () => {
+        const me = { status: 200, body: '{"id":"me-123","userPrincipalName":"yo@acme.co"}' };
+        await expect(
+            prepareIntegrationRequest('teams', 'send_direct_message', vals({ to: 'YO@acme.co', message: 'x' }), creds(), {
+                fetch: async () => me,
+            }),
+        ).rejects.toThrow(/uno mismo/);
+        await expect(
+            prepareIntegrationRequest('teams', 'send_direct_message', vals({ to: 'otra@fuera.com', message: 'x' }), creds(), {
+                fetch: async (req) =>
+                    req.url.includes('/me?') ? me : { status: 404, body: '{"error":{"message":"Resource \'otra@fuera.com\' does not exist"}}' },
+            }),
+        ).rejects.toThrow(/No encontramos a «otra@fuera\.com»/);
+        expect(() =>
+            buildIntegrationRequest('teams', 'send_direct_message', vals({ to: 'a@x.co, b@x.co', message: 'x' }), creds()),
+        ).toThrow(/UN correo/);
+    });
+
+    it('las respuestas de Teams se explican', () => {
+        expect(checkIntegrationResponse('teams', 201, '{"id":"1"}')).toBeNull();
+        expect(checkIntegrationResponse('teams', 403, '{"error":{"message":"Forbidden"}}')).toMatch(/miembro del equipo/);
+        expect(checkIntegrationResponse('teams', 404, '')).toMatch(/No encontramos ese canal o chat/);
+        expect(
+            checkIntegrationResponse('teams', 400, '{"error":{"message":"Requested API is not supported for MSA accounts."}}'),
+        ).toMatch(/cuentas de trabajo/);
+        expect(checkIntegrationResponse('teams', 401, '')).toMatch(/reconecta/);
+    });
+
+    it('evento de Outlook con reunión de Teams y de Google con Meet', () => {
+        const outlook = buildIntegrationRequest(
+            'outlook',
+            'create_event',
+            vals({ title: 'Demo', date: '2026-07-30', time: '09:00', duration: '30', timezone: 'America/Bogota', teams_meeting: 'true' }),
+            creds(),
+        );
+        const ob = JSON.parse(outlook.body!);
+        expect(ob.isOnlineMeeting).toBe(true);
+        expect(ob.onlineMeetingProvider).toBe('teamsForBusiness');
+        const plain = JSON.parse(
+            buildIntegrationRequest('outlook', 'create_event', vals({ title: 'Demo', date: '2026-07-30' }), creds()).body!,
+        );
+        expect(plain.isOnlineMeeting).toBeUndefined();
+        expect(
+            checkIntegrationResponse('outlook', 400, '{"error":{"message":"onlineMeetingProvider is not supported"}}'),
+        ).toMatch(/reunión de Teams/);
+
+        const google = buildIntegrationRequest(
+            'google_calendar',
+            'create_event',
+            vals({ title: 'Demo', date: '2026-07-30', time: '09:00', meet: 'true' }),
+            creds(),
+        );
+        expect(google.url).toBe('https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1');
+        const gb = JSON.parse(google.body!);
+        expect(gb.conferenceData.createRequest.conferenceSolutionKey).toEqual({ type: 'hangoutsMeet' });
+        expect(gb.conferenceData.createRequest.requestId).toMatch(/^[0-9a-f-]{36}$/);
     });
 });

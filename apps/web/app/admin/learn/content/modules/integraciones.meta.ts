@@ -28,11 +28,11 @@ export const meta: LearnModuleMeta = {
         },
         {
             id: 'integraciones-mensajeria',
-            title: 'WhatsApp, Telegram y Slack: avisos a clientes y al equipo',
-            summary: 'Conecta WhatsApp (WAS), un bot de Telegram o tu Slack, mándate un mensaje de prueba y usa sus acciones para avisar a clientes y al equipo.',
-            minutes: 8,
+            title: 'WhatsApp, Telegram, Slack y Teams: avisos a clientes y al equipo',
+            summary: 'Conecta WhatsApp (WAS), un bot de Telegram, tu Slack o Microsoft Teams, mándate un mensaje de prueba y usa sus acciones para avisar a clientes y al equipo.',
+            minutes: 9,
             level: 'basic',
-            keywords: 'whatsapp was telegram bot slack canal mensaje prueba numero indicativo',
+            keywords: 'whatsapp was telegram bot slack teams microsoft canal chat mensaje directo prueba numero indicativo',
             needs: 'manage_automations',
         },
         {

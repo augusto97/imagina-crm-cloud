@@ -382,13 +382,37 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.347**
-(la barra de abajo del celular, personalizable; antes v0.1.346 la barra de
-abajo de la app instalada siguiendo el modo oscuro, v0.1.345 la apertura de la
-app en modo oscuro explicada como es y v0.1.344 el QR de cada registro con
-etiquetas), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.348**
+(Microsoft Teams y la ayuda debajo de cada credencial; antes v0.1.347 la barra
+de abajo del celular personalizable, v0.1.346 la barra de abajo de la app
+instalada siguiendo el modo oscuro y v0.1.345 la apertura de la app en modo
+oscuro explicada como es), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-03 — **Conectar Outlook y Teams → v0.1.348** (addendum ADR-S22). El
+  usuario estaba registrando la app de Microsoft y dijo: "la guía no está muy
+  clara… no sé de dónde sacar los valores de abajo (Client ID y Client
+  Secret)". Se le explicó paso a paso: el Client ID es el «Id. de aplicación
+  (cliente)» en «Información general», y el secreto es la columna «Valor» (no
+  el «Id. de secreto») de «Certificados y secretos». Después pidió dos cosas:
+  1. **La indicación debajo de cada campo.** Hecho, con aviso si lo pegado
+     tiene otra forma.
+  2. **Cómo conectar el calendario de Outlook y Microsoft Teams**, porque
+     creía que la integración era sólo de correo. El calendario de Outlook
+     YA venía en la misma conexión de Outlook (acción «Crear evento en
+     Outlook» y la agenda de citas). Teams no existía y se hizo:
+     - mensajes a un canal (con «Elegir canal»);
+     - mensaje directo a una persona;
+     - mensaje a un chat de grupo;
+     - «Agregar reunión de Teams» en los eventos de Outlook (y Meet en los de
+       Google).
+
+  **Pendiente del usuario**:
+  - Terminar de cargar Client ID y Client Secret en Plataforma → Integraciones.
+  - Para Teams, sumar en Entra los 5 permisos delegados: Team.ReadBasic.All,
+    Channel.ReadBasic.All, ChannelMessage.Send, Chat.Create y
+    ChatMessage.Send. No piden consentimiento del administrador.
+  - Conectar Teams con una cuenta de trabajo de Microsoft 365.
 - 2026-11-03 — **Barra de abajo personalizable → v0.1.347** (ADR-S93). Pedido
   del usuario: "permite que el menú de celular o de PWA sea personalizable,
   definir cuántos botones va a tener y qué botones o secciones; a algunos
@@ -1200,6 +1224,30 @@ etiquetas), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-03 · v0.1.348** — **Microsoft Teams + ayuda debajo de cada
+  credencial** (addendum ADR-S22; pedido del usuario, ver §10).
+  - **Credenciales**: `PROVIDER_GUIDES[*].credentials` dice dónde está y cómo
+    se ve cada valor, y va debajo del Client ID y del Client Secret en
+    Plataforma → Integraciones. `credentialWarning` avisa, sin bloquear, si lo
+    pegado tiene otra forma (el «Id. de secreto» en lugar del «Valor», un
+    secreto tapado, el Client ID como secreto). La tarjeta del proveedor dice
+    qué habilita cada app («Outlook (correo y calendario…)»).
+  - **Teams** (`teams`, misma app de Microsoft, 5 permisos delegados sin
+    consentimiento del administrador, sólo cuentas de trabajo):
+    - Acciones: mensaje a un canal (con «Elegir canal»:
+      `GET /connections/:id/teams/channels`), mensaje directo a una persona y
+      mensaje a un chat de grupo por vínculo.
+    - Los vínculos se leen con `teams-links.ts` (shared).
+    - Los pasos previos del mensaje directo viven en `integration-prepare.ts`,
+      que comparten el motor y «Probar ahora».
+    - Los errores de Graph se traducen.
+  - **Eventos**: «Agregar reunión de Teams» en Outlook y «Agregar videollamada
+    de Google Meet» en Google Calendar.
+  - **Tests**: shared (teams-links 5, provider-guides +3), API
+    (integration-calls +7, integrations.spec +1 de punta a punta); E2E
+    navegador 29/29 con un Graph simulado (consola con ayuda y avisos, galería,
+    elegir canal, «Probar ahora» que publica, mensaje directo, Outlook con
+    reunión, celular oscuro).
 - **2026-11-03 · v0.1.347** — **La barra de abajo del celular, personalizable**
   (ADR-S93; pedido del usuario, ver §10).
   - **Qué**: de 3 a 6 botones (con «Más» fijo al final), elegidos entre
