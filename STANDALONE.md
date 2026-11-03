@@ -5848,6 +5848,77 @@ barras de fábrica. El usuario aprobó las tres mejoras propuestas.
 - **Un servicio externo de QR** (Google Charts y similares): manda los enlaces
   de la empresa a un tercero y depende de que siga existiendo.
 
+
+### ADR-S93 — La barra de abajo del celular, personalizable (v0.1.347)
+
+**Contexto.** El usuario pidió que la barra de abajo del celular y de la app
+instalada fuera personalizable: "definir cuántos botones va a tener y qué
+botones o secciones se colocan ahí… a algunos usuarios no les será importante
+Mi trabajo y les importará más los dashboards". La barra de ADR-S90 era fija
+(Listas · Mi trabajo · Buscar · Avisos · Más) y lo que no estaba ahí vivía en
+«Más», con lo cual quien usa a diario los tableros, una lista puntual o el
+escáner de un depósito tenía que dar dos toques siempre.
+
+**Decisión.**
+1. **Cada persona elige su barra**, por empresa: de **2 a 5 botones más «Más»**
+   (3 a 6 en total). «Más» **no se elige**: va siempre al final, así nadie se
+   queda sin salida (Ajustes, su cuenta, cerrar sesión). Vive en
+   `memberships.settings.mobile_nav` (`mobileNavConfigSchema` en shared:
+   `items` sin repetir + `labels`), sin migración. Es una preferencia de la
+   CUENTA, no del dispositivo: se ve igual en todos los teléfonos y en la app
+   instalada. Cada empresa tiene la suya porque las listas y tableros cambian.
+2. **Qué puede ser un botón**: una **sección** (Listas, Mi trabajo, Avisos,
+   Tableros, Favoritos, Agentes, Aprende, Ideas, Novedades, Ajustes,
+   Plataforma), una **acción** (Buscar, Escanear, el Asistente) o **una lista o
+   un tablero puntual**, guardados por ID (`list:12`, `dashboard:3`: regla de
+   oro nº 1, el nombre y el slug se resuelven al dibujar). Lo que la persona ya
+   no puede usar (perdió el permiso, el plan no lo incluye, se borró la lista)
+   se saltea al dibujar sin tocar lo guardado; Avisos apagados ceden el lugar
+   a Favoritos como antes; si quedan menos de dos, se completa con la barra de
+   siempre. Las mismas reglas de permisos que «Más».
+3. **La barra del equipo**: el admin puede dejar la suya como **predeterminada
+   de la empresa** (`tenants.settings.mobile_nav`), que vale para quien no
+   eligió la suya; queda en la bitácora (`workspace.mobile_nav_change`).
+   Resolución: la propia → la del equipo → la de siempre
+   (`effectiveMobileNav`). Endpoints `GET/PUT/DELETE /me/mobile-nav` (lo
+   propio; vale en solo lectura, no escribe impersonando) y
+   `PUT/DELETE /me/mobile-nav/team` (sólo admin). Un invitado no tiene barra.
+4. **«Más» muestra lo que no está en la barra** (como el «Más» del iPhone):
+   Buscar, Escanear, Listas, Mi trabajo y Avisos aparecen ahí si se quitaron
+   de la barra, y Tableros, Favoritos, Aprende… dejan de repetirse si están en
+   ella. Nada se pierde al quitar un botón.
+5. **Editor** (`MobileNavEditor`): en **Más → Barra de abajo** (`/menu/barra`)
+   y en **Ajustes → Cuenta → Apariencia** (para elegirla desde el
+   computador). Vista previa con la misma barra, cantidad de botones (3 a 6),
+   orden con subir/bajar, quitar, agregar por grupos (secciones, acciones, una
+   lista, un tablero, con buscador y «Ver todas»), mostrar u ocultar los
+   nombres. El cambio se ve **al instante** en la barra de verdad (caché
+   optimista) y se guarda solo, un momento después (varios toques = un pedido;
+   sólo cuenta la respuesta del último).
+6. **La pestaña marcada** la decide la ruta MÁS específica entre las pestañas
+   (`activeMobileTab`): una lista puntual le gana a «Listas», un tablero
+   puntual a «Tableros»; lo que no está en la barra marca «Más».
+7. **La pantalla de arranque** recuerda la cantidad de pestañas
+   (`imcrm:splash.tabs`) y dibuja esa misma cantidad.
+8. **De paso**: cada pantalla nueva arranca arriba (el `<main>` tiene su propio
+   scroll y el navegador no lo reseteaba al navegar: tocar una fila al fondo de
+   «Más» abría la pantalla siguiente a mitad de página).
+
+**Consecuencias.** La barra se adapta a cada trabajo (una gerente con sus
+tableros, un depósito con el escáner) sin perder nada: lo que no está en la
+barra sigue en «Más». Las anclas de los recorridos de la barra son por botón
+(`tabbar-<sección>`), así un paso cuyo botón no está se saltea solo; el primer
+paso del recorrido señala la barra entera (`tabbar-bar`). Lo que se agregue al
+catálogo de secciones necesita su regla de disponibilidad y su fila en «Más».
+
+**Descartado.**
+- **Una preferencia del dispositivo (localStorage)**: la barra cambiaría según
+  el teléfono y se perdería al reinstalar la app.
+- **«Más» como un botón más que se puede quitar**: sin él no hay forma de
+  llegar a Ajustes ni de cerrar sesión.
+- **Más de 6 botones**: en 390 px los nombres dejan de leerse (Material
+  recomienda 3 a 5).
+
 ---
 
-**Versión del documento:** 1.139.2 (la barra de abajo de Android sigue el modo oscuro)
+**Versión del documento:** 1.140.0 (la barra de abajo del celular, personalizable)

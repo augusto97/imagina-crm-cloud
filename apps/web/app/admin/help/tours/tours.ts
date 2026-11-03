@@ -46,10 +46,10 @@ export const TOURS: TourDef[] = [
                 body: 'Aquí vive la información de tu empresa: cada lista guarda registros (clientes, tareas, pedidos…). En el panel de al lado las ordenas en carpetas y anclas a **Favoritos** las que más usas.',
                 tip: 'Arrastra una lista sobre una carpeta para guardarla ahí.',
                 mobile: {
-                    target: 'tabbar-lists',
+                    target: 'tabbar-bar',
                     placement: 'top',
                     title: 'Todo a un toque, abajo',
-                    body: 'La barra de abajo te lleva a todo: **Listas**, **Mi trabajo**, **Buscar**, **Avisos** y **Más**. En **Listas** está la información de tu empresa.',
+                    body: 'La barra de abajo te lleva a lo que más usas. De entrada trae **Listas**, **Mi trabajo**, **Buscar**, **Avisos** y **Más**, y tú eliges cuántos botones tiene y cuáles en **Más → Barra de abajo**.',
                 },
             },
             {
@@ -163,8 +163,18 @@ export const TOURS: TourDef[] = [
                     target: 'tabbar-more',
                     placement: 'top',
                     title: 'Todo lo demás, en Más',
-                    body: 'En **Más** están los **Tableros**, **Favoritos**, **Aprende**, **Ajustes**, tu cuenta y la ayuda.',
+                    body: 'En **Más** está todo lo que no tienes en la barra de abajo: **Tableros**, **Favoritos**, **Aprende**, **Ajustes**, tu cuenta y la ayuda.',
                 },
+            },
+            {
+                id: 'tabbar-custom',
+                device: 'mobile',
+                route: '/menu',
+                target: 'menu-tabbar',
+                placement: 'top',
+                art: 'celular-pestanas',
+                title: 'Tu barra, a tu medida',
+                body: 'En **Barra de abajo** eliges cuántos botones tiene y cuáles: **Tableros**, una lista o un tablero puntual, **Escanear**… Lo que no pongas sigue a mano en **Más**.',
             },
             {
                 id: 'search',

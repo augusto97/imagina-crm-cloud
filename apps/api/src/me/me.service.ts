@@ -1,18 +1,22 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     favoritesSchema,
     mergeGuideProgress,
+    readMobileNavConfig,
     parseGuideProgress,
     type FavoriteView,
     type Favorites,
     type GuideProgress,
     type MeUserSummary,
+    type MobileNavConfig,
+    type MobileNavState,
     type UpdateFavoritesInput,
     type UpdateGuideProgressInput,
 } from '@imagina-base/shared';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { lists, memberships, mentions, savedViews } from '../db/schema';
+import { lists, memberships, mentions, savedViews, tenants } from '../db/schema';
+import { AuditService } from '../audit/audit.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MeRepository, type MeUserRow } from './me.repository';
 
@@ -26,6 +30,8 @@ export class MeService {
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly tenantDb: TenantDb,
         private readonly repo: MeRepository,
+        // @Optional: los specs arman MeService a mano (la bitácora es global).
+        @Optional() private readonly audit?: AuditService,
     ) {}
 
     /**
@@ -219,6 +225,74 @@ export class MeService {
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
             return merged;
         });
+    }
+
+    /**
+     * v0.1.347 — La barra de abajo del celular: la de la persona
+     * (`memberships.settings.mobile_nav`) y la predeterminada del equipo
+     * (`tenants.settings.mobile_nav`), en una sola lectura.
+     */
+    async getMobileNav(tenantId: number, userId: number): Promise<MobileNavState> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [m] = await tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1);
+            const [t] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            return {
+                own: readMobileNavConfig((m?.settings as Record<string, unknown> | null)?.mobile_nav),
+                team: readMobileNavConfig((t?.settings as Record<string, unknown> | null)?.mobile_nav),
+            };
+        });
+    }
+
+    /**
+     * Guarda (o borra, con null) la barra de la persona. Se escribe SÓLO la
+     * clave `mobile_nav`: favoritos, recorridos o la capacidad que otra pieza
+     * guarde a la vez en `settings` no se pisan.
+     */
+    async setMobileNav(tenantId: number, userId: number, config: MobileNavConfig | null): Promise<MobileNavState> {
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .update(memberships)
+                .set({
+                    settings:
+                        config === null
+                            ? sql`coalesce(${memberships.settings}, '{}'::jsonb) - 'mobile_nav'`
+                            : sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('mobile_nav', ${JSON.stringify(config)}::jsonb)`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId))),
+        );
+        return this.getMobileNav(tenantId, userId);
+    }
+
+    /**
+     * La barra predeterminada del equipo (sólo el admin; lo chequea el
+     * controller). Vale para quien no eligió la suya. Queda en la bitácora.
+     */
+    async setTeamMobileNav(tenantId: number, userId: number, actorId: number | null, config: MobileNavConfig | null): Promise<MobileNavState> {
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .update(tenants)
+                .set({
+                    settings:
+                        config === null
+                            ? sql`coalesce(${tenants.settings}, '{}'::jsonb) - 'mobile_nav'`
+                            : sql`coalesce(${tenants.settings}, '{}'::jsonb) || jsonb_build_object('mobile_nav', ${JSON.stringify(config)}::jsonb)`,
+                })
+                .where(eq(tenants.id, tenantId)),
+        );
+        await this.audit?.log({
+            tenantId,
+            userId: actorId,
+            action: 'workspace.mobile_nav_change',
+            targetType: 'workspace',
+            targetLabel: config ? config.items.join(', ') : '',
+            meta: config ? { items: config.items, labels: config.labels } : { cleared: true },
+        });
+        return this.getMobileNav(tenantId, userId);
     }
 }
 

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
     BarChart3,
+    Bell,
     Bot,
     Check,
     ChevronRight,
@@ -11,8 +12,12 @@ import {
     GraduationCap,
     Lightbulb,
     ListChecks,
+    List as ListIcon,
     LogOut,
     Megaphone,
+    PanelBottom,
+    ScanLine,
+    Search,
     Monitor,
     Moon,
     Pin,
@@ -25,12 +30,15 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { help, useHelpAvailability } from '@/admin/help/helpBus';
+import { resolveMobileTabs } from '@/admin/layout/mobileNav';
+import { shellActions } from '@/admin/layout/shellActions';
 import { logoutAndReload } from '@/admin/layout/logout';
 import { initials } from '@/admin/layout/WorkspaceSwitcher';
 import { useSession } from '@/cloud/session';
 import { roleLabel, switchWorkspace, useWorkspaces } from '@/cloud/workspaceSwitch';
 import { InstallAppDialog } from '@/components/pwa/InstallAppDialog';
-import { useIncidents } from '@/hooks/useNotifications';
+import { needsEntities, useMobileNav, useMobileNavContext } from '@/hooks/useMobileNav';
+import { useIncidents, useNotifications } from '@/hooks/useNotifications';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { useWhatsNewFeed } from '@/hooks/useWhatsNew';
 import { moduleEnabled } from '@/lib/cloudFeatures';
@@ -72,6 +80,16 @@ export function MenuPage(): JSX.Element | null {
     const canSeeDashboards = (canManageDashboards || (canAccessAdmin && canViewDashboards)) && moduleEnabled('dashboards');
     const incidents = useIncidents('open', isAdmin || canManageAutomations);
     const openIncidents = incidents.data?.open ?? 0;
+
+    // v0.1.347 — la barra de abajo es personalizable: «Más» ofrece todo lo
+    // que NO quedó en la barra (como el «Más» del iPhone), así nada se pierde
+    // al quitar un botón.
+    const { config: navConfig } = useMobileNav();
+    const navCtx = useMobileNavContext(needsEntities(navConfig));
+    const onBar = useMemo(() => new Set(resolveMobileTabs(navConfig, navCtx).map((t) => t.key)), [navConfig, navCtx]);
+    const inboxOn = moduleEnabled('mentions');
+    const notifications = useNotifications(false);
+    const unread = inboxOn ? notifications.data?.unread ?? 0 : 0;
 
     if (!user) return null;
     const displayName = user.name.trim() !== '' ? user.name : user.email;
@@ -140,21 +158,41 @@ export function MenuPage(): JSX.Element | null {
             )}
 
             <MenuGroup label={__('Ir a')}>
-                <MenuLink to="/favorites" icon={Pin} label={__('Favoritos')} hint={__('Lo que anclaste para tenerlo a mano')} testId="menu-favorites" />
-                {canSeeDashboards && (
+                {!onBar.has('search') && (
+                    <MenuButton icon={Search} label={__('Buscar')} hint={__('Registros, listas y guías por su nombre')} testId="menu-search" onClick={() => shellActions.openSearch()} />
+                )}
+                {!onBar.has('scan') && navCtx.available('scan') && (
+                    <MenuButton icon={ScanLine} label={__('Escanear un código')} hint={__('QR o código de barras, con la cámara')} testId="menu-scan" onClick={() => shellActions.openScan()} />
+                )}
+                {!onBar.has('lists') && <MenuLink to="/lists" icon={ListIcon} label={__('Listas')} hint={__('Tus listas y carpetas')} testId="menu-lists" />}
+                {!onBar.has('mywork') && <MenuLink to="/my-work" icon={ListChecks} label={__('Mi trabajo')} hint={__('Lo que tienes asignado, por fecha')} testId="menu-mywork" />}
+                {inboxOn && !onBar.has('inbox') && (
+                    <MenuLink
+                        to="/avisos"
+                        icon={Bell}
+                        label={__('Avisos')}
+                        hint={__('Menciones, asignaciones y aprobaciones')}
+                        badge={unread > 0 ? (unread > 99 ? '99+' : String(unread)) : null}
+                        testId="menu-inbox"
+                    />
+                )}
+                {!onBar.has('favorites') && <MenuLink to="/favorites" icon={Pin} label={__('Favoritos')} hint={__('Lo que anclaste para tenerlo a mano')} testId="menu-favorites" />}
+                {canSeeDashboards && !onBar.has('dashboards') && (
                     <MenuLink to="/dashboards" icon={BarChart3} label={__('Tableros')} hint={__('Dashboards con cifras y gráficos de tus listas')} testId="menu-dashboards" />
                 )}
-                {canManageAgents && <MenuLink to="/agents" icon={Bot} label={__('Agentes de IA')} hint={__('Compañeros que trabajan solos')} />}
-                <MenuLink to="/aprende" icon={GraduationCap} label={__('Aprende')} hint={__('El manual de cada parte de la app')} testId="menu-learn" />
-                <MenuLink to="/ideas" icon={Lightbulb} label={__('Ideas para tu negocio')} hint={__('Automatizaciones listas para activar')} />
-                <MenuLink
-                    to="/novedades"
-                    icon={Megaphone}
-                    label={__('Novedades')}
-                    hint={__('Lo nuevo de cada versión')}
-                    badge={unseenNews > 0 ? (unseenNews > 9 ? '9+' : String(unseenNews)) : null}
-                    testId="menu-whats-new"
-                />
+                {canManageAgents && !onBar.has('agents') && <MenuLink to="/agents" icon={Bot} label={__('Agentes de IA')} hint={__('Compañeros que trabajan solos')} />}
+                {!onBar.has('learn') && <MenuLink to="/aprende" icon={GraduationCap} label={__('Aprende')} hint={__('El manual de cada parte de la app')} testId="menu-learn" />}
+                {!onBar.has('ideas') && <MenuLink to="/ideas" icon={Lightbulb} label={__('Ideas para tu negocio')} hint={__('Automatizaciones listas para activar')} />}
+                {!onBar.has('whatsnew') && (
+                    <MenuLink
+                        to="/novedades"
+                        icon={Megaphone}
+                        label={__('Novedades')}
+                        hint={__('Lo nuevo de cada versión')}
+                        badge={unseenNews > 0 ? (unseenNews > 9 ? '9+' : String(unseenNews)) : null}
+                        testId="menu-whats-new"
+                    />
+                )}
             </MenuGroup>
 
             <MenuGroup label={__('Configuración')}>
@@ -181,6 +219,14 @@ export function MenuPage(): JSX.Element | null {
             </MenuGroup>
 
             <MenuGroup label={__('Preferencias')}>
+                <MenuLink
+                    to="/menu/barra"
+                    icon={PanelBottom}
+                    label={__('Barra de abajo')}
+                    hint={__('Elige cuántos botones tiene y cuáles')}
+                    testId="menu-tabbar"
+                    tour="menu-tabbar"
+                />
                 <li className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-px-3.5 imcrm-py-3">
                     <span className="imcrm-text-[15px]">{__('Apariencia')}</span>
                     <ThemeChooser mode={theme.mode} onChange={theme.setMode} />
@@ -283,6 +329,7 @@ const ROW_CLASS =
 function MenuLink({
     to,
     testId,
+    tour,
     ...body
 }: {
     to: string;
@@ -292,10 +339,12 @@ function MenuLink({
     badge?: string | null;
     tone?: 'danger';
     testId?: string;
+    /** Ancla de los recorridos (`data-tour`). */
+    tour?: string;
 }): JSX.Element {
     return (
         <li>
-            <Link to={to} className={ROW_CLASS} data-testid={testId}>
+            <Link to={to} className={ROW_CLASS} data-testid={testId} data-tour={tour}>
                 <RowBody {...body} />
             </Link>
         </li>

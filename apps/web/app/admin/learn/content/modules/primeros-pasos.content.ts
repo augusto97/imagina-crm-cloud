@@ -179,14 +179,45 @@ export const articles: LearnArticle[] = [
             { t: 'anim', key: 'celular-pestanas', caption: 'La barra de abajo: «Más» muestra todo lo demás y «Listas» te devuelve a tus listas.' },
             {
                 t: 'settings',
-                title: 'Las cinco pestañas',
+                title: 'Las pestañas de entrada',
                 rows: [
                     { name: 'Listas', what: 'Tus listas por carpeta, con **Recientes** y **Favoritos** arriba para llegar de un toque.', tip: 'Si ya estás en Listas, tocarla otra vez te sube al principio.' },
                     { name: 'Mi trabajo', what: 'Lo que tienes asignado en todas las listas, por vencimiento, más recordatorios y aprobaciones.' },
                     { name: 'Buscar', what: 'La búsqueda global: listas, registros, tableros y guías. También lee códigos con la cámara.' },
                     { name: 'Avisos', what: 'Tus menciones, asignaciones, recordatorios y aprobaciones, a pantalla completa.', tip: 'El número rojo son los que no leíste.' },
-                    { name: 'Más', what: 'Tu cuenta, el cambio de empresa, Favoritos, Tableros, Aprende, Ajustes, el tema, instalar la app, la ayuda y cerrar sesión.', tip: 'Un punto en «Más» indica que hay novedades sin ver.' },
+                    { name: 'Más', what: 'Tu cuenta, el cambio de empresa, todo lo que no está en la barra (Favoritos, Tableros, Aprende…), Ajustes, el tema, instalar la app, la ayuda y cerrar sesión.', tip: 'Un punto en «Más» indica que hay novedades sin ver.' },
                 ],
+            },
+            { t: 'h', text: 'Elige los botones de tu barra' },
+            {
+                t: 'p',
+                md: 'Esa es la barra de entrada, pero **cada persona arma la suya**: si casi nunca entras a **Mi trabajo** y vives mirando los **Tableros**, cambia uno por otro. También puedes elegir **cuántos botones** tiene.',
+            },
+            { t: 'anim', key: 'barra-personalizable', caption: 'Cambias «Mi trabajo» por «Tableros», subes a 6 botones y la barra del teléfono cambia al instante.' },
+            {
+                t: 'steps',
+                items: [
+                    'En el celular toca **Más** y elige **Barra de abajo**. Desde el computador está en **Ajustes → Cuenta → Apariencia**.',
+                    'En **Cantidad de botones** elige de **3 a 6**, contando **Más**, que va siempre al final.',
+                    'En **Tus botones, en orden** súbelos, bájalos o quítalos.',
+                    'En **Agregar un botón** elige una sección (**Tableros**, **Favoritos**, **Avisos**, **Aprende**…), una acción (**Buscar**, **Escanear** un código, el **Asistente**) o **una lista o un tablero puntual**, que se abre con un toque.',
+                    'Si quieres más espacio, apaga **Mostrar los nombres** y quedan sólo los íconos.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Se guarda solo, en tu cuenta: la ves igual en todos tus teléfonos y en la app instalada, y cada empresa tiene la suya. Lo que quites de la barra **sigue en Más**, así nunca pierdes una sección.',
+            },
+            {
+                t: 'example',
+                title: 'Un depósito y una gerente',
+                md: 'En el depósito de Café Aurora, Julián deja **Listas**, **Escanear**, **Buscar** y **Más**: escanea la etiqueta de cada bulto y llega a su ficha con un toque. La gerente, en cambio, pone el tablero **Ventas del mes** como segundo botón y lo abre sin buscarlo.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Si administras la empresa, **Usar mi barra para el equipo** la deja como la barra de quienes todavía no eligieron la suya. Cada persona puede cambiarla después.',
             },
             {
                 t: 'p',

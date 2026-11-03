@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -35,6 +35,18 @@ export function RouteTracker(): null {
     const dashboards = useDashboards();
     const groups = useListGroups();
     const params = useMemo(() => new URLSearchParams(search), [search]);
+
+    // v0.1.347 — cada pantalla nueva arranca ARRIBA. El área de trabajo es un
+    // `<main>` con su propio scroll (no la ventana), así que el navegador no
+    // lo resetea al navegar: tocar «Barra de abajo» al fondo de «Más» abría
+    // el editor a mitad de página. Cuenta como pantalla nueva cambiar de ruta
+    // o de sección de Ajustes/Plataforma (`?s=`, `?tab=`); abrir un registro
+    // en el modal (`?record=`) no mueve nada.
+    const section = params.get('s') ?? '';
+    const tab = params.get('tab') ?? '';
+    useLayoutEffect(() => {
+        document.getElementById('imcrm-main')?.scrollTo({ top: 0 });
+    }, [pathname, section, tab]);
 
     const listMatch = /^\/lists\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/.exec(pathname);
     const listSlug = listMatch ? decodeURIComponent(listMatch[1]!) : null;

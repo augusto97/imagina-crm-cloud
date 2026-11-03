@@ -382,13 +382,23 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.346**
-(la barra de abajo de la app instalada sigue el modo oscuro; antes v0.1.345 la
-apertura de la app en modo oscuro explicada como es y el estudio del ícono en
-tres pasos claros, v0.1.344 el QR de cada registro con etiquetas y v0.1.343 el
-ícono de la app como ícono de app), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.347**
+(la barra de abajo del celular, personalizable; antes v0.1.346 la barra de
+abajo de la app instalada siguiendo el modo oscuro, v0.1.345 la apertura de la
+app en modo oscuro explicada como es y v0.1.344 el QR de cada registro con
+etiquetas), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-03 — **Barra de abajo personalizable → v0.1.347** (ADR-S93). Pedido
+  del usuario: "permite que el menú de celular o de PWA sea personalizable,
+  definir cuántos botones va a tener y qué botones o secciones; a algunos
+  usuarios no les será importante Mi trabajo y les importará más los
+  dashboards". Cada persona elige de 3 a 6 botones (con «Más», que va siempre
+  al final) y cuáles: secciones, acciones (Buscar, Escanear, Asistente) o una
+  lista o un tablero puntual. Se guarda en su cuenta por empresa, el admin
+  puede dejar una barra del equipo y «Más» muestra lo que no está en la barra.
+  Editor en **Más → Barra de abajo** y en **Ajustes → Cuenta → Apariencia**.
+  **Pendiente del usuario**: probarlo en el teléfono tras la actualización.
 - 2026-11-02 — **Franja blanca abajo en modo oscuro → v0.1.346** (addendum
   ADR-S79). Reporte del usuario con captura tras v0.1.345: "en el modo oscuro
   quedó una barra blanca abajo en la app debajo del menú". Era la barra de
@@ -1190,6 +1200,24 @@ tres pasos claros, v0.1.344 el QR de cada registro con etiquetas y v0.1.343 el
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-03 · v0.1.347** — **La barra de abajo del celular, personalizable**
+  (ADR-S93; pedido del usuario, ver §10).
+  - **Qué**: de 3 a 6 botones (con «Más» fijo al final), elegidos entre
+    secciones, acciones y una lista o un tablero puntual (por ID); orden,
+    nombres sí/no; se ve al instante y se guarda solo. Barra del equipo para el
+    admin (bitácora). «Más» ofrece lo que no está en la barra. La pantalla de
+    arranque dibuja la misma cantidad de pestañas.
+  - **Dónde**: `memberships.settings.mobile_nav` y `tenants.settings.mobile_nav`
+    (sin migración); `GET/PUT/DELETE /me/mobile-nav` y `/me/mobile-nav/team`
+    (admin); `mobile-nav.ts` en shared; `mobileNav.ts`, `MobileTabBar`,
+    `MobileNavEditor`, `/menu/barra`.
+  - **De paso**: cada pantalla nueva arranca arriba (el `<main>` no se
+    reseteaba al navegar).
+  - **Ayuda**: guía nueva, paso nuevo del recorrido en el celular, Aprende con
+    animación `barra-personalizable` y novedad.
+  - **Tests**: API `mobile-nav.spec` (6), shared (3), front (`mobileNav.test`
+    11); E2E navegador 38/38 (celular claro y oscuro, escritorio) y 5/5 del
+    recorrido.
 - **2026-11-02 · v0.1.346** — **La barra de abajo de la app instalada sigue el
   modo oscuro** (addendum ADR-S79; reporte del usuario, ver §10).
   - **Causa real**: con `WebAppNavigationBarThemeColor` (activa por defecto)

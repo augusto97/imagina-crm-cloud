@@ -41,7 +41,7 @@ export function isRecentLocalListsChange(now: number = Date.now()): boolean {
     return pendingLocalListsChanges > 0 || now - lastLocalListsChange < 2500;
 }
 
-export function useLists() {
+export function useLists(enabled = true) {
     return useQuery({
         queryKey: listsKeys.list(),
         queryFn: async () => {
@@ -49,6 +49,8 @@ export function useLists() {
             return res.data;
         },
         staleTime: META_STALE_TIME,
+        // v0.1.347 — la barra de abajo sólo las pide si tiene una lista puntual.
+        enabled,
     });
 }
 

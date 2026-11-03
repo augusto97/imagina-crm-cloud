@@ -11019,6 +11019,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         La app instalada se actualiza sola en uno o dos días; reinstalarla lo
         muestra al momento.
 
+  - [x] **La barra de abajo del celular, personalizable (v0.1.347, ADR-S93,
+        pedido del usuario: "que sea personalizable, definir cuántos botones y
+        qué botones o secciones; a algunos no les importa Mi trabajo y les
+        importan más los dashboards")**: cada persona arma su barra de abajo
+        (celular y app instalada) **por empresa**, guardada en su cuenta
+        (`memberships.settings.mobile_nav`, `mobileNavConfigSchema` en shared,
+        sin migración): de **2 a 5 botones** más **«Más»**, que va siempre al
+        final y no se elige (sin él no habría Ajustes ni cerrar sesión). Un
+        botón es una **sección** (Listas, Mi trabajo, Avisos, Tableros,
+        Favoritos, Agentes, Aprende, Ideas, Novedades, Ajustes, Plataforma),
+        una **acción** (Buscar, Escanear, Asistente) o **una lista o un tablero
+        puntual** por ID (`list:12`, `dashboard:3`). Lo que ya no se puede usar
+        (permiso, plan, lista borrada) se saltea al dibujar; con menos de dos
+        se completa con la de siempre. El admin puede dejar su barra como la
+        **del equipo** (`tenants.settings.mobile_nav`, bitácora
+        `workspace.mobile_nav_change`): vale para quien no eligió la suya.
+        Endpoints `GET/PUT/DELETE /me/mobile-nav` (vale en solo lectura; no
+        escribe impersonando) y `PUT/DELETE /me/mobile-nav/team` (admin).
+        **«Más» ofrece lo que no está en la barra** (Buscar, Escanear, Listas,
+        Mi trabajo, Avisos aparecen ahí si se quitaron; lo que está en la barra
+        no se repite). **Editor** en **Más → Barra de abajo** (`/menu/barra`) y
+        en **Ajustes → Cuenta → Apariencia**: vista previa con la barra real,
+        cantidad (3 a 6), subir/bajar/quitar, agregar por grupos (con buscador
+        y «Ver todas» para listas y tableros), nombres sí/no, «Volver a la
+        barra del equipo / de siempre»; el cambio se ve al instante (caché
+        optimista) y se guarda solo (varios toques = un pedido, sólo cuenta la
+        última respuesta). La pestaña marcada es la de la ruta más específica
+        (una lista puntual le gana a «Listas»). La pantalla de arranque
+        recuerda cuántas pestañas dibujar. Las acciones del shell (abrir la
+        búsqueda o el escáner) se exponen a «Más» y a la barra por
+        `shellActions`. **De paso**: cada pantalla nueva arranca arriba — el
+        `<main>` tiene su propio scroll y no se reseteaba al navegar (tocar una
+        fila al fondo de «Más» abría la pantalla siguiente a mitad de página).
+        Ayuda: guía «¿Cómo elijo los botones de la barra de abajo del
+        celular?», paso nuevo `tabbar-custom` del recorrido en el celular (el
+        primero señala la barra entera, `tabbar-bar`), sección y animación
+        `barra-personalizable` en Aprende, y novedad. Tests: API
+        `mobile-nav.spec` (6: guardar sin pisar otras claves, por empresa, barra
+        del equipo sólo admin con bitácora, volver, impersonando no escribe,
+        valor corrupto), shared (3) y front (`mobileNav.test`, 11) — shared
+        633, front 739 en verde — + E2E navegador 38/38 en celular claro y
+        oscuro y escritorio, y 5/5 del recorrido.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

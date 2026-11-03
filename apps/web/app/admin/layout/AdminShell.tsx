@@ -11,6 +11,7 @@ import { GettingStarted } from '@/admin/onboarding/GettingStarted';
 import { ActivePathSync } from './activePath';
 import { RouteTracker } from './RouteTracker';
 import { ShortcutsDialog } from './ShortcutsDialog';
+import { registerShellActions } from './shellActions';
 import { MobileTabBar } from '@/admin/layout/MobileTabBar';
 import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
@@ -82,6 +83,9 @@ export function AdminShell(): JSX.Element {
     const openShortcuts = useCallback(() => setShortcutsOpen(true), []);
     const openCreateList = useCallback(() => setCreateListOpen(true), []);
     const openScan = useCallback(() => setScanOpen(true), []);
+    // v0.1.347 — la búsqueda y el escáner también se abren desde «Más» y
+    // desde la barra de abajo personalizada.
+    useEffect(() => registerShellActions({ search: openPalette, scan: openScan }), [openPalette, openScan]);
 
     return (
         // `imcrm-app-height` = 100dvh (con 100vh de respaldo): en Safari del
@@ -113,7 +117,7 @@ export function AdminShell(): JSX.Element {
                         <Outlet />
                     </div>
                 </main>
-                <MobileTabBar onSearch={openPalette} />
+                <MobileTabBar onSearch={openPalette} onScan={openScan} />
             </div>
             <GlobalCommandPalette
                 open={paletteOpen}

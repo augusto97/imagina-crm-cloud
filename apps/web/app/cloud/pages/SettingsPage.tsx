@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { Check, Crown, Lock, SlidersHorizontal } from 'lucide-react';
@@ -10,6 +11,10 @@ import {
     type SettingsSectionId,
 } from '@/cloud/settingsSections';
 import { AppearanceCard } from '@/admin/settings/AppearanceCard';
+import { lazyWithReload } from '@/lib/lazyWithReload';
+
+// v0.1.347 — el editor de la barra del celular (chunk propio: sólo en Apariencia).
+const MobileNavEditor = lazyWithReload(() => import('@/admin/menu/MobileNavEditor').then((m) => ({ default: m.MobileNavEditor })));
 import { NotificationPrefsCard } from '@/admin/settings/NotificationPrefsCard';
 import { AuditLogPanel } from '@/cloud/components/AuditLogPanel';
 import { IncidentsPanel } from '@/cloud/components/IncidentsPanel';
@@ -227,7 +232,25 @@ export function SettingsPage(): JSX.Element {
                 {/* Per-usuario: descarga/borrado de datos personales (GDPR). */}
                 {active === 'datos' && <PersonalDataCard />}
                 {/* Per-usuario y por dispositivo: tema claro/oscuro/sistema. */}
-                {active === 'apariencia' && <AppearanceCard />}
+                {active === 'apariencia' && (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-8">
+                        <AppearanceCard />
+                        {/* v0.1.347 — la barra de abajo del celular (se guarda en la cuenta). */}
+                        {!isGuest && (
+                            <section className="imcrm-flex imcrm-max-w-xl imcrm-flex-col imcrm-gap-3" id="barra-celular">
+                                <div>
+                                    <h2 className="imcrm-text-base imcrm-font-semibold">{__('Barra de abajo del celular')}</h2>
+                                    <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
+                                        {__('Elige cuántos botones tiene la barra de abajo en el teléfono y en la app instalada, y cuáles.')}
+                                    </p>
+                                </div>
+                                <Suspense fallback={null}>
+                                    <MobileNavEditor />
+                                </Suspense>
+                            </section>
+                        )}
+                    </div>
+                )}
             </section>
             )}
         </div>
