@@ -48,10 +48,24 @@ export interface GuidePhase {
     tip?: string;
 }
 
+/**
+ * Dónde está cada credencial (v0.1.348). La guía lo decía, pero escondido en
+ * un paso de una fase: la persona llega al formulario con la consola del
+ * proveedor abierta y no sabe cuál de los tres identificadores copiar. Va
+ * debajo de cada campo, con la forma que tiene el valor correcto.
+ */
+export interface CredentialHelp {
+    /** Dónde se copia, en la consola del proveedor. */
+    where: string;
+    /** Cómo se ve el valor correcto (para reconocerlo). */
+    looks_like: string;
+}
+
 export interface ProviderGuide {
     /** Resumen de una línea de lo que implica el proveedor. */
     intro: string;
     phases: GuidePhase[];
+    credentials: { client_id: CredentialHelp; client_secret: CredentialHelp };
 }
 
 const G = 'https://console.cloud.google.com';
@@ -60,6 +74,16 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
     google: {
         intro:
             'Son cinco fases. Las tres primeras dejan la conexión funcionando para tus usuarios de prueba; la 4 y la 5 hacen que cualquier empresa pueda conectarse sin el aviso de «Google no verificó esta app». Usa una cuenta de Google de la plataforma (no personal): va a ser la dueña del proyecto.',
+        credentials: {
+            client_id: {
+                where: 'En Google Cloud → «Google Auth Platform» → «Clientes» → tu cliente web: el «ID de cliente».',
+                looks_like: 'Termina en .apps.googleusercontent.com',
+            },
+            client_secret: {
+                where: 'En el mismo cliente → «Secretos del cliente». Google lo muestra completo sólo al crearlo: si ya no lo ves, toca «Agregar secreto» y usa el nuevo.',
+                looks_like: 'Empieza con GOCSPX-',
+            },
+        },
         phases: [
             {
                 key: 'project',
@@ -189,7 +213,17 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
     },
     microsoft: {
         intro:
-            'Una sola app sirve para Outlook personal (outlook.com, hotmail) y para las cuentas de trabajo de cualquier empresa con Microsoft 365. Lo que cambia la experiencia es la verificación del publicador (fase 4).',
+            'Una sola app sirve para Outlook (correo y calendario) y Microsoft Teams, para las cuentas personales (outlook.com, hotmail) y para las de trabajo de cualquier empresa con Microsoft 365. Lo que cambia la experiencia es la verificación del publicador (fase 4).',
+        credentials: {
+            client_id: {
+                where: 'En Microsoft Entra → «Registros de aplicaciones» → tu app → «Información general»: el «Id. de aplicación (cliente)». No el «Id. de objeto» ni el «Id. de directorio (inquilino)»: tienen la misma forma.',
+                looks_like: '8-4-4-4-12 caracteres: a1b2c3d4-1234-5678-9abc-def012345678',
+            },
+            client_secret: {
+                where: 'En tu app → «Certificados y secretos» → «Secretos de cliente» → «Nuevo secreto de cliente». Copia la columna «Valor» (no el «Id. de secreto»). Microsoft la muestra una sola vez: si ya ves «abc***», crea un secreto nuevo.',
+                looks_like: 'Unos 40 caracteres con letras, números y símbolos, por ejemplo: Abc8Q~xYz…',
+            },
+        },
         phases: [
             {
                 key: 'register',
@@ -222,7 +256,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Qué puede hacer la app en nombre de cada persona, y la clave que la identifica.',
                 steps: [
                     {
-                        text: 'En «Permisos de API» → «Agregar un permiso» → Microsoft Graph → «Permisos delegados»: marca openid, email, offline_access, User.Read, Mail.Send y Calendars.ReadWrite. No hace falta «Conceder consentimiento de administrador»: cada persona los acepta al conectar.',
+                        text: 'En «Permisos de API» → «Agregar un permiso» → Microsoft Graph → «Permisos delegados»: marca openid, email, offline_access, User.Read, Mail.Send y Calendars.ReadWrite (Outlook: correo y calendario) y Team.ReadBasic.All, Channel.ReadBasic.All, ChannelMessage.Send, Chat.Create y ChatMessage.Send (Teams). No hace falta «Conceder consentimiento de administrador»: cada persona los acepta al conectar. Si no vas a usar Teams, puedes dejar fuera los cinco de Teams.',
                         copy: ['scopes_lines'],
                     },
                     {
@@ -230,7 +264,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                     },
                 ],
                 warning:
-                    'El secreto de Microsoft VENCE. El día que vence, todas las conexiones de Outlook dejan de renovarse. Anota la fecha y, un mes antes, crea un secreto nuevo y pégalo aquí (el viejo puede convivir hasta que lo borres).',
+                    'El secreto de Microsoft VENCE. El día que vence, todas las conexiones de Outlook y Teams dejan de renovarse. Anota la fecha y, un mes antes, crea un secreto nuevo y pégalo aquí (el viejo puede convivir hasta que lo borres).',
             },
             {
                 key: 'branding',
@@ -271,6 +305,16 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
     slack: {
         intro:
             'Slack no exige verificación para funcionar, pero sí activar la distribución pública: sin eso la app sólo se instala en tu propio workspace.',
+        credentials: {
+            client_id: {
+                where: 'En api.slack.com/apps → tu app → «Basic Information» → «App Credentials»: el «Client ID».',
+                looks_like: 'Dos números separados por un punto: 1234567890.1234567890',
+            },
+            client_secret: {
+                where: 'En el mismo lugar: «Client Secret» → «Show». No el «Signing Secret» ni el «Verification Token».',
+                looks_like: '32 letras y números, sin guiones',
+            },
+        },
         phases: [
             {
                 key: 'create',
@@ -380,4 +424,54 @@ export function registrableDomain(host: string): string {
     const tld = labels[labels.length - 1]!;
     const twoLevel = tld.length === 2 && ['com', 'co', 'net', 'org', 'gov', 'edu', 'gob', 'ac'].includes(sld);
     return labels.slice(twoLevel ? -3 : -2).join('.');
+}
+
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * ¿El valor pegado tiene la forma del correcto? (v0.1.348). Devuelve un aviso
+ * en lenguaje claro o `null`. NO bloquea guardar: los proveedores cambian de
+ * formato de vez en cuando y un falso positivo no puede dejar a nadie afuera.
+ * Lo que sí atrapa son las confusiones de siempre: el «Id. de secreto» de
+ * Microsoft en lugar del «Valor», el secreto tapado con asteriscos, el Client
+ * ID pegado en el campo del secreto.
+ */
+export function credentialWarning(
+    provider: IntegrationProvider,
+    field: 'client_id' | 'client_secret',
+    raw: string,
+    other = '',
+): string | null {
+    const value = raw.trim();
+    if (value === '') return null;
+    if (/\s/.test(value)) return 'Tiene espacios en el medio: copia el valor de nuevo, sin el texto de alrededor.';
+    if (field === 'client_secret' && /\*{3,}|•{3,}/.test(value)) {
+        return 'Ese valor está tapado: el proveedor sólo lo muestra completo al crearlo. Crea un secreto nuevo y copia el valor entero.';
+    }
+    if (other.trim() !== '' && value === other.trim()) return 'Es igual al otro campo: el Client ID y el Client Secret son dos valores distintos.';
+    if (provider === 'microsoft') {
+        if (field === 'client_id' && !GUID_RE.test(value)) {
+            return 'El «Id. de aplicación (cliente)» tiene esta forma: a1b2c3d4-1234-5678-9abc-def012345678. Revisa que hayas copiado ese.';
+        }
+        if (field === 'client_secret' && GUID_RE.test(value)) {
+            return 'Eso parece el «Id. de secreto», no el «Valor». Copia la columna «Valor» (más larga, con símbolos como ~).';
+        }
+    }
+    if (provider === 'google') {
+        if (field === 'client_id' && !/\.apps\.googleusercontent\.com$/i.test(value)) {
+            return 'El ID de cliente de Google termina en .apps.googleusercontent.com. Revisa que hayas copiado ese.';
+        }
+        if (field === 'client_secret' && /\.apps\.googleusercontent\.com$/i.test(value)) {
+            return 'Eso es el ID de cliente, no el secreto. El secreto empieza con GOCSPX-.';
+        }
+    }
+    if (provider === 'slack') {
+        if (field === 'client_id' && !/^\d+\.\d+$/.test(value)) {
+            return 'El Client ID de Slack son dos números separados por un punto (1234567890.1234567890).';
+        }
+        if (field === 'client_secret' && /^xox[a-z]-/i.test(value)) {
+            return 'Eso es un token de Slack, no el Client Secret. Está en «Basic Information» → «App Credentials».';
+        }
+    }
+    return null;
 }

@@ -10,7 +10,9 @@ import {
     isSmsProvider,
     smsRecipient,
     smsSegments,
+    teamsChannelLink,
     type SmsProviderKey,
+    type TeamsChannelOption,
     oauthConfigSchema,
     type AuthorizeIntegrationInput,
     type ConnectIntegrationKeyInput,
@@ -61,8 +63,11 @@ import {
     testSendRequest,
     verifyRequest,
     type IntegrationCreds,
+    type IntegrationRequest,
+    type IntegrationValues,
     type VerifyOutcome,
 } from './integration-calls';
+import { prepareIntegrationRequest } from './integration-prepare';
 import {
     classifyWooVerify,
     wooSiteIndexUrl,
@@ -595,6 +600,105 @@ export class ConnectorsService {
             throw new Error(`«${row.name}» no está autorizada: conéctala de nuevo en Ajustes → Integraciones.`);
         }
         return token;
+    }
+
+    /**
+     * v0.1.348 — el pedido de una acción de la galería, listo para salir. Con
+     * `run`, ejecuta los pasos previos que alguna necesita (el chat uno a uno
+     * del mensaje directo de Teams); sin `run` —la simulación— no toca la red.
+     */
+    async prepareIntegrationCall(
+        key: IntegrationKey,
+        actionKey: string,
+        compiled: IntegrationValues,
+        creds: IntegrationCreds,
+        run: boolean,
+    ): Promise<IntegrationRequest> {
+        return prepareIntegrationRequest(key, actionKey, compiled, creds, {
+            graphBase: this.env.MS_GRAPH_API_URL,
+            ...(run
+                ? {
+                      fetch: async (req) => {
+                          const res = await safeWebhookFetch(req.url, {
+                              method: req.method,
+                              headers: req.headers,
+                              ...(req.body !== undefined ? { body: req.body } : {}),
+                              captureBody: true,
+                              timeoutMs: 10_000,
+                          });
+                          return { status: res.status, body: res.body ?? '' };
+                      },
+                  }
+                : {}),
+        });
+    }
+
+    /**
+     * v0.1.348 — los equipos de Teams de la cuenta conectada con sus canales,
+     * para elegir uno en vez de pegar un vínculo. Sólo nombres e ids: ni
+     * mensajes ni miembros.
+     */
+    async teamsChannels(tenantId: number, userId: number, id: number): Promise<TeamsChannelOption[]> {
+        const row = await this.row(tenantId, id);
+        if (!row || !this.canSee(row, userId) || row.provider !== 'teams') {
+            throw new NotFoundException({ code: 'connection_not_found', message: 'Conexión de Teams no encontrada', data: { status: 404 } });
+        }
+        let token: string;
+        try {
+            token = await this.oauthAccessToken(tenantId, id);
+        } catch (err) {
+            throw new BadRequestException({ code: 'teams_unavailable', message: err instanceof Error ? err.message : String(err), data: { status: 400 } });
+        }
+        const base = (this.env.MS_GRAPH_API_URL || 'https://graph.microsoft.com').replace(/\/+$/, '');
+        const get = async (path: string): Promise<{ status: number; json: Record<string, unknown> | null; body: string }> => {
+            const res = await safeWebhookFetch(`${base}${path}`, {
+                method: 'GET',
+                headers: { accept: 'application/json', authorization: `Bearer ${token}` },
+                captureBody: true,
+                maxCaptureBytes: 512 * 1024,
+                timeoutMs: 10_000,
+            });
+            let json: Record<string, unknown> | null = null;
+            try {
+                json = JSON.parse(res.body ?? '') as Record<string, unknown>;
+            } catch {
+                json = null;
+            }
+            return { status: res.status, json, body: res.body ?? '' };
+        };
+        const teams = await get('/v1.0/me/joinedTeams?$select=id,displayName');
+        if (teams.status >= 400) {
+            throw new BadRequestException({
+                code: 'teams_unavailable',
+                message: checkIntegrationResponse('teams', teams.status, teams.body) ?? `Microsoft respondió ${teams.status}.`,
+                data: { status: 400 },
+            });
+        }
+        const list = (Array.isArray(teams.json?.value) ? (teams.json!.value as Array<Record<string, unknown>>) : [])
+            .map((t) => ({ id: String(t.id ?? ''), name: String(t.displayName ?? '') }))
+            .filter((t) => t.id !== '')
+            .slice(0, 50);
+        const out: TeamsChannelOption[] = [];
+        for (let i = 0; i < list.length; i += 5) {
+            const chunk = list.slice(i, i + 5);
+            const done = await Promise.all(
+                chunk.map(async (team) => {
+                    const res = await get(`/v1.0/teams/${encodeURIComponent(team.id)}/channels?$select=id,displayName,membershipType`).catch(() => null);
+                    const channels = (Array.isArray(res?.json?.value) ? (res!.json!.value as Array<Record<string, unknown>>) : [])
+                        .map((c) => {
+                            const cid = String(c.id ?? '');
+                            const name = String(c.displayName ?? '');
+                            return { id: cid, name, link: teamsChannelLink(team.id, cid, name), private: c.membershipType === 'private' };
+                        })
+                        .filter((c) => c.id !== '')
+                        // «General» primero, como en Teams; después por nombre.
+                        .sort((a, b) => (a.name === 'General' ? -1 : b.name === 'General' ? 1 : a.name.localeCompare(b.name, 'es')));
+                    return { team_id: team.id, team_name: team.name, channels };
+                }),
+            );
+            out.push(...done);
+        }
+        return out.sort((a, b) => a.team_name.localeCompare(b.team_name, 'es'));
     }
 
     /** v0.1.269 — guarda claves sueltas en `config` (la carpeta de Drive). */

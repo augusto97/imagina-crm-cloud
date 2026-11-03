@@ -79,6 +79,7 @@ export * from './field-types/text-coercion';
 export * from './schemas/templates';
 export * from './schemas/connector';
 export * from './schemas/integrations';
+export * from './schemas/teams-links';
 export * from './schemas/collections';
 export * from './schemas/whatsapp';
 export * from './schemas/sms';

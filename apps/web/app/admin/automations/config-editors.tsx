@@ -15,6 +15,7 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
 import { SmsActionConfig } from './SmsActionConfig';
+import { TeamsChannelField, TeamsChatStatus } from './TeamsChannelField';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { FilterOptionPicker } from '../records/FilterOptionPicker';
@@ -2375,6 +2376,7 @@ function ConnectorActionConfig({
                     value={typeof values[param.key] === 'string' ? (values[param.key] as string) : ''}
                     fields={fields}
                     onChange={(next) => setValue(param.key, next)}
+                    teamsConnectionId={connection?.integration_key === 'teams' ? connection.id : null}
                 />
             ))}
 
@@ -2414,11 +2416,14 @@ function ConnectorParamField({
     value,
     fields,
     onChange,
+    teamsConnectionId = null,
 }: {
     param: ConnectorParam;
     value: string;
     fields: FieldEntity[];
     onChange: (next: string) => void;
+    /** v0.1.348 — conexión de Teams: el canal se elige de una lista. */
+    teamsConnectionId?: number | null;
 }): JSX.Element {
     const hasOptions = param.type === 'select' && param.options.length > 0;
     // Una opción de lista también puede venir de una variable del registro:
@@ -2426,6 +2431,21 @@ function ConnectorParamField({
     const [asTag, setAsTag] = useState(
         () => hasOptions && value !== '' && !param.options.some((o) => o.value === value),
     );
+
+    if (teamsConnectionId !== null && param.key === 'channel') {
+        return (
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {param.label || param.key}
+                    {param.required && <span className="imcrm-text-destructive"> *</span>}
+                </Label>
+                <TeamsChannelField connectionId={teamsConnectionId} value={value} onChange={onChange} fields={fields} />
+                {value.trim() === '' && param.help !== '' && (
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{param.help}</p>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -2478,6 +2498,8 @@ function ConnectorParamField({
                     }
                 />
             )}
+
+            {teamsConnectionId !== null && param.key === 'chat' && <TeamsChatStatus value={value} />}
 
             {param.help !== '' && (
                 <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{param.help}</p>

@@ -1001,4 +1001,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En el celular toca **Más → Barra de abajo**; desde el computador, **Ajustes → Cuenta → Apariencia**. Se guarda en tu cuenta: la ves igual en todos tus teléfonos. Si administras la empresa, puedes dejar tu barra como la del equipo.',
         action: { label: 'Armar mi barra', href: '/menu/barra' },
     },
+    {
+        key: 'v0.1.348-microsoft-teams',
+        version: '0.1.348',
+        date: '2026-11-03',
+        kind: 'feature',
+        title: 'Avisos en Microsoft Teams',
+        summary:
+            'Conecta Microsoft Teams y tus automatizaciones avisan en un canal o le escriben directo a una persona. Y los eventos de Outlook ya pueden llevar la reunión de Teams.',
+        media: {
+            slides: [
+                {
+                    title: 'Un canal o una persona',
+                    text: 'Elige el canal de una lista con «Elegir canal», o escríbele directo al responsable del registro con su correo de trabajo.',
+                    illustration: 'integ-connect-once',
+                },
+                {
+                    title: 'Reuniones con enlace',
+                    text: '«Crear evento en Outlook» puede agregar la reunión de Teams, y «Crear evento en Google Calendar» la videollamada de Meet: el enlace les llega a los invitados.',
+                    illustration: 'vistas-calendario',
+                },
+            ],
+        },
+        body: 'Ve a **Ajustes → Integraciones**, conecta **Microsoft Teams** con tu cuenta de trabajo de Microsoft 365 y úsala en **Añadir acción** de cualquier automatización.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+    },
 ];

@@ -32,6 +32,7 @@ import {
     type InlineSecretCandidate,
     type OAuthStartResult,
     type Role,
+    type TeamsChannelOption,
     type UpdateConnectionInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
@@ -155,6 +156,17 @@ export class ConnectorsController {
             role(req),
             id,
         );
+        return { data };
+    }
+
+    /** v0.1.348 — equipos y canales de Teams de la conexión, para elegir uno. */
+    @Get(':id/teams/channels')
+    async teamsChannels(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ data: TeamsChannelOption[] }> {
+        await assertConnectionModule(this.db, req, id);
+        const data = await this.connectors.teamsChannels(tenantId(req), userId(req), id);
         return { data };
     }
 

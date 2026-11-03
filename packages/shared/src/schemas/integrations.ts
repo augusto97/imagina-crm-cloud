@@ -123,6 +123,8 @@ export const INTEGRATION_KEYS = [
     'google_sheets',
     'google_drive',
     'outlook',
+    // v0.1.348 — Microsoft Teams: mensajes a canales y chats (misma app de Microsoft).
+    'teams',
     'woocommerce',
     // v0.1.333 (ADR-S83) — sitios WordPress: páginas, entradas, tipos propios y taxonomías.
     'wordpress',
@@ -885,7 +887,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             action({
                 key: 'create_event',
                 label: 'Crear evento en Google Calendar',
-                description: 'Con fecha, hora, duración e invitados.',
+                description: 'Con fecha, hora, invitados y videollamada de Meet si quieres.',
                 params: [
                     {
                         key: 'calendar',
@@ -893,6 +895,13 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         help: 'Vacío = tu calendario principal. Para otro, su ID (está en la configuración del calendario).',
                     },
                     ...eventParams,
+                    {
+                        key: 'meet',
+                        label: 'Agregar videollamada de Google Meet',
+                        type: 'boolean',
+                        default: 'false',
+                        help: 'El evento lleva el enlace de Meet y les llega a los invitados.',
+                    },
                 ],
             }),
         ],
@@ -971,8 +980,81 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             action({
                 key: 'create_event',
                 label: 'Crear evento en Outlook',
-                description: 'En el calendario de la cuenta conectada.',
-                params: eventParams,
+                description: 'En el calendario de la cuenta conectada, con reunión de Teams si quieres.',
+                params: [
+                    ...eventParams,
+                    {
+                        key: 'teams_meeting',
+                        label: 'Agregar reunión de Teams',
+                        type: 'boolean',
+                        default: 'false',
+                        help: 'El evento lleva el enlace para unirse por Teams y les llega a los invitados. Sólo con cuentas de trabajo o estudiantiles de Microsoft 365 (no con outlook.com).',
+                    },
+                ],
+            }),
+        ],
+    },
+    {
+        // v0.1.348 — Teams usa la MISMA app de Microsoft que Outlook (el
+        // operador la registra una vez); cada empresa conecta Teams aparte
+        // porque los permisos son otros. Ninguno de estos cinco pide
+        // consentimiento del administrador, y sólo existen en cuentas de
+        // trabajo o estudiantiles (Teams no tiene API para cuentas personales).
+        key: 'teams',
+        name: 'Microsoft Teams',
+        tagline: 'Mensajes a canales y chats de Teams.',
+        description:
+            'Avisa a tu equipo en un canal de Teams o mándale un mensaje directo a una persona cuando pasa algo en una lista: un cliente nuevo, una venta cerrada, un ticket urgente.',
+        category: 'mensajeria',
+        color: '#4B53BC',
+        auth: {
+            kind: 'oauth',
+            provider: 'microsoft',
+            scopes: 'Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send',
+        },
+        actions: [
+            action({
+                key: 'send_channel_message',
+                label: 'Enviar mensaje a un canal de Teams',
+                description: 'Una publicación nueva en el canal, a nombre de la cuenta conectada.',
+                params: [
+                    {
+                        key: 'channel',
+                        label: 'Canal',
+                        required: true,
+                        help: 'Toca «Elegir canal», o pega el vínculo del canal (en Teams: «…» junto al canal → «Obtener vínculo al canal»).',
+                    },
+                    { key: 'subject', label: 'Título', help: 'Opcional: el título en negrita de la publicación.' },
+                    { key: 'message', label: 'Mensaje', type: 'long_text', required: true },
+                ],
+            }),
+            action({
+                key: 'send_direct_message',
+                label: 'Enviar mensaje directo en Teams',
+                description: 'Un chat uno a uno con una persona de tu organización.',
+                params: [
+                    {
+                        key: 'to',
+                        label: 'Para',
+                        required: true,
+                        help: 'El correo de trabajo de la persona (el mismo con el que entra a Teams). Puedes usar una variable, por ejemplo el correo del responsable del registro.',
+                    },
+                    { key: 'message', label: 'Mensaje', type: 'long_text', required: true },
+                ],
+            }),
+            action({
+                key: 'send_chat_message',
+                label: 'Enviar mensaje a un chat de Teams',
+                description: 'A un chat de grupo que ya existe.',
+                params: [
+                    {
+                        key: 'chat',
+                        label: 'Chat',
+                        required: true,
+                        help: 'Pega el vínculo de cualquier mensaje de ese chat (en Teams: «…» sobre un mensaje → «Copiar vínculo»).',
+                    },
+                    { key: 'message', label: 'Mensaje', type: 'long_text', required: true },
+                ],
             }),
         ],
     },

@@ -75,7 +75,6 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
-    buildIntegrationRequest,
     checkIntegrationResponse,
     compileIntegrationValues,
 } from '../connectors/integration-calls';
@@ -3222,7 +3221,9 @@ export class AutomationEngine {
                     if (compiled.missing.length > 0) {
                         return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
                     }
-                    const req = buildIntegrationRequest(integ.key, resolved.action.key, compiled, integ.creds);
+                    // v0.1.348 — algunas acciones necesitan pasos antes (el chat uno a
+                    // uno de Teams); en la simulación no se ejecutan.
+                    const req = await this.connectors.prepareIntegrationCall(integ.key, resolved.action.key, compiled, integ.creds, realCall);
                     const hide = [integ.creds.secret, integ.creds.accessToken].filter((x) => typeof x === 'string' && x.length >= 4);
                     const shownRequest = {
                         method: req.method,

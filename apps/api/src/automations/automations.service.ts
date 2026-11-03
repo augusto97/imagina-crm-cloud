@@ -51,7 +51,6 @@ import { MailService } from '../mail/mail.service';
 import type { MailAttachment } from '../mail/mail.types';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
-    buildIntegrationRequest,
     checkIntegrationResponse,
     compileIntegrationValues,
 } from '../connectors/integration-calls';
@@ -924,7 +923,7 @@ export class AutomationsService {
         }
         let req;
         try {
-            req = buildIntegrationRequest(integ.key, action.key, compiled, integ.creds);
+            req = await this.connectors.prepareIntegrationCall(integ.key, action.key, compiled, integ.creds, true);
         } catch (err) {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },

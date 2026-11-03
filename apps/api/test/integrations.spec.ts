@@ -172,7 +172,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
 
     /** Arranca la autorización y simula la vuelta del proveedor. */
     async function authorizeAndReturn(
-        key: 'slack' | 'outlook',
+        key: 'slack' | 'outlook' | 'teams',
         connectionId?: number,
     ): Promise<{ url: URL; result: { ok: boolean; error: string | null } }> {
         const { authorize_url } = await svc.startIntegrationOAuth(tenantId, adminId, 'admin', key, {
@@ -570,5 +570,112 @@ describe('Integraciones de la galería (v0.1.203)', () => {
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, conn!.id))),
         );
         expect(still).toBeDefined();
+    });
+
+    it('Microsoft Teams (v0.1.348): conectar, elegir el canal de una lista y mandar un mensaje directo', async () => {
+        await apps.update('microsoft', { client_id: 'ms-client', client_secret: 'ms-secreto-5555' }, new Map());
+        const TEAM = '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b';
+        const CHANNEL = '19:a1b2c3d4e5f6@thread.tacv2';
+        const CHAT = '19:uno-a-uno@unq.gbl.spaces';
+        net.handler = (call) => {
+            if (call.url.includes('login.microsoftonline.com')) {
+                return { status: 200, body: JSON.stringify({ access_token: 'ms-teams-token', expires_in: 3600, refresh_token: 'r1' }) };
+            }
+            if (call.url === 'https://graph.microsoft.com/v1.0/me') {
+                return { status: 200, body: '{"mail":"yo@acme.co","userPrincipalName":"yo@acme.co"}' };
+            }
+            if (call.url.startsWith('https://graph.microsoft.com/v1.0/me?')) {
+                return { status: 200, body: '{"id":"me-123","userPrincipalName":"yo@acme.co"}' };
+            }
+            if (call.url.startsWith('https://graph.microsoft.com/v1.0/me/joinedTeams')) {
+                return { status: 200, body: JSON.stringify({ value: [{ id: TEAM, displayName: 'Comercial' }, { id: 'sin-canales', displayName: 'Archivo' }] }) };
+            }
+            if (call.url.startsWith(`https://graph.microsoft.com/v1.0/teams/${TEAM}/channels?`)) {
+                return {
+                    status: 200,
+                    body: JSON.stringify({
+                        value: [
+                            { id: '19:otro@thread.tacv2', displayName: 'Ventas grandes', membershipType: 'private' },
+                            { id: CHANNEL, displayName: 'General', membershipType: 'standard' },
+                        ],
+                    }),
+                };
+            }
+            if (call.url === 'https://graph.microsoft.com/v1.0/chats' && call.method === 'POST') {
+                return { status: 201, body: JSON.stringify({ id: CHAT }) };
+            }
+            if (call.url.endsWith('/messages') && call.method === 'POST') return { status: 201, body: '{"id":"1700"}' };
+            return { status: 404, body: '' };
+        };
+
+        const { url, result } = await authorizeAndReturn('teams');
+        expect(result).toEqual({ ok: true, error: null });
+        expect(url.searchParams.get('scope')).toBe(
+            'openid email offline_access User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send',
+        );
+        const [conn] = await svc.list(tenantId, adminId, 'admin');
+        expect(conn).toMatchObject({ provider: 'teams', integration_key: 'teams', account_label: 'yo@acme.co' });
+        expect(conn!.actions.map((a) => a.key)).toEqual(['send_channel_message', 'send_direct_message', 'send_chat_message']);
+
+        // Los equipos y canales de la cuenta, con «General» primero y el vínculo listo.
+        const teams = await svc.teamsChannels(tenantId, adminId, conn!.id);
+        expect(teams.map((t) => t.team_name)).toEqual(['Archivo', 'Comercial']);
+        const comercial = teams.find((t) => t.team_name === 'Comercial')!;
+        expect(comercial.channels.map((c) => [c.name, c.private])).toEqual([
+            ['General', false],
+            ['Ventas grandes', true],
+        ]);
+        expect(comercial.channels[0]!.link).toContain(`groupId=${TEAM}`);
+        // Otra conexión que no es de Teams: 404.
+        await expect(svc.teamsChannels(tenantId, adminId, 999_999)).rejects.toThrow(/Teams no encontrada/);
+
+        await listsService.create(tenantId, { name: 'Tickets' });
+        const asunto = await fieldsService.create(tenantId, 'tickets', { label: 'Asunto', type: 'text', slug: 'asunto' });
+        const correo = await fieldsService.create(tenantId, 'tickets', { label: 'Correo', type: 'email', slug: 'correo' });
+        await recordsService.create(tenantId, admin(), 'tickets', {
+            data: { [`f${asunto.id}`]: 'Impresora <rota>', [`f${correo.id}`]: 'ana@acme.co' },
+        });
+
+        // Probador del canal: el canal elegido, el texto escapado.
+        net.calls.length = 0;
+        const channel = await automationsService.testWebhook(tenantId, 'tickets', {
+            config: {
+                connection_id: conn!.id,
+                action_key: 'send_channel_message',
+                values: { channel: comercial.channels[0]!.link, message: 'Nuevo: {{asunto}}' },
+            },
+        });
+        expect(channel.error).toBeNull();
+        expect(channel.request.url).toBe(
+            `https://graph.microsoft.com/v1.0/teams/${TEAM}/channels/${encodeURIComponent(CHANNEL)}/messages`,
+        );
+        expect(JSON.parse(channel.request.body!).body.content).toBe('Nuevo: Impresora &lt;rota&gt;');
+
+        // Mensaje directo: abre el chat uno a uno con la persona y manda ahí.
+        net.calls.length = 0;
+        const dm = await automationsService.testWebhook(tenantId, 'tickets', {
+            config: {
+                connection_id: conn!.id,
+                action_key: 'send_direct_message',
+                values: { to: '{{correo}}', message: 'Tienes un ticket: {{asunto}}' },
+            },
+        });
+        expect(dm.error).toBeNull();
+        expect(dm.request.url).toBe(`https://graph.microsoft.com/v1.0/chats/${encodeURIComponent(CHAT)}/messages`);
+        const open = net.calls.find((c) => c.url === 'https://graph.microsoft.com/v1.0/chats')!;
+        expect(JSON.stringify(JSON.parse(open.body!).members)).toContain("users('ana@acme.co')");
+        expect(dm.request.headers.authorization).not.toContain('ms-teams-token');
+
+        // Si la cuenta no puede escribir en el canal, el motivo es legible.
+        net.handler = (call) =>
+            call.url.endsWith('/messages') ? { status: 403, body: '{"error":{"message":"Forbidden"}}' } : { status: 404, body: '' };
+        const denied = await automationsService.testWebhook(tenantId, 'tickets', {
+            config: {
+                connection_id: conn!.id,
+                action_key: 'send_channel_message',
+                values: { channel: comercial.channels[0]!.link, message: 'hola' },
+            },
+        });
+        expect(denied.error).toMatch(/miembro del equipo/);
     });
 });

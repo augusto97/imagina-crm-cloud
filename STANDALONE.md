@@ -1200,6 +1200,47 @@ las sirve en `/api/v1/public/legal[/privacidad|/terminos]`:
 - Texto sugerido editable, con marcadores que se completan solos.
 - Ajustes en `platform:legal`, así viajan en el snapshot.
 
+**Addendum v0.1.348 — Microsoft Teams y dónde está cada credencial.**
+- **Ayuda debajo de cada credencial.** La guía decía dónde estaban el Client
+  ID y el secreto, pero dentro de una fase. Quien llega al formulario con la
+  consola abierta no sabía cuál de los tres identificadores copiar. Ahora cada
+  proveedor declara `credentials.{client_id,client_secret}` (dónde se copia y
+  cómo se ve el valor correcto) y esa ayuda va debajo de cada campo.
+- **Aviso si el valor tiene otra forma.** `credentialWarning` (puro) detecta,
+  por ejemplo, el «Id. de secreto» de Microsoft en lugar del «Valor», un
+  secreto tapado con asteriscos o el Client ID pegado como secreto. El aviso
+  NO bloquea guardar: un proveedor que cambia su formato no puede dejar a
+  nadie afuera.
+- **Integración `teams`.** Usa la MISMA app de Microsoft que Outlook (el
+  operador la registra una vez), pero es otra conexión porque los permisos
+  son otros.
+  - **Permisos:** `Team.ReadBasic.All`, `Channel.ReadBasic.All`,
+    `ChannelMessage.Send`, `Chat.Create` y `ChatMessage.Send`, todos
+    delegados. Ninguno pide consentimiento del administrador (verificado en
+    la referencia de Graph).
+  - **Sólo cuentas de trabajo o estudiantiles:** Teams no tiene API para
+    cuentas personales, y el error se traduce cuando pasa.
+  - **Acción «mensaje a un canal».** El canal se ELIGE de una lista
+    (`GET /connections/:id/teams/channels`: equipos y canales, sólo nombres
+    e ids) o se pega el vínculo que da Teams. `parseTeamsChannelRef` /
+    `parseTeamsChatRef` (shared, puros) leen los vínculos tanto en el servidor
+    como en el editor, que muestra debajo a qué canal apunta lo pegado.
+  - **Acción «mensaje directo».** Necesita dos pasos previos (el id de la
+    cuenta y el chat uno a uno, que Microsoft no duplica). Viven en
+    `prepareIntegrationRequest`, así el motor y «Probar ahora» hacen lo mismo.
+    En la simulación no se ejecutan.
+  - **Acción «mensaje a un chat de grupo».** Se indica con el vínculo de un
+    mensaje del chat.
+  - **El texto del mensaje** va escapado como HTML con sus saltos de línea:
+    un registro no mete enlaces falsos.
+- **Reunión en el evento:** «Crear evento en Outlook» gana «Agregar reunión de
+  Teams» (`isOnlineMeeting` + `teamsForBusiness`) y «Crear evento en Google
+  Calendar» gana «Agregar videollamada de Google Meet» (`conferenceData` con
+  `conferenceDataVersion=1`). El enlace les llega a los invitados en la
+  invitación del calendario. No hizo falta ningún permiso nuevo.
+- **Entorno de pruebas:** `MS_GRAPH_API_URL` también re-apunta las acciones de
+  Graph de la galería.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
@@ -5921,4 +5962,4 @@ catálogo de secciones necesita su regla de disponibilidad y su fila en «Más»
 
 ---
 
-**Versión del documento:** 1.140.0 (la barra de abajo del celular, personalizable)
+**Versión del documento:** 1.141.0 (Microsoft Teams y la ayuda bajo cada credencial)
