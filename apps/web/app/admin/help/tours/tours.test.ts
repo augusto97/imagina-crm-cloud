@@ -37,6 +37,8 @@ function anchorsInSource(): Set<string> {
         if (!src.includes('tour')) continue;
         // data-tour="x" y la prop `tour="x"` de RailItem/FlowCard/RowButton.
         for (const m of src.matchAll(/\b(?:data-tour|tour)="([a-z0-9-]+)"/g)) found.add(m[1]!);
+        // v0.1.347 — los botones de la barra de abajo vienen de un catálogo: `dataTour: 'x'`.
+        for (const m of src.matchAll(/\bdataTour:\s*'([a-z0-9-]+)'/g)) found.add(m[1]!);
         // data-tour={cond ? 'x' : 'y'}
         for (const m of src.matchAll(/\bdata-tour=\{([^}]*)\}/g)) {
             for (const s of m[1]!.matchAll(/'([a-z0-9-]+)'/g)) found.add(s[1]!);
@@ -140,7 +142,10 @@ describe('recorridos', () => {
         // En el celular no se señala el riel (vive en el cajón cerrado).
         const mobile = resolveSteps(welcome, ctx({ isMobile: true }));
         expect(mobile.map((s) => s.target)).not.toContain('rail-lists');
-        expect(mobile.find((s) => s.id === 'rail')?.target).toBe('tabbar-lists');
+        expect(mobile.find((s) => s.id === 'rail')?.target).toBe('tabbar-bar');
+        // v0.1.347 — la barra es personalizable: el paso sólo en el celular.
+        expect(mobile.map((s) => s.id)).toContain('tabbar-custom');
+        expect(resolveSteps(welcome, ctx()).map((s) => s.id)).not.toContain('tabbar-custom');
     });
 
     it('sin listas, los recorridos que las necesitan no se ofrecen', () => {

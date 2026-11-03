@@ -91,6 +91,7 @@
                 border-top: 1px solid var(--ib-border); background: var(--ib-surface);
             }
             .ib-tabs span { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+            .ib-tabs span[hidden] { display: none; }
             .ib-tabs span b:first-child { width: 22px; height: 22px; border-radius: 6px; }
             .ib-tabs span b:last-child { width: 34px; height: 6px; border-radius: 3px; }
             .ib-h1 { width: 150px; height: 20px; margin-bottom: 12px; }
@@ -155,9 +156,9 @@
                         <div class="ib-row"><b></b><b></b><b></b></div><div class="ib-row"><b></b><b></b><b></b></div>
                         <div class="ib-row"><b></b><b></b><b></b></div><div class="ib-row"><b></b><b></b><b></b></div>
                     </div>
-                    <div class="ib-tabs">
+                    <div class="ib-tabs" id="imcrm-boot-tabs">
                         <span><b></b><b></b></span><span><b></b><b></b></span><span><b></b><b></b></span>
-                        <span><b></b><b></b></span><span><b></b><b></b></span>
+                        <span><b></b><b></b></span><span><b></b><b></b></span><span hidden><b></b><b></b></span>
                     </div>
                 </div>
             </div>
@@ -189,6 +190,12 @@
                         collapsed = false;
                     }
                     if (collapsed) document.getElementById('imcrm-boot-panel').hidden = true;
+                    /* v0.1.347 — la barra de abajo de esta persona puede tener de 3 a 6 pestañas. */
+                    var tabs = mem.tabs;
+                    if (typeof tabs === 'number' && tabs >= 3 && tabs <= 6) {
+                        var spans = document.getElementById('imcrm-boot-tabs').children;
+                        for (var i = 0; i < spans.length; i++) spans[i].hidden = i >= tabs;
+                    }
                     document.getElementById('imcrm-boot-shell').hidden = false;
                     boot.setAttribute('data-shell', '1');
                 }

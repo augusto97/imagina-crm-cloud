@@ -58,7 +58,7 @@ export function bundleBody(scope: DashboardBundleScope): Record<string, unknown>
     return body;
 }
 
-export function useDashboards() {
+export function useDashboards(enabled = true) {
     // C2 — sin «Ver tableros» (rol propio) ni invitado: no se piden (sería un 403).
     const canView = useCanAny(CAP.VIEW_DASHBOARDS, CAP.MANAGE_DASHBOARDS);
     const isGuest = useIsGuest();
@@ -69,7 +69,7 @@ export function useDashboards() {
             return res.data;
         },
         staleTime: 60_000, // Fase 16.D
-        enabled: canView && !isGuest,
+        enabled: enabled && canView && !isGuest,
     });
 }
 

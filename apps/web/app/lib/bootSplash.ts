@@ -35,6 +35,13 @@ export interface SplashMemory {
     shell: boolean;
     light: SplashColors | null;
     dark: SplashColors | null;
+    /** v0.1.347 — cuántas pestañas tiene la barra de abajo (3 a 6, con «Más»). */
+    tabs?: number;
+}
+
+/** Cantidad de pestañas válida para la pantalla de arranque (o undefined). */
+export function safeTabCount(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 3 && value <= 6 ? value : undefined;
 }
 
 /** Sólo `rgb()`/`rgba()` numéricos: el script del HTML los pone en un `style`. */
@@ -65,7 +72,8 @@ export function readSplash(storage: Pick<Storage, 'getItem'> | null = safeStorag
                       accent: safeColor((c as SplashColors).accent),
                   }
                 : null;
-        return { shell: raw.shell === true, light: colors(raw.light), dark: colors(raw.dark) };
+        const tabs = safeTabCount(raw.tabs);
+        return { shell: raw.shell === true, light: colors(raw.light), dark: colors(raw.dark), ...(tabs ? { tabs } : {}) };
     } catch {
         return empty;
     }
@@ -85,6 +93,15 @@ export function rememberShell(shell: boolean, storage: Pick<Storage, 'getItem' |
     const current = readSplash(storage);
     if (current.shell === shell) return;
     write({ ...current, shell }, storage);
+}
+
+/** v0.1.347 — Recuerda cuántas pestañas tiene la barra de abajo de esta persona. */
+export function rememberTabCount(count: number, storage: Pick<Storage, 'getItem' | 'setItem'> | null = safeStorage()): void {
+    const tabs = safeTabCount(count);
+    if (!tabs) return;
+    const current = readSplash(storage);
+    if (current.tabs === tabs) return;
+    write({ ...current, tabs }, storage);
 }
 
 /** Recuerda los colores del tema que está a la vista. */

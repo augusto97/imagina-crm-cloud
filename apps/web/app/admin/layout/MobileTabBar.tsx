@@ -1,15 +1,16 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router';
-import { Bell, List as ListIcon, ListChecks, Menu, Pin, Search } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 
+import { assistantPanel } from '@/admin/assistant/assistantPanelStore';
 import { useNotifications } from '@/hooks/useNotifications';
+import { needsEntities, useMobileNav, useMobileNavContext } from '@/hooks/useMobileNav';
 import { useWhatsNewFeed } from '@/hooks/useWhatsNew';
+import { rememberTabCount } from '@/lib/bootSplash';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-import { isTabRoot, mobileTabFromPath, type MobileTabId } from './mobileNav';
+import { MORE_TAB, activeMobileTab, isTabRoot, resolveMobileTabs, type MobileTab, type TabIconComponent } from './mobileNav';
 
 /**
  * v0.1.342 — La barra de pestañas de abajo, como en las apps del teléfono
@@ -18,18 +19,31 @@ import { isTabRoot, mobileTabFromPath, type MobileTabId } from './mobileNav';
  * que se pega al fondo dentro de ella (la barra de scroll horizontal, el
  * «Guardar» de un editor) queda arriba de las pestañas.
  *
+ * v0.1.347 — Personalizable: cada persona elige cuántos botones lleva y
+ * cuáles (Ajustes → Apariencia, o «Más → Barra de abajo»). «Más» va siempre
+ * al final.
+ *
  * Mide su alto y lo publica en `--imcrm-bottom-nav`: lo usan los flotantes
  * que viven fuera de la columna (avisos, «Primeros pasos», la barra de
  * selección) para no quedar tapados. En escritorio está oculta y vale 0.
  */
-export function MobileTabBar({ onSearch }: { onSearch: () => void }): JSX.Element {
+export function MobileTabBar({ onSearch, onScan }: { onSearch: () => void; onScan: () => void }): JSX.Element {
     const { pathname } = useLocation();
-    const active = mobileTabFromPath(pathname);
+    const { config } = useMobileNav();
+    const ctx = useMobileNavContext(needsEntities(config));
+    const tabs = useMemo(() => resolveMobileTabs(config, ctx), [config, ctx]);
+    const active = activeMobileTab(pathname, tabs);
+
     const inboxOn = moduleEnabled('mentions');
     const notifications = useNotifications(false);
     const unread = inboxOn ? notifications.data?.unread ?? 0 : 0;
     const news = useWhatsNewFeed(true);
     const unseenNews = news.data?.unseen_count ?? 0;
+    const newsOnBar = tabs.some((t) => t.section === 'whatsnew');
+
+    // La pantalla de arranque dibuja la misma cantidad de pestañas.
+    const count = tabs.length + 1;
+    useLayoutEffect(() => rememberTabCount(count), [count]);
 
     const ref = useRef<HTMLElement | null>(null);
     useLayoutEffect(() => {
@@ -48,85 +62,113 @@ export function MobileTabBar({ onSearch }: { onSearch: () => void }): JSX.Elemen
         };
     }, []);
 
-    /** Tocar la pestaña en la que ya estás, en su raíz, sube al inicio. */
-    const onTabClick = (e: React.MouseEvent, tab: Exclude<MobileTabId, 'search'>): void => {
-        if (active === tab && isTabRoot(pathname, tab)) {
+    /** Tocar la pestaña en la que ya estás, en su inicio, sube al principio. */
+    const onTabClick = (e: React.MouseEvent, tab: Pick<MobileTab, 'key' | 'to'>): void => {
+        if (active === tab.key && isTabRoot(pathname, tab)) {
             e.preventDefault();
             document.getElementById('imcrm-main')?.scrollTo({ top: 0, behavior: 'smooth' });
         }
     };
+
+    const runAction = (tab: MobileTab): void => {
+        if (tab.action === 'search') onSearch();
+        else if (tab.action === 'scan') onScan();
+        else if (tab.action === 'assistant') assistantPanel.toggle();
+    };
+
+    const badgeFor = (tab: MobileTab): string | null => {
+        if (tab.section === 'inbox' && unread > 0) return unread > 99 ? '99+' : String(unread);
+        if (tab.section === 'whatsnew' && unseenNews > 0) return unseenNews > 9 ? '9+' : String(unseenNews);
+        return null;
+    };
+    const ariaFor = (tab: MobileTab): string | undefined => {
+        if (tab.section === 'inbox' && unread > 0) return sprintf(__('Avisos: %d sin leer'), unread);
+        if (tab.section === 'whatsnew' && unseenNews > 0) return sprintf(__('Novedades: %d sin ver'), unseenNews);
+        return config.labels ? undefined : __(tab.label);
+    };
+
+    const moreDot = unseenNews > 0 && !newsOnBar;
+    const moreAria = moreDot ? sprintf(__('Más · %d novedades sin ver'), unseenNews) : config.labels ? undefined : __('Más');
 
     return (
         <nav
             ref={ref}
             aria-label={__('Navegación principal')}
             data-testid="mobile-tabbar"
+            data-tour="tabbar-bar"
+            data-tabs={count}
             className="imcrm-admin-tabbar imcrm-shrink-0 imcrm-border-t imcrm-border-border imcrm-bg-background imcrm-pb-[env(safe-area-inset-bottom)] lg:imcrm-hidden"
         >
-            <ul className="imcrm-mx-auto imcrm-grid imcrm-max-w-xl imcrm-grid-cols-5">
+            <ul className="imcrm-mx-auto imcrm-grid imcrm-max-w-xl" style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}>
+                {tabs.map((tab) => (
+                    <li key={tab.key}>
+                        {tab.action ? (
+                            <TabButton
+                                tab={tab}
+                                labels={config.labels}
+                                ariaLabel={ariaFor(tab) ?? __(tab.label)}
+                                onClick={() => runAction(tab)}
+                            />
+                        ) : tab.to ? (
+                            <TabLink
+                                to={tab.to}
+                                dataTour={tab.dataTour}
+                                icon={tab.icon}
+                                label={tab.section ? __(tab.label) : tab.label}
+                                labels={config.labels}
+                                ariaLabel={ariaFor(tab)}
+                                active={active === tab.key}
+                                badge={badgeFor(tab)}
+                                onClick={(e) => onTabClick(e, tab)}
+                            />
+                        ) : (
+                            // Una lista o un tablero que todavía se está cargando.
+                            <span className={cn(TAB_CLASS, 'imcrm-opacity-50')} aria-hidden data-tour={tab.dataTour}>
+                                <TabIcon icon={tab.icon} active={false} />
+                                {config.labels && <span className={labelClass(false)}>&nbsp;</span>}
+                            </span>
+                        )}
+                    </li>
+                ))}
                 <li>
                     <TabLink
-                        to="/lists"
-                        tour="tabbar-lists"
-                        icon={ListIcon}
-                        label={__('Listas')}
-                        active={active === 'lists'}
-                        onClick={(e) => onTabClick(e, 'lists')}
-                    />
-                </li>
-                <li>
-                    <TabLink
-                        to="/my-work"
-                        tour="tabbar-mywork"
-                        icon={ListChecks}
-                        label={__('Mi trabajo')}
-                        active={active === 'mywork'}
-                        onClick={(e) => onTabClick(e, 'mywork')}
-                    />
-                </li>
-                <li>
-                    <button
-                        type="button"
-                        onClick={onSearch}
-                        data-tour="tabbar-search"
-                        data-testid="tabbar-search"
-                        aria-label={__('Buscar')}
-                        className={TAB_CLASS}
-                    >
-                        <TabIcon icon={Search} active={false} />
-                        <span className={labelClass(false)}>{__('Buscar')}</span>
-                    </button>
-                </li>
-                <li>
-                    {inboxOn ? (
-                        <TabLink
-                            to="/avisos"
-                            tour="tabbar-inbox"
-                            icon={Bell}
-                            label={__('Avisos')}
-                            ariaLabel={unread > 0 ? sprintf(__('Avisos: %d sin leer'), unread) : __('Avisos')}
-                            active={active === 'inbox'}
-                            badge={unread > 0 ? (unread > 99 ? '99+' : String(unread)) : null}
-                            onClick={(e) => onTabClick(e, 'inbox')}
-                        />
-                    ) : (
-                        <TabLink to="/favorites" tour="tabbar-favorites" icon={Pin} label={__('Favoritos')} active={pathname.startsWith('/favorites')} />
-                    )}
-                </li>
-                <li>
-                    <TabLink
-                        to="/menu"
-                        tour="tabbar-more"
-                        icon={Menu}
-                        label={__('Más')}
-                        ariaLabel={unseenNews > 0 ? sprintf(__('Más · %d novedades sin ver'), unseenNews) : __('Más')}
-                        active={active === 'more'}
-                        dot={unseenNews > 0}
-                        onClick={(e) => onTabClick(e, 'more')}
+                        to={MORE_TAB.to}
+                        dataTour={MORE_TAB.dataTour}
+                        icon={MORE_TAB.icon}
+                        label={__(MORE_TAB.label)}
+                        labels={config.labels}
+                        ariaLabel={moreAria}
+                        active={active === MORE_TAB.key}
+                        dot={moreDot}
+                        onClick={(e) => onTabClick(e, MORE_TAB)}
                     />
                 </li>
             </ul>
         </nav>
+    );
+}
+
+/**
+ * La misma barra, quieta: la vista previa del editor. Dibuja exactamente lo
+ * que se va a ver abajo (íconos, nombres, cantidad), sin navegar.
+ */
+export function MobileTabBarPreview({ tabs, labels }: { tabs: readonly MobileTab[]; labels: boolean }): JSX.Element {
+    const count = tabs.length + 1;
+    return (
+        <div className="imcrm-border-t imcrm-border-border imcrm-bg-background" data-testid="tabbar-preview" aria-hidden>
+            <ul className="imcrm-grid" style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}>
+                {[...tabs, { key: MORE_TAB.key, label: MORE_TAB.label, icon: MORE_TAB.icon, section: undefined } as Pick<MobileTab, 'key' | 'label' | 'icon' | 'section'>].map(
+                    (tab, i) => (
+                        <li key={tab.key}>
+                            <span className={TAB_CLASS}>
+                                <TabIcon icon={tab.icon} active={i === 0} />
+                                {labels && <span className={labelClass(i === 0)}>{tab.section || tab.key === MORE_TAB.key ? __(tab.label) : tab.label}</span>}
+                            </span>
+                        </li>
+                    ),
+                )}
+            </ul>
+        </div>
     );
 }
 
@@ -141,11 +183,11 @@ function labelClass(active: boolean): string {
 }
 
 /** El ícono dentro de una «pastilla» que se rellena en la pestaña activa (Material 3). */
-function TabIcon({ icon: Icon, active, badge, dot }: { icon: LucideIcon; active: boolean; badge?: string | null; dot?: boolean }): JSX.Element {
+function TabIcon({ icon: Icon, active, badge, dot }: { icon: TabIconComponent; active: boolean; badge?: string | null; dot?: boolean }): JSX.Element {
     return (
         <span
             className={cn(
-                'imcrm-relative imcrm-flex imcrm-h-7 imcrm-w-12 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-transition-colors',
+                'imcrm-relative imcrm-flex imcrm-h-7 imcrm-w-12 imcrm-max-w-full imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-transition-colors',
                 active ? 'imcrm-bg-primary/[0.12] imcrm-text-primary' : '',
             )}
         >
@@ -170,11 +212,21 @@ function TabIcon({ icon: Icon, active, badge, dot }: { icon: LucideIcon; active:
     );
 }
 
+function TabButton({ tab, labels, ariaLabel, onClick }: { tab: MobileTab; labels: boolean; ariaLabel: string; onClick: () => void }): JSX.Element {
+    return (
+        <button type="button" onClick={onClick} data-tour={tab.dataTour} data-testid={tab.dataTour} aria-label={ariaLabel} className={TAB_CLASS}>
+            <TabIcon icon={tab.icon} active={false} />
+            {labels && <span className={labelClass(false)}>{__(tab.label)}</span>}
+        </button>
+    );
+}
+
 function TabLink({
     to,
-    tour,
+    dataTour,
     icon,
     label,
+    labels,
     ariaLabel,
     active,
     badge,
@@ -183,9 +235,10 @@ function TabLink({
 }: {
     to: string;
     /** Ancla de los recorridos (`data-tour`). */
-    tour: string;
-    icon: LucideIcon;
+    dataTour: string;
+    icon: TabIconComponent;
     label: string;
+    labels: boolean;
     ariaLabel?: string;
     active: boolean;
     badge?: string | null;
@@ -195,15 +248,15 @@ function TabLink({
     return (
         <Link
             to={to}
-            data-tour={tour}
-            data-testid={tour}
-            aria-label={ariaLabel}
+            data-tour={dataTour}
+            data-testid={dataTour}
+            aria-label={ariaLabel ?? (labels ? undefined : label)}
             aria-current={active ? 'page' : undefined}
             onClick={onClick}
             className={TAB_CLASS}
         >
             <TabIcon icon={icon} active={active} badge={badge} dot={dot} />
-            <span className={labelClass(active)}>{label}</span>
+            {labels && <span className={labelClass(active)}>{label}</span>}
         </Link>
     );
 }

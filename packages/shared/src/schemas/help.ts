@@ -180,6 +180,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     if (path === '/favorites') out.push('favorites');
     if (path === '/avisos') out.push('inbox');
     if (path === '/menu') out.push('menu');
+    // v0.1.347 — el editor de la barra de abajo del celular.
+    if (path === '/menu/barra') out.push('menu', 'menu:barra');
     if (/^\/dashboards(\/.*)?$/.test(path)) out.push('dashboards');
     if (/^\/agents(\/.*)?$/.test(path)) out.push('agents');
     if (/^\/settings(\/.*)?$/.test(path)) {

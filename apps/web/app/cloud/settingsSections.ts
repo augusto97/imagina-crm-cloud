@@ -79,7 +79,7 @@ const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
     avisos: { id: 'avisos', label: 'Avisos', icon: Bell, hint: 'Qué te llega al correo y al teléfono' },
     firma: { id: 'firma', label: 'Firma de email', icon: PenLine, hint: 'La firma de tus correos' },
     datos: { id: 'datos', label: 'Tus datos', icon: DatabaseZap, hint: 'Descargar o borrar tu cuenta' },
-    apariencia: { id: 'apariencia', label: 'Apariencia', icon: SunMoon, hint: 'Modo claro u oscuro' },
+    apariencia: { id: 'apariencia', label: 'Apariencia', icon: SunMoon, hint: 'Modo claro u oscuro y la barra de abajo del celular' },
 };
 
 /**

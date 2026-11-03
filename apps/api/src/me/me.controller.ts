@@ -1,18 +1,22 @@
 import {
     Body,
     Controller,
+    Delete,
+    ForbiddenException,
     Get,
     HttpCode,
     Param,
     ParseIntPipe,
     Patch,
     Post,
+    Put,
     Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
 import {
     deleteAccountSchema,
+    mobileNavConfigSchema,
     updateEmailSignatureSchema,
     updateFavoritesSchema,
     updateGuideProgressSchema,
@@ -21,6 +25,8 @@ import {
     type Favorites,
     type GuideProgress,
     type MeUserSummary,
+    type MobileNavConfig,
+    type MobileNavState,
     type UpdateEmailSignatureInput,
     type UpdateFavoritesInput,
     type UpdateGuideProgressInput,
@@ -30,6 +36,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
+import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { AccountDataService, type AccountExport } from './account-data.service';
 import { MeService } from './me.service';
 
@@ -144,6 +151,58 @@ export class MeController {
         return this.me.updateGuideProgress(tenantId(req), req.authUserId!, patch);
     }
 
+    // ── v0.1.347 — la barra de abajo del celular ─────────────────────────
+
+    /** La barra de la persona y la predeterminada del equipo. */
+    @Get('mobile-nav')
+    @UseGuards(SessionGuard, TenantGuard)
+    getMobileNav(@Req() req: FastifyRequest): Promise<MobileNavState> {
+        return this.me.getMobileNav(tenantId(req), req.authUserId!);
+    }
+
+    /**
+     * Guarda la barra de la persona. Es una preferencia de la interfaz: vale
+     * también con la cuenta en solo-lectura. Durante una impersonación no se
+     * escribe nada (el operador no le cambia la barra a la persona).
+     */
+    @Put('mobile-nav')
+    @AllowReadOnly()
+    @UseGuards(SessionGuard, TenantGuard)
+    setMobileNav(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(mobileNavConfigSchema)) config: MobileNavConfig,
+    ): Promise<MobileNavState> {
+        if (req.impersonatedBy !== undefined) return this.me.getMobileNav(tenantId(req), req.authUserId!);
+        return this.me.setMobileNav(tenantId(req), req.authUserId!, config);
+    }
+
+    /** Vuelve a la del equipo (o a la de siempre). */
+    @Delete('mobile-nav')
+    @AllowReadOnly()
+    @UseGuards(SessionGuard, TenantGuard)
+    resetMobileNav(@Req() req: FastifyRequest): Promise<MobileNavState> {
+        if (req.impersonatedBy !== undefined) return this.me.getMobileNav(tenantId(req), req.authUserId!);
+        return this.me.setMobileNav(tenantId(req), req.authUserId!, null);
+    }
+
+    /** La barra predeterminada del equipo: sólo el admin de la empresa. */
+    @Put('mobile-nav/team')
+    @UseGuards(SessionGuard, TenantGuard)
+    async setTeamMobileNav(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(mobileNavConfigSchema)) config: MobileNavConfig,
+    ): Promise<MobileNavState> {
+        assertAdmin(req);
+        return this.me.setTeamMobileNav(tenantId(req), req.authUserId!, req.impersonatedBy ?? req.authUserId ?? null, config);
+    }
+
+    @Delete('mobile-nav/team')
+    @UseGuards(SessionGuard, TenantGuard)
+    async clearTeamMobileNav(@Req() req: FastifyRequest): Promise<MobileNavState> {
+        assertAdmin(req);
+        return this.me.setTeamMobileNav(tenantId(req), req.authUserId!, req.impersonatedBy ?? req.authUserId ?? null, null);
+    }
+
     // ── Datos personales (v0.1.121, GDPR art. 15 y 17) ──────────────────
 
     /** Todo lo que la app sabe de esta persona, en un JSON descargable. */
@@ -189,6 +248,16 @@ export class MeController {
         @Body(new ZodValidationPipe(updateEmailSignatureSchema)) input: UpdateEmailSignatureInput,
     ): Promise<{ signature: string }> {
         return { signature: await this.me.updateEmailSignature(req.authUserId!, input.signature) };
+    }
+}
+
+function assertAdmin(req: FastifyRequest): void {
+    if (req.tenant!.role !== 'admin') {
+        throw new ForbiddenException({
+            code: 'admin_only',
+            message: 'Sólo el admin de la empresa puede elegir la barra del equipo',
+            data: { status: 403 },
+        });
     }
 }
 

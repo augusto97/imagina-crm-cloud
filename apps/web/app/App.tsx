@@ -51,6 +51,8 @@ const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPa
 // v0.1.342 — las pestañas «Avisos» y «Más» de la barra de abajo del celular.
 const InboxPage = lazyWithReload(() => import('@/admin/layout/NotificationInbox').then(m => ({ default: m.InboxPage })));
 const MenuPage = lazyWithReload(() => import('@/admin/menu/MenuPage').then(m => ({ default: m.MenuPage })));
+// v0.1.347 — el editor de la barra de abajo del celular.
+const MobileNavPage = lazyWithReload(() => import('@/admin/menu/MobileNavPage').then(m => ({ default: m.MobileNavPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
 const RecordLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/RecordLayoutEditorPage').then(m => ({ default: m.RecordLayoutEditorPage })));
@@ -201,6 +203,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="menu" element={
                     <Suspense fallback={<RouteFallback />}><MenuPage /></Suspense>
+                } />
+                <Route path="menu/barra" element={
+                    <Suspense fallback={<RouteFallback />}><MobileNavPage /></Suspense>
                 } />
                 <Route path="dashboards" element={
                     <Suspense fallback={<RouteFallback />}><DashboardsIndexPage /></Suspense>

@@ -976,4 +976,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         media: { illustration: 'celular-pestanas' },
         body: 'Si ya tenías la app instalada, el teléfono la actualiza solo en uno o dos días. Para verlo ya, quita la app y vuelve a instalarla desde **Más → Instalar la app**.',
     },
+    {
+        key: 'v0.1.347-barra-personalizable',
+        version: '0.1.347',
+        date: '2026-11-03',
+        kind: 'feature',
+        title: 'Arma tu barra de abajo en el celular',
+        summary:
+            'Elige cuántos botones tiene la barra de abajo del celular y de la app instalada, y cuáles: Tableros en vez de Mi trabajo, una lista o un tablero que abres a diario, Escanear… Lo que quites sigue en «Más».',
+        media: {
+            slides: [
+                {
+                    title: 'Los botones que más usas',
+                    text: 'Cambia uno por otro: secciones como Tableros, Favoritos o Aprende, acciones como Buscar, Escanear o el Asistente, o una lista o un tablero puntual que se abre con un toque.',
+                    illustration: 'barra-personalizable',
+                },
+                {
+                    title: 'De 3 a 6 botones',
+                    text: 'Elige la cantidad, ordénalos y decide si se ven los nombres debajo de los íconos. «Más» va siempre al final, con todo lo que no pusiste en la barra.',
+                    illustration: 'celular-pestanas',
+                },
+            ],
+        },
+        body: 'En el celular toca **Más → Barra de abajo**; desde el computador, **Ajustes → Cuenta → Apariencia**. Se guarda en tu cuenta: la ves igual en todos tus teléfonos. Si administras la empresa, puedes dejar tu barra como la del equipo.',
+        action: { label: 'Armar mi barra', href: '/menu/barra' },
+    },
 ];
