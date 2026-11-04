@@ -75,13 +75,21 @@ import {
     readSavedPublicThemes,
     sanitizePublicCss,
     type PublicTheme,
+    FORM_DRAFT_CODE_RE,
+    FORM_DRAFT_MAX_BYTES,
+    FORM_DRAFT_TTL_DAYS,
+    type FormStatEventsInput,
+    type FormStatsDto,
+    type PublicFormDraft,
+    type SaveFormDraftInput,
+    type SaveFormDraftResult,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, formPendingSubmissions, forms, lists, recordTemplates, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
+import { attachments, formDrafts, formPendingSubmissions, forms, lists, recordTemplates, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { DataConsentService, newWithdrawRef } from '../data-consent/data-consent.service';
 import { DomainsService } from '../domains/domains.service';
@@ -98,7 +106,8 @@ import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TeamsService } from '../teams/teams.service';
 import { CaptchaService } from './captcha.service';
-import { formConfirmEmail, formCopyEmail, type FormAnswerLine } from './form-email';
+import { formConfirmEmail, formCopyEmail, formDraftEmail, type FormAnswerLine } from './form-email';
+import { FormStatsService, type FormStatsTarget } from './form-stats.service';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
@@ -111,6 +120,9 @@ const formCacheKey = (token: string): string => `form:${token}`;
 /** Lo que necesita la página pública de un formulario (lo mismo para todas las visitas). */
 export interface FormPageInfo {
     form_id: number;
+    /** v0.1.358 — para las estadísticas (no viajan a la página). */
+    tenant_id: number;
+    time_zone: string;
     title: string;
     allowed_domains: string[];
     meta: PublicFormMeta;
@@ -180,6 +192,37 @@ function maskEmail(email: string): string {
 
 function hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+}
+
+/** v0.1.358 — A qué formulario y día suman las estadísticas. */
+function statsTarget(f: ResolvedForm): FormStatsTarget {
+    return { tenantId: f.row.tenantId, formId: f.row.id, timeZone: f.timeZone };
+}
+
+/**
+ * v0.1.358 — Lo que se guarda de un avance: sólo las respuestas a preguntas
+ * del formulario (no los archivos ni la firma: sus comprobantes vencen), y
+ * sólo valores simples. Lo raro se descarta.
+ */
+function cleanDraftValues(config: FormConfig, fieldTypes: ReadonlyMap<number, string>, values: Record<string, unknown>): Record<string, unknown> {
+    const allowed = new Set<number>();
+    for (const i of config.items) {
+        if (i.type === 'field') {
+            if (fieldTypes.get(i.field_id) !== 'file' && i.display !== 'signature') allowed.add(i.field_id);
+            if (i.other_field_id) allowed.add(i.other_field_id);
+        } else if (i.type === 'matrix') {
+            for (const r of i.rows) allowed.add(r.field_id);
+        }
+    }
+    const simple = (v: unknown): boolean =>
+        v === null || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.length <= 10_000);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(values)) {
+        if (!allowed.has(Number(k))) continue;
+        if (simple(v)) out[k] = v;
+        else if (Array.isArray(v) && v.length <= 100 && v.every((x) => (typeof x === 'string' && x.length <= 500) || (typeof x === 'number' && Number.isFinite(x)))) out[k] = v;
+    }
+    return out;
 }
 
 /**
@@ -277,6 +320,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly teams?: TeamsService,
         // v0.1.352 (ADR-S95) — la página pública se arma una vez y vale unos segundos.
         @Optional() cache?: PublicCacheService,
+        // v0.1.358 — estadísticas (visitas, empezados, enviados…).
+        @Optional() private readonly stats?: FormStatsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -302,6 +347,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             });
             this.sweepExpiredPending().catch((err: unknown) => {
                 this.logger.warn(`Barrido de respuestas sin confirmar: ${String(err)}`);
+            });
+            this.sweepExpiredDrafts().catch((err: unknown) => {
+                this.logger.warn(`Barrido de avances guardados: ${String(err)}`);
             });
         }, 20 * 60 * 1000);
         this.sweeper.unref?.();
@@ -614,6 +662,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const look = this.themeLook(f);
         return {
             form_id: f.row.id,
+            tenant_id: f.row.tenantId,
+            time_zone: f.timeZone,
             title: meta.title || f.row.name,
             allowed_domains: f.config.settings.allowed_domains,
             meta,
@@ -676,6 +726,156 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const info = await this.cachedPageInfo(token);
         if (!info) throw notFound();
         return { stamp: this.newStamp(info.form_id) };
+    }
+
+    // ─────────────────── v0.1.358 — Estadísticas ───────────────────
+
+    /**
+     * Los eventos que manda la página (lo vi, empecé, llegué a un paso, me
+     * fui). Sale de la caché de la página: una visita no consulta la base. Un
+     * token desconocido no cuenta nada (y no se le dice nada a quien prueba).
+     */
+    async recordEvents(token: string, ip: string, input: FormStatEventsInput): Promise<void> {
+        if (!this.stats) return;
+        const info = await this.cachedPageInfo(token).catch(() => null);
+        if (!info) return;
+        await this.stats.record({ tenantId: info.tenant_id, formId: info.form_id, timeZone: info.time_zone }, ip, input.events);
+    }
+
+    /** Las estadísticas de un formulario para el equipo (últimos `days` días). */
+    async statsFor(tenantId: number, listIdOrSlug: string, id: number, days: number): Promise<FormStatsDto> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const row = await this.load(tenantId, list.id, id);
+        const [tenant] = await this.db.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const timeZone = resolveTimeZone(((tenant?.settings as Record<string, unknown> | null)?.format as { timezone?: unknown } | undefined)?.timezone);
+        if (!this.stats) {
+            throw new HttpException({ code: 'stats_unavailable', message: 'Las estadísticas no están disponibles.', data: { status: 503 } }, HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        const out = await this.stats.summary({ tenantId, formId: row.id, timeZone }, days);
+        return { ...out, all_time_submits: row.submissionsCount };
+    }
+
+    // ─────────────────── v0.1.358 — Guardar el avance ───────────────────
+
+    /**
+     * «Guardar y seguir después»: guarda lo que la persona lleva y le manda
+     * el enlace para volver. Con el código de un enlace que ya tenía, actualiza
+     * ESE (sin otro correo). Exige el sello de la página (sin haberla cargado
+     * no se guarda nada) y frena por correo y por IP como los demás correos a
+     * quien responde.
+     */
+    async saveDraft(token: string, ip: string, input: SaveFormDraftInput): Promise<SaveFormDraftResult> {
+        const f = await this.resolve(token);
+        if (!f.config.settings.save_progress.email) {
+            throw new ForbiddenException({ code: 'draft_disabled', message: 'Este formulario no guarda el avance.', data: { status: 403 } });
+        }
+        const closed = this.closedReason(f);
+        if (closed) throw new ForbiddenException({ code: 'form_closed', message: closed, data: { status: 403 } });
+        const expiresAt = new Date(Date.now() + FORM_DRAFT_TTL_DAYS * 86_400_000);
+        // Robots: el campo trampa lleno se "acepta" sin guardar ni mandar nada.
+        if (input.hp && input.hp.trim() !== '') {
+            return { ok: true, code: randomBytes(32).toString('base64url'), email_sent: true, expires_at: expiresAt.toISOString() };
+        }
+        this.checkStamp(f.row.id, input.stamp, { minFill: false });
+        const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
+        const values = cleanDraftValues(f.config, new Map(fields.map((x) => [x.id, x.type])), input.values);
+        if (Buffer.byteLength(JSON.stringify(values)) > FORM_DRAFT_MAX_BYTES) {
+            throw new HttpException(
+                { code: 'draft_too_large', message: 'Hay demasiado texto para guardarlo. Envía el formulario o acorta alguna respuesta.', data: { status: 413 } },
+                HttpStatus.PAYLOAD_TOO_LARGE,
+            );
+        }
+        if (input.code && FORM_DRAFT_CODE_RE.test(input.code)) {
+            const updated = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+                tx
+                    .update(formDrafts)
+                    .set({ values, page: input.page, expiresAt, updatedAt: new Date() })
+                    .where(and(eq(formDrafts.tokenHash, hashToken(input.code!)), eq(formDrafts.formId, f.row.id), gt(formDrafts.expiresAt, new Date())))
+                    .returning({ id: formDrafts.id }),
+            );
+            if (updated.length > 0) return { ok: true, code: input.code, email_sent: false, expires_at: expiresAt.toISOString() };
+        }
+        if (!this.mail) {
+            throw new HttpException(
+                { code: 'form_unavailable', message: 'No pudimos guardar tu avance en este momento. Prueba de nuevo más tarde.', data: { status: 503 } },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        if (!(await this.allowRespondentMail(input.email, ip))) {
+            throw new HttpException(
+                {
+                    code: 'rate_limited',
+                    message: 'Ya enviamos varios correos a esta dirección. Revisa tu bandeja (y la carpeta de spam) o prueba en un rato.',
+                    data: { status: 429 },
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+        const code = randomBytes(32).toString('base64url');
+        const [draft] = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+            tx
+                .insert(formDrafts)
+                .values({ tenantId: f.row.tenantId, formId: f.row.id, tokenHash: hashToken(code), email: input.email, values, page: input.page, expiresAt })
+                .returning({ id: formDrafts.id }),
+        );
+        const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
+        const brand = await this.emailBrand(f, base);
+        const message = formDraftEmail(brand, `${base}/api/v1/public/f/${f.row.token}?seguir=${code}`, {
+            formTitle: f.config.settings.title || f.row.name,
+            days: FORM_DRAFT_TTL_DAYS,
+        });
+        try {
+            await this.mail.sendNow({
+                tenantId: f.row.tenantId,
+                to: input.email,
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+                ...(brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
+            });
+        } catch (err) {
+            // Sin el correo el enlace no le llega a nadie: no se guarda.
+            await this.tenantDb.withTenant(f.row.tenantId, (tx) => tx.delete(formDrafts).where(eq(formDrafts.id, draft!.id))).catch(() => undefined);
+            this.logger.warn(`Formulario ${f.row.id}: el correo para seguir después no salió: ${err instanceof Error ? err.message : String(err)}`);
+            throw new HttpException(
+                { code: 'form_unavailable', message: 'No pudimos enviarte el correo. Prueba de nuevo más tarde.', data: { status: 503 } },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        return { ok: true, code, email_sent: true, expires_at: expiresAt.toISOString() };
+    }
+
+    /** El avance de un enlace «seguir después» (404 opaco si no existe, venció o es de otro formulario). */
+    async loadDraft(token: string, code: string): Promise<PublicFormDraft> {
+        if (!FORM_DRAFT_CODE_RE.test(code)) throw notFound();
+        const f = await this.resolve(token);
+        if (!f.config.settings.save_progress.email) throw notFound();
+        const [row] = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+            tx
+                .select({ values: formDrafts.values, page: formDrafts.page, expiresAt: formDrafts.expiresAt })
+                .from(formDrafts)
+                .where(and(eq(formDrafts.tokenHash, hashToken(code)), eq(formDrafts.formId, f.row.id), gt(formDrafts.expiresAt, new Date())))
+                .limit(1),
+        );
+        if (!row) throw notFound();
+        return { values: (row.values ?? {}) as Record<string, unknown>, page: row.page, expires_at: row.expiresAt.toISOString() };
+    }
+
+    /** Al enviar, el avance ya no hace falta (best-effort). */
+    private async dropDraft(f: ResolvedForm, code: string): Promise<void> {
+        if (!FORM_DRAFT_CODE_RE.test(code)) return;
+        await this.tenantDb
+            .withTenant(f.row.tenantId, (tx) => tx.delete(formDrafts).where(and(eq(formDrafts.tokenHash, hashToken(code)), eq(formDrafts.formId, f.row.id))))
+            .catch(() => undefined);
+    }
+
+    /** Los avances vencidos se borran (conexión base, de a 500). */
+    async sweepExpiredDrafts(now = new Date()): Promise<number> {
+        const gone = await this.db
+            .delete(formDrafts)
+            .where(inArray(formDrafts.id, this.db.select({ id: formDrafts.id }).from(formDrafts).where(lt(formDrafts.expiresAt, now)).limit(500)))
+            .returning({ id: formDrafts.id });
+        return gone.length;
     }
 
     private newStamp(formId: number): string {
@@ -743,6 +943,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 start: c.start,
                 parts: formCalcIsLive(config, c.key) ? [...(c.parts ?? [])] : null,
             })),
+            // v0.1.358 — guardar el avance (en el dispositivo / con un enlace al correo).
+            save_progress:
+                config.settings.save_progress.device || config.settings.save_progress.email ? { ...config.settings.save_progress } : null,
         };
     }
 
@@ -869,13 +1072,18 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                   }
                 : null;
 
+        let result: SubmitFormResult;
         if (s.confirm_email && respondentEmail) {
-            return this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId);
+            result = await this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId);
+        } else {
+            const created = await this.finalize(f, fields, data, attachmentIds, accepted);
+            if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
+            result = { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId, ...(Object.keys(calcs).length ? { calcs } : {}) };
         }
-
-        const created = await this.finalize(f, fields, data, attachmentIds, accepted);
-        if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
-        return { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId, ...(Object.keys(calcs).length ? { calcs } : {}) };
+        // v0.1.358 — cuenta para las estadísticas (y el avance guardado ya no hace falta).
+        void this.stats?.recordSubmit(statsTarget(f), input.elapsed_ms);
+        if (input.draft) void this.dropDraft(f, input.draft);
+        return result;
     }
 
     /**

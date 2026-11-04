@@ -382,9 +382,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.357**
-(formularios: puntaje y cálculos, una pregunta por pantalla y bienvenida;
-addendum ADR-S39; antes v0.1.356 la lógica —varias reglas todas/alguna, saltos
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.358**
+(formularios: estadísticas y guardar el avance; addendum ADR-S39; antes
+v0.1.357 puntaje y cálculos, una pregunta por pantalla y bienvenida, v0.1.356 la lógica —varias reglas todas/alguna, saltos
 entre páginas, pantallas finales según las respuestas y recordar respuestas con
 `{{nombre}}`—, v0.1.355 más formas de preguntar
 —escala/NPS, deslizador, Sí o No, firma, lista con buscador, ordenar, «Otro» y
@@ -441,7 +441,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   saltar a una página, varias pantallas finales, recordar respuestas) y
   **puntaje, una pregunta por pantalla y bienvenida HECHOS en v0.1.357**: con
   eso la entrega 2 queda completa.
-  **SIGUIENTE**: la entrega 3 de formularios (medir, insertar, cobrar).
+  La entrega 3 se partió en tres versiones: **estadísticas y guardar el avance
+  HECHOS en v0.1.358**; después **v0.1.359** (más formas de insertar —panel,
+  pantalla completa, QR—, enlace para actualizar un registro existente y
+  plantillas de formularios completos) y **v0.1.360** (cobrar al enviar con el
+  Mercado Pago o Wompi de la empresa).
+  **SIGUIENTE**: v0.1.359.
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1348,6 +1353,35 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.358** — **Formularios: estadísticas y guardar el avance**
+  (addendum ADR-S39; primera de las tres versiones de la entrega 3).
+  - **Estadísticas por formulario** (ícono en la lista de formularios y en el
+    constructor): visitas, empezaron, enviaron, tiempo promedio, gráfica día
+    por día, hasta dónde llegan (por página), dónde lo dejan (la última
+    pregunta que tocaron), de dónde llegan (utm_source, el sitio anterior o
+    directo) y dispositivo, en 7/30/90 días en la zona de la empresa.
+  - **Sin cargar la base**: la página manda eventos en lote (sendBeacon) a
+    `POST /public/forms/:token/events`; se suman en un hash de Redis por
+    formulario y día (tope de 400 contadores, freno de 60 lotes por IP y
+    minuto) y cada 2 min se vuelcan a `form_stats` con un UPSERT que suma
+    (migración 0100). Los envíos se cuentan en el servidor. Son contadores:
+    nunca la IP ni nada de la persona.
+  - **Guardar el avance** (`settings.save_progress`, apagado por defecto):
+    «Recordar lo que van respondiendo en ese dispositivo» (localStorage 30
+    días, aviso «Continuar / Empezar de nuevo») y el botón «Guardar y seguir
+    después» (enlace al correo, `form_drafts` con el token hasheado, 30 días,
+    se actualiza el mismo sin otro correo, se borra al enviar; archivos y
+    firma no se guardan).
+  - Ni las estadísticas ni los avances viajan al migrar una empresa; borrarla
+    los limpia. El cliente de la página no carga zod (la lógica de los
+    contadores vive en `form-stats-logic.ts`): 20,3 KB gz.
+  - **De paso**: el test «freno por IP» de formularios fallaba si caía justo en
+    el cambio de minuto (ventana fija); ahora espera a estar lejos del borde.
+  - Tests: 6 de shared, 5 de la API, 3 del front; E2E navegador: página
+    pública 24/24 y 25/25 en celular oscuro, administración 12/12 y 11/11 en
+    celular.
+  - **Siguiente**: v0.1.359 (insertar en panel, pantalla completa y QR;
+    actualizar un registro existente; plantillas de formularios).
 - **2026-11-04 · v0.1.357** — **Formularios: puntaje, una pregunta por pantalla
   y bienvenida** (addendum ADR-S39; con esto la entrega 2 queda completa).
   - **Cálculos y puntaje** (hasta 5 por formulario): puntos por opción, Sí/No,

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { ClipboardList, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BarChart3, ClipboardList, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { readMirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { __ } from '@/lib/i18n';
 import { formPublicUrl, useCreateForm, useDeleteForm, useForms, useUpdateForm } from './useForms';
 
 const FormBuilder = lazy(() => import('./FormBuilder'));
+const FormStatsSheet = lazy(() => import('./FormStatsSheet').then((m) => ({ default: m.FormStatsSheet })));
 
 /**
  * v0.1.275 — Ajustes de la lista → Formularios (ADR-S39). Cada formulario es
@@ -28,6 +29,8 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     const confirm = useConfirm();
     const toast = useToast();
     const [editingId, setEditingId] = useState<number | null>(null);
+    // v0.1.358 — las estadísticas de un formulario.
+    const [statsId, setStatsId] = useState<number | null>(null);
     // El recién creado puede no estar todavía en la lista (llega con el
     // refetch): se abre con lo que devolvió el alta, así no queda cerrado.
     const [created, setCreated] = useState<NonNullable<typeof forms.data>[number] | null>(null);
@@ -126,6 +129,9 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                                         </p>
                                     </div>
                                     <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                                        <Button variant="ghost" size="icon" aria-label={__('Estadísticas')} title={__('Estadísticas')} onClick={() => setStatsId(f.id)} data-form-stats>
+                                            <BarChart3 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        </Button>
                                         <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setEditingId(f.id)} data-form-edit>
                                             <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
                                             {__('Editar')}
@@ -189,6 +195,11 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                 )}
             </CardContent>
 
+            {statsId !== null && list.find((x) => x.id === statsId) && (
+                <Suspense fallback={null}>
+                    <FormStatsSheet open onOpenChange={(o) => !o && setStatsId(null)} listId={listId} form={list.find((x) => x.id === statsId)!} fields={fields.data ?? []} />
+                </Suspense>
+            )}
             {editing && (
                 <Suspense fallback={null}>
                     <FormBuilder

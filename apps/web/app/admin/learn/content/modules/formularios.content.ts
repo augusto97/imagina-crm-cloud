@@ -583,6 +583,87 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Siguiente: estadísticas y guardar el avance', article: 'formularios-estadisticas' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-estadisticas',
+        route: '/lists',
+        related: ['formularios-puntaje', 'formularios-publicar', 'formularios-condiciones-pasos'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cada formulario lleva la cuenta de cuántas personas lo **abren**, cuántas **empiezan** a responder y cuántas lo **envían**, hasta qué página llegan y **en qué pregunta lo dejan**. Con eso sabes si el formulario funciona o si hay una pregunta que espanta a la gente. Y para formularios largos, puedes dejar que lo **terminen después**.',
+            },
+            { t: 'anim', key: 'form-stats', caption: 'De 1.240 visitas, 610 empezaron y 402 lo enviaron; la mayoría de los que se fueron lo dejaron en «Tu teléfono».' },
+            { t: 'h', text: 'Abrir las estadísticas' },
+            {
+                t: 'steps',
+                items: [
+                    'Ve a **Configurar lista → Formularios** y toca el ícono de **Estadísticas** junto al formulario. Dentro del constructor está el mismo ícono, arriba a la derecha.',
+                    'Elige el período: **7 días**, **30 días** o **90 días** (hoy incluido).',
+                    'Pasa el mouse (o el dedo) por la gráfica para ver las visitas y los envíos de cada día.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Qué muestra cada parte',
+                rows: [
+                    { name: 'Visitas', what: 'Cuántas veces se abrió el formulario. Una misma pestaña cuenta una sola vez aunque la recarguen.' },
+                    { name: 'Empezaron', what: 'Cuántos tocaron al menos una pregunta, y qué porcentaje de las visitas son.' },
+                    { name: 'Enviaron', what: 'Cuántas respuestas llegaron, y qué porcentaje de los que empezaron.' },
+                    { name: 'Tiempo promedio', what: 'Cuánto tardan desde que empiezan hasta que envían.', tip: 'Si alguien dejó la pestaña abierta horas, no cuenta: arruinaría el promedio.' },
+                    { name: 'Hasta dónde llegan', what: 'De las visitas, cuántos empezaron, cuántos llegaron a cada página y cuántos lo enviaron. Si el formulario es de una sola página, va de las visitas al envío.' },
+                    { name: 'Dónde lo dejan', what: 'La última pregunta que tocaron quienes se fueron sin enviar, de la que más se repite a la que menos.' },
+                    { name: 'De dónde llegan', what: 'La campaña del enlace (el utm_source: «facebook-ads», «correo-junio»), el sitio anterior (google.com, instagram.com) o **Directo** si escribieron el enlace o lo abrieron desde una app.', tip: 'Si el formulario está insertado en tu sitio, aparece la página donde está.' },
+                    { name: 'Dispositivo', what: 'Cuántas visitas llegaron desde un celular, una tableta o un computador.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Contamos visitas, no personas',
+                md: 'Las estadísticas son números sueltos: no se guarda la dirección IP, el nombre ni nada que identifique a quien abrió el formulario. Los números de hoy pueden tardar un par de minutos en aparecer.',
+            },
+            { t: 'h', text: 'Guardar el avance' },
+            { t: 'anim', key: 'form-save-progress', caption: 'Laura pide el enlace por correo, lo abre más tarde y sigue donde quedó, con lo que ya había escrito.' },
+            {
+                t: 'p',
+                md: 'En los ajustes del formulario, en **Guardar el avance**, eliges cómo puede terminarlo alguien que no alcanzó a hacerlo de una vez:',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Recordar lo que van respondiendo en ese dispositivo', what: 'Si cierran la página sin enviar, al volver ven «Tienes respuestas sin enviar de la última vez» con **Continuar** (vuelve a la página donde estaban, con sus respuestas) y **Empezar de nuevo**. Queda sólo en ese navegador, durante 30 días.', tip: 'Apágalo si el formulario se llena en un computador compartido, como el de una recepción o un evento.' },
+                    { name: 'Botón «Guardar y seguir después»', what: 'Aparece debajo del formulario. La persona escribe su correo y le llega un enlace para terminarlo en otro momento o en otro dispositivo. El enlace dura 30 días y sale por el correo de la empresa.', tip: 'Si vuelve a guardar desde el mismo enlace, se actualiza el mismo: no le llega otro correo.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Los archivos y la firma no se guardan',
+                md: 'Al seguir después, los archivos adjuntos y la firma hay que volver a subirlos. Todo lo demás —textos, opciones, fechas, números— vuelve tal cual.',
+            },
+            {
+                t: 'example',
+                title: 'Una pregunta que espantaba a los clientes',
+                md: 'Una constructora de Bogotá veía 900 visitas al mes en su formulario de cotización, pero sólo 120 envíos. En **Dónde lo dejan**, la primera era «Presupuesto aproximado»: mucha gente no sabía qué poner. La hicieron opcional y la pasaron al final; al mes siguiente los envíos subieron a 210. Como el formulario es largo, también encendieron **Guardar y seguir después**: quien está en la obra pide el enlace y lo termina en la noche desde el computador.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Las estadísticas cuentan las respuestas que llegaron antes de esta función?', a: 'Las respuestas sí aparecen en la lista como siempre; las visitas y los abandonos se empiezan a contar desde que se actualizó la app.' },
+                    { q: '¿Cuenta mis propias visitas a la vista previa del constructor?', a: 'No: la vista previa no suma. Sí suma si abres el enlace público en otra pestaña.' },
+                    { q: '¿Qué pasa con un enlace de «seguir después» cuando ya se envió la respuesta?', a: 'Se borra al enviar. Si lo vuelven a abrir, el formulario les avisa que el enlace venció o ya se usó y pueden empezar de nuevo.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Siguiente: agradecimiento y cierre', article: 'formularios-ajustes' },
                 ],
             },

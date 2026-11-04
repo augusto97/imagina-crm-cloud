@@ -47,6 +47,12 @@ import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
+/** Los frenos usan ventanas fijas de un minuto: una prueba que cruza el cambio de minuto vería dos ventanas. */
+async function awayFromMinuteEdge(): Promise<void> {
+    const left = 60_000 - (Date.now() % 60_000);
+    if (left < 5_000) await new Promise((r) => setTimeout(r, left + 100));
+}
+
 class CapturingDispatcher extends AutomationDispatcher {
     readonly events: TriggerEvent[] = [];
     override dispatch(event: TriggerEvent): void {
@@ -429,6 +435,7 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
 
     it('freno por IP: una persona no manda 9 respuestas en un minuto', async () => {
         const { id, token } = await contactForm();
+        await awayFromMinuteEdge();
         for (let i = 0; i < 8; i++) {
             await svc.submit(token, IP, { values: { [f.nombre!.id]: `R${i}` }, uploads: {}, stamp: oldStamp(id) });
         }

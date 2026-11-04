@@ -20,6 +20,7 @@ import {
     Moon,
     Palette,
     Plus,
+    BarChart3,
     Redo2,
     Scale,
     SeparatorHorizontal,
@@ -55,6 +56,7 @@ import {
 } from '@imagina-base/shared';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { FormStatsSheet } from './FormStatsSheet';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -188,6 +190,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     // Con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
     const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
     const [shareOpen, setShareOpen] = useState(false);
+    // v0.1.358 — las estadísticas del formulario.
+    const [statsOpen, setStatsOpen] = useState(false);
     // v0.1.356 — la pantalla final que se mira en la vista previa (null = el formulario; '' = la de siempre).
     const [previewEnding, setPreviewEnding] = useState<string | null>(null);
     /** v0.1.357 — ver la bienvenida en la vista previa. */
@@ -327,6 +331,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                 start: c.start,
                 parts: c.parts.map((p) => ({ key: String(p.field_id), points: p.points, multiplier: p.multiplier })),
             })),
+            // v0.1.358 — para que la vista previa muestre «Guardar y seguir después».
+            save_progress: s.save_progress.device || s.save_progress.email ? { ...s.save_progress } : null,
         };
     }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
 
@@ -648,6 +654,17 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                         <Redo2 className="imcrm-h-4 imcrm-w-4" />
                     </Button>
                     <ThemeToggle />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={__('Estadísticas')}
+                        title={__('Estadísticas')}
+                        onClick={() => setStatsOpen(true)}
+                        data-testid="form-stats-open"
+                        data-tour="form-stats"
+                    >
+                        <BarChart3 className="imcrm-h-4 imcrm-w-4" />
+                    </Button>
                     <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setShareOpen((o) => !o)} data-testid="form-share">
                         <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
                         <span className="imcrm-hidden sm:imcrm-inline">{__('Compartir')}</span>
@@ -657,6 +674,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                     </Button>
                 </div>
             </header>
+            {statsOpen && <FormStatsSheet open onOpenChange={setStatsOpen} listId={listId} form={form} fields={fields} />}
             {shareOpen && (
                 <SharePanel form={form} enabled={enabled} accent={resolvedAccent(config.settings, brandColor)} onClose={() => setShareOpen(false)} onPublish={() => void togglePublish()} />
             )}

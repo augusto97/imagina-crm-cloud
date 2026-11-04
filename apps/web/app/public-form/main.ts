@@ -18,6 +18,7 @@
  * postMessage y se reemplazan en vivo.
  */
 import type { PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
+import { FORM_DRAFT_TTL_DAYS, formStatSource, type FormStatDevice, type FormStatEvent } from '@imagina-base/shared/src/schemas/form-stats-logic';
 import {
     FORM_CALC_VALUE_PREFIX,
     formAnswerText,
@@ -100,6 +101,200 @@ function readyStamp(): Promise<string> {
 function kickStamp(): void {
     if (BOOT.preview) return;
     void ensureStamp().catch(() => undefined);
+}
+
+// ─────────────────── Estadísticas (v0.1.358) ───────────────────
+// Sólo contadores: «lo vi», «empecé», «llegué al paso N», «me fui en la
+// pregunta X». Sin cookies ni datos de la persona. Van en lotes y, al cerrar
+// la página, con sendBeacon (no frena nada).
+const statQueue: FormStatEvent[] = [];
+let statTimer: number | null = null;
+/** Cuándo tocó el formulario por primera vez (para el tiempo promedio). */
+let startedAt = 0;
+let submittedOk = false;
+/** La última pregunta que tocó (si se va sin enviar, es donde lo dejó). */
+let lastItem: string | null = null;
+let maxStep = 0;
+let leaveSent = false;
+
+function onceThisSession(kind: string): boolean {
+    try {
+        const k = `ib:${kind}:${BOOT.token}`;
+        if (sessionStorage.getItem(k)) return false;
+        sessionStorage.setItem(k, '1');
+    } catch {
+        // Sin sessionStorage (modo privado estricto) se cuenta igual.
+    }
+    return true;
+}
+
+function flushStats(beacon = false): void {
+    if (statTimer !== null) {
+        clearTimeout(statTimer);
+        statTimer = null;
+    }
+    while (statQueue.length) {
+        const body = JSON.stringify({ events: statQueue.splice(0, 12) });
+        try {
+            if (beacon && typeof navigator.sendBeacon === 'function' && navigator.sendBeacon(`${API}/events`, new Blob([body], { type: 'application/json' }))) continue;
+        } catch {
+            // cae al fetch
+        }
+        void fetch(`${API}/events`, { method: 'POST', credentials: 'omit', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => undefined);
+    }
+}
+
+function stat(e: FormStatEvent): void {
+    if (BOOT.preview) return;
+    statQueue.push(e);
+    if (statQueue.length >= 12) flushStats();
+    else if (statTimer === null) statTimer = window.setTimeout(() => flushStats(), 1500);
+}
+
+function deviceKind(): FormStatDevice {
+    const coarse = matchMedia('(pointer: coarse)').matches;
+    if (!coarse) return 'desktop';
+    return Math.min(screen.width, screen.height) >= 600 ? 'tablet' : 'mobile';
+}
+
+function trackView(): void {
+    if (BOOT.preview || !meta || meta.closed || !onceThisSession('v')) return;
+    const params = new URLSearchParams(location.search);
+    stat({ kind: 'view', src: formStatSource({ utm_source: params.get('utm_source'), referrer: document.referrer, own_hosts: [location.hostname] }), dev: deviceKind() });
+}
+
+function trackStart(): void {
+    if (BOOT.preview || startedAt) return;
+    startedAt = Date.now();
+    if (onceThisSession('s')) stat({ kind: 'start' });
+    trackStep();
+}
+
+/** Llegó a un paso nuevo (con varias páginas o una pregunta por pantalla). */
+function trackStep(): void {
+    if (BOOT.preview || !paged()) return;
+    const step = visiblePages().indexOf(current) + 1;
+    if (step <= maxStep || step < 1) return;
+    maxStep = step;
+    stat({ kind: 'step', step });
+}
+
+function trackLeave(): void {
+    if (BOOT.preview || leaveSent || submittedOk || !startedAt || !lastItem) return;
+    leaveSent = true;
+    stat({ kind: 'leave', item: lastItem });
+}
+
+// ─────────────────── Guardar el avance (v0.1.358) ───────────────────
+const DRAFT_KEY = 'ib:d:' + BOOT.token;
+const DRAFT_MAX_AGE = FORM_DRAFT_TTL_DAYS * 86_400_000;
+/** El código del enlace «seguir después» con el que se está respondiendo. */
+let draftCode: string | null = null;
+let saveTimer: number | null = null;
+/** Lo guardado en este navegador, a ofrecer al abrir (null = nada). */
+let resumeOffer: { v: Record<string, unknown>; p: number } | null = null;
+/** Aviso arriba del formulario (retomaste, venció el enlace…). */
+let noteText: string | null = null;
+/** Al dibujar, pintar los controles con lo que hay en `values` (al retomar). */
+let restoring = false;
+
+/** Las respuestas que se pueden guardar: no los archivos ni la firma. */
+function draftValues(): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const i of meta?.items ?? []) {
+        if (i.type === 'matrix') {
+            for (const r of i.rows) if (!empty(values[r.key])) out[r.key] = values[r.key];
+            continue;
+        }
+        if (i.type !== 'field' || i.field_type === 'file' || i.display === 'signature') continue;
+        if (!empty(values[i.key])) out[i.key] = values[i.key];
+        if (i.other && !empty(values[i.other.key])) out[i.other.key] = values[i.other.key];
+    }
+    return out;
+}
+
+function persistLocal(): void {
+    if (BOOT.preview || !meta?.save_progress?.device || submittedOk || resumeOffer) return;
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+        saveTimer = null;
+        try {
+            const v = draftValues();
+            if (!Object.keys(v).length) return;
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({ v, p: current, t: Date.now(), c: draftCode }));
+        } catch {
+            // Sin espacio o bloqueado: no se guarda, y está bien.
+        }
+    }, 500);
+}
+
+function readLocal(): { v: Record<string, unknown>; p: number; c: string | null } | null {
+    try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return null;
+        const d = JSON.parse(raw) as { v?: unknown; p?: unknown; t?: unknown; c?: unknown };
+        if (typeof d.t !== 'number' || Date.now() - d.t > DRAFT_MAX_AGE || !d.v || typeof d.v !== 'object') {
+            localStorage.removeItem(DRAFT_KEY);
+            return null;
+        }
+        const v = d.v as Record<string, unknown>;
+        if (!Object.keys(v).length) return null;
+        return { v, p: typeof d.p === 'number' ? d.p : 0, c: typeof d.c === 'string' ? d.c : null };
+    } catch {
+        return null;
+    }
+}
+
+function clearLocal(): void {
+    try {
+        localStorage.removeItem(DRAFT_KEY);
+    } catch {
+        // nada
+    }
+}
+
+/** Retoma unas respuestas guardadas: las pone en el formulario y vuelve al paso donde quedó. */
+function applyDraft(v: Record<string, unknown>, page: number): void {
+    values = { ...values, ...v };
+    resumeOffer = null;
+    started = true;
+    restoring = true;
+    current = Math.max(0, page);
+    render(true);
+    restoring = false;
+    if (paged()) {
+        const vis = visiblePages();
+        if (!vis.includes(current)) current = vis.length ? vis[0]! : 0;
+        goToPage(current, false);
+    }
+    reportHeight();
+}
+
+/** Pinta cada control con su respuesta (al retomar lo guardado). */
+function restoreControls(controls: Record<string, Control>): void {
+    for (const f of fields()) {
+        const v = values[f.key];
+        const c = controls[f.id];
+        if (v === undefined || !c || f.field_type === 'file' || f.display === 'signature') continue;
+        if (Array.isArray(v)) {
+            if (f.display !== 'ranking') c.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach((i) => (i.checked = v.map(String).includes(i.value)));
+        } else if (typeof v === 'boolean') {
+            const cb = c instanceof HTMLInputElement ? c : c.querySelector<HTMLInputElement>('input[type=checkbox]');
+            if (cb) cb.checked = v;
+        } else {
+            const str = v === null ? '' : typeof v === 'number' && ['number', 'currency', 'percent'].includes(f.field_type) ? fmtNum(v) : String(v);
+            const inp =
+                c instanceof HTMLInputElement || c instanceof HTMLTextAreaElement || c instanceof HTMLSelectElement
+                    ? c
+                    : c.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input:not([type=radio]):not([type=checkbox]):not([type=range]), textarea, select');
+            if (inp && !(f.display === 'scale' || f.display === 'slider' || f.display === 'yes_no')) inp.value = str;
+            c.querySelectorAll<HTMLInputElement>('input[type=radio]').forEach((i) => (i.checked = i.value === str));
+        }
+        c._paint?.();
+        const other = f.other ? otherEls[f.id] : undefined;
+        if (other && f.other && typeof values[f.other.key] === 'string') other.input.value = values[f.other.key] as string;
+    }
+    for (const m of (meta?.items ?? []).filter((i): i is MatrixItem => i.type === 'matrix')) controls[m.id]?._paint?.();
 }
 let values: Record<string, unknown> = {};
 let uploads: Record<string, Upload[]> = {};
@@ -1517,6 +1712,8 @@ function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
     } else node = fieldNode(i as FieldItem, controls);
     if (BOOT.preview && i.show_if) node.insertBefore(pvTag('Condicional · sólo aparece si se cumple su condición'), node.firstChild);
     previewable(node, i.id);
+    // v0.1.358 — para saber en qué pregunta lo dejó (estadísticas).
+    if (i.type === 'field' || i.type === 'matrix') node.setAttribute('data-q', i.id);
     itemEls[i.id] = node;
     return node;
 }
@@ -1525,6 +1722,7 @@ function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
 
 function refresh(): void {
     dirty();
+    persistLocal();
     paintRecall();
     for (const i of meta?.items ?? []) {
         const n = itemEls[i.id];
@@ -1572,6 +1770,8 @@ function paintPages(): void {
 function goToPage(idx: number, focus = true): void {
     current = idx;
     paintPages();
+    if (startedAt) trackStep();
+    persistLocal();
     if (alertBox) alertBox.hidden = true;
     if (focus) {
         const target = stepsLabel?.parentElement?.parentElement ?? root;
@@ -1709,6 +1909,10 @@ function render(keepPage: boolean): void {
         return;
     }
 
+    // v0.1.358 — lo guardado de la última vez (en este navegador) o un aviso.
+    if (noteText && !BOOT.preview) r.appendChild(el('div', { cls: 'ib-note', role: 'status', text: noteText, 'data-testid': 'form-note' }));
+    if (resumeOffer && !BOOT.preview) r.appendChild(resumeNode(resumeOffer));
+
     // v0.1.357 — la bienvenida: lo primero que ve, con «Empezar». Las
     // respuestas que llegan en la dirección ya cuentan (su texto puede decir
     // «Hola, {{nombre}}»).
@@ -1782,8 +1986,16 @@ function render(keepPage: boolean): void {
     } else {
         form.appendChild(el('div', { cls: 'ib-actions' }, [submitBtn]));
     }
+    // v0.1.358 — «Guardar y seguir después» (un enlace al correo).
+    if (meta.save_progress?.email) {
+        const later = saveLater(() => hp.querySelector('input')!.value);
+        form.appendChild(el('div', { cls: 'ib-save-line' }, [later.btn]));
+        form.appendChild(later.box);
+    }
     r.appendChild(form);
     prefill(controls);
+    // v0.1.358 — al retomar lo guardado, cada control muestra su respuesta.
+    if (restoring) restoreControls(controls);
     refresh();
     if (!paged() && meta.captcha && !BOOT.preview) mountCaptcha();
 
@@ -1870,6 +2082,9 @@ function submit(hpValue: string): void {
         body.consent = consentCb.checked;
         body.consent_version = m.data_consent.version;
     }
+    // v0.1.358 — cuánto tardó (para el tiempo promedio) y el avance que termina.
+    if (startedAt) body.elapsed_ms = Math.min(7 * 86_400_000, Date.now() - startedAt);
+    if (draftCode) body.draft = draftCode;
     readyStamp()
         .then((stamp) => {
             body.stamp = stamp;
@@ -1892,6 +2107,10 @@ function submit(hpValue: string): void {
                 data?: { errors?: Record<string, string> };
             };
             if (res.ok) {
+                // v0.1.358 — enviado: lo guardado ya no hace falta.
+                submittedOk = true;
+                clearLocal();
+                flushStats();
                 // v0.1.357 — el puntaje lo dice el servidor (la pantalla final lo puede mostrar).
                 if (b.calcs && typeof b.calcs === 'object') finalCalcs = b.calcs;
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
@@ -2060,6 +2279,109 @@ function checkEmail(hint?: string): void {
     );
 }
 
+// ─────────────────── Guardar el avance: pantalla (v0.1.358) ───────────────────
+
+/** «Tienes respuestas sin enviar»: seguir donde quedó o empezar de nuevo. */
+function resumeNode(offer: { v: Record<string, unknown>; p: number }): HTMLElement {
+    const cont = el('button', { type: 'button', cls: 'ib-btn ib-btn-primary', text: 'Continuar', 'data-testid': 'form-resume-continue' });
+    const fresh = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Empezar de nuevo', 'data-testid': 'form-resume-fresh' });
+    cont.addEventListener('click', () => applyDraft(offer.v, offer.p));
+    fresh.addEventListener('click', () => {
+        clearLocal();
+        resumeOffer = null;
+        draftCode = null;
+        render(false);
+        reportHeight();
+    });
+    return el('div', { cls: 'ib-resume', role: 'region', 'aria-label': 'Respuestas guardadas', 'data-testid': 'form-resume' }, [
+        el('p', { text: 'Tienes respuestas sin enviar de la última vez. ¿Sigues donde quedaste?' }),
+        cont,
+        fresh,
+    ]);
+}
+
+/** El correo que ya escribió en el formulario (para no pedirlo dos veces). */
+function guessEmail(): string {
+    for (const f of fields()) {
+        const v = values[f.key];
+        if (f.field_type === 'email' && typeof v === 'string' && /.+@.+\..+/.test(v)) return v.trim();
+    }
+    return '';
+}
+
+/** «Guardar y seguir después»: el botón y el panel con el correo. */
+function saveLater(honeypot: () => string): { btn: HTMLButtonElement; box: HTMLElement } {
+    const btn = el('button', { type: 'button', cls: 'ib-linkbtn ib-save-later', text: 'Guardar y seguir después', 'aria-expanded': 'false', 'data-testid': 'form-save-later' });
+    const email = el('input', { type: 'email', cls: 'ib-input', placeholder: 'tu@correo.com', autocomplete: 'email', 'aria-label': 'Tu correo', 'data-testid': 'form-save-email' });
+    const send = primaryButton('Enviarme el enlace', 'button');
+    send.setAttribute('data-testid', 'form-save-send');
+    const msg = el('p', { cls: 'ib-save-msg', role: 'status', hidden: true, 'data-testid': 'form-save-msg' });
+    const box = el('div', { cls: 'ib-save-box', hidden: true, 'data-testid': 'form-save-box' }, [
+        el('p', {
+            text: `Te mandamos un enlace para que sigas donde quedaste, en este o en otro dispositivo. Dura ${FORM_DRAFT_TTL_DAYS} días. Los archivos y la firma hay que volver a subirlos.`,
+        }),
+        el('div', { cls: 'ib-save-row' }, [email, send]),
+        msg,
+    ]);
+    const say = (text: string, error = false): void => {
+        msg.textContent = text;
+        msg.hidden = false;
+        msg.classList.toggle('ib-save-err', error);
+        reportHeight();
+    };
+    btn.addEventListener('click', () => {
+        if (BOOT.preview) return;
+        box.hidden = !box.hidden;
+        btn.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+        if (!box.hidden) {
+            if (!email.value) email.value = guessEmail();
+            email.focus();
+        }
+        reportHeight();
+    });
+    const go = (): void => {
+        const addr = email.value.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+            say('Escribe un correo válido para mandarte el enlace.', true);
+            email.focus();
+            return;
+        }
+        send.disabled = true;
+        ensureStamp()
+            .then(({ stamp }) =>
+                fetch(`${API}/drafts`, {
+                    method: 'POST',
+                    credentials: 'omit',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stamp, hp: honeypot(), email: addr, values: draftValues(), page: current, ...(draftCode ? { code: draftCode } : {}) }),
+                }),
+            )
+            .then((r) => r.json().then((b: Record<string, unknown>) => ({ ok: r.ok, b }), () => ({ ok: r.ok, b: {} as Record<string, unknown> })))
+            .then(({ ok, b }) => {
+                send.disabled = false;
+                if (!ok) {
+                    say(typeof b.message === 'string' ? b.message : 'No se pudo guardar. Prueba de nuevo.', true);
+                    return;
+                }
+                if (typeof b.code === 'string') draftCode = b.code;
+                persistLocal();
+                say(b.email_sent ? `Listo: te enviamos el enlace a ${addr}. Ya puedes cerrar esta página.` : 'Guardamos tus cambios: el enlace que ya tienes en el correo te lleva a esta versión.');
+            })
+            .catch(() => {
+                send.disabled = false;
+                say('No hay conexión. Revisa tu internet y prueba de nuevo.', true);
+            });
+    };
+    send.addEventListener('click', go);
+    email.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            go();
+        }
+    });
+    return { btn, box };
+}
+
 // ───────────────────────────── Arranque ─────────────────────────────
 
 if (embedded && !BOOT.preview) {
@@ -2123,4 +2445,62 @@ if (!BOOT.preview) {
     for (const ev of ['pointerdown', 'focusin', 'keydown', 'touchstart'] as const) {
         app.addEventListener(ev, kickStamp, { once: true, passive: true });
     }
+}
+
+// v0.1.358 — estadísticas y guardar el avance.
+if (!BOOT.preview && meta && !meta.closed) {
+    // Empezó a responder: la primera vez que toca algo DENTRO de una pregunta
+    // (o «Empezar» en la bienvenida); y la última que tocó es donde lo dejó.
+    const touch = (e: Event): void => {
+        const t = e.target as Element | null;
+        const q = t?.closest?.('[data-q]')?.getAttribute('data-q');
+        if (q) lastItem = q;
+        if (q || t?.closest?.('[data-testid="form-welcome-start"]')) trackStart();
+        // Empezó a responder sin elegir «Continuar»: lo nuevo reemplaza lo guardado.
+        if (q && resumeOffer && e.type !== 'focusin') {
+            resumeOffer = null;
+            document.querySelector('[data-testid="form-resume"]')?.remove();
+            persistLocal();
+        }
+    };
+    for (const ev of ['input', 'change', 'click', 'focusin'] as const) app.addEventListener(ev, touch, { passive: true });
+    window.addEventListener('pagehide', () => {
+        trackLeave();
+        flushStats(true);
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushStats(true);
+    });
+
+    const params = new URLSearchParams(location.search);
+    const code = params.get('seguir');
+    if (code && meta.save_progress?.email) {
+        // El enlace del correo: lo guardado se retoma en el paso donde quedó.
+        params.delete('seguir');
+        const clean = location.pathname + (params.toString() ? `?${params.toString()}` : '') + location.hash;
+        try {
+            history.replaceState(null, '', clean);
+        } catch {
+            // nada
+        }
+        fetch(`${API}/drafts/${encodeURIComponent(code)}`, { credentials: 'omit', cache: 'no-store' })
+            .then((r) => (r.ok ? (r.json() as Promise<{ values?: Record<string, unknown>; page?: number }>) : Promise.reject(new Error(String(r.status)))))
+            .then((d) => {
+                draftCode = code;
+                noteText = 'Retomaste tus respuestas guardadas. Sigue donde quedaste.';
+                applyDraft(d.values ?? {}, typeof d.page === 'number' ? d.page : 0);
+            })
+            .catch(() => {
+                noteText = 'Ese enlace para seguir venció o ya se usó. Puedes empezar de nuevo aquí.';
+                render(false);
+            });
+    } else if (meta.save_progress?.device) {
+        const local = readLocal();
+        if (local) {
+            resumeOffer = { v: local.v, p: local.p };
+            draftCode = local.c;
+            render(false);
+        }
+    }
+    trackView();
 }

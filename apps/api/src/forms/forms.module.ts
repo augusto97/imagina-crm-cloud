@@ -11,6 +11,7 @@ import { PlatformCaptchaController, WorkspaceCaptchaController } from './captcha
 import { CaptchaService } from './captcha.service';
 import { FormsController, PublicFormPageController, PublicFormsController } from './forms.controller';
 import { FormsService } from './forms.service';
+import { FormStatsService } from './form-stats.service';
 
 /**
  * v0.1.275 (ADR-S39) — Formularios públicos. @Global para que el catálogo
@@ -24,7 +25,7 @@ import { FormsService } from './forms.service';
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule, RecordTemplatesModule],
     controllers: [FormsController, PublicFormsController, PublicFormPageController, PlatformCaptchaController, WorkspaceCaptchaController, PublicThemesController],
-    providers: [FormsService, CaptchaService, PublicThemesService],
-    exports: [FormsService, CaptchaService, PublicThemesService],
+    providers: [FormsService, FormStatsService, CaptchaService, PublicThemesService],
+    exports: [FormsService, FormStatsService, CaptchaService, PublicThemesService],
 })
 export class FormsModule {}

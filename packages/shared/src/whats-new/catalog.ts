@@ -1301,4 +1301,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Formularios → Editar**: el puntaje está en **Lógica → Cálculos y puntaje**; una pregunta por pantalla y la bienvenida, en los ajustes del formulario.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.358-estadisticas-formularios',
+        version: '0.1.358',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Estadísticas de tus formularios y guardar el avance',
+        summary:
+            'Mira cuántas personas abren cada formulario, cuántas lo empiezan y lo envían, en qué pregunta lo dejan y de dónde llegan. Y deja que lo terminen después: en el mismo dispositivo o con un enlace a su correo.',
+        media: {
+            slides: [
+                {
+                    title: 'Cómo le va a tu formulario',
+                    text: 'Visitas, cuántos empezaron, cuántos lo enviaron y el tiempo promedio, con una gráfica día por día.',
+                    illustration: 'form-stats',
+                },
+                {
+                    title: 'Dónde lo dejan y de dónde llegan',
+                    text: 'Hasta qué página llega la gente, la pregunta donde más se van y si vinieron de Google, de una campaña o directo.',
+                    illustration: 'form-stats',
+                },
+                {
+                    title: 'Terminarlo después',
+                    text: 'Al volver ven «Continuar» donde quedaron, o piden un enlace por correo para seguir desde otro dispositivo.',
+                    illustration: 'form-save-progress',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Formularios**, toca el ícono de **Estadísticas** junto al formulario. Para guardar el avance, edita el formulario y en sus ajustes busca **Guardar el avance**.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

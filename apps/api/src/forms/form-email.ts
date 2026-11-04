@@ -124,3 +124,35 @@ export function formCopyEmail(
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 16px">${rows}</table>${withdrawHtml(opts.withdrawUrl)}`;
     return { subject, text, html: frame(brand, subject, inner, footer) };
 }
+
+/**
+ * v0.1.358 — «Guardar y seguir después»: el enlace para volver al formulario
+ * con lo que la persona ya respondió.
+ */
+export function formDraftEmail(brand: PortalEmailBrand, url: string, opts: { formTitle: string; days: number }): PortalEmail {
+    const e = escapeHtml;
+    const name = brand.name.trim();
+    const title = opts.formTitle.trim().slice(0, 120);
+    const color = safeColor(brand.color);
+    const ink = inkOn(color);
+    const subject = title ? `Sigue con «${title}» cuando quieras` : 'Sigue con el formulario cuando quieras';
+    const footer = `Recibiste este correo porque pediste guardar lo que llevabas de un formulario${name ? ` de ${name}` : ''}. Si no fuiste tú, ignóralo: nadie recibe nada hasta que lo envíes.`;
+    const text = [
+        'Hola,',
+        '',
+        `Guardamos lo que llevabas respondido${title ? ` en «${title}»` : ''}. Para seguir donde quedaste, abre este enlace:`,
+        url,
+        '',
+        `El enlace dura ${opts.days} días. Los archivos que adjuntaste (y la firma, si había) hay que volver a subirlos.`,
+        'No compartas este enlace: quien lo abra ve lo que respondiste.',
+        '',
+        footer,
+    ].join('\n');
+    const inner = `<p style="margin:0 0 12px">Hola,</p>
+<p style="margin:0 0 20px">Guardamos lo que llevabas respondido${title ? ` en «${e(title)}»` : ''}. Cuando quieras, sigue donde quedaste.</p>
+<p style="margin:0 0 20px;text-align:center"><a href="${e(url)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px">Seguir con el formulario</a></p>
+<p style="margin:0 0 8px;font-size:13px;color:#6b7280">El enlace dura ${opts.days} días. Los archivos que adjuntaste (y la firma, si había) hay que volver a subirlos. No compartas este enlace: quien lo abra ve lo que respondiste.</p>
+<p style="margin:0 0 8px;font-size:13px;color:#6b7280">Si el botón no funciona, copia esta dirección en el navegador:</p>
+<p style="margin:0 0 20px;font-size:12px;color:#6b7280;word-break:break-all">${e(url)}</p>`;
+    return { subject, text, html: frame(brand, subject, inner, footer) };
+}
