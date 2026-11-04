@@ -11,7 +11,7 @@ import { BookingHolidaysService } from './booking-holidays';
 import { BookingPublicService } from './booking-public.service';
 import { BookingRemindersService } from './booking-reminders.service';
 import { BOOKING_SIMULATOR } from './booking-simulator';
-import { BookingController, MyAgendaCalendarController, PublicBookingController, PublicBookingPageController } from './booking.controller';
+import { BookingController, MyAgendaCalendarController, PublicBookingController, PublicBookingPageController, RecordBookingController } from './booking.controller';
 import { BookingMyCalendarService } from './booking-my-calendar.service';
 import { BookingCalendarSyncService } from './booking-calendar-sync.service';
 import { BookingService } from './booking.service';
@@ -24,7 +24,7 @@ import { BookingService } from './booking.service';
 @Global()
 @Module({
     imports: [AuthModule, DomainsModule, ListsModule, FieldsModule, FilesModule, RecordsModule],
-    controllers: [BookingController, MyAgendaCalendarController, PublicBookingController, PublicBookingPageController],
+    controllers: [BookingController, MyAgendaCalendarController, PublicBookingController, PublicBookingPageController, RecordBookingController],
     providers: [
         BookingService,
         BookingPublicService,

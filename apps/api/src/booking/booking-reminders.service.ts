@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { and, eq, gt, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte, inArray, sql } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { bookingAppointments, bookingPages, records } from '../db/schema';
@@ -13,6 +13,8 @@ const QUEUE = 'booking-reminders';
 /** Recordatorios hasta dos semanas antes (el máximo que deja configurar la página). */
 const LOOKAHEAD_MS = 14 * 24 * 3600 * 1000 + 3600 * 1000;
 const BATCH = 200;
+/** v0.1.353 — Sólo las citas confirmadas reciben recordatorios (una por confirmar, todavía no). */
+const LIVE_STATUSES = ['confirmed', 'rescheduled'];
 
 /**
  * D5 — Recordatorios de las citas al cliente («24 h antes», «1 h antes»). Un
@@ -46,7 +48,15 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
             };
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de recordatorios de citas con error: ${err.message}`));
-            this.worker = new Worker(QUEUE, async () => this.tick(), { connection: conn() });
+            // v0.1.353 — en el mismo barrido vencen las citas por confirmar que nadie decidió.
+            this.worker = new Worker(
+                QUEUE,
+                async () => {
+                    await this.tick();
+                    await this.publicSvc.expirePending();
+                },
+                { connection: conn() },
+            );
             this.worker.on('failed', (_job, err) => this.logger.error(`Recordatorios de citas fallaron: ${err.message}`));
             this.worker.on('error', (err) => this.logger.warn(`Worker de recordatorios de citas con error: ${err.message}`));
             await this.queue.upsertJobScheduler('booking-reminders', { every: 60_000 }, { name: 'tick', data: {} });
@@ -70,7 +80,7 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
             .innerJoin(records, and(eq(records.id, bookingAppointments.recordId), isNull(records.deletedAt)))
             .where(
                 and(
-                    ne(bookingAppointments.status, 'cancelled'),
+                    inArray(bookingAppointments.status, LIVE_STATUSES),
                     gt(bookingAppointments.startAt, now),
                     lte(bookingAppointments.startAt, new Date(now.getTime() + LOOKAHEAD_MS)),
                 ),
@@ -97,7 +107,7 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
                 .where(
                     and(
                         eq(bookingAppointments.id, appt.id),
-                        ne(bookingAppointments.status, 'cancelled'),
+                        inArray(bookingAppointments.status, LIVE_STATUSES),
                         sql`not (${bookingAppointments.remindersSent} ?| ARRAY[${sql.join(ids.map((i) => sql`${i}`), sql`, `)}]::text[])`,
                     ),
                 )

@@ -12,6 +12,7 @@ import {
     type OnModuleInit,
 } from '@nestjs/common';
 import {
+    BOOKING_INACTIVE_STATUSES,
     bookableWindow,
     bookingLocationPublic,
     bookingLocationText,
@@ -22,11 +23,13 @@ import {
     formatBookingWhen,
     formItemVisible,
     isBookingQuestionType,
+    isDisposableEmail,
     isEmptyAnswer,
     isValidTimeZone,
     jsonbKeyForField,
     pickServiceDuration,
     resolveTimeZone,
+    serviceApprovalMode,
     serviceDurations,
     staffLabel,
     tenantFormatSchema,
@@ -43,6 +46,10 @@ import {
     type BookingStaff,
     type BookingStatus,
     type CancelAppointmentInput,
+    type DecideBookingInput,
+    type RecordBookingDto,
+    type RequestBookingCodeInput,
+    type VerifyBookingCodeInput,
     type PublicAppointmentSummary,
     type PublicBookingMeta,
     type PublicBookingSlots,
@@ -51,7 +58,9 @@ import {
     type TenantFormat,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import { can } from '../authz/can';
 import type Redis from 'ioredis';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { ENV, type Env } from '../config/env';
@@ -73,13 +82,13 @@ import { NotifyHub } from '../notifications/notify-hub';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
-import { RecordsService } from '../records/records.service';
+import { RecordsService, type Actor } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingAvailabilityService, type PageContext } from './booking-availability.service';
 import { BookingCalendarService, type CalendarProvider } from './booking-calendar';
-import { appointmentRecordData, isCancelledValue, readBookingConfig, staffKey } from './booking-config';
-import { bookingClientEmail, type BookingMailKind } from './booking-email';
+import { appointmentRecordData, readBookingConfig, staffKey, statusFromValue, statusValueFor } from './booking-config';
+import { bookingClientEmail, bookingCodeEmail, bookingMailHasIcs, type BookingMailKind } from './booking-email';
 import { buildIcs } from './booking-ics';
 import type { BookingSimulator } from './booking-simulator';
 import { planModuleOff } from '../billing/plan-module-gate';
@@ -98,6 +107,28 @@ const BOOK_LIMITS = [
     { scope: 'page', window: 60, max: 60 },
     { scope: 'page', window: 3600, max: 1000 },
 ] as const;
+/**
+ * v0.1.353 — Frenos por CORREO (compartidos entre nodos): reservas por hora y
+ * por día de un mismo correo en una página, y códigos de confirmación.
+ */
+const BOOK_EMAIL_LIMITS = [
+    { window: 3600, max: 5 },
+    { window: 86_400, max: 12 },
+] as const;
+const CODE_EMAIL_LIMITS = [
+    { window: 600, max: 3 },
+    { window: 86_400, max: 8 },
+] as const;
+const CODE_LIMITS = [
+    { scope: 'ip', window: 3600, max: 12 },
+    { scope: 'page', window: 3600, max: 300 },
+] as const;
+/** El código de 6 dígitos: cuánto vale, cuántos intentos y cuánto dura la prueba que devuelve. */
+const CODE_TTL_S = 600;
+const CODE_ATTEMPTS = 5;
+const PROOF_TTL_MS = 45 * 60 * 1000;
+/** Las citas por confirmar que vencen en una vuelta del barrido. */
+const EXPIRE_BATCH = 100;
 const SLOTS_LIMITS = [
     { scope: 'ip', window: 60, max: 90 },
     // v0.1.352 — cuenta sólo los CÁLCULOS (lo que sale de la caché no pesa).
@@ -149,6 +180,16 @@ const MEETING_WAIT_MS = 6000;
 interface MeetingInfo {
     url: string;
     provider: 'meet' | 'teams' | 'link';
+}
+
+const DISPOSABLE_MESSAGE = 'Usa un correo personal o de trabajo: los correos temporales no se aceptan.';
+const sha = (v: string): string => createHash('sha256').update(v).digest('hex');
+
+/** v0.1.353 — Quien mira la ficha (para aprobar o rechazar): el actor del registro, con su ACL. */
+export type BookingDecider = Actor;
+
+function notPending(): ConflictException {
+    return new ConflictException({ code: 'booking_not_pending', message: 'Esta cita ya no está por confirmar: alguien la decidió antes.', data: { status: 409 } });
 }
 
 function clientDuplicate(): ConflictException {
@@ -479,6 +520,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             stamp: this.newStamp(p.pageId),
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             data_consent: consent ? DataConsentService.toPublic(consent) : null,
+            verify_email: s.verify_email,
+            pending_message: s.pending_message,
         };
     }
 
@@ -536,6 +579,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const errors: Record<string, string> = {};
         const email = validateFieldValue({ type: 'email', config: {}, is_required: true }, input.email);
         if (!email.ok) errors.email = 'Revisa el correo.';
+        else if (p.config.settings.block_disposable_email && isDisposableEmail(String(email.value))) errors.email = DISPOSABLE_MESSAGE;
         let phone: string | null = null;
         const phoneField = p.config.mapping.phone_field_id !== null ? p.fields.find((f) => f.id === p.config.mapping.phone_field_id) : undefined;
         if (p.config.settings.ask_phone !== 'hidden') {
@@ -555,6 +599,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         await this.checkCaptcha(p, input.captcha, ip);
 
         const clientEmail = String(email.ok ? email.value : input.email).trim();
+        // v0.1.353 — el correo confirmado con el código (si la página lo pide) y el freno por correo.
+        if (p.config.settings.verify_email && !this.verifyEmailProof(p.pageId, clientEmail, input.email_proof)) {
+            throw badRequest('booking_email_unverified', 'Confirma tu correo con el código que te enviamos.');
+        }
+        await this.enforceEmail(BOOK_EMAIL_LIMITS, p.pageId, clientEmail, 'reservas');
         const clientName = input.name.trim().slice(0, 200);
         const clientTz = input.time_zone && isValidTimeZone(input.time_zone) ? input.time_zone : null;
 
@@ -571,6 +620,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (p.config.rules.max_active_per_client !== null && (await this.activeForClient(p, clientEmail)) >= p.config.rules.max_active_per_client) {
             throw clientLimit(p.config.rules.max_active_per_client);
         }
+
+        // v0.1.353 — ¿queda por confirmar? (siempre, o sólo la primera vez de cada correo).
+        const approvalMode = serviceApprovalMode(p.config.approval, service);
+        const pending = approvalMode === 'all' || (approvalMode === 'new_clients' && !(await this.knownClient(p, clientEmail)));
+        const status: BookingStatus = pending ? 'pending' : 'confirmed';
+        const pendingUntil = pending ? new Date(Math.min(Date.now() + p.config.approval.hours * 3_600_000, start.getTime())) : null;
 
         // Ley 1581: la prueba de la autorización se guarda ANTES que la cita.
         let evidence: { id: number; withdrawRef: string | null } | null = null;
@@ -602,8 +657,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             for (const staff of candidates) {
                 // v0.1.350 — un enlace fijo (del servicio o de la persona) se sabe ya;
                 // el de Meet o Teams lo genera el evento del calendario después.
-                const meeting = await this.immediateMeeting(p, service, staff);
+                // v0.1.353 — una por confirmar todavía no tiene videollamada (llega al aprobarla).
+                const meeting = pending ? null : await this.immediateMeeting(p, service, staff);
                 const out = await this.tryBook(p, staff, service, start, end, {
+                    status,
+                    pendingUntil,
                     meeting,
                     data: {
                         ...answers,
@@ -616,7 +674,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                             staffName: names.get(staff.id) ?? staffLabel(staff),
                             start,
                             end,
-                            status: 'confirmed',
+                            status,
                             client: { name: clientName, email: clientEmail, phone },
                         }),
                     },
@@ -664,6 +722,17 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             ...(list ? { list, fields: p.fields } : {}),
         });
         const base = await this.base(p.tenantId);
+        if (pending) {
+            // Por confirmar: aviso a quien aprueba, el disparador «se pidió» y el
+            // correo «recibimos tu solicitud». Sin evento en el calendario ni recordatorios.
+            const info = this.eventInfo(p, appt, 'requested', 'client', base, names, null);
+            this.notifyApprovers(p, appt, info, 'requested');
+            this.dispatchEvent(p, appt, info, record.data);
+            if (p.config.notifications.confirm_email) {
+                void this.sendClientMail(p, appt, 'requested', { base, names, withdrawRef: evidence?.withdrawRef ?? null });
+            }
+            return { ok: true, appointment: this.summary(p, appt, base, names) };
+        }
         const info = this.eventInfo(p, appt, 'booked', 'client', base, names, null);
         this.notifyStaff(p, appt, staff, 'booked', info);
         // v0.1.350 — el disparador sale cuando el calendario ya creó el evento
@@ -690,7 +759,16 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         service: BookingServiceItem,
         start: Date,
         end: Date,
-        x: { data: Record<string, unknown>; clientName: string; clientEmail: string; clientTz: string | null; durationMin: number; meeting: MeetingInfo | null },
+        x: {
+            data: Record<string, unknown>;
+            clientName: string;
+            clientEmail: string;
+            clientTz: string | null;
+            durationMin: number;
+            meeting: MeetingInfo | null;
+            status: BookingStatus;
+            pendingUntil: Date | null;
+        },
     ): Promise<{ appt: BookingAppointmentRow; record: { id: number; data: Record<string, unknown> } } | { reason: string }> {
         const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
         // Lo del calendario externo y los festivos se leen ANTES del candado (no se espera a la red con él tomado).
@@ -728,7 +806,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         serviceId: service.id,
                         startAt: start,
                         endAt: end,
-                        status: 'confirmed',
+                        status: x.status,
+                        pendingUntil: x.pendingUntil,
                         clientName: x.clientName,
                         clientEmail: x.clientEmail,
                         clientTz: x.clientTz,
@@ -800,7 +879,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 .select({
                     staffId: bookingAppointments.staffId,
                     last: sql<string>`max(${bookingAppointments.createdAt})`,
-                    upcoming: sql<number>`count(*) filter (where ${bookingAppointments.status} <> 'cancelled' and ${bookingAppointments.startAt} > now() and ${bookingAppointments.startAt} < ${horizon})`,
+                    upcoming: sql<number>`count(*) filter (where ${bookingAppointments.status} not in ('cancelled', 'declined') and ${bookingAppointments.startAt} > now() and ${bookingAppointments.startAt} < ${horizon})`,
                 })
                 .from(bookingAppointments)
                 .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.pageId, p.pageId)))
@@ -836,7 +915,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     eq(bookingAppointments.serviceId, serviceId),
                     eq(bookingAppointments.startAt, start),
                     sql`lower(${bookingAppointments.clientEmail}) = ${email.toLowerCase()}`,
-                    ne(bookingAppointments.status, 'cancelled'),
+                    notInArray(bookingAppointments.status, [...BOOKING_INACTIVE_STATUSES]),
                 ),
             )
             .limit(1);
@@ -854,12 +933,36 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         eq(bookingAppointments.tenantId, p.tenantId),
                         eq(bookingAppointments.pageId, p.pageId),
                         sql`lower(${bookingAppointments.clientEmail}) = ${email.toLowerCase()}`,
-                        ne(bookingAppointments.status, 'cancelled'),
+                        notInArray(bookingAppointments.status, [...BOOKING_INACTIVE_STATUSES]),
                         sql`${bookingAppointments.endAt} > now()`,
                     ),
                 );
         const rows = tx ? await q(tx) : await this.tenantDb.withTenant(p.tenantId, q);
         return Number(rows[0]?.n ?? 0);
+    }
+
+    /**
+     * v0.1.353 — ¿Ese correo ya tuvo una cita confirmada en esta página? (para
+     * «sólo la primera cita de cada cliente»). Cuenta las confirmadas o
+     * reprogramadas, y las canceladas que se habían confirmado (una por
+     * confirmar que se canceló conserva su plazo).
+     */
+    private async knownClient(p: ResolvedPage, email: string): Promise<boolean> {
+        const rows = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .select({ id: bookingAppointments.id })
+                .from(bookingAppointments)
+                .where(
+                    and(
+                        eq(bookingAppointments.tenantId, p.tenantId),
+                        eq(bookingAppointments.pageId, p.pageId),
+                        sql`lower(${bookingAppointments.clientEmail}) = ${email.toLowerCase()}`,
+                        sql`(${bookingAppointments.status} in ('confirmed', 'rescheduled') or (${bookingAppointments.status} = 'cancelled' and ${bookingAppointments.pendingUntil} is null))`,
+                    ),
+                )
+                .limit(1),
+        );
+        return rows.length > 0;
     }
 
     /** Recordatorios cuyo momento ya pasó al reservar (no se mandan tarde). */
@@ -955,24 +1058,162 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
     }
 
-    // ─────────────────────────── La cita del cliente ───────────────────────────
-
-    /** Firma del enlace de una cita: `<id>.<firma>` (la cita no se adivina por su número). */
-    manageRef(tenantId: number, apptId: number): string {
-        return `${apptId}.${this.files.signParts('bookmanage', tenantId, apptId)}`;
+    /** v0.1.353 — Ventanas fijas por CORREO (con su huella, no la dirección). Redis caído → no frena. */
+    private async enforceEmail(limits: ReadonlyArray<{ window: number; max: number }>, pageId: number, email: string, what: string): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+        const who = sha(email.trim().toLowerCase()).slice(0, 32);
+        for (const { window, max } of limits) {
+            const key = `bookrl:${what}:email:${window}:${Math.floor(now / window)}:${pageId}:${who}`;
+            let count: number;
+            try {
+                const res = await this.redis.multi().incr(key).expire(key, window).exec();
+                count = Number(res?.[0]?.[1] ?? 0);
+            } catch {
+                return;
+            }
+            if (count > max) {
+                throw new HttpException(
+                    {
+                        code: 'rate_limited',
+                        message: what === 'codigos' ? 'Ya te enviamos varios códigos a este correo. Espera unos minutos y vuelve a intentar.' : 'Este correo ya pidió varias citas seguidas. Espera un rato y vuelve a intentar.',
+                        data: { status: 429 },
+                    },
+                    HttpStatus.TOO_MANY_REQUESTS,
+                );
+            }
+        }
     }
 
-    manageUrl(base: string, tenantId: number, apptId: number): string {
-        return `${base}/api/v1/public/b/manage/${this.manageRef(tenantId, apptId)}`;
+    // ───────────────────── Confirmar el correo con un código (v0.1.353) ─────────────────────
+
+    private codeKey(pageId: number, email: string): string {
+        return `bookcode:${pageId}:${sha(email.trim().toLowerCase())}`;
+    }
+
+    /**
+     * Manda el código de 6 dígitos al correo. Sólo si la página lo pide; con el
+     * sello anti-robots, el freno por IP, por página y por correo. Un correo
+     * temporal se rechaza aquí mismo (antes de gastar un correo).
+     */
+    async requestCode(token: string, ip: string, input: RequestBookingCodeInput): Promise<{ ok: true; minutes: number }> {
+        const cached = await this.cachedPage(token);
+        if (!cached) throw notFound();
+        const p = cached.p;
+        const closed = this.closedReason(p);
+        if (closed) throw new ForbiddenException({ code: 'booking_closed', message: closed, data: { status: 403 } });
+        if (!p.config.settings.verify_email) throw badRequest('booking_code_off', 'Esta agenda no pide confirmar el correo.');
+        this.checkStamp(p.pageId, input.stamp);
+        const email = input.email.trim();
+        if (p.config.settings.block_disposable_email && isDisposableEmail(email)) throw badRequest('booking_invalid', DISPOSABLE_MESSAGE, { errors: { email: DISPOSABLE_MESSAGE } });
+        await this.enforce(CODE_LIMITS, p.pageId, ip, 'codigos');
+        await this.enforceEmail(CODE_EMAIL_LIMITS, p.pageId, email, 'codigos');
+        if (!this.mail) throw unavailable('No pudimos enviarte el código en este momento. Prueba de nuevo más tarde.');
+        const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+        try {
+            await this.redis.set(this.codeKey(p.pageId, email), JSON.stringify({ h: sha(`${p.pageId}:${code}`), n: 0 }), 'EX', CODE_TTL_S);
+        } catch {
+            throw unavailable('No pudimos enviarte el código en este momento. Prueba de nuevo más tarde.');
+        }
+        const base = await this.base(p.tenantId);
+        const brand = await this.emailBrand(p, base);
+        const message = bookingCodeEmail(brand, { code, minutes: Math.round(CODE_TTL_S / 60), pageTitle: p.config.settings.title || p.row.name });
+        try {
+            await this.mail.sendNow({
+                tenantId: p.tenantId,
+                to: email,
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+                ...(brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
+            });
+        } catch (err) {
+            this.logger.warn(`Agenda ${p.pageId}: el código de confirmación no salió: ${String(err)}`);
+            await this.redis.del(this.codeKey(p.pageId, email)).catch(() => undefined);
+            throw unavailable('No pudimos enviarte el código en este momento. Prueba de nuevo más tarde.');
+        }
+        return { ok: true, minutes: Math.round(CODE_TTL_S / 60) };
+    }
+
+    /**
+     * Comprueba el código: 5 intentos por código (después hay que pedir otro).
+     * Bien → una prueba firmada (página + correo + vencimiento) que la reserva
+     * vuelve a comprobar; el código se consume.
+     */
+    async verifyCode(token: string, ip: string, input: VerifyBookingCodeInput): Promise<{ ok: true; proof: string }> {
+        const cached = await this.cachedPage(token);
+        if (!cached) throw notFound();
+        const p = cached.p;
+        await this.enforce(CODE_LIMITS.filter((l) => l.scope === 'ip'), p.pageId, ip, 'verificar');
+        const key = this.codeKey(p.pageId, input.email);
+        let raw: string | null;
+        try {
+            raw = await this.redis.get(key);
+        } catch {
+            throw unavailable('No pudimos comprobar el código en este momento. Prueba de nuevo en un momento.');
+        }
+        const saved = raw ? (JSON.parse(raw) as { h?: string; n?: number }) : null;
+        if (!saved?.h) throw badRequest('booking_code_expired', 'El código venció o no existe. Pide uno nuevo.');
+        const tries = Number(saved.n ?? 0) + 1;
+        const given = Buffer.from(sha(`${p.pageId}:${input.code.trim()}`));
+        const expected = Buffer.from(saved.h);
+        const ok = given.length === expected.length && timingSafeEqual(given, expected);
+        if (!ok) {
+            if (tries >= CODE_ATTEMPTS) {
+                await this.redis.del(key).catch(() => undefined);
+                throw badRequest('booking_code_locked', 'Escribiste mal el código varias veces. Pide uno nuevo.');
+            }
+            const ttl = await this.redis.ttl(key).catch(() => CODE_TTL_S);
+            await this.redis.set(key, JSON.stringify({ h: saved.h, n: tries }), 'EX', Math.max(1, ttl > 0 ? ttl : CODE_TTL_S)).catch(() => undefined);
+            throw badRequest('booking_code_wrong', `El código no coincide. Te quedan ${CODE_ATTEMPTS - tries} intento${CODE_ATTEMPTS - tries === 1 ? '' : 's'}.`);
+        }
+        await this.redis.del(key).catch(() => undefined);
+        const exp = Date.now() + PROOF_TTL_MS;
+        return { ok: true, proof: `${exp}.${this.files.signParts('bookproof', p.pageId, input.email.trim().toLowerCase(), exp)}` };
+    }
+
+    /** La prueba de `verifyCode`: de esta página, de este correo y no vencida. */
+    private verifyEmailProof(pageId: number, email: string, proof: string | undefined): boolean {
+        const m = /^(\d{10,16})\.([A-Za-z0-9_-]{10,128})$/.exec(proof ?? '');
+        if (!m) return false;
+        const exp = Number(m[1]);
+        if (!Number.isFinite(exp) || exp < Date.now()) return false;
+        return this.files.verifyParts(m[2]!, 'bookproof', pageId, email.trim().toLowerCase(), exp);
+    }
+
+    // ─────────────────────────── La cita del cliente ───────────────────────────
+
+    /**
+     * Firma del enlace de una cita (la cita no se adivina por su número).
+     * v0.1.353 — lleva la VERSIÓN de la cita: `<id>.<firma>` la primera vez (así
+     * los correos de antes siguen sirviendo) y `<id>.<versión>.<firma>` después
+     * de un cambio. Un enlace de una versión anterior muestra la cita pero ya no
+     * deja cambiarla (el correo viejo reenviado no reprograma ni cancela).
+     */
+    manageRef(tenantId: number, apptId: number, version = 0): string {
+        return version > 0
+            ? `${apptId}.${version}.${this.files.signParts('bookmanage', tenantId, apptId, version)}`
+            : `${apptId}.${this.files.signParts('bookmanage', tenantId, apptId)}`;
+    }
+
+    manageUrl(base: string, tenantId: number, apptId: number, version = 0): string {
+        return `${base}/api/v1/public/b/manage/${this.manageRef(tenantId, apptId, version)}`;
+    }
+
+    /** El enlace al día de una cita. */
+    private apptUrl(base: string, p: ResolvedPage, appt: BookingAppointmentRow): string {
+        return this.manageUrl(base, p.tenantId, appt.id, appt.manageVersion);
     }
 
     /** Enlace → cita + página. Uno alterado o de una cita que no existe da el mismo 404. */
-    private async resolveAppointment(ref: string): Promise<{ p: ResolvedPage; appt: BookingAppointmentRow }> {
-        const m = /^(\d{1,15})\.([A-Za-z0-9_-]{10,128})$/.exec(ref ?? '');
+    private async resolveAppointment(ref: string): Promise<{ p: ResolvedPage; appt: BookingAppointmentRow; stale: boolean }> {
+        const m = /^(\d{1,15})\.(?:(\d{1,6})\.)?([A-Za-z0-9_-]{10,128})$/.exec(ref ?? '');
         if (!m) throw apptNotFound();
         const id = Number(m[1]);
+        const version = m[2] === undefined ? 0 : Number(m[2]);
         const [appt] = await this.db.select().from(bookingAppointments).where(eq(bookingAppointments.id, id)).limit(1);
-        if (!appt || !this.files.verifyParts(m[2]!, 'bookmanage', appt.tenantId, appt.id)) throw apptNotFound();
+        if (!appt || version > appt.manageVersion) throw apptNotFound();
+        const signed = version > 0 ? this.files.verifyParts(m[3]!, 'bookmanage', appt.tenantId, appt.id, version) : this.files.verifyParts(m[3]!, 'bookmanage', appt.tenantId, appt.id);
+        if (!signed) throw apptNotFound();
         // El registro en la papelera: la cita no existe para el cliente.
         const [rec] = await this.db
             .select({ id: records.id })
@@ -981,12 +1222,14 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             .limit(1);
         const p = rec ? await this.resolveById(appt.pageId) : null;
         if (!p) throw apptNotFound();
-        return { p, appt };
+        return { p, appt, stale: version < appt.manageVersion };
     }
 
     /** ¿Se puede reprogramar o cancelar? (no cancelada, no pasada, con el aviso mínimo). */
-    private lockedReason(p: ResolvedPage, appt: BookingAppointmentRow, now = new Date()): string | null {
+    private lockedReason(p: ResolvedPage, appt: BookingAppointmentRow, now = new Date(), stale = false): string | null {
         if (appt.status === 'cancelled') return 'Esta cita está cancelada.';
+        if (appt.status === 'declined') return 'Esta solicitud de cita no fue confirmada.';
+        if (stale) return 'Este enlace es de un correo anterior. Para hacer cambios, usa el del último correo que te enviamos.';
         if (appt.startAt.getTime() <= now.getTime()) return 'Esta cita ya pasó.';
         if (p.readOnly) return 'Por ahora no se pueden hacer cambios en línea. Comunícate con la empresa.';
         const notice = p.config.rules.min_notice_min * 60_000;
@@ -997,10 +1240,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         return null;
     }
 
-    summary(p: ResolvedPage, appt: BookingAppointmentRow, base: string, names: Map<string, string>): PublicAppointmentSummary {
+    summary(p: ResolvedPage, appt: BookingAppointmentRow, base: string, names: Map<string, string>, stale = false): PublicAppointmentSummary {
         const svc = p.config.services.find((s) => s.id === appt.serviceId);
-        const locked = this.lockedReason(p, appt);
-        const url = this.manageUrl(base, p.tenantId, appt.id);
+        const locked = this.lockedReason(p, appt, new Date(), stale);
+        const url = this.apptUrl(base, p, appt);
         return {
             service: svc?.name ?? 'Cita',
             staff: names.get(appt.staffId) ?? '',
@@ -1009,12 +1252,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             status: appt.status as BookingStatus,
             location: this.locationText(p, appt),
             location_kind: svc?.location.kind ?? 'page',
-            // El enlace lo ve sólo quien tiene el enlace firmado de su cita (y no una cancelada).
-            meeting_url: appt.status === 'cancelled' ? null : appt.meetingUrl,
+            // El enlace lo ve sólo quien tiene el enlace firmado de su cita (y no una cancelada ni una por confirmar).
+            meeting_url: appt.status === 'confirmed' || appt.status === 'rescheduled' ? appt.meetingUrl : null,
             client_name: appt.clientName ?? '',
             time_zone: p.timeZone,
             manage_url: url,
-            ics_url: `${base}/api/v1/public/booking/manage/${this.manageRef(p.tenantId, appt.id)}/ics`,
+            ics_url: `${base}/api/v1/public/booking/manage/${this.manageRef(p.tenantId, appt.id, appt.manageVersion)}/ics`,
             can_reschedule: locked === null && p.config.rules.allow_reschedule,
             can_cancel: locked === null && p.config.rules.allow_cancel,
             locked_reason: locked,
@@ -1022,11 +1265,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     async manageMeta(ref: string): Promise<PublicManageMeta> {
-        const { p, appt } = await this.resolveAppointment(ref);
+        const { p, appt, stale } = await this.resolveAppointment(ref);
         const base = await this.base(p.tenantId);
         const names = await this.staffNames(p.config);
         const booking = await this.buildMeta(p);
-        return { appointment: this.summary(p, appt, base, names), booking, service_id: appt.serviceId, staff_id: appt.staffId };
+        return { appointment: this.summary(p, appt, base, names, stale), booking, service_id: appt.serviceId, staff_id: appt.staffId };
     }
 
     /** La página HTML de gestión: null si el enlace no sirve (mismo 404 para todo). */
@@ -1041,9 +1284,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
 
     /** Horarios para reprogramar: los mismos de la página, sin contar la propia cita. */
     async manageSlots(ref: string, ip: string, q: BookingSlotsQuery): Promise<PublicBookingSlots> {
-        const { p, appt } = await this.resolveAppointment(ref);
+        const { p, appt, stale } = await this.resolveAppointment(ref);
         await this.enforce(SLOTS_LIMITS, p.pageId, ip, 'horarios');
-        if (this.lockedReason(p, appt) || !p.config.rules.allow_reschedule) return { slots: [], first_day: q.from, last_day: q.to };
+        if (this.lockedReason(p, appt, new Date(), stale) || !p.config.rules.allow_reschedule) return { slots: [], first_day: q.from, last_day: q.to };
         return this.availability.slots(p, appt.serviceId, this.staffSelection(p, q.staff), q.from, q.to, { excludeRecordId: appt.recordId, durationMin: appointmentMinutes(appt) });
     }
 
@@ -1058,7 +1301,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const svc = p.config.services.find((s) => s.id === appt.serviceId);
         const b = this.brand(p);
         const staff = names.get(appt.staffId) ?? '';
-        const url = this.manageUrl(base, p.tenantId, appt.id);
+        const url = this.apptUrl(base, p, appt);
         return buildIcs({
             uid: `cita-${appt.id}-${p.tenantId}@imagina-base`,
             start: appt.startAt,
@@ -1075,15 +1318,15 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             // Con videollamada el lugar ES el enlace (los calendarios lo vuelven clicable).
             location: appt.meetingUrl ?? this.locationText(p, appt),
             sequence: Math.max(0, Math.floor((appt.updatedAt.getTime() - Date.UTC(2026, 0, 1)) / 1000)),
-            cancelled: appt.status === 'cancelled',
+            cancelled: appt.status === 'cancelled' || appt.status === 'declined',
             url,
         });
     }
 
     async cancel(ref: string, ip: string, input: CancelAppointmentInput): Promise<PublicAppointmentSummary> {
-        const { p, appt } = await this.resolveAppointment(ref);
+        const { p, appt, stale } = await this.resolveAppointment(ref);
         await this.enforce(MANAGE_LIMITS, p.pageId, ip, 'cambios');
-        const locked = this.lockedReason(p, appt);
+        const locked = this.lockedReason(p, appt, new Date(), stale);
         if (locked || !p.config.rules.allow_cancel) {
             throw new ForbiddenException({ code: 'booking_locked', message: locked ?? 'Esta agenda no permite cancelar en línea. Comunícate con la empresa.', data: { status: 403 } });
         }
@@ -1100,9 +1343,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             tx
                 .update(bookingAppointments)
                 .set({ status: 'cancelled', cancelledAt: new Date(), updatedAt: new Date() })
-                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id)))
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), notInArray(bookingAppointments.status, [...BOOKING_INACTIVE_STATUSES])))
                 .returning(),
         );
+        // Dos pedidos a la vez (o el equipo la canceló un segundo antes): sólo uno cancela.
+        if (!row) throw new ForbiddenException({ code: 'booking_locked', message: 'Esta cita ya no se puede cancelar.', data: { status: 403 } });
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
         const names = await this.staffNames(p.config);
@@ -1115,9 +1360,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     async reschedule(ref: string, ip: string, input: RescheduleAppointmentInput): Promise<PublicAppointmentSummary> {
-        const { p, appt } = await this.resolveAppointment(ref);
+        const { p, appt, stale } = await this.resolveAppointment(ref);
         await this.enforce(MANAGE_LIMITS, p.pageId, ip, 'cambios');
-        const locked = this.lockedReason(p, appt);
+        const locked = this.lockedReason(p, appt, new Date(), stale);
         if (locked || !p.config.rules.allow_reschedule) {
             throw new ForbiddenException({ code: 'booking_locked', message: locked ?? 'Esta agenda no permite reprogramar en línea. Comunícate con la empresa.', data: { status: 403 } });
         }
@@ -1135,13 +1380,16 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (candidates.length === 0) throw badRequest('booking_invalid', 'No hay quién atienda ese servicio en este momento.');
         const names = await this.staffNames(p.config);
         const fieldsById = new Map(p.fields.map((f) => [f.id, f]));
+        // v0.1.353 — una por confirmar sigue por confirmar en el horario nuevo.
+        const wasPending = appt.status === 'pending';
+        const nextStatus: BookingStatus = wasPending ? 'pending' : 'rescheduled';
 
         let done: { row: BookingAppointmentRow; staff: BookingStaff } | null = null;
         let lastReason = 'taken';
         for (const staff of candidates) {
             const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
             const outside = await this.availability.outside(p, staff, ymd, ymd);
-            const newMeeting = staff.id !== appt.staffId ? await this.immediateMeeting(p, service, staff) : null;
+            const newMeeting = staff.id !== appt.staffId && !wasPending ? await this.immediateMeeting(p, service, staff) : null;
             const out = await this.withStaffLock(p.tenantId, staffKey(p.pageId, staff), async (tx) => {
                 const reason = await this.availability.checkInTx(tx, p, staff, service, start, outside, { excludeRecordId: appt.recordId, durationMin });
                 if (reason) return { reason };
@@ -1156,7 +1404,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     appt.recordId,
                     {
                         data: {
-                            ...appointmentRecordData({ config: p.config, fieldsById, service, staff, staffName: names.get(staff.id) ?? staffLabel(staff), start, end, status: 'rescheduled' }),
+                            ...appointmentRecordData({ config: p.config, fieldsById, service, staff, staffName: names.get(staff.id) ?? staffLabel(staff), start, end, status: nextStatus }),
                             ...(staff.id !== appt.staffId ? this.meetingData(p, newMeeting, true) : {}),
                         },
                     },
@@ -1170,14 +1418,19 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         endAt: end,
                         staffId: staff.id,
                         staffUserId: staff.kind === 'user' ? staff.staff_user_id : null,
-                        status: 'rescheduled',
+                        status: nextStatus,
                         remindersSent: this.passedReminders(p.config, start),
+                        // El enlace con el que se hizo el cambio deja de servir para otro (v0.1.353).
+                        manageVersion: sql`${bookingAppointments.manageVersion} + 1`,
+                        ...(wasPending ? { pendingUntil: new Date(Math.min(Date.now() + p.config.approval.hours * 3_600_000, start.getTime())) } : {}),
                         updatedAt: new Date(),
                         ...(input.time_zone && isValidTimeZone(input.time_zone) ? { clientTz: input.time_zone } : {}),
                     })
-                    .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id)))
+                    .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.manageVersion, appt.manageVersion)))
                     .returning();
-                return { row: row! };
+                // Otro cambio entró un segundo antes con el mismo enlace: éste ya no vale.
+                if (!row) throw new ForbiddenException({ code: 'booking_locked', message: 'La cita cambió mientras elegías. Recarga la página.', data: { status: 403 } });
+                return { row };
             }).catch((err: unknown) => {
                 if (err instanceof HttpException && err.getStatus() < 500) throw err;
                 this.reportLost(p, err);
@@ -1216,7 +1469,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         names: Map<string, string>,
         previous: { start: Date; end: Date } | null,
     ): BookingEventInfo {
-        const url = this.manageUrl(base, p.tenantId, appt.id);
+        const url = this.apptUrl(base, p, appt);
         return {
             page_id: p.pageId,
             page_name: p.row.name,
@@ -1317,7 +1570,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             dispatch?: { data: Record<string, unknown> | null; by: 'client' | 'team' | 'calendar'; previous: { start: Date; end: Date } | null };
         },
     ): { calendar: Promise<BookingAppointmentRow | null>; done: Promise<void> } {
-        const calendar = (x.fromCalendar ? Promise.resolve(appt) : this.syncCalendar(p, appt, staff, event, x.previous)).catch((err: unknown) => {
+        // v0.1.353 — una por confirmar todavía no va al calendario (llega al aprobarla).
+        const skipCalendar = x.fromCalendar || appt.status === 'pending';
+        const calendar = (skipCalendar ? Promise.resolve(appt) : this.syncCalendar(p, appt, staff, event, x.previous)).catch((err: unknown) => {
             this.logger.warn(`Agenda ${p.pageId}: calendario de la cita ${appt.id}: ${String(err)}`);
             return null;
         });
@@ -1330,7 +1585,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             }
             const send = event === 'booked' ? p.config.notifications.confirm_email : !x.byTeam || p.config.notifications.notify_client_on_team_change;
             if (send) {
-                await this.sendClientMail(p, row, event, {
+                // Una por confirmar que cambió de horario: el correo vuelve a ser «recibimos tu solicitud».
+                const kind: BookingMailKind = row.status === 'pending' && event === 'rescheduled' ? 'requested' : (event as BookingMailKind);
+                await this.sendClientMail(p, row, kind, {
                     base: x.base,
                     names: x.names,
                     withdrawRef: x.withdrawRef ?? null,
@@ -1589,7 +1846,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         p: ResolvedPage,
         appt: BookingAppointmentRow,
         kind: BookingMailKind,
-        x: { base: string; names: Map<string, string>; withdrawRef?: string | null; previousStart?: Date | null; byTeam?: boolean; reminderLead?: string },
+        x: { base: string; names: Map<string, string>; withdrawRef?: string | null; previousStart?: Date | null; byTeam?: boolean; reminderLead?: string; reason?: string | null },
     ): Promise<boolean> {
         if (!this.mail || !appt.clientEmail) return false;
         if (!(await this.allowClientMail(appt.clientEmail))) return false;
@@ -1617,6 +1874,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             ...(x.reminderLead ? { reminderLead: x.reminderLead } : {}),
             withdrawUrl: x.withdrawRef && this.dataConsent ? this.dataConsent.withdrawUrl(x.base, p.tenantId, x.withdrawRef) : null,
             byTeam: x.byTeam === true,
+            reason: x.reason ?? appt.declineReason,
+            pendingUntil: appt.pendingUntil ? appt.pendingUntil.toISOString() : null,
         });
         const ics = this.icsFor(p, appt, x.base, x.names);
         const key = `booking-mail:${p.pageId}`;
@@ -1627,7 +1886,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 subject: message.subject,
                 text: message.text,
                 html: message.html,
-                attachments: [{ filename: kind === 'cancelled' ? 'cita-cancelada.ics' : 'cita.ics', contentType: 'text/calendar; charset=utf-8; method=' + (kind === 'cancelled' ? 'CANCEL' : 'PUBLISH'), contentBase64: Buffer.from(ics, 'utf8').toString('base64') }],
+                // Una solicitud o un rechazo no van al calendario del cliente.
+                ...(bookingMailHasIcs(kind)
+                    ? { attachments: [{ filename: kind === 'cancelled' ? 'cita-cancelada.ics' : 'cita.ics', contentType: 'text/calendar; charset=utf-8; method=' + (kind === 'cancelled' ? 'CANCEL' : 'PUBLISH'), contentBase64: Buffer.from(ics, 'utf8').toString('base64') }] }
+                    : {}),
                 ...(brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
             });
             this.incidents?.resolve(p.tenantId, key);
@@ -1739,6 +2001,240 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         return false;
     }
 
+    // ─────────────────────────── Aprobación (v0.1.353) ───────────────────────────
+
+    /** Quién aprueba: las personas elegidas y, si la página lo dice, quien atiende. Sin nadie, quien armó la agenda. */
+    approverIds(p: ResolvedPage, appt: Pick<BookingAppointmentRow, 'staffUserId'>): number[] {
+        const a = p.config.approval;
+        const ids = new Set<number>(a.approver_user_ids);
+        if (a.staff_approves && appt.staffUserId !== null) ids.add(appt.staffUserId);
+        if (ids.size === 0 && p.createdBy !== null) ids.add(p.createdBy);
+        return [...ids];
+    }
+
+    /** ¿Puede decidir? Quien administra la lista, quien aprueba en esta agenda o quien atiende (si se permite). */
+    canDecide(actor: BookingDecider, p: ResolvedPage, appt: Pick<BookingAppointmentRow, 'staffUserId'>): boolean {
+        if (actor.role === 'client' || actor.role === 'guest') return false;
+        if (can(actor, 'manage_lists')) return true;
+        return this.approverIds(p, appt).includes(actor.userId);
+    }
+
+    /** Aviso a quien aprueba: una cita nueva por confirmar, o que venció el plazo. */
+    private notifyApprovers(p: ResolvedPage, appt: BookingAppointmentRow, info: BookingEventInfo, why: 'requested' | 'expired'): void {
+        if (!this.notify) return;
+        const ids = this.approverIds(p, appt);
+        if (ids.length === 0) return;
+        const when = formatBookingWhen(appt.startAt.toISOString(), p.timeZone, p.format.time_format, { year: false });
+        const client = (appt.clientName ?? '').trim() || 'Un cliente';
+        this.notify.emit({
+            type: 'booking',
+            tenantId: p.tenantId,
+            listId: p.listId,
+            recordId: appt.recordId,
+            userIds: ids,
+            kind: 'assigned',
+            title: why === 'requested' ? `Cita por confirmar: ${client} · ${info.service}, ${when}` : `Venció el plazo de la cita de ${client} (${when})`,
+            body:
+                why === 'requested'
+                    ? `En «${p.row.name}». Ábrela para aprobarla o rechazarla.`
+                    : `En «${p.row.name}». Nadie la decidió a tiempo: se ${p.config.approval.on_timeout === 'approve' ? 'confirmó' : 'rechazó'} sola.`,
+        });
+    }
+
+    /** La cita de un registro, para el panel de la ficha (null = el registro no es una cita). */
+    async recordBooking(tenantId: number, actor: BookingDecider, listIdOrSlug: string, recordId: number): Promise<RecordBookingDto | null> {
+        // Ver el registro (404 si no): el mismo ACL que la ficha.
+        await this.records.get(tenantId, actor, listIdOrSlug, recordId);
+        const appt = await this.latestForRecord(tenantId, recordId);
+        if (!appt) return null;
+        const p = await this.resolveById(appt.pageId);
+        if (!p) return null;
+        return this.recordDto(p, appt, actor);
+    }
+
+    private async latestForRecord(tenantId: number, recordId: number): Promise<BookingAppointmentRow | null> {
+        const [appt] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(bookingAppointments)
+                .where(and(eq(bookingAppointments.tenantId, tenantId), eq(bookingAppointments.recordId, recordId)))
+                .orderBy(desc(bookingAppointments.id))
+                .limit(1),
+        );
+        return appt ?? null;
+    }
+
+    private async recordDto(p: ResolvedPage, appt: BookingAppointmentRow, actor: BookingDecider): Promise<RecordBookingDto> {
+        const names = await this.staffNames(p.config);
+        let decidedBy: string | null = null;
+        if (appt.decidedBy !== null) {
+            const [u] = await this.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, appt.decidedBy)).limit(1);
+            decidedBy = u ? u.name.trim() || u.email : null;
+        }
+        return {
+            appointment_id: appt.id,
+            page_id: p.pageId,
+            page_name: p.config.settings.title || p.row.name,
+            status: appt.status as BookingStatus,
+            service: p.config.services.find((s) => s.id === appt.serviceId)?.name ?? 'Cita',
+            staff: names.get(appt.staffId) ?? '',
+            start: appt.startAt.toISOString(),
+            end: appt.endAt.toISOString(),
+            client_name: appt.clientName ?? '',
+            client_email: appt.clientEmail ?? '',
+            pending_until: appt.status === 'pending' && appt.pendingUntil ? appt.pendingUntil.toISOString() : null,
+            on_timeout: appt.status === 'pending' ? p.config.approval.on_timeout : null,
+            can_decide: appt.status === 'pending' && !p.readOnly && this.canDecide(actor, p, appt),
+            decided_by_name: decidedBy,
+            decided_at: appt.decidedAt ? appt.decidedAt.toISOString() : null,
+            decline_reason: appt.declineReason,
+        };
+    }
+
+    /** Aprobar o rechazar desde la ficha. Siempre un POST con sesión y el ACL del registro. */
+    async decide(tenantId: number, actor: BookingDecider, listIdOrSlug: string, recordId: number, input: DecideBookingInput): Promise<RecordBookingDto> {
+        await this.records.get(tenantId, actor, listIdOrSlug, recordId);
+        const appt = await this.latestForRecord(tenantId, recordId);
+        if (!appt) throw apptNotFound();
+        const p = await this.resolveById(appt.pageId);
+        if (!p) throw apptNotFound();
+        if (appt.status !== 'pending') throw notPending();
+        if (!this.canDecide(actor, p, appt)) {
+            throw new ForbiddenException({ code: 'booking_not_approver', message: 'No eres de quienes aprueban las citas de esta agenda.', data: { status: 403 } });
+        }
+        if (p.readOnly) throw new ForbiddenException({ code: 'read_only', message: 'La cuenta está en solo lectura: no se pueden aprobar citas.', data: { status: 403 } });
+        const row =
+            input.decision === 'approve'
+                ? await this.approvePending(p, appt, { by: actor.userId })
+                : await this.declinePending(p, appt, { by: actor.userId, reason: input.reason?.trim() || null });
+        if (!row) throw notPending();
+        return this.recordDto(p, row, actor);
+    }
+
+    /**
+     * Aprueba una cita por confirmar: queda confirmada, va al calendario de
+     * quien atiende (con la videollamada), le llega la confirmación al cliente
+     * y sale el disparador «Se agendó». El UPDATE condicional (sólo si sigue
+     * por confirmar) hace que dos aprobaciones a la vez cuenten una vez.
+     * `recordDone`: el equipo ya puso el estado en el registro (no se vuelve a escribir).
+     */
+    async approvePending(
+        p: ResolvedPage,
+        appt: BookingAppointmentRow,
+        x: { by: number | null; recordDone?: boolean; times?: { start: Date; end: Date }; expired?: boolean },
+    ): Promise<BookingAppointmentRow | null> {
+        const staff = p.config.staff.find((s) => s.id === appt.staffId) ?? null;
+        const service = p.config.services.find((s) => s.id === appt.serviceId);
+        const meeting = staff ? await this.immediateMeeting(p, service, staff) : null;
+        const start = x.times?.start ?? appt.startAt;
+        const [row] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .update(bookingAppointments)
+                .set({
+                    status: 'confirmed',
+                    pendingUntil: null,
+                    decidedBy: x.by && x.by > 0 ? x.by : null,
+                    decidedAt: new Date(),
+                    remindersSent: this.passedReminders(p.config, start),
+                    meetingUrl: meeting?.url ?? null,
+                    meetingProvider: meeting?.provider ?? null,
+                    ...(x.times ? { startAt: x.times.start, endAt: x.times.end } : {}),
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, 'pending')))
+                .returning(),
+        );
+        if (!row) return null;
+        const data: Record<string, unknown> = { ...this.meetingData(p, meeting) };
+        const status = statusValueFor(p.config.mapping, 'confirmed');
+        if (!x.recordDone && status !== null && p.config.mapping.status_field_id !== null) data[jsonbKeyForField(p.config.mapping.status_field_id)] = status;
+        if (Object.keys(data).length > 0) {
+            await this.records.update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data }, { origin: 'booking' }).catch((err: unknown) => {
+                this.logger.warn(`Agenda ${p.pageId}: no se pudo marcar como confirmada la cita ${appt.id} en el registro: ${String(err)}`);
+            });
+        }
+        this.forgetSlots(p.tenantId);
+        const base = await this.base(p.tenantId);
+        const names = await this.staffNames(p.config);
+        const info = this.eventInfo(p, row, 'booked', 'team', base, names, null);
+        // A quien atiende, si no fue quien la aprobó.
+        if (staff && !(staff.kind === 'user' && staff.staff_user_id === x.by)) this.notifyStaff(p, row, staff, 'booked', info);
+        if (x.expired) this.notifyApprovers(p, row, info, 'expired');
+        void this.afterChange(p, row, staff, 'booked', { base, names, dispatch: { data: null, by: x.by ? 'team' : 'client', previous: null } });
+        return row;
+    }
+
+    /**
+     * Rechaza una cita por confirmar (el equipo, o venció el plazo): el lugar
+     * queda libre, le llega al cliente el motivo (si lo hay) y sale el
+     * disparador «Se rechazó».
+     */
+    async declinePending(
+        p: ResolvedPage,
+        appt: BookingAppointmentRow,
+        x: { by: number | null; reason: string | null; recordDone?: boolean; expired?: boolean },
+    ): Promise<BookingAppointmentRow | null> {
+        const [row] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .update(bookingAppointments)
+                .set({
+                    status: 'declined',
+                    decidedBy: x.by && x.by > 0 ? x.by : null,
+                    decidedAt: new Date(),
+                    declineReason: x.reason ? x.reason.slice(0, 500) : null,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, 'pending')))
+                .returning(),
+        );
+        if (!row) return null;
+        const status = statusValueFor(p.config.mapping, 'declined');
+        if (!x.recordDone && status !== null && p.config.mapping.status_field_id !== null) {
+            await this.records
+                .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data: { [jsonbKeyForField(p.config.mapping.status_field_id)]: status } }, { origin: 'booking' })
+                .catch((err: unknown) => this.logger.warn(`Agenda ${p.pageId}: no se pudo marcar como rechazada la cita ${appt.id}: ${String(err)}`));
+        }
+        this.forgetSlots(p.tenantId);
+        const base = await this.base(p.tenantId);
+        const names = await this.staffNames(p.config);
+        const info = this.eventInfo(p, row, 'declined', x.by ? 'team' : 'client', base, names, null);
+        this.dispatchEvent(p, row, info, null);
+        if (x.expired) this.notifyApprovers(p, row, info, 'expired');
+        // El cliente se entera siempre: si no, se presentaría a una cita que no existe.
+        void this.sendClientMail(p, row, 'declined', { base, names, byTeam: true, reason: x.reason });
+        return row;
+    }
+
+    /**
+     * Las citas por confirmar cuyo plazo venció: se rechazan (o se confirman,
+     * si la agenda lo dice). Una por una, con el mismo UPDATE condicional que
+     * decidir: aunque dos nodos barran a la vez, cada una se decide una vez.
+     */
+    async expirePending(now = new Date()): Promise<number> {
+        const rows = await this.db
+            .select()
+            .from(bookingAppointments)
+            .where(and(eq(bookingAppointments.status, 'pending'), lte(bookingAppointments.pendingUntil, now)))
+            .orderBy(asc(bookingAppointments.pendingUntil))
+            .limit(EXPIRE_BATCH);
+        let done = 0;
+        for (const appt of rows) {
+            try {
+                const p = await this.resolveById(appt.pageId);
+                // En solo lectura no se decide nada (vuelve a intentarse cuando la cuenta vuelva).
+                if (!p || p.readOnly) continue;
+                const row =
+                    p.config.approval.on_timeout === 'approve' && appt.startAt.getTime() > now.getTime()
+                        ? await this.approvePending(p, appt, { by: null, expired: true })
+                        : await this.declinePending(p, appt, { by: null, reason: null, expired: true });
+                if (row) done++;
+            } catch (err) {
+                this.logger.warn(`Agenda: no se pudo vencer la cita por confirmar ${appt.id}: ${String(err)}`);
+            }
+        }
+        return done;
+    }
+
     // ─────────────────────────── Cambios del equipo ───────────────────────────
 
     private async hasPages(tenantId: number, listId: number): Promise<boolean> {
@@ -1778,31 +2274,52 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (!p) return;
         const m = p.config.mapping;
         const after = c.after;
-        const nowCancelled = isCancelledValue(m, after);
+        // v0.1.353 — el estado del registro dicho como estado de la cita (null = otro valor, o vacío).
+        const said = statusFromValue(m, after);
+        const nowInactive = said === 'cancelled' || said === 'declined';
+        const wasInactive = (BOOKING_INACTIVE_STATUSES as readonly string[]).includes(appt.status);
         const startRaw = m.start_field_id !== null ? after[jsonbKeyForField(m.start_field_id)] : null;
         const start = typeof startRaw === 'string' ? new Date(startRaw) : null;
+        const moved = start !== null && !Number.isNaN(start.getTime()) && start.getTime() !== appt.startAt.getTime();
+        const newTimes = (): { start: Date; end: Date } => {
+            const endRaw = m.end_field_id !== null ? after[jsonbKeyForField(m.end_field_id)] : null;
+            const durRaw = m.duration_field_id !== null ? Number(after[jsonbKeyForField(m.duration_field_id)]) : NaN;
+            const end =
+                typeof endRaw === 'string' && Date.parse(endRaw) > start!.getTime()
+                    ? new Date(endRaw)
+                    : new Date(start!.getTime() + (Number.isFinite(durRaw) && durRaw > 0 ? durRaw : (appt.endAt.getTime() - appt.startAt.getTime()) / 60_000) * 60_000);
+            return { start: start!, end };
+        };
+        // Una por confirmar: el equipo la aprueba o la rechaza poniéndole el estado en la ficha.
+        if (appt.status === 'pending' && !p.readOnly) {
+            if (said === 'confirmed' || said === 'rescheduled') {
+                await this.approvePending(p, appt, { by: c.actorId ?? null, recordDone: true, ...(moved ? { times: newTimes() } : {}) });
+                return;
+            }
+            if (said === 'declined') {
+                await this.declinePending(p, appt, { by: c.actorId ?? null, reason: null, recordDone: true });
+                return;
+            }
+        }
         let event: BookingEvent | null = null;
         const patch: Partial<typeof bookingAppointments.$inferInsert> = { updatedAt: new Date() };
-        if (nowCancelled && appt.status !== 'cancelled') {
+        if (nowInactive && !wasInactive) {
             event = 'cancelled';
             patch.status = 'cancelled';
             patch.cancelledAt = new Date();
-        } else if (!nowCancelled && appt.status === 'cancelled') {
+        } else if (wasInactive && (said === 'confirmed' || said === 'rescheduled')) {
             // La reactivaron: vuelve a contar (sin aviso: lo decide el equipo).
             patch.status = 'confirmed';
             patch.cancelledAt = null;
         }
-        if (start && !Number.isNaN(start.getTime()) && start.getTime() !== appt.startAt.getTime() && !nowCancelled) {
-            const endRaw = m.end_field_id !== null ? after[jsonbKeyForField(m.end_field_id)] : null;
-            const durRaw = m.duration_field_id !== null ? Number(after[jsonbKeyForField(m.duration_field_id)]) : NaN;
-            const end =
-                typeof endRaw === 'string' && Date.parse(endRaw) > start.getTime()
-                    ? new Date(endRaw)
-                    : new Date(start.getTime() + (Number.isFinite(durRaw) && durRaw > 0 ? durRaw : (appt.endAt.getTime() - appt.startAt.getTime()) / 60_000) * 60_000);
-            patch.startAt = start;
-            patch.endAt = end;
-            patch.remindersSent = this.passedReminders(p.config, start);
-            if (patch.status === undefined) patch.status = 'rescheduled';
+        // Una cancelada o rechazada que nadie reactivó no se mueve (ni revive por moverla).
+        if (moved && !nowInactive && !(wasInactive && patch.status === undefined)) {
+            const t = newTimes();
+            patch.startAt = t.start;
+            patch.endAt = t.end;
+            patch.remindersSent = this.passedReminders(p.config, t.start);
+            // Una por confirmar sigue por confirmar (sin calendario hasta aprobarla).
+            if (patch.status === undefined) patch.status = appt.status === 'pending' ? 'pending' : 'rescheduled';
             event = event ?? 'rescheduled';
         }
         // Cambió quien atiende (otra persona del equipo en el campo Persona).

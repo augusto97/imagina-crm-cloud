@@ -21,8 +21,10 @@ import {
     type PublicBookingSlots,
     type Role,
     type UpdateBookingPageInput,
+    BOOKING_INACTIVE_STATUSES,
+    bookingUsesApproval,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { attachments, bookingAppointments, bookingPages, connections, memberships, tenants, users, type BookingPageRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
@@ -54,8 +56,24 @@ function badRequest(code: string, message: string): BadRequestException {
 }
 
 /** Colores de las opciones de estado que la página crea si no existen. */
-const STATUS_COLORS: Record<BookingStatus, string> = { confirmed: '#10b981', rescheduled: '#f59e0b', cancelled: '#f43f5e' };
-const STATUS_MATCH: Record<BookingStatus, RegExp> = { confirmed: /confirm/i, rescheduled: /reprogram|reagend/i, cancelled: /cancel/i };
+const STATUS_COLORS: Record<BookingStatus, string> = {
+    confirmed: '#10b981',
+    rescheduled: '#f59e0b',
+    cancelled: '#f43f5e',
+    pending: '#8b5cf6',
+    declined: '#64748b',
+};
+/**
+ * Cómo reconocer una opción que ya existe. OJO: «Por confirmar» contiene
+ * «confirm»: la confirmada tiene que EMPEZAR así (v0.1.353).
+ */
+const STATUS_MATCH: Record<BookingStatus, RegExp> = {
+    confirmed: /^\s*confirm(ad|ed)/i,
+    rescheduled: /reprogram|reagend/i,
+    cancelled: /cancel/i,
+    pending: /por confirmar|pendiente|pending/i,
+    declined: /rechaz|declin/i,
+};
 
 /**
  * Un calendario conectado que se puede asociar a quien atiende: uno del
@@ -146,7 +164,7 @@ export class BookingService {
                     and(
                         eq(bookingAppointments.tenantId, tenantId),
                         inArray(bookingAppointments.pageId, pageIds),
-                        ne(bookingAppointments.status, 'cancelled'),
+                        notInArray(bookingAppointments.status, [...BOOKING_INACTIVE_STATUSES]),
                         gt(bookingAppointments.startAt, new Date()),
                     ),
                 )
@@ -544,7 +562,9 @@ export class BookingService {
         }
         const mapping = { ...m };
         if (m.status_field_id !== null && byId.get(m.status_field_id)?.type === 'select') {
-            for (const status of ['confirmed', 'rescheduled', 'cancelled'] as const) {
+            // v0.1.353 — «Por confirmar» y «Rechazada» sólo si la agenda aprueba citas.
+            const statuses: BookingStatus[] = ['confirmed', 'rescheduled', 'cancelled', ...(bookingUsesApproval(config) ? (['pending', 'declined'] as const) : [])];
+            for (const status of statuses) {
                 const key = `status_${status}` as const;
                 if (mapping[key] !== null) continue;
                 mapping[key] = await ensure(

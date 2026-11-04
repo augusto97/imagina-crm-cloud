@@ -56,6 +56,8 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'booking.unpublish': { text: 'dejó de publicar la agenda de citas' },
     'booking.regenerate_link': { text: 'cambió la dirección de la agenda de citas' },
     'booking.delete': { text: 'eliminó la agenda de citas', danger: true },
+    'booking.approve': { text: 'aprobó la cita' },
+    'booking.decline': { text: 'rechazó la cita' },
     'form.captcha_on': { text: 'activó la verificación anti-robots en el formulario' },
     'public_theme.create': { text: 'guardó el tema de diseño' },
     'public_theme.update': { text: 'cambió el tema de diseño' },

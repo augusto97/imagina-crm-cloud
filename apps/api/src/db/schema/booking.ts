@@ -93,6 +93,13 @@ export const bookingAppointments = pgTable(
         meetingProvider: varchar('meeting_provider', { length: 16 }),
         remindersSent: jsonb('reminders_sent').$type<string[]>().notNull().default([]),
         cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+        /** v0.1.353 — Por confirmar: hasta cuándo ocupa el lugar sin que nadie decida. */
+        pendingUntil: timestamp('pending_until', { withTimezone: true }),
+        decidedBy: bigint('decided_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        decidedAt: timestamp('decided_at', { withTimezone: true }),
+        declineReason: varchar('decline_reason', { length: 500 }),
+        /** v0.1.353 — Va en la firma del enlace de la cita: cada cambio la sube (el enlace viejo deja de servir). */
+        manageVersion: integer('manage_version').notNull().default(0),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },
@@ -102,7 +109,9 @@ export const bookingAppointments = pgTable(
         index('booking_appointments_page_fk_ix').on(t.pageId),
         index('booking_appointments_list_ix').on(t.listId),
         index('booking_appointments_staff_user_ix').on(t.staffUserId),
-        index('booking_appointments_upcoming_ix').on(t.startAt).where(sql`${t.status} <> 'cancelled'`),
+        index('booking_appointments_upcoming_ix').on(t.startAt).where(sql`${t.status} NOT IN ('cancelled', 'declined')`),
+        index('booking_appointments_pending_ix').on(t.pendingUntil).where(sql`${t.status} = 'pending'`),
+        index('booking_appointments_decided_by_ix').on(t.decidedBy),
     ],
 );
 export type BookingAppointmentRow = typeof bookingAppointments.$inferSelect;

@@ -19,6 +19,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
+    BOOKING_STATUSES,
     SMS_PROVIDER_KEYS,
     TENANT_TRANSFER_FORMAT,
     remapFormulaConfig,
@@ -1433,7 +1434,7 @@ export class TenantTransferService {
             const listId = mapId(maps.list, a.listId);
             const recordId = mapId(maps.record, a.recordId);
             if (pageId === null || listId === null || recordId === null) return null;
-            const status = ['confirmed', 'rescheduled', 'cancelled'].includes(String(a.status)) ? String(a.status) : 'confirmed';
+            const status = (BOOKING_STATUSES as readonly string[]).includes(String(a.status)) ? String(a.status) : 'confirmed';
             return {
                 tenantId,
                 pageId,
@@ -1453,6 +1454,12 @@ export class TenantTransferService {
                 meetingProvider: typeof a.meetingProvider === 'string' ? a.meetingProvider.slice(0, 16) : null,
                 remindersSent: Array.isArray(a.remindersSent) ? a.remindersSent : [],
                 cancelledAt: this.date(a.cancelledAt),
+                // v0.1.353 — aprobación (quién la decidió, si viajó) y la versión del enlace.
+                pendingUntil: this.date(a.pendingUntil),
+                decidedBy: mapId(maps.user, a.decidedBy),
+                decidedAt: this.date(a.decidedAt),
+                declineReason: typeof a.declineReason === 'string' ? a.declineReason.slice(0, 500) : null,
+                manageVersion: Number.isInteger(Number(a.manageVersion)) && Number(a.manageVersion) >= 0 ? Number(a.manageVersion) : 0,
                 createdAt: this.date(a.createdAt) ?? new Date(),
                 updatedAt: this.date(a.updatedAt) ?? new Date(),
             };

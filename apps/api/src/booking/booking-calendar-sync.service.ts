@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger, Optional, type OnApplicationShutdown, type 
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { createHash } from 'node:crypto';
-import { and, asc, eq, gt, isNotNull, isNull, lte, ne } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, lte, notInArray } from 'drizzle-orm';
+import { BOOKING_INACTIVE_STATUSES } from '@imagina-base/shared';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
@@ -108,7 +109,7 @@ export class BookingCalendarSyncService implements OnModuleInit, OnApplicationSh
             .where(
                 and(
                     isNotNull(bookingAppointments.externalEvent),
-                    ne(bookingAppointments.status, 'cancelled'),
+                    notInArray(bookingAppointments.status, [...BOOKING_INACTIVE_STATUSES]),
                     gt(bookingAppointments.endAt, new Date(now.getTime() - 3600_000)),
                     lte(bookingAppointments.startAt, new Date(now.getTime() + 400 * 86_400_000)),
                 ),

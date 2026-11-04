@@ -34,29 +34,65 @@ import {
 
 // ─────────────────────────── Constantes ───────────────────────────
 
-/** Qué le pasó a una cita (el disparador «Cuando se agenda, reprograma o cancela una cita»). */
-export const BOOKING_EVENTS = ['booked', 'rescheduled', 'cancelled'] as const;
+/**
+ * Qué le pasó a una cita (el disparador «Cuando se agenda, reprograma o
+ * cancela una cita»). v0.1.353 — con aprobación: `requested` (el cliente la
+ * pidió y queda por confirmar) y `declined` (el equipo la rechazó o venció el
+ * plazo). `booked` sale cuando la cita queda CONFIRMADA: al reservar sin
+ * aprobación, o al aprobarla.
+ */
+export const BOOKING_EVENTS = ['booked', 'rescheduled', 'cancelled', 'requested', 'declined'] as const;
 export type BookingEvent = (typeof BOOKING_EVENTS)[number];
+/**
+ * Los eventos que dispara un disparador SIN eventos elegidos: los de siempre.
+ * Los de la aprobación hay que elegirlos (si no, una automatización vieja
+ * «cuando se agenda» saldría dos veces: al pedirla y al aprobarla).
+ */
+export const BOOKING_DEFAULT_EVENTS: readonly BookingEvent[] = ['booked', 'rescheduled', 'cancelled'];
 export const BOOKING_EVENT_LABELS: Record<BookingEvent, string> = {
     booked: 'Se agendó',
     rescheduled: 'Se reprogramó',
     cancelled: 'Se canceló',
+    requested: 'Se pidió (por confirmar)',
+    declined: 'Se rechazó',
 };
 /** `{{cita.evento}}`: la palabra que va en un mensaje («Tu cita fue agendada»). */
 export const BOOKING_EVENT_WORDS: Record<BookingEvent, string> = {
     booked: 'agendada',
     rescheduled: 'reprogramada',
     cancelled: 'cancelada',
+    requested: 'solicitada',
+    declined: 'rechazada',
 };
 
-/** Estado de una cita (columna `status` de `booking_appointments`). */
-export const BOOKING_STATUSES = ['confirmed', 'rescheduled', 'cancelled'] as const;
+/**
+ * Estado de una cita (columna `status` de `booking_appointments`). v0.1.353 —
+ * `pending`: pedida, esperando que el equipo la apruebe (ya ocupa el lugar);
+ * `declined`: rechazada (o venció el plazo para aprobarla).
+ */
+export const BOOKING_STATUSES = ['confirmed', 'rescheduled', 'cancelled', 'pending', 'declined'] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+/** Los estados que ya no ocupan el lugar. */
+export const BOOKING_INACTIVE_STATUSES: readonly BookingStatus[] = ['cancelled', 'declined'];
 /** Etiquetas de las opciones que la página crea en el campo de estado si no existen. */
 export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
     confirmed: 'Confirmada',
     rescheduled: 'Reprogramada',
     cancelled: 'Cancelada',
+    pending: 'Por confirmar',
+    declined: 'Rechazada',
+};
+
+/**
+ * v0.1.353 — Cuándo una cita necesita que alguien del equipo la apruebe:
+ * nunca, siempre, o sólo la primera vez de cada cliente (por su correo).
+ */
+export const BOOKING_APPROVAL_MODES = ['none', 'all', 'new_clients'] as const;
+export type BookingApprovalMode = (typeof BOOKING_APPROVAL_MODES)[number];
+export const BOOKING_APPROVAL_MODE_LABELS: Record<BookingApprovalMode, string> = {
+    none: 'Se confirman solas',
+    all: 'Alguien del equipo las aprueba',
+    new_clients: 'Sólo la primera cita de cada cliente',
 };
 
 /** Cada cuánto se ofrecen los horarios (minutos). `0` = cada «lo que dura la cita». */
@@ -312,6 +348,8 @@ export const bookingServiceSchema = z.object({
         .default(null),
     /** v0.1.350 — Dónde es la cita (por defecto, lo que dice la página). */
     location: bookingLocationSchema.default({}),
+    /** v0.1.353 — Aprobación propia del servicio (`inherit` = la de la página). */
+    approval: z.enum(['inherit', ...BOOKING_APPROVAL_MODES]).default('inherit'),
     active: z.boolean().default(true),
 });
 export type BookingServiceItem = z.infer<typeof bookingServiceSchema>;
@@ -438,6 +476,9 @@ export const bookingMappingSchema = z.object({
     status_confirmed: z.string().max(190).nullable().default(null),
     status_rescheduled: z.string().max(190).nullable().default(null),
     status_cancelled: z.string().max(190).nullable().default(null),
+    /** v0.1.353 — «Por confirmar» y «Rechazada» (con aprobación). */
+    status_pending: z.string().max(190).nullable().default(null),
+    status_declined: z.string().max(190).nullable().default(null),
 });
 export type BookingMapping = z.infer<typeof bookingMappingSchema>;
 
@@ -501,8 +542,51 @@ export const bookingSettingsSchema = z.object({
     captcha: z.boolean().default(false),
     /** Autorización de tratamiento de datos (Ley 1581): si la empresa la tiene activa. */
     data_consent: z.boolean().default(true),
+    /**
+     * v0.1.353 — Antes de agendar, el cliente confirma su correo con un código
+     * de 6 dígitos que le llega ahí (así nadie reserva con el correo de otro).
+     */
+    verify_email: z.boolean().default(false),
+    /** v0.1.353 — Rechazar correos temporales (mailinator, yopmail…). Las agendas nuevas nacen con esto prendido. */
+    block_disposable_email: z.boolean().default(false),
+    /** v0.1.353 — Lo que ve el cliente cuando su cita queda por confirmar. */
+    pending_message: z
+        .string()
+        .max(2000)
+        .default('Recibimos tu solicitud. Te avisaremos por correo cuando la confirmemos.'),
 });
 export type BookingSettings = z.infer<typeof bookingSettingsSchema>;
+
+/**
+ * v0.1.353 — La aprobación de citas. Mientras espera, la cita ocupa el lugar
+ * (nadie más lo toma), no manda recordatorios ni crea el evento en el
+ * calendario. Si nadie decide a tiempo, vence: se rechaza (o se confirma).
+ */
+export const BOOKING_APPROVAL_MAX_APPROVERS = 20;
+export const bookingApprovalSchema = z.object({
+    mode: z.enum(BOOKING_APPROVAL_MODES).default('none'),
+    /** Horas para decidir (el plazo nunca pasa del inicio de la cita). */
+    hours: z.number().int().min(1).max(168).default(24),
+    /** Si nadie decide a tiempo. */
+    on_timeout: z.enum(['decline', 'approve']).default('decline'),
+    /** Quien atiende la cita (si es una persona del equipo) puede aprobarla. */
+    staff_approves: z.boolean().default(true),
+    /** Otras personas del equipo que aprueban (además de quien administra la lista). */
+    approver_user_ids: z.array(z.number().int().positive()).max(BOOKING_APPROVAL_MAX_APPROVERS).default([]),
+});
+export type BookingApproval = z.infer<typeof bookingApprovalSchema>;
+
+/** ¿Alguna cita de esta agenda puede quedar por confirmar? */
+export function bookingUsesApproval(config: { approval: Pick<BookingApproval, 'mode'>; services: Array<Pick<BookingServiceItem, 'approval' | 'active'>> }): boolean {
+    if (config.approval.mode !== 'none') return true;
+    return config.services.some((s) => s.active && (s.approval === 'all' || s.approval === 'new_clients'));
+}
+
+/** ¿Este servicio pide aprobación? (`new_clients` lo resuelve el servidor con el historial del correo). */
+export function serviceApprovalMode(approval: Pick<BookingApproval, 'mode'>, svc: Pick<BookingServiceItem, 'approval'> | null | undefined): BookingApprovalMode {
+    const own = svc?.approval ?? 'inherit';
+    return own === 'inherit' ? approval.mode : own;
+}
 
 /**
  * v0.1.350 — Lo que pasa cuando quien atiende cambia el evento de la cita en
@@ -525,6 +609,8 @@ export const bookingConfigSchema = z.object({
     questions: z.array(bookingQuestionSchema).max(BOOKING_MAX_QUESTIONS).default([]),
     notifications: bookingNotificationsSchema.default({}),
     calendar_sync: bookingCalendarSyncSchema.default({}),
+    /** v0.1.353 */
+    approval: bookingApprovalSchema.default({}),
 });
 export type BookingConfig = z.infer<typeof bookingConfigSchema>;
 
@@ -712,6 +798,10 @@ export interface PublicBookingMeta {
     stamp: string;
     captcha?: PublicFormCaptcha | null;
     data_consent?: PublicDataConsent | null;
+    /** v0.1.353 — Pide el código del correo antes de agendar. */
+    verify_email?: boolean;
+    /** v0.1.353 — Lo que ve el cliente cuando su cita queda por confirmar. */
+    pending_message?: string;
 }
 
 /** Un horario libre: inicio y fin (ISO UTC) y quién puede atenderlo. */
@@ -760,8 +850,53 @@ export const bookAppointmentSchema = z.object({
     consent_version: z.number().int().positive().max(1_000_000).optional(),
     /** Zona horaria del visitante (para el correo). */
     time_zone: z.string().max(64).optional(),
+    /** v0.1.353 — La prueba de que el correo es suyo (la devuelve `verify-code`). */
+    email_proof: z.string().max(300).optional(),
 });
 export type BookAppointmentInput = z.infer<typeof bookAppointmentSchema>;
+
+/** v0.1.353 — Pedir el código de 6 dígitos al correo (antes de agendar). */
+export const requestBookingCodeSchema = z.object({
+    email: z.string().trim().email().max(320),
+    stamp: z.string().max(200),
+});
+export type RequestBookingCodeInput = z.infer<typeof requestBookingCodeSchema>;
+
+export const verifyBookingCodeSchema = z.object({
+    email: z.string().trim().email().max(320),
+    code: z.string().trim().regex(/^\d{6}$/, 'Son 6 números'),
+});
+export type VerifyBookingCodeInput = z.infer<typeof verifyBookingCodeSchema>;
+
+/** v0.1.353 — Aprobar o rechazar una cita por confirmar (desde la ficha). */
+export const decideBookingSchema = z.object({
+    decision: z.enum(['approve', 'decline']),
+    /** Rechazar: el motivo que le llega al cliente (opcional). */
+    reason: z.string().trim().max(500).optional(),
+});
+export type DecideBookingInput = z.infer<typeof decideBookingSchema>;
+
+/** v0.1.353 — La cita de un registro, para el panel de la ficha. */
+export interface RecordBookingDto {
+    appointment_id: number;
+    page_id: number;
+    page_name: string;
+    status: BookingStatus;
+    service: string;
+    staff: string;
+    start: string;
+    end: string;
+    client_name: string;
+    client_email: string;
+    /** Por confirmar: hasta cuándo hay para decidir (ISO) y qué pasa si vence. */
+    pending_until: string | null;
+    on_timeout: 'decline' | 'approve' | null;
+    /** ¿Quien mira puede aprobarla o rechazarla? */
+    can_decide: boolean;
+    decided_by_name: string | null;
+    decided_at: string | null;
+    decline_reason: string | null;
+}
 
 /** Resumen de una cita (confirmación, página de gestión). */
 export interface PublicAppointmentSummary {
@@ -840,12 +975,16 @@ export interface BookingEventInfo {
     meeting_url?: string;
 }
 
-/** ¿El evento coincide con el disparador? Sin página = cualquiera; sin eventos = los tres. */
+/**
+ * ¿El evento coincide con el disparador? Sin página = cualquiera; sin eventos
+ * = los tres de siempre (agendar, reprogramar, cancelar): los de la aprobación
+ * se eligen a propósito.
+ */
 export function bookingTriggerMatches(cfg: Record<string, unknown>, info: Pick<BookingEventInfo, 'page_id' | 'event'>): boolean {
     const page = Number(cfg.booking_page_id);
     if (Number.isInteger(page) && page > 0 && page !== info.page_id) return false;
     const events = Array.isArray(cfg.events) ? cfg.events.filter((e): e is BookingEvent => (BOOKING_EVENTS as readonly string[]).includes(String(e))) : [];
-    return events.length === 0 || events.includes(info.event);
+    return events.length === 0 ? BOOKING_DEFAULT_EVENTS.includes(info.event) : events.includes(info.event);
 }
 
 /**
@@ -1207,7 +1346,8 @@ export function defaultBookingConfig(input: {
     const pickHint = (types: readonly string[], hints: RegExp): number | null =>
         input.fields.find((f) => types.includes(f.type) && hints.test(`${f.slug} ${f.label}`))?.id ?? null;
     return bookingConfigSchema.parse({
-        settings: { title: input.listName },
+        // v0.1.353 — las agendas nuevas no aceptan correos temporales.
+        settings: { title: input.listName, block_disposable_email: true },
         services: [{ id: newBookingItemId('svc'), name: 'Cita', duration_min: 30 }],
         staff:
             input.userId !== null
