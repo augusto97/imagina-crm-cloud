@@ -119,6 +119,7 @@ import {
     type FormContentType,
 } from './formDesignOps';
 import { EmbedCodePicker } from './EmbedCodePicker';
+import { PublicQrCard } from './PublicQrCard';
 import { formPublicOrigin, formPublicUrl, useCaptchaAvailability,
     useDataConsentAvailability, useUpdateForm } from './useForms';
 
@@ -795,7 +796,7 @@ function CopyRow({ label, value, testId }: { label: string; value: string; testI
 
 function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormDto; enabled: boolean; accent: string; onClose: () => void; onPublish: () => void }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="form-share-panel">
+        <div className="imcrm-flex imcrm-max-h-[65dvh] imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="form-share-panel">
             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
                 <div>
                     <p className="imcrm-text-sm imcrm-font-medium">{__('Compartir el formulario')}</p>
@@ -821,6 +822,7 @@ function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormD
                 testId="form-embed"
                 dataTour="form-embed-mode"
             />
+            <PublicQrCard url={formPublicUrl(form)} name={form.config.settings.title.trim() || form.name} kind="form" />
             <a
                 href={formPublicUrl(form)}
                 target="_blank"

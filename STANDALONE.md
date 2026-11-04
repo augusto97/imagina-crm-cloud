@@ -3119,6 +3119,39 @@ versiones de la entrega 3 (medir, insertar, cobrar).
 7. Migrar una empresa no lleva estadísticas ni avances (el aviso lo dice);
    borrarla los limpia.
 
+**Addendum v0.1.359 — Plantillas de formularios.** Segunda de las versiones de
+la entrega 3 (que pasa a cuatro: el enlace para actualizar un registro va en
+v0.1.360 y cobrar al enviar en v0.1.361).
+
+1. **Roles, no campos.** Una plantilla (`packages/shared/src/templates/
+   form-templates.ts`) declara roles —«nombre», «correo», «tipo de cliente»—
+   con los tipos de campo que aceptan y la configuración con la que se crean
+   si faltan (opciones con sus etiquetas, rangos). Sus preguntas, condiciones,
+   saltos, cálculos y pantallas finales apuntan a esos roles. Es el mismo
+   patrón que las plantillas de tableros y automatizaciones (v0.1.167): la
+   plantilla vive con el código y llega a todas las empresas con el release.
+2. **Mapeo en el navegador, validación en el servidor.** La galería propone
+   un campo por rol con `suggestRoleMapping` (mismo slug, etiqueta parecida,
+   mismo tipo, sin repetir), deja crear el que falta (sólo con `manage_fields`)
+   y saltear los opcionales; los obligatorios sin campo bloquean el botón con
+   el motivo. Los campos nuevos se crean ANTES del formulario por el endpoint
+   de campos de siempre (permisos, validación, índices), y
+   `buildFormFromTemplate` arma la config final: las opciones de una
+   condición se traducen por ETIQUETA a los valores del campo elegido (un
+   campo existente con otras opciones no rompe la regla), `{{rol}}` pasa al
+   slug del campo, un cálculo cuyo nombre corto choca con un slug de la lista
+   recibe un sufijo, y el diseño sale de las plantillas de tema (ADR-S94) con
+   el color de la marca. El servidor la recibe como cualquier formulario y la
+   pasa por el mismo `sanitizeConfig`: una plantilla no tiene atajos.
+3. **Nueve del sistema**: contacto, cotización en dos pasos (NIT sólo si es
+   empresa), encuesta NPS de una pregunta por pantalla, inscripción a un
+   evento, solicitud de soporte, postulación, datos del cliente, test con
+   puntaje (pantalla final según el resultado) y pedido. El test exige que
+   cada una arme una config válida y que la página pública la pueda dibujar.
+4. **Fuera de alcance**: guardar un formulario como plantilla de la empresa
+   (el tema ya se guarda en «Mis temas»; si se pide, el modelo de roles lo
+   permite sin cambiar nada de lo anterior).
+
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 
 **Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado
@@ -6536,6 +6569,30 @@ para poner Cloudflare delante y subir el tope está en
   entre servidores y su limpieza; la memoria con 30 s da lo mismo.
 - **Cachear también el envío o la reserva**: siempre van a la base.
 
+**Addendum v0.1.359 — Panel lateral, pantalla completa y código QR.**
+
+1. **Cómo se abre**: además de la ventana al centro, `embed.js` abre el
+   formulario o la agenda como **panel lateral** (`data-imagina-open="side"` +
+   `data-imagina-side="left|right"`; 480 px de ancho y todo el alto en
+   pantallas anchas, a todo el ancho en el celular, con una animación de 220
+   ms que no se usa con «reducir movimiento») o a **pantalla completa**
+   (`data-imagina-open="full"`). Vale para la ventana al hacer clic, el botón
+   propio y el botón flotante (el script copia el estilo al botón que crea; el
+   lado del panel sigue a la esquina). Sin el atributo, la ventana de siempre:
+   los códigos ya pegados en otros sitios no cambian.
+2. **Un marco por estilo**: los paneles se guardan por dirección + estilo +
+   lado y se muestran u ocultan (nunca se mueve un iframe en el DOM, que lo
+   recargaría): reabrir no vuelve a pedir la página, y la precarga al pasar el
+   mouse sigue igual. Lo demás del punto 8 no cambia: sólo abre direcciones
+   públicas del propio origen y no necesita nada de la CSP del sitio.
+3. **Código QR** del formulario y de la agenda en Compartir: se dibuja en el
+   navegador con `qrcode` (pedido sólo al abrir esa tarjeta; la dirección ya
+   es pública, no hace falta el endpoint firmado de ADR-S92) y se descarga en
+   PNG de 1024 px o en SVG para imprenta, por Blob (un enlace `data:` no
+   descarga en varios navegadores del celular). La dirección lleva
+   `utm_source=qr`, así las estadísticas del formulario cuentan aparte a quien
+   llega escaneándolo («Código QR»).
+
 ---
 
-**Versión del documento:** 1.143.0 (Formularios y agenda insertados que aguantan mucho tráfico)
+**Versión del documento:** 1.144.0 (Plantillas de formularios, panel lateral, pantalla completa y QR)

@@ -244,6 +244,10 @@ export function formMissingBuildPage(): string {
  * enlaces de formularios o agendas del origen desde donde se cargó el script.
  * Todo el estilo va por `element.style` (no `<style>` ni atributos), así
  * funciona aunque el sitio tenga una CSP estricta.
+ *
+ * v0.1.359 — la ventana se abre de tres maneras (`data-imagina-open`): al
+ * centro (por defecto), como **panel lateral** (`side`, desde la derecha o la
+ * izquierda según `data-imagina-side`) o a **pantalla completa** (`full`).
  */
 export const FORM_EMBED_JS = String.raw`(function () {
   var me = document.currentScript;
@@ -299,22 +303,49 @@ export const FORM_EMBED_JS = String.raw`(function () {
 
   function css(el, props) { for (var k in props) el.style[k] = props[k]; return el; }
   function small() { return window.innerWidth < 600; }
+  function still() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+  }
+  // Cómo se abre: al centro, panel lateral o pantalla completa.
+  function styleOf(raw) { return raw === 'side' || raw === 'full' ? raw : 'window'; }
+  function sideOf(raw) { return raw === 'left' ? 'left' : 'right'; }
 
   function layout(p) {
-    css(p.overlay, { padding: small() ? '0' : '16px' });
-    css(p.panel, {
-      width: small() ? '100%' : 'min(680px, 100%)', height: small() ? '100%' : 'auto',
-      maxHeight: small() ? '100%' : 'calc(100vh - 32px)', borderRadius: small() ? '0' : '14px'
-    });
+    var s = small();
+    if (p.style === 'full') {
+      css(p.overlay, { padding: '0', alignItems: 'stretch', justifyContent: 'center' });
+      css(p.panel, { width: '100%', height: '100%', maxHeight: '100%', borderRadius: '0' });
+    } else if (p.style === 'side') {
+      css(p.overlay, { padding: '0', alignItems: 'stretch', justifyContent: p.side === 'left' ? 'flex-start' : 'flex-end' });
+      css(p.panel, { width: s ? '100%' : 'min(480px, 100%)', height: '100%', maxHeight: '100%', borderRadius: '0' });
+    } else {
+      css(p.overlay, { padding: s ? '0' : '16px', alignItems: 'center', justifyContent: 'center' });
+      css(p.panel, {
+        width: s ? '100%' : 'min(680px, 100%)', height: s ? '100%' : 'auto',
+        maxHeight: s ? '100%' : 'calc(100vh - 32px)', borderRadius: s ? '0' : '14px'
+      });
+    }
+  }
+
+  // El panel lateral entra deslizándose desde su lado (sin animación si la
+  // persona pidió menos movimiento).
+  function slide(p, shown) {
+    if (p.style !== 'side') return;
+    p.panel.style.transition = still() ? 'none' : 'transform .22s ease';
+    p.panel.style.transform = shown ? 'none' : 'translateX(' + (p.side === 'left' ? '-' : '') + '100%)';
   }
 
   function hide(p) {
     css(p.overlay, { visibility: 'hidden', opacity: '0' });
     p.overlay.setAttribute('aria-hidden', 'true');
+    slide(p, false);
   }
 
-  function build(url, title) {
-    var p = popups[url];
+  function build(url, title, style, side) {
+    style = styleOf(style);
+    side = sideOf(side);
+    var key = url + '|' + style + '|' + side;
+    var p = popups[key];
     if (p && p.frame.getAttribute('data-imagina-done') !== null) {
       // Ya se envió: la próxima vez arranca de cero.
       if (p.overlay.parentNode) p.overlay.parentNode.removeChild(p.overlay);
@@ -349,22 +380,24 @@ export const FORM_EMBED_JS = String.raw`(function () {
     f.setAttribute('data-imagina-popup-frame', '');
     f.setAttribute('allow', 'payment');
     css(f, { width: '100%', height: '560px', border: '0', display: 'block', background: 'transparent' });
+    // De lado o a pantalla completa, el formulario llena el alto disponible.
+    if (style !== 'window') f.style.minHeight = '100%';
     panel.appendChild(x);
     panel.appendChild(f);
     overlay.appendChild(panel);
     overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
-    p = { overlay: overlay, panel: panel, frame: f, close: x };
+    p = { overlay: overlay, panel: panel, frame: f, close: x, style: style, side: side };
     layout(p);
     hide(p);
     document.body.appendChild(overlay);
-    popups[url] = p;
+    popups[key] = p;
     return p;
   }
 
   // Al pasar el mouse (o tocar) se empieza a cargar: al hacer clic ya está.
-  function preload(url, title) {
-    if (!url || popups[url]) return;
-    build(url, title);
+  function preload(t) {
+    if (!t || !t.url || popups[t.url + '|' + styleOf(t.style) + '|' + sideOf(t.side)]) return;
+    build(t.url, t.title, t.style, t.side);
   }
 
   function close() {
@@ -379,12 +412,15 @@ export const FORM_EMBED_JS = String.raw`(function () {
 
   function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
 
-  function openPopup(url, title, opener) {
+  function openPopup(t) {
     if (open) close();
-    var p = build(url, title);
+    var p = build(t.url, t.title, t.style, t.side);
     layout(p);
     css(p.overlay, { visibility: 'visible', opacity: '1' });
     p.overlay.removeAttribute('aria-hidden');
+    // Un cuadro después, para que el navegador vea el panel afuera y lo deslice.
+    if (p.style === 'side') requestAnimationFrame(function () { slide(p, true); });
+    var opener = t.el;
     open = { p: p, opener: opener, overflow: document.documentElement.style.overflow };
     document.documentElement.style.overflow = 'hidden';
     document.addEventListener('keydown', onKey, true);
@@ -395,19 +431,23 @@ export const FORM_EMBED_JS = String.raw`(function () {
     var t = el && el.closest ? el.closest('[data-imagina-popup]') : null;
     if (!t) return null;
     var url = safeUrl(t.getAttribute('data-imagina-popup') || t.getAttribute('href'));
-    return url ? { el: t, url: url, title: t.getAttribute('data-imagina-title') || '' } : null;
+    return url
+      ? {
+          el: t, url: url, title: t.getAttribute('data-imagina-title') || '',
+          style: t.getAttribute('data-imagina-open') || '', side: t.getAttribute('data-imagina-side') || ''
+        }
+      : null;
   }
 
   document.addEventListener('click', function (e) {
     var t = targetOf(e.target);
     if (!t) return;
     e.preventDefault();
-    openPopup(t.url, t.title, t.el);
+    openPopup(t);
   });
   ['mouseover', 'focusin', 'touchstart'].forEach(function (ev) {
     document.addEventListener(ev, function (e) {
-      var t = targetOf(e.target);
-      if (t) preload(t.url, t.title);
+      preload(targetOf(e.target));
     }, { passive: true });
   });
 
@@ -436,6 +476,10 @@ export const FORM_EMBED_JS = String.raw`(function () {
     b.textContent = me.getAttribute('data-imagina-label') || 'Escríbenos';
     b.setAttribute('data-imagina-popup', url);
     if (title) b.setAttribute('data-imagina-title', title);
+    // v0.1.359 — el panel lateral sale del mismo lado que el botón.
+    var how = styleOf(me.getAttribute('data-imagina-open'));
+    if (how !== 'window') b.setAttribute('data-imagina-open', how);
+    if (how === 'side') b.setAttribute('data-imagina-side', left ? 'left' : 'right');
     b.setAttribute('aria-haspopup', 'dialog');
     document.body.appendChild(b);
   }

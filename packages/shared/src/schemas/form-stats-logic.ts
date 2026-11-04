@@ -236,6 +236,8 @@ export function summarizeFormStats(rows: ReadonlyArray<{ day: string; counts: Fo
 export function formStatSourceLabel(key: string): string {
     if (key === 'd') return 'Directo';
     if (key === 'o') return 'Otros';
+    // v0.1.359 — el QR del formulario lleva utm_source=qr.
+    if (key === 'u:qr') return 'Código QR';
     if (key.startsWith('u:')) return `Campaña: ${key.slice(2)}`;
     if (key.startsWith('h:')) return key.slice(2);
     return key;

@@ -39,6 +39,7 @@ describe('v0.1.358 — estadísticas de formularios', () => {
         expect(formStatSourceLabel('d')).toBe('Directo');
         expect(formStatSourceLabel('u:verano')).toBe('Campaña: verano');
         expect(formStatSourceLabel('h:google.com')).toBe('google.com');
+        expect(formStatSourceLabel('u:qr')).toBe('Código QR');
     });
 
     it('el resumen: totales, tasas, tiempo promedio, pasos, abandonos y días sin datos en cero', () => {

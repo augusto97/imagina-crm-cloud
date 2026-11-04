@@ -10,10 +10,11 @@ import { useFields } from '@/hooks/useFields';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 
-import { formPublicUrl, useCreateForm, useDeleteForm, useForms, useUpdateForm } from './useForms';
+import { formPublicUrl, useDeleteForm, useForms, useUpdateForm } from './useForms';
 
 const FormBuilder = lazy(() => import('./FormBuilder'));
 const FormStatsSheet = lazy(() => import('./FormStatsSheet').then((m) => ({ default: m.FormStatsSheet })));
+const FormCreateDialog = lazy(() => import('./FormCreateDialog').then((m) => ({ default: m.FormCreateDialog })));
 
 /**
  * v0.1.275 — Ajustes de la lista → Formularios (ADR-S39). Cada formulario es
@@ -23,7 +24,6 @@ const FormStatsSheet = lazy(() => import('./FormStatsSheet').then((m) => ({ defa
 export function FormsPanel({ listId, listName, listSettings }: { listId: number; listName: string; listSettings: unknown }): JSX.Element {
     const forms = useForms(listId);
     const fields = useFields(listId);
-    const create = useCreateForm(listId);
     const update = useUpdateForm(listId);
     const remove = useDeleteForm(listId);
     const confirm = useConfirm();
@@ -31,6 +31,8 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     const [editingId, setEditingId] = useState<number | null>(null);
     // v0.1.358 — las estadísticas de un formulario.
     const [statsId, setStatsId] = useState<number | null>(null);
+    // v0.1.359 — «Nuevo formulario» abre la galería de plantillas.
+    const [creating, setCreating] = useState(false);
     // El recién creado puede no estar todavía en la lista (llega con el
     // refetch): se abre con lo que devolvió el alta, así no queda cerrado.
     const [created, setCreated] = useState<NonNullable<typeof forms.data>[number] | null>(null);
@@ -49,17 +51,12 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     const list = forms.data ?? [];
     const editing = editingId !== null ? list.find((f) => f.id === editingId) ?? (created?.id === editingId ? created : null) : null;
 
-    const createNew = (): void => {
-        create.mutate(
-            { name: list.length === 0 ? `${__('Formulario de')} ${listName}` : `${__('Formulario')} ${list.length + 1}` },
-            {
-                onSuccess: (form) => {
-                    setCreated(form);
-                    setEditingId(form.id);
-                },
-                onError: (err) => toast.error(__('No se pudo crear'), err instanceof Error ? err.message : String(err)),
-            },
-        );
+    const defaultName = list.length === 0 ? `${__('Formulario de')} ${listName}` : `${__('Formulario')} ${list.length + 1}`;
+    const createNew = (): void => setCreating(true);
+    const onCreated = (form: NonNullable<typeof forms.data>[number]): void => {
+        setCreating(false);
+        setCreated(form);
+        setEditingId(form.id);
     };
 
     const copyLink = (url: string): void => {
@@ -76,8 +73,8 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                     <p className="imcrm-max-w-xl imcrm-text-sm imcrm-text-muted-foreground">
                         {__('Comparte el enlace o insértalo en tu sitio. Cada respuesta crea un registro, y una automatización puede avisarte o responderle a quien lo llenó.')}
                     </p>
-                    <Button size="sm" className="imcrm-gap-1.5" onClick={createNew} disabled={create.isPending} data-testid="form-new" data-tour="forms-new">
-                        {create.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Plus className="imcrm-h-3.5 imcrm-w-3.5" />}
+                    <Button size="sm" className="imcrm-gap-1.5" onClick={createNew} data-testid="form-new" data-tour="forms-new">
+                        <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Nuevo formulario')}
                     </Button>
                 </div>
@@ -92,9 +89,9 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                         <ClipboardList className="imcrm-h-7 imcrm-w-7 imcrm-text-muted-foreground" />
                         <p className="imcrm-text-sm imcrm-font-medium">{__('Todavía no hay formularios')}</p>
                         <p className="imcrm-max-w-sm imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Arranca con los campos de la lista ya puestos: saca los que no quieras preguntar y publícalo.')}
+                            {__('Arranca con una plantilla —contacto, cotización, encuesta, inscripción…— o con los campos de la lista ya puestos.')}
                         </p>
-                        <Button size="sm" variant="outline" onClick={createNew} disabled={create.isPending}>
+                        <Button size="sm" variant="outline" onClick={createNew}>
                             {__('Crear el primero')}
                         </Button>
                     </div>
@@ -195,6 +192,18 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                 )}
             </CardContent>
 
+            {creating && (
+                <Suspense fallback={null}>
+                    <FormCreateDialog
+                        open
+                        onOpenChange={(o) => !o && setCreating(false)}
+                        listId={listId}
+                        listName={listName}
+                        defaultName={defaultName}
+                        onCreated={onCreated}
+                    />
+                </Suspense>
+            )}
             {statsId !== null && list.find((x) => x.id === statsId) && (
                 <Suspense fallback={null}>
                     <FormStatsSheet open onOpenChange={(o) => !o && setStatsId(null)} listId={listId} form={list.find((x) => x.id === statsId)!} fields={fields.data ?? []} />

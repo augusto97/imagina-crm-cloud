@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, safeHex, type EmbedTarget } from './embedCode';
+import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, type EmbedTarget } from './embedCode';
 
 const target: EmbedTarget = {
     url: 'https://app.acme.co/api/v1/public/f/abc123',
@@ -45,5 +45,24 @@ describe('v0.1.352 — código para insertar', () => {
         expect(buttonInk('#ffffff')).toBe('#111827');
         expect(buttonInk('#0e7490')).toBe('#ffffff');
         expect(embedPopupAttribute({ ...target, url: 'https://x.co/api/v1/public/b/t"1' })).toBe('data-imagina-popup="https://x.co/api/v1/public/b/t&quot;1"');
+    });
+
+    it('v0.1.359 — panel lateral y pantalla completa, en el botón, el flotante y el atributo', () => {
+        const side = embedCode(target, 'popup', { label: 'Hola', color: '#0e7490', position: 'left', open: 'side' });
+        expect(side).toContain('data-imagina-open="side" data-imagina-side="left"');
+        const full = embedCode(target, 'float', { label: '', color: '#0e7490', position: 'right', open: 'full' });
+        expect(full).toContain('data-imagina-open="full"');
+        // La ventana al centro no agrega nada: los códigos de antes siguen iguales.
+        expect(embedCode(target, 'popup', { label: 'Hola', color: '#0e7490', position: 'right', open: 'window' })).not.toContain('data-imagina-open');
+        expect(embedPopupAttribute(target, 'side', 'right')).toBe(
+            'data-imagina-popup="https://app.acme.co/api/v1/public/f/abc123" data-imagina-open="side" data-imagina-side="right"',
+        );
+    });
+
+    it('v0.1.359 — el QR lleva utm_source=qr (y conserva lo que ya traía la dirección)', () => {
+        expect(qrTargetUrl('https://app.acme.co/api/v1/public/f/abc123')).toBe('https://app.acme.co/api/v1/public/f/abc123?utm_source=qr');
+        expect(qrTargetUrl('https://app.acme.co/api/v1/public/f/abc123?origen=feria')).toBe(
+            'https://app.acme.co/api/v1/public/f/abc123?origen=feria&utm_source=qr',
+        );
     });
 });

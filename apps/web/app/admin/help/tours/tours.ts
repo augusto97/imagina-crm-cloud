@@ -813,7 +813,8 @@ export const TOURS: TourDef[] = [
                 target: 'forms-new',
                 art: 'form-builder',
                 title: 'Formularios de la lista',
-                body: 'Cada respuesta crea un registro en esta lista. Empieza con **Nuevo formulario**.',
+                body: 'Cada respuesta crea un registro en esta lista. Empieza con **Nuevo formulario**: elige una plantilla (contacto, cotización, encuesta NPS, inscripción…) y la app conecta cada pregunta con un campo de la lista.',
+                tip: 'Si a la lista le falta un campo para la plantilla, se crea solo al crear el formulario.',
             },
             {
                 id: 'build',
@@ -845,7 +846,7 @@ export const TOURS: TourDef[] = [
                 id: 'publish',
                 art: 'form-embed',
                 title: 'Publica y comparte',
-                body: 'Publícalo y copia el enlace o el código para insertarlo en tu web: **en la página**, en una **ventana al hacer clic** o con un **botón flotante**. Con «Cuando se envía un formulario» le respondes al instante por correo o WhatsApp.',
+                body: 'Publícalo y copia el enlace o el código para tu web: **en la página**, en una **ventana**, un **panel lateral** o a **pantalla completa**, o con un **botón flotante**. Para un volante, descarga su **código QR**.',
                 tip: 'Si tu sitio tiene muchas visitas, usa la ventana o el botón flotante: el formulario no se carga hasta que alguien lo abre.',
             },
             {
