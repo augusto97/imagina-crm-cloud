@@ -12,6 +12,7 @@ import { BookingTools } from '../src/ai/tools/booking-tools';
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
 import { StructureTools } from '../src/ai/tools/structure-tools';
 import { AuditService } from '../src/audit/audit.service';
+import { NO_HOLIDAYS } from './helpers/no-holidays';
 import { BookingAvailabilityService } from '../src/booking/booking-availability.service';
 import { BookingService } from '../src/booking/booking.service';
 import { CommentsRepository } from '../src/comments/comments.repository';
@@ -103,7 +104,7 @@ describe('Asistente/MCP: agenda de citas', () => {
         const store = new ProposalsStore(redis);
         const comments = new CommentsService(tenantDb, new CommentsRepository(), lists, records, rt);
         const publicLists = new PublicListsService(pg.db, tenantDb, lists, null as never);
-        const booking = new BookingService(pg.db, tenantDb, lists, fields, new BookingAvailabilityService(tenantDb, null as never));
+        const booking = new BookingService(pg.db, tenantDb, lists, fields, new BookingAvailabilityService(tenantDb, null as never, NO_HOLIDAYS), NO_HOLIDAYS);
         const structure = new StructureTools(
             tenantDb,
             lists,

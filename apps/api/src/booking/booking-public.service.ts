@@ -12,6 +12,7 @@ import {
     type OnModuleInit,
 } from '@nestjs/common';
 import {
+    bookableWindow,
     bookingMergeValue,
     bookingPriceLabel,
     brandingSchema,
@@ -22,7 +23,9 @@ import {
     isEmptyAnswer,
     isValidTimeZone,
     jsonbKeyForField,
+    pickServiceDuration,
     resolveTimeZone,
+    serviceDurations,
     staffLabel,
     tenantFormatSchema,
     timeZoneLabel,
@@ -46,7 +49,7 @@ import {
     type TenantFormat,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { ENV, type Env } from '../config/env';
@@ -114,6 +117,30 @@ function badRequest(code: string, message: string, extra: Record<string, unknown
 
 function unavailable(message = 'No pudimos agendar tu cita en este momento. Prueba de nuevo más tarde.'): HttpException {
     return new HttpException({ code: 'booking_unavailable', message, data: { status: 503 } }, HttpStatus.SERVICE_UNAVAILABLE);
+}
+
+function clientDuplicate(): ConflictException {
+    return new ConflictException({
+        code: 'booking_duplicate',
+        message: 'Ya tienes una cita en ese horario con este correo. Si quieres cambiarla, usa el enlace del correo de confirmación.',
+        data: { status: 409 },
+    });
+}
+
+function clientLimit(max: number): ConflictException {
+    return new ConflictException({
+        code: 'booking_client_limit',
+        message:
+            max === 1
+                ? 'Ya tienes una cita agendada con este correo. Para otro horario, cámbiala desde el enlace del correo de confirmación.'
+                : `Ya tienes ${max} citas agendadas con este correo, el máximo que se permite. Para otro horario, cambia una desde el enlace del correo de confirmación.`,
+        data: { status: 409 },
+    });
+}
+
+/** Lo que dura una cita guardada (minutos). */
+function appointmentMinutes(appt: Pick<BookingAppointmentRow, 'startAt' | 'endAt'>): number {
+    return Math.round((appt.endAt.getTime() - appt.startAt.getTime()) / 60_000);
 }
 
 /** Lo que no se puede reservar, en palabras del visitante. */
@@ -329,13 +356,35 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             number_format: p.format.number_format,
             services: p.config.services
                 .filter((x) => x.active && staff.some((st) => st.services.length === 0 || st.services.includes(x.id)))
-                .map((x) => ({ id: x.id, name: x.name, duration_min: x.duration_min, description: x.description, price_label: bookingPriceLabel(x.price, p.format.number_format) })),
-            staff: staff.map((x) => ({ id: x.id, name: names.get(x.id) ?? staffLabel(x), kind: x.kind, services: x.services })),
+                .map((x) => ({
+                    id: x.id,
+                    name: x.name,
+                    duration_min: x.duration_min,
+                    durations: serviceDurations(x),
+                    description: x.description,
+                    price_label: bookingPriceLabel(x.price, p.format.number_format),
+                    seats: x.seats,
+                    show_seats_left: x.show_seats_left,
+                })),
+            staff: staff.map((x) => ({
+                id: x.id,
+                name: names.get(x.id) ?? staffLabel(x),
+                kind: x.kind,
+                services: x.services,
+                title: x.title,
+                bio: x.bio,
+                // La foto viaja firmada (la página no tiene sesión); 1 h alcanza para la visita.
+                photo_url: x.photo_file_id !== null ? this.files.signedUrl(p.tenantId, x.photo_file_id, 3600) : null,
+            })),
             choose_staff: s.choose_staff === 'visitor' && staff.length > 1,
             ask_phone: s.ask_phone,
             questions: buildPublicFormItems({ items: p.config.questions, settings: {} as never }, fieldsForQuestions),
             max_days_ahead: p.config.rules.max_days_ahead,
             min_notice_min: p.config.rules.min_notice_min,
+            ...(() => {
+                const w = bookableWindow(p.config.rules, p.timeZone, new Date());
+                return { first_day: w.first, last_day: w.last };
+            })(),
             closed: this.closedReason(p),
             success_message: s.success_message,
             stamp: `${ts}.${this.files.signParts('bookstamp', p.pageId, ts)}`,
@@ -348,7 +397,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const p = await this.resolve(token);
         await this.enforce(SLOTS_LIMITS, p.pageId, ip, 'horarios');
         if (this.closedReason(p)) return { slots: [], first_day: q.from, last_day: q.to };
-        return this.availability.slots(p, q.service, this.staffSelection(p, q.staff), q.from, q.to);
+        return this.availability.slots(p, q.service, this.staffSelection(p, q.staff), q.from, q.to, q.duration !== undefined ? { durationMin: q.duration } : {});
     }
 
     /** «Que lo asigne solo»: el visitante no elige aunque mande un id. */
@@ -372,7 +421,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const service = this.availability.service(p.config, input.service_id);
         const start = new Date(input.start);
         if (Number.isNaN(start.getTime())) throw badRequest('booking_invalid', 'Elige un horario.');
-        const end = new Date(start.getTime() + service.duration_min * 60_000);
+        if (input.duration_min !== undefined && !serviceDurations(service).includes(input.duration_min)) {
+            throw badRequest('booking_invalid', 'Esa duración ya no está disponible. Elige otra.');
+        }
+        const durationMin = pickServiceDuration(service, input.duration_min);
+        const end = new Date(start.getTime() + durationMin * 60_000);
 
         // Datos del cliente y preguntas extra (lo decide el servidor).
         const errors: Record<string, string> = {};
@@ -406,6 +459,13 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         let candidates = this.availability.candidates(p.config, service.id, sel);
         if (candidates.length === 0) throw badRequest('booking_invalid', 'No hay quién atienda ese servicio. Elige otro.');
         if (sel === 'any') candidates = await this.roundRobin(p, candidates);
+
+        // v0.1.349 — Citas futuras que puede tener a la vez un mismo correo (se
+        // vuelve a contar dentro del candado del cliente: dos reservas a la vez
+        // con el mismo correo no se cuelan).
+        if (p.config.rules.max_active_per_client !== null && (await this.activeForClient(p, clientEmail)) >= p.config.rules.max_active_per_client) {
+            throw clientLimit(p.config.rules.max_active_per_client);
+        }
 
         // Ley 1581: la prueba de la autorización se guarda ANTES que la cita.
         let evidence: { id: number; withdrawRef: string | null } | null = null;
@@ -453,6 +513,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     clientName,
                     clientEmail,
                     clientTz,
+                    durationMin,
                 });
                 if ('reason' in out) {
                     lastReason = out.reason;
@@ -509,11 +570,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         service: BookingServiceItem,
         start: Date,
         end: Date,
-        x: { data: Record<string, unknown>; clientName: string; clientEmail: string; clientTz: string | null },
+        x: { data: Record<string, unknown>; clientName: string; clientEmail: string; clientTz: string | null; durationMin: number },
     ): Promise<{ appt: BookingAppointmentRow; record: { id: number; data: Record<string, unknown> } } | { reason: string }> {
         const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
-        // Lo del calendario externo se lee ANTES del candado (no se espera a la red con él tomado).
-        const external = await this.availability.externalBusy(p, staff, ymd, ymd);
+        // Lo del calendario externo y los festivos se leen ANTES del candado (no se espera a la red con él tomado).
+        const outside = await this.availability.outside(p, staff, ymd, ymd);
         const list = await this.lists.get(p.tenantId, String(p.listId));
         let prep;
         try {
@@ -525,8 +586,14 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const planRoom = await this.records.planRoomChecker(p.tenantId, 1);
         try {
             return await this.withStaffLock(p.tenantId, staffKey(p.pageId, staff), async (tx) => {
-                const reason = await this.availability.checkInTx(tx, p, staff, service, start, external);
+                const reason = await this.availability.checkInTx(tx, p, staff, service, start, outside, { durationMin: x.durationMin });
                 if (reason) return { reason };
+                // Candado del correo (dentro del de la persona: siempre en ese orden, sin abrazos mortales).
+                await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`booking-client:${p.tenantId}:${p.pageId}:${x.clientEmail.toLowerCase()}`}, 0))`);
+                // El mismo correo no reserva dos veces la MISMA sesión (en un grupal se llevaría dos cupos).
+                if (await this.clientInSession(tx, p, x.clientEmail, staff.id, service.id, start)) throw clientDuplicate();
+                const cap = p.config.rules.max_active_per_client;
+                if (cap !== null && (await this.activeForClient(p, x.clientEmail, tx)) >= cap) throw clientLimit(cap);
                 if (planRoom) await planRoom(tx);
                 const inserted = await this.records.insertPreparedInTx(tx, p.tenantId, SYSTEM_ACTOR, prep);
                 const [appt] = await tx
@@ -597,18 +664,80 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         throw unavailable('Hay muchas reservas en este momento. Prueba de nuevo en unos segundos.');
     }
 
-    /** «El primero disponible»: primero quien lleva más tiempo sin recibir una cita de esta página. */
+    /**
+     * «El primero disponible» (o «se asigna solo»): el orden en que se prueba a
+     * cada persona. v0.1.349 — según la página:
+     *  - `rotate`: primero quien lleva más tiempo sin recibir una cita de esta página;
+     *  - `balance`: primero quien tiene menos citas en los próximos 30 días;
+     *  - `priority`: primero la prioridad más alta; entre iguales, por turno.
+     */
     private async roundRobin(p: ResolvedPage, staff: BookingStaff[]): Promise<BookingStaff[]> {
+        const horizon = new Date(Date.now() + 30 * 86_400_000);
         const rows = await this.tenantDb.withTenant(p.tenantId, (tx) =>
             tx
-                .select({ staffId: bookingAppointments.staffId, last: sql<string>`max(${bookingAppointments.createdAt})` })
+                .select({
+                    staffId: bookingAppointments.staffId,
+                    last: sql<string>`max(${bookingAppointments.createdAt})`,
+                    upcoming: sql<number>`count(*) filter (where ${bookingAppointments.status} <> 'cancelled' and ${bookingAppointments.startAt} > now() and ${bookingAppointments.startAt} < ${horizon})`,
+                })
                 .from(bookingAppointments)
                 .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.pageId, p.pageId)))
                 .groupBy(bookingAppointments.staffId),
         );
         const last = new Map(rows.map((r) => [r.staffId, new Date(r.last).getTime()]));
+        const upcoming = new Map(rows.map((r) => [r.staffId, Number(r.upcoming)]));
         const order = new Map(staff.map((s, i) => [s.id, i]));
-        return [...staff].sort((a, b) => (last.get(a.id) ?? 0) - (last.get(b.id) ?? 0) || (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+        const mode = p.config.rules.assign_mode;
+        return [...staff].sort(
+            (a, b) =>
+                (mode === 'priority' ? b.priority - a.priority : 0) ||
+                (mode === 'balance' ? (upcoming.get(a.id) ?? 0) - (upcoming.get(b.id) ?? 0) : 0) ||
+                (last.get(a.id) ?? 0) - (last.get(b.id) ?? 0) ||
+                (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+        );
+    }
+
+    /**
+     * ¿Ese correo ya tiene un lugar en esa sesión (mismo servicio, misma persona
+     * o recurso y misma hora)? Sólo la sesión exacta: agendar a dos familiares a
+     * la misma hora con distintos asesores es legítimo.
+     */
+    private async clientInSession(tx: Tx, p: ResolvedPage, email: string, staffId: string, serviceId: string, start: Date): Promise<boolean> {
+        const rows = await tx
+            .select({ id: bookingAppointments.id })
+            .from(bookingAppointments)
+            .where(
+                and(
+                    eq(bookingAppointments.tenantId, p.tenantId),
+                    eq(bookingAppointments.pageId, p.pageId),
+                    eq(bookingAppointments.staffId, staffId),
+                    eq(bookingAppointments.serviceId, serviceId),
+                    eq(bookingAppointments.startAt, start),
+                    sql`lower(${bookingAppointments.clientEmail}) = ${email.toLowerCase()}`,
+                    ne(bookingAppointments.status, 'cancelled'),
+                ),
+            )
+            .limit(1);
+        return rows.length > 0;
+    }
+
+    /** Citas futuras (no canceladas) de un correo en esta página. */
+    private async activeForClient(p: ResolvedPage, email: string, tx?: Tx): Promise<number> {
+        const q = (t: Tx) =>
+            t
+                .select({ n: sql<number>`count(*)` })
+                .from(bookingAppointments)
+                .where(
+                    and(
+                        eq(bookingAppointments.tenantId, p.tenantId),
+                        eq(bookingAppointments.pageId, p.pageId),
+                        sql`lower(${bookingAppointments.clientEmail}) = ${email.toLowerCase()}`,
+                        ne(bookingAppointments.status, 'cancelled'),
+                        sql`${bookingAppointments.endAt} > now()`,
+                    ),
+                );
+        const rows = tx ? await q(tx) : await this.tenantDb.withTenant(p.tenantId, q);
+        return Number(rows[0]?.n ?? 0);
     }
 
     /** Recordatorios cuyo momento ya pasó al reservar (no se mandan tarde). */
@@ -790,7 +919,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const { p, appt } = await this.resolveAppointment(ref);
         await this.enforce(SLOTS_LIMITS, p.pageId, ip, 'horarios');
         if (this.lockedReason(p, appt) || !p.config.rules.allow_reschedule) return { slots: [], first_day: q.from, last_day: q.to };
-        return this.availability.slots(p, appt.serviceId, this.staffSelection(p, q.staff), q.from, q.to, { excludeRecordId: appt.recordId });
+        return this.availability.slots(p, appt.serviceId, this.staffSelection(p, q.staff), q.from, q.to, { excludeRecordId: appt.recordId, durationMin: appointmentMinutes(appt) });
     }
 
     async ics(ref: string): Promise<{ filename: string; body: string }> {
@@ -861,7 +990,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const service = this.availability.service(p.config, appt.serviceId);
         const start = new Date(input.start);
         if (Number.isNaN(start.getTime())) throw badRequest('booking_invalid', 'Elige un horario.');
-        const end = new Date(start.getTime() + service.duration_min * 60_000);
+        // Se conserva la duración que eligió al reservar (si el servicio todavía la ofrece).
+        const durationMin = pickServiceDuration(service, appointmentMinutes(appt));
+        const end = new Date(start.getTime() + durationMin * 60_000);
         const sel = this.staffSelection(p, input.staff_id ?? appt.staffId);
         let candidates = this.availability.candidates(p.config, service.id, sel);
         if (sel === 'any') candidates = await this.roundRobin(p, candidates);
@@ -875,9 +1006,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         let lastReason = 'taken';
         for (const staff of candidates) {
             const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
-            const external = await this.availability.externalBusy(p, staff, ymd, ymd);
+            const outside = await this.availability.outside(p, staff, ymd, ymd);
             const out = await this.withStaffLock(p.tenantId, staffKey(p.pageId, staff), async (tx) => {
-                const reason = await this.availability.checkInTx(tx, p, staff, service, start, external, { excludeRecordId: appt.recordId });
+                const reason = await this.availability.checkInTx(tx, p, staff, service, start, outside, { excludeRecordId: appt.recordId, durationMin });
                 if (reason) return { reason };
                 // El registro se actualiza por RecordsService (validación, actividad,
                 // automatizaciones) mientras ESTA transacción tiene el candado.

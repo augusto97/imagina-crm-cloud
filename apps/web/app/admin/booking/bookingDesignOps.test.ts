@@ -19,6 +19,14 @@ import {
     setException,
     setMapping,
     setReminders,
+    addTimeOff,
+    copyHolidaysToAll,
+    setDefaultDuration,
+    setHolidayCountry,
+    setHolidayWorked,
+    setServiceDayIntervals,
+    setServiceHours,
+    toggleServiceDuration,
     toggleStaffService,
 } from './bookingDesignOps';
 
@@ -120,10 +128,69 @@ describe('constructor de la agenda (operaciones puras)', () => {
             dataConsent: null,
         });
         expect(meta.title).toBe('Pide tu cita');
-        expect(meta.staff).toEqual([{ id: c.staff[0]!.id, name: 'Dra. Ruiz', kind: 'user', services: [] }]);
+        expect(meta.staff).toEqual([{ id: c.staff[0]!.id, name: 'Dra. Ruiz', kind: 'user', services: [], title: '', bio: '', photo_url: null }]);
         expect(meta.services[0]!.price_label).toBe('$ 80.000');
         expect(meta.choose_staff).toBe(false);
         expect(meta.time_zone_label).toContain('Bogotá');
+    });
+
+    it('v0.1.349 — festivos: país, marcados y copiar a todos', () => {
+        let c = addStaff(base(), 'user', 12, 'America/Mexico_City').config;
+        c = addStaff(c, 'resource').config;
+        const [a, b] = c.staff;
+        // El primero toma el país de la zona; el siguiente, el de quien ya atiende.
+        expect(a!.availability.holiday_country).toBe('MX');
+        expect(b!.availability.holiday_country).toBe('MX');
+        c = setHolidayWorked(c, a!.id, '2026-09-16', true, true);
+        c = setHolidayWorked(c, a!.id, '2026-04-02', false, false);
+        expect(c.staff[0]!.availability.holiday_work).toEqual(['2026-09-16']);
+        expect(c.staff[0]!.availability.holiday_off).toEqual(['2026-04-02']);
+        c = copyHolidaysToAll(c, a!.id);
+        expect(c.staff[1]!.availability.holiday_work).toEqual(['2026-09-16']);
+        // Cambiar de país olvida lo marcado del anterior.
+        c = setHolidayCountry(c, a!.id, 'CO');
+        expect(c.staff[0]!.availability).toMatchObject({ holiday_country: 'CO', holiday_work: [], holiday_off: [] });
+        c = setHolidayCountry(c, a!.id, null);
+        expect(c.staff[0]!.availability.holiday_country).toBeNull();
+    });
+
+    it('v0.1.349 — vacaciones ordenadas y con el rango al derecho', () => {
+        let c = addStaff(base(), 'user', 12).config;
+        const id = c.staff[0]!.id;
+        c = addTimeOff(c, id, '2026-12-31', '2026-12-20');
+        c = addTimeOff(c, id, '2026-07-01', '2026-07-15', 'Viaje');
+        expect(c.staff[0]!.availability.time_off.map((t) => [t.from, t.to])).toEqual([
+            ['2026-07-01', '2026-07-15'],
+            ['2026-12-20', '2026-12-31'],
+        ]);
+    });
+
+    it('v0.1.349 — duraciones del servicio y su horario propio', () => {
+        let c = base();
+        const svc = c.services[0]!.id;
+        c = toggleServiceDuration(c, svc, 60, true);
+        c = toggleServiceDuration(c, svc, 90, true);
+        expect(c.services[0]!.durations).toEqual([60, 90]);
+        // La de por defecto no se agrega como extra.
+        c = toggleServiceDuration(c, svc, c.services[0]!.duration_min, true);
+        expect(c.services[0]!.durations).toEqual([60, 90]);
+        // Cambiar la de por defecto: la anterior queda como opción.
+        const before = c.services[0]!.duration_min;
+        c = setDefaultDuration(c, svc, 60);
+        expect(c.services[0]!.duration_min).toBe(60);
+        expect(c.services[0]!.durations).toEqual([before, 90].sort((x, y) => x - y));
+        c = setServiceHours(c, svc, true);
+        expect(c.services[0]!.hours?.[1]).toEqual([{ start: '08:00', end: '12:00' }]);
+        expect(c.services[0]!.hours?.[0]).toEqual([]);
+        c = setServiceDayIntervals(c, svc, 6, [{ start: '09:00', end: '11:00' }]);
+        expect(c.services[0]!.hours?.[6]).toEqual([{ start: '09:00', end: '11:00' }]);
+        c = setServiceHours(c, svc, false);
+        expect(c.services[0]!.hours).toBeNull();
+    });
+
+    it('v0.1.349 — un rango de fechas a medias se avisa en Reglas', () => {
+        const c = { ...base(), rules: { ...base().rules, window_mode: 'range' as const, range_start: '2026-12-01', range_end: null } };
+        expect(sectionProblems(c, fields).reglas?.length).toBeGreaterThan(0);
     });
 
     it('lo que falta por sección', () => {

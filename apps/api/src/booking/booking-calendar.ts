@@ -17,11 +17,12 @@ import { TenantDb } from '../tenancy/tenant-db.service';
  *
  * LEER lo ocupado entra en el permiso que la app ya pide:
  *  - Google `calendar.events` («ver y editar los eventos de tus calendarios»)
- *    alcanza para `events.list`. Se piden SÓLO `start`, `end`, `status` y
- *    `transparency` con el parámetro `fields`: títulos, invitados y
- *    descripciones nunca salen de Google.
+ *    alcanza para `events.list`. Se piden SÓLO `id`, `start`, `end`, `status`
+ *    y `transparency` con el parámetro `fields`: títulos, invitados y
+ *    descripciones nunca salen de Google. El `id` (v0.1.349) es para no
+ *    contar dos veces el evento que la propia agenda creó para una cita.
  *  - Microsoft `Calendars.ReadWrite` alcanza para `calendarView`; se piden
- *    sólo `start`, `end`, `showAs` e `isCancelled` con `$select`.
+ *    sólo `id`, `start`, `end`, `showAs` e `isCancelled` con `$select`.
  * Los eventos «libres» (transparentes, «disponible») no ocupan.
  *
  * CREAR el evento de cada cita reusa el armado de la acción «Crear evento»
@@ -49,7 +50,7 @@ export function busyRequest(provider: CalendarProvider, base: string, token: str
             timeMax: toIso,
             singleEvents: 'true',
             maxResults: '250',
-            fields: 'items(start,end,status,transparency),nextPageToken',
+            fields: 'items(id,start,end,status,transparency),nextPageToken',
             ...(pageToken ? { pageToken } : {}),
         });
         return { url: `${base}/calendar/v3/calendars/primary/events?${q.toString()}`, method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${token}` } };
@@ -57,7 +58,7 @@ export function busyRequest(provider: CalendarProvider, base: string, token: str
     const q = new URLSearchParams({
         startDateTime: fromIso,
         endDateTime: toIso,
-        $select: 'start,end,showAs,isCancelled,isAllDay',
+        $select: 'id,start,end,showAs,isCancelled,isAllDay',
         $top: '250',
     });
     return {
@@ -65,6 +66,10 @@ export function busyRequest(provider: CalendarProvider, base: string, token: str
         method: 'GET',
         headers: { accept: 'application/json', authorization: `Bearer ${token}`, prefer: 'outlook.timezone="UTC"' },
     };
+}
+
+function externalId(raw: unknown): { externalId?: string } {
+    return typeof raw === 'string' && raw.length > 0 && raw.length <= 1024 ? { externalId: raw } : {};
 }
 
 interface ParsedBusy {
@@ -89,7 +94,7 @@ export function parseBusy(provider: CalendarProvider, body: string): ParsedBusy 
             // Un evento de todo el día ocupa ese día entero (en UTC: la persona lo marcó ocupado).
             const start = Date.parse(s.dateTime ?? (s.date ? `${s.date}T00:00:00Z` : ''));
             const end = Date.parse(e.dateTime ?? (e.date ? `${e.date}T00:00:00Z` : ''));
-            if (Number.isFinite(start) && Number.isFinite(end) && end > start) out.push({ start, end, kind: 'external' });
+            if (Number.isFinite(start) && Number.isFinite(end) && end > start) out.push({ start, end, kind: 'external', ...externalId(raw.id) });
         }
         return { busy: out, next: typeof json.nextPageToken === 'string' ? json.nextPageToken : null };
     }
@@ -102,7 +107,7 @@ export function parseBusy(provider: CalendarProvider, body: string): ParsedBusy 
         const z = (v: string | undefined): number => (v ? Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(v) ? v : `${v}Z`) : NaN);
         const start = z(s.dateTime);
         const end = z(e.dateTime);
-        if (Number.isFinite(start) && Number.isFinite(end) && end > start) out.push({ start, end, kind: 'external' });
+        if (Number.isFinite(start) && Number.isFinite(end) && end > start) out.push({ start, end, kind: 'external', ...externalId(raw.id) });
     }
     const next = json['@odata.nextLink'];
     return { busy: out, next: typeof next === 'string' ? next : null };

@@ -1026,4 +1026,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Ve a **Ajustes → Integraciones**, conecta **Microsoft Teams** con tu cuenta de trabajo de Microsoft 365 y úsala en **Añadir acción** de cualquier automatización.',
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
     },
+    {
+        key: 'v0.1.349-agenda-reglas',
+        version: '0.1.349',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Una agenda de citas mucho más completa',
+        summary:
+            'Citas grupales con cupos, varias duraciones por servicio, festivos de tu país, vacaciones, asesores con foto y cargo, y topes por semana, por mes y por cliente.',
+        media: {
+            slides: [
+                {
+                    title: 'Grupales y con varias duraciones',
+                    text: 'Una clase con 10 cupos que se ven bajar con cada reserva, o una consulta de 30 minutos o de una hora: el cliente elige. Cada servicio puede tener su propio horario y sus propias reglas.',
+                    illustration: 'citas-cupos',
+                },
+                {
+                    title: 'Festivos de tu país y vacaciones',
+                    text: 'Elige el país y sus festivos oficiales se cierran solos cada año. Marca los que sí atiendes y cierra una semana de vacaciones de una vez.',
+                    illustration: 'citas-festivos',
+                },
+                {
+                    title: 'Quién atiende, con su foto',
+                    text: 'El cliente ve la foto, el cargo y una descripción de cada asesor. Y tú eliges cómo se reparten las citas: por turno, equilibrando la carga o por prioridad.',
+                    illustration: 'citas-roundrobin',
+                },
+            ],
+        },
+        body: 'Abre **Configurar lista → Agenda** y edita tu agenda. En **Reglas** también puedes limitar cuántas citas pendientes tiene un mismo cliente o abrir la agenda sólo entre dos fechas.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

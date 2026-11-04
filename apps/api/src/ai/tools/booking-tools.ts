@@ -4,6 +4,10 @@ import {
     BOOKING_SLOT_INTERVALS,
     bookingConfigSchema,
     bookingProblems,
+    bookingServiceSchema,
+    bookingStaffSchema,
+    HOLIDAY_COUNTRIES,
+    serviceDurations,
     defaultBookingConfig,
     defaultBookingWeek,
     isBookingQuestionType,
@@ -52,8 +56,22 @@ const staffSpec = z.object({
     resource: z.string().max(120).optional().describe('O un RECURSO por nombre (una sala, un consultorio, un vehículo)'),
     services: z.array(z.string().max(120)).max(30).optional().describe('Nombres de los servicios que ofrece; sin él, todos'),
     schedule: scheduleSpec.optional().describe('Sin él: lunes a viernes de 8 a 12 y de 14 a 18'),
-    days_off: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(60).optional().describe('Días que no atiende (vacaciones), AAAA-MM-DD'),
-    work_holidays: z.boolean().optional().describe('true = atiende también los festivos de Colombia (por defecto no)'),
+    days_off: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(60).optional().describe('Días sueltos que no atiende, AAAA-MM-DD'),
+    vacations: z
+        .array(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), note: z.string().max(120).optional() }))
+        .max(30)
+        .optional()
+        .describe('Vacaciones o ausencias por rango (AAAA-MM-DD a AAAA-MM-DD, inclusive)'),
+    holiday_country: z
+        .string()
+        .regex(/^[A-Za-z]{2}$/)
+        .nullable()
+        .optional()
+        .describe(`País de los festivos que NO atiende (ISO de 2 letras: ${HOLIDAY_COUNTRIES.map((c) => c.code).join(', ')}); null = atiende también los festivos. Por defecto CO.`),
+    work_holidays: z.boolean().optional().describe('Atajo antiguo: true = atiende también los festivos (equivale a holiday_country: null)'),
+    title: z.string().max(120).optional().describe('Cargo o especialidad que ve el cliente («Odontóloga»)'),
+    bio: z.string().max(600).optional().describe('Unas líneas sobre la persona o el recurso'),
+    priority: z.number().int().min(1).max(5).optional().describe('Con assign_mode «priority»: 5 recibe primero, 1 al final (por defecto 3)'),
 });
 
 const writesSpec = z
@@ -98,9 +116,15 @@ const pageSpec = z.object({
         .array(
             z.object({
                 name: z.string().min(1).max(120),
-                duration_min: z.number().int().min(5).max(720),
+                duration_min: z.number().int().min(5).max(720).describe('Duración por defecto'),
+                durations: z.array(z.number().int().min(5).max(720)).max(6).optional().describe('Otras duraciones que el cliente puede elegir (ej. [30, 60])'),
                 description: z.string().max(1000).optional(),
                 price: z.number().min(0).optional().describe('Sólo informativo (no se cobra)'),
+                seats: z.number().int().min(1).max(500).optional().describe('Cupos por horario: 1 = individual (por defecto); más = grupal (una clase, un taller)'),
+                hours: scheduleSpec.optional().describe('Horario propio del servicio («sólo en la mañana»): recorta el de quien atiende'),
+                buffer_before_min: z.number().int().min(0).max(240).optional().describe('Margen antes propio de este servicio'),
+                buffer_after_min: z.number().int().min(0).max(240).optional().describe('Margen después propio de este servicio'),
+                min_notice_min: z.number().int().min(0).max(86_400).optional().describe('Aviso mínimo propio de este servicio (minutos)'),
             }),
         )
         .max(30)
@@ -114,8 +138,16 @@ const pageSpec = z.object({
             buffer_after_min: z.number().int().min(0).max(240).optional().describe('Margen después de cada cita (limpieza, traslado)'),
             min_notice_min: z.number().int().min(0).max(86_400).optional().describe('Aviso mínimo en minutos (por defecto 120)'),
             max_days_ahead: z.number().int().min(1).max(365).optional(),
-            slot_interval_min: z.number().int().optional().describe(`Cada cuánto empieza un horario: ${BOOKING_SLOT_INTERVALS.join(', ')}`),
-            max_per_day: z.number().int().min(1).max(200).nullable().optional().describe('Tope de citas por día por persona o recurso'),
+            slot_interval_min: z.number().int().optional().describe(`Cada cuánto empieza un horario: ${BOOKING_SLOT_INTERVALS.join(', ')} (0 = cada lo que dura la cita)`),
+            max_per_day: z.number().int().min(1).max(200).nullable().optional().describe('Tope de citas por día por persona o recurso (un horario grupal cuenta una vez)'),
+            max_per_week: z.number().int().min(1).max(1000).nullable().optional().describe('Tope por semana (lunes a domingo)'),
+            max_per_month: z.number().int().min(1).max(5000).nullable().optional().describe('Tope por mes'),
+            max_active_per_client: z.number().int().min(1).max(50).nullable().optional().describe('Citas futuras que puede tener a la vez un mismo correo'),
+            business_days: z.boolean().optional().describe('max_days_ahead cuenta sólo días hábiles (lunes a viernes)'),
+            window_mode: z.enum(['rolling', 'range']).optional().describe('rolling = los próximos N días; range = sólo entre range_start y range_end'),
+            range_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+            range_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+            assign_mode: z.enum(['rotate', 'balance', 'priority']).optional().describe('Sin elegir persona: rotate = por turno; balance = a quien tenga menos citas; priority = por la prioridad de cada uno'),
             allow_reschedule: z.boolean().optional(),
             allow_cancel: z.boolean().optional(),
         })
@@ -192,15 +224,23 @@ export class BookingTools implements AiProposalApplier {
                 if (names.has(key)) throw new AiToolError(`El servicio «${s.name}» está repetido.`);
                 names.add(key);
                 const prev = base.services.find((x) => x.name.trim().toLowerCase() === key);
-                return {
+                const hours = s.hours ? DAYS.map((d) => (s.hours![d] ?? []).map((t) => parseTramo(t, `services.${s.name}.hours.${d}`))) : (prev?.hours ?? null);
+                return bookingServiceSchema.parse({
+                    ...(prev ?? {}),
                     id: prev?.id ?? newBookingItemId('svc'),
                     name: s.name.trim(),
                     duration_min: s.duration_min,
+                    durations: (s.durations ?? prev?.durations ?? []).filter((d) => d !== s.duration_min),
                     description: s.description ?? prev?.description ?? '',
                     price: s.price ?? prev?.price ?? null,
                     option_value: prev?.option_value ?? null,
+                    seats: s.seats ?? prev?.seats ?? 1,
+                    hours,
+                    buffer_before_min: s.buffer_before_min ?? prev?.buffer_before_min ?? null,
+                    buffer_after_min: s.buffer_after_min ?? prev?.buffer_after_min ?? null,
+                    min_notice_min: s.min_notice_min ?? prev?.min_notice_min ?? null,
                     active: true,
-                };
+                });
             });
         }
         const serviceIdByName = new Map(config.services.map((s) => [s.name.trim().toLowerCase(), s.id]));
@@ -256,7 +296,7 @@ export class BookingTools implements AiProposalApplier {
 
         // Vista previa en lenguaje claro.
         const names = new Map(members.map((m) => [m.id, m.name]));
-        changes.push({ label: 'Servicios', from: null, to: clean.services.filter((s) => s.active).map((s) => `${s.name} (${s.duration_min} min)`).join(', ') || '(ninguno)' });
+        changes.push({ label: 'Servicios', from: null, to: clean.services.filter((s) => s.active).map((s) => `${s.name} (${serviceDurations(s).join(' / ')} min${s.seats > 1 ? `, ${s.seats} cupos` : ''})`).join(', ') || '(ninguno)' });
         changes.push({
             label: 'Quién atiende',
             from: null,
@@ -271,11 +311,14 @@ export class BookingTools implements AiProposalApplier {
             label: 'Reglas',
             from: null,
             to: [
-                `cada ${r.slot_interval_min} min`,
+                r.slot_interval_min === 0 ? 'un horario cada lo que dura la cita' : `cada ${r.slot_interval_min} min`,
                 r.buffer_after_min || r.buffer_before_min ? `margen ${r.buffer_before_min}/${r.buffer_after_min} min` : null,
                 `aviso mínimo ${r.min_notice_min} min`,
-                `hasta ${r.max_days_ahead} días`,
+                r.window_mode === 'range' ? `del ${r.range_start ?? '?'} al ${r.range_end ?? '?'}` : `hasta ${r.max_days_ahead} días${r.business_days ? ' hábiles' : ''}`,
                 r.max_per_day ? `máx. ${r.max_per_day} por día` : null,
+                r.max_per_week ? `máx. ${r.max_per_week} por semana` : null,
+                r.max_per_month ? `máx. ${r.max_per_month} por mes` : null,
+                r.max_active_per_client ? `máx. ${r.max_active_per_client} citas activas por cliente` : null,
             ]
                 .filter(Boolean)
                 .join(' · '),
@@ -381,25 +424,43 @@ export class BookingTools implements AiProposalApplier {
             if (!id) throw new AiToolError(`${where}: el servicio «${n}» no existe. Servicios: ${[...serviceIdByName.keys()].join(', ')}.`);
             return id;
         });
-        const availability = old?.availability ?? { week: defaultBookingWeek(), exceptions: [], skip_holidays: true };
+        const availability = old?.availability ?? bookingStaffSchema.parse({ id: 'tmp00', availability: { week: defaultBookingWeek() } }).availability;
         const week = s.schedule ? DAYS.map((d) => (s.schedule![d] ?? []).map((t) => parseTramo(t, `${where}.schedule.${d}`))) : availability.week;
-        return {
+        let holidayCountry = availability.holiday_country;
+        if (s.work_holidays !== undefined) holidayCountry = s.work_holidays ? null : (holidayCountry ?? 'CO');
+        if (s.holiday_country !== undefined) {
+            const code = s.holiday_country === null ? null : s.holiday_country.toUpperCase();
+            if (code !== null && !HOLIDAY_COUNTRIES.some((c) => c.code === code)) {
+                throw new AiToolError(`${where}: no hay festivos para «${s.holiday_country}». Países: ${HOLIDAY_COUNTRIES.map((c) => c.code).join(', ')}.`);
+            }
+            holidayCountry = code;
+        }
+        for (const v of s.vacations ?? []) {
+            if (v.from > v.to) throw new AiToolError(`${where}.vacations: «${v.from}» es después de «${v.to}».`);
+        }
+        return bookingStaffSchema.parse({
+            ...(old ?? {}),
             id: old?.id ?? newBookingItemId('stf'),
             kind: s.user_id !== undefined ? 'user' : 'resource',
             staff_user_id: s.user_id ?? null,
             name: s.resource?.trim() ?? old?.name ?? '',
             option_value: old?.option_value ?? null,
+            title: s.title ?? old?.title ?? '',
+            bio: s.bio ?? old?.bio ?? '',
+            priority: s.priority ?? old?.priority ?? 3,
             services,
             availability: {
+                ...availability,
                 week,
                 exceptions: s.days_off ? s.days_off.map((date) => ({ date, closed: true, intervals: [], note: '' })) : availability.exceptions,
-                skip_holidays: s.work_holidays === undefined ? availability.skip_holidays : !s.work_holidays,
+                holiday_country: holidayCountry,
+                time_off: s.vacations ? s.vacations.map((v) => ({ id: newBookingItemId('off'), from: v.from, to: v.to, note: v.note ?? '' })) : availability.time_off,
             },
             connection_id: old?.connection_id ?? null,
             read_busy: old?.read_busy ?? true,
             create_events: old?.create_events ?? true,
             active: true,
-        };
+        });
     }
 
     private async resolveList(ctx: AiToolContext, slug: string): Promise<List> {

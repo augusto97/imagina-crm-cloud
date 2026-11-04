@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { PublicDataConsent } from './data-consent';
 import { SMS_BOOKING_REMINDER_DEFAULT } from './sms';
+import { holidayCountryForTimeZone } from './holidays';
 import {
     FORM_FIELD_TYPES,
     formFieldItemSchema,
@@ -58,8 +59,23 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
     cancelled: 'Cancelada',
 };
 
-/** Cada cuánto se ofrecen los horarios (minutos). */
-export const BOOKING_SLOT_INTERVALS = [5, 10, 15, 20, 30, 45, 60, 90, 120] as const;
+/** Cada cuánto se ofrecen los horarios (minutos). `0` = cada «lo que dura la cita». */
+export const BOOKING_SLOT_INTERVALS = [0, 5, 10, 15, 20, 30, 45, 60, 90, 120] as const;
+const isSlotInterval = (v: number): boolean => (BOOKING_SLOT_INTERVALS as readonly number[]).includes(v);
+
+/** Duraciones que se ofrecen en la lista rápida (cualquier otra entre 5 y 720 también vale). */
+export const BOOKING_DURATION_PRESETS = [15, 20, 30, 45, 60, 90, 120] as const;
+export const BOOKING_MAX_DURATIONS = 6;
+/** Cupos por horario (citas grupales: una clase, un taller). */
+export const BOOKING_MAX_SEATS = 500;
+/** Cómo se reparte entre varias personas cuando el cliente no elige. */
+export const BOOKING_ASSIGN_MODES = ['rotate', 'balance', 'priority'] as const;
+export type BookingAssignMode = (typeof BOOKING_ASSIGN_MODES)[number];
+export const BOOKING_ASSIGN_MODE_LABELS: Record<BookingAssignMode, string> = {
+    rotate: 'Por turno',
+    balance: 'Equilibrar la carga',
+    priority: 'Por prioridad',
+};
 
 /** Preguntas extra: los tipos del formulario, salvo archivos (subir archivos a una cita queda para después). */
 export const BOOKING_QUESTION_TYPES = FORM_FIELD_TYPES.filter((t) => t !== 'file') as Exclude<FormFieldType, 'file'>[];
@@ -138,25 +154,95 @@ export const bookingExceptionSchema = z.object({
 });
 export type BookingException = z.infer<typeof bookingExceptionSchema>;
 
-export const bookingAvailabilitySchema = z.object({
+/**
+ * v0.1.349 — Vacaciones o ausencias de varios días (un rango cerrado). Más
+ * cómodo que marcar día por día en «Días especiales»; una excepción de una
+ * fecha puntual dentro del rango igual manda («de vacaciones, pero el jueves
+ * atiendo de 9 a 12»).
+ */
+export const bookingTimeOffSchema = z
+    .object({
+        id: itemIdSchema,
+        from: isoDate,
+        to: isoDate,
+        note: z.string().max(120).default(''),
+    })
+    .refine((t) => t.from <= t.to, { message: 'La ausencia termina antes de empezar' });
+export type BookingTimeOff = z.infer<typeof bookingTimeOffSchema>;
+
+const countryCode = z.string().regex(/^[A-Z]{2}$/);
+
+const bookingAvailabilityObject = z.object({
     /** 7 días, índice = día de la semana de JS (0 = domingo … 6 = sábado). */
     week: z.array(dayScheduleSchema).length(7).default(defaultBookingWeek),
     exceptions: z.array(bookingExceptionSchema).max(366).default([]),
-    /** No atender los festivos de Colombia (salvo que una excepción diga otra cosa). */
-    skip_holidays: z.boolean().default(true),
+    /**
+     * v0.1.349 — País de los festivos que NO atiende (null = atiende en
+     * festivos). Los festivos salen del calendario oficial de ese país.
+     */
+    holiday_country: countryCode.nullable().default('CO'),
+    /** Festivos (nacionales) que SÍ atiende igual, por fecha. */
+    holiday_work: z.array(isoDate).max(200).default([]),
+    /** Festivos regionales que TAMPOCO atiende, por fecha (por defecto lo regional se atiende). */
+    holiday_off: z.array(isoDate).max(200).default([]),
+    time_off: z.array(bookingTimeOffSchema).max(30).default([]),
 });
+
+/**
+ * Antes de v0.1.349 había un solo interruptor «No atender en festivos de
+ * Colombia» (`skip_holidays`). Una configuración vieja se lee igual: con el
+ * interruptor encendido (o sin decir nada) queda Colombia; apagado, ninguno.
+ */
+export const bookingAvailabilitySchema = z.preprocess((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+    const r = raw as Record<string, unknown>;
+    if ('holiday_country' in r) return r;
+    return { ...r, holiday_country: r.skip_holidays === false ? null : 'CO' };
+}, bookingAvailabilityObject);
 export type BookingAvailability = z.infer<typeof bookingAvailabilitySchema>;
+
+const durationMin = z.number().int().min(5).max(720);
+/** Un margen o aviso propio del servicio; null = el de la página. */
+const minutesOrPage = (max: number) => z.number().int().min(0).max(max).nullable().default(null);
 
 /** Un tipo de cita. */
 export const bookingServiceSchema = z.object({
     id: itemIdSchema,
     name: z.string().trim().min(1).max(120),
-    duration_min: z.number().int().min(5).max(720).default(30),
+    /** La duración por defecto (la que se elige sola). */
+    duration_min: durationMin.default(30),
+    /**
+     * v0.1.349 — Otras duraciones que el cliente puede elegir («30 o 60
+     * minutos»). Vacío = sólo `duration_min`.
+     */
+    durations: z.array(durationMin).max(BOOKING_MAX_DURATIONS).default([]),
     description: z.string().max(1000).default(''),
     /** Sólo informativo (no se cobra): en la moneda de la empresa. */
     price: z.number().min(0).max(1_000_000_000_000).nullable().default(null),
     /** El valor de la opción en el campo «servicio» de la lista (si es una selección). */
     option_value: z.string().max(190).nullable().default(null),
+    /**
+     * v0.1.349 — Cupos por horario: 1 = cita individual; más = grupal (una
+     * clase, un taller): el mismo horario recibe hasta N reservas.
+     */
+    seats: z.number().int().min(1).max(BOOKING_MAX_SEATS).default(1),
+    /** Grupal: mostrarle al cliente cuántos cupos quedan. */
+    show_seats_left: z.boolean().default(true),
+    /**
+     * v0.1.349 — Horario propio del servicio («las valoraciones sólo en la
+     * mañana»): recorta el de quien atiende. null = el de quien atiende.
+     */
+    hours: z.array(dayScheduleSchema).length(7).nullable().default(null),
+    /** v0.1.349 — Reglas propias del servicio (null = las de la página). */
+    buffer_before_min: minutesOrPage(240),
+    buffer_after_min: minutesOrPage(240),
+    min_notice_min: minutesOrPage(60 * 24 * 60),
+    slot_interval_min: z
+        .number()
+        .int()
+        .refine(isSlotInterval, { message: 'Intervalo no válido' })
+        .nullable()
+        .default(null),
     active: z.boolean().default(true),
 });
 export type BookingServiceItem = z.infer<typeof bookingServiceSchema>;
@@ -171,6 +257,14 @@ export const bookingStaffSchema = z.object({
     name: z.string().max(120).default(''),
     /** El valor de la opción en el campo «recurso» de la lista (si es una selección). */
     option_value: z.string().max(190).nullable().default(null),
+    /** v0.1.349 — Cargo o especialidad que ve el cliente («Odontóloga», «Asesor comercial»). */
+    title: z.string().max(120).default(''),
+    /** v0.1.349 — Unas líneas sobre la persona o el recurso. */
+    bio: z.string().max(600).default(''),
+    /** v0.1.349 — Foto (un archivo de imagen de la empresa); la página pública la sirve firmada. */
+    photo_file_id: z.number().int().positive().nullable().default(null),
+    /** v0.1.349 — Con «Por prioridad»: 5 recibe primero, 1 al final. */
+    priority: z.number().int().min(1).max(5).default(3),
     /** Servicios que ofrece (vacío = todos). */
     services: z.array(itemIdSchema).max(BOOKING_MAX_SERVICES).default([]),
     availability: bookingAvailabilitySchema.default({}),
@@ -184,23 +278,45 @@ export const bookingStaffSchema = z.object({
 });
 export type BookingStaff = z.infer<typeof bookingStaffSchema>;
 
-export const bookingRulesSchema = z.object({
-    buffer_before_min: z.number().int().min(0).max(240).default(0),
-    buffer_after_min: z.number().int().min(0).max(240).default(0),
-    /** No reservar (ni reprogramar o cancelar) con menos de esto de anticipación. */
-    min_notice_min: z.number().int().min(0).max(60 * 24 * 60).default(120),
-    /** Hasta cuántos días hacia adelante se puede reservar. */
-    max_days_ahead: z.number().int().min(1).max(365).default(60),
-    slot_interval_min: z
-        .number()
-        .int()
-        .refine((v) => (BOOKING_SLOT_INTERVALS as readonly number[]).includes(v), { message: 'Intervalo no válido' })
-        .default(30),
-    /** Tope de citas por día por persona o recurso (null = sin tope). */
-    max_per_day: z.number().int().min(1).max(200).nullable().default(null),
-    allow_reschedule: z.boolean().default(true),
-    allow_cancel: z.boolean().default(true),
-});
+const capOrNone = (max: number) => z.number().int().min(1).max(max).nullable().default(null);
+
+/**
+ * Un rango incompleto (`window_mode: 'range'` sin fechas) NO invalida la
+ * configuración —se leería entera por defecto—: el motor lo trata como «sin
+ * fechas reservables» y `bookingProblems` lo pide antes de publicar.
+ */
+export const bookingRulesSchema = z
+    .object({
+        buffer_before_min: z.number().int().min(0).max(240).default(0),
+        buffer_after_min: z.number().int().min(0).max(240).default(0),
+        /** No reservar (ni reprogramar o cancelar) con menos de esto de anticipación. */
+        min_notice_min: z.number().int().min(0).max(60 * 24 * 60).default(120),
+        /**
+         * v0.1.349 — Hasta cuándo se puede reservar:
+         *  - `rolling`: los próximos N días (corridos, o hábiles con `business_days`);
+         *  - `range`: sólo entre dos fechas (una temporada, un evento).
+         */
+        window_mode: z.enum(['rolling', 'range']).default('rolling'),
+        /** Hasta cuántos días hacia adelante se puede reservar. */
+        max_days_ahead: z.number().int().min(1).max(365).default(60),
+        /** Contar sólo días hábiles (lunes a viernes) en `max_days_ahead`. */
+        business_days: z.boolean().default(false),
+        range_start: isoDate.nullable().default(null),
+        range_end: isoDate.nullable().default(null),
+        /** `0` = cada «lo que dura la cita» (una cita de 45 min: 8:00, 8:45, 9:30…). */
+        slot_interval_min: z.number().int().refine(isSlotInterval, { message: 'Intervalo no válido' }).default(30),
+        /** Tope de citas por día por persona o recurso (null = sin tope). Un horario grupal cuenta una vez. */
+        max_per_day: capOrNone(200),
+        /** v0.1.349 — Topes por semana (lunes a domingo) y por mes. */
+        max_per_week: capOrNone(1000),
+        max_per_month: capOrNone(5000),
+        /** v0.1.349 — Citas futuras que puede tener a la vez un mismo correo (null = sin tope). */
+        max_active_per_client: capOrNone(50),
+        /** v0.1.349 — Con varias personas y sin elegir: cómo se reparte. */
+        assign_mode: z.enum(BOOKING_ASSIGN_MODES).default('rotate'),
+        allow_reschedule: z.boolean().default(true),
+        allow_cancel: z.boolean().default(true),
+    });
 export type BookingRules = z.infer<typeof bookingRulesSchema>;
 
 const fieldRef = z.number().int().positive().nullable().default(null);
@@ -341,6 +457,7 @@ export const bookingPreviewSlotsSchema = z.object({
     config: bookingConfigSchema,
     service_id: itemIdSchema,
     staff_id: z.union([itemIdSchema, z.literal('any')]).default('any'),
+    duration: z.number().int().min(5).max(720).optional(),
     from: isoDate,
     to: isoDate,
 });
@@ -351,10 +468,16 @@ export type BookingPreviewSlotsInput = z.infer<typeof bookingPreviewSlotsSchema>
 export interface PublicBookingService {
     id: string;
     name: string;
+    /** La duración por defecto. */
     duration_min: number;
+    /** v0.1.349 — Todas las duraciones que puede elegir (la de por defecto incluida, de menor a mayor). */
+    durations: number[];
     description: string;
     /** Precio legible con la moneda de la empresa («$ 80.000»), o null. */
     price_label: string | null;
+    /** v0.1.349 — Cupos por horario (1 = individual). */
+    seats: number;
+    show_seats_left: boolean;
 }
 
 export interface PublicBookingStaff {
@@ -363,6 +486,10 @@ export interface PublicBookingStaff {
     kind: 'user' | 'resource';
     /** Servicios que ofrece (ids). */
     services: string[];
+    /** v0.1.349 — Cargo, unas líneas y la foto (dirección firmada, o null). */
+    title: string;
+    bio: string;
+    photo_url: string | null;
 }
 
 export interface PublicBookingMeta {
@@ -384,6 +511,9 @@ export interface PublicBookingMeta {
     questions: PublicFormItem[];
     max_days_ahead: number;
     min_notice_min: number;
+    /** v0.1.349 — Primer y último día reservables (zona de la empresa): la ventana corrida, hábil o el rango de fechas. */
+    first_day?: string;
+    last_day?: string;
     /** null = recibe reservas; si no, el mensaje de cerrado. */
     closed: string | null;
     success_message: string;
@@ -397,6 +527,8 @@ export interface PublicBookingSlot {
     start: string;
     end: string;
     staff: string[];
+    /** v0.1.349 — Grupal: cupos libres (el mayor entre quienes atienden). null = individual. */
+    seats_left?: number | null;
 }
 
 export interface PublicBookingSlots {
@@ -412,6 +544,8 @@ export const bookingSlotsQuerySchema = z.object({
     staff: z.union([itemIdSchema, z.literal('any')]).default('any'),
     from: isoDate,
     to: isoDate,
+    /** v0.1.349 — La duración elegida (tiene que ser una de las del servicio). */
+    duration: z.coerce.number().int().min(5).max(720).optional(),
 });
 export type BookingSlotsQuery = z.infer<typeof bookingSlotsQuerySchema>;
 
@@ -419,6 +553,8 @@ export const bookAppointmentSchema = z.object({
     service_id: itemIdSchema,
     staff_id: z.union([itemIdSchema, z.literal('any')]).default('any'),
     start: z.string().datetime({ offset: true }),
+    /** v0.1.349 — La duración elegida (una de las del servicio; sin esto, la de por defecto). */
+    duration_min: z.number().int().min(5).max(720).optional(),
     name: z.string().trim().min(1).max(200),
     email: z.string().trim().email().max(320),
     phone: z.string().trim().max(60).optional(),
@@ -660,6 +796,15 @@ export function bookingProblems(
         out.push('Elige el campo de fecha y hora donde se guarda el inicio de la cita (Campos de la lista).');
     }
     if (!config.services.some((s) => s.active)) out.push('Agrega al menos un servicio.');
+    const r = config.rules;
+    if (r.window_mode === 'range' && (r.range_start === null || r.range_end === null || r.range_start > r.range_end)) {
+        out.push('Elige desde y hasta qué fecha se puede agendar (Reglas).');
+    }
+    for (const svc of config.services) {
+        if (svc.active && svc.hours !== null && !svc.hours.some((d) => d.length > 0)) {
+            out.push(`El servicio «${svc.name}» tiene un horario propio vacío: agrégale un tramo o quítalo.`);
+        }
+    }
     const staff = config.staff.filter((s) => s.active);
     if (staff.length === 0) out.push('Agrega al menos una persona o recurso que atienda.');
     if (staff.some((s) => s.kind === 'user') && m.person_field_id === null) {
@@ -697,12 +842,45 @@ export function staffOffers(staff: Pick<BookingStaff, 'services'>, serviceId: st
     return staff.services.length === 0 || staff.services.includes(serviceId);
 }
 
+/** v0.1.349 — Las duraciones que el cliente puede elegir (la de por defecto incluida), de menor a mayor. */
+export function serviceDurations(svc: Pick<BookingServiceItem, 'duration_min' | 'durations'>): number[] {
+    return [...new Set([svc.duration_min, ...svc.durations])].sort((a, b) => a - b);
+}
+
+/** La duración pedida si el servicio la ofrece; si no (o sin pedir), la de por defecto. */
+export function pickServiceDuration(svc: Pick<BookingServiceItem, 'duration_min' | 'durations'>, requested: number | null | undefined): number {
+    if (requested === null || requested === undefined) return svc.duration_min;
+    return serviceDurations(svc).includes(requested) ? requested : svc.duration_min;
+}
+
+/** Las reglas que valen para un servicio: las suyas donde las tiene, las de la página donde no. */
+export function serviceRules(rules: BookingRules, svc: Pick<BookingServiceItem, 'buffer_before_min' | 'buffer_after_min' | 'min_notice_min' | 'slot_interval_min'>): BookingRules {
+    return {
+        ...rules,
+        buffer_before_min: svc.buffer_before_min ?? rules.buffer_before_min,
+        buffer_after_min: svc.buffer_after_min ?? rules.buffer_after_min,
+        min_notice_min: svc.min_notice_min ?? rules.min_notice_min,
+        slot_interval_min: svc.slot_interval_min ?? rules.slot_interval_min,
+    };
+}
+
+/** «30 min», «1 h», «1 h 30 min». */
+export function durationLabel(min: number): string {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (h === 0) return `${m} min`;
+    return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
 /** Configuración de arranque de una página: un servicio y la persona que la crea. */
 export function defaultBookingConfig(input: {
     listName: string;
     userId: number | null;
     fields: ReadonlyArray<{ id: number; type: string; slug: string; label: string }>;
+    /** v0.1.349 — Zona de la empresa: sugiere el país de los festivos (Bogotá → Colombia). */
+    timeZone?: string | null;
 }): BookingConfig {
+    const country = input.timeZone === undefined ? 'CO' : holidayCountryForTimeZone(input.timeZone) ?? 'CO';
     const pick = (types: readonly string[], hints: RegExp): number | null => {
         const byHint = input.fields.find((f) => types.includes(f.type) && hints.test(`${f.slug} ${f.label}`));
         return (byHint ?? input.fields.find((f) => types.includes(f.type)))?.id ?? null;
@@ -714,7 +892,7 @@ export function defaultBookingConfig(input: {
         services: [{ id: newBookingItemId('svc'), name: 'Cita', duration_min: 30 }],
         staff:
             input.userId !== null
-                ? [{ id: newBookingItemId('stf'), kind: 'user', staff_user_id: input.userId }]
+                ? [{ id: newBookingItemId('stf'), kind: 'user', staff_user_id: input.userId, availability: { holiday_country: country } }]
                 : [],
         mapping: {
             start_field_id: pick(['datetime'], /fecha|inicio|hora|start|cita/i),

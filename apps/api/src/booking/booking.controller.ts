@@ -14,6 +14,7 @@ import {
     type BookingSlotsQuery,
     type CancelAppointmentInput,
     type CreateBookingPageInput,
+    type HolidayItem,
     type PublicAppointmentSummary,
     type PublicBookingMeta,
     type PublicBookingSlots,
@@ -60,6 +61,14 @@ export class BookingController {
     @RequireCapability('manage_lists')
     options(@Req() req: FastifyRequest, @Param('list') list: string): Promise<BookingEditorOptions> {
         return this.booking.editorOptions(req.tenant!.tenantId, list);
+    }
+
+    /** v0.1.349 — Los festivos de un país y un año (para marcar los que sí se atienden). */
+    @Get('holidays')
+    @RequireCapability('manage_lists')
+    holidays(@Query('country') country: string | undefined, @Query('year') year: string | undefined): Promise<{ country: string; items: HolidayItem[]; available: boolean }> {
+        const y = Number(year);
+        return this.booking.holidayList(String(country ?? ''), Number.isInteger(y) && y >= 2000 && y <= 2100 ? y : new Date().getUTCFullYear());
     }
 
     @Get(':id')
