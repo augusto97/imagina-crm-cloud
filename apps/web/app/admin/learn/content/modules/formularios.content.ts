@@ -766,6 +766,99 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Siguiente: cobrar al enviar', article: 'formularios-cobrar' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-cobrar',
+        route: '/lists',
+        related: ['cobros-conectar', 'cobros-estados', 'formularios-puntaje'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un formulario puede **cobrar en el mismo momento en que se envía**: una inscripción, una entrada, un plan o un aporte. La respuesta se guarda como siempre y, enseguida, la persona paga con la cuenta de **Mercado Pago** o **Wompi** de tu empresa. El dinero llega a tu cuenta, no pasa por la app.',
+            },
+            { t: 'anim', key: 'form-payment', caption: 'Ana elige el plan Premium, ve el total cambiar, toca «Enviar y pagar», paga y su registro queda «Pagado».' },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Antes: conecta tu cuenta de cobro',
+                md: 'Necesitas una conexión de **Mercado Pago** o **Wompi** del equipo en **Ajustes → Integraciones**. Una conexión privada (sólo tuya) no sirve para cobrar en un formulario.',
+            },
+            { t: 'h', text: 'Encenderlo' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'En **Cobrar al enviar**, enciende **Cobrar al enviar el formulario**.',
+                    'Elige **con qué cuenta se cobra** y escribe el **concepto** del cobro (lo que verá la persona al pagar).',
+                    'Elige **cuánto se cobra** y qué pasa **después de enviar**.',
+                    'Guarda y publica. Mira la vista previa: debajo de las preguntas aparece **Total a pagar**.',
+                ],
+            },
+            { t: 'h', text: 'Cuánto se cobra' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Monto fijo', what: 'Todos pagan lo mismo: una inscripción, una entrada, una cuota.', tip: 'Escribe el monto con los separadores de tu empresa: «150.000».' },
+                    { name: 'Según un cálculo', what: 'El total sale de un cálculo de la pestaña **Lógica → Cálculos y puntaje**. Por ejemplo, cada plan suma su precio como puntos, o la cantidad por el precio unitario.', tip: 'La persona ve el total cambiar mientras elige, antes de enviar.' },
+                    { name: 'Lo escribe la persona', what: 'Un aporte, una donación o un abono: la persona escribe cuánto paga en una pregunta de número o moneda, con un **mínimo** y un **máximo** opcionales.', tip: 'Si escribe menos del mínimo o más del máximo, el formulario se lo dice y no se envía.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'El monto lo calcula siempre el servidor con las respuestas que se guardaron: nadie puede cambiarlo desde el navegador. Si el total da **cero**, la respuesta se guarda y no se cobra nada.',
+            },
+            { t: 'h', text: 'Los demás ajustes' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Concepto del cobro', what: 'Lo que se ve en el pago. Puede recordar respuestas: «Inscripción de {{nombre}}». Vacío = el título del formulario.' },
+                    { name: 'Moneda', what: 'La moneda del cobro. Con Wompi siempre se cobra en pesos colombianos.' },
+                    { name: 'El link sirve (días)', what: 'Cuántos días puede pagar la persona si no paga en ese momento (de 1 a 30).' },
+                    { name: 'Llevar directo a pagar', what: 'Al enviar, la persona pasa a la página de pago. Al terminar vuelve al formulario y ve si el pago quedó aprobado.', tip: 'Si el formulario está insertado en tu sitio, en vez de saltar muestra el botón para pagar en una pestaña nueva.' },
+                    { name: 'Mostrar el botón para pagar', what: 'La pantalla de gracias muestra el total y un botón para pagar. Útil cuando primero quieres darle un mensaje.' },
+                    { name: 'Texto del botón', what: 'Lo que dice el botón de pago. Por defecto, «Ir a pagar».', tip: '«Pagar mi inscripción» dice mejor lo que pasa.' },
+                ],
+            },
+            { t: 'h', text: 'Ver quién pagó' },
+            {
+                t: 'p',
+                md: 'Cada respuesta crea su registro y su **link de pago**, que aparece en la ficha del registro, en **Cobros**. Allí, **Agregar columnas** suma a la lista el estado del pago, la fecha y el medio, así puedes filtrar «Pendiente» o agrupar por estado. Cuando el pago se aprueba, el estado cambia solo.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Avisar cuando llega el pago',
+                md: 'Crea una automatización **Cuando se recibe un pago** para mandar la confirmación por correo o WhatsApp, o cambiar el estado de la inscripción a «Confirmada».',
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Si no se puede preparar el pago',
+                md: 'Si la cuenta de cobro deja de funcionar, la respuesta igual se guarda y la persona ve que la contactarás para completar el pago. En **Problemas** te aparece un aviso con el motivo para que lo arregles.',
+            },
+            {
+                t: 'example',
+                title: 'Inscripciones a un taller con dos planes',
+                md: 'Una escuela de fotografía de Cali armó su formulario de inscripción con un cálculo «precio»: el plan Básico suma 300.000 y el Premium 800.000. Encendió **Cobrar al enviar** con su Mercado Pago, «Llevar directo a pagar» y el concepto «Taller de {{nombre}}». Cada persona ve su total, paga con PSE o tarjeta, y en la lista de inscripciones la columna del pago muestra quién ya pagó. Una automatización le manda por WhatsApp los datos del taller apenas el pago se aprueba.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿La app se queda con una comisión?', a: 'No. El cobro sale de la cuenta de tu empresa y el dinero llega ahí. Sólo aplica la comisión de Mercado Pago o Wompi.' },
+                    { q: '¿Qué pasa si la persona no paga en ese momento?', a: 'La respuesta queda guardada con su pago pendiente. El link sirve los días que elegiste: en la sección **Cobros** de la ficha del registro, **Copiar link** te lo da para mandárselo otra vez.' },
+                    { q: '¿Se cobra al actualizar datos con un enlace?', a: 'No. Los enlaces para actualizar un registro nunca cobran.' },
+                    { q: '¿Y si el formulario pide confirmar el correo?', a: 'Se cobra cuando la persona confirma: en esa misma página ve el total y el botón para pagar.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Conectar Mercado Pago o Wompi', to: '/settings?s=conectores' },
                     { label: 'Siguiente: agradecimiento y cierre', article: 'formularios-ajustes' },
                 ],
             },

@@ -196,6 +196,12 @@ export interface LinkInput {
     reference: string;
     /** URL de avisos (sólo https; Mercado Pago la recibe por link). */
     notificationUrl: string | null;
+    /**
+     * v0.1.361 — Adónde vuelve la persona al terminar de pagar (sólo https):
+     * la página del formulario con `?pago=<referencia>`. null = el proveedor
+     * muestra su propio comprobante y ahí termina.
+     */
+    returnUrl?: string | null;
 }
 
 /** Wompi sólo cobra en pesos colombianos; Mercado Pago, en la moneda de la cuenta. */
@@ -237,6 +243,11 @@ export function createLinkRequest(
             body.expires = true;
             body.expiration_date_to = input.expiresAt.toISOString();
         }
+        if (input.returnUrl && input.returnUrl.startsWith('https://')) {
+            body.back_urls = { success: input.returnUrl, pending: input.returnUrl, failure: input.returnUrl };
+            // Con el pago aprobado vuelve solo (sin el botón «Volver al sitio»).
+            body.auto_return = 'approved';
+        }
         return {
             url: `${trimBase(bases.mercadopago)}/checkout/preferences`,
             method: 'POST',
@@ -258,6 +269,7 @@ export function createLinkRequest(
         amount_in_cents: Math.round(input.amount * 100),
     };
     if (input.expiresAt) body.expires_at = input.expiresAt.toISOString();
+    if (input.returnUrl && input.returnUrl.startsWith('https://')) body.redirect_url = input.returnUrl;
     return {
         url: `${trimBase(wompiBase(creds, bases))}/payment_links`,
         method: 'POST',

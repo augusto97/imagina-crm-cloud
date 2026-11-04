@@ -11861,6 +11861,59 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         formularios y automatizaciones 90/90; E2E navegador 28/28 y 26/26 en
         celular oscuro.
 
+  - [x] **Formularios, entrega 3 (cuarta parte): cobrar al enviar (v0.1.361,
+        addendum ADR-S39)**. Un formulario cobra en el momento en que se envía
+        con la conexión de cobro de la empresa (ADR-S31): el dinero va a SU
+        cuenta. Con esto la entrega 3 y el proyecto de formularios quedan
+        completos.
+        (a) **Ajustes → «Cobrar al enviar»** (`PaymentSettings`,
+        `settings.payment` / `formPaymentSchema`, leído con tolerancia, sin
+        migración para la config): conexión DEL EQUIPO (una privada → 400
+        `form_payment_connection`), concepto con `{{respuestas}}`, cuánto se
+        cobra —**monto fijo**, **según un cálculo** de «Cálculos y puntaje» o
+        **lo escribe la persona** en una pregunta de número o moneda con
+        mínimo y máximo—, moneda (Wompi fuerza COP), días del link (1-30) y
+        qué pasa al enviar (**llevar directo a pagar** o **mostrar el botón**
+        en la pantalla de gracias, con su texto). `sanitizeConfig` descarta un
+        cálculo o una pregunta inexistentes.
+        (b) **El monto lo decide el servidor** (`formPaymentAmount`, puro en
+        `form-logic.ts`, sin zod) con las respuestas guardadas: fuera del
+        mínimo o el máximo es un error de esa pregunta, cero no cobra. La
+        página muestra **Total a pagar** en vivo con la misma función (un
+        cálculo usado como monto es «vivo») y el botón pasa a «Enviar y
+        pagar».
+        (c) **El link** (`CollectionsService.createForForm`, tras crear el
+        registro; módulo de integraciones del plan; bitácora
+        `payment_link.create` con `via: 'form'`): referencia propia aleatoria
+        `ib_…` y formulario en `payment_links.reference` (única) y
+        `payment_links.form_id` (FK `ON DELETE SET NULL`), migración 0101;
+        vuelta del checkout a `?pago=<ref>` (Mercado Pago `back_urls` +
+        `auto_return`, Wompi `redirect_url`, sólo https). El estado lo ponen
+        los avisos del proveedor; aparece en la sección Cobros de la ficha.
+        (d) **La vuelta**: `GET /public/forms/:token/payment/:ref` (`no-store`)
+        busca por referencia Y formulario y consulta al proveedor si lleva más
+        de 15 s pendiente; la página pregunta cada 4 s (hasta 2 min), pasa sola
+        a «¡Pago recibido!» o ofrece reintentar, limpia la dirección y no
+        cuenta como visita.
+        (e) **Si no se puede preparar el pago**, la respuesta igual se guarda,
+        la persona lee que la contactarán y se abre un Problema
+        (`form-payment:<id>`, ADR-S44) que se cierra solo. Con confirmación por
+        correo se cobra al confirmar (la página de confirmación muestra el
+        total y el botón); los enlaces para actualizar un registro nunca
+        cobran; insertado en un sitio, el pago abre en otra pestaña.
+        (f) Asistente/MCP: `get_list_schema` dice qué formularios cobran y
+        cómo.
+        Ayuda: artículo «Cobrar al enviar el formulario» en Aprende →
+        Formularios con la ilustración `form-payment`, guía `form-payment`,
+        paso del recorrido y novedad con carrusel. El script de la página
+        pública sube 1,4 KB gz (21,2 → 22,6). Tests: `forms-payment.spec`
+        (7), shared 723, front 795, specs de formularios y cobros 52/52; E2E
+        navegador 31/31 y 23/23 en celular oscuro contra un Mercado Pago
+        simulado.
+
+        **Con esto el proyecto de formularios queda completo: diseño,
+        preguntas y lógica, medir, insertar y cobrar.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

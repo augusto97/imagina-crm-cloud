@@ -29,6 +29,7 @@ import {
     stepLabel,
     APPROVAL_TRIGGER_RESULTS,
     splitFormPages,
+    formPaymentActive,
     formRecallTexts,
     crmTemplateIdSchema,
     fieldSlugSchema,
@@ -1357,6 +1358,19 @@ export class StructureTools implements AiProposalApplier {
                         // este formulario: en un correo o WhatsApp de una automatización,
                         // la variable `{{formulario.<id>.enlace}}`.
                         edit_links: st.edit_links.enabled ? { days: st.edit_links.days, variable: `{{formulario.${f.id}.enlace}}` } : null,
+                        // v0.1.361 — cobra al enviar (con la conexión de cobro del equipo).
+                        charges_on_submit: formPaymentActive(f.config)
+                            ? {
+                                  amount_from:
+                                      st.payment.source === 'fixed'
+                                          ? { fixed: st.payment.amount }
+                                          : st.payment.source === 'calc'
+                                            ? { calc: st.payment.calc_key }
+                                            : { question: st.payment.field_id !== null ? (fieldById.get(st.payment.field_id)?.slug ?? null) : null, min: st.payment.min, max: st.payment.max },
+                                  currency: st.payment.currency,
+                                  then: st.payment.after === 'redirect' ? 'lleva directo a pagar' : 'muestra el botón para pagar',
+                              }
+                            : null,
                     };
                 }),
                 // D5 — páginas de agenda: lo que se reserva y quién atiende (las

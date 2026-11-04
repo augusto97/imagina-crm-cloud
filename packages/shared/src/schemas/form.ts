@@ -3,7 +3,7 @@ import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
 import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
 import type { PublicThemeView } from './public-theme-css';
-import { FORM_CALC_VALUE_PREFIX, FORM_SCALE_MAX_BUTTONS, formConditionCalcKeys, formRecallSlugs, type FormCalcLike } from './form-logic';
+import { FORM_CALC_VALUE_PREFIX, FORM_PAYMENT_MAX_AMOUNT, FORM_SCALE_MAX_BUTTONS, formConditionCalcKeys, formRecallSlugs, type FormCalcLike } from './form-logic';
 
 /**
  * v0.1.275 — Formularios públicos (ADR-S39).
@@ -547,6 +547,65 @@ export const formEditLinksSchema = z.object({
 export type FormEditLinks = z.infer<typeof formEditLinksSchema>;
 export const FORM_EDIT_LINKS_DEFAULT: FormEditLinks = { enabled: false, days: 30, version: 1, message: '' };
 
+/**
+ * v0.1.361 — Cobrar al enviar: al recibir la respuesta se arma un link de
+ * pago con una conexión de cobro DEL EQUIPO de la empresa (Mercado Pago o
+ * Wompi, ADR-S31) y la persona va a pagar. El monto lo decide SIEMPRE el
+ * servidor: un valor fijo, el resultado de un cálculo del formulario o lo que
+ * la persona escribió en una pregunta de número o moneda (dentro de un
+ * mínimo y un máximo). Si el monto da cero, no se cobra.
+ */
+export const FORM_PAYMENT_SOURCES = ['fixed', 'calc', 'field'] as const;
+export type FormPaymentSource = (typeof FORM_PAYMENT_SOURCES)[number];
+/** Qué pasa al enviar: llevar directo a pagar o mostrar el botón «Pagar» en la pantalla final. */
+export const FORM_PAYMENT_AFTER = ['redirect', 'button'] as const;
+const paymentAmount = z.number().min(0).max(FORM_PAYMENT_MAX_AMOUNT);
+export const formPaymentSchema = z.object({
+    enabled: z.boolean().default(false),
+    connection_id: z.number().int().positive().nullable().catch(null).default(null),
+    /** El concepto del cobro (acepta respuestas recordadas: «Inscripción de {{nombre}}»); vacío = el título del formulario. */
+    title: z.string().max(200).catch('').default(''),
+    source: z.enum(FORM_PAYMENT_SOURCES).catch('fixed').default('fixed'),
+    /** Monto fijo (source = fixed). */
+    amount: paymentAmount.nullable().catch(null).default(null),
+    /** Clave del cálculo que da el monto (source = calc). */
+    calc_key: z.string().max(40).nullable().catch(null).default(null),
+    /** Id del CAMPO número o moneda cuya respuesta es el monto (source = field). */
+    field_id: z.number().int().positive().nullable().catch(null).default(null),
+    min: paymentAmount.nullable().catch(null).default(null),
+    max: paymentAmount.nullable().catch(null).default(null),
+    /** Moneda del cobro (Wompi sólo cobra en COP). */
+    currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .catch('COP')
+        .default('COP'),
+    /** Días que sirve el link de pago. */
+    expires_days: z.number().int().min(1).max(30).catch(3).default(3),
+    after: z.enum(FORM_PAYMENT_AFTER).catch('redirect').default('redirect'),
+    /** El botón para pagar. */
+    button_label: z.string().max(60).catch('').default(''),
+});
+export type FormPayment = z.infer<typeof formPaymentSchema>;
+export const FORM_PAYMENT_DEFAULT: FormPayment = {
+    enabled: false,
+    connection_id: null,
+    title: '',
+    source: 'fixed',
+    amount: null,
+    calc_key: null,
+    field_id: null,
+    min: null,
+    max: null,
+    currency: 'COP',
+    expires_days: 3,
+    after: 'redirect',
+    button_label: '',
+};
+/** El estado de un pago visto desde la página pública (al volver del checkout). */
+export const FORM_PAYMENT_STATES = ['pending', 'paid', 'failed', 'expired', 'cancelled'] as const;
+export type FormPaymentState = (typeof FORM_PAYMENT_STATES)[number];
+
 export const formSettingsSchema = z.object({
     title: z.string().max(200).default(''),
     description: z.string().max(5000).default(''),
@@ -633,6 +692,8 @@ export const formSettingsSchema = z.object({
     save_progress: formSaveProgressSchema.catch(FORM_SAVE_PROGRESS_DEFAULT).default(FORM_SAVE_PROGRESS_DEFAULT),
     /** v0.1.360 — Enlaces para que alguien actualice su registro con este formulario. */
     edit_links: formEditLinksSchema.catch(FORM_EDIT_LINKS_DEFAULT).default(FORM_EDIT_LINKS_DEFAULT),
+    /** v0.1.361 — Cobrar al enviar. */
+    payment: formPaymentSchema.catch(FORM_PAYMENT_DEFAULT).default(FORM_PAYMENT_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -860,6 +921,37 @@ export interface PublicFormMeta {
      * pide los datos del registro si lo acepta) y el mensaje al guardar.
      */
     edit_links?: { message: string } | null;
+    /**
+     * v0.1.361 — Cobrar al enviar: de dónde sale el monto (para mostrar el
+     * total antes de enviar; el servidor lo vuelve a calcular), la moneda y
+     * el botón. null = no se cobra.
+     */
+    payment?: PublicFormPayment | null;
+}
+
+export interface PublicFormPayment {
+    source: FormPaymentSource;
+    /** Monto fijo (source = fixed). */
+    amount: number | null;
+    /** Cálculo que da el monto (source = calc). */
+    calc_key: string | null;
+    /** Campo cuya respuesta es el monto (source = field), con sus límites. */
+    field_id: number | null;
+    min: number | null;
+    max: number | null;
+    currency: string;
+    after: 'redirect' | 'button';
+    button_label: string;
+}
+
+/** v0.1.361 — Lo que la página muestra al volver del pago. */
+export interface PublicFormPaymentStatus {
+    status: FormPaymentState;
+    title: string;
+    amount: number;
+    currency: string;
+    /** El link para pagar, mientras siga pendiente y vigente. */
+    url: string | null;
 }
 
 /** v0.1.357 */
@@ -935,6 +1027,12 @@ export interface SubmitFormResult {
     email_hint?: string;
     /** v0.1.360 — Se actualizó un registro que ya existía (no se creó otro). */
     updated?: boolean;
+    /**
+     * v0.1.361 — Cobrar al enviar: el link para pagar (y su monto), o por qué
+     * no se pudo armar. La respuesta YA quedó guardada en los dos casos.
+     */
+    payment?: { url: string; amount: number; currency: string; after: 'redirect' | 'button'; button_label: string } | null;
+    payment_error?: string;
 }
 
 export interface FormUploadResult {
@@ -1363,7 +1461,8 @@ export function buildPublicFormItems(
  */
 export function formRecallTexts(config: FormConfig): string[] {
     const st = config.settings;
-    const out: string[] = [st.title, st.description, st.success_title, st.success_message, st.welcome.title, st.welcome.message];
+    // v0.1.361 — el concepto del cobro también recuerda respuestas («Inscripción de {{nombre}}»).
+    const out: string[] = [st.title, st.description, st.success_title, st.success_message, st.welcome.title, st.welcome.message, st.payment.title];
     for (const e of st.endings) out.push(e.title, e.message);
     for (const i of config.items) {
         if (i.type === 'field') out.push(i.label, i.help);
@@ -1422,6 +1521,20 @@ export function formLiveTexts(config: FormConfig): string[] {
 }
 
 /**
+ * v0.1.361 — ¿El formulario cobra al enviar? Sí si está encendido, tiene una
+ * conexión y el monto sale de algo que existe (un monto fijo mayor a cero, un
+ * cálculo del formulario o una pregunta del formulario).
+ */
+export function formPaymentActive(config: FormConfig): boolean {
+    const p = config.settings.payment;
+    if (!p.enabled || p.connection_id === null) return false;
+    if (p.source === 'fixed') return p.amount !== null && p.amount > 0;
+    if (p.source === 'calc') return p.calc_key !== null && config.settings.calcs.some((c) => c.key === p.calc_key);
+    return p.field_id !== null && config.items.some((i) => i.type === 'field' && i.field_id === p.field_id);
+}
+
+
+/**
  * v0.1.357 — ¿La página necesita hacer este cálculo mientras se responde? Sí
  * si un salto lo mira o un texto de las preguntas lo muestra. Si no, el
  * resultado lo da el servidor al enviar (y lo que vale cada respuesta no
@@ -1429,6 +1542,9 @@ export function formLiveTexts(config: FormConfig): string[] {
  */
 export function formCalcIsLive(config: FormConfig, key: string): boolean {
     if (config.settings.jumps.some((j) => formConditionCalcKeys(j.when).includes(key))) return true;
+    // v0.1.361 — el cálculo que da el monto a pagar se muestra antes de enviar.
+    const pay = config.settings.payment;
+    if (pay.enabled && pay.source === 'calc' && pay.calc_key === key) return true;
     return formLiveTexts(config).some((t) => formRecallSlugs(t).includes(key));
 }
 

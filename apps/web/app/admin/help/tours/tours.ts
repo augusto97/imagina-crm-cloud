@@ -863,6 +863,13 @@ export const TOURS: TourDef[] = [
                 body: 'En los ajustes, **Actualizar un registro** crea enlaces que abren el formulario con los datos del cliente: corrige lo que cambió y se guarda en ese registro. Mándalo desde la ficha o en una automatización.',
                 tip: 'Mándalo sólo al dueño de esos datos: quien tenga el enlace puede verlos y cambiarlos.',
             },
+            {
+                id: 'payment',
+                art: 'form-payment',
+                title: 'Cobrar al enviar',
+                body: 'En los ajustes, **Cobrar al enviar** cobra un monto fijo, el resultado de un cálculo o lo que escribe la persona, con el Mercado Pago o Wompi de tu empresa. El pago aparece en la ficha del registro.',
+                tip: 'La persona ve el total antes de enviar, y el monto lo calcula siempre el servidor.',
+            },
         ],
     },
 

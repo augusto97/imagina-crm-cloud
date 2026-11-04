@@ -46,6 +46,10 @@ export const paymentLinks = pgTable(
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
         lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+        /** v0.1.361 — Nuestra referencia (`ib_…`): la dirección de vuelta del checkout la lleva. */
+        reference: varchar('reference', { length: 64 }),
+        /** v0.1.361 — El formulario que armó el link (null = ficha, automatización o portal). */
+        formId: bigint('form_id', { mode: 'number' }),
     },
     (t) => [
         uniqueIndex('payment_links_external_ux').on(t.provider, t.externalId),

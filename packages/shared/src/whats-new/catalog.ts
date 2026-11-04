@@ -1386,4 +1386,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Edita el formulario y en **Ajustes → Actualizar un registro** enciende los enlaces. Después, en la ficha de un registro, toca el ícono **Enlace para actualizar**.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.361-cobrar-al-enviar',
+        version: '0.1.361',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Cobra en el momento en que envían tu formulario',
+        summary:
+            'Una inscripción, una entrada, un plan o un aporte: la persona envía el formulario y paga enseguida con el Mercado Pago o Wompi de tu empresa.',
+        media: {
+            slides: [
+                {
+                    title: 'Ve el total antes de enviar',
+                    text: 'Un monto fijo, el precio del plan que eligió (con un cálculo) o lo que escribe la persona, con mínimo y máximo. El total cambia mientras responde.',
+                    illustration: 'form-payment',
+                },
+                {
+                    title: 'Mira en la lista quién pagó',
+                    text: 'Cada respuesta crea su registro con su link de pago. Cuando el pago se aprueba, el estado cambia solo y puedes avisar con una automatización.',
+                    illustration: 'cobro-estados',
+                },
+            ],
+        },
+        body: 'Edita el formulario y en **Ajustes → Cobrar al enviar** elige la cuenta de cobro y cuánto se cobra. El dinero llega a la cuenta de tu empresa.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

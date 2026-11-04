@@ -37,6 +37,7 @@ import {
     buildPublicThemeCss,
     CAPTCHA_PROVIDER_INFO,
     formEstimateMinutes,
+    formPaymentActive,
     formRecallMap,
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
@@ -335,6 +336,20 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             // v0.1.358 — para que la vista previa muestre «Guardar y seguir después».
             save_progress: s.save_progress.device || s.save_progress.email ? { ...s.save_progress } : null,
             edit_links: s.edit_links.enabled ? { message: s.edit_links.message } : null,
+            // v0.1.361 — cobrar al enviar: la vista previa muestra el total y el botón.
+            payment: formPaymentActive(config)
+                ? {
+                      source: s.payment.source,
+                      amount: s.payment.source === 'fixed' ? s.payment.amount : null,
+                      calc_key: s.payment.source === 'calc' ? s.payment.calc_key : null,
+                      field_id: s.payment.source === 'field' ? s.payment.field_id : null,
+                      min: s.payment.source === 'field' ? s.payment.min : null,
+                      max: s.payment.source === 'field' ? s.payment.max : null,
+                      currency: s.payment.currency,
+                      after: s.payment.after,
+                      button_label: s.payment.button_label || 'Ir a pagar',
+                  }
+                : null,
         };
     }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
 

@@ -24,6 +24,7 @@ import {
     formAnswerText,
     formAnswered,
     formFlow,
+    formPaymentAmount,
     formRecallText,
     formScaleValues,
     splitFormPages,
@@ -385,6 +386,8 @@ let started = false;
 let previewWelcome = false;
 /** v0.1.357 — El resultado de cada cálculo que mandó el servidor al enviar. */
 let finalCalcs: Record<string, number> | null = null;
+/** v0.1.361 — «Total a pagar» antes de enviar (cuando el formulario cobra). */
+let payTotalEl: HTMLElement | null = null;
 
 // ───────────────────────────── Utilidades ─────────────────────────────
 
@@ -1792,7 +1795,35 @@ function refresh(): void {
         }
     }
     if (paged()) paintPages();
+    paintPayTotal();
     reportHeight();
+}
+
+/** v0.1.361 — Cuánto se va a cobrar con lo respondido hasta ahora (el servidor lo vuelve a calcular). */
+function payAmountNow(): number {
+    const p = meta?.payment;
+    if (!p) return 0;
+    const out = formPaymentAmount(p, { calcs: flow().calcs, fieldValue: p.field_id !== null ? values[String(p.field_id)] : undefined });
+    return 'amount' in out ? out.amount : 0;
+}
+
+function paintPayTotal(): void {
+    if (!payTotalEl || !meta?.payment) return;
+    const amount = payAmountNow();
+    // En la vista previa del constructor se ve siempre (un clic ahí elige la pregunta, no la responde).
+    payTotalEl.hidden = amount <= 0 && !BOOT.preview;
+    payTotalEl.querySelector('strong')!.textContent = amount > 0 ? `${fmtNum(amount)} ${meta.payment.currency}` : '—';
+}
+
+/** v0.1.361 — El total y el botón para pagar (en la pantalla de gracias). */
+function payNodes(pay: { url: string; amount: number; currency: string; button_label: string }): HTMLElement[] {
+    const link = el('a', { cls: 'ib-btn ib-btn-primary ib-pay-btn', href: pay.url, rel: 'noopener', 'data-testid': 'form-pay-go', text: pay.button_label || 'Ir a pagar' });
+    // Insertado en otro sitio, el pago se abre en una pestaña nueva (los checkouts no se dejan abrir dentro de un marco).
+    if (embedded) link.setAttribute('target', '_blank');
+    return [
+        el('p', { cls: 'ib-pay-total', 'data-testid': 'form-pay-amount' }, [document.createTextNode('Total a pagar: '), el('strong', { text: `${fmtNum(pay.amount)} ${pay.currency}` })]),
+        link,
+    ];
 }
 
 function paintPages(): void {
@@ -2030,7 +2061,13 @@ function render(keepPage: boolean): void {
     if (meta.data_consent) form.appendChild(consentNode(meta.data_consent));
     alertBox = el('div', { cls: 'ib-alert', role: 'alert', hidden: true });
     form.appendChild(alertBox);
-    submitBtn = primaryButton(editing() ? 'Guardar cambios' : meta.submit_label || 'Enviar', 'submit');
+    // v0.1.361 — el total a pagar, al lado del botón.
+    payTotalEl = null;
+    if (meta.payment && !editing()) {
+        payTotalEl = el('p', { cls: 'ib-pay-total', 'data-testid': 'form-pay-total', hidden: true }, [document.createTextNode('Total a pagar: '), el('strong')]);
+        form.appendChild(payTotalEl);
+    }
+    submitBtn = primaryButton(editing() ? 'Guardar cambios' : submitLabel(), 'submit');
     if (paged()) {
         prevBtn = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Anterior' });
         nextBtn = primaryButton('Siguiente', 'button');
@@ -2133,7 +2170,7 @@ function submit(hpValue: string): void {
         if (values[i.key] !== undefined) outValues[i.key] = values[i.key];
         if (i.other && choseOther(i) && values[i.other.key] !== undefined) outValues[i.other.key] = values[i.other.key];
     }
-    const label = editing() ? 'Guardar cambios' : m.submit_label || 'Enviar';
+    const label = editing() ? 'Guardar cambios' : submitLabel();
     setBusy(true, label);
     const body: Record<string, unknown> = { values: outValues, uploads: outUploads, hp: hpValue };
     if (m.captcha && !editing()) body.captcha = captchaToken;
@@ -2166,6 +2203,8 @@ function submit(hpValue: string): void {
                 calcs?: Record<string, number>;
                 message?: string;
                 updated?: boolean;
+                payment?: { url: string; amount: number; currency: string; after: 'redirect' | 'button'; button_label: string } | null;
+                payment_error?: string;
                 code?: string;
                 data?: { errors?: Record<string, string> };
             };
@@ -2182,6 +2221,12 @@ function submit(hpValue: string): void {
                 // v0.1.357 — el puntaje lo dice el servidor (la pantalla final lo puede mostrar).
                 if (b.calcs && typeof b.calcs === 'object') finalCalcs = b.calcs;
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
+                // v0.1.361 — cobrar al enviar: a pagar (o el botón en la pantalla de gracias).
+                if (b.payment && /^https?:\/\//.test(b.payment.url)) {
+                    if (b.payment.after === 'redirect' && !embedded) return goPay(b.payment);
+                    return done(b.ending_id ?? null, b.payment);
+                }
+                if (b.payment_error) return done(b.ending_id ?? null, null, b.payment_error);
                 if (b.redirect_url) return goTo(b.redirect_url);
                 return done(b.ending_id ?? null);
             }
@@ -2323,15 +2368,91 @@ function endingKids(endingId: string | null): HTMLElement[] {
     ];
 }
 
-function done(endingId: string | null = null): void {
+function done(
+    endingId: string | null = null,
+    pay: { url: string; amount: number; currency: string; button_label: string } | null = null,
+    payError?: string,
+): void {
     const m = meta!;
     const kids = endingKids(endingId);
-    if (m.allow_another) {
+    if (pay) kids.push(...payNodes(pay));
+    if (payError) kids.push(el('p', { cls: 'ib-pay-error', role: 'alert', 'data-testid': 'form-pay-error', text: payError }));
+    if (m.allow_another && !pay) {
         const again = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Enviar otra respuesta' });
         again.addEventListener('click', () => location.reload());
         kids.push(again);
     }
     finalScreen(kids, 'form-done');
+}
+
+/** v0.1.361 — El botón de enviar: con cobro directo, dice que lleva a pagar (si la empresa no eligió otro texto). */
+function submitLabel(): string {
+    const m = meta!;
+    const label = m.submit_label || 'Enviar';
+    return m.payment?.after === 'redirect' && label === 'Enviar' ? 'Enviar y pagar' : label;
+}
+
+/** v0.1.361 — Respuesta guardada: a pagar (con el botón por si el navegador no redirige). */
+function goPay(pay: { url: string; amount: number; currency: string; button_label: string }): void {
+    finalScreen(
+        [
+            el('div', { cls: 'ib-tick', text: '✓', 'aria-hidden': 'true' }),
+            el('h2', { text: 'Te llevamos a pagar…' }),
+            el('p', { cls: 'ib-done-msg', text: 'Recibimos tu respuesta. Termina el pago en la página que se abre.' }),
+            ...payNodes(pay),
+        ],
+        'form-pay-redirect',
+    );
+    if (!BOOT.preview) setTimeout(() => location.assign(pay.url), 600);
+}
+
+/**
+ * v0.1.361 — Al volver del pago (`?pago=<referencia>`): cómo quedó. Mientras
+ * siga pendiente se vuelve a preguntar un rato (el aviso del medio de pago a
+ * veces llega unos segundos después que la persona).
+ */
+function paymentReturn(ref: string, tries = 0): void {
+    fetch(`${API}/payment/${encodeURIComponent(ref)}`, { credentials: 'omit', cache: 'no-store' })
+        .then((r) => (r.ok ? (r.json() as Promise<{ status: string; title: string; amount: number; currency: string; url: string | null }>) : Promise.reject(new Error(String(r.status)))))
+        .then((p) => {
+            const amount = `${fmtNum(p.amount)} ${p.currency}`;
+            const retry = (label: string): HTMLElement[] =>
+                p.url ? [el('a', { cls: 'ib-btn ib-btn-primary ib-pay-btn', href: p.url, rel: 'noopener', 'data-testid': 'form-pay-retry', text: label })] : [];
+            const next = meta?.redirect_url && p.status === 'paid' ? [el('a', { cls: 'ib-btn ib-btn-secondary', href: meta.redirect_url, text: 'Continuar' })] : [];
+            const screens: Record<string, [string, string, string, HTMLElement[]]> = {
+                paid: ['✓', '¡Pago recibido!', `Recibimos tu pago de ${amount} por «${p.title}». ¡Gracias!`, next],
+                pending:
+                    tries < 30
+                        ? ['…', 'Estamos confirmando tu pago', 'Esto puede tardar unos segundos. No cierres esta página.', retry('Volver a pagar')]
+                        : ['…', 'Todavía no vemos el pago', 'Si ya pagaste, la confirmación puede tardar un poco más. Si no terminaste, puedes intentarlo de nuevo.', retry('Ir a pagar')],
+                failed: ['!', 'El pago no se completó', `No recibimos el pago de ${amount}. Puedes intentarlo de nuevo con otro medio de pago.`, retry('Intentar de nuevo')],
+                expired: ['!', 'El link de pago venció', 'Escríbele a la empresa para que te envíe uno nuevo.', []],
+                cancelled: ['!', 'Este pago se anuló', 'Si crees que es un error, escríbele a la empresa.', []],
+            };
+            const [mark, title, msg, extra] = screens[p.status] ?? screens.failed!;
+            const r = root!;
+            r.textContent = '';
+            const box = el('div', { cls: 'ib-done', 'data-testid': 'form-pay-status', 'data-state': p.status }, [
+                el('div', { cls: mark === '✓' ? 'ib-tick' : 'ib-tick ib-tick-error', text: mark, 'aria-hidden': 'true' }),
+                el('h2', { text: title }),
+                el('p', { cls: 'ib-done-msg', role: 'status', text: msg }),
+                ...extra,
+            ]);
+            r.appendChild(box);
+            reportHeight();
+            if (p.status === 'pending' && tries < 30) setTimeout(() => paymentReturn(ref, tries + 1), 4000);
+        })
+        .catch(() => {
+            const r = root!;
+            r.textContent = '';
+            r.appendChild(
+                el('div', { cls: 'ib-done', 'data-testid': 'form-pay-status', 'data-state': 'unknown' }, [
+                    el('div', { cls: 'ib-tick ib-tick-error', text: '!', 'aria-hidden': 'true' }),
+                    el('h2', { text: 'No encontramos ese pago' }),
+                    el('p', { cls: 'ib-done-msg', text: 'Si ya pagaste, la empresa recibirá la confirmación igual.' }),
+                ]),
+            );
+        });
 }
 
 // v0.1.360 — los cambios del enlace «actualizar mis datos» quedaron guardados.
@@ -2582,7 +2703,17 @@ if (!BOOT.preview && meta && !meta.closed) {
 
     const params = new URLSearchParams(location.search);
     const code = params.get('seguir');
-    if (editLoading && pendingEdit) {
+    // v0.1.361 — vuelve del pago: se muestra cómo quedó (la referencia sale de la barra).
+    const payRef = params.get('pago');
+    if (payRef && !BOOT.preview) {
+        for (const k of ['pago', 'collection_id', 'collection_status', 'payment_id', 'status', 'external_reference', 'payment_type', 'merchant_order_id', 'preference_id', 'site_id', 'processing_mode', 'merchant_account_id', 'id', 'env']) params.delete(k);
+        try {
+            history.replaceState(null, '', location.pathname + (params.toString() ? `?${params.toString()}` : '') + location.hash);
+        } catch {
+            // nada
+        }
+        paymentReturn(payRef);
+    } else if (editLoading && pendingEdit) {
         // El código no queda en la barra (se copia o se comparte sin querer):
         // esta pestaña lo recuerda si se recarga.
         if (params.has('editar')) {
@@ -2643,5 +2774,6 @@ if (!BOOT.preview && meta && !meta.closed) {
             render(false);
         }
     }
-    trackView();
+    // Volver del pago no es otra visita.
+    if (!payRef) trackView();
 }

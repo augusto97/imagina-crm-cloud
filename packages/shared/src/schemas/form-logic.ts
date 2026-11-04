@@ -595,3 +595,38 @@ export function formatFormNumber(n: number, fmt: 'comma_dot' | 'dot_comma' | 'sp
     const decSep = fmt === 'comma_dot' ? '.' : ',';
     return `${n < 0 ? '-' : ''}${grouped}${dec ? decSep + dec : ''}`;
 }
+
+/** v0.1.361 — El monto más alto que puede cobrar un formulario. */
+export const FORM_PAYMENT_MAX_AMOUNT = 1_000_000_000;
+
+/** v0.1.361 — De dónde sale el monto de un cobro al enviar (el subconjunto que usa el cálculo). */
+export interface FormPaymentAmountRule {
+    source: 'fixed' | 'calc' | 'field';
+    amount: number | null;
+    calc_key: string | null;
+    min: number | null;
+    max: number | null;
+}
+
+/**
+ * v0.1.361 — El monto a cobrar con lo que respondió la persona: el fijo, el
+ * resultado del cálculo o la respuesta de la pregunta (que tiene que estar
+ * entre el mínimo y el máximo). Redondeado a centavos; 0 = no se cobra.
+ * La usan el servidor (que manda) y la página (para mostrar el total).
+ */
+export function formPaymentAmount(
+    payment: FormPaymentAmountRule,
+    input: { calcs: Record<string, number>; fieldValue: unknown },
+): { amount: number } | { error: 'below_min' | 'above_max' } {
+    let raw = 0;
+    if (payment.source === 'fixed') raw = payment.amount ?? 0;
+    else if (payment.source === 'calc') raw = (payment.calc_key !== null ? input.calcs[payment.calc_key] : undefined) ?? 0;
+    else {
+        const v = typeof input.fieldValue === 'number' ? input.fieldValue : typeof input.fieldValue === 'string' && input.fieldValue.trim() !== '' ? Number(input.fieldValue) : 0;
+        raw = Number.isFinite(v) ? v : 0;
+        if (raw > 0 && payment.min !== null && raw < payment.min) return { error: 'below_min' };
+        if (payment.max !== null && raw > payment.max) return { error: 'above_max' };
+    }
+    if (!Number.isFinite(raw) || raw <= 0) return { amount: 0 };
+    return { amount: Math.min(FORM_PAYMENT_MAX_AMOUNT, Math.round(raw * 100) / 100) };
+}

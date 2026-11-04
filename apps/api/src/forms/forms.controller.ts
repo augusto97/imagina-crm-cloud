@@ -295,6 +295,16 @@ export class PublicFormsController {
         reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
     }
 
+    /**
+     * v0.1.361 — Cómo quedó un pago al volver del checkout (`?pago=<referencia>`):
+     * estado, concepto y monto, nunca en caché.
+     */
+    @Get(':token/payment/:ref')
+    async paymentStatus(@Param('token') token: string, @Param('ref') ref: string, @Res() reply: FastifyReply): Promise<void> {
+        const out = await this.forms.paymentStatus(token, ref);
+        reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
+    }
+
     /** v0.1.358 — El avance de un enlace «seguir después» (nunca en caché: son respuestas de alguien). */
     @Get(':token/drafts/:code')
     async loadDraft(@Param('token') token: string, @Param('code') code: string, @Res() reply: FastifyReply): Promise<void> {
@@ -443,6 +453,8 @@ export class PublicFormPageController {
             message: out.message,
             tone: out.status === 'confirmed' ? 'ok' : out.status === 'closed' ? 'info' : 'error',
             continueUrl: out.continueUrl,
+            pay: out.payUrl ? { url: out.payUrl, label: out.payLabel || 'Ir a pagar', amountText: out.payAmountText ?? '' } : null,
+            payError: out.payError ?? null,
         });
         this.sendNotice(reply, nonce, html, out.status === 'confirmed' ? 200 : out.status === 'invalid' ? 404 : out.status === 'closed' ? 410 : 503);
     }

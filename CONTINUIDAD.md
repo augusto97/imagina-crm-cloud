@@ -382,9 +382,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.360**
-(formularios: enlace para que un cliente actualice su registro, addendum
-ADR-S39; antes v0.1.359 plantillas, panel lateral, pantalla completa y código
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.361**
+(formularios: cobrar al enviar con el Mercado Pago o Wompi de la empresa,
+addendum ADR-S39 —con ella queda COMPLETO el proyecto de formularios—; antes
+v0.1.360 enlace para que un cliente actualice su registro, v0.1.359 plantillas, panel lateral, pantalla completa y código
 QR, addendum ADR-S39 y ADR-S95, v0.1.358 estadísticas y guardar el avance,
 v0.1.357 puntaje y cálculos, una pregunta por pantalla y bienvenida, v0.1.356 la lógica —varias reglas todas/alguna, saltos
 entre páginas, pantallas finales según las respuestas y recordar respuestas con
@@ -447,9 +448,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   avance HECHOS en v0.1.358**; **más formas de insertar (panel lateral,
   pantalla completa, QR) y plantillas de formularios HECHAS en v0.1.359**;
   **enlace firmado para que alguien actualice un registro que ya existe HECHO
-  en v0.1.360**; después **v0.1.361** (cobrar al enviar con el Mercado Pago o
-  Wompi de la empresa).
-  **SIGUIENTE**: v0.1.361.
+  en v0.1.360** y **cobrar al enviar con el Mercado Pago o Wompi de la empresa
+  HECHO en v0.1.361**.
+  **Estado: las TRES entregas HECHAS — el proyecto de formularios queda
+  completo.** SIGUIENTE: lo que el usuario pida (banco de ideas en
+  `docs/ideas.md`).
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1356,6 +1359,58 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.361** — **Formularios: cobrar al enviar** (addendum
+  ADR-S39; cuarta y última versión de la entrega 3: con ella queda COMPLETO el
+  proyecto de formularios —diseño, preguntas y lógica, medir, insertar y
+  cobrar—).
+  - **Configurarlo**: en los ajustes del formulario, **Cobrar al enviar**
+    (`settings.payment`, sin migración para la config): la conexión de cobro
+    DEL EQUIPO (Mercado Pago o Wompi, ADR-S31; una privada se rechaza con 400
+    `form_payment_connection`), el concepto (admite `{{nombre}}`), cuánto se
+    cobra —**monto fijo**, **según un cálculo** (el de «Cálculos y puntaje») o
+    **lo escribe la persona** en una pregunta de número o moneda con mínimo y
+    máximo—, moneda (Wompi fuerza COP), días del link (1-30) y qué pasa al
+    enviar (**llevar directo a pagar** o **mostrar el botón** en la pantalla
+    de gracias, con su texto).
+  - **El monto lo decide el servidor** (`formPaymentAmount`, puro en
+    `form-logic.ts`) con las respuestas guardadas; fuera del mínimo o del
+    máximo es un error de esa pregunta; cero = no se cobra. La página muestra
+    **Total a pagar** en vivo con la misma función y el botón dice «Enviar y
+    pagar».
+  - **El link**: `CollectionsService.createForForm` lo arma tras crear el
+    registro, con una referencia propia aleatoria y el formulario
+    (`payment_links.reference` única + `payment_links.form_id`, migración
+    0101) y la vuelta del checkout a `?pago=<ref>`. Aparece en la sección
+    Cobros de la ficha y su estado lo ponen los avisos del proveedor.
+  - **La vuelta**: `GET /public/forms/:token/payment/:ref` (por referencia Y
+    formulario; consulta al proveedor si lleva más de 15 s pendiente) → la
+    página dice «Estamos confirmando tu pago» y pasa sola a «¡Pago
+    recibido!» o ofrece reintentar; limpia la dirección y no cuenta como
+    visita.
+  - **Si no se puede preparar el pago** la respuesta igual se guarda, la
+    persona lee que la contactarán y se abre un Problema
+    (`form-payment:<id>`) que se cierra solo. Con confirmación por correo se
+    cobra al confirmar (la página de confirmación muestra el total y el
+    botón). Los enlaces para actualizar un registro nunca cobran. Insertado en
+    un sitio, el pago abre en otra pestaña.
+  - Asistente/MCP: `get_list_schema` dice qué formularios cobran y cómo.
+  - Ayuda: artículo «Cobrar al enviar el formulario» en Aprende → Formularios
+    con la ilustración `form-payment`, guía `form-payment`, paso nuevo en el
+    recorrido de formularios y novedad con carrusel. El script de la página
+    pública sube 1,4 KB gz (21,2 → 22,6).
+  - Tests: 7 de integración (`forms-payment.spec`: monto fijo con concepto
+    recordado, `back_urls` y referencia, pendiente → pagado con la consulta
+    cada 15 s, referencia de otro formulario, cálculo y monto cero, pregunta
+    con mínimo/máximo, conexión privada rechazada y Problema, confirmación
+    por correo, enlaces de actualizar sin cobro), 4 de shared (723 en verde),
+    front 795; specs de formularios y cobros 52/52. E2E navegador 31/31 en
+    escritorio y 23/23 en celular oscuro contra un Mercado Pago simulado
+    (constructor, total en vivo 30.000 → 80.000, salto al checkout con una
+    sola preferencia de 80.000 y el concepto «Inscripción de Ana Gómez»,
+    vuelta pendiente → aprobado sola, referencia desconocida, botón «Pagar mi
+    aporte» con el mínimo, cero errores de CSP o JS).
+  - **Siguiente**: lo que el usuario pida; el proyecto de formularios está
+    completo.
 - **2026-11-04 · v0.1.360** — **Formularios: enlace para que un cliente
   actualice su registro** (addendum ADR-S39; tercera de las versiones de la
   entrega 3).

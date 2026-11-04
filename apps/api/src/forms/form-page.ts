@@ -522,6 +522,10 @@ export function renderFormNoticePage(opts: {
     confirmAction?: string;
     /** Botón «Continuar» (la redirección del formulario, https). */
     continueUrl?: string | null;
+    /** v0.1.361 — Con cobro al enviar: el botón para pagar (va antes que «Continuar»). */
+    pay?: { url: string; label: string; amountText: string } | null;
+    /** v0.1.361 — No se pudo armar el pago (la respuesta sí quedó guardada). */
+    payError?: string | null;
 }): string {
     const e = escapeHtml;
     const accent = /^#[0-9a-fA-F]{6}$/.test(opts.brand.accent) ? opts.brand.accent : '#0e7490';
@@ -535,9 +539,13 @@ export function renderFormNoticePage(opts: {
     const action = opts.confirmAction
         ? `<form method="post" action="${e(opts.confirmAction)}" id="confirm"><button type="submit" class="ib-btn ib-btn-primary">Confirmar mi correo</button></form>
 <script nonce="${opts.nonce}">(function(){var f=document.getElementById('confirm');if(f){var b=f.querySelector('button');b.disabled=true;b.textContent='Confirmando…';f.submit();}})();</script>`
-        : opts.continueUrl
-          ? `<a class="ib-btn ib-btn-primary" href="${e(opts.continueUrl)}">Continuar</a>`
-          : '';
+        : opts.pay && /^https?:\/\//.test(opts.pay.url)
+          ? `<p class="ib-pay-total" data-testid="form-notice-pay-total">Total a pagar: <strong>${e(opts.pay.amountText)}</strong></p>
+<a class="ib-btn ib-btn-primary" href="${e(opts.pay.url)}" rel="noopener" data-testid="form-notice-pay">${e(opts.pay.label)}</a>`
+          : opts.continueUrl
+            ? `<a class="ib-btn ib-btn-primary" href="${e(opts.continueUrl)}">Continuar</a>`
+            : '';
+    const payError = opts.payError ? `<p class="ib-pay-error" data-testid="form-notice-pay-error">${e(opts.payError)}</p>` : '';
     return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" />
 <title>${e(opts.title)}</title>
@@ -550,6 +558,7 @@ ${logo}
 <div class="ib-tick${opts.tone === 'error' ? ' ib-tick-error' : ''}" aria-hidden="true">${icon}</div>
 <h2>${e(opts.title)}</h2>
 <p>${e(opts.message)}</p>
+${payError}
 ${action}
 </div></div></div></main></div></body></html>`;
 }

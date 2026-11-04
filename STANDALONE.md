@@ -3201,6 +3201,58 @@ tiene y, al guardar, actualizar ese registro en vez de crear otro (el caso
    correo (sería otra puerta de entrada; el portal ya cubre ese caso con
    sesión), y editar varios registros con un mismo enlace.
 
+**Addendum v0.1.361 — Cobrar al enviar.** Cuarta y última versión de la
+entrega 3 (con ella queda completo el proyecto de formularios). Un formulario
+puede cobrar en el momento en que se envía, con la conexión de cobro de la
+empresa (ADR-S31): el dinero va a SU cuenta y la app no cobra comisión.
+
+1. **Configuración** en `settings.payment` (`formPaymentSchema` en shared,
+   leído con tolerancia; sin migración para la config): conexión, concepto
+   (admite recordar respuestas, `{{nombre}}`), de dónde sale el monto
+   (**fijo**, un **cálculo** de ADR-S39 v0.1.357 o una **pregunta** de número o
+   moneda con mínimo y máximo), moneda (Wompi fuerza COP), días que sirve el
+   link (1-30) y qué pasa al enviar (llevar directo a pagar o mostrar el botón
+   en la pantalla de gracias). Al guardar, `sanitizeConfig` descarta un cálculo
+   o una pregunta que no existen y `assertPayment` exige una conexión de cobro
+   **del equipo** (400 `form_payment_connection`): una privada no cobra en un
+   formulario público.
+2. **El monto lo decide el servidor.** `formPaymentAmount` (puro, en
+   `form-logic.ts` para no meter zod en la página pública) lo calcula con las
+   respuestas GUARDADAS —el mismo camino de `collect()` y `formCalcValues`—,
+   redondeado a centavos; fuera del mínimo o del máximo es un error de esa
+   pregunta y no se envía; cero = no se cobra. La página muestra **Total a
+   pagar** en vivo con la misma función (un cálculo usado como monto pasa a ser
+   «vivo» y sus partes viajan a la página), pero nada de lo que mande el
+   navegador cambia lo que se cobra.
+3. **El link nace con el registro.** Tras crear el registro,
+   `CollectionsService.createForForm` arma el link de pago (módulo de
+   integraciones del plan, conexión del equipo, bitácora `payment_link.create`
+   con `via: 'form'`) con una referencia nuestra aleatoria (`ib_…`) y el
+   formulario que lo pidió: columnas `payment_links.reference` (única) y
+   `payment_links.form_id` (FK `ON DELETE SET NULL`), migración 0101. La
+   dirección de vuelta del checkout es la del formulario con `?pago=<ref>`
+   (Mercado Pago `back_urls` + `auto_return`, Wompi `redirect_url`; sólo si es
+   https). El estado del pago lo siguen poniendo los avisos del proveedor
+   (ADR-S31): el formulario no inventa un «pagado».
+4. **La vuelta.** `GET /public/forms/:token/payment/:ref` (`no-store`,
+   `no-referrer`) busca por referencia Y formulario —una referencia ajena no
+   devuelve nada— y, si sigue pendiente y hace más de 15 s que no se mira,
+   consulta al proveedor. Devuelve sólo estado, concepto, monto y moneda (y el
+   link para reintentar si no se pagó). La página pregunta cada 4 s hasta 2
+   minutos, limpia la dirección y esa visita no cuenta en las estadísticas.
+5. **Si no se puede cobrar, la respuesta igual se guarda.** Una conexión rota,
+   sin el módulo o rechazada por el proveedor: la persona lee que la
+   contactarán para completar el pago y se abre un Problema
+   (`form-payment:<id>`, ADR-S44) que se cierra solo con el siguiente link que
+   sale bien.
+6. **Con confirmación por correo** el link se arma al confirmar y la página de
+   confirmación muestra el total y el botón. Los **enlaces para actualizar un
+   registro** (v0.1.360) nunca cobran. Insertado en un sitio, el formulario no
+   salta de página: muestra el botón y abre el pago en otra pestaña.
+7. **Fuera de alcance**: varios conceptos o una «canasta» con cantidades
+   (para eso está el cálculo), cobrar en cuotas o suscripciones, y descuentos
+   con cupón.
+
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 
 **Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado
@@ -6644,4 +6696,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.145.0 (Enlace para actualizar un registro con un formulario)
+**Versión del documento:** 1.146.0 (Cobrar al enviar un formulario)
