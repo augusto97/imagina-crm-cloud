@@ -3070,6 +3070,55 @@ bienvenida.**
    (`field_id`, `save_field_id`) y la imagen de la bienvenida (`file_id`); el
    asistente/MCP ve cálculos, modo y bienvenida en `get_list_schema`.
 
+**Addendum v0.1.358 — Estadísticas y guardar el avance.** Primera de las tres
+versiones de la entrega 3 (medir, insertar, cobrar).
+
+1. **Eventos, no filas.** Un formulario insertado en un sitio con muchas
+   visitas no puede escribir en la base por cada visita (ADR-S95). La página
+   manda lotes de hasta 12 eventos (`view` con origen y dispositivo, `start`,
+   `step` con el paso al que llegó, `leave` con la última pregunta que tocó)
+   por `sendBeacon`/`fetch keepalive` a `POST /public/forms/:token/events`
+   (204, sin sello: un evento no crea nada). Cada evento es un conjunto de
+   contadores (`formStatFields`): `v`, `s`, `st:N`, `lv:<item>`, `src:<k>`,
+   `dev:m|t|d`. La vista y el empezar cuentan una vez por pestaña
+   (sessionStorage); la vista previa del constructor no cuenta.
+2. **Redis primero, Postgres cada 2 minutos.** Los contadores se suman en un
+   hash `fst:<tenant>:<form>:<día>` (el día en la zona de la empresa) con un
+   script Lua que no lo deja crecer: lo que existe siempre suma, lo nuevo
+   sólo hasta 400 campos (un origen de más va a «Otros», una pregunta de más
+   no se cuenta). Freno de 60 lotes por IP y minuto (un lote de más se ignora
+   sin error). Un volcado periódico toma cada hash y lo BORRA en la misma
+   transacción de Redis (nada se cuenta dos veces) y lo suma a
+   `form_stats (tenant_id, form_id, day, counts jsonb)` con un UPSERT que suma
+   clave por clave (dos servidores que vuelcan a la vez no se pisan); si la
+   base falla, los números vuelven a Redis. El resumen = lo de la base + lo
+   que todavía está en Redis de los últimos días, así los números de hoy no
+   esperan al volcado.
+3. **Los envíos los cuenta el servidor** (`sub`), con el tiempo desde
+   «empezar» que manda la página (`elapsed_ms`; sólo entre 1 s y 6 h, para
+   que una pestaña olvidada no arruine el promedio).
+4. **Privado por construcción**: son contadores por día. No se guarda la IP,
+   el navegador ni nada que identifique a la persona; el origen es la campaña
+   (`utm_source` normalizado) o el dominio de la página anterior (sin ruta),
+   y el propio dominio de la app cuenta como directo. `GET
+   /lists/:l/forms/:id/stats?days=7|30|90` exige `manage_forms`.
+5. **Guardar el avance** (`settings.save_progress {device, email}`, los dos
+   apagados por defecto): en el dispositivo, lo respondido y la página se
+   guardan en `localStorage` (30 días) y al volver se ofrece «Continuar» o
+   «Empezar de nuevo»; por correo, «Guardar y seguir después» guarda en
+   `form_drafts` (RLS; el código del enlace sólo como SHA-256; 30 días; tope
+   64 KB) los valores limpios —sólo campos del formulario, textos de hasta 10
+   mil caracteres, sin archivos ni firma— y manda un enlace
+   `/f/<token>?seguir=<código>` por el correo de la empresa. Guardar con el
+   mismo código actualiza sin mandar otro correo; enviar la respuesta lo
+   borra; un código desconocido o vencido da el mismo 404 opaco. Mismas
+   defensas que el envío: sello (sin tiempo mínimo), campo trampa y el freno
+   de correos por destinatario.
+6. **Bundle**: la lógica de los contadores vive sin zod
+   (`form-stats-logic.ts`) para no meter el validador en la página pública.
+7. Migrar una empresa no lleva estadísticas ni avances (el aviso lo dice);
+   borrarla los limpia.
+
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 
 **Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado

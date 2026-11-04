@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CaptchaAvailability, CreateFormInput, FormDataConsentAvailability, FormDto, UpdateFormInput } from '@imagina-base/shared';
+import type { CaptchaAvailability, CreateFormInput, FormDataConsentAvailability, FormDto, FormStatsDto, UpdateFormInput } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -96,3 +96,17 @@ export function formPublicOrigin(form: Pick<FormDto, 'public_path' | 'public_url
     }
 }
 
+
+/**
+ * v0.1.358 — Estadísticas de un formulario (visitas, empezados, enviados,
+ * hasta dónde llegan, dónde lo dejan, de dónde vienen y el dispositivo).
+ */
+export function useFormStats(listId: number, formId: number | null, days: number) {
+    return useQuery({
+        queryKey: ['form-stats', listId, formId ?? 0, days],
+        queryFn: async () => (await api.get<FormStatsDto>(`/lists/${listId}/forms/${formId}/stats?days=${days}`)).data,
+        enabled: listId > 0 && formId !== null && formId > 0,
+        staleTime: 20_000,
+        refetchInterval: 60_000,
+    });
+}

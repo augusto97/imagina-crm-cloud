@@ -18,13 +18,20 @@ import {
 } from '@nestjs/common';
 import {
     createFormSchema,
+    formStatEventsSchema,
+    saveFormDraftSchema,
     submitFormSchema,
     updateFormSchema,
     type CaptchaAvailability,
     type CreateFormInput,
     type FormDataConsentAvailability,
     type FormDto,
+    type FormStatEventsInput,
+    type FormStatsDto,
     type FormUploadResult,
+    type PublicFormDraft,
+    type SaveFormDraftInput,
+    type SaveFormDraftResult,
     type PublicFormMeta,
     type SubmitFormInput,
     type SubmitFormResult,
@@ -104,6 +111,23 @@ export class FormsController {
     async dataConsentAvailability(@Req() req: FastifyRequest): Promise<FormDataConsentAvailability> {
         if (!this.dataConsent) return { active: false, consent: null, can_configure: req.tenant!.role === 'admin' };
         return this.dataConsent.availabilityForForms(req.tenant!.tenantId, req.tenant!.role);
+    }
+
+    /**
+     * v0.1.358 — Estadísticas de un formulario: visitas, empezados, enviados,
+     * hasta dónde llegan, dónde lo dejan, de dónde vienen y el dispositivo.
+     */
+    @Get(':id/stats')
+    @RequireCapability('manage_forms')
+    stats(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Query('days') days?: string,
+    ): Promise<FormStatsDto> {
+        const n = Number(days);
+        const range = n === 7 || n === 90 ? n : 30;
+        return this.forms.statsFor(req.tenant!.tenantId, list, id, range);
     }
 
     @Get(':id')
@@ -207,6 +231,39 @@ export class PublicFormsController {
             }
             throw err;
         }
+    }
+
+    /**
+     * v0.1.358 — Lo que la página cuenta (lo vieron, empezaron, llegaron a un
+     * paso, lo dejaron). Siempre 204: a quien prueba no se le dice nada, y un
+     * evento que no se pudo contar no le cuesta nada a nadie.
+     */
+    @Post(':token/events')
+    @HttpCode(204)
+    async events(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Body(new ZodValidationPipe(formStatEventsSchema)) input: FormStatEventsInput,
+    ): Promise<void> {
+        await this.forms.recordEvents(token, req.ip, input);
+    }
+
+    /** v0.1.358 — «Guardar y seguir después»: guarda el avance y manda el enlace al correo. */
+    @Post(':token/drafts')
+    @HttpCode(200)
+    saveDraft(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Body(new ZodValidationPipe(saveFormDraftSchema)) input: SaveFormDraftInput,
+    ): Promise<SaveFormDraftResult> {
+        return this.forms.saveDraft(token, req.ip, input);
+    }
+
+    /** v0.1.358 — El avance de un enlace «seguir después» (nunca en caché: son respuestas de alguien). */
+    @Get(':token/drafts/:code')
+    async loadDraft(@Param('token') token: string, @Param('code') code: string, @Res() reply: FastifyReply): Promise<void> {
+        const out: PublicFormDraft = await this.forms.loadDraft(token, code);
+        reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
     }
 
     @Post(':token/submit')

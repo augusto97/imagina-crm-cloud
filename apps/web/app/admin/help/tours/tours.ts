@@ -848,6 +848,13 @@ export const TOURS: TourDef[] = [
                 body: 'Publícalo y copia el enlace o el código para insertarlo en tu web: **en la página**, en una **ventana al hacer clic** o con un **botón flotante**. Con «Cuando se envía un formulario» le respondes al instante por correo o WhatsApp.',
                 tip: 'Si tu sitio tiene muchas visitas, usa la ventana o el botón flotante: el formulario no se carga hasta que alguien lo abre.',
             },
+            {
+                id: 'stats',
+                art: 'form-stats',
+                title: 'Mira cómo le va',
+                body: 'El ícono de **Estadísticas** te dice cuántos lo abren, cuántos lo empiezan y lo envían, en qué pregunta lo dejan y de dónde llegan. En los ajustes, **Guardar el avance** les deja terminarlo después.',
+                tip: 'Si muchos lo dejan en la misma pregunta, prueba hacerla opcional o pasarla al final.',
+            },
         ],
     },
 

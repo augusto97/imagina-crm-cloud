@@ -517,6 +517,19 @@ export type FormEnding = z.infer<typeof formEndingSchema>;
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+/**
+ * v0.1.358 — Guardar el avance: `device` = lo que se va respondiendo queda en
+ * ese navegador y, al volver, ofrece seguir donde quedó; `email` = un botón
+ * «Guardar y seguir después» manda un enlace al correo para terminarlo en otro
+ * momento (o en otro dispositivo). Los archivos y las firmas no se guardan.
+ */
+export const formSaveProgressSchema = z.object({
+    device: z.boolean().default(false),
+    email: z.boolean().default(false),
+});
+export type FormSaveProgress = z.infer<typeof formSaveProgressSchema>;
+export const FORM_SAVE_PROGRESS_DEFAULT: FormSaveProgress = { device: false, email: false };
+
 export const formSettingsSchema = z.object({
     title: z.string().max(200).default(''),
     description: z.string().max(5000).default(''),
@@ -599,6 +612,8 @@ export const formSettingsSchema = z.object({
     welcome: formWelcomeSchema.catch(FORM_WELCOME_DEFAULT).default(FORM_WELCOME_DEFAULT),
     /** v0.1.357 — Todo a la vista o una pregunta por pantalla (lo desconocido = el de siempre). */
     layout: z.enum(FORM_LAYOUTS).catch('classic').default('classic'),
+    /** v0.1.358 — Guardar el avance (en el dispositivo y/o con un enlace al correo). */
+    save_progress: formSaveProgressSchema.catch(FORM_SAVE_PROGRESS_DEFAULT).default(FORM_SAVE_PROGRESS_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -819,6 +834,8 @@ export interface PublicFormMeta {
      * (así el puntaje de una evaluación no se ve en el código de la página).
      */
     calcs?: PublicFormCalc[];
+    /** v0.1.358 — Guardar el avance (null = no se guarda). */
+    save_progress?: FormSaveProgress | null;
 }
 
 /** v0.1.357 */
@@ -870,6 +887,10 @@ export const submitFormSchema = z.object({
     consent: z.boolean().optional(),
     /** La versión del texto que se le mostró. */
     consent_version: z.number().int().positive().max(1_000_000).optional(),
+    /** v0.1.358 — El avance guardado que se está terminando (se borra al enviar). */
+    draft: z.string().regex(/^[A-Za-z0-9_-]{32,64}$/).optional(),
+    /** v0.1.358 — Cuánto tardó desde que empezó a responder (para el tiempo promedio). */
+    elapsed_ms: z.number().int().min(0).max(7 * 86_400_000).optional(),
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 

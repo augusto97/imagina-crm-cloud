@@ -41,6 +41,8 @@ export function StartSettings({
     const w = s.welcome;
     const setWelcome = (patch: Partial<FormConfig['settings']['welcome']>): void => onChange(updateSettings(config, { welcome: { ...w, ...patch } }));
     const minutes = formEstimateMinutes(config);
+    const sp = s.save_progress;
+    const setSave = (patch: Partial<FormConfig['settings']['save_progress']>): void => onChange(updateSettings(config, { save_progress: { ...sp, ...patch } }));
     return (
         <>
             <Section title={__('Cómo se responde')}>
@@ -115,6 +117,23 @@ export function StartSettings({
                         />
                     </div>
                 )}
+            </Section>
+
+            <Section title={__('Guardar el avance')}>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="form-save-progress" data-tour="form-save-progress">
+                    <Check
+                        label={__('Recordar lo que van respondiendo en ese dispositivo')}
+                        checked={sp.device}
+                        onChange={(v) => setSave({ device: v })}
+                    />
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Si cierran la página sin enviar, al volver les ofrece «Continuar» donde quedaron. Queda sólo en ese navegador. Apágalo si el formulario se llena en un computador compartido (una recepción, un evento).')}
+                    </p>
+                    <Check label={__('Botón «Guardar y seguir después»')} checked={sp.email} onChange={(v) => setSave({ email: v })} />
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Les manda un enlace al correo para terminarlo en otro momento o en otro dispositivo (dura 30 días). Sale por el correo de la empresa. Los archivos y la firma no se guardan.')}
+                    </p>
+                </div>
             </Section>
         </>
     );

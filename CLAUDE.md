@@ -11721,6 +11721,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         oscuro (también contra el build de producción con su CSP), constructor
         26/26 y 25/25 en celular, y v0.1.355/v0.1.356 sin regresiones.
 
+  - [x] **Formularios, entrega 3 (primera parte): estadísticas y guardar el
+        avance (v0.1.358, addendum ADR-S39)**. La entrega 3 (medir, insertar,
+        cobrar) se partió en tres versiones; ésta es la de medir.
+        (a) **Estadísticas** por formulario (ícono en la lista de formularios
+        y en la barra del constructor, `FormStatsSheet`): visitas, empezaron
+        (con su % de las visitas), enviaron (con su % de los que empezaron),
+        tiempo promedio, gráfica día por día con tooltip, **hasta dónde
+        llegan** (vieron → empezaron → paso N → enviaron), **dónde lo dejan**
+        (la última pregunta tocada, con su nombre), **de dónde llegan**
+        (`utm_source`, el dominio anterior —sin www/m/l— o directo; los de más
+        en «Otros») y dispositivo; 7/30/90 días en la zona de la empresa.
+        (b) **Sin cargar la base** (como pide ADR-S95): la página manda lotes
+        de eventos (`view` / `start` / `step` / `leave`, `sendBeacon` al irse)
+        a `POST /public/forms/:token/events`; `FormStatsService` los suma en un
+        hash de Redis por formulario y día con un Lua que topa en 400
+        contadores (freno de 60 lotes por IP y minuto) y cada 2 min los vuelca
+        a `form_stats` (migración 0100, RLS) con un UPSERT que suma clave por
+        clave — leer y borrar el hash es atómico y si la base falla los
+        números vuelven a Redis. El resumen suma lo que todavía está en Redis.
+        Los envíos (y el tiempo desde empezar, entre 1 s y 6 h) los cuenta el
+        servidor. Contadores puros: ni IP ni nada de la persona.
+        (c) **Guardar el avance** (`settings.save_progress`, apagado por
+        defecto, en Ajustes → «Guardar el avance»): en el dispositivo
+        (localStorage 30 días, aviso «Continuar / Empezar de nuevo» al volver;
+        escribir en una pregunta descarta el aviso) y el botón **«Guardar y
+        seguir después»** que manda un enlace al correo (`form_drafts`, RLS,
+        código sólo como SHA-256, 30 días, 64 KB; valores limpios sin archivos
+        ni firma; sello, campo trampa y freno por destinatario; guardar otra
+        vez desde el mismo enlace lo actualiza sin otro correo; enviar lo
+        borra; vencido → 404 opaco y la página lo dice).
+        (d) La lógica de los contadores vive sin zod (`form-stats-logic.ts`)
+        para no inflar la página pública (20,3 KB gz). Migrar una empresa no
+        lleva estadísticas ni avances (se avisa) y borrarla los limpia.
+        **De paso**: el test «freno por IP» de formularios fallaba si caía en
+        el cambio de minuto (ventana fija); ahora espera a estar lejos del
+        borde (`awayFromMinuteEdge`). Ayuda: guía `form-stats`, artículo
+        «Estadísticas y guardar el avance» en Aprende → Formularios con las
+        ilustraciones `form-stats` y `form-save-progress`, paso nuevo en el
+        recorrido de formularios y novedad con carrusel. Tests: 6 de shared
+        (712 en verde), 5 de la API (`form-stats.spec`; specs de formularios
+        129/129), 3 del front (793); E2E navegador: página pública 24/24 y
+        25/25 en celular oscuro, administración 12/12 y 11/11 en celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

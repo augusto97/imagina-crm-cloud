@@ -117,6 +117,8 @@ import {
     bookingAppointments,
     bookingPages,
     formPendingSubmissions,
+    formDrafts,
+    formStats,
     dataConsents,
     dataConsentVersions,
     portalCredentials,
@@ -474,6 +476,9 @@ export class PlatformService {
             // v0.1.275 — formularios públicos. v0.1.289 — y sus respuestas sin
             // confirmar (antes que el formulario: la FK las ata a él).
             await tx.delete(formPendingSubmissions).where(eq(formPendingSubmissions.tenantId, id));
+            // v0.1.358 — sus estadísticas y los avances guardados.
+            await tx.delete(formDrafts).where(eq(formDrafts.tenantId, id));
+            await tx.delete(formStats).where(eq(formStats.tenantId, id));
             await tx.delete(forms).where(eq(forms.tenantId, id));
             // D5 — agenda de citas: las citas (atadas a registros) y sus páginas.
             await tx.delete(bookingAppointments).where(eq(bookingAppointments.tenantId, id));

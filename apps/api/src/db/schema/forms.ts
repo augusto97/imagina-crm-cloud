@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, jsonb, pgTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, index, integer, jsonb, pgTable, primaryKey, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { lists } from './lists';
 import { tenants } from './tenants';
 
@@ -84,3 +84,56 @@ export interface PendingConsent {
     /** Referencia del enlace de retiro que va en el correo de confirmación. */
     withdraw_ref: string | null;
 }
+
+/**
+ * v0.1.358 — Contadores de un formulario por día (zona de la empresa):
+ * visitas, empezados, enviados, pasos, abandonos, orígenes y dispositivos.
+ * Son sumas, nunca datos de una persona. RLS: dato de la empresa.
+ */
+export const formStats = pgTable(
+    'form_stats',
+    {
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        formId: bigint('form_id', { mode: 'number' })
+            .notNull()
+            .references(() => forms.id, { onDelete: 'cascade' }),
+        day: date('day', { mode: 'string' }).notNull(),
+        counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+        updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [primaryKey({ columns: [t.formId, t.day] }), index('form_stats_tenant_ix').on(t.tenantId, t.formId, t.day)],
+);
+export type FormStatsRow = typeof formStats.$inferSelect;
+
+/**
+ * v0.1.358 — Un avance guardado («Guardar y seguir después»). El enlace del
+ * correo lo busca por `token_hash` con la conexión base. RLS: datos de la
+ * empresa (son respuestas a medio llenar). Dura 30 días; se borra al enviar.
+ */
+export const formDrafts = pgTable(
+    'form_drafts',
+    {
+        id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        formId: bigint('form_id', { mode: 'number' })
+            .notNull()
+            .references(() => forms.id, { onDelete: 'cascade' }),
+        tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+        email: varchar('email', { length: 320 }).notNull(),
+        values: jsonb('values').$type<Record<string, unknown>>().notNull().default({}),
+        page: integer('page').notNull().default(0),
+        expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [
+        uniqueIndex('form_drafts_token_ux').on(t.tokenHash),
+        index('form_drafts_expires_ix').on(t.expiresAt),
+        index('form_drafts_form_ix').on(t.tenantId, t.formId),
+    ],
+);
+export type FormDraftRow = typeof formDrafts.$inferSelect;
