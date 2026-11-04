@@ -245,7 +245,10 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
 
     // ── Vista previa: la página real, alimentada por postMessage ──
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const [ready, setReady] = useState(false);
+    // Cuántas veces avisó la vista previa que está lista: en el celular la
+    // pestaña «Vista previa» se desmonta y el iframe vuelve a cargar, así que
+    // cada aviso tiene que volver a mandarle lo que se está editando.
+    const [ready, setReady] = useState(0);
     const members = useMemo(() => options.data?.members ?? [], [options.data]);
     const timeZone = options.data?.time_zone ?? 'America/Bogota';
     const photoIds = useMemo(() => config.staff.flatMap((s) => (s.photo_file_id !== null ? [s.photo_file_id] : [])), [config.staff]);
@@ -272,7 +275,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         const onMessage = (e: MessageEvent): void => {
             if (e.origin !== window.location.origin || e.source !== iframeRef.current?.contentWindow) return;
             const data = e.data as { type?: string; id?: number; service?: string; staff?: string; from?: string; to?: string; duration?: number } | null;
-            if (data?.type === 'imb-booking-ready') setReady(true);
+            if (data?.type === 'imb-booking-ready') setReady((n) => n + 1);
             if (data?.type === 'imb-booking-slots-request' && typeof data.id === 'number') {
                 const reply = (slots: unknown[]): void => {
                     iframeRef.current?.contentWindow?.postMessage({ type: 'imb-booking-slots', id: data.id, slots }, window.location.origin);

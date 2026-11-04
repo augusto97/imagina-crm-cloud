@@ -518,6 +518,83 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Configurar la agenda', to: '/lists' },
+                    { label: 'Siguiente: diseñar la página de la agenda', article: 'agenda-diseno' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'agenda-diseno',
+        route: '/lists',
+        related: ['agenda-publicar', 'agenda-aprobacion', 'agenda-servicios-personas'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'La página donde tus clientes agendan es tu vitrina: tiene que verse como tu negocio. En **Diseño** eliges una plantilla, el color, la tipografía, los tamaños y qué se muestra, con la **vista previa a la derecha** que cambia al instante. Es el mismo diseño que tienen los formularios, así tus páginas se ven iguales.',
+            },
+            { t: 'anim', key: 'agenda-diseno', caption: 'Elegir la plantilla «Tarjetas», cambiar el color y ocultar los precios: la página de la agenda cambia en la vista previa.' },
+            { t: 'h', text: 'Elegir una plantilla' },
+            {
+                t: 'steps',
+                items: [
+                    'En el constructor de la agenda (**Configurar lista → Agenda → Editar**) abre **Diseño**.',
+                    'En **Plantillas** toca una: **Clásico** es el diseño de siempre; las demás (Minimalista, Tarjetas, Oscuro, Píldoras, Con portada, Dividido…) toman el color de tu marca.',
+                    'Mira la vista previa: los servicios, quién atiende, el calendario y los horarios ya se ven con el diseño.',
+                    'Toca **Guardar**. Si quieres usar el mismo diseño en otras agendas o formularios, guárdalo en **Mis temas**.',
+                ],
+            },
+            { t: 'h', text: 'Mostrar u ocultar' },
+            {
+                t: 'settings',
+                title: 'Diseño → Mostrar u ocultar',
+                rows: [
+                    { name: 'El logo de la empresa', what: 'Tu logo arriba del título (el de Ajustes → Marca).' },
+                    { name: 'Dónde es la cita', what: 'La dirección o «Videollamada», arriba y en cada servicio.' },
+                    { name: 'La duración y la descripción de cada servicio', what: 'Útil cuando los servicios se explican solos y quieres una página más limpia.' },
+                    { name: 'El precio de cada servicio', what: 'Ocúltalo si prefieres hablar de precios después.' },
+                    { name: 'Las fotos de quienes atienden', what: 'La foto (o las iniciales) de cada persona del equipo.' },
+                    { name: 'El cargo y la descripción de quienes atienden', what: '«Odontóloga», «Doce años de experiencia»…' },
+                ],
+            },
+            { t: 'p', md: 'El título y la descripción se muestran u ocultan en **Página**, dentro del mismo panel.' },
+            { t: 'h', text: 'Distribución' },
+            {
+                t: 'settings',
+                title: 'Diseño → Distribución',
+                rows: [
+                    { name: 'El calendario', what: '**Al lado de los horarios** (en pantallas anchas) o **Arriba de los horarios**. En el celular siempre va arriba.' },
+                    { name: 'Los horarios', what: '**Cuadrícula** de botones o **Lista**, uno debajo del otro (con los cupos a la derecha).' },
+                    { name: 'La semana empieza el', what: 'Lunes o domingo, como se usa en tu país.' },
+                ],
+            },
+            { t: 'h', text: 'El resto del diseño' },
+            {
+                t: 'p',
+                md: 'Más abajo, en **Diseño de la agenda**, ajustas cada parte con la misma lógica de los formularios: **Colores** (y el modo oscuro), **Tipografía**, **Página** (ancho, aire, título y avance), **Fondo** (color, degradado o imagen), **Portada**, **Pantalla dividida**, **Tarjeta**, **Campos** (los datos del cliente), **Opciones** (los servicios y quién atiende como lista, botones o tarjetas) y **Botón**.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'El diseño vale también para la página donde el cliente **cambia o cancela** su cita. El color que elijas va además en los correos de confirmación y recordatorio.',
+            },
+            {
+                t: 'example',
+                title: 'Un consultorio odontológico',
+                md: 'Sonríe, en Bogotá, eligió la plantilla **Tarjetas** con el verde de su marca, ocultó los precios (los explica en la consulta) y dejó las fotos de sus odontólogas: los pacientes eligen con quién atenderse viendo su cara y su especialidad. Puso el calendario arriba y los horarios en lista, que se leen mejor en el celular.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Cambia cómo se ve mi agenda si no toco nada?', a: 'No. Las agendas que ya existían quedan con el diseño de siempre (Clásico) hasta que elijas otro.' },
+                    { q: '¿Puedo escribir mi propio CSS?', a: 'Sí, en **CSS propio** al final del panel. Sólo lo agrega un administrador de la empresa; se limpia al guardar para que no cargue nada de otros sitios.' },
+                    { q: '¿Se ve bien insertada en mi sitio?', a: 'Sí: el diseño viaja con la agenda. Con un fondo de color o imagen, puedes elegir si se ve también cuando está insertada.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Configurar la agenda', to: '/lists' },
                     { label: 'Siguiente: publicar la agenda', article: 'agenda-publicar' },
                 ],
             },
@@ -545,14 +622,16 @@ export const articles: LearnArticle[] = [
                 ],
             },
             { t: 'demo', key: 'citas-publicar', caption: 'Publicar la agenda y copiar su enlace.', fallback: 'citas-embed' },
-            { t: 'h', text: 'Cómo se ve' },
+            { t: 'h', text: 'Textos de la página' },
+            {
+                t: 'p',
+                md: 'Los colores, el logo, la tipografía y qué se muestra están en **Diseño** (ver «Diseñar la página de la agenda»). Aquí van los textos:',
+            },
             {
                 t: 'settings',
                 rows: [
                     { name: 'Título y Descripción', what: 'Lo primero que lee el cliente: «Agenda tu cita» y «Elige el servicio, el día y la hora que te quedan bien».' },
                     { name: 'Dónde es la cita', what: 'Una dirección, «Videollamada»… Va en la página, el correo y el archivo del calendario.' },
-                    { name: 'Color', what: 'El color de la página. Vacío = **El de la marca**.' },
-                    { name: 'Mostrar el logo de la empresa', what: 'Pone tu logo arriba del título.' },
                     { name: 'Mensaje cuando no recibe reservas', what: 'Lo que se ve si la agenda está sin publicar o tu empresa está en solo lectura.' },
                 ],
             },

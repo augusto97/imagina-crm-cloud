@@ -73,6 +73,15 @@ export const meta: LearnModuleMeta = {
             needs: 'manage_lists',
         },
         {
+            id: 'agenda-diseno',
+            title: 'Diseñar la página de la agenda',
+            summary: 'Una plantilla, el color, la tipografía y los tamaños; qué se muestra (precios, fotos, lugar) y cómo se distribuyen el calendario y los horarios.',
+            minutes: 5,
+            level: 'basic',
+            keywords: 'diseño plantilla tema colores fuente tipografia tamaño fondo portada tarjetas mostrar ocultar precio foto cargo calendario al lado arriba horarios lista cuadricula semana domingo modo oscuro css mis temas',
+            needs: 'manage_lists',
+        },
+        {
             id: 'agenda-publicar',
             title: 'Publicar la agenda e insertarla en tu sitio',
             summary: 'Revisa lo que falta, publica, copia el enlace o el código para tu página y ajusta cómo se ve.',

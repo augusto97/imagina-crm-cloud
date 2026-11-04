@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    BOOKING_CLASSIC_THEME,
+    bookingTheme,
     bookingConfigSchema,
     bookingLocationPublic,
     bookingLocationText,
@@ -430,5 +432,35 @@ describe('v0.1.353 — aprobación de las citas y seguridad de la página', () =
         expect(isDisposableEmail('ana@mailinator.com.co')).toBe(false);
         expect(isDisposableEmail('ana@notmailinator.com')).toBe(false);
         expect(isDisposableEmail('sin-arroba')).toBe(false);
+    });
+});
+
+describe('v0.1.354 — el diseño de la página de la agenda', () => {
+    it('una agenda guardada antes queda con el diseño de siempre y lo que se mostraba', () => {
+        const c = bookingConfigSchema.parse({ settings: { title: 'Agenda' } });
+        expect(c.settings.theme).toBeNull();
+        expect(bookingTheme(c.settings)).toBe(BOOKING_CLASSIC_THEME);
+        expect(BOOKING_CLASSIC_THEME.layout).toMatchObject({ width: 720, padding: 24, progress: 'steps' });
+        expect(c.settings.display).toEqual({
+            show_location: true,
+            show_service_details: true,
+            show_prices: true,
+            show_staff_photos: true,
+            show_staff_details: true,
+            calendar_layout: 'side',
+            slot_style: 'grid',
+            week_start: 'monday',
+        });
+    });
+    it('un tema o una distribución dañados no tiran toda la configuración', () => {
+        const c = bookingConfigSchema.parse({
+            settings: { title: 'Agenda', theme: { layout: { width: 'mucho' } }, display: { calendar_layout: 'diagonal' } },
+            services: [{ id: 'svcuno', name: 'Consulta', duration_min: 30 }],
+        });
+        expect(c.settings.title).toBe('Agenda');
+        expect(c.services).toHaveLength(1);
+        expect(c.settings.display.calendar_layout).toBe('side');
+        // La sección dañada del tema se lee con su valor por defecto; lo demás sigue.
+        expect(typeof bookingTheme(c.settings).layout.width).toBe('number');
     });
 });
