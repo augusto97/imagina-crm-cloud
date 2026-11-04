@@ -7,6 +7,8 @@ import {
     bookingServiceSchema,
     isColombianHoliday,
     newFormItemId,
+    publicThemePresets,
+    publicThemeSchema,
     ymdToMs,
     zonedInstant,
     zonedToday,
@@ -230,7 +232,12 @@ describe('D5 — agenda (puro)', () => {
             nonce: 'n1',
             title: '<b>Agenda</b>',
             boot: { mode: 'book', token: 'tok', meta: { title: '</script><script>alert(1)</script>' } as never, manage: null },
+            themeCss: '</style><script>alert(2)</script>',
+            bodyClasses: ['ib-x', 'a"onload="x'],
         });
+        // v0.1.354 — el CSS del tema no cierra su <style> y las clases van limpias.
+        expect(html).not.toContain('</style><script>alert(2)');
+        expect(html).toContain('<body class="ib-body ib-x aonloadx">');
         expect(html).toContain('<title>&lt;b&gt;Agenda&lt;/b&gt;</title>');
         expect(html).not.toContain('</script><script>alert(1)');
         expect(html).toContain('<script nonce="n1">');
@@ -1363,6 +1370,80 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         const slots = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30'].map((h) => at(D, Number(h.slice(0, 2)), Number(h.slice(3))));
         for (const start of slots.slice(0, 5)) await book({ staff: 'stfana', start, email: 'mucho@cliente.co' });
         await expect(book({ staff: 'stfana', start: slots[5]!, email: 'Mucho@Cliente.co' })).rejects.toMatchObject({ status: 429 });
+    });
+
+    // ─────────────────────────── v0.1.354 ───────────────────────────
+
+    it('v0.1.354 — diseño: la página sale con el tema y lo que se muestra; sin tema, el de siempre', async () => {
+        await freshPage();
+        // Sin tema: el de siempre de la agenda (pasos «Paso X de Y», 720 de ancho).
+        const plain = await pub.cachedPage(token);
+        expect(plain!.info.meta.theme!.progress).toBe('steps');
+        expect(plain!.info.look.classes).toEqual(expect.arrayContaining(['bk-ch-list', 'bk-cal-side', 'bk-slots-grid']));
+        expect(plain!.info.look.css).toContain('--ib-width:720px');
+
+        const cards = publicThemePresets('#0e7490').find((x) => x.id === 'cards')!.theme;
+        const dto = await booking.get(tenantId, 'citas', pageId);
+        const cfg = structuredClone(dto.config);
+        cfg.settings.theme = { ...cards, colors: { ...cards.colors, accent: '#7c3aed' } };
+        cfg.settings.display = { ...cfg.settings.display, show_prices: false, show_staff_photos: false, calendar_layout: 'stacked', slot_style: 'list', week_start: 'sunday' };
+        await booking.update(tenantId, 'citas', pageId, { config: cfg });
+        pub.forgetPage(token, tenantId);
+        const info = (await pub.cachedPage(token))!.info;
+        expect(info.meta.theme!.choice_style).toBe('cards');
+        expect(info.meta.display).toMatchObject({ show_prices: false, calendar_layout: 'stacked', slot_style: 'list', week_start: 'sunday' });
+        // El color del diseño manda: en la página y en los correos.
+        expect(info.meta.accent_color).toBe('#7c3aed');
+        expect(info.look.css).toContain('#7c3aed');
+        expect(info.look.classes).toEqual(expect.arrayContaining(['bk-ch-cards', 'bk-cal-stacked', 'bk-slots-list', 'bk-hide-prices', 'bk-hide-photos']));
+        // La página de una cita usa el mismo diseño.
+        const r = await book({ staff: 'stfana', start: at(D, 10) });
+        const manage = await pub.managePage(refOf(r.appointment!.manage_url));
+        expect(manage!.look.css).toContain('#7c3aed');
+        expect(manage!.meta.booking.theme!.choice_style).toBe('cards');
+    });
+
+    it('v0.1.354 — diseño: el CSS propio sólo lo agrega un admin y queda limpio; las imágenes son de la empresa; nace con el tema por defecto', async () => {
+        await freshPage();
+        const AGENT = { isAdmin: false };
+        const dto = await booking.get(tenantId, 'citas', pageId);
+        const withCss = (css: string, extra: Record<string, unknown> = {}) => {
+            const cfg = structuredClone(dto.config);
+            cfg.settings.theme = publicThemeSchema.parse({ custom_css: css, ...extra });
+            return cfg;
+        };
+        const css = '.ib-title{letter-spacing:2px} .ib-card{background:url(https://evil.test/x.png)}';
+        await expect(booking.update(tenantId, 'citas', pageId, { config: withCss(css) }, AGENT)).rejects.toMatchObject({ response: { code: 'custom_css_admin_only' } });
+        const saved = await booking.update(tenantId, 'citas', pageId, { config: withCss(css) });
+        expect(saved.config.settings.theme!.custom_css).toContain('letter-spacing:2px');
+        expect(saved.config.settings.theme!.custom_css).not.toContain('evil.test');
+        // Un agente que cambia otra cosa conserva el CSS que puso el admin.
+        const keep = structuredClone(saved.config);
+        keep.settings.title = 'Otro título';
+        await expect(booking.update(tenantId, 'citas', pageId, { config: keep }, AGENT)).resolves.toBeTruthy();
+        // …y puede aplicar un tema guardado de la empresa aunque traiga CSS.
+        const brandCss = '.ib-btn{text-transform:uppercase}';
+        await pg.db
+            .update(tenants)
+            .set({ settings: { format: { timezone: TZ }, public_themes: [{ id: 'thmmarca', name: 'Marca', theme: publicThemeSchema.parse({ custom_css: brandCss }), created_at: new Date().toISOString() }], public_theme_default: 'thmmarca' } })
+            .where(eq(tenants.id, tenantId));
+        await expect(booking.update(tenantId, 'citas', pageId, { config: withCss(brandCss) }, AGENT)).resolves.toBeTruthy();
+
+        // Imágenes: sólo de la empresa y que no ejecutan nada.
+        const [png] = await withTenant(pg.db, tenantId, (tx) => tx.insert(attachments).values({ tenantId, filename: 'portada.png', mime: 'image/png', sizeBytes: 10, storageKey: 'k/portada.png' }).returning());
+        const [svg] = await withTenant(pg.db, tenantId, (tx) => tx.insert(attachments).values({ tenantId, filename: 'logo.svg', mime: 'image/svg+xml', sizeBytes: 10, storageKey: 'k/logo.svg' }).returning());
+        const [ajena] = await withTenant(pg.db, otherTenant, (tx) => tx.insert(attachments).values({ tenantId: otherTenant, filename: 'y.png', mime: 'image/png', sizeBytes: 10, storageKey: 'k/y.png' }).returning());
+        await expect(booking.update(tenantId, 'citas', pageId, { config: withCss('', { cover: { enabled: true, file_id: svg!.id } }) })).rejects.toMatchObject({ response: { code: 'invalid_image' } });
+        await expect(booking.update(tenantId, 'citas', pageId, { config: withCss('', { cover: { enabled: true, file_id: ajena!.id } }) })).rejects.toMatchObject({ response: { code: 'invalid_image' } });
+        await booking.update(tenantId, 'citas', pageId, { config: withCss('', { cover: { enabled: true, file_id: png!.id } }) });
+        pub.forgetPage(token, tenantId);
+        const info = (await pub.cachedPage(token))!.info;
+        expect(info.meta.theme!.cover).toBeTruthy();
+        expect(info.look.css).toMatch(new RegExp(`/files/${png!.id}/signed\\?`));
+
+        // Una agenda nueva nace con el tema por defecto de la empresa.
+        const nueva = await booking.create(tenantId, ana, 'citas', { name: 'Otra agenda' });
+        expect(nueva.config.settings.theme!.custom_css).toBe(brandCss);
     });
 
 });

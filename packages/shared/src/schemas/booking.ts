@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { PublicDataConsent } from './data-consent';
 import { SMS_BOOKING_REMINDER_DEFAULT } from './sms';
 import { holidayCountryForTimeZone } from './holidays';
+import { publicThemeSchema, readPublicTheme, type PublicTheme } from './public-theme';
+import type { PublicThemeView } from './public-theme-css';
 import {
     FORM_FIELD_TYPES,
     formFieldItemSchema,
@@ -523,6 +525,34 @@ export const bookingNotificationsSchema = z.object({
 });
 export type BookingNotifications = z.infer<typeof bookingNotificationsSchema>;
 
+/**
+ * v0.1.354 — Mostrar u ocultar partes de la página y cómo se distribuye.
+ * Los colores, la tipografía y los tamaños viven en el tema (`theme`).
+ */
+export const BOOKING_CALENDAR_LAYOUTS = ['side', 'stacked'] as const;
+export type BookingCalendarLayout = (typeof BOOKING_CALENDAR_LAYOUTS)[number];
+export const BOOKING_SLOT_STYLES = ['grid', 'list'] as const;
+export type BookingSlotStyle = (typeof BOOKING_SLOT_STYLES)[number];
+export const bookingDisplaySchema = z.object({
+    /** El lugar de la agenda y el de cada servicio. */
+    show_location: z.boolean().default(true),
+    /** Duración, descripción y si es grupal, en cada servicio. */
+    show_service_details: z.boolean().default(true),
+    /** El precio de cada servicio (si lo tiene). */
+    show_prices: z.boolean().default(true),
+    /** Las fotos (o iniciales) de quienes atienden. */
+    show_staff_photos: z.boolean().default(true),
+    /** El cargo y la descripción de quienes atienden. */
+    show_staff_details: z.boolean().default(true),
+    /** El calendario al lado de los horarios (pantallas anchas) o arriba. */
+    calendar_layout: z.enum(BOOKING_CALENDAR_LAYOUTS).default('side'),
+    /** Los horarios como cuadrícula de botones o como lista. */
+    slot_style: z.enum(BOOKING_SLOT_STYLES).default('grid'),
+    /** Primer día de la semana del calendario. */
+    week_start: z.enum(['monday', 'sunday']).default('monday'),
+});
+export type BookingDisplay = z.infer<typeof bookingDisplaySchema>;
+
 export const bookingSettingsSchema = z.object({
     title: z.string().max(200).default(''),
     description: z.string().max(5000).default(''),
@@ -554,8 +584,31 @@ export const bookingSettingsSchema = z.object({
         .string()
         .max(2000)
         .default('Te avisaremos por correo cuando la confirmemos.'),
+    /**
+     * v0.1.354 — El diseño de la página con el motor de los formularios
+     * (ADR-S94): null = el de siempre (`BOOKING_CLASSIC_THEME`). Un tema
+     * dañado se lee como null en vez de tirar toda la configuración.
+     */
+    theme: publicThemeSchema.nullable().catch(null).default(null),
+    /** v0.1.354 — Qué se muestra y cómo se distribuye la página. */
+    display: bookingDisplaySchema.catch(() => bookingDisplaySchema.parse({})).default({}),
 });
 export type BookingSettings = z.infer<typeof bookingSettingsSchema>;
+
+/**
+ * v0.1.354 — El diseño «de siempre» de la agenda: el clásico de los
+ * formularios con el ancho, el relleno, el título y los pasos que tenía la
+ * página antes del motor de temas (así nadie ve su agenda cambiar sola).
+ */
+export const BOOKING_CLASSIC_THEME: PublicTheme = publicThemeSchema.parse({
+    layout: { width: 720, padding: 24, progress: 'steps' },
+    typography: { title_size: 22 },
+});
+
+/** El tema que se ve: el guardado o el de siempre de la agenda. */
+export function bookingTheme(settings: { theme?: unknown }): PublicTheme {
+    return settings.theme ? readPublicTheme(settings.theme) : BOOKING_CLASSIC_THEME;
+}
 
 /**
  * v0.1.353 — La aprobación de citas. Mientras espera, la cita ocupa el lugar
@@ -802,6 +855,10 @@ export interface PublicBookingMeta {
     verify_email?: boolean;
     /** v0.1.353 — Lo que ve el cliente cuando su cita queda por confirmar. */
     pending_message?: string;
+    /** v0.1.354 — Lo estructural del tema (clases, portada, panel dividido, avance, estilo de las opciones). */
+    theme?: PublicThemeView;
+    /** v0.1.354 — Qué se muestra y cómo se distribuye. */
+    display?: BookingDisplay;
 }
 
 /** Un horario libre: inicio y fin (ISO UTC) y quién puede atenderlo. */

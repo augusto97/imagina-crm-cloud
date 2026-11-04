@@ -1,4 +1,15 @@
-import { CAPTCHA_PROVIDER_INFO, type CaptchaProvider, type PublicBookingMeta, type PublicManageMeta } from '@imagina-base/shared';
+import {
+    BOOKING_CLASSIC_THEME,
+    CAPTCHA_PROVIDER_INFO,
+    PUBLIC_BASE_CSS,
+    buildPublicThemeCss,
+    publicThemeView,
+    type BookingDisplay,
+    type CaptchaProvider,
+    type PublicBookingMeta,
+    type PublicManageMeta,
+    type PublicThemeView,
+} from '@imagina-base/shared';
 import { escapeHtml, inlineScriptHash, inlineScriptText } from '../forms/form-page';
 
 /**
@@ -22,117 +33,109 @@ function jsonForScript(value: unknown): string {
 
 const CAPTCHA_SCRIPTS = Object.fromEntries(Object.entries(CAPTCHA_PROVIDER_INFO).map(([k, v]) => [k, v.script_url])) as Record<CaptchaProvider, string>;
 
-const CSS = `
-  :root { color-scheme: light; --accent: #0e7490; --accent-ink: #ffffff; --accent-soft: rgba(14,116,144,.1); --bg: #f4f5f7; --card: #ffffff; --fg: #1d2330;
-          --muted: #667085; --border: #d9dde5; --danger: #c0262d; --ok: #067647; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--fg);
-         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  body.embedded { background: transparent; }
-  [hidden] { display: none !important; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 14px 48px; }
-  body.embedded .wrap { padding: 6px 4px 16px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
-          box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 24px rgba(16,24,40,.06); }
-  body.embedded .card { box-shadow: none; }
-  .band { height: 6px; background: var(--accent); }
-  .inner { padding: 24px 24px 22px; }
-  @media (max-width: 520px) { .inner { padding: 18px 14px 16px; } .wrap { padding: 10px 8px 28px; } }
-  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
-  .brand img { max-height: 36px; max-width: 160px; object-fit: contain; }
-  h1 { font-size: 22px; line-height: 1.25; margin: 0 0 6px; font-weight: 700; letter-spacing: -.01em; }
-  h2 { font-size: 17px; margin: 0 0 12px; font-weight: 650; }
-  .desc p { margin: 0 0 6px; color: var(--muted); white-space: pre-wrap; }
-  .loc { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
-  .steps { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 14px; font-size: 13px; color: var(--muted); }
-  .back { appearance: none; border: 0; background: none; padding: 6px 0; font: inherit; color: var(--fg); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; min-height: 36px; }
-  .back:hover { text-decoration: underline; }
-  .choices { display: grid; gap: 10px; }
-  .opt { appearance: none; text-align: left; width: 100%; border: 1px solid var(--border); background: #fff; border-radius: 10px;
-         padding: 12px 14px; font: inherit; color: var(--fg); cursor: pointer; display: flex; justify-content: space-between; gap: 12px; align-items: center; min-height: 52px; }
-  .opt:hover, .opt:focus-visible { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
-  .opt .t { font-weight: 600; }
-  .opt.cur { border-color: var(--accent); }
-  .opt .s { color: var(--muted); font-size: 13px; }
-  .opt .d { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: pre-wrap; }
-  .opt .r { color: var(--muted); font-size: 13px; white-space: nowrap; }
-  .who { display: flex; align-items: center; gap: 12px; }
-  .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--accent-soft); color: var(--fg); display: inline-flex; align-items: center; justify-content: center;
-            font-weight: 650; font-size: 15px; overflow: hidden; }
-  .avatar img { width: 100%; height: 100%; object-fit: cover; }
-  .avatar.any { color: var(--accent); }
-  .durs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
-  .dur { appearance: none; border: 1px solid var(--border); background: #fff; color: var(--fg); border-radius: 99px; padding: 6px 14px; font: inherit; font-size: 14px; cursor: pointer; min-height: 36px; }
-  .dur.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-  .dur:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .slot .seats { display: block; font-size: 11px; font-weight: 500; opacity: .8; }
-  .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--fg); font-size: 12px; }
-  .summary { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 14px; background: #fafbfc; }
-  .summary b { font-weight: 600; }
-  .summary .row { display: flex; gap: 8px; padding: 2px 0; }
-  .summary .row span:first-child { color: var(--muted); min-width: 88px; }
-  .tz { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: var(--muted); margin: 0 0 12px; }
-  .tz select { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--fg); }
-  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .cal-head b { font-size: 16px; }
-  .nav { appearance: none; border: 1px solid var(--border); background: #fff; border-radius: 8px; width: 40px; height: 40px; font-size: 18px; cursor: pointer; color: var(--fg); }
-  .nav[disabled] { opacity: .35; cursor: default; }
-  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .datepick { display: grid; gap: 18px; }
-  .datepick h2.day-title { margin: 0 0 4px; }
-  @media (min-width: 640px) {
-    .datepick { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); align-items: start; gap: 24px; }
-    .datepick .slots { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
-  }
-  .dow { text-align: center; font-size: 11px; color: var(--muted); text-transform: uppercase; padding: 4px 0; }
-  .day { appearance: none; border: 0; background: transparent; border-radius: 10px; aspect-ratio: 1 / 1; font: inherit; font-size: 15px;
-         color: #b4bac5; cursor: default; position: relative; min-height: 40px; }
-  .day.on { background: var(--accent-soft); color: var(--fg); font-weight: 600; cursor: pointer; }
-  .day.on:hover, .day.on:focus-visible { outline: 2px solid var(--accent); }
-  .day.sel { background: var(--accent); color: var(--accent-ink); }
-  .day.today::after { content: ''; position: absolute; left: 50%; bottom: 6px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: currentColor; }
-  .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin-top: 14px; }
-  .slot { appearance: none; border: 1px solid var(--accent); background: #fff; color: var(--fg); border-radius: 8px; padding: 10px 8px; font: inherit; font-weight: 600; cursor: pointer; min-height: 44px; }
-  .slot:hover, .slot:focus-visible { background: var(--accent); color: var(--accent-ink); outline: none; }
-  .empty { color: var(--muted); font-size: 14px; padding: 12px 0; }
-  .loading { color: var(--muted); font-size: 14px; padding: 12px 0; }
-  label.q { display: block; font-weight: 600; margin: 14px 0 6px; }
-  .req { color: var(--danger); margin-left: 3px; }
-  .help { color: var(--muted); font-size: 13px; margin: -2px 0 6px; white-space: pre-wrap; }
-  input[type=text], input[type=email], input[type=tel], input[type=date], input[type=datetime-local], input[type=number], select, textarea {
-    width: 100%; font: inherit; color: var(--fg); background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 44px; }
-  textarea { min-height: 96px; resize: vertical; }
-  @media (max-width: 768px) { input, select, textarea { font-size: 16px; } }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
-  .chk { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin: 6px 0; }
-  .chk input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
-  .err { color: var(--danger); font-size: 13px; margin-top: 4px; }
-  .invalid input, .invalid select, .invalid textarea { border-color: var(--danger); }
-  .alert { border: 1px solid #f3c2c4; background: #fdf1f1; color: var(--danger); border-radius: 8px; padding: 10px 12px; margin: 12px 0; font-size: 14px; }
-  .note-ok { border: 1px solid #b7e4cc; background: #effaf4; color: var(--ok); border-radius: 8px; padding: 10px 12px; margin: 12px 0; font-size: 14px; }
-  .btn { appearance: none; border: 0; border-radius: 8px; padding: 11px 20px; font: inherit; font-weight: 600; background: var(--accent); color: var(--accent-ink);
-         cursor: pointer; min-height: 46px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-  .btn[disabled] { opacity: .6; cursor: default; }
-  .btn.ghost { background: #fff; color: var(--fg); border: 1px solid var(--border); }
-  .btn.danger { background: var(--danger); color: #fff; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-  @media (max-width: 520px) { .actions .btn { flex: 1 1 100%; } }
-  .done { text-align: center; padding: 8px 0 4px; }
-  .tick { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 10px; }
-  .tick.x { background: #f2f4f7; color: var(--muted); }
-  .tick.wait { background: #f3ecfe; color: #6d28d9; }
-  .badge-pending { display: inline-block; margin: 0 0 12px; padding: 3px 10px; border-radius: 99px; background: #f3ecfe; color: #5b21b6; font-size: 13px; font-weight: 600; }
-  .code-input { font-size: 26px !important; letter-spacing: 10px; text-align: center; font-variant-numeric: tabular-nums; max-width: 240px; }
-  .done .summary { text-align: left; margin-top: 14px; }
-  .muted { color: var(--muted); }
-  .small { font-size: 13px; }
-  .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
-  .consent { margin-top: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #fafbfc; font-size: 14px; }
-  .consent-text { white-space: pre-wrap; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; max-height: 240px; overflow: auto; margin-top: 8px; background: #fff; }
-  .linkbtn { appearance: none; border: 0; background: none; padding: 0; font: inherit; font-size: 13px; color: var(--fg); text-decoration: underline; cursor: pointer; }
-  .captcha { margin-top: 16px; min-height: 66px; }
-  .pv { border: 1.5px dashed var(--border); border-radius: 8px; padding: 10px; color: var(--muted); font-size: 13px; text-align: center; margin-top: 12px; }
+/**
+ * v0.1.354 — Lo propio de la página de reservas, sobre la estructura y las
+ * variantes de los formularios (`PUBLIC_BASE_CSS`) y las variables del tema
+ * (`#ib-theme`, ADR-S94): colores, tipografía, tamaños y esquinas salen del
+ * tema; aquí sólo va lo que no tiene un formulario (opciones con foto, el
+ * calendario, los horarios, el resumen). Las clases `.ib-…` son las que se
+ * documentan para el CSS propio.
+ */
+const BOOKING_CSS = `
+.bk-root{container-type:inline-size}
+.ib-no-title .bk-manage-title{display:block}
+.ib-header .ib-loc{color:var(--ib-muted);font-size:calc(var(--ib-fs) - 1px);margin:4px 0 0}
+.bk-hide-loc .ib-loc,.bk-hide-loc .loc2{display:none}
+.ib-step-title{font-family:var(--ib-heading-font);font-size:calc(var(--ib-q-fs) + 2px);font-weight:650;line-height:1.3;margin:0 0 12px}
+.steps{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:18px 0 14px;font-size:13px;color:var(--ib-muted)}
+.bk-progress{margin:-6px 0 16px}
+.back{appearance:none;border:0;background:none;padding:6px 0;font:inherit;color:var(--ib-text);cursor:pointer;display:inline-flex;gap:6px;align-items:center;min-height:36px}
+.back:hover{text-decoration:underline}
+.choices{display:grid;gap:10px}
+.opt{appearance:none;text-align:left;width:100%;border:var(--ib-input-bw,1px) solid var(--ib-input-border);background:var(--ib-input-bg);border-radius:min(var(--ib-choice-radius),24px);padding:12px 14px;font:inherit;color:var(--ib-text);cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:52px;transition:border-color .15s,box-shadow .15s,background-color .15s}
+.opt:hover,.opt:focus-visible{border-color:var(--ib-accent);outline:none;box-shadow:0 0 0 3px var(--ib-accent-ring)}
+.opt .t{font-weight:600;overflow-wrap:anywhere}
+.opt.cur{border-color:var(--ib-accent)}
+.opt .s{color:var(--ib-muted);font-size:13px}
+.opt .d{color:var(--ib-muted);font-size:13px;margin-top:2px;white-space:pre-wrap}
+.opt .r{color:var(--ib-muted);font-size:13px;white-space:nowrap}
+.bk-ch-buttons .choices,.bk-ch-cards .choices{grid-template-columns:repeat(var(--bk-cols,2),minmax(0,1fr))}
+.bk-ch-buttons .opt{justify-content:center;text-align:center;border-radius:max(var(--ib-choice-radius),6px);min-height:0;padding:12px 14px}
+.bk-ch-buttons .opt .d,.bk-ch-buttons .opt .loc2,.bk-ch-buttons .opt .r{display:none}
+.bk-ch-buttons .who{flex-direction:column;gap:6px;text-align:center}
+.bk-ch-cards .opt{flex-direction:column;align-items:stretch;text-align:left;padding:16px}
+.bk-ch-cards .opt .r{order:-1;align-self:flex-start;font-weight:600;color:var(--ib-accent-text)}
+.bk-ch-cards .who{flex-direction:column;align-items:flex-start;gap:10px}
+.bk-ch-cards .avatar{width:64px;height:64px;font-size:20px}
+@container (max-width:420px){.bk-ch-buttons .choices,.bk-ch-cards .choices{grid-template-columns:repeat(min(var(--bk-cols,2),2),minmax(0,1fr))}}
+.bk-hide-sdetails .opt .s:not(.loc2),.bk-hide-sdetails .opt .d{display:none}
+.bk-hide-prices .opt .r{display:none}
+.bk-hide-photos .opt .avatar:not(.any){display:none}
+.bk-hide-stdetails [data-staff] .s,.bk-hide-stdetails [data-staff] .d{display:none}
+.who{display:flex;align-items:center;gap:12px}
+.avatar{flex:none;width:44px;height:44px;border-radius:50%;background:var(--ib-accent-soft);color:var(--ib-text);display:inline-flex;align-items:center;justify-content:center;font-weight:650;font-size:15px;overflow:hidden}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar.any{color:var(--ib-accent-text)}
+.durs{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px}
+.dur{appearance:none;border:var(--ib-input-bw,1px) solid var(--ib-input-border);background:var(--ib-input-bg);color:var(--ib-text);border-radius:99px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer;min-height:36px}
+.dur.on{background:var(--ib-accent);color:var(--ib-accent-ink);border-color:var(--ib-accent);font-weight:600}
+.dur:focus-visible{outline:2px solid var(--ib-accent);outline-offset:2px}
+.slot .seats{display:block;font-size:11px;font-weight:500;opacity:.8}
+.chip{display:inline-block;padding:1px 8px;border-radius:99px;background:var(--ib-accent-soft);color:var(--ib-text);font-size:12px}
+.summary{border:1px solid var(--ib-border);border-radius:min(var(--ib-choice-radius),14px);padding:10px 12px;margin-bottom:14px;font-size:14px;background:var(--ib-soft)}
+.summary b{font-weight:600}
+.summary .row{display:flex;gap:8px;padding:2px 0}
+.summary .row span:first-child{color:var(--ib-muted);min-width:88px}
+.tz{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13px;color:var(--ib-muted);margin:0 0 12px}
+.tz select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--ib-input-border);border-radius:6px;background:var(--ib-input-bg);color:var(--ib-text)}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-head b{font-size:16px}
+.nav{appearance:none;border:1px solid var(--ib-border);background:var(--ib-card);border-radius:min(var(--ib-choice-radius),10px);width:40px;height:40px;font-size:18px;cursor:pointer;color:var(--ib-text)}
+.nav[disabled]{opacity:.35;cursor:default}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.datepick{display:grid;gap:18px}
+.datepick h2.day-title{margin:0 0 4px}
+.bk-cal{width:100%;max-width:440px}
+.ib-header-center .bk-cal-stacked .bk-cal,.bk-cal-stacked.ib-header-center .bk-cal{margin:0 auto}
+@container (min-width:560px){
+.bk-cal-side .datepick{grid-template-columns:minmax(0,330px) minmax(0,1fr);align-items:start;gap:24px}
+.bk-cal-side .datepick .slots{grid-template-columns:repeat(auto-fill,minmax(92px,1fr))}
+}
+.dow{text-align:center;font-size:11px;color:var(--ib-muted);text-transform:uppercase;padding:4px 0}
+.day{appearance:none;border:0;background:transparent;border-radius:min(var(--ib-choice-radius),12px);aspect-ratio:1/1;font:inherit;font-size:15px;color:color-mix(in srgb,var(--ib-muted) 55%,transparent);cursor:default;position:relative;min-height:40px}
+.day.on{background:var(--ib-accent-soft);color:var(--ib-text);font-weight:600;cursor:pointer}
+.day.on:hover,.day.on:focus-visible{outline:2px solid var(--ib-accent)}
+.day.sel{background:var(--ib-accent);color:var(--ib-accent-ink)}
+.day.today::after{content:'';position:absolute;left:50%;bottom:6px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:currentColor}
+.slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-top:14px}
+.slot{appearance:none;border:var(--ib-input-bw,1px) solid var(--ib-accent);background:var(--ib-input-bg);color:var(--ib-text);border-radius:var(--ib-choice-radius);padding:10px 8px;font:inherit;font-weight:600;cursor:pointer;min-height:44px}
+.slot:hover,.slot:focus-visible{background:var(--ib-accent);color:var(--ib-accent-ink);outline:none}
+.bk-slots-list .slots,.bk-slots-list.bk-cal-side .datepick .slots{grid-template-columns:1fr}
+.bk-slots-list .slot{text-align:left;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+.bk-slots-list .slot .seats{display:inline}
+.empty,.loading{color:var(--ib-muted);font-size:14px;padding:12px 0}
+.bk-form{display:flex;flex-direction:column;gap:var(--ib-gap)}
+.bk-form .ib-item{grid-column:auto}
+.chk{display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin:6px 0}
+.chk input{width:18px;height:18px;margin:2px 0 0;accent-color:var(--ib-accent);flex:none}
+.note-ok{border:1px solid color-mix(in srgb,#067647 35%,transparent);background:color-mix(in srgb,#067647 10%,var(--ib-card));color:var(--ib-text);border-radius:10px;padding:10px 12px;margin:12px 0;font-size:14px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+.ib-btn-align-center .actions{justify-content:center}
+.ib-btn-align-right .actions{justify-content:flex-end}
+.ib-btn-full .actions .ib-btn{flex:1}
+@media (max-width:520px){.actions .ib-btn{flex:1 1 100%}}
+.btn-danger{background:var(--ib-error)!important;color:#fff!important;border-color:var(--ib-error)!important}
+.done{text-align:center;padding:8px 0 4px}
+.tick{width:54px;height:54px;border-radius:50%;background:var(--ib-accent);color:var(--ib-accent-ink);display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:10px}
+.tick.x{background:var(--ib-soft);color:var(--ib-muted)}
+.tick.wait{background:color-mix(in srgb,#6d28d9 14%,var(--ib-card));color:#6d28d9}
+.badge-pending{display:inline-block;margin:0 0 12px;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,#6d28d9 14%,var(--ib-card));color:color-mix(in srgb,#6d28d9 80%,var(--ib-text));font-size:13px;font-weight:600}
+.code-input{font-size:26px!important;letter-spacing:10px;text-align:center;font-variant-numeric:tabular-nums;max-width:240px}
+.done .summary{text-align:left;margin-top:14px}
+.muted{color:var(--ib-muted)}
+.small{font-size:13px}
+.captcha{margin-top:16px;min-height:66px}
+.pv{border:1.5px dashed var(--ib-border);border-radius:8px;padding:10px;color:var(--ib-muted);font-size:13px;text-align:center;margin-top:12px}
 `;
 
 export interface BookingPageBoot {
@@ -156,20 +159,62 @@ export function bookingClientHash(): string {
     return clientHash;
 }
 
-export function renderBookingPage(opts: { nonce?: string; title: string; boot: BookingPageBoot }): string {
+/**
+ * v0.1.354 — Las clases del `<body>`: las del tema (ADR-S94) más lo propio de
+ * la agenda (qué se muestra y cómo se distribuye). El cliente las vuelve a
+ * poner igual al arrancar; venir ya en el HTML evita un salto al cargar.
+ */
+export function bookingBodyClasses(view: PublicThemeView | null | undefined, display: Partial<BookingDisplay> | null | undefined): string[] {
+    const d = display ?? {};
+    const out = [...(view?.classes ?? [])];
+    out.push(`bk-ch-${view?.choice_style ?? 'list'}`);
+    out.push(`bk-cal-${d.calendar_layout === 'stacked' ? 'stacked' : 'side'}`);
+    out.push(`bk-slots-${d.slot_style === 'list' ? 'list' : 'grid'}`);
+    if (d.show_location === false) out.push('bk-hide-loc');
+    if (d.show_service_details === false) out.push('bk-hide-sdetails');
+    if (d.show_prices === false) out.push('bk-hide-prices');
+    if (d.show_staff_photos === false) out.push('bk-hide-photos');
+    if (d.show_staff_details === false) out.push('bk-hide-stdetails');
+    return out;
+}
+
+function safeClasses(list: readonly string[]): string {
+    return ['ib-body', ...list].map((c) => c.replace(/[^a-z0-9_-]/gi, '')).filter(Boolean).join(' ');
+}
+
+/** El diseño de siempre de la agenda (la vista previa arranca con él hasta que el editor manda el suyo). */
+export function bookingClassicLook(accent = '#0e7490'): { css: string; classes: string[] } {
+    return { css: buildPublicThemeCss(BOOKING_CLASSIC_THEME, { accent }), classes: bookingBodyClasses(publicThemeView(BOOKING_CLASSIC_THEME), null) };
+}
+
+export function renderBookingPage(opts: {
+    nonce?: string;
+    title: string;
+    boot: BookingPageBoot;
+    /** v0.1.354 — CSS del tema (`buildPublicThemeCss`). */
+    themeCss: string;
+    bodyClasses: string[];
+    preloadFont?: string | null;
+}): string {
     const boot = jsonForScript({ ...opts.boot, scripts: CAPTCHA_SCRIPTS });
     const nonce = opts.nonce ? ` nonce="${opts.nonce}"` : '';
+    const preload = opts.preloadFont
+        ? `<link rel="preload" href="${escapeHtml(opts.preloadFont)}" as="font" type="font/woff2" crossorigin>\n`
+        : '';
     return `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="robots" content="noindex" />
 <title>${escapeHtml(opts.title)}</title>
-<style>${CSS}</style>
+${preload}<style>${PUBLIC_BASE_CSS}${BOOKING_CSS}</style>
+<style id="ib-theme">${opts.themeCss.replace(/<\/style/gi, '')}</style>
 </head>
-<body>
-<div class="wrap"><div class="card"><div class="band"></div><div class="inner" id="root" data-testid="booking-root"></div></div></div>
+<body class="${safeClasses(opts.bodyClasses)}">
+<div class="ib-bg" aria-hidden="true"><div class="ib-bg-img"></div></div>
+<div id="app"></div>
+<noscript><div class="ib-shell"><main class="ib-wrap"><div class="ib-card"><div class="ib-inner"><p>Para agendar una cita, activa JavaScript en tu navegador.</p></div></div></main></div></noscript>
 <script type="application/json" id="boot">${boot}</script>
 <script${nonce}>${inlineScriptText(CLIENT_JS)}</script>
 </body>
@@ -198,10 +243,10 @@ const CLIENT_JS = String.raw`
   'use strict';
   var BOOT = JSON.parse(document.getElementById('boot').textContent);
   var MODE = BOOT.mode;
-  var root = document.getElementById('root');
+  var app = document.getElementById('app');
+  var root = null;
   var embedded = false;
   try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
-  if (embedded) document.body.classList.add('embedded');
   var PREVIEW = MODE === 'preview';
   var API = MODE === 'manage'
     ? '/api/v1/public/booking/manage/' + encodeURIComponent(BOOT.token)
@@ -242,7 +287,7 @@ const CLIENT_JS = String.raw`
   }
   if (MODE === 'book') {
     ['pointerdown', 'focusin', 'keydown', 'touchstart'].forEach(function (ev) {
-      root.addEventListener(ev, function () { ensureStamp().catch(function () {}); }, { once: true, passive: true });
+      app.addEventListener(ev, function () { ensureStamp().catch(function () {}); }, { once: true, passive: true });
     });
   }
 
@@ -257,17 +302,46 @@ const CLIENT_JS = String.raw`
     (kids || []).forEach(function (c) { if (c) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
     return n;
   }
-  function ink(hex) {
-    var m = /^#([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return '#ffffff';
-    var n = parseInt(m[1], 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    function ch(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-    var L = 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
-    return L > 0.45 ? '#1d2330' : '#ffffff';
+  // ── v0.1.354 — La estructura del diseño (ADR-S94): la arman el tema y lo que se muestra ──
+  function view() { return meta && meta.theme ? meta.theme : null; }
+  function applyBodyClasses() {
+    var v = view(), d = (meta && meta.display) || {};
+    var cls = ['ib-body'].concat(v && v.classes ? v.classes : []);
+    if (embedded && !PREVIEW) cls.push('ib-embedded');
+    if (embedded && !PREVIEW && v && v.embed_background) cls.push('ib-embed-bg');
+    cls.push('bk-ch-' + (v && v.choice_style ? v.choice_style : 'list'));
+    cls.push('bk-cal-' + (d.calendar_layout === 'stacked' ? 'stacked' : 'side'));
+    cls.push('bk-slots-' + (d.slot_style === 'list' ? 'list' : 'grid'));
+    if (d.show_location === false) cls.push('bk-hide-loc');
+    if (d.show_service_details === false) cls.push('bk-hide-sdetails');
+    if (d.show_prices === false) cls.push('bk-hide-prices');
+    if (d.show_staff_photos === false) cls.push('bk-hide-photos');
+    if (d.show_staff_details === false) cls.push('bk-hide-stdetails');
+    document.body.className = cls.filter(function (c) { return /^[a-z0-9_-]+$/i.test(c); }).join(' ');
+    document.documentElement.style.setProperty('--bk-cols', String(v && v.choice_columns > 1 ? v.choice_columns : 2));
   }
-  function soft(hex) {
-    var m = /^#([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return 'rgba(14,116,144,.1)';
-    var n = parseInt(m[1], 16);
-    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',.12)';
+  function buildShell() {
+    var v = view();
+    var card = el('div', { cls: 'ib-card' });
+    if (v && v.cover) card.appendChild(el('div', { cls: 'ib-cover', role: 'presentation' }));
+    else if (!v || v.band) card.appendChild(el('div', { cls: 'ib-band' }));
+    root = el('div', { cls: 'ib-inner bk-root', id: 'root', 'data-testid': 'booking-root' });
+    card.appendChild(root);
+    var kids = [];
+    if (v && v.split) {
+      var media = el('aside', { cls: 'ib-split-media', 'aria-hidden': v.split.headline ? null : 'true' });
+      if (v.split.headline) media.appendChild(el('div', { cls: 'ib-split-headline', text: v.split.headline }));
+      kids.push(media);
+    }
+    kids.push(el('main', { cls: 'ib-wrap' }, [card]));
+    app.textContent = '';
+    app.appendChild(el('div', { cls: 'ib-shell' }, kids));
+    applyBodyClasses();
+  }
+  // Los campos de los datos del cliente toman el estilo del tema.
+  function themeInputs() {
+    var list = root.querySelectorAll('input[type=text],input[type=email],input[type=tel],input[type=date],input[type=datetime-local],input[type=number],select,textarea');
+    for (var i = 0; i < list.length; i++) { if (!list[i].closest('.tz')) list[i].classList.add('ib-input'); }
   }
   function reportHeight() {
     if (!embedded || PREVIEW) return;
@@ -365,26 +439,33 @@ const CLIENT_JS = String.raw`
   }
 
   function header() {
-    var box = el('div');
-    if (meta.logo_url) box.appendChild(el('div', { cls: 'brand' }, [el('img', { src: meta.logo_url, alt: meta.company })]));
-    else if (meta.company) box.appendChild(el('div', { cls: 'brand', text: meta.company }));
-    box.appendChild(el('h1', { text: MODE === 'manage' ? 'Tu cita' : meta.title }));
+    var box = el('header', { cls: 'ib-header' });
+    if (meta.logo_url) box.appendChild(el('div', { cls: 'ib-logo' }, [el('img', { src: meta.logo_url, alt: meta.company })]));
+    else if (meta.company) box.appendChild(el('div', { cls: 'ib-logo', text: meta.company }));
+    // En la página de una cita, «Tu cita» se ve aunque el diseño oculte el título.
+    box.appendChild(el('h1', { cls: MODE === 'manage' ? 'ib-title bk-manage-title' : 'ib-title', text: MODE === 'manage' ? 'Tu cita' : meta.title }));
     if (MODE !== 'manage' && meta.description) {
-      var d = el('div', { cls: 'desc' });
+      var d = el('div', { cls: 'ib-desc' });
       meta.description.split(/\n{2,}/).forEach(function (p) { if (p.trim()) d.appendChild(el('p', { text: p })); });
       box.appendChild(d);
     }
-    if (meta.location && MODE !== 'manage') box.appendChild(el('p', { cls: 'loc', text: '\u{1F4CD} ' + meta.location }));
+    if (meta.location && MODE !== 'manage') box.appendChild(el('p', { cls: 'ib-loc', text: '\u{1F4CD} ' + meta.location }));
     return box;
   }
 
   function stepBar() {
     var s = steps(), i = s.indexOf(st.step === 'code' ? 'details' : st.step);
+    var prog = (view() && view().progress) || 'steps';
     var bar = el('div', { cls: 'steps' });
     var canBack = i > 0 || MODE === 'manage' || st.step === 'code';
     bar.appendChild(canBack ? el('button', { type: 'button', cls: 'back', text: '\u2190 Volver', on: { click: back }, 'data-testid': 'booking-back' }) : el('span'));
-    if (i >= 0) bar.appendChild(el('span', { text: 'Paso ' + (i + 1) + ' de ' + s.length }));
-    return bar;
+    if (i >= 0 && prog !== 'none') bar.appendChild(el('span', { 'data-testid': 'booking-step', text: 'Paso ' + (i + 1) + ' de ' + s.length }));
+    if (i < 0 || prog !== 'bar' || MODE === 'manage') return bar;
+    // v0.1.354 — con «Barra», el avance también se dibuja.
+    var fill = el('span');
+    fill.style.width = Math.round(((i + 1) / s.length) * 100) + '%';
+    var meter = el('div', { cls: 'ib-progress bk-progress', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': String(s.length), 'aria-valuenow': String(i + 1), 'data-testid': 'booking-progress' }, [fill]);
+    return el('div', null, [bar, meter]);
   }
 
   // v0.1.350 — Dónde es cada servicio («Videollamada (Google Meet o Teams)», «En persona · Calle 10…»).
@@ -397,7 +478,7 @@ const CLIENT_JS = String.raw`
   function safeMeeting(u) { return typeof u === 'string' && /^https:\/\/[^\s"<>]+$/.test(u) ? u : null; }
   function meetingButton(a) {
     var u = safeMeeting(a.meeting_url);
-    return u ? el('a', { cls: 'btn', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-testid': 'booking-join', text: 'Unirse a la videollamada' }) : null;
+    return u ? el('a', { cls: 'ib-btn ib-btn-primary', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-testid': 'booking-join', text: 'Unirse a la videollamada' }) : null;
   }
 
   function summaryBox(withSlot) {
@@ -408,13 +489,13 @@ const CLIENT_JS = String.raw`
     else if (meta.choose_staff) rows.push(['Con', 'El primero disponible']);
     if (withSlot && st.slot) rows.push(['Cuándo', whenLong(st.slot.start, tzShown())]);
     if (svc && locText(svc) && MODE !== 'manage') rows.push(['Dónde', locText(svc)]);
-    var box = el('div', { cls: 'summary', 'data-testid': 'booking-summary' });
+    var box = el('div', { cls: 'summary ib-summary', 'data-testid': 'booking-summary' });
     rows.forEach(function (r) { box.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })])); });
     return box;
   }
 
   function renderService() {
-    root.appendChild(el('h2', { text: 'Elige el servicio' }));
+    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Elige el servicio' }));
     var list = el('div', { cls: 'choices' });
     (meta.services || []).forEach(function (s) {
       var info = durationsOf(s).map(durLabel).join(' · ');
@@ -423,7 +504,7 @@ const CLIENT_JS = String.raw`
       var where = locText(s);
       if (where) left.appendChild(el('div', { cls: 's loc2', text: where, 'data-service-location': s.location.kind }));
       if (s.description) left.appendChild(el('div', { cls: 'd', text: s.description }));
-      list.appendChild(el('button', { type: 'button', cls: 'opt', 'data-service': s.id, on: { click: function () {
+      list.appendChild(el('button', { type: 'button', cls: 'opt ib-choice', 'data-service': s.id, on: { click: function () {
         st.service = s.id; st.duration = s.duration_min; st.staff = 'any'; st.day = null; st.slot = null;
         var s2 = steps(); go(s2[s2.indexOf('service') + 1]);
       } } }, [left, s.price_label ? el('span', { cls: 'r', text: s.price_label }) : null]));
@@ -434,9 +515,9 @@ const CLIENT_JS = String.raw`
 
   function renderStaff() {
     root.appendChild(summaryBox(false));
-    root.appendChild(el('h2', { text: '¿Con quién?' }));
+    root.appendChild(el('h2', { cls: 'ib-step-title', text: '¿Con quién?' }));
     var list = el('div', { cls: 'choices' });
-    list.appendChild(el('button', { type: 'button', cls: 'opt', 'data-staff': 'any', on: { click: function () { st.staff = 'any'; st.day = null; go('date'); } } },
+    list.appendChild(el('button', { type: 'button', cls: 'opt ib-choice', 'data-staff': 'any', on: { click: function () { st.staff = 'any'; st.day = null; go('date'); } } },
       [el('div', { cls: 'who' }, [el('span', { cls: 'avatar any', 'aria-hidden': 'true', text: '\u2605' }), el('div', null, [el('div', { cls: 't', text: 'El primero disponible' }), el('div', { cls: 's', text: 'Más horarios para elegir' })])])]));
     staffFor(st.service).forEach(function (s) {
       var now = MODE === 'manage' && manage && manage.staff_id === s.id;
@@ -444,7 +525,7 @@ const CLIENT_JS = String.raw`
       if (s.title) txt.appendChild(el('div', { cls: 's', text: s.title }));
       if (s.bio) txt.appendChild(el('div', { cls: 'd', text: s.bio }));
       if (now) txt.appendChild(el('div', { cls: 's', text: 'Te atiende ahora' }));
-      list.appendChild(el('button', { type: 'button', cls: 'opt' + (now ? ' cur' : ''), 'data-staff': s.id, on: { click: function () { st.staff = s.id; st.day = null; go('date'); } } },
+      list.appendChild(el('button', { type: 'button', cls: 'opt ib-choice' + (now ? ' cur' : ''), 'data-staff': s.id, on: { click: function () { st.staff = s.id; st.day = null; go('date'); } } },
         [el('div', { cls: 'who' }, [avatar(s), txt])]));
     });
     root.appendChild(list);
@@ -476,7 +557,7 @@ const CLIENT_JS = String.raw`
 
   function renderDate() {
     root.appendChild(summaryBox(false));
-    root.appendChild(el('h2', { text: 'Elige el día y la hora' }));
+    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Elige el día y la hora' }));
     var chips = durationChips();
     if (chips) root.appendChild(chips);
     root.appendChild(tzControl());
@@ -498,18 +579,20 @@ const CLIENT_JS = String.raw`
     head.appendChild(prev); head.appendChild(el('b', { text: title })); head.appendChild(next);
     // Calendario y horarios lado a lado en pantallas anchas; apilados en el celular.
     var pick = el('div', { cls: 'datepick' });
-    var calBox = el('div');
+    var calBox = el('div', { cls: 'bk-cal' });
     calBox.appendChild(head);
     pick.appendChild(calBox);
     root.appendChild(pick);
     var grid = el('div', { cls: 'grid', role: 'grid', 'aria-label': title, 'data-testid': 'booking-calendar' });
-    ['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'].forEach(function (d) { grid.appendChild(el('div', { cls: 'dow', text: d })); });
-    var dow = (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7;
+    // v0.1.354 — la semana empieza el lunes (o el domingo, si la agenda lo elige).
+    var sunday = !!(meta.display && meta.display.week_start === 'sunday');
+    (sunday ? ['do', 'lu', 'ma', 'mi', 'ju', 'vi', 'sá'] : ['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do']).forEach(function (d) { grid.appendChild(el('div', { cls: 'dow', text: d })); });
+    var dow = sunday ? new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() : (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7;
     for (var i = 0; i < dow; i++) grid.appendChild(el('div'));
     var cells = {};
     for (var d = 1; d <= daysIn; d++) {
       var ymd = st.month + '-' + (d < 10 ? '0' : '') + d;
-      var b = el('button', { type: 'button', cls: 'day' + (ymd === today ? ' today' : '') + (ymd === st.day ? ' sel' : ''), text: String(d), disabled: true, 'data-day': ymd });
+      var b = el('button', { type: 'button', cls: 'day ib-day' + (ymd === today ? ' today' : '') + (ymd === st.day ? ' sel' : ''), text: String(d), disabled: true, 'data-day': ymd });
       cells[ymd] = b;
       grid.appendChild(b);
     }
@@ -543,7 +626,7 @@ const CLIENT_JS = String.raw`
         list.forEach(function (s) {
           var svc2 = serviceById(st.service);
           var seats = typeof s.seats_left === 'number' && svc2 && svc2.show_seats_left ? s.seats_left : null;
-          var btn = el('button', { type: 'button', cls: 'slot', 'data-start': s.start, on: { click: function () { pickSlot(s); } } }, [el('span', { text: timeLabel(s.start, tz) })]);
+          var btn = el('button', { type: 'button', cls: 'slot ib-slot', 'data-start': s.start, on: { click: function () { pickSlot(s); } } }, [el('span', { text: timeLabel(s.start, tz) })]);
           if (seats !== null) { btn.appendChild(el('span', { cls: 'seats', text: seats === 1 ? '1 cupo' : seats + ' cupos' })); btn.setAttribute('aria-label', timeLabel(s.start, tz) + ', ' + (seats === 1 ? 'queda 1 cupo' : 'quedan ' + seats + ' cupos')); }
           g.appendChild(btn);
         });
@@ -562,15 +645,15 @@ const CLIENT_JS = String.raw`
   // ── Datos del cliente y preguntas ──
   function setErr(key, msg, node) {
     st.errors[key] = msg;
-    if (node) node.classList.toggle('invalid', !!msg);
+    if (node) node.classList.toggle('ib-invalid', !!msg);
   }
   function fieldBox(key, labelText, required, control, help) {
-    var box = el('div', { 'data-q': key });
-    box.appendChild(el('label', { cls: 'q', for: 'q_' + key }, [labelText, required ? el('span', { cls: 'req', text: '*' }) : null]));
-    if (help) box.appendChild(el('div', { cls: 'help', text: help }));
+    var box = el('div', { 'data-q': key, cls: 'ib-item ib-field' });
+    if (labelText) box.appendChild(el('label', { cls: 'ib-label', for: 'q_' + key }, [labelText, required ? el('span', { cls: 'ib-req', text: '*' }) : null]));
+    if (help) box.appendChild(el('div', { cls: 'ib-help', text: help }));
     box.appendChild(control);
     var msg = st.errors[key];
-    if (msg) { box.classList.add('invalid'); box.appendChild(el('div', { cls: 'err', role: 'alert', text: msg })); }
+    if (msg) { box.classList.add('ib-invalid'); box.appendChild(el('div', { cls: 'ib-error', role: 'alert', text: msg })); }
     return box;
   }
   function visible(item) {
@@ -642,7 +725,7 @@ const CLIENT_JS = String.raw`
     questionsHost.textContent = '';
     (meta.questions || []).forEach(function (q) {
       if (!visible(q)) return;
-      if (q.type === 'heading') { questionsHost.appendChild(el('h2', { text: q.text, style: 'margin-top:18px' })); return; }
+      if (q.type === 'heading') { questionsHost.appendChild(el('h2', { cls: 'ib-step-title', text: q.text, style: 'margin-top:18px' })); return; }
       if (q.type === 'text') { questionsHost.appendChild(el('p', { cls: 'muted', text: q.text })); return; }
       if (q.hidden) return;
       var c = questionControl(q);
@@ -652,8 +735,8 @@ const CLIENT_JS = String.raw`
 
   function renderDetails() {
     root.appendChild(summaryBox(true));
-    root.appendChild(el('h2', { text: 'Tus datos' }));
-    var form = el('form', { novalidate: true, 'data-testid': 'booking-form' });
+    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Tus datos' }));
+    var form = el('form', { novalidate: true, cls: 'bk-form', 'data-testid': 'booking-form' });
     var name = el('input', { type: 'text', id: 'q_name', autocomplete: 'name', value: st.values.__name || '' });
     name.addEventListener('input', function () { st.values.__name = name.value; });
     form.appendChild(fieldBox('name', 'Nombre', true, name));
@@ -674,21 +757,21 @@ const CLIENT_JS = String.raw`
       consentCb = el('input', { type: 'checkbox', id: 'q___consent', 'data-testid': 'booking-consent' });
       consentCb.checked = st.values.__consent === true;
       consentCb.addEventListener('change', function () { st.values.__consent = consentCb.checked; });
-      var full = el('div', { cls: 'consent-text', hidden: true, text: dc.text });
-      var toggle = el('button', { type: 'button', cls: 'linkbtn', text: 'Ver la autorización completa', on: { click: function () { full.hidden = !full.hidden; reportHeight(); } } });
-      var cbox = el('div', { cls: 'consent' + (st.errors.__consent ? ' invalid' : '') }, [el('label', { cls: 'chk' }, [consentCb, el('span', { text: dc.label })]), toggle, full]);
+      var full = el('div', { cls: 'ib-consent-text', hidden: true, text: dc.text });
+      var toggle = el('button', { type: 'button', cls: 'ib-linkbtn', text: 'Ver la autorización completa', on: { click: function () { full.hidden = !full.hidden; reportHeight(); } } });
+      var cbox = el('div', { cls: 'ib-consent' + (st.errors.__consent ? ' ib-invalid' : '') }, [el('label', { cls: 'chk' }, [consentCb, el('span', { text: dc.label })]), toggle, full]);
       if (dc.policy_url && /^https:\/\//i.test(dc.policy_url)) cbox.appendChild(el('div', { cls: 'small' }, [el('a', { href: dc.policy_url, target: '_blank', rel: 'noopener noreferrer', text: 'Política de tratamiento de datos' })]));
-      if (st.errors.__consent) cbox.appendChild(el('div', { cls: 'err', role: 'alert', text: st.errors.__consent }));
+      if (st.errors.__consent) cbox.appendChild(el('div', { cls: 'ib-error', role: 'alert', text: st.errors.__consent }));
       form.appendChild(cbox);
     }
-    var hp = el('div', { cls: 'hp', 'aria-hidden': 'true' }, [el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', id: 'hp' })]);
+    var hp = el('div', { cls: 'ib-hp', 'aria-hidden': 'true' }, [el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', id: 'hp' })]);
     form.appendChild(hp);
     var captchaBox = null;
     if (meta.captcha && !PREVIEW) { captchaBox = el('div', { cls: 'captcha' }); form.appendChild(captchaBox); }
     if (meta.captcha && PREVIEW) form.appendChild(el('div', { cls: 'pv', text: 'Aquí va la verificación anti-robots.' }));
     if (meta.verify_email) form.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-verify-note', text: 'Para terminar, te enviaremos un código a tu correo.' }));
-    if (st.alert) form.appendChild(el('div', { cls: 'alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
-    var submit = el('button', { type: 'submit', cls: 'btn', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : 'Confirmar cita', disabled: st.busy, 'data-testid': 'booking-submit' });
+    if (st.alert) form.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
+    var submit = el('button', { type: 'submit', cls: 'ib-btn ib-btn-primary', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : 'Confirmar cita', disabled: st.busy, 'data-testid': 'booking-submit' });
     form.appendChild(el('div', { cls: 'actions' }, [submit]));
     form.addEventListener('submit', function (e) { e.preventDefault(); submitBooking(); });
     root.appendChild(form);
@@ -818,17 +901,17 @@ const CLIENT_JS = String.raw`
   }
   function renderCode() {
     root.appendChild(summaryBox(true));
-    root.appendChild(el('h2', { text: 'Confirma tu correo' }));
+    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Confirma tu correo' }));
     var sent = st.codeSent || { email: currentEmail(), minutes: 10 };
     root.appendChild(el('p', { cls: 'muted', text: 'Te enviamos un código de 6 números a ' + sent.email + '. Escríbelo para terminar de agendar (vence en ' + sent.minutes + ' minutos).' }));
     var form = el('form', { novalidate: true, 'data-testid': 'booking-code-form' });
     var input = el('input', { type: 'text', id: 'q_code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', cls: 'code-input', placeholder: '······', value: st.codeValue || '', 'aria-label': 'Código de 6 números', 'data-testid': 'booking-code' });
     input.addEventListener('input', function () { st.codeValue = input.value.replace(/\D/g, '').slice(0, 6); if (input.value !== st.codeValue) input.value = st.codeValue; if (st.codeValue.length === 6 && !st.busy) verifyCode(); });
     form.appendChild(el('div', { cls: 'field' }, [input]));
-    if (st.alert) form.appendChild(el('div', { cls: 'alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
-    var ok = el('button', { type: 'submit', cls: 'btn', text: st.busy ? 'Comprobando…' : 'Confirmar y agendar', disabled: st.busy, 'data-testid': 'booking-code-submit' });
-    var again = el('button', { type: 'button', cls: 'btn ghost', text: 'Enviarme otro código', disabled: st.busy, 'data-testid': 'booking-code-resend', on: { click: function () { requestCode(); } } });
-    var other = el('button', { type: 'button', cls: 'linkbtn', text: 'Usar otro correo', on: { click: function () { st.codeSent = null; st.alert = ''; go('details'); } } });
+    if (st.alert) form.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
+    var ok = el('button', { type: 'submit', cls: 'ib-btn ib-btn-primary', text: st.busy ? 'Comprobando…' : 'Confirmar y agendar', disabled: st.busy, 'data-testid': 'booking-code-submit' });
+    var again = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Enviarme otro código', disabled: st.busy, 'data-testid': 'booking-code-resend', on: { click: function () { requestCode(); } } });
+    var other = el('button', { type: 'button', cls: 'ib-linkbtn', text: 'Usar otro correo', on: { click: function () { st.codeSent = null; st.alert = ''; go('details'); } } });
     form.appendChild(el('div', { cls: 'actions' }, [ok, again]));
     form.appendChild(other);
     form.addEventListener('submit', function (e) { e.preventDefault(); verifyCode(); });
@@ -841,7 +924,7 @@ const CLIENT_JS = String.raw`
     var waiting = a.status === 'pending';
     var box = el('div', { cls: 'done', 'data-testid': 'booking-done', 'data-status': a.status || '' });
     box.appendChild(el('div', { cls: waiting ? 'tick wait' : 'tick', text: waiting ? '\u23F3' : '\u2713', 'aria-hidden': 'true' }));
-    box.appendChild(el('h2', { text: a.preview ? 'Vista previa: así se confirma la cita' : waiting ? 'Recibimos tu solicitud' : '¡Tu cita quedó agendada!' }));
+    box.appendChild(el('h2', { cls: 'ib-step-title', text: a.preview ? 'Vista previa: así se confirma la cita' : waiting ? 'Recibimos tu solicitud' : '¡Tu cita quedó agendada!' }));
     if (waiting) {
       box.appendChild(el('span', { cls: 'badge-pending', 'data-testid': 'booking-pending', text: 'Por confirmar' }));
       if (meta.pending_message) box.appendChild(el('p', { cls: 'muted', text: meta.pending_message }));
@@ -853,7 +936,7 @@ const CLIENT_JS = String.raw`
       return;
     }
     if (a.start) {
-      var sum = el('div', { cls: 'summary' });
+      var sum = el('div', { cls: 'summary ib-summary' });
       [['Servicio', a.service], ['Con', a.staff], ['Cuándo', whenLong(a.start, tzShown())], ['Dónde', a.location]].forEach(function (r) {
         if (r[1]) sum.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })]));
       });
@@ -863,7 +946,7 @@ const CLIENT_JS = String.raw`
       if (join) acts.appendChild(join);
       // Una solicitud todavía no va al calendario del cliente.
       if (!waiting) acts.appendChild(el('a', { cls: join ? 'btn ghost' : 'btn', href: a.ics_url, 'data-testid': 'booking-ics', text: 'Agregar a mi calendario' }));
-      if (a.can_reschedule || a.can_cancel) acts.appendChild(el('a', { cls: 'btn ghost', href: a.manage_url, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-manage-link', text: 'Cambiar o cancelar' }));
+      if (a.can_reschedule || a.can_cancel) acts.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: a.manage_url, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-manage-link', text: 'Cambiar o cancelar' }));
       box.appendChild(acts);
       if (!join && !waiting && a.location_kind === 'video') box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-meeting-later', text: 'El enlace de la videollamada te llega en el correo de confirmación.' }));
     }
@@ -872,7 +955,7 @@ const CLIENT_JS = String.raw`
 
   // ── Gestión de una cita ──
   function apptSummary(a) {
-    var sum = el('div', { cls: 'summary', 'data-testid': 'booking-appt' });
+    var sum = el('div', { cls: 'summary ib-summary', 'data-testid': 'booking-appt' });
     [['Servicio', a.service], ['Con', a.staff], ['Cuándo', whenLong(a.start, tzShown())], ['Dónde', a.location]].forEach(function (r) {
       if (r[1]) sum.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })]));
     });
@@ -881,7 +964,7 @@ const CLIENT_JS = String.raw`
   function renderSummary() {
     var a = manage.appointment;
     if (a.status === 'cancelled' || a.status === 'declined') {
-      root.appendChild(el('div', { cls: 'done', 'data-testid': 'booking-gone' }, [el('div', { cls: 'tick x', text: '\u2715' }), el('h2', { text: a.status === 'declined' ? 'Esta cita no fue confirmada' : 'Esta cita está cancelada' })]));
+      root.appendChild(el('div', { cls: 'done', 'data-testid': 'booking-gone' }, [el('div', { cls: 'tick x', text: '\u2715' }), el('h2', { cls: 'ib-step-title', text: a.status === 'declined' ? 'Esta cita no fue confirmada' : 'Esta cita está cancelada' })]));
       root.appendChild(apptSummary(a));
       if (a.status === 'declined' && meta && !meta.closed) root.appendChild(el('p', { cls: 'muted', text: 'El horario quedó libre. Si quieres, agenda otra desde la página de la empresa.' }));
       return;
@@ -896,18 +979,18 @@ const CLIENT_JS = String.raw`
     var acts = el('div', { cls: 'actions' });
     var joinM = meetingButton(a);
     if (joinM) acts.appendChild(joinM);
-    if (a.status !== 'pending') acts.appendChild(el('a', { cls: 'btn ghost', href: a.ics_url, text: 'Agregar a mi calendario' }));
-    if (a.can_reschedule) acts.appendChild(el('button', { type: 'button', cls: 'btn', text: 'Cambiar el horario', 'data-testid': 'booking-reschedule', on: { click: function () {
+    if (a.status !== 'pending') acts.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: a.ics_url, text: 'Agregar a mi calendario' }));
+    if (a.can_reschedule) acts.appendChild(el('button', { type: 'button', cls: 'ib-btn ib-btn-primary', text: 'Cambiar el horario', 'data-testid': 'booking-reschedule', on: { click: function () {
       st.service = manage.service_id; st.staff = manage.staff_id || 'any'; st.month = null; st.day = null; st.cache = {};
       var s = steps(); go(s.indexOf('staff') >= 0 ? 'staff' : 'date');
     } } }));
-    if (a.can_cancel) acts.appendChild(el('button', { type: 'button', cls: 'btn danger', text: a.status === 'pending' ? 'Cancelar la solicitud' : 'Cancelar la cita', 'data-testid': 'booking-cancel', on: { click: function () { st.cancelOpen = true; render(); } } }));
+    if (a.can_cancel) acts.appendChild(el('button', { type: 'button', cls: 'ib-btn ib-btn-primary btn-danger', text: a.status === 'pending' ? 'Cancelar la solicitud' : 'Cancelar la cita', 'data-testid': 'booking-cancel', on: { click: function () { st.cancelOpen = true; render(); } } }));
     root.appendChild(acts);
     if (st.cancelOpen && a.can_cancel) {
       var reason = el('textarea', { id: 'q_reason', placeholder: 'Opcional: cuéntanos por qué', maxlength: '500' });
-      var confirm = el('button', { type: 'button', cls: 'btn danger', text: st.busy ? 'Cancelando…' : 'Sí, cancelar mi cita', disabled: st.busy, 'data-testid': 'booking-cancel-confirm', on: { click: function () { doCancel(reason.value); } } });
-      var keep = el('button', { type: 'button', cls: 'btn ghost', text: 'No, mantenerla', on: { click: function () { st.cancelOpen = false; render(); } } });
-      root.appendChild(el('div', { cls: 'consent', style: 'margin-top:16px' }, [el('b', { text: '¿Cancelar la cita?' }), el('label', { cls: 'q', for: 'q_reason', text: 'Motivo' }), reason, el('div', { cls: 'actions' }, [confirm, keep])]));
+      var confirm = el('button', { type: 'button', cls: 'ib-btn ib-btn-primary btn-danger', text: st.busy ? 'Cancelando…' : 'Sí, cancelar mi cita', disabled: st.busy, 'data-testid': 'booking-cancel-confirm', on: { click: function () { doCancel(reason.value); } } });
+      var keep = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'No, mantenerla', on: { click: function () { st.cancelOpen = false; render(); } } });
+      root.appendChild(el('div', { cls: 'ib-consent' }, [el('b', { text: '¿Cancelar la cita?' }), el('label', { cls: 'ib-label', for: 'q_reason', text: 'Motivo', style: 'margin-top:10px' }), reason, el('div', { cls: 'actions' }, [confirm, keep])]));
     }
   }
   function post(path, body) {
@@ -934,9 +1017,9 @@ const CLIENT_JS = String.raw`
     var s = st.slot;
     root.textContent = '';
     root.appendChild(header());
-    root.appendChild(el('h2', { text: '¿Cambiar tu cita a este horario?' }));
+    root.appendChild(el('h2', { cls: 'ib-step-title', text: '¿Cambiar tu cita a este horario?' }));
     root.appendChild(apptSummary({ service: manage.appointment.service, staff: st.staff !== 'any' ? staffName(st.staff) : manage.appointment.staff, start: s.start, location: manage.appointment.location }));
-    var yes = el('button', { type: 'button', cls: 'btn', text: 'Sí, cambiar', 'data-testid': 'booking-reschedule-confirm', on: { click: function () {
+    var yes = el('button', { type: 'button', cls: 'ib-btn ib-btn-primary', text: 'Sí, cambiar', 'data-testid': 'booking-reschedule-confirm', on: { click: function () {
       yes.disabled = true; yes.textContent = 'Cambiando…';
       post('/reschedule', { start: s.start, staff_id: st.staff, time_zone: visitorTz }).then(function (res) {
         if (res.status >= 200 && res.status < 300) {
@@ -950,32 +1033,33 @@ const CLIENT_JS = String.raw`
         st.step = 'summary'; render();
       });
     } } });
-    var no = el('button', { type: 'button', cls: 'btn ghost', text: 'Elegir otro', on: { click: function () { st.slot = null; go('date'); } } });
+    var no = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Elegir otro', on: { click: function () { st.slot = null; go('date'); } } });
     root.appendChild(el('div', { cls: 'actions' }, [yes, no]));
     reportHeight();
   }
 
   // ── Render ──
   function render() {
+    if (!root) buildShell();
     root.textContent = '';
     if (!meta) { root.appendChild(el('div', { cls: 'loading', text: 'Cargando…' })); return; }
-    var accent = meta.accent_color || '#0e7490';
-    document.documentElement.style.setProperty('--accent', accent);
-    document.documentElement.style.setProperty('--accent-ink', ink(accent));
-    document.documentElement.style.setProperty('--accent-soft', soft(accent));
+    paint();
+    themeInputs();
+    reportHeight();
+  }
+  function paint() {
     root.appendChild(header());
     if (MODE === 'book' && meta.closed) { root.appendChild(el('p', { cls: 'empty', text: meta.closed, 'data-testid': 'booking-closed' })); return; }
     if (MODE === 'manage' && st.step === 'summary') { renderSummary(); reportHeight(); return; }
     if (st.step === 'done') { renderDone(); reportHeight(); return; }
-    if (MODE !== 'manage' && st.alert && st.step === 'date') root.appendChild(el('div', { cls: 'alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
-    if (MODE === 'manage' && st.alert && st.step === 'date') root.appendChild(el('div', { cls: 'alert', role: 'alert', text: st.alert }));
+    if (MODE !== 'manage' && st.alert && st.step === 'date') root.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
+    if (MODE === 'manage' && st.alert && st.step === 'date') root.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert }));
     root.appendChild(stepBar());
     if (st.step === 'service') renderService();
     else if (st.step === 'staff') renderStaff();
     else if (st.step === 'date') renderDate();
     else if (st.step === 'details') renderDetails();
     else if (st.step === 'code') renderCode();
-    reportHeight();
   }
 
   function start() {
@@ -994,6 +1078,7 @@ const CLIENT_JS = String.raw`
     render();
   }
 
+  buildShell();
   if (PREVIEW) {
     window.addEventListener('message', function (e) {
       if (e.origin !== location.origin || !e.data) return;
@@ -1001,6 +1086,13 @@ const CLIENT_JS = String.raw`
         var hadMeta = meta !== null;
         var prevSteps = hadMeta ? steps().join(',') : '';
         meta = e.data.meta;
+        // v0.1.354 — el diseño en edición: el CSS del tema, el modo y la estructura.
+        if (typeof e.data.css === 'string') { var style = document.getElementById('ib-theme'); if (style) style.textContent = e.data.css; }
+        if (e.data.scheme) document.documentElement.setAttribute('data-scheme', e.data.scheme);
+        else document.documentElement.removeAttribute('data-scheme');
+        var keep = window.scrollY;
+        buildShell();
+        setTimeout(function () { window.scrollTo(0, keep); }, 0);
         // Si cambian los pasos (un segundo servicio, otra persona), la vista
         // previa vuelve al primero: si no, seguiría en un paso que ya no es el
         // que vería el cliente.

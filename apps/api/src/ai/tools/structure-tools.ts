@@ -1347,6 +1347,14 @@ export class StructureTools implements AiProposalApplier {
                     approval: b.config.approval,
                     verify_email: b.config.settings.verify_email,
                     block_disposable_email: b.config.settings.block_disposable_email,
+                    // v0.1.354 — cómo se ve: la plantilla de diseño (classic = la de siempre) y qué se muestra.
+                    design: {
+                        template: b.config.settings.theme ? (b.config.settings.theme.preset ?? 'custom') : 'classic',
+                        accent: b.config.settings.theme?.colors.accent ?? b.config.settings.accent_color ?? null,
+                        has_custom_css: (b.config.settings.theme?.custom_css ?? '').trim() !== '',
+                        show_logo: b.config.settings.show_logo,
+                        ...b.config.settings.display,
+                    },
                     // v0.1.350 — el calendario: el de la persona («Mi calendario») o una conexión de la empresa.
                     staff: b.config.staff
                         .filter((x) => x.active)

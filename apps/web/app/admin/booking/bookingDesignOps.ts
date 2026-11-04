@@ -6,6 +6,8 @@ import {
     BOOKING_MAX_STAFF,
     bookableWindow,
     bookingLocationPublic,
+    bookingTheme,
+    publicThemeView,
     bookingPriceLabel,
     bookingServiceSchema,
     bookingStaffSchema,
@@ -31,6 +33,8 @@ import {
     type BookingTimeOff,
     type PublicBookingMeta,
 } from '@imagina-base/shared';
+
+import { resolvedAccent } from '../forms/design/themeOps';
 
 /**
  * D5 — Operaciones PURAS del constructor de la agenda (sin React): cada una
@@ -365,7 +369,8 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         title: s.title || ctx.name,
         description: s.description,
         location: s.location,
-        accent_color: s.accent_color ?? ctx.accent,
+        // v0.1.354 — el acento del tema, el viejo de la agenda o el de la marca.
+        accent_color: resolvedAccent(s, ctx.accent),
         logo_url: s.show_logo ? ctx.logoUrl : null,
         company: ctx.company,
         time_zone: ctx.timeZone,
@@ -409,11 +414,13 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         data_consent: s.data_consent ? ctx.dataConsent : null,
         verify_email: s.verify_email,
         pending_message: s.pending_message,
+        theme: publicThemeView(bookingTheme(s)),
+        display: s.display,
     };
 }
 
 /** Lo que falta por sección del constructor (para el punto rojo de cada una). */
-export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'campos' | 'correos' | 'publicar';
+export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'diseno' | 'campos' | 'correos' | 'publicar';
 
 /**
  * v0.1.350 — Qué calendario tiene cada persona que atiende, desde lo que

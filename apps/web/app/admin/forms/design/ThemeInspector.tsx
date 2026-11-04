@@ -8,7 +8,6 @@ import {
     mixHex,
     resolvePublicPalettes,
     sanitizePublicCss,
-    type FormConfig,
     type PublicTheme,
     type PublicThemeMode,
     type Shadow,
@@ -36,6 +35,7 @@ import {
     themeSectionModified,
     type ThemeResetKey,
     type ThemeSectionKey,
+    type Themed,
 } from './themeOps';
 
 /**
@@ -66,6 +66,19 @@ const SIZE_OPTIONS = [
 ] as const;
 
 /** Clases estables documentadas para el CSS propio. */
+const BOOKING_CSS_CLASSES: Array<[string, string]> = [
+    ['.ib-card', 'la tarjeta de la agenda'],
+    ['.ib-header', 'el encabezado (logo, título y descripción)'],
+    ['.ib-title', 'el título de la agenda'],
+    ['.ib-cover', 'la portada'],
+    ['.ib-step-title', 'el título de cada paso («Elige el servicio»…)'],
+    ['.ib-choice', 'cada servicio o persona para elegir'],
+    ['.ib-day', 'cada día del calendario'],
+    ['.ib-slot', 'cada horario'],
+    ['.ib-summary', 'el resumen de la cita'],
+    ['.ib-input', 'los campos de los datos del cliente'],
+    ['.ib-btn-primary', 'el botón de agendar'],
+];
 const CSS_CLASSES: Array<[string, string]> = [
     ['.ib-card', 'la tarjeta del formulario'],
     ['.ib-header', 'el encabezado (logo, título y descripción)'],
@@ -138,35 +151,43 @@ function pct(n: number): number {
     return Math.round(n * 100);
 }
 
-export function ThemeInspector({
+export function ThemeInspector<C extends Themed>({
     config,
     onChange,
     brand,
     isAdmin,
     showLogo,
+    variant = 'form',
+    classicTheme,
 }: {
-    config: FormConfig;
-    onChange: (next: FormConfig) => void;
+    config: C;
+    onChange: (next: C) => void;
     /** Color de la marca de la empresa (acento cuando el tema no fija uno). */
     brand: string;
     /** Sólo un administrador escribe CSS propio. */
     isAdmin: boolean;
     /** Si el formulario muestra el logo (Ajustes). */
     showLogo: boolean;
+    /** v0.1.354 — La agenda usa el mismo panel, sin lo que sólo tiene un formulario. */
+    variant?: 'form' | 'booking';
+    /** v0.1.354 — El diseño «de siempre» (el de la agenda es más ancho y muestra los pasos). */
+    classicTheme?: PublicTheme;
 }): JSX.Element {
+    const booking = variant === 'booking';
+    const base = classicTheme ?? DEFAULT_PUBLIC_THEME;
     const s = config.settings;
-    const t = useMemo(() => effectiveTheme(s), [s]);
+    const t = useMemo(() => effectiveTheme(s, base), [s, base]);
     const classic = isClassicTheme(s);
     const fallback = fallbackAccent(s, brand);
     const accent = t.colors.accent ?? s.accent_color ?? null;
     const pal = useMemo(() => resolvePublicPalettes(t, fallback), [t, fallback]);
     const derivedDark = useMemo(() => resolvePublicPalettes({ ...t, mode: 'auto', dark_colors: null }, fallback).dark, [t, fallback]);
-    const D = DEFAULT_PUBLIC_THEME;
+    const D = base;
 
-    const set = <K extends ThemeSectionKey>(key: K, patch: Partial<PublicTheme[K]>): void => onChange(patchThemeSection(config, key, patch));
+    const set = <K extends ThemeSectionKey>(key: K, patch: Partial<PublicTheme[K]>): void => onChange(patchThemeSection(config, key, patch, base));
     const sec = (key: ThemeResetKey) => ({
-        modified: themeSectionModified(s, key),
-        onReset: () => onChange(resetThemeSection(config, key)),
+        modified: themeSectionModified(s, key, base),
+        onReset: () => onChange(resetThemeSection(config, key, base)),
     });
     const int = (v: number | null, def: number): number => (v == null ? def : Math.round(v));
 
@@ -177,13 +198,19 @@ export function ThemeInspector({
     const cssCheck = useMemo(() => sanitizePublicCss(t.custom_css), [t.custom_css]);
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-p-4" data-tour="form-design-inspector" data-testid="form-design-inspector">
+        <div
+            className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-p-4"
+            data-tour={booking ? 'booking-design-inspector' : 'form-design-inspector'}
+            data-testid={booking ? 'booking-design-inspector' : 'form-design-inspector'}
+        >
             <div>
-                <p className="imcrm-text-sm imcrm-font-semibold">{__('Diseño del formulario')}</p>
+                <p className="imcrm-text-sm imcrm-font-semibold">{booking ? __('Diseño de la agenda') : __('Diseño del formulario')}</p>
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {classic
                         ? __('Tiene el diseño de siempre («Clásico»). Elige una plantilla o cambia cualquier ajuste.')
-                        : __('Vale para todo el formulario. Toca una pregunta en la vista previa para darle su propio diseño.')}
+                        : booking
+                          ? __('Vale para la página de reservas y la página de cada cita (cambiar o cancelar).')
+                          : __('Vale para todo el formulario. Toca una pregunta en la vista previa para darle su propio diseño.')}
                 </p>
             </div>
 
@@ -196,7 +223,7 @@ export function ThemeInspector({
                         { value: 'dark', label: __('Oscuro') },
                         { value: 'auto', label: __('Automático'), title: __('Según el dispositivo') },
                     ]}
-                    onChange={(v) => onChange(patchTheme(config, { mode: v }))}
+                    onChange={(v) => onChange(patchTheme(config, { mode: v }, base))}
                 />
                 {t.mode === 'auto' && (
                     <Hint>{__('Se ve claro u oscuro según el dispositivo de quien responde. Para ver cada uno, usa «Claro / Oscuro» arriba de la vista previa.')}</Hint>
@@ -235,7 +262,7 @@ export function ThemeInspector({
                                 { value: 'auto', label: __('Automáticos'), title: __('Automáticos (recomendado)') },
                                 { value: 'custom', label: __('Personalizar') },
                             ]}
-                            onChange={(v) => onChange(patchTheme(config, { dark_colors: v === 'custom' ? (t.dark_colors ?? {}) : null }))}
+                            onChange={(v) => onChange(patchTheme(config, { dark_colors: v === 'custom' ? (t.dark_colors ?? {}) : null }, base))}
                         />
                         {!t.dark_colors ? (
                             <Hint>{__('Automáticos (recomendado): se calculan solos a partir de los claros, con buen contraste.')}</Hint>
@@ -246,7 +273,7 @@ export function ThemeInspector({
                                     label={__('Acento')}
                                     value={t.dark_colors.accent ?? null}
                                     placeholder={derivedDark?.accent}
-                                    onChange={(v) => onChange(patchDarkColor(config, 'accent', v))}
+                                    onChange={(v) => onChange(patchDarkColor(config, 'accent', v, base))}
                                 />
                                 <Grid>
                                     {(
@@ -266,7 +293,7 @@ export function ThemeInspector({
                                             label={label}
                                             value={t.dark_colors?.[key] ?? null}
                                             placeholder={derivedDark?.[key]}
-                                            onChange={(v) => onChange(patchDarkColor(config, key, v))}
+                                            onChange={(v) => onChange(patchDarkColor(config, key, v, base))}
                                         />
                                     ))}
                                 </Grid>
@@ -324,7 +351,7 @@ export function ThemeInspector({
                         onChange={(v) => set('typography', { title_letter_spacing: v ?? D.typography.title_letter_spacing })}
                     />
                     <NumberField
-                        label={__('Tamaño de las preguntas')}
+                        label={booking ? __('Tamaño de las etiquetas') : __('Tamaño de las preguntas')}
                         unit="px"
                         min={12}
                         max={30}
@@ -340,7 +367,7 @@ export function ThemeInspector({
                     onChange={(v) => set('typography', { title_weight: Number(v) as Weight })}
                 />
                 <Choice
-                    label={__('Peso de las preguntas')}
+                    label={booking ? __('Peso de las etiquetas') : __('Peso de las preguntas')}
                     value={String(t.typography.question_weight)}
                     options={WEIGHTS.map((w) => ({ ...w, label: __(w.label) }))}
                     onChange={(v) => set('typography', { question_weight: Number(v) as Weight })}
@@ -349,7 +376,7 @@ export function ThemeInspector({
 
             <StyleSection title={__('Página')} testId="form-theme-layout" {...sec('layout')}>
                 <Choice
-                    label={__('Ancho del formulario')}
+                    label={booking ? __('Ancho de la página') : __('Ancho del formulario')}
                     value={String(t.layout.width)}
                     options={WIDTH_PRESETS.map((w) => ({ value: String(w.value), label: __(w.label), title: `${w.value} px` }))}
                     onChange={(v) => set('layout', { width: Number(v) })}
@@ -384,7 +411,7 @@ export function ThemeInspector({
                         onChange={(v) => set('layout', { padding: int(v, D.layout.padding) })}
                     />
                     <NumberField
-                        label={__('Entre preguntas')}
+                        label={booking ? __('Separación') : __('Entre preguntas')}
                         unit="px"
                         min={4}
                         max={56}
@@ -393,7 +420,13 @@ export function ThemeInspector({
                         onChange={(v) => set('layout', { gap: int(v, D.layout.gap) })}
                     />
                 </Grid>
-                {!showLogo && <Hint>{__('El logo se muestra si lo enciendes en «Ajustes» (Mostrar el logo de la empresa).')}</Hint>}
+                {!showLogo && (
+                    <Hint>
+                        {booking
+                            ? __('El logo se muestra si lo enciendes en «Mostrar u ocultar» (Mostrar el logo de la empresa).')
+                            : __('El logo se muestra si lo enciendes en «Ajustes» (Mostrar el logo de la empresa).')}
+                    </Hint>
+                )}
                 <Choice
                     label={__('Contenedor')}
                     value={t.layout.container}
@@ -430,7 +463,7 @@ export function ThemeInspector({
                 </div>
                 {t.cover.enabled && <Hint>{__('Con portada no se dibuja la franja de color.')}</Hint>}
                 <Choice
-                    label={__('Avance (varias páginas)')}
+                    label={booking ? __('Avance (pasos de la reserva)') : __('Avance (varias páginas)')}
                     value={t.layout.progress}
                     options={[
                         { value: 'bar', label: __('Barra') },
@@ -439,7 +472,11 @@ export function ThemeInspector({
                     ]}
                     onChange={(v) => set('layout', { progress: v })}
                 />
-                <Hint>{__('El avance sólo se ve si el formulario tiene saltos de página.')}</Hint>
+                <Hint>
+                    {booking
+                        ? __('Los pasos son: el servicio, con quién, el día y la hora, y los datos.')
+                        : __('El avance sólo se ve si el formulario tiene saltos de página.')}
+                </Hint>
             </StyleSection>
 
             <StyleSection title={__('Fondo')} testId="form-theme-background" {...sec('background')}>
@@ -702,23 +739,27 @@ export function ThemeInspector({
                         onChange={(v) => set('inputs', { border_width: v ?? D.inputs.border_width })}
                     />
                 </Grid>
-                <Choice
-                    label={__('Etiqueta de cada pregunta')}
-                    value={t.inputs.label_position}
-                    options={[
-                        { value: 'top', label: __('Arriba') },
-                        { value: 'left', label: __('Al costado'), title: __('A la izquierda') },
-                        { value: 'floating', label: __('Dentro'), title: __('Dentro del campo') },
-                    ]}
-                    onChange={(v) => set('inputs', { label_position: v })}
-                />
-                {t.inputs.label_position === 'left' && <Hint>{__('A la izquierda en pantallas anchas; en el celular queda arriba.')}</Hint>}
-                {t.inputs.label_position === 'floating' && <Hint>{__('La etiqueta va dentro del campo y sube al escribir.')}</Hint>}
+                {!booking && (
+                    <>
+                        <Choice
+                            label={__('Etiqueta de cada pregunta')}
+                            value={t.inputs.label_position}
+                            options={[
+                                { value: 'top', label: __('Arriba') },
+                                { value: 'left', label: __('Al costado'), title: __('A la izquierda') },
+                                { value: 'floating', label: __('Dentro'), title: __('Dentro del campo') },
+                            ]}
+                            onChange={(v) => set('inputs', { label_position: v })}
+                        />
+                        {t.inputs.label_position === 'left' && <Hint>{__('A la izquierda en pantallas anchas; en el celular queda arriba.')}</Hint>}
+                        {t.inputs.label_position === 'floating' && <Hint>{__('La etiqueta va dentro del campo y sube al escribir.')}</Hint>}
+                    </>
+                )}
             </StyleSection>
 
             <StyleSection title={__('Opciones')} testId="form-theme-choices" {...sec('choices')}>
                 <Choice
-                    label={__('Cómo se ven las opciones')}
+                    label={booking ? __('Cómo se ven los servicios y las personas') : __('Cómo se ven las opciones')}
                     value={t.choices.style}
                     options={[
                         { value: 'list', label: __('Lista') },
@@ -740,17 +781,23 @@ export function ThemeInspector({
                     onChange={(radius) => set('choices', { radius })}
                     testId="form-theme-choices-radius"
                 />
-                <Choice
-                    label={__('Imágenes de las tarjetas')}
-                    value={t.choices.image_ratio}
-                    options={[
-                        { value: 'square', label: __('Cuadradas') },
-                        { value: 'landscape', label: __('Horizontales') },
-                        { value: 'portrait', label: __('Verticales') },
-                    ]}
-                    onChange={(v) => set('choices', { image_ratio: v })}
-                />
-                <Hint>{__('En el celular, como mucho 2 columnas. Cada pregunta puede elegir otro estilo en «Diseño de esta pregunta».')}</Hint>
+                {!booking && (
+                    <Choice
+                        label={__('Imágenes de las tarjetas')}
+                        value={t.choices.image_ratio}
+                        options={[
+                            { value: 'square', label: __('Cuadradas') },
+                            { value: 'landscape', label: __('Horizontales') },
+                            { value: 'portrait', label: __('Verticales') },
+                        ]}
+                        onChange={(v) => set('choices', { image_ratio: v })}
+                    />
+                )}
+                <Hint>
+                    {booking
+                        ? __('Las columnas valen para «Botones» y «Tarjetas». En el celular, como mucho 2. Los horarios usan las mismas esquinas.')
+                        : __('En el celular, como mucho 2 columnas. Cada pregunta puede elegir otro estilo en «Diseño de esta pregunta».')}
+                </Hint>
             </StyleSection>
 
             <StyleSection title={__('Botón')} testId="form-theme-button" {...sec('button')}>
@@ -811,8 +858,8 @@ export function ThemeInspector({
             <StyleSection
                 title={__('CSS propio')}
                 testId="form-theme-css"
-                modified={themeSectionModified(s, 'custom_css')}
-                onReset={isAdmin ? () => onChange(resetThemeSection(config, 'custom_css')) : undefined}
+                modified={themeSectionModified(s, 'custom_css', base)}
+                onReset={isAdmin ? () => onChange(resetThemeSection(config, 'custom_css', base)) : undefined}
             >
                 {isAdmin ? (
                     <>
@@ -823,7 +870,7 @@ export function ThemeInspector({
                             value={t.custom_css}
                             maxLength={PUBLIC_CSS_MAX}
                             placeholder={'.ib-title {\n  letter-spacing: 1px;\n}'}
-                            onChange={(e) => onChange(patchTheme(config, { custom_css: e.target.value.slice(0, PUBLIC_CSS_MAX) }))}
+                            onChange={(e) => onChange(patchTheme(config, { custom_css: e.target.value.slice(0, PUBLIC_CSS_MAX) }, base))}
                             className="imcrm-font-mono imcrm-text-[11px] imcrm-leading-relaxed"
                             data-testid="form-theme-css-input"
                         />
@@ -841,7 +888,7 @@ export function ThemeInspector({
                                 {__('Clases que puedes usar')}
                             </summary>
                             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-border-t imcrm-border-border imcrm-px-2 imcrm-py-1.5">
-                                {CSS_CLASSES.map(([cls, what]) => (
+                                {(booking ? BOOKING_CSS_CLASSES : CSS_CLASSES).map(([cls, what]) => (
                                     <li key={cls} className="imcrm-flex imcrm-gap-2">
                                         <code className="imcrm-shrink-0 imcrm-font-mono imcrm-text-[10.5px] imcrm-text-foreground">{cls}</code>
                                         <span className="imcrm-text-muted-foreground">{__(what)}</span>

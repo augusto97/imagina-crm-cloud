@@ -1,11 +1,14 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     BOOKING_STATUS_LABELS,
     bookingProblems,
     defaultBookingConfig,
     holidayCountry,
+    publicThemeFileIds,
     readMirrorListMarker,
+    readSavedPublicThemes,
     resolveTimeZone,
+    sanitizePublicCss,
     slugify,
     type AgendaCalendarItem,
     type BookingConfig,
@@ -19,6 +22,7 @@ import {
     type HolidayItem,
     type List,
     type PublicBookingSlots,
+    type PublicTheme,
     type Role,
     type UpdateBookingPageInput,
     BOOKING_INACTIVE_STATUSES,
@@ -50,6 +54,11 @@ const NOT_STAFF_ROLES = new Set(['client', 'guest']);
  */
 
 const notFound = () => new NotFoundException({ code: 'not_found', message: 'Esta página de agenda no existe', data: { status: 404 } });
+
+/** v0.1.354 — Quién guarda la agenda (el CSS propio sólo lo agrega un admin). */
+export interface BookingActor {
+    isAdmin: boolean;
+}
 
 function badRequest(code: string, message: string): BadRequestException {
     return new BadRequestException({ code, message, data: { status: 400 } });
@@ -287,7 +296,7 @@ export class BookingService {
         }
     }
 
-    async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateBookingPageInput): Promise<BookingPageDto> {
+    async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateBookingPageInput, actor: BookingActor = { isAdmin: true }): Promise<BookingPageDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         this.assertNotStore(list);
         const fields = await this.fields.listByListId(tenantId, list.id);
@@ -297,6 +306,10 @@ export class BookingService {
         // Las opciones de servicios, recursos y estados se crean al PUBLICAR: mientras
         // se arma la página, renombrar un servicio no deja opciones huérfanas.
         const config = await this.cleanPhotos(tenantId, await this.cleanCalendars(tenantId, sanitizeBookingConfig(raw, fields, members)));
+        // v0.1.354 — una agenda nueva nace con el tema por defecto de la empresa (si eligió uno).
+        const def = await this.defaultTheme(tenantId);
+        if (!config.settings.theme && def) config.settings.theme = def;
+        await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(bookingPages)
@@ -314,7 +327,7 @@ export class BookingService {
         return this.toDto(row!, fields, await this.publicBase(tenantId), 0, await this.memberProblems(tenantId, list, config, fields));
     }
 
-    async update(tenantId: number, listIdOrSlug: string, id: number, input: UpdateBookingPageInput): Promise<BookingPageDto> {
+    async update(tenantId: number, listIdOrSlug: string, id: number, input: UpdateBookingPageInput, actor: BookingActor = { isAdmin: true }): Promise<BookingPageDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const current = await this.load(tenantId, list.id, id);
         let fields = await this.fields.listByListId(tenantId, list.id);
@@ -323,7 +336,9 @@ export class BookingService {
         let config = readBookingConfig(current.config);
         if (input.config !== undefined) {
             const members = new Set((await this.eligibleMembers(tenantId, list)).map((m) => m.id));
+            const previousCss = readBookingConfig(current.config).settings.theme?.custom_css ?? '';
             config = await this.cleanPhotos(tenantId, await this.cleanCalendars(tenantId, sanitizeBookingConfig(input.config, fields, members)));
+            await this.assertDesign(tenantId, config, previousCss, actor);
             patch.config = config as unknown as Record<string, unknown>;
         }
         const willBeEnabled = input.enabled ?? current.enabled;
@@ -447,6 +462,58 @@ export class BookingService {
         );
         const ok = new Set(rows.filter((r) => /^image\/(png|jpe?g|webp|gif)$/i.test(r.mime)).map((r) => r.id));
         return { ...config, staff: config.staff.map((s) => (s.photo_file_id !== null && !ok.has(s.photo_file_id) ? { ...s, photo_file_id: null } : s)) };
+    }
+
+    /**
+     * v0.1.354 (ADR-S94) — El diseño que se guarda, con las mismas reglas que
+     * los formularios: (a) el CSS propio sólo lo cambia un ADMIN — se acepta
+     * igual si es el que ya tenía o el de un tema guardado de la empresa — y
+     * queda guardado ya limpio; (b) cada imagen del diseño (portada, fondo,
+     * panel) tiene que ser una imagen de ESTA empresa que se muestra sin
+     * ejecutar nada (nada de SVG).
+     */
+    private async assertDesign(tenantId: number, config: BookingConfig, previousCss: string, actor: BookingActor): Promise<void> {
+        const theme = config.settings.theme;
+        if (!theme) return;
+        const css = sanitizePublicCss(theme.custom_css).css;
+        if (css !== sanitizePublicCss(previousCss).css && css !== '' && !actor.isAdmin) {
+            const saved = await this.savedThemes(tenantId);
+            if (!saved.some((t) => sanitizePublicCss(t.theme.custom_css).css === css)) {
+                throw new ForbiddenException({ code: 'custom_css_admin_only', message: 'El CSS propio lo agrega un administrador de la empresa.', data: { status: 403 } });
+            }
+        }
+        theme.custom_css = css;
+        const ids = [...new Set(publicThemeFileIds(theme))];
+        if (ids.length === 0) return;
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: attachments.id, mime: attachments.mime })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, ids), isNull(attachments.pendingFormId))),
+        );
+        const ok = new Set(rows.filter((r) => /^image\/(png|jpe?g|webp|gif|avif)$/i.test(r.mime)).map((r) => r.id));
+        const bad = ids.filter((id) => !ok.has(id));
+        if (bad.length > 0) throw badRequest('invalid_image', 'Una de las imágenes no se puede usar: sube una imagen PNG, JPG, GIF o WebP.');
+    }
+
+    private async tenantSettings(tenantId: number): Promise<Record<string, unknown>> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
+        );
+        return (row?.settings ?? {}) as Record<string, unknown>;
+    }
+
+    /** Los temas guardados de la empresa («Mis temas», los mismos de los formularios). */
+    private async savedThemes(tenantId: number) {
+        return readSavedPublicThemes((await this.tenantSettings(tenantId)).public_themes);
+    }
+
+    /** El tema con el que nacen las agendas nuevas (null = el de siempre). */
+    private async defaultTheme(tenantId: number): Promise<PublicTheme | null> {
+        const st = await this.tenantSettings(tenantId);
+        const id = typeof st.public_theme_default === 'string' ? st.public_theme_default : null;
+        if (!id) return null;
+        return readSavedPublicThemes(st.public_themes).find((t) => t.id === id)?.theme ?? null;
     }
 
     /** v0.1.349 — Los festivos de un país para el constructor (lista de un año). */

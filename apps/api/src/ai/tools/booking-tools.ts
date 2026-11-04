@@ -7,7 +7,10 @@ import {
     bookingProblems,
     bookingServiceSchema,
     bookingStaffSchema,
+    BOOKING_CALENDAR_LAYOUTS,
+    BOOKING_SLOT_STYLES,
     HOLIDAY_COUNTRIES,
+    publicThemePresets,
     serviceDurations,
     defaultBookingConfig,
     defaultBookingWeek,
@@ -190,6 +193,35 @@ const pageSpec = z.object({
         })
         .optional()
         .describe('Aprobación de las citas. Por servicio: services[].approval'),
+    design: z
+        .object({
+            template: z
+                .string()
+                .max(40)
+                .optional()
+                .describe(
+                    `Plantilla de diseño de la página (las mismas de los formularios, toman el color de la marca): ${publicThemePresets('#0e7490')
+                        .map((x) => x.id)
+                        .join(', ')}. classic = el de siempre. Lo fino (colores, tipografía, tamaños) se ajusta en el editor.`,
+                ),
+            accent: z
+                .string()
+                .regex(/^#[0-9a-fA-F]{6}$/)
+                .nullable()
+                .optional()
+                .describe('Color principal en hex (#0e7490); null = el de la marca'),
+            show_logo: z.boolean().optional().describe('El logo de la empresa arriba'),
+            show_location: z.boolean().optional().describe('Dónde es la cita'),
+            show_service_details: z.boolean().optional().describe('Duración y descripción de cada servicio'),
+            show_prices: z.boolean().optional().describe('El precio de cada servicio'),
+            show_staff_photos: z.boolean().optional().describe('Las fotos de quienes atienden'),
+            show_staff_details: z.boolean().optional().describe('El cargo y la descripción de quienes atienden'),
+            calendar_layout: z.enum(BOOKING_CALENDAR_LAYOUTS).optional().describe('side = el calendario al lado de los horarios (pantallas anchas); stacked = arriba'),
+            slot_style: z.enum(BOOKING_SLOT_STYLES).optional().describe('grid = horarios como botones; list = como lista'),
+            week_start: z.enum(['monday', 'sunday']).optional(),
+        })
+        .optional()
+        .describe('Cómo se ve la página pública'),
     verify_email: z.boolean().optional().describe('El cliente confirma su correo con un código de 6 números antes de agendar (recomendado con approval.mode new_clients)'),
     block_disposable_email: z.boolean().optional().describe('No aceptar correos temporales (mailinator, yopmail…)'),
     questions: z.array(z.string().max(63)).max(30).optional().describe('Slugs de los campos que se le preguntan además (motivo, empresa…)'),
@@ -309,6 +341,7 @@ export class BookingTools implements AiProposalApplier {
             config.approval = { ...config.approval, ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) };
             if (pendingMessage !== undefined) config.settings = { ...config.settings, pending_message: pendingMessage };
         }
+        if (input.design) this.applyDesign(config, input.design, changes);
         if (input.verify_email !== undefined) config.settings = { ...config.settings, verify_email: input.verify_email };
         if (input.block_disposable_email !== undefined) config.settings = { ...config.settings, block_disposable_email: input.block_disposable_email };
 
@@ -450,18 +483,66 @@ export class BookingTools implements AiProposalApplier {
         };
     }
 
+    /**
+     * v0.1.354 — El diseño de la página: una plantilla de la galería (conserva
+     * el CSS propio y las imágenes que ya tenía: el asistente no los escribe),
+     * el color y qué se muestra.
+     */
+    private applyDesign(config: BookingConfig, d: NonNullable<PageSpec['design']>, changes: AiProposalPreview['changes']): void {
+        const s = config.settings;
+        if (d.template !== undefined) {
+            const preset = publicThemePresets('#0e7490').find((x) => x.id === d.template);
+            if (!preset) {
+                throw new AiToolError(`design.template: «${d.template}» no existe. Plantillas: ${publicThemePresets('#0e7490').map((x) => x.id).join(', ')}.`);
+            }
+            if (preset.id === 'classic') s.theme = null;
+            else {
+                const prev = s.theme;
+                const next = structuredClone(preset.theme);
+                if (prev) {
+                    next.custom_css = prev.custom_css;
+                    next.cover = { ...next.cover, file_id: prev.cover.file_id };
+                    next.split = { ...next.split, file_id: prev.split.file_id };
+                }
+                // El color de la plantilla es el de la marca: sin acento propio, manda el de la marca.
+                next.colors = { ...next.colors, accent: null };
+                s.theme = next;
+            }
+            changes.push({ label: 'Diseño', from: null, to: preset.name });
+        }
+        if (d.accent !== undefined) {
+            if (s.theme) s.theme = { ...s.theme, colors: { ...s.theme.colors, accent: d.accent } };
+            else s.accent_color = d.accent;
+            changes.push({ label: 'Color', from: null, to: d.accent ?? 'El de la marca' });
+        }
+        if (d.show_logo !== undefined) s.show_logo = d.show_logo;
+        const display = { ...s.display };
+        for (const k of ['show_location', 'show_service_details', 'show_prices', 'show_staff_photos', 'show_staff_details', 'calendar_layout', 'slot_style', 'week_start'] as const) {
+            if (d[k] !== undefined) (display as Record<string, unknown>)[k] = d[k];
+        }
+        s.display = display;
+    }
+
     async apply(ctx: AiToolContext, stored: StoredProposal): Promise<AiApplyOutcome> {
         const p = stored.payload as Payload;
         let page: BookingPageDto;
+        // v0.1.354 — el CSS propio del diseño sólo lo cambia un admin (también por el asistente).
+        const actor = { isAdmin: ctx.role === 'admin' };
         if (p.pageId === null) {
-            page = await this.booking.create(ctx.tenantId, ctx.userId, String(p.listId), { name: p.name, config: p.config });
-            if (p.publish === true) page = await this.booking.update(ctx.tenantId, String(p.listId), page.id, { enabled: true });
+            page = await this.booking.create(ctx.tenantId, ctx.userId, String(p.listId), { name: p.name, config: p.config }, actor);
+            if (p.publish === true) page = await this.booking.update(ctx.tenantId, String(p.listId), page.id, { enabled: true }, actor);
         } else {
-            page = await this.booking.update(ctx.tenantId, String(p.listId), p.pageId, {
-                name: p.name,
-                config: p.config,
-                ...(p.publish !== null ? { enabled: p.publish } : {}),
-            });
+            page = await this.booking.update(
+                ctx.tenantId,
+                String(p.listId),
+                p.pageId,
+                {
+                    name: p.name,
+                    config: p.config,
+                    ...(p.publish !== null ? { enabled: p.publish } : {}),
+                },
+                actor,
+            );
         }
         return {
             message: page.enabled ? `La agenda «${page.name}» quedó publicada.` : `La agenda «${page.name}» quedó guardada (sin publicar).`,

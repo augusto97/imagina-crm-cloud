@@ -191,7 +191,7 @@ export function ThemeGallery({
                 })}
             </div>
             {activeId === null && (
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('El formulario tiene un diseño propio (ajustado a mano).')}</p>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('Este diseño está ajustado a mano.')}</p>
             )}
         </div>
     );
