@@ -42,6 +42,7 @@ import {
 } from '@imagina-base/shared';
 import { z } from 'zod';
 import { ENV, type Env } from '../config/env';
+import { useWebBuild } from '../common/web-build';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuditService } from '../audit/audit.service';
 import { SessionGuard } from '../auth/session.guard';
@@ -388,13 +389,14 @@ export class PublicFormPageController {
     }
 
     /**
-     * v0.1.351 — El script del formulario: el compilado (en producción o con
-     * `WEB_DIST_DIR`) para servir en línea; `null` = desarrollo (el módulo de
-     * vite); `undefined` = producción SIN el build (instalación rota).
+     * v0.1.351 — El script del formulario: el compilado (en producción, con
+     * `WEB_DIST_DIR` o —v0.1.362— corriendo desde un release instalado aunque
+     * falte `NODE_ENV=production`) para servir en línea; `null` = desarrollo
+     * (el módulo de vite); `undefined` = producción SIN el build (instalación
+     * rota).
      */
     private formClient(): string | null | undefined {
-        const useBuild = this.env.NODE_ENV === 'production' || this.env.WEB_DIST_DIR.trim() !== '';
-        if (!useBuild) return null;
+        if (!useWebBuild(this.env)) return null;
         return loadFormClient(this.env.WEB_DIST_DIR) ?? undefined;
     }
 

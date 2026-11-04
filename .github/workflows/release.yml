@@ -131,7 +131,7 @@ jobs:
           rm -f dist-release/check-plugin.zip
 
           # scripts + config que el release necesita para instalar/rollback/servir
-          cp deploy/deploy.sh deploy/finalize.sh deploy/oauth-discovery-static.sh "$OUT/deploy/"
+          cp deploy/deploy.sh deploy/finalize.sh deploy/oauth-discovery-static.sh deploy/env-heal.sh "$OUT/deploy/"
           cp scripts/backup.sh scripts/restore.sh "$OUT/deploy/"
           # v0.1.179 — copias completas + migración de servidor (ADR-S20)
           cp scripts/snapshot.sh scripts/snapshot-restore.sh scripts/bootstrap-server.sh scripts/redis-kv.mjs "$OUT/deploy/"

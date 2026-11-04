@@ -3388,6 +3388,31 @@ cortado dejaba el zip y la carpeta a medio extraer, que el reintento sumaba.
    unidad (runbook-disk §6, opcional, por consola: la auto-actualización no
    toca systemd).
 
+### ADR-S13 addendum — La actualización completa el `.env` de producción (v0.1.362)
+
+Un servidor instalado con la «config mínima» del runbook de ServerAvatar (que
+no pedía `NODE_ENV=production` ni `SECRETS_KEY`/`FILES_SIGNING_SECRET`) corría
+en modo desarrollo: los formularios públicos quedaban en blanco (pedían el
+módulo de vite), `/metrics` abierto, sin HSTS, credenciales sin cifrar y
+enlaces firmados que cambiaban en cada reinicio.
+
+1. **Las páginas públicas no dependen de `NODE_ENV`** para elegir el build:
+   `useWebBuild` también es verdadero si el API corre desde un release
+   (`<release>/web/cloud/index.html` existe).
+2. **`deploy/env-heal.sh`** corre en cada actualización (desde `deploy.sh`,
+   best-effort, nunca corta el deploy): genera `SECRETS_KEY` y
+   `FILES_SIGNING_SECRET` si faltan o están vacíos y sólo después agrega
+   `NODE_ENV=production` (en producción el API no arranca sin ellos). Generar
+   la clave es seguro: sin clave nada se cifró y `decryptSecret` devuelve el
+   texto plano heredado. Un `NODE_ENV` puesto a mano se respeta; nunca imprime
+   un secreto; conserva dueño y permisos del archivo.
+3. **Plataforma → Diagnóstico → «Configuración del servidor»** dice qué falta
+   y qué líneas agregar si la actualización no pudo escribir el archivo (o si
+   el servicio lee su configuración de otro lado, p. ej. PM2).
+4. Los binarios del repo (fuentes) se vigilan con un test de integridad
+   (largo declarado en la cabecera = tamaño real): un reemplazo masivo de texto
+   en v0.1.300 había dañado 15.
+
 ### ADR-S42 — Idioma de la interfaz: español neutro (v0.1.279)
 
 **Contexto.** Los textos de la app se escribieron desde el inicio con voseo
@@ -6696,4 +6721,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.146.0 (Cobrar al enviar un formulario)
+**Versión del documento:** 1.147.0 (La actualización completa el `.env` de producción)

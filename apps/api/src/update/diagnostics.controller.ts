@@ -7,6 +7,7 @@ import { PostgresWalService } from './postgres-wal';
 import type Redis from 'ioredis';
 import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
+import { serverConfigStatus } from '../common/web-build';
 import { MailService } from '../mail/mail.service';
 import { clearDiagnostics, readMailLog, readServerErrors } from '../observability/diagnostics';
 import { REDIS } from '../redis/redis.module';
@@ -35,7 +36,7 @@ export class DiagnosticsController {
             readMailLog(this.redis, 100),
             readServerErrors(this.redis, 100),
         ]);
-        return { account_mail, mail, errors };
+        return { server: serverConfigStatus(this.env), account_mail, mail, errors };
     }
 
     /**

@@ -68,6 +68,9 @@ nano "$BASE/shared/.env.production"     # ver "Config mínima" abajo
 
 Config mínima en `/opt/imagina-base/shared/.env.production`:
 ```
+NODE_ENV=production                                  # sin esto la app corre en modo desarrollo
+SECRETS_KEY=<openssl rand -hex 48>                   # cifra contraseñas de correo, conexiones y 2FA
+FILES_SIGNING_SECRET=<openssl rand -hex 48>          # firma los enlaces de archivos, logo y QR
 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB      # passwords fuertes
 DATABASE_URL=postgres://<user>:<pass>@127.0.0.1:5432/<db>
 # Redis del stack de ServerAvatar (ya corre en 127.0.0.1:6379). Si el panel le
@@ -78,6 +81,14 @@ APP_BASE_URL=https://app.tu-dominio.com
 PLATFORM_SUPERADMINS=tu-correo@tu-dominio.com
 UPDATER_BASE_PATH=/opt/imagina-base
 ```
+
+> **v0.1.362** — Hasta esta versión esta lista no traía `NODE_ENV` ni los dos
+> secretos, y un servidor armado así corría en modo desarrollo: los
+> formularios públicos quedaban en blanco, `/metrics` abierto y las
+> credenciales sin cifrar. Cada actualización corre `deploy/env-heal.sh`, que
+> completa lo que falte en este archivo (primero los secretos, después
+> `NODE_ENV=production`) sin tocar el resto. Si no puede escribirlo, lo dice
+> Plataforma → Diagnóstico → «Configuración del servidor».
 
 **Postgres por Docker** (sólo Postgres; el Redis lo pone el stack, así que NO
 levantamos el de Docker para no chocar en el 6379):
