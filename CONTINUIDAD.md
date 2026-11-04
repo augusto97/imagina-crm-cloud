@@ -1388,6 +1388,18 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
     de Microsoft en Partner Center quita el «sin comprobar».
   - Tests: `ms-admin-consent.spec` 8/8, shared 727, front 795, specs de
     OAuth/integraciones 63/63, E2E navegador 30/30.
+  - **Bug real que encontró el cliente** al reintentar con la cuenta de
+    administrador (aprobó los permisos y la app respondió «El proveedor
+    devolvió algo que no es JSON: {"token_type":"Bearer","scope":…»): la app
+    leía la respuesta de tokens con un tope de 8 KB y la de una cuenta de
+    trabajo de Microsoft 365 pesa más → llegaba cortada. Toda cuenta de
+    empresa de Microsoft fallaba al conectar, con o sin administrador. Va en
+    el MISMO v0.1.363: el canje lee hasta 256 KB, el error ya no muestra
+    nada de la respuesta (trae los tokens) y el evento de Outlook con Teams
+    de la agenda tampoco se corta. **Para el cliente**: con v0.1.363 basta
+    volver a tocar «Conectar»; el consentimiento que dio el administrador ya
+    quedó registrado en Microsoft (se da en la pantalla de permisos, antes
+    del canje que fallaba).
 
 - **2026-11-04 · v0.1.362** — **Corrección: formularios en blanco, fuentes
   dañadas y servidor en modo desarrollo** (reporte del usuario con captura: el

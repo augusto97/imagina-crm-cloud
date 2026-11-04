@@ -1292,6 +1292,17 @@ Microsoft es el **consentimiento del administrador**, y la app lo arma:
   Center (guía de Plataforma → Integraciones) quita el «sin comprobar» y, en
   las organizaciones que dejan aprobar apps de publicadores verificados, evita
   el paso del administrador.
+- **La respuesta de tokens se lee entera.** `safeWebhookFetch` retiene 8 KB
+  por defecto (es el tope del probador), y el canje del código y la
+  renovación lo usaban sin subirlo: la respuesta de una cuenta de trabajo de
+  Microsoft 365 (access token con los grupos del usuario, refresh e
+  id_token) pasa de 8 KB y llegaba cortada — toda cuenta de empresa de
+  Microsoft fallaba al conectar con «no es JSON». Regla: **toda llamada que
+  PARSEA la respuesta de un proveedor sube `maxCaptureBytes`** al tamaño que
+  esa respuesta puede tener (tokens 256 KB; eventos de calendario 256 KB;
+  lecturas chicas 64 KB) y trata `truncated` como error. Y un error de
+  parseo de la respuesta de tokens NUNCA repite el cuerpo: trae los tokens, y
+  el mensaje viaja a la pantalla, a la dirección y a los registros.
 
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 

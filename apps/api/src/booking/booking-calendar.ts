@@ -561,7 +561,10 @@ export class BookingCalendarService {
                 if (r.provider === 'google_calendar') body.location = where.slice(0, 1000);
                 else body.location = { displayName: where.slice(0, 250) };
             }
-            const res = await safeWebhookFetch(url, { method: req.method, headers: req.headers, body: JSON.stringify(body), captureBody: true, timeoutMs: 12_000 });
+            // El evento creado vuelve COMPLETO (con la reunión de Teams, Outlook
+            // devuelve el cuerpo HTML de la invitación): con el tope de 8 KB
+            // llegaba cortado y el id no se podía leer.
+            const res = await safeWebhookFetch(url, { method: req.method, headers: req.headers, body: JSON.stringify(body), captureBody: true, maxCaptureBytes: 256 * 1024, timeoutMs: 12_000 });
             return { status: res.status, body: json(res.body), raw: res.body ?? '' };
         };
 
@@ -591,7 +594,7 @@ export class BookingCalendarService {
                 await new Promise((ok) => setTimeout(ok, 1200));
                 const again = await safeWebhookFetch(
                     `${this.bases.google}/calendar/v3/calendars/${encodeURIComponent(calendar ?? 'primary')}/events/${encodeURIComponent(id)}?fields=hangoutLink,conferenceData`,
-                    { method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${token}` }, captureBody: true, timeoutMs: 8000 },
+                    { method: 'GET', headers: { accept: 'application/json', authorization: `Bearer ${token}` }, captureBody: true, maxCaptureBytes: 64 * 1024, timeoutMs: 8000 },
                 ).catch(() => null);
                 if (!again || again.status >= 400) break;
                 found = meetingFrom(r.provider, json(again.body));

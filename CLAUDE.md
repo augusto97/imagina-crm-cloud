@@ -11990,6 +11990,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Outlook, enlace copiado, la vuelta del administrador sin sesión en
         oscuro, el diálogo se entera solo, aviso tras el error, Mi calendario,
         celular en oscuro).
+        **Bug encontrado por el cliente al reintentar con la cuenta de
+        administrador** («El proveedor devolvió algo que no es JSON:
+        {"token_type":"Bearer","scope":…»): el canje del código leía la
+        respuesta de tokens con el tope de 8 KB del probador
+        (`safeWebhookFetch` sin `maxCaptureBytes`), y la de una cuenta de
+        trabajo de Microsoft 365 (access token con los grupos + refresh +
+        id_token) pasa de 8 KB → JSON cortado → la conexión fallaba SIEMPRE
+        para esas cuentas. `postToken` (canje y renovación) ahora lee hasta
+        256 KB y una respuesta cortada lo dice. El error ya no repite el
+        cuerpo: es la respuesta con los TOKENS y el mensaje viaja a la
+        pantalla, la dirección y los registros (con Google, que manda
+        `access_token` primero, se habría filtrado el comienzo del token). El
+        mismo tope dejaba sin id el evento de Outlook con reunión de Teams que
+        crea la agenda (Graph devuelve el evento entero con el cuerpo HTML de
+        la invitación): sube a 256 KB, y a 64 KB los pasos previos de Teams y
+        la lectura de la cuenta. El mock de red de `integrations.spec` ahora
+        corta en el mismo tope que el fetch real y el token de Teams viene con
+        el tamaño y el orden de Microsoft (falla sin el arreglo); test de que
+        el error no repite el token.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

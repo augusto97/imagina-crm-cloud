@@ -118,7 +118,9 @@ export function parseTokenResponse(raw: string, contentType: string, now: number
         try {
             data = JSON.parse(raw) as Record<string, unknown>;
         } catch {
-            throw new Error(`El proveedor devolvió algo que no es JSON: ${raw.slice(0, 200)}`);
+            // Nunca se repite el cuerpo: es la respuesta con los TOKENS, y este
+            // mensaje viaja a la pantalla y a los registros.
+            throw new Error('La respuesta del proveedor con los permisos llegó incompleta o no es JSON válido. Vuelve a tocar «Conectar».');
         }
     } else {
         data = Object.fromEntries(new URLSearchParams(raw));
