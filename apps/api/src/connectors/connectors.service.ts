@@ -967,6 +967,26 @@ export class ConnectorsService {
     }
 
     /**
+     * v0.1.363 — La vuelta del proveedor trajo un ERROR (la persona canceló,
+     * o Microsoft pidió la aprobación del administrador): el viaje terminó, así
+     * que se consume el `state` y se devuelve de qué app era, para que el panel
+     * ofrezca la salida que corresponde. Sólo a la misma persona que lo inició.
+     */
+    async abandonOAuth(sessionUserId: number, state: string): Promise<{ integration: IntegrationKey | null; purpose: 'agenda' | null }> {
+        const none = { integration: null, purpose: null };
+        if (state.trim() === '') return none;
+        const raw = await this.redis.getdel(oauthStateKey(state));
+        if (!raw) return none;
+        try {
+            const pending = JSON.parse(raw) as PendingOAuth;
+            if (pending.userId !== sessionUserId) return none;
+            return { integration: pending.integration ?? null, purpose: pending.purpose ?? null };
+        } catch {
+            return none;
+        }
+    }
+
+    /**
      * Vuelta del proveedor. El `state` se consume con `GETDEL` —de un solo uso,
      * el mismo criterio que el magic link del portal (SEC-15)— y además se
      * exige que lo canjee la MISMA persona que lo pidió: un código robado no

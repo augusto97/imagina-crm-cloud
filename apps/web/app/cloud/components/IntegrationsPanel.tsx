@@ -5,6 +5,7 @@ import {
     INTEGRATIONS,
     INTEGRATION_CATEGORY_LABEL,
     integrationDef,
+    isMsConsentError,
     isSmsProvider,
     moduleForIntegration,
     readDisabledModules,
@@ -12,11 +13,12 @@ import {
     type IntegrationDef,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { CalendarDays, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, Wallet } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, ShieldCheck, Wallet } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { MsAdminConsentDialog } from '@/cloud/components/MsAdminConsentDialog';
 import { WordpressConnectDialog } from '@/cloud/components/WordpressConnectDialog';
 import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -45,7 +47,10 @@ export function IntegrationsPanel(): JSX.Element | null {
     const confirm = useConfirm();
     const tenantId = useSession((s) => s.activeTenantId);
     const [params, setParams] = useSearchParams();
-    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+    // v0.1.363 — `consent`: Microsoft devolvió «Se necesita la aprobación del
+    // administrador» para esa app; el aviso ofrece crear el enlace para TI.
+    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string; consent?: MsApp } | null>(null);
+    const [adminConsent, setAdminConsent] = useState<MsApp | null>(null);
     const [dialog, setDialog] = useState<{ def: IntegrationDef; connection: Connection | null } | null>(null);
     // v0.1.333 — WordPress se conecta en un clic con su pantalla «Autorizar aplicación».
     const [wpDialog, setWpDialog] = useState<{ connection: Connection | null } | null>(null);
@@ -74,14 +79,24 @@ export function IntegrationsPanel(): JSX.Element | null {
     const oauthResult = params.get('oauth');
     useEffect(() => {
         if (!oauthResult) return;
+        const msg = params.get('msg') ?? '';
+        const app = params.get('app');
+        const consent = (app === 'outlook' || app === 'teams') && isMsConsentError(msg) ? app : undefined;
         setNotice(
             oauthResult === 'ok'
                 ? { kind: 'ok', text: __('¡Listo! La app quedó conectada y ya la puedes usar en tus automatizaciones.') }
-                : { kind: 'err', text: params.get('msg') ?? __('No se pudo conectar la app.') },
+                : consent
+                  ? {
+                        kind: 'err',
+                        consent,
+                        text: __('Microsoft no dejó terminar la conexión: tu empresa pide que un administrador de Microsoft 365 apruebe la app antes de que cada persona la conecte. Crea el enlace para tu administrador; cuando lo apruebe, vuelve a tocar «Conectar».'),
+                    }
+                  : { kind: 'err', text: msg || __('No se pudo conectar la app.') },
         );
         const next = new URLSearchParams(params);
         next.delete('oauth');
         next.delete('msg');
+        next.delete('app');
         setParams(next, { replace: true });
         void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
         // Sólo importa el cambio de resultado: las demás dependencias son
@@ -172,6 +187,20 @@ export function IntegrationsPanel(): JSX.Element | null {
                     data-testid="imcrm-integrations-notice"
                 >
                     {notice.text}
+                    {notice.consent && (
+                        <span className="imcrm-mt-2 imcrm-block">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="imcrm-gap-1.5"
+                                onClick={() => setAdminConsent(notice.consent ?? null)}
+                                data-testid="imcrm-integrations-consent-open"
+                            >
+                                <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Crear el enlace para mi administrador')}
+                            </Button>
+                        </span>
+                    )}
                 </p>
             )}
 
@@ -214,6 +243,7 @@ export function IntegrationsPanel(): JSX.Element | null {
                             planOff={offModules.includes(moduleForIntegration(def.key))}
                             busy={authorize.isPending && authorize.variables?.def.key === def.key}
                             onConnect={() => start(def, null)}
+                            onAdminConsent={def.key === 'outlook' || def.key === 'teams' ? () => setAdminConsent(def.key as MsApp) : undefined}
                         />
                     ))}
                 </div>
@@ -266,6 +296,23 @@ export function IntegrationsPanel(): JSX.Element | null {
                 />
             )}
 
+            {adminConsent && (
+                <MsAdminConsentDialog
+                    target={{ kind: 'integration', key: adminConsent }}
+                    open
+                    onClose={() => setAdminConsent(null)}
+                    onConnect={
+                        canConnect
+                            ? () => {
+                                  const def = integrationDef(adminConsent);
+                                  setAdminConsent(null);
+                                  if (def) start(def, null);
+                              }
+                            : undefined
+                    }
+                />
+            )}
+
             {dialog && (
                 <IntegrationKeyDialog
                     def={dialog.def}
@@ -290,6 +337,7 @@ function AppTile({
     canConnect,
     busy,
     onConnect,
+    onAdminConsent,
     planOff = false,
 }: {
     def: IntegrationDef;
@@ -298,6 +346,8 @@ function AppTile({
     canConnect: boolean;
     busy: boolean;
     onConnect: () => void;
+    /** v0.1.363 — apps de Microsoft: enlace de aprobación para el administrador de TI. */
+    onAdminConsent?: () => void;
     /** v0.1.338 (ADR-S87) — el plan no incluye esta app. */
     planOff?: boolean;
 }): JSX.Element | null {
@@ -357,6 +407,17 @@ function AppTile({
                         {__('Configurar en Plataforma')}
                     </Link>
                 </Button>
+            )}
+            {available && !planOff && onAdminConsent && (
+                <button
+                    type="button"
+                    onClick={onAdminConsent}
+                    className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-1.5 imcrm-rounded imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                    data-testid="imcrm-integration-admin-consent"
+                >
+                    <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {__('¿Tu empresa pide aprobación del administrador?')}
+                </button>
             )}
         </div>
     );
@@ -511,6 +572,9 @@ function ConnectedRow({
         </li>
     );
 }
+
+/** Las apps de Microsoft 365 que pueden necesitar la aprobación del administrador. */
+type MsApp = 'outlook' | 'teams';
 
 function errText(err: unknown): string {
     if (err instanceof CloudApiError) return err.message;

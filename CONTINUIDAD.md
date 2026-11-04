@@ -382,9 +382,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.362**
-(corrección: formularios en blanco en servidores sin `NODE_ENV=production`,
-15 fuentes dañadas y el `.env` que se completa solo; antes v0.1.361
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.363**
+(conectar Teams y Outlook cuando la empresa pide un administrador de Microsoft
+365: el enlace de consentimiento del administrador, addendum ADR-S22; antes
+v0.1.362 corrección: formularios en blanco en servidores sin
+`NODE_ENV=production`, 15 fuentes dañadas y el `.env` que se completa solo;
+antes v0.1.361
 formularios: cobrar al enviar con el Mercado Pago o Wompi de la empresa,
 addendum ADR-S39 —con ella queda COMPLETO el proyecto de formularios—; antes
 v0.1.360 enlace para que un cliente actualice su registro, v0.1.359 plantillas, panel lateral, pantalla completa y código
@@ -1360,6 +1363,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-04 · v0.1.363** — **Conectar Teams y Outlook cuando la empresa
+  pide un administrador** (reporte del usuario con captura: a un cliente,
+  cristian.bucuru@binapps.co, Microsoft le mostró «Se necesita la aprobación
+  del administrador · Imagina Base, sin comprobar» al conectar Teams). Le
+  expliqué que no es un error de la app: su empresa no deja que cada persona
+  apruebe apps; las salidas son que un administrador de Microsoft 365 apruebe
+  (enlace de consentimiento del administrador) o que el operador verifique el
+  publicador en Partner Center. El usuario pidió «Sí, hazlo» al botón «Enlace
+  para tu administrador».
+  - **Qué hace**: en Integraciones (tarjeta de Teams u Outlook) y en Mi
+    calendario, «¿Tu empresa pide aprobación del administrador?» abre un
+    diálogo que crea el enlace de `/organizations/v2.0/adminconsent` con los
+    permisos exactos, lo copia con un mensaje listo para TI, lista los
+    permisos en palabras y se entera solo cuando el administrador aprueba. El
+    administrador vuelve a una página del servidor SIN sesión (sólo los
+    `state` `ac_…` pasan sin sesión; no traen código ni tokens). Si la persona
+    vuelve de Microsoft con el error, el aviso ofrece el enlace ahí mismo.
+  - **Para el cliente del usuario**: tiene que actualizar a v0.1.363, tocar el
+    enlace en la tarjeta de Teams y mandárselo a su administrador de Microsoft
+    365 de binapps (rol global, de aplicaciones o de aplicaciones en la nube).
+  - **Pendiente del operador** (no bloquea): verificar el publicador de la app
+    de Microsoft en Partner Center quita el «sin comprobar».
+  - Tests: `ms-admin-consent.spec` 8/8, shared 727, front 795, specs de
+    OAuth/integraciones 63/63, E2E navegador 30/30.
 
 - **2026-11-04 · v0.1.362** — **Corrección: formularios en blanco, fuentes
   dañadas y servidor en modo desarrollo** (reporte del usuario con captura: el

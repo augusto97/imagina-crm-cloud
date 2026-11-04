@@ -1,7 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ConnectorsController } from './connectors.controller';
-import { ConnectorsOAuthController } from './connectors-oauth.controller';
+import { ConnectorsOAuthController, OAuthCallbackGuard } from './connectors-oauth.controller';
+import { MsAdminConsentService } from './ms-admin-consent.service';
 import { ConnectorsService } from './connectors.service';
 import { IntegrationAppsService } from './integration-apps.service';
 import { MailAccountService } from './mail-account.service';
@@ -35,6 +36,9 @@ import { SQL_RUNNER } from './sqlserver/sql-runner';
     providers: [
         ConnectorsService,
         IntegrationAppsService,
+        // v0.1.363 — enlace de aprobación para el administrador de Microsoft 365.
+        MsAdminConsentService,
+        OAuthCallbackGuard,
         // v0.1.249 — el correo de la empresa por su cuenta de Google/Microsoft.
         MailAccountService,
         { provide: MAIL_ACCOUNT_SENDER, useExisting: MailAccountService },
@@ -48,6 +52,6 @@ import { SQL_RUNNER } from './sqlserver/sql-runner';
             inject: [ENV],
         },
     ],
-    exports: [ConnectorsService, IntegrationAppsService, MailAccountService, MAIL_ACCOUNT_SENDER, TenantStorageService, TENANT_STORAGE, SQL_RUNNER],
+    exports: [ConnectorsService, IntegrationAppsService, MsAdminConsentService, MailAccountService, MAIL_ACCOUNT_SENDER, TenantStorageService, TENANT_STORAGE, SQL_RUNNER],
 })
 export class ConnectorsModule {}
