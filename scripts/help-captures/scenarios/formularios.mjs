@@ -48,7 +48,7 @@ export default [
             { go: '/lists/{list:Tickets}/edit?s=formularios', wait: '[data-tour="forms-new"]' },
             { click: '[data-tour="forms-new"]', then: '[data-testid="form-create-dialog"]', caption: 'En la configuración de la lista, pestaña «Formularios», toca «Nuevo formulario»: eliges una plantilla o arrancas con las preguntas de la lista.' },
             { click: '[data-testid="form-create-mode-blank"]', then: '[data-testid="form-create-blank"]', caption: '«Con los campos de la lista» arma uno con todas las preguntas de la lista ya puestas.' },
-            { click: '[data-testid="form-create-blank"]' },
+            { click: '[data-testid="form-create-blank"]', caption: 'Toca «Crear formulario»: se abre el editor.' },
             {
                 // A veces el panel se vuelve a montar al refrescar la lista y el
                 // constructor no se abre solo: en ese caso se abre con «Editar».
@@ -67,9 +67,14 @@ export default [
             { click: '[data-testid="form-builder"] [role="tab"]:has-text("Preguntas")', then: '[data-testid="form-structure"]', caption: 'En «Preguntas» ves el orden; arrastra para moverlas.' },
             { click: '[data-structure-item]:has-text("Canal") button >> nth=0', then: '[data-testid="form-item-inspector"]', caption: 'Toca una pregunta para editarla (también puedes tocarla en la vista previa).' },
             { fill: '[data-testid="form-item-label"]', text: '¿Por dónde prefieres que te contactemos?', caption: 'Cambia el texto de la pregunta: el campo de la lista sigue siendo el mismo.' },
-            { click: '[data-testid="form-item-inspector"] button:has-text("Lista")', caption: 'En «Cómo se elige», pasa de botones a una lista desplegable.' },
-            { wait: 900 },
-            { shot: true, caption: 'La vista previa cambia al instante.' },
+            { shot: '[data-testid="form-item-display"]', caption: 'En «Cómo se pregunta» eliges la forma: lista, botones, tarjetas, desplegable o lista con buscador.' },
+            {
+                run: async ({ page, sleep }) => {
+                    await page.locator('[data-testid="form-item-display"]').selectOption('dropdown');
+                    await sleep(900);
+                },
+            },
+            { shot: true, caption: 'Con «Lista desplegable», la vista previa cambia al instante.' },
             { click: '[data-testid="form-save"]', caption: 'Toca «Guardar» y listo para publicar.' },
             { wait: 800 },
             { run: clearForms },

@@ -1,14 +1,24 @@
 name: CI
 
+# v0.1.364 — Las pruebas de la API (cada archivo levanta su propio Postgres y
+# Redis y corren en serie) se reparten en 4 máquinas a la vez: de ~16 a ~5
+# minutos. El job final «ci» junta el resultado y conserva el nombre del check.
+#
+# No corre al fusionar a main: el squash deja en main EXACTAMENTE el árbol que
+# ya pasó en el PR, y repetirlas sólo gastaba minutos mientras se publicaba.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  ci:
+  checks:
+    name: lint, tipos, build y shared
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -22,9 +32,49 @@ jobs:
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
 
-      # apps/web (fork del plugin) se integra al pipeline en F1.
-      - name: Lint + typecheck + build + tests
+      - name: Lint + tipos + build (shared y API) + pruebas de shared
         run: >
-          pnpm turbo run lint typecheck build test
+          pnpm turbo run lint typecheck build
           --filter=@imagina-base/shared
           --filter=@imagina-base/api
+          && pnpm turbo run test --filter=@imagina-base/shared
+
+  api-tests:
+    name: pruebas de la API (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      # La API importa @imagina-base/shared compilado.
+      - name: Compilar shared
+        run: pnpm --filter @imagina-base/shared build
+
+      - name: Pruebas de la API (parte ${{ matrix.shard }} de 4)
+        working-directory: apps/api
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/4
+
+  ci:
+    needs: [checks, api-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resultado
+        run: |
+          echo "checks: ${{ needs.checks.result }} · api-tests: ${{ needs.api-tests.result }}"
+          test "${{ needs.checks.result }}" = success
+          test "${{ needs.api-tests.result }}" = success

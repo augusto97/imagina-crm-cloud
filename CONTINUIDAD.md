@@ -176,10 +176,22 @@ Pasos (en este orden):
     (un PR mergeado no se reutiliza; la próxima versión arranca limpia).
 12. Si `ci` falla: diagnosticar, arreglar, push, esperar de nuevo.
 
-**CI** (`.github/workflows/ci.yml`): en cada PR corre `lint typecheck build
-test` de `shared` + `api` (Postgres/Redis por Testcontainers). El front
-(`apps/web`) NO está en el CI → correr a mano `pnpm --filter @imagina-base/web
-typecheck lint test` y `build:cloud` antes de publicar.
+**CI** (`.github/workflows/ci.yml`): en cada PR corre `lint typecheck build`
+de `shared` + `api` y las pruebas de `shared` en un job, y las pruebas de la
+API (Postgres/Redis por Testcontainers) repartidas en **4 máquinas**
+(`vitest --shard`); el job final **`ci`** junta el resultado (~5 min en total
+desde v0.1.364; antes ~16). No corre al fusionar a main (el squash deja el
+mismo árbol que ya pasó). El front (`apps/web`) NO está en el CI → correr a
+mano `pnpm --filter @imagina-base/web typecheck lint test` y `build:cloud`
+antes de publicar.
+
+**Release** (`.github/workflows/release.yml`, al fusionar a main): compila una
+vez, graba las capturas del centro de aprendizaje en **5 máquinas** a la vez y
+un último job junta todo y publica (~10 min; antes ~20). Si una parte de las
+capturas falla, la versión sale igual. Si el reparto de las capturas queda
+desparejo (una parte tarda mucho más que las otras), refrescar los tiempos con
+el log de un release: `node scripts/help-captures/timings.mjs <log>`
+(ADR-S75, addendum v0.1.364).
 
 ---
 
@@ -382,10 +394,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.363**
-(conectar Teams y Outlook cuando la empresa pide un administrador de Microsoft
-365: el enlace de consentimiento del administrador, addendum ADR-S22; antes
-v0.1.362 corrección: formularios en blanco en servidores sin
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.364**
+(publicar más rápido: las pruebas de la API en 4 máquinas y las capturas del
+centro de aprendizaje en 5, addendum ADR-S75; arregla 2 capturas rotas; antes
+v0.1.363 conectar Teams y Outlook cuando la empresa pide un administrador de
+Microsoft 365: el enlace de consentimiento del administrador, addendum ADR-S22;
+antes v0.1.362 corrección: formularios en blanco en servidores sin
 `NODE_ENV=production`, 15 fuentes dañadas y el `.env` que se completa solo;
 antes v0.1.361
 formularios: cobrar al enviar con el Mercado Pago o Wompi de la empresa,
@@ -1364,6 +1378,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.364** — **Publicar más rápido** (pregunta del usuario:
+  "¿por qué se demoran tanto las versiones en publicar? … tarda más de media
+  hora"). Medí los tiempos de GitHub Actions: no es el tamaño de la app (armar
+  el bundle tarda 12 s) sino ~16 min de pruebas de la API (cada archivo con su
+  Postgres y Redis, en serie) + ~17 min de capturas del centro de aprendizaje
+  grabadas una detrás de otra. Le propuse repartirlo en varias máquinas y dijo
+  "sí, eso aceleraría bastante la publicación". Ahora: pruebas en 4 máquinas
+  (job final `ci`, mismo nombre de check), capturas en 5 con un reparto por
+  archivo pesado con lo que tardó cada demo (`scripts/help-captures/
+  timings.json`; si una parte queda mucho más lenta que las otras, refrescarlo
+  con `node scripts/help-captures/timings.mjs <log del release>`), y la CI ya
+  no corre al fusionar a main. De paso arreglé dos capturas de formularios
+  que fallaban («Publicar»: la página pública salía en blanco en el entorno
+  de las capturas; «Crear»: buscaba un botón que ya no existe) y la de la
+  campana, que perdía 2 minutos esperando. Esperado:
+  ~5 min de pruebas + ~10 de publicación. **Queda**: confirmar los tiempos
+  reales con esta misma versión (es la primera que usa los flujos nuevos).
 - **2026-11-04 · v0.1.363** — **Conectar Teams y Outlook cuando la empresa
   pide un administrador** (reporte del usuario con captura: a un cliente,
   cristian.bucuru@binapps.co, Microsoft le mostró «Se necesita la aprobación
