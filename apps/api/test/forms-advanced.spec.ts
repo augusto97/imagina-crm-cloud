@@ -172,7 +172,7 @@ describe('v0.1.289 — formularios (puro)', () => {
         expect(landing).toContain('<form method="post" action="/api/v1/public/f/confirm/abc"');
         expect(landing).toContain('<script nonce="n">');
         // Sobre un color claro la tinta es oscura.
-        expect(landing).toContain('--accent-ink: #1d2330');
+        expect(landing).toContain('--ib-accent-ink:#111827');
     });
 });
 

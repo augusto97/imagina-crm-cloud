@@ -6046,6 +6046,116 @@ catálogo de secciones necesita su regla de disponibilidad y su fila en «Más»
 - **Más de 6 botones**: en 390 px los nombres dejan de leerse (Material
   recomienda 3 a 5).
 
+### ADR-S94 — Un motor de diseño para las páginas públicas, estrenado en los formularios (v0.1.351)
+
+**Contexto.** El usuario pidió formularios "mucho más potentes y avanzados…
+personalizables, estilizables, que se puedan controlar los tamaños de todo,
+bordes, colores, estilos, plantillas de diseño… bonitos y eficientes en carga
+y rendimiento", revisando otras apps de formularios. Hasta acá un formulario
+tenía UN color y el logo: tarjeta blanca de 660 px sobre gris, siempre en modo
+claro, con la tipografía del sistema. Se relevaron Typeform, Jotform, Tally,
+Fillout, Google Forms, Paperform, Formbricks y Cal.com/Calendly (para la
+agenda, que comparte la necesidad) y se acordaron tres entregas: **diseño**
+(ésta) → la 3.ª de la agenda (que reusa este motor) → **preguntas y lógica** →
+**medir, insertar y cobrar**. El CSS propio se aprobó "como opción avanzada,
+sólo administradores, sin poder cargar nada de afuera".
+
+**Decisión.**
+1. **El tema es un DATO de shared** (`publicThemeSchema` en
+   `schemas/public-theme.ts`), pensado para cualquier página pública (hoy los
+   formularios; la agenda en su próxima entrega): `mode` (claro, oscuro,
+   automático), `colors` + `dark_colors` (null = calculados), `typography`
+   (fuente del texto y de los títulos de las 19 de ADR-S37, tamaños, pesos,
+   interlineado, espacio entre letras), `layout` (ancho 360-1200, con o sin
+   tarjeta, relleno, espacio entre preguntas, encabezado, franja, centrado
+   vertical, título/descripción visibles, logo, avance), `background`
+   (color, degradado o imagen con ajuste/oscurecer/desenfoque, y patrón),
+   `cover`, `split` (pantalla dividida), `card`, `inputs` (con borde, con
+   relleno, línea, redondo; tamaño; etiqueta arriba, al costado o dentro),
+   `choices` (lista, botones, tarjetas; columnas; forma de las imágenes),
+   `button` (estilo, tamaño, alineación, ancho completo, esquinas, sombra,
+   mayúsculas, ícono) y `custom_css`. Se lee con **tolerancia por sección**
+   (`.catch` en cada una): una sección rota cae a la de fábrica sin perder el
+   resto. `settings.theme` del formulario es `null` en todo lo guardado antes
+   y **null = el diseño de siempre** (el color propio del formulario sigue
+   mandando): nadie ve su formulario cambiar al actualizar.
+2. **El CSS se parte en dos**. `PUBLIC_BASE_CSS` es fijo y trae TODAS las
+   variantes como clases `.ib-*` (`ib-input-pill`, `ib-labels-floating`,
+   `ib-btn-full`…); `buildPublicThemeCss` (puro) sólo escribe las variables
+   (`--ib-accent`, `--ib-input-radius`…), las `@font-face` de lo que se usa,
+   fondo/portada/dividido, el modo oscuro y el CSS propio ya limpio. Lo
+   estructural viaja como `meta.theme` (`publicThemeView`: clases del body,
+   posición de la etiqueta, estilo de las opciones, avance, ícono del botón).
+   La MISMA función arma el CSS del servidor y el de la vista previa del
+   constructor, así lo que se ve al editar es lo que se publica.
+3. **Modo oscuro** (`deriveDarkPalette`): en «Automático» se calcula una
+   paleta oscura a partir de la clara con contraste medido (texto > 7:1,
+   acento ≥ 3:1 sobre la tarjeta; el acento se aclara si hace falta) bajo
+   `@media (prefers-color-scheme: dark)`, y `:root[data-scheme=dark]` permite
+   que la vista previa muestre los dos. Un acento claro (amarillo) como texto
+   se oscurece hasta leerse (`ensureContrast`, `--ib-accent-ink`).
+4. **13 plantillas** (`publicThemePresets(brand)`): funciones del color de la
+   marca (el acento queda en null = el de la empresa y los fondos que lo
+   necesitan se tiñen con él). Cada sección de una plantilla se valida
+   ESTRICTA al construirla: la lectura tolerante habría descartado en
+   silencio una sección con un valor fuera de rango (pasó: las esquinas
+   «redondas» de 999 px rompían el botón de cinco plantillas).
+   `PUBLIC_ROUND_RADIUS = 999` = esquinas completamente redondas.
+5. **«Mis temas»**: los diseños guardados de la empresa viven en
+   `tenants.settings.public_themes` (tope 30) con `public_theme_default`, el
+   tema con que nacen los formularios nuevos; se escriben con `FOR UPDATE`
+   sobre la fila del tenant (dos personas a la vez no se pisan) y quedan en la
+   bitácora (`public_theme.*`). Cada formulario guarda su COPIA del diseño:
+   cambiar o borrar un tema no altera los formularios que ya lo usaban.
+6. **Diseño por pregunta**: `width` (completo / mitad / tercio; dos mitades
+   seguidas van lado a lado, una debajo de la otra en el celular),
+   `hide_label` (se conserva para lectores de pantalla), `display` gana
+   `buttons` y `cards`, `option_images` (una imagen por opción, por id) y un
+   bloque de contenido **Imagen**. La agenda (ADR-S67) sigue leyendo el
+   `display` de siempre; el estilo nuevo viaja aparte en `choice_style`.
+7. **Imágenes**: sólo adjuntos de la propia empresa (no los pendientes de un
+   formulario), de tipo PNG/JPEG/GIF/WebP/AVIF —**nunca SVG**, que ejecuta
+   script—, servidos por URL firmada (ADR-S16) de 24 h redondeada a la hora
+   para que el navegador la cachee. El navegador las achica antes de subirlas.
+8. **CSS propio**: sólo un administrador lo cambia (el resto de las personas
+   puede editar el diseño y el CSS se conserva tal cual), con tope de 20.000
+   caracteres, y se limpia al guardar Y al servir (`sanitizePublicCss`): fuera
+   las barras invertidas (escapes que esconden `url`), `<` (no puede cerrar la
+   etiqueta), comentarios, `@import`, `@font-face`, `@namespace`/`@charset`/
+   `@document`, `url(`/`src(`/`image(`/`image-set(`/`cross-fade(`/
+   `element(`, `expression(`, `behavior`/`-moz-binding` y `javascript:`. Ni
+   siquiera así carga nada: la CSP de la página es `img-src 'self' data:
+   blob:` y `font-src 'self'`. El editor dice qué se quitó.
+9. **Rendimiento como contrato**: el cliente de la página pública pasó de un
+   string de JS en el servidor a `apps/web/app/public-form/main.ts` (TypeScript
+   con tipos de shared), compilado por vite a UN IIFE que el API sirve
+   **dentro** del HTML con el nonce: una sola ida y vuelta para quien entra una
+   vez (25 kB / 9,4 kB gz, menos que el anterior). Sólo se piden las fuentes
+   que usa el tema, en WOFF2 propias (400 y 700), con `preload` de la del
+   texto. En producción, sin el build del cliente la página responde 503
+   (`loadFormClient`, misma búsqueda que los tableros públicos); en
+   desarrollo carga el módulo de vite.
+10. **Migrar una empresa** (ADR-S23) re-mapea las imágenes del diseño, de las
+    opciones, «Mis temas» y el logo de la marca (que de paso NO se re-mapeaba
+    antes: el logo de una empresa importada apuntaba al archivo de otra).
+
+**Consecuencias.** La agenda estrena el mismo motor en su próxima entrega (su
+página pública es hermana de la del formulario) y el portal y las listas
+públicas pueden usarlo después sin otro modelo. El editor (pestaña
+**Diseño** del constructor: plantillas, «Mis temas» y el panel por secciones)
+es una pieza aparte del constructor de preguntas: las entregas 2 y 3 suman
+preguntas, lógica y cobros sin tocar el diseño.
+
+**Descartado.**
+- **CSS libre para cualquiera**: un formulario es una página del dominio de
+  la plataforma; el CSS propio queda para administradores y no carga nada.
+- **Fuentes de Google por enlace**: suman una conexión a un tercero por
+  visita y pasan los datos del visitante; se sirven las propias.
+- **Un archivo JS aparte cacheado**: quien llena un formulario casi siempre
+  entra una sola vez; inline ahorra la ida y vuelta.
+- **Guardar el HTML/CSS final**: se guarda el MODELO; el CSS se arma al
+  servir, así una mejora del motor llega a todos los formularios.
+
 ---
 
-**Versión del documento:** 1.141.0 (Microsoft Teams y la ayuda bajo cada credencial)
+**Versión del documento:** 1.142.0 (Diseño de los formularios: el motor de temas de las páginas públicas)

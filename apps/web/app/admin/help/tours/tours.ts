@@ -822,6 +822,13 @@ export const TOURS: TourDef[] = [
                 body: 'Cada pregunta llena un campo. Muestra una sólo si otra respuesta lo pide, divide en páginas y pon el captcha para frenar robots.',
             },
             {
+                id: 'design',
+                art: 'form-design',
+                title: 'Dale tu diseño',
+                body: 'En la pestaña **Diseño** del constructor eliges una de las 13 plantillas o ajustas colores, fuentes, tamaños, bordes, fondo, portada y el botón, viendo el cambio al instante.',
+                tip: 'Guarda el diseño en **Mis temas** para usarlo en todos los formularios de la empresa.',
+            },
+            {
                 id: 'publish',
                 art: 'form-embed',
                 title: 'Publica y comparte',

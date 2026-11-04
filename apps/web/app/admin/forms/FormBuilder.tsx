@@ -11,16 +11,20 @@ import {
     EyeOff,
     GripVertical,
     Heading2,
+    Image as ImageIcon,
     Link2,
     Loader2,
     MailCheck,
     Monitor,
+    Moon,
+    Palette,
     Plus,
     Redo2,
     Scale,
     SeparatorHorizontal,
     ShieldCheck,
     Smartphone,
+    Sun,
     Trash2,
     Type,
     Undo2,
@@ -28,6 +32,7 @@ import {
 } from 'lucide-react';
 import {
     buildPublicFormItems,
+    buildPublicThemeCss,
     CAPTCHA_PROVIDER_INFO,
     FORM_CONDITION_OPS,
     FORM_FILE_ACCEPT_INFO,
@@ -40,17 +45,22 @@ import {
     type FormConfig,
     type FormDto,
     type FormItem,
+    type PublicChoiceStyle,
     type PublicFormMeta,
+    type PublicThemePreset,
+    type SavedPublicTheme,
+    publicThemeView,
+    resolvePublicPalettes,
 } from '@imagina-base/shared';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { ColorField } from '@/components/design/DesignStyleControls';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
+import { useSession } from '@/cloud/session';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
@@ -58,10 +68,26 @@ import { useTeams } from '@/hooks/useTeams';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
+import { getThemeState } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { Check, Field, Section, Segmented } from '../automations/email/EmailBlockInspector';
+import { Check, Field, Section } from '../automations/email/EmailBlockInspector';
+import { FieldItemDesign, ImageItemEditor } from './design/ItemDesign';
+import { MyThemes } from './design/MyThemes';
+import { ThemeGallery } from './design/ThemeGallery';
+import { ThemeInspector } from './design/ThemeInspector';
+import {
+    activePresetId,
+    applyTheme,
+    effectiveTheme,
+    fallbackAccent,
+    formImageIds,
+    normalizeForSave,
+    resolvedAccent,
+    startTheme,
+} from './design/themeOps';
+import { themeErrorMessage, useAttachmentUrls } from './design/useFormThemes';
 import {
     addContentItem,
     addFieldItem,
@@ -74,9 +100,11 @@ import {
     pageCount,
     pageNumbers,
     questionCount,
+    readFormConfig,
     removeItem,
     updateItem,
     updateSettings,
+    type FormContentType,
 } from './formDesignOps';
 import { formEmbedCode, formPublicUrl, useCaptchaAvailability,
     useDataConsentAvailability, useUpdateForm } from './useForms';
@@ -145,15 +173,20 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const captcha = useCaptchaAvailability(listId);
     const dataConsent = useDataConsentAvailability(listId);
     const narrow = useMediaQuery('(max-width: 1023px)');
+    // v0.1.351 — el CSS propio lo escribe sólo un administrador (el rol, no la capacidad).
+    const isAdmin = useSession((st) => st.memberships.find((m) => m.tenant_id === st.activeTenantId)?.role === 'admin');
 
-    const [draft, setDraft] = useState<Draft>({ name: form.name, config: form.config });
-    const [saved, setSaved] = useState<Draft>({ name: form.name, config: form.config });
+    // v0.1.351 — con los valores por defecto de la versión (ancho, imágenes de opciones, tema…).
+    const [draft, setDraft] = useState<Draft>(() => ({ name: form.name, config: readFormConfig(form.config) }));
+    const [saved, setSaved] = useState<Draft>(() => ({ name: form.name, config: readFormConfig(form.config) }));
     const [enabled, setEnabled] = useState(form.enabled);
     const [history, setHistory] = useState<History>({ past: [], future: [] });
     const [selected, setSelected] = useState<string | null>(null);
-    const [leftTab, setLeftTab] = useState<'add' | 'structure'>('add');
-    const [mobileTab, setMobileTab] = useState<'build' | 'preview' | 'settings'>('preview');
+    const [leftTab, setLeftTab] = useState<LeftTab>('add');
+    const [mobileTab, setMobileTab] = useState<'build' | 'design' | 'preview' | 'settings'>('preview');
     const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+    // Con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
+    const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
     const [shareOpen, setShareOpen] = useState(false);
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
@@ -217,6 +250,29 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         () => [...(teams.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'es')).map((t) => ({ value: String(t.id), label: t.name })),
         [teams.data],
     );
+    // ── Diseño (ADR-S94): el tema, sus imágenes y el CSS que recibe la vista previa ──
+    const brandColor = branding.data?.primary_color ?? '#0e7490';
+    const theme = useMemo(() => effectiveTheme(config.settings), [config.settings]);
+    const imageIds = useMemo(() => formImageIds(config), [config]);
+    const imageUrls = useAttachmentUrls(imageIds);
+    const imageUrl = useCallback((id: number): string | null => imageUrls.get(id) ?? null, [imageUrls]);
+    const themeCss = useMemo(() => {
+        const img = (id: number | null): string | null => (id === null ? null : imageUrl(id));
+        return buildPublicThemeCss(theme, {
+            accent: fallbackAccent(config.settings, brandColor),
+            images: {
+                cover: img(theme.cover.file_id),
+                split: img(theme.split.file_id),
+                background: theme.background.kind === 'image' ? img(theme.background.file_id) : null,
+            },
+        });
+    }, [theme, config.settings, brandColor, imageUrl]);
+    const scheme = theme.mode === 'auto' ? previewScheme : null;
+    const previewBg = useMemo(() => {
+        const pals = resolvePublicPalettes(theme, fallbackAccent(config.settings, brandColor));
+        return (scheme === 'dark' && pals.dark ? pals.dark : pals.main).background;
+    }, [theme, config.settings, brandColor, scheme]);
+
     const meta = useMemo<PublicFormMeta>(() => {
         const s = config.settings;
         const b = branding.data;
@@ -229,11 +285,11 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             redirect_url: s.redirect_url,
             allow_another: s.allow_another,
             allow_prefill: s.allow_prefill,
-            accent_color: s.accent_color ?? b?.primary_color ?? '#0e7490',
+            accent_color: resolvedAccent(s, b?.primary_color),
             logo_url: s.show_logo ? (b?.logo_url ?? null) : null,
             company: b?.app_name ?? '',
             number_format: getTenantFormat().number_format,
-            items: buildPublicFormItems(config, fields, teamOptions),
+            items: buildPublicFormItems(config, fields, teamOptions, { imageUrl }),
             closed: null,
             stamp: '',
             max_upload_bytes: 20 * 1024 * 1024,
@@ -242,8 +298,9 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             confirm_email: s.confirm_email,
             // Ley 1581 — la casilla de autorización con el texto vigente de la empresa.
             data_consent: s.data_consent && dataConsent.data?.active ? dataConsent.data.consent : null,
+            theme: publicThemeView(theme),
         };
-    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions]);
+    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
 
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {
@@ -260,19 +317,25 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     }, [narrow]);
     useEffect(() => {
         if (!ready) return;
-        iframeRef.current?.contentWindow?.postMessage({ type: 'imb-form-preview', meta, selected }, window.location.origin);
-    }, [ready, meta, selected]);
+        iframeRef.current?.contentWindow?.postMessage(
+            { type: 'imb-form-preview', meta, selected, css: themeCss, scheme },
+            window.location.origin,
+        );
+    }, [ready, meta, selected, themeCss, scheme]);
 
     const save = async (extra: { enabled?: boolean } = {}): Promise<boolean> => {
         try {
-            const doc = await update.mutateAsync({ id: form.id, body: { name: draft.name.trim() || form.name, config: draft.config, ...extra } });
-            const next = { name: doc.name, config: doc.config };
+            const doc = await update.mutateAsync({
+                id: form.id,
+                body: { name: draft.name.trim() || form.name, config: normalizeForSave(draft.config), ...extra },
+            });
+            const next = { name: doc.name, config: readFormConfig(doc.config) };
             setDraft(next);
             setSaved(next);
             setEnabled(doc.enabled);
             return true;
         } catch (err) {
-            toast.error(__('No se pudo guardar'), err instanceof Error ? err.message : String(err));
+            toast.error(__('No se pudo guardar'), themeErrorMessage(err));
             return false;
         }
     };
@@ -310,16 +373,49 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         change(next);
         setSelected(id);
     };
-    const addContent = (type: 'heading' | 'text' | 'page_break'): void => {
+    const addContent = (type: FormContentType): void => {
         const { config: next, id } = addContentItem(config, type, selected);
         change(next);
         setSelected(id);
     };
 
+    const applyPreset = (p: PublicThemePreset): void => {
+        change(applyTheme(config, p.theme, { keepCustomCss: !isAdmin, carryImages: true }));
+    };
+    const applySaved = (t: SavedPublicTheme): void => {
+        change(applyTheme(config, t.theme, { keepCustomCss: !isAdmin }));
+        toast.success(__('Tema aplicado'), __('«%s». Si no te convence, deshazlo.').replace('%s', t.name));
+    };
+    const openDesign = (): void => {
+        setSelected(null);
+        if (narrow) setMobileTab('design');
+        else setLeftTab('design');
+    };
+    const designLibrary = (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-5">
+            <ThemeGallery brand={brandColor} activeId={activePresetId(config.settings)} onApply={applyPreset} columns={narrow ? 3 : 2} />
+            <MyThemes
+                brand={brandColor}
+                current={startTheme(config.settings)}
+                suggestedName={(config.settings.title || draft.name).slice(0, 60)}
+                onApply={applySaved}
+            />
+        </div>
+    );
+    const themeInspector = (
+        <ThemeInspector config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} showLogo={config.settings.show_logo} />
+    );
+
     const left = (
         <LeftPanel
             tab={leftTab}
-            onTab={setLeftTab}
+            onTab={(t) => {
+                setLeftTab(t);
+                // Elegir «Diseño» muestra los ajustes del tema a la derecha.
+                if (t === 'design') setSelected(null);
+            }}
+            showDesignTab={!narrow}
+            designContent={designLibrary}
             config={config}
             fields={fields}
             fieldsById={fieldsById}
@@ -339,9 +435,12 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             item={selectedItem}
             config={config}
             fieldsById={fieldsById}
+            themeChoiceStyle={theme.choices.style}
             onChange={change}
             onClose={() => setSelected(null)}
         />
+    ) : leftTab === 'design' && !narrow ? (
+        themeInspector
     ) : (
         <SettingsInspector
             draft={draft}
@@ -353,35 +452,68 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             captcha={captcha.data ?? null}
             dataConsent={dataConsent.data ?? null}
             listId={listId}
+            onOpenDesign={openDesign}
         />
     );
     const preview = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-1.5">
-                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                <span className="imcrm-min-w-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
                     {__('Vista previa — toca una pregunta para editarla')}
                 </span>
-                <div role="group" aria-label={__('Dispositivo')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
-                    {(
-                        [
-                            ['desktop', Monitor, __('Computadora')],
-                            ['mobile', Smartphone, __('Celular')],
-                        ] as const
-                    ).map(([key, Icon, label]) => (
-                        <button
-                            key={key}
-                            type="button"
-                            title={label}
-                            aria-pressed={device === key}
-                            onClick={() => setDevice(key)}
-                            className={cn(
-                                'imcrm-rounded imcrm-p-1',
-                                device === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
-                            )}
+                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5">
+                    {theme.mode === 'auto' && (
+                        <div
+                            role="group"
+                            aria-label={__('Ver en modo claro u oscuro')}
+                            className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5"
+                            data-testid="form-preview-scheme"
                         >
-                            <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                        </button>
-                    ))}
+                            {(
+                                [
+                                    ['light', Sun, __('Claro')],
+                                    ['dark', Moon, __('Oscuro')],
+                                ] as const
+                            ).map(([key, Icon, label]) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    title={`${__('Ver como en un dispositivo en modo')} ${label.toLowerCase()}`}
+                                    aria-pressed={previewScheme === key}
+                                    onClick={() => setPreviewScheme(key)}
+                                    className={cn(
+                                        'imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px]',
+                                        previewScheme === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
+                                    )}
+                                >
+                                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    <span className="imcrm-hidden sm:imcrm-inline">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <div role="group" aria-label={__('Dispositivo')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
+                        {(
+                            [
+                                ['desktop', Monitor, __('Computadora')],
+                                ['mobile', Smartphone, __('Celular')],
+                            ] as const
+                        ).map(([key, Icon, label]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                title={label}
+                                aria-pressed={device === key}
+                                onClick={() => setDevice(key)}
+                                className={cn(
+                                    'imcrm-rounded imcrm-p-1',
+                                    device === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
+                                )}
+                            >
+                                <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
             <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
@@ -390,9 +522,11 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                     src="/api/v1/public/f/preview"
                     title={__('Vista previa del formulario')}
                     className={cn(
-                        'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-white',
+                        'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border',
                         device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full imcrm-max-w-[760px]',
                     )}
+                    // La miniatura toma el fondo del diseño (no un blanco que parpadea al cargar).
+                    style={{ background: previewBg }}
                     data-testid="form-preview"
                 />
             </div>
@@ -437,6 +571,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                         {(
                             [
                                 ['build', __('Preguntas')],
+                                ['design', __('Diseño')],
                                 ['preview', __('Vista previa')],
                                 ['settings', selectedItem ? __('Editar') : __('Ajustes')],
                             ] as const
@@ -446,7 +581,11 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                                 role="tab"
                                 type="button"
                                 aria-selected={mobileTab === key}
-                                onClick={() => setMobileTab(key)}
+                                data-tour={designTabTour(key)}
+                                onClick={() => {
+                                    setMobileTab(key);
+                                    if (key === 'design') setSelected(null);
+                                }}
                                 className={cn(
                                     'imcrm-flex-1 imcrm-border-b-2 imcrm-py-2 imcrm-text-sm',
                                     mobileTab === key ? 'imcrm-border-primary imcrm-font-medium' : 'imcrm-border-transparent imcrm-text-muted-foreground',
@@ -458,6 +597,12 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                     </div>
                     <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto">
                         {mobileTab === 'build' && left}
+                        {mobileTab === 'design' && (
+                            <div className="imcrm-flex imcrm-flex-col" data-testid="form-design-mobile">
+                                <div className="imcrm-border-b imcrm-border-border imcrm-p-3">{designLibrary}</div>
+                                {themeInspector}
+                            </div>
+                        )}
                         {mobileTab === 'preview' && <div className="imcrm-h-full">{preview}</div>}
                         {mobileTab === 'settings' && right}
                     </div>
@@ -574,16 +719,28 @@ function SharePanel({ form, enabled, onClose, onPublish }: { form: FormDto; enab
 
 // ─────────────────────────── Panel izquierdo ───────────────────────────
 
+type LeftTab = 'add' | 'structure' | 'design';
+
+/** Ancla del recorrido para la pestaña «Diseño» (escritorio y celular). */
+const DESIGN_TAB = { dataTour: 'form-design-tab' } as const;
+function designTabTour(tab: string): string | undefined {
+    return tab === 'design' ? DESIGN_TAB.dataTour : undefined;
+}
+
 interface LeftPanelProps {
-    tab: 'add' | 'structure';
-    onTab: (t: 'add' | 'structure') => void;
+    tab: LeftTab;
+    onTab: (t: LeftTab) => void;
+    /** En el celular el diseño tiene su propia pestaña arriba. */
+    showDesignTab: boolean;
+    /** Plantillas y «Mis temas». */
+    designContent: React.ReactNode;
     config: FormConfig;
     fields: FieldEntity[];
     fieldsById: Map<number, FieldEntity>;
     selected: string | null;
     onSelect: (id: string) => void;
     onAddField: (fieldId: number) => void;
-    onAddContent: (type: 'heading' | 'text' | 'page_break') => void;
+    onAddContent: (type: FormContentType) => void;
     onChange: (next: FormConfig) => void;
 }
 
@@ -591,6 +748,7 @@ function itemTitle(item: FormItem, fieldsById: Map<number, FieldEntity>): string
     if (item.type === 'heading') return item.text || __('Título de sección');
     if (item.type === 'text') return item.text.split('\n')[0] || __('Texto');
     if (item.type === 'page_break') return item.title || __('Salto de página');
+    if (item.type === 'image') return item.caption.trim() || item.alt.trim() || __('Imagen');
     return item.label.trim() || fieldsById.get(item.field_id)?.label || __('Campo borrado');
 }
 
@@ -607,13 +765,16 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                     [
                         ['add', __('Agregar')],
                         ['structure', `${__('Preguntas')} (${p.config.items.length})`],
-                    ] as const
+                        ...(p.showDesignTab ? ([['design', __('Diseño')]] as const) : []),
+                    ] as ReadonlyArray<readonly [LeftTab, string]>
                 ).map(([key, label]) => (
                     <button
                         key={key}
                         role="tab"
                         type="button"
                         aria-selected={p.tab === key}
+                        data-tour={designTabTour(key)}
+                        data-testid={key === 'design' ? 'form-design-tab' : undefined}
                         onClick={() => p.onTab(key)}
                         className={cn(
                             '-imcrm-mb-px imcrm-border-b-2 imcrm-px-2 imcrm-pb-2 imcrm-text-xs',
@@ -625,7 +786,19 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                 ))}
             </div>
 
-            {p.tab === 'add' ? (
+            {p.tab === 'design' && p.showDesignTab ? (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3">
+                    <button
+                        type="button"
+                        className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-left imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground"
+                        onClick={() => p.onTab('design')}
+                    >
+                        <Palette className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
+                        {__('Los colores, fuentes, tamaños y bordes se ajustan a la derecha.')}
+                    </button>
+                    {p.designContent}
+                </div>
+            ) : p.tab === 'add' || (p.tab === 'design' && !p.showDesignTab) ? (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-3">
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                         <p className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
@@ -677,6 +850,15 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                             <SeparatorHorizontal className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
                             {__('Salto de página')}
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => p.onAddContent('image')}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm hover:imcrm-bg-accent"
+                            data-testid="form-add-image"
+                        >
+                            <ImageIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
+                            {__('Imagen')}
+                        </button>
                         <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                             {__('Con saltos de página el formulario se responde por pasos, con una barra de progreso.')}
                         </p>
@@ -702,7 +884,9 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                                   ? Type
                                   : item.type === 'page_break'
                                     ? SeparatorHorizontal
-                                    : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
+                                    : item.type === 'image'
+                                      ? ImageIcon
+                                      : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
                         const isBreak = item.type === 'page_break';
                         return (
                             <li
@@ -777,12 +961,15 @@ function ItemInspector({
     item,
     config,
     fieldsById,
+    themeChoiceStyle,
     onChange,
     onClose,
 }: {
     item: FormItem;
     config: FormConfig;
     fieldsById: Map<number, FieldEntity>;
+    /** v0.1.351 — estilo de las opciones del diseño del formulario. */
+    themeChoiceStyle: PublicChoiceStyle;
     onChange: (next: FormConfig) => void;
     onClose: () => void;
 }): JSX.Element {
@@ -795,7 +982,9 @@ function ItemInspector({
               ? __('Texto')
               : item.type === 'page_break'
                 ? __('Salto de página')
-                : (field?.label ?? __('Pregunta'));
+                : item.type === 'image'
+                  ? __('Imagen')
+                  : (field?.label ?? __('Pregunta'));
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-item-inspector">
@@ -874,18 +1063,6 @@ function ItemInspector({
                             </select>
                         </Field>
                     )}
-                    {field.type === 'select' && (
-                        <Segmented
-                            label={__('Cómo se elige')}
-                            value={item.display}
-                            options={[
-                                { value: 'auto', label: __('Automático') },
-                                { value: 'radio', label: __('Botones') },
-                                { value: 'dropdown', label: __('Lista') },
-                            ]}
-                            onChange={(v) => set({ display: v })}
-                        />
-                    )}
                     <Section title={__('Respuesta')}>
                         {config.settings.confirm_email && config.settings.respondent_email_field_id === field.id ? (
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -905,8 +1082,12 @@ function ItemInspector({
                             </p>
                         )}
                     </Section>
+                    {!item.hidden && (
+                        <FieldItemDesign item={item} field={field} themeChoiceStyle={themeChoiceStyle} onSet={(patch) => onChange(updateItem(config, item.id, patch))} />
+                    )}
                 </>
             )}
+            {item.type === 'image' && <ImageItemEditor item={item} onSet={(patch) => onChange(updateItem(config, item.id, patch))} />}
 
             {item.type !== 'page_break' &&
                 !(item.type === 'field' && config.settings.confirm_email && config.settings.respondent_email_field_id === item.field_id) && (
@@ -1014,8 +1195,11 @@ function SettingsInspector({
     captcha,
     dataConsent,
     listId,
+    onOpenDesign,
 }: {
     listId: number;
+    /** v0.1.351 — lleva a la pestaña «Diseño» (colores, fuentes, tamaños…). */
+    onOpenDesign: () => void;
     draft: Draft;
     setName: (name: string) => void;
     config: FormConfig;
@@ -1240,8 +1424,14 @@ function SettingsInspector({
             </Section>
 
             <Section title={__('Apariencia')}>
-                <ColorField label={__('Color')} value={s.accent_color} placeholder={__('El de tu marca')} onChange={(v) => set({ accent_color: v })} />
                 <Check label={__('Mostrar el logo de la empresa')} checked={s.show_logo} onChange={(v) => set({ show_logo: v })} />
+                <Button variant="outline" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onOpenDesign} data-testid="form-open-design">
+                    <Palette className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Colores, fuentes y más')}
+                </Button>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Plantillas de diseño, colores, tipografía, tamaños, bordes, fondo y portada: en la pestaña «Diseño».')}
+                </p>
             </Section>
 
             <Section title={__('Insertar en tu sitio')}>

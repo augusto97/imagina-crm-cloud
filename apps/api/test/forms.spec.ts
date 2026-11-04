@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -138,20 +140,37 @@ describe('v0.1.275 — formularios (puro)', () => {
         const csp = formPageCsp('abc', "'self'");
         expect(csp).toContain("script-src 'nonce-abc'");
         expect(csp).toContain("frame-ancestors 'self'");
+        // v0.1.351 — sólo imágenes y fuentes propias (el CSS propio no carga nada de afuera).
+        expect(csp).toContain("img-src 'self' data: blob:");
+        expect(csp).toContain("font-src 'self'");
+        expect(formPageCsp('abc', "'self'", null, { dev: true })).toContain("script-src 'self' 'nonce-abc'");
         const html = renderFormPage({
             nonce: 'abc',
             title: '<b>Hola</b>',
             token: 'x',
             meta: { title: '</script><script>alert(1)</script>' } as never,
+            themeCss: ':root{--ib-accent:#0e7490}</style><script>alert(2)</script>',
+            bodyClasses: ['ib-input-pill', 'mala clase"><script>'],
+            preloadFont: '/email-fonts/inter-400-normal.woff2',
+            client: 'console.log("hola")</script><script>alert(3)',
         });
         expect(html).toContain('<title>&lt;b&gt;Hola&lt;/b&gt;</title>');
         expect(html).not.toContain('</script><script>alert(1)');
-        expect(html).toContain('<script nonce="abc">');
+        expect(html).not.toContain('</style><script>alert(2)');
+        expect(html).not.toContain('</script><script>alert(3)');
+        expect(html).toContain('<script nonce="abc">console.log("hola")');
+        expect(html).toContain('class="ib-body ib-input-pill malaclasescript"');
+        expect(html).toContain('<link rel="preload" href="/email-fonts/inter-400-normal.woff2" as="font" type="font/woff2" crossorigin>');
+        // Sin el script compilado (desarrollo): el módulo de vite con el nonce.
+        expect(renderFormPage({ nonce: 'n', title: 't', token: 'x', meta: null, themeCss: '', bodyClasses: [], preloadFont: null, client: null })).toContain(
+            '<script type="module" nonce="n" src="/app/public-form/main.ts"></script>',
+        );
         // iOS no agranda la página al tocar un campo (≥16px en el teléfono).
-        expect(html).toContain('@media (max-width: 768px) { input, select, textarea { font-size: 16px; } }');
-        // Insertado: avisa su alto y la redirección va a la página entera.
-        expect(html).toContain('imb-form-height');
-        expect(html).toContain('imb-form-redirect');
+        expect(html).toContain('@media (max-width:768px){.ib-input{font-size:max(16px,var(--ib-fs))}}');
+        // Insertado: el cliente avisa su alto y la redirección va a la página entera.
+        const client = readFileSync(path.resolve(__dirname, '../../web/app/public-form/main.ts'), 'utf8');
+        expect(client).toContain('imb-form-height');
+        expect(client).toContain('imb-form-redirect');
         expect(FORM_EMBED_JS).toContain("iframe[data-imagina-form]");
         expect(FORM_EMBED_JS).toContain('e.origin !== origin');
     });

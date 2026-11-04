@@ -42,6 +42,15 @@ import {
     resolveTitleFieldId,
     zonedInstant,
     type FormFieldItem,
+    buildPublicThemeCss,
+    formConfigFileIds,
+    publicThemeFileIds,
+    publicThemePreloadFont,
+    publicThemeView,
+    readPublicTheme,
+    readSavedPublicThemes,
+    sanitizePublicCss,
+    type PublicTheme,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -155,9 +164,14 @@ export interface ConfirmOutcome {
     status: 'confirmed' | 'invalid' | 'closed' | 'failed';
     title: string;
     message: string;
-    brand: { company: string; accent: string; logoUrl: string | null } | null;
+    brand: { company: string; accent: string; logoUrl: string | null; themeCss?: string; bodyClasses?: string[] } | null;
     continueUrl: string | null;
 }
+
+/** v0.1.351 — Las imágenes de un formulario se firman por un día (el vencimiento se redondea a la hora: el navegador las cachea). */
+const FORM_IMAGE_TTL = 24 * 3600;
+/** Tipos de imagen que un formulario puede mostrar (nada de SVG: puede llevar script). */
+const FORM_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
 
 const notFound = () => new NotFoundException({ code: 'not_found', message: 'Este formulario no existe', data: { status: 404 } });
 
@@ -174,6 +188,11 @@ export function pastCloseDate(closesAt: string | null, timeZone: string, now = n
     if (!closesAt || !/^\d{4}-\d{2}-\d{2}$/.test(closesAt)) return false;
     const end = zonedInstant(addDaysYmd(closesAt, 1), timeZone);
     return now.getTime() >= end.getTime();
+}
+
+/** v0.1.351 — Quién guarda (para el CSS propio, que es sólo de administradores). */
+export interface FormActor {
+    isAdmin: boolean;
 }
 
 interface ResolvedForm {
@@ -305,7 +324,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return row;
     }
 
-    async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateFormInput): Promise<FormDto> {
+    async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateFormInput, actor: FormActor = { isAdmin: true }): Promise<FormDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const mirror = readMirrorListMarker(list.settings);
         if (mirror) {
@@ -317,6 +336,10 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const fields = await this.fields.listByListId(tenantId, list.id);
         const config = sanitizeConfig(input.config ?? defaultFormConfig(list.name, fields), fields);
         await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
+        // v0.1.351 — un formulario nuevo nace con el tema por defecto de la empresa (si eligió uno).
+        const def = await this.defaultTheme(tenantId);
+        if (!config.settings.theme && def) config.settings.theme = def;
+        await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(forms)
@@ -334,7 +357,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return this.toDto(row!, await this.publicBase(tenantId));
     }
 
-    async update(tenantId: number, listIdOrSlug: string, id: number, input: UpdateFormInput): Promise<FormDto> {
+    async update(tenantId: number, listIdOrSlug: string, id: number, input: UpdateFormInput, actor: FormActor = { isAdmin: true }): Promise<FormDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const current = await this.load(tenantId, list.id, id);
         const patch: Partial<typeof forms.$inferInsert> = { updatedAt: new Date() };
@@ -350,6 +373,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const fields = await this.fields.listByListId(tenantId, list.id);
             const clean = sanitizeConfig(input.config, fields);
             await this.assertTemplate(tenantId, list.id, clean.settings.record_template_id);
+            const prev = readPublicTheme(((current.config as Record<string, unknown>)?.settings as Record<string, unknown> | undefined)?.theme ?? {});
+            await this.assertDesign(tenantId, clean, prev.custom_css, actor);
             patch.config = clean as unknown as Record<string, unknown>;
         }
         if (input.regenerate_token) patch.token = newToken();
@@ -357,6 +382,70 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             tx.update(forms).set(patch).where(and(eq(forms.tenantId, tenantId), eq(forms.id, current.id))).returning(),
         );
         return this.toDto(row!, await this.publicBase(tenantId));
+    }
+
+    /**
+     * v0.1.351 (ADR-S94) — El diseño que se guarda: (a) el CSS propio sólo lo
+     * cambia un ADMIN — se acepta igual si es el que ya tenía o el de un tema
+     * guardado de la empresa (aplicar un tema hecho por un admin lo puede
+     * cualquiera) — y queda guardado ya limpio; (b) cada imagen (portada,
+     * fondo, panel, ítems y opciones) tiene que ser un archivo de ESTA empresa
+     * y una imagen que se muestra sin ejecutar nada (nada de SVG).
+     */
+    private async assertDesign(tenantId: number, config: FormConfig, previousCss: string, actor: FormActor): Promise<void> {
+        const theme = config.settings.theme;
+        if (theme) {
+            const css = sanitizePublicCss(theme.custom_css).css;
+            if (css !== sanitizePublicCss(previousCss).css && css !== '' && !actor.isAdmin) {
+                const saved = await this.savedThemes(tenantId);
+                if (!saved.some((t) => sanitizePublicCss(t.theme.custom_css).css === css)) {
+                    throw new ForbiddenException({
+                        code: 'custom_css_admin_only',
+                        message: 'El CSS propio lo agrega un administrador de la empresa.',
+                        data: { status: 403 },
+                    });
+                }
+            }
+            theme.custom_css = css;
+        }
+        const ids = [...new Set([...(theme ? publicThemeFileIds(theme) : []), ...formConfigFileIds(config)])];
+        await this.assertImages(tenantId, ids);
+    }
+
+    /** Las imágenes tienen que ser archivos de la empresa y de un tipo que se muestra sin riesgo. */
+    async assertImages(tenantId: number, ids: number[]): Promise<void> {
+        if (ids.length === 0) return;
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: attachments.id, mime: attachments.mime })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, ids))),
+        );
+        const ok = new Set(rows.filter((r) => FORM_IMAGE_MIMES.has(r.mime.toLowerCase())).map((r) => r.id));
+        const bad = ids.filter((id) => !ok.has(id));
+        if (bad.length > 0) {
+            throw badRequest('invalid_image', 'Una de las imágenes no se puede usar: sube una imagen PNG, JPG, GIF o WebP.', { file_ids: bad });
+        }
+    }
+
+    /** El tema con el que nacen los formularios nuevos (null = el clásico). */
+    private async defaultTheme(tenantId: number): Promise<PublicTheme | null> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
+        );
+        const st = (row?.settings ?? {}) as Record<string, unknown>;
+        const id = typeof st.public_theme_default === 'string' ? st.public_theme_default : null;
+        if (!id) return null;
+        const hit = readSavedPublicThemes(st.public_themes).find((t) => t.id === id);
+        return hit ? hit.theme : null;
+    }
+
+    /** Los temas guardados de la empresa (Ajustes del diseño → Mis temas). */
+    private async savedThemes(tenantId: number) {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
+        );
+        return readSavedPublicThemes((row?.settings as Record<string, unknown> | null)?.public_themes);
     }
 
     /** C6 — la plantilla elegida tiene que ser una plantilla de REGISTRO de esta lista. */
@@ -461,9 +550,15 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * CSP `frame-ancestors` de la página (los sitios que pueden insertarlo) y,
      * v0.1.289, el proveedor de captcha cuyos dominios entran a la CSP.
      */
-    async pageInfo(
-        token: string,
-    ): Promise<{ title: string; allowed_domains: string[]; meta: PublicFormMeta; captcha: PublicFormMeta['captcha'] } | null> {
+    async pageInfo(token: string): Promise<{
+        title: string;
+        allowed_domains: string[];
+        meta: PublicFormMeta;
+        captcha: PublicFormMeta['captcha'];
+        theme_css: string;
+        body_classes: string[];
+        preload_font: string | null;
+    } | null> {
         let f: ResolvedForm;
         try {
             f = await this.resolve(token);
@@ -471,7 +566,37 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             return null;
         }
         const meta = await this.buildMeta(f);
-        return { title: meta.title || f.row.name, allowed_domains: f.config.settings.allowed_domains, meta, captcha: meta.captcha ?? null };
+        const look = this.themeLook(f);
+        return {
+            title: meta.title || f.row.name,
+            allowed_domains: f.config.settings.allowed_domains,
+            meta,
+            captcha: meta.captcha ?? null,
+            theme_css: look.css,
+            body_classes: look.classes,
+            preload_font: look.preload,
+        };
+    }
+
+    /**
+     * v0.1.351 (ADR-S94) — El diseño de la página: el tema del formulario (o
+     * el clásico), con el acento del formulario / la marca y sus imágenes
+     * firmadas. El CSS propio sale ya limpio de `buildPublicThemeCss`.
+     */
+    private themeLook(f: ResolvedForm): { theme: PublicTheme; css: string; classes: string[]; preload: string | null } {
+        const theme = readPublicTheme(f.config.settings.theme ?? {});
+        const branding = brandingSchema.safeParse(f.tenantSettings.branding ?? {});
+        const accent = f.config.settings.accent_color ?? (branding.success ? branding.data.primary_color : null) ?? '#0e7490';
+        const sign = (id: number | null): string | null => (id === null ? null : this.files.signedUrl(f.row.tenantId, id, FORM_IMAGE_TTL));
+        const css = buildPublicThemeCss(theme, {
+            accent,
+            images: {
+                cover: sign(theme.cover.file_id),
+                split: sign(theme.split.file_id),
+                background: theme.background.kind === 'image' ? sign(theme.background.file_id) : null,
+            },
+        });
+        return { theme, css, classes: publicThemeView(theme).classes, preload: publicThemePreloadFont(theme) };
     }
 
     async meta(token: string): Promise<PublicFormMeta> {
@@ -496,20 +621,23 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             redirect_url: config.settings.redirect_url,
             allow_another: config.settings.allow_another,
             allow_prefill: config.settings.allow_prefill,
-            accent_color: config.settings.accent_color ?? b.primary_color ?? '#0e7490',
+            accent_color: config.settings.theme?.colors.accent ?? config.settings.accent_color ?? b.primary_color ?? '#0e7490',
             logo_url:
                 config.settings.show_logo && b.logo_file_id !== null
                     ? this.files.signedUrl(row.tenantId, b.logo_file_id, 3600)
                     : null,
             company: b.app_name || f.tenantName,
             number_format: format.success ? format.data.number_format : 'comma_dot',
-            items: buildPublicFormItems(config, fields, await this.teamOptions(row.tenantId, fields)),
+            items: buildPublicFormItems(config, fields, await this.teamOptions(row.tenantId, fields), {
+                imageUrl: (id) => this.files.signedUrl(row.tenantId, id, FORM_IMAGE_TTL),
+            }),
             closed: this.closedReason(f),
             stamp: `${ts}.${this.files.signParts('formstamp', row.id, ts)}`,
             max_upload_bytes: this.env.MAX_UPLOAD_BYTES,
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             confirm_email: config.settings.confirm_email,
             data_consent: consent ? DataConsentService.toPublic(consent) : null,
+            theme: publicThemeView(readPublicTheme(config.settings.theme ?? {})),
         };
     }
 
@@ -1140,10 +1268,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private noticeBrand(f: ResolvedForm): NonNullable<ConfirmOutcome['brand']> {
         const parsed = brandingSchema.safeParse(f.tenantSettings.branding ?? {});
         const b = parsed.success ? parsed.data : brandingSchema.parse({});
+        const look = this.themeLook(f);
         return {
             company: b.app_name || f.tenantName,
-            accent: f.config.settings.accent_color ?? b.primary_color ?? '#0e7490',
+            accent: f.config.settings.theme?.colors.accent ?? f.config.settings.accent_color ?? b.primary_color ?? '#0e7490',
             logoUrl: b.logo_file_id !== null ? this.files.signedUrl(f.row.tenantId, b.logo_file_id, 3600) : null,
+            themeCss: look.css,
+            bodyClasses: look.classes,
         };
     }
 
@@ -1153,7 +1284,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const b = parsed.success ? parsed.data : brandingSchema.parse({});
         return {
             name: b.app_name ?? f.tenantName,
-            color: f.config.settings.accent_color ?? b.primary_color,
+            color: f.config.settings.theme?.colors.accent ?? f.config.settings.accent_color ?? b.primary_color,
             logoUrl: b.logo_file_id !== null ? `${base}${this.files.signedUrl(f.row.tenantId, b.logo_file_id, 30 * 24 * 3600)}` : null,
         };
     }

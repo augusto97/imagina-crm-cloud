@@ -1086,4 +1086,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Conecta tu calendario en **Ajustes → Cuenta → Mi calendario**. Para la videollamada, abre **Configurar lista → Agenda** y en cada servicio elige **Dónde es**.',
         action: { label: 'Conectar mi calendario', href: '/settings?s=calendario' },
     },
+    {
+        key: 'v0.1.351-formularios-diseno',
+        version: '0.1.351',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Formularios con tu diseño: plantillas, colores, fuentes y tamaños',
+        summary:
+            '13 plantillas de diseño, colores, 19 tipografías, tamaños, bordes y esquinas de todo, fondo con imagen o degradado, portada, modo oscuro, opciones como tarjetas con foto y tus propios temas para toda la empresa.',
+        media: {
+            slides: [
+                {
+                    title: 'Una plantilla en un clic',
+                    text: 'En la pestaña Diseño del constructor eliges entre 13 plantillas —clásica, minimalista, oscura, píldoras, elegante…— que toman el color de tu marca. Después retocas lo que quieras.',
+                    illustration: 'form-design',
+                },
+                {
+                    title: 'Controla cada detalle',
+                    text: 'Colores, tipografía de títulos y textos, tamaños, ancho de la página, esquinas, bordes y sombras de la tarjeta, los campos, las opciones y el botón. También fondo con imagen o degradado, portada y modo oscuro.',
+                    illustration: 'form-builder',
+                },
+                {
+                    title: 'Preguntas que se ven mejor',
+                    text: 'Pon dos preguntas lado a lado, muestra las opciones como botones o como tarjetas con una foto cada una, y agrega imágenes entre las preguntas.',
+                    illustration: 'form-conditional',
+                },
+                {
+                    title: 'Tus temas, para todos los formularios',
+                    text: 'Guarda un diseño en «Mis temas» y úsalo en cualquier formulario de la empresa. Si marcas uno como predeterminado, los formularios nuevos nacen con él.',
+                    illustration: 'form-embed',
+                },
+            ],
+        },
+        body: 'Abre **Configurar lista → Formularios**, edita un formulario y toca la pestaña **Diseño**. Los formularios que ya tenías se siguen viendo igual hasta que elijas otro diseño.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

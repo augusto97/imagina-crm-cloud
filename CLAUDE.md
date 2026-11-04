@@ -11300,6 +11300,98 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
           registro y la página de la cita;
         - la vuelta: mover el evento movió la cita y borrarlo la canceló.
 
+  - [x] **Formularios con tu diseño: plantillas, colores, fuentes y tamaños
+        (v0.1.351, ADR-S94, primera de tres entregas del pedido del usuario:
+        "que sea más personalizable, estilizable, se puedan controlar los
+        tamaños de todo, bordes, colores, estilos, plantillas de diseño… bonito
+        y eficiente en carga y rendimiento")**. Un motor de diseño COMÚN a las
+        páginas públicas, estrenado en los formularios (la agenda lo usa en su
+        próxima entrega).
+        (a) **El tema es un dato de shared** (`publicThemeSchema`,
+        `schemas/public-theme.ts`). Secciones:
+        - modo claro / oscuro / automático y colores;
+        - tipografía de texto y títulos (las 19 de ADR-S37);
+        - página: ancho, relleno, encabezado, franja, centrado y avance;
+        - fondo de color, degradado o imagen, con patrón;
+        - portada, pantalla dividida y tarjeta;
+        - campos, opciones y botón;
+        - CSS propio.
+        Se lee con tolerancia por sección, y `settings.theme = null` (todo lo
+        guardado antes) = el diseño de siempre con el color propio del
+        formulario: nadie ve su formulario cambiar al actualizar.
+        (b) **CSS en dos partes**:
+        - `PUBLIC_BASE_CSS`, fijo, con todas las variantes como clases `.ib-*`;
+        - `buildPublicThemeCss`, puro: variables, `@font-face` de lo usado,
+          fondo/portada/dividido, modo oscuro (`deriveDarkPalette`, contraste
+          medido) y el CSS propio limpio.
+        Lo estructural viaja en `meta.theme` (`publicThemeView`). La MISMA
+        función arma la página y la vista previa del constructor.
+        (c) **13 plantillas** que toman el color de la marca
+        (`publicThemePresets`), validadas estrictas al construirse. **Bug
+        atrapado por el test**: las de esquinas redondas (999 px) superaban el
+        tope de 40 y la lectura tolerante les tiraba el botón y las opciones
+        enteras sin avisar; ahora `PUBLIC_ROUND_RADIUS = 999` es válido en
+        campos, opciones y botón.
+        (d) **«Mis temas»** de la empresa (`tenants.settings.public_themes`,
+        tope 30, con `public_theme_default` para los formularios nuevos;
+        `FOR UPDATE`, bitácora `public_theme.*`). Cada formulario guarda su
+        copia del diseño.
+        (e) **Diseño por pregunta**: ancho completo / mitad / tercio (lado a
+        lado), ocultar la etiqueta, opciones como botones o tarjetas con una
+        imagen por opción, y un bloque **Imagen** entre preguntas. La agenda
+        sigue leyendo el `display` de siempre; el estilo nuevo va en
+        `choice_style`.
+        (f) **Seguridad**:
+        - imágenes: sólo de la propia empresa, nunca SVG, por URL firmada de
+          24 h redondeada a la hora;
+        - CSS propio: lo cambia sólo un admin, se limpia al guardar y al
+          servir (`sanitizePublicCss`: url/@import/@font-face/expression/
+          escapes/`<`…), y la CSP de la página (`img-src 'self' data: blob:`,
+          `font-src 'self'`) igual impide cargar algo de afuera.
+        (g) **Rendimiento**: el cliente de la página pasó de un string de JS a
+        `apps/web/app/public-form/main.ts` (TS, vite → un IIFE de 25 kB /
+        9,4 kB gz) que el API sirve **inline** con el nonce: un solo pedido.
+        Sólo las fuentes usadas, propias, con `preload` de la del texto.
+        `loadFormClient` busca el build como los tableros públicos; en
+        producción sin build da 503 y en desarrollo usa el módulo de vite.
+        Medido en un celular con 4G lento (150 ms, 1,6 Mbps, CPU 4×):
+        - formulario clásico: 2 pedidos, 15,6 KB comprimido, primera pintura
+          ~335 ms (antes ~308: +1,7 KB de diseño) y listo ~420 ms (igual que
+          antes);
+        - con todo el diseño (Píldoras + Inter + Playfair + portada con foto):
+          texto a ~380 ms, portada ~530 ms y todo cargado ~610 ms, con 27 KB
+          en 6 pedidos.
+        (h) **Migrar una empresa** re-mapea las imágenes del diseño y de las
+        opciones, «Mis temas» y el **logo de la marca**, que no se re-mapeaba
+        (bug latente: el logo de una empresa importada apuntaba a otro
+        archivo).
+        **Editor**: pestaña **Diseño** del constructor con «Plantillas», «Mis
+        temas» y el panel por secciones (Colores, Tipografía, Página, Fondo,
+        Portada, Dividido, Tarjeta, Campos, Opciones, Botón, CSS propio), más
+        «Diseño de esta pregunta».
+        **Ayuda**: artículo «Diseña tu formulario» en Aprende con la
+        ilustración `form-design`, guía `form-design`, paso nuevo en el
+        recorrido de formularios y novedad con carrusel.
+        **De paso, el CSS propio**: los escapes de CSS se DECODIFICAN antes de
+        revisar (`u\72l(` = `url(`, `\3c` = `<`) y las llamadas que cargan
+        algo se quitan enteras, con su argumento (antes quedaba
+        `none(https://…)`, inofensivo pero con la dirección escrita).
+        **Tests**: 7 de integración (`form-design.spec`: página con tema,
+        clases, fuente precargada e imágenes firmadas; formulario viejo con el
+        clásico; CSS sólo admin y limpio; imágenes de la empresa y sin SVG;
+        «Mis temas» con RLS y el por defecto; página de confirmación con el
+        diseño; migración con los ids nuevos), 10 del motor en shared (con los
+        escapes y la validación estricta de las plantillas), 19 del editor en
+        el front (`themeOps` e `imageResize`). En verde: API 1871 + 1 omitido,
+        front 768, shared 670.
+        **E2E navegador**:
+        - escritorio 27/27: plantillas que cambian la vista previa,
+          «Redondo», CSS limpio en la vista previa y al guardar, la mitad de
+          ancho, «Mis temas» con el por defecto, página pública con el diseño
+          y sin violaciones de CSP, celular en oscuro sin scroll lateral;
+        - constructor en celular 7/7, en claro y en oscuro;
+        - un formulario nuevo nace con el tema por defecto.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

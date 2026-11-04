@@ -364,6 +364,8 @@ export function StyleSection({
 /**
  * Tipografías agrupadas (del sistema / web) y cada una escrita en SU fuente.
  * `inheritLabel` agrega la opción "la del estilo general" (valor null).
+ * v0.1.351 — `medium="web"` (páginas públicas): las fuentes web se cargan
+ * siempre, así que no hay avisos de respaldo.
  */
 export function FontSelect({
     label,
@@ -375,7 +377,7 @@ export function FontSelect({
     label: string;
     value: DesignFont | null | undefined;
     onChange: (next: DesignFont | null) => void;
-    medium: DesignMedium;
+    medium: DesignMedium | 'web';
     inheritLabel?: string;
 }): JSX.Element {
     useDesignFontFaces();
