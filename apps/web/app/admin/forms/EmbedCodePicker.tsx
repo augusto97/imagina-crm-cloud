@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckIcon, Copy, MousePointerClick, PanelTop, SquareMousePointer } from 'lucide-react';
+import { AppWindow, CheckIcon, Copy, Maximize2, MousePointerClick, PanelRight, PanelTop, SquareMousePointer } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,12 +7,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, safeHex, type EmbedMode, type EmbedTarget } from './embedCode';
+import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, safeHex, type EmbedMode, type EmbedOpen, type EmbedTarget } from './embedCode';
 
 const MODES: Array<{ id: EmbedMode; label: string; hint: string; icon: typeof PanelTop }> = [
     { id: 'inline', label: 'En la página', hint: 'Se ve dentro de tu página. Se carga cuando la persona baja hasta él.', icon: PanelTop },
     { id: 'popup', label: 'Ventana al hacer clic', hint: 'Un botón abre una ventana. No se carga nada hasta que alguien lo toca: lo más liviano para un sitio con muchas visitas.', icon: MousePointerClick },
     { id: 'float', label: 'Botón flotante', hint: 'Un botón fijo en una esquina de cada página donde pegues el código. También carga sólo al hacer clic.', icon: SquareMousePointer },
+];
+
+/** v0.1.359 — cómo se abre la ventana del botón o del botón flotante. */
+const OPENS: Array<{ id: EmbedOpen; label: string; hint: string; icon: typeof PanelTop }> = [
+    { id: 'window', label: 'Ventana', hint: 'Una ventana al centro de la pantalla.', icon: AppWindow },
+    { id: 'side', label: 'Panel lateral', hint: 'Entra deslizándose desde un costado; tu página se sigue viendo detrás.', icon: PanelRight },
+    { id: 'full', label: 'Pantalla completa', hint: 'Ocupa toda la pantalla, sin distracciones. Ideal para formularios largos.', icon: Maximize2 },
 ];
 
 /**
@@ -25,9 +32,12 @@ export function EmbedCodePicker({ target, accent, testId, dataTour }: { target: 
     const [label, setLabel] = useState(defaultEmbedLabel(target.kind));
     const [color, setColor] = useState(safeHex(accent));
     const [position, setPosition] = useState<'right' | 'left'>('right');
+    const [open, setOpen] = useState<EmbedOpen>('window');
     const [copied, setCopied] = useState<'code' | 'attr' | null>(null);
-    const code = embedCode(target, mode, { label, color, position });
-    const popupAttr = embedPopupAttribute(target);
+    const code = embedCode(target, mode, { label, color, position, open });
+    const popupAttr = embedPopupAttribute(target, open, position);
+    // La esquina del flotante y, en el botón, el lado del panel lateral.
+    const showSide = mode === 'float' || open === 'side';
     const copy = (text: string, which: 'code' | 'attr'): void => {
         void navigator.clipboard.writeText(text).then(() => {
             setCopied(which);
@@ -64,6 +74,35 @@ export function EmbedCodePicker({ target, accent, testId, dataTour }: { target: 
             </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">{__(current.hint)}</p>
             {mode !== 'inline' && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid={`${testId}-open`}>
+                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cómo se abre')}</span>
+                    <div role="radiogroup" aria-label={__('Cómo se abre')} className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+                        {OPENS.map((o) => {
+                            const Icon = o.icon;
+                            const on = o.id === open;
+                            return (
+                                <Button
+                                    key={o.id}
+                                    type="button"
+                                    size="sm"
+                                    variant={on ? 'default' : 'outline'}
+                                    className="imcrm-h-8 imcrm-gap-1.5 imcrm-text-xs"
+                                    role="radio"
+                                    aria-checked={on}
+                                    title={__(o.hint)}
+                                    onClick={() => setOpen(o.id)}
+                                    data-testid={`${testId}-open-${o.id}`}
+                                >
+                                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__(o.label)}
+                                </Button>
+                            );
+                        })}
+                    </div>
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__(OPENS.find((o) => o.id === open)!.hint)}</p>
+                </div>
+            )}
+            {mode !== 'inline' && (
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-end imcrm-gap-2">
                     <label className="imcrm-flex imcrm-min-w-[160px] imcrm-flex-1 imcrm-flex-col imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
                         {__('Texto del botón')}
@@ -79,9 +118,13 @@ export function EmbedCodePicker({ target, accent, testId, dataTour }: { target: 
                             aria-label={__('Color del botón')}
                         />
                     </label>
-                    {mode === 'float' && (
-                        <div role="radiogroup" aria-label={__('Esquina')} className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('Esquina')}
+                    {showSide && (
+                        <div
+                            role="radiogroup"
+                            aria-label={mode === 'float' ? __('Esquina') : __('Lado')}
+                            className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground"
+                        >
+                            {mode === 'float' ? __('Esquina') : __('Lado')}
                             <div className="imcrm-flex imcrm-gap-1">
                                 {(['left', 'right'] as const).map((p) => (
                                     <Button key={p} type="button" size="sm" variant={position === p ? 'default' : 'outline'} className="imcrm-h-8 imcrm-text-xs" role="radio" aria-checked={position === p} onClick={() => setPosition(p)}>

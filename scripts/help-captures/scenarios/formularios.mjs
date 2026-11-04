@@ -46,7 +46,9 @@ export default [
         setup: clearForms,
         steps: [
             { go: '/lists/{list:Tickets}/edit?s=formularios', wait: '[data-tour="forms-new"]' },
-            { click: '[data-tour="forms-new"]', caption: 'En la configuración de la lista, pestaña «Formularios», toca «Nuevo formulario»: arranca con las preguntas de la lista ya puestas.' },
+            { click: '[data-tour="forms-new"]', then: '[data-testid="form-create-dialog"]', caption: 'En la configuración de la lista, pestaña «Formularios», toca «Nuevo formulario»: eliges una plantilla o arrancas con las preguntas de la lista.' },
+            { click: '[data-testid="form-create-mode-blank"]', then: '[data-testid="form-create-blank"]', caption: '«Con los campos de la lista» arma uno con todas las preguntas de la lista ya puestas.' },
+            { click: '[data-testid="form-create-blank"]' },
             {
                 // A veces el panel se vuelve a montar al refrescar la lista y el
                 // constructor no se abre solo: en ese caso se abre con «Editar».

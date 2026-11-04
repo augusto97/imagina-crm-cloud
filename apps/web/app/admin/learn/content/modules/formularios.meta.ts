@@ -10,7 +10,7 @@ export const meta: LearnModuleMeta = {
     tone: 'violet',
     hero: 'form-hero',
     highlights: [
-        'Arma el formulario con los campos de tu lista y míralo tal como lo verá quien responde',
+        'Arranca con una plantilla completa —contacto, cotización, encuesta, inscripción y más— o con los campos de tu lista',
         'Escalas del 0 al 10, Sí o No, deslizador, firma, matriz, ordenar opciones y «Otro» con espacio para escribir',
         'Preguntas que aparecen según otra respuesta, formularios por pasos y datos ocultos desde el enlace',
         'Saltos entre páginas, pantallas finales distintas y respuestas que se recuerdan: «Hola, {{nombre}}»',
@@ -19,7 +19,8 @@ export const meta: LearnModuleMeta = {
         'Guardar el avance para terminarlo después, en el mismo dispositivo o con un enlace al correo',
         'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
-        'Comparte el enlace o insértalo en tu sitio, y deja que una automatización conteste sola',
+        'Comparte el enlace o un código QR, o insértalo en tu sitio en una ventana, un panel lateral o a pantalla completa',
+        'Deja que una automatización conteste sola',
     ],
     articles: [
         {
@@ -28,7 +29,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Qué es un formulario público, para qué sirve en tu negocio y cómo crear el primero en dos minutos.',
             minutes: 6,
             level: 'basic',
-            keywords: 'formulario publico encuesta inscripcion contacto solicitud crear nuevo formulario respuestas',
+            keywords: 'formulario publico encuesta inscripcion contacto solicitud crear nuevo formulario respuestas plantilla plantillas cotizacion nps soporte postulacion pedido',
             needs: 'manage_forms',
         },
         {
@@ -118,7 +119,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Pon el formulario en línea, copia su enlace o el código para tu página web y decide en qué sitios se puede insertar.',
             minutes: 6,
             level: 'basic',
-            keywords: 'publicar enlace link compartir insertar iframe pagina web sitio dominios qr redes sociales',
+            keywords: 'publicar enlace link compartir insertar iframe pagina web sitio dominios qr codigo qr imprimir volante redes sociales panel lateral pantalla completa ventana emergente popup',
             needs: 'manage_forms',
         },
         {

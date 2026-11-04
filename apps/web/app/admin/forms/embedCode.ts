@@ -12,8 +12,14 @@
  *
  * Las dos últimas son las más livianas para un sitio con muchas visitas: la
  * gran mayoría mira la página y nunca abre el formulario, así que ni lo pide.
+ *
+ * v0.1.359 — la ventana de las dos últimas se abre al centro, como **panel
+ * lateral** (desde la derecha o la izquierda) o a **pantalla completa**.
  */
 export type EmbedMode = 'inline' | 'popup' | 'float';
+
+/** Cómo se abre la ventana (`popup` y `float`). */
+export type EmbedOpen = 'window' | 'side' | 'full';
 
 export interface EmbedTarget {
     /** La dirección pública (absoluta) del formulario o la agenda. */
@@ -29,7 +35,17 @@ export interface EmbedOptions {
     label: string;
     /** Hex `#rrggbb`. */
     color: string;
+    /** La esquina del botón flotante y el lado del panel lateral. */
     position: 'right' | 'left';
+    /** v0.1.359 — cómo se abre (por defecto, al centro). */
+    open?: EmbedOpen;
+}
+
+/** Los atributos que dicen cómo se abre (nada para la ventana al centro). */
+function openAttrs(open: EmbedOpen | undefined, side: 'right' | 'left'): string {
+    if (open === 'full') return ' data-imagina-open="full"';
+    if (open === 'side') return ` data-imagina-open="side" data-imagina-side="${side}"`;
+    return '';
 }
 
 const attr = (v: string): string => v.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c] ?? c);
@@ -62,7 +78,7 @@ export function embedCode(t: EmbedTarget, mode: EmbedMode, opts: EmbedOptions): 
     if (mode === 'popup') {
         const ink = buttonInk(color);
         return (
-            `<button type="button" data-imagina-popup="${attr(t.url)}" data-imagina-title="${title}" ` +
+            `<button type="button" data-imagina-popup="${attr(t.url)}"${openAttrs(opts.open, opts.position)} data-imagina-title="${title}" ` +
             `style="background:${color};color:${ink};border:0;border-radius:999px;padding:12px 22px;font:600 15px/1.2 system-ui,sans-serif;cursor:pointer">` +
             `${attr(label)}</button>\n` +
             `<script src="${script}" async></script>`
@@ -71,7 +87,8 @@ export function embedCode(t: EmbedTarget, mode: EmbedMode, opts: EmbedOptions): 
     if (mode === 'float') {
         return (
             `<script src="${script}" data-imagina-float="${attr(t.url)}" data-imagina-title="${title}" ` +
-            `data-imagina-label="${attr(label)}" data-imagina-color="${color}" data-imagina-position="${opts.position}" async></script>`
+            `data-imagina-label="${attr(label)}" data-imagina-color="${color}" data-imagina-position="${opts.position}"` +
+            `${opts.open === 'side' || opts.open === 'full' ? ` data-imagina-open="${opts.open}"` : ''} async></script>`
         );
     }
     const height = t.kind === 'booking' ? 720 : 640;
@@ -85,6 +102,21 @@ export function embedCode(t: EmbedTarget, mode: EmbedMode, opts: EmbedOptions): 
  * El atributo para convertir un botón o enlace propio del sitio en el que abre
  * la ventana (junto con el script, pegado una vez en la página).
  */
-export function embedPopupAttribute(t: EmbedTarget): string {
-    return `data-imagina-popup="${attr(t.url)}"`;
+export function embedPopupAttribute(t: EmbedTarget, open?: EmbedOpen, side: 'right' | 'left' = 'right'): string {
+    return `data-imagina-popup="${attr(t.url)}"${openAttrs(open, side)}`;
+}
+
+/**
+ * v0.1.359 — La dirección para el código QR: la misma del formulario con
+ * `utm_source=qr`, así las estadísticas cuentan aparte a quien llega por el
+ * QR impreso.
+ */
+export function qrTargetUrl(url: string): string {
+    try {
+        const u = new URL(url);
+        u.searchParams.set('utm_source', 'qr');
+        return u.toString();
+    } catch {
+        return url;
+    }
 }

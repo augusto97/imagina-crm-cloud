@@ -11764,6 +11764,57 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         129/129), 3 del front (793); E2E navegador: página pública 24/24 y
         25/25 en celular oscuro, administración 12/12 y 11/11 en celular.
 
+  - [x] **Formularios, entrega 3 (segunda parte): plantillas, panel lateral,
+        pantalla completa y código QR (v0.1.359, addendum ADR-S39 y ADR-S95)**.
+        La entrega 3 pasa a cuatro versiones: el enlace para actualizar un
+        registro va en v0.1.360 y cobrar al enviar en v0.1.361.
+        (a) **Plantillas de formularios** (`packages/shared/src/templates/
+        form-templates.ts`, puras, con tests): 9 —contacto, cotización en dos
+        pasos (el NIT sólo si es empresa), encuesta NPS de una pregunta por
+        pantalla con bienvenida, inscripción a un evento, soporte, postulación
+        (con guardar el avance), datos del cliente, test con puntaje (pantalla
+        final según el resultado) y pedido—, cada una con su plantilla de
+        diseño. Hablan de **roles**, no de campos: «Nuevo formulario» abre una
+        galería (`FormCreateDialog`, a pedido: plantilla por defecto, o «Con
+        los campos de la lista») con buscador sin acentos, categorías y qué
+        incluye cada una; por rol propone un campo existente
+        (`suggestRoleMapping`), **crear el que falta** (sólo con
+        `manage_fields`, por el endpoint de campos de siempre y antes del
+        formulario) o saltear los opcionales; un obligatorio sin campo o un
+        campo repetido bloquean el botón con el motivo.
+        `buildFormFromTemplate` arma la config: las opciones de una condición
+        se traducen por etiqueta a los valores del campo elegido, `{{rol}}`
+        pasa al slug, un cálculo que choca con un slug de la lista recibe un
+        sufijo, el correo de quien responde sale del rol de correo y el diseño
+        de `publicThemePresets` con el color de la marca; el servidor la valida
+        con el `sanitizeConfig` de siempre. (b) **Cómo se abre** (embed.js):
+        además de la ventana al centro, **panel lateral** (480 px desde la
+        derecha o la izquierda, todo el alto; a todo el ancho en el celular;
+        animación que respeta «reducir movimiento») y **pantalla completa**,
+        en la ventana al hacer clic, el botón propio y el botón flotante
+        (`data-imagina-open="side|full"`, `data-imagina-side`); sin el
+        atributo, la ventana de siempre (los códigos ya pegados no cambian).
+        Un marco por dirección + estilo + lado que se muestra u oculta: reabrir
+        no recarga. Selector «Cómo se abre» en `EmbedCodePicker`. (c) **Código
+        QR** del formulario y de la agenda en Compartir (`PublicQrCard`:
+        dibujado en el navegador con `qrcode` a pedido; PNG de 1024 px y SVG
+        para imprenta por Blob) con `utm_source=qr`: las estadísticas lo
+        cuentan como «Código QR». **De paso**: en el celular el panel de
+        Compartir del constructor (formulario y agenda) era más alto que la
+        pantalla y no scrolleaba — los botones de descarga quedaban afuera.
+        Ayuda: guías `forms` y `embed-site` al día, recorrido de formularios,
+        Aprende («Empezar desde una plantilla», «Cómo se abre», «El código
+        QR») con las ilustraciones `form-templates` y `form-embed-side`, y
+        novedad con carrusel. Tests: 6 de plantillas en shared (718 en verde),
+        2 de `embedCode` en el front (795), specs de formularios de la API
+        87/87; E2E navegador: administración 18/18 en escritorio y en celular
+        (galería, mapeo sugerido, sólo los campos que faltan, la regla mapeada
+        a la opción del campo existente, diseño, QR y sus descargas) e
+        inserción en un sitio de otro origen con CSP estricta 10/10 en
+        escritorio y en celular (panel derecho e izquierdo de 480 px, pantalla
+        completa, ventana igual que antes, botón flotante a pantalla completa,
+        reabrir sin otro marco, cero violaciones de CSP).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1331,4 +1331,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Formularios**, toca el ícono de **Estadísticas** junto al formulario. Para guardar el avance, edita el formulario y en sus ajustes busca **Guardar el avance**.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.359-plantillas-formularios',
+        version: '0.1.359',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Plantillas de formularios, panel lateral y código QR',
+        summary:
+            'Crea un formulario completo en un minuto desde una plantilla —contacto, cotización, encuesta NPS, inscripción, soporte y más—. Ábrelo desde tu sitio como panel lateral o a pantalla completa, y descarga su código QR para imprimirlo.',
+        media: {
+            slides: [
+                {
+                    title: 'Nueve plantillas listas',
+                    text: 'Elige una y la app propone qué campo de la lista guarda cada respuesta. Si falta uno, lo crea. El diseño ya viene incluido.',
+                    illustration: 'form-templates',
+                },
+                {
+                    title: 'Panel lateral o pantalla completa',
+                    text: 'El botón de tu sitio abre el formulario desde un costado, con tu página detrás, o a pantalla completa para los formularios largos.',
+                    illustration: 'form-embed-side',
+                },
+                {
+                    title: 'Código QR para imprimir',
+                    text: 'Descárgalo en imagen o en SVG para imprenta. Quien lo escanea abre el formulario, y en las estadísticas aparece como «Código QR».',
+                    illustration: 'etiquetas-qr',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Formularios**, toca **Nuevo formulario** y elige una plantilla. El panel lateral, la pantalla completa y el código QR están en **Compartir**.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

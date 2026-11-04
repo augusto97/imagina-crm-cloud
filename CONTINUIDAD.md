@@ -382,8 +382,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.358**
-(formularios: estadísticas y guardar el avance; addendum ADR-S39; antes
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.359**
+(formularios: plantillas, panel lateral, pantalla completa y código QR;
+addendum ADR-S39 y ADR-S95; antes v0.1.358 estadísticas y guardar el avance,
 v0.1.357 puntaje y cálculos, una pregunta por pantalla y bienvenida, v0.1.356 la lógica —varias reglas todas/alguna, saltos
 entre páginas, pantallas finales según las respuestas y recordar respuestas con
 `{{nombre}}`—, v0.1.355 más formas de preguntar
@@ -441,12 +442,13 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   saltar a una página, varias pantallas finales, recordar respuestas) y
   **puntaje, una pregunta por pantalla y bienvenida HECHOS en v0.1.357**: con
   eso la entrega 2 queda completa.
-  La entrega 3 se partió en tres versiones: **estadísticas y guardar el avance
-  HECHOS en v0.1.358**; después **v0.1.359** (más formas de insertar —panel,
-  pantalla completa, QR—, enlace para actualizar un registro existente y
-  plantillas de formularios completos) y **v0.1.360** (cobrar al enviar con el
-  Mercado Pago o Wompi de la empresa).
-  **SIGUIENTE**: v0.1.359.
+  La entrega 3 se partió en cuatro versiones: **estadísticas y guardar el
+  avance HECHOS en v0.1.358**; **más formas de insertar (panel lateral,
+  pantalla completa, QR) y plantillas de formularios HECHAS en v0.1.359**;
+  después **v0.1.360** (enlace firmado para que alguien actualice un registro
+  que ya existe) y **v0.1.361** (cobrar al enviar con el Mercado Pago o Wompi
+  de la empresa).
+  **SIGUIENTE**: v0.1.360.
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1353,6 +1355,45 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.359** — **Formularios: plantillas, panel lateral,
+  pantalla completa y código QR** (addendum ADR-S39 y ADR-S95; segunda de las
+  versiones de la entrega 3, que se partió en cuatro: el enlace para actualizar
+  un registro pasa a v0.1.360 y cobrar al enviar a v0.1.361).
+  - **Plantillas de formularios** (`packages/shared/src/templates/
+    form-templates.ts`, puras): 9 —contacto, cotización en dos pasos con NIT
+    sólo para empresas, encuesta NPS conversacional, inscripción a un evento,
+    soporte, postulación, datos del cliente, test con puntaje y pedido— que
+    hablan de ROLES, no de campos. «Nuevo formulario» abre una galería
+    (plantilla por defecto, o «Con los campos de la lista») y por cada rol
+    propone un campo existente (`suggestRoleMapping`), crear uno nuevo (con
+    `manage_fields`) o saltear los opcionales. `buildFormFromTemplate` mapea las
+    opciones por etiqueta, reescribe `{{rol}}` al slug elegido, renombra un
+    cálculo que choca con un slug y toma el diseño de las plantillas de tema
+    con el color de la marca; el servidor lo valida con el `sanitizeConfig` de
+    siempre.
+  - **Cómo se abre** (embed.js): además de la ventana al centro, **panel
+    lateral** (480 px desde la derecha o la izquierda, a todo el ancho en el
+    celular, con su animación que respeta «reducir movimiento») y **pantalla
+    completa**, en la ventana al hacer clic, el botón propio y el botón
+    flotante (`data-imagina-open` / `data-imagina-side`). Cada estilo tiene su
+    marco y no se recarga al reabrir.
+  - **Código QR** del formulario y de la agenda en Compartir (dibujado en el
+    navegador, `qrcode` a pedido; descarga PNG 1024 px y SVG para imprenta por
+    Blob) con `utm_source=qr`: las estadísticas lo cuentan como «Código QR».
+  - **De paso**: en el celular el panel de Compartir del constructor era más
+    alto que la pantalla y no scrolleaba (los botones de descarga quedaban
+    afuera): ahora scrollea en el formulario y en la agenda.
+  - Ayuda: guías `forms` y `embed-site`, recorrido de formularios, Aprende
+    («Empezar desde una plantilla», «Cómo se abre», «El código QR») con las
+    ilustraciones `form-templates` y `form-embed-side`, y novedad con carrusel.
+  - Tests: 6 de plantillas en shared (718 en verde), 2 de `embedCode` en el
+    front (795), specs de formularios de la API 87/87; E2E navegador:
+    administración 18/18 en escritorio y en celular (galería, mapeo sugerido,
+    sólo los campos que faltan, regla mapeada, diseño, QR y descargas) e
+    inserción en un sitio de otro origen con CSP estricta 10/10 en escritorio y
+    en celular (panel derecho/izquierdo, pantalla completa, ventana igual que
+    antes, reabrir sin otro marco, cero violaciones de CSP).
+  - **Siguiente**: v0.1.360 (enlace firmado para actualizar un registro).
 - **2026-11-04 · v0.1.358** — **Formularios: estadísticas y guardar el avance**
   (addendum ADR-S39; primera de las tres versiones de la entrega 3).
   - **Estadísticas por formulario** (ícono en la lista de formularios y en el
@@ -1381,7 +1422,7 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
     pública 24/24 y 25/25 en celular oscuro, administración 12/12 y 11/11 en
     celular.
   - **Siguiente**: v0.1.359 (insertar en panel, pantalla completa y QR;
-    actualizar un registro existente; plantillas de formularios).
+    plantillas de formularios).
 - **2026-11-04 · v0.1.357** — **Formularios: puntaje, una pregunta por pantalla
   y bienvenida** (addendum ADR-S39; con esto la entrega 2 queda completa).
   - **Cálculos y puntaje** (hasta 5 por formulario): puntos por opción, Sí/No,

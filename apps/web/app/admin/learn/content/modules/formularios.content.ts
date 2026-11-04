@@ -34,13 +34,41 @@ export const articles: LearnArticle[] = [
                 items: [
                     'Abre la lista que va a recibir las respuestas y toca **Configurar lista** (arriba a la derecha).',
                     'Entra a la pestaña **Formularios**.',
-                    'Toca **Nuevo formulario**. La app arma uno con **todos los campos que se pueden preguntar** ya puestos, en el orden de la lista.',
+                    'Toca **Nuevo formulario**. Se abre la galería de **plantillas** (contacto, cotización, encuesta, inscripción, soporte…). Si prefieres arrancar con **todos los campos que se pueden preguntar** ya puestos, elige **Con los campos de la lista**.',
                     'Se abre el constructor a pantalla completa: saca las preguntas que no quieras hacer, cambia los textos y revisa la vista previa.',
                     'Toca **Guardar** y, cuando esté listo, enciende el interruptor **Sin publicar** para que pase a **Publicado**.',
                     'Copia el enlace con **Compartir** y mándalo por WhatsApp, ponlo en tus redes o insértalo en tu página web.',
                 ],
             },
             { t: 'demo', key: 'form-crear', caption: 'Crear un formulario en la lista de tickets y abrir el constructor.', fallback: 'form-builder' },
+            { t: 'h', text: 'Empezar desde una plantilla' },
+            { t: 'anim', key: 'form-templates', caption: 'Se elige «Pide tu cotización»: la app propone qué campo guarda cada respuesta y crea el que falta.' },
+            {
+                t: 'p',
+                md: 'Una plantilla trae el formulario **completo**: las preguntas con su forma (botones, tarjetas, escala, Sí o No), los pasos, las preguntas que aparecen según otra respuesta, los mensajes del final y un diseño. Como cada respuesta se guarda en un campo de tu lista, al elegirla la app te pregunta **dónde se guarda cada respuesta**:',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Un campo que ya tienes', what: 'La app lo propone sola cuando el nombre y el tipo encajan («Correo» para el correo). Puedes elegir otro de la lista.' },
+                    { name: '+ Crear el campo', what: 'Si la lista no tiene uno que sirva, lo crea con el tipo y las opciones de la plantilla (por ejemplo, «Servicio» con sus cuatro opciones).', tip: 'Crear campos necesita poder administrar los campos de la lista.' },
+                    { name: 'No preguntarlo', what: 'Sólo en lo que la plantilla marca como opcional: esa pregunta no se incluye, y lo que dependía de ella tampoco.' },
+                ],
+            },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'Mail', title: 'Contacto', md: 'Nombre, correo, teléfono y mensaje: el de la página de contacto.', tone: 'blue' },
+                    { icon: 'Receipt', title: 'Pide tu cotización', md: 'En dos pasos; pide el NIT sólo si es una empresa y guarda el avance.', tone: 'violet' },
+                    { icon: 'Star', title: 'Encuesta NPS', md: 'Del 0 al 10, una pregunta por pantalla, y el porqué según la nota.', tone: 'mint' },
+                    { icon: 'CalendarCheck', title: 'Inscripción a un evento', md: 'Asistente, acompañantes y preferencia de comida.', tone: 'amber' },
+                    { icon: 'Headphones', title: 'Solicitud de soporte', md: 'Tipo de problema, urgencia, detalle y capturas de pantalla.', tone: 'rose' },
+                    { icon: 'Briefcase', title: 'Postulación a un empleo', md: 'Datos, cargo, experiencia y hoja de vida; se puede terminar después.', tone: 'violet' },
+                    { icon: 'UserCheck', title: 'Datos del cliente', md: 'Documento, contacto, dirección y cumpleaños para tener la base al día.', tone: 'cyan' },
+                    { icon: 'Target', title: 'Test con puntaje', md: 'Tres preguntas que suman puntos y un final distinto según el resultado.', tone: 'amber' },
+                    { icon: 'ShoppingCart', title: 'Pedido de un producto', md: 'Producto, cantidad, entrega y forma de pago.', tone: 'rose' },
+                ],
+            },
             { t: 'h', text: 'La lista de formularios de cada lista' },
             {
                 t: 'p',
@@ -1002,7 +1030,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { icon: 'MessageCircle', title: 'WhatsApp', md: 'En tu mensaje de bienvenida o en las respuestas rápidas: «Para cotizar, llena este formulario».', tone: 'mint' },
                     { icon: 'Smartphone', title: 'Redes sociales', md: 'En la biografía de Instagram o TikTok, con `?origen=instagram` para medir de dónde llega cada uno.', tone: 'violet' },
-                    { icon: 'QrCode', title: 'Un código QR', md: 'Conviértelo en QR con cualquier generador e imprímelo en el mostrador, la factura o un volante.', tone: 'amber' },
+                    { icon: 'QrCode', title: 'Un código QR', md: 'En **Compartir**, la sección **Código QR** lo descarga listo para imprimir en el mostrador, la factura o un volante.', tone: 'amber' },
                     { icon: 'Mail', title: 'Correos y firmas', md: 'Un botón «Agenda una visita» o «Cuéntanos qué te pareció» en tus correos.', tone: 'blue' },
                 ],
             },
@@ -1024,6 +1052,19 @@ export const articles: LearnArticle[] = [
                 ],
             },
             { t: 'anim', key: 'embed-popup', caption: 'El botón flotante: el formulario se abre y se carga sólo cuando alguien lo toca.' },
+            {
+                t: 'p',
+                md: 'Con la **ventana al hacer clic** o el **botón flotante** eliges además **cómo se abre**:',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Ventana', what: 'Al centro de la pantalla, sobre la página. Es la de siempre.' },
+                    { name: 'Panel lateral', what: 'Entra deslizándose desde un costado (la derecha o la izquierda, en **Lado**) y la página se sigue viendo detrás. En el celular ocupa toda la pantalla.', tip: 'Ideal para «Escríbenos» o una cotización rápida sin sacar a la persona de lo que estaba leyendo.' },
+                    { name: 'Pantalla completa', what: 'Ocupa toda la pantalla, sin distracciones.', tip: 'Para formularios largos, por pasos o de una pregunta por pantalla.' },
+                ],
+            },
+            { t: 'anim', key: 'form-embed-side', caption: 'El botón del sitio abre el formulario en un panel que entra desde la derecha.' },
             {
                 t: 'callout',
                 tone: 'tip',
@@ -1047,6 +1088,20 @@ export const articles: LearnArticle[] = [
                 tone: 'tip',
                 md: 'La restricción de sitios sólo aplica a insertarlo: el enlace directo se abre igual desde cualquier lugar. Si quieres que el formulario deje de funcionar del todo, despublícalo.',
             },
+            { t: 'h', text: 'El código QR' },
+            {
+                t: 'steps',
+                items: [
+                    'En el constructor, toca **Compartir** (o **Publicar**).',
+                    'Baja hasta **Código QR**: ya está dibujado con el enlace del formulario.',
+                    'Toca **Imagen (PNG)** para usarlo en una publicación o un documento, o **Para imprenta (SVG)** para que la imprenta lo haga del tamaño que quiera sin que se pixele.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'El QR lleva la marca de que viene del código impreso: en las **Estadísticas** del formulario, quienes lleguen por ahí aparecen como **Código QR** en «De dónde llegan». La agenda de citas también tiene su QR en **Publicar**.',
+            },
             {
                 t: 'example',
                 title: 'Un consultorio odontológico',
@@ -1057,7 +1112,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿El enlace cambia si edito el formulario?', a: 'No. Mientras el formulario exista, el enlace es el mismo; los cambios que guardes se ven al instante en él y en el sitio donde lo insertaste.' },
                     { q: '¿Se ve bien en el celular?', a: 'Sí. La página se adapta sola al ancho de la pantalla. Revísalo con el botón **Celular** de la vista previa.' },
-                    { q: '¿Puedo ver cuántas respuestas lleva?', a: 'En **Configurar lista → Formularios** cada formulario muestra cuántas respuestas recibió y cuándo llegó la última. Las respuestas mismas son los registros de la lista.' },
+                    { q: '¿Puedo ver cuántas respuestas lleva?', a: 'En **Configurar lista → Formularios** cada formulario muestra cuántas respuestas recibió y cuándo llegó la última, y el ícono de **Estadísticas** cuenta además cuántos lo abren y dónde lo dejan. Las respuestas mismas son los registros de la lista.' },
                 ],
             },
             {
