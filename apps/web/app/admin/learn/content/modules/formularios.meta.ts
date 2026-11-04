@@ -96,6 +96,15 @@ export const meta: LearnModuleMeta = {
             needs: 'manage_forms',
         },
         {
+            id: 'formularios-cobrar',
+            title: 'Cobrar al enviar el formulario',
+            summary: 'Cobra una inscripción, un plan o un aporte en el mismo momento en que la persona envía el formulario, con la cuenta de Mercado Pago o Wompi de la empresa, y mira en la lista quién pagó.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'cobrar pago pagar al enviar inscripcion entrada evento taller plan precio total a pagar aporte donacion abono mercado pago wompi pse nequi tarjeta link de pago checkout pasarela pagado pendiente',
+            needs: 'manage_forms',
+        },
+        {
             id: 'formularios-ajustes',
             title: 'Ajustes: agradecimiento, cierre por fecha o cupo y logo',
             summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y si muestra tu logo.',

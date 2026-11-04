@@ -28,6 +28,8 @@ import {
     type PaymentLink,
     type PaymentLinkRow,
     type PaymentLinkStatus,
+    type FormPaymentState,
+    type PublicFormPaymentStatus,
     type RecordPayments,
     type Role,
 } from '@imagina-base/shared';
@@ -289,6 +291,70 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         return { url: result.url, reused: result.reused };
     }
 
+    /**
+     * v0.1.361 — Un formulario cobra al enviar: arma el link del registro
+     * que se acaba de crear, con una conexión DEL EQUIPO (una privada no sirve: la
+     * respuesta no es de nadie del equipo) y deja dónde volver al pagar. El
+     * monto lo calculó el servidor del formulario. Lanza `CollectionError`
+     * con un motivo legible si no se puede.
+     */
+    async createForForm(
+        tenantId: number,
+        opts: {
+            formId: number;
+            connectionId: number;
+            listId: number;
+            recordId: number;
+            title: string;
+            amount: number;
+            currency: string;
+            payerEmail: string | null;
+            expiresDays: number;
+            returnUrlFor: (reference: string) => string | null;
+        },
+    ): Promise<{ url: string; amount: number; currency: string; reference: string }> {
+        if (await planModuleOff(this.db, tenantId, 'integrations')) {
+            throw new CollectionError('El plan de la empresa no incluye los cobros por integraciones.');
+        }
+        const team = await this.teamConnections(tenantId);
+        if (!team.some((c) => c.id === opts.connectionId)) {
+            throw new CollectionError('La conexión de cobro del formulario ya no existe o no es del equipo.');
+        }
+        const created = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.createLinkInTx(tx, tenantId, {
+                connectionId: opts.connectionId,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                title: opts.title,
+                amount: opts.amount,
+                currency: opts.currency,
+                payerEmail: opts.payerEmail,
+                expiresDays: opts.expiresDays,
+                userId: null,
+                formId: opts.formId,
+                returnUrlFor: opts.returnUrlFor,
+            }),
+        );
+        this.afterWrite(tenantId, created.write);
+        await this.audit.log({
+            tenantId,
+            userId: null,
+            action: 'payment_link.create',
+            targetType: 'record',
+            targetId: opts.recordId,
+            targetLabel: created.link.title,
+            meta: {
+                provider: created.link.provider,
+                amount: created.link.amount,
+                currency: created.link.currency,
+                list_id: opts.listId,
+                via: 'form',
+                form_id: opts.formId,
+            },
+        });
+        return { url: created.link.url, amount: created.link.amount, currency: created.link.currency, reference: created.reference };
+    }
+
     /** URL a la que el proveedor manda los avisos de una conexión (se crea la primera vez). */
     async hookUrlFor(tenantId: number, connectionId: number, provider: CollectionProvider): Promise<string> {
         const token = await this.ensureHook(tenantId, connectionId, provider);
@@ -516,8 +582,12 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             payerEmail: string | null;
             expiresDays: number | null;
             userId: number | null;
+            /** v0.1.361 — El formulario que lo arma (para la página de vuelta). */
+            formId?: number | null;
+            /** v0.1.361 — Adónde vuelve la persona al pagar, armado con nuestra referencia. */
+            returnUrlFor?: ((reference: string) => string | null) | null;
         },
-    ): Promise<{ link: PaymentLink; write: RecordWrite | null; context: PaymentContext }> {
+    ): Promise<{ link: PaymentLink; write: RecordWrite | null; context: PaymentContext; reference: string }> {
         const conn = await this.connectors.integrationCredsInTx(tx, tenantId, opts.connectionId);
         if (!conn) throw new CollectionError(`La conexión #${opts.connectionId} ya no existe.`);
         if (!isCollectionProvider(conn.provider)) throw new CollectionError(`«${conn.name}» no es una conexión de cobro.`);
@@ -534,6 +604,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             expiresAt,
             reference,
             notificationUrl: provider === 'mercadopago' ? await this.hookUrlFor(tenantId, opts.connectionId, provider) : null,
+            returnUrl: opts.returnUrlFor ? opts.returnUrlFor(reference) : null,
         };
         const invalid = linkInputError(provider, input);
         if (invalid) throw new CollectionError(invalid);
@@ -571,6 +642,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                 payerEmail: input.payerEmail,
                 expiresAt,
                 createdBy: opts.userId,
+                reference,
+                formId: opts.formId ?? null,
             })
             .returning();
         const link = row!;
@@ -581,7 +654,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             paid_amount: null,
             method: null,
         });
-        return { link: toDto(link, conn.name), write, context: paymentContext(link) };
+        return { link: toDto(link, conn.name), write, context: paymentContext(link), reference };
     }
 
     /** Anula un link pendiente (en Wompi además lo desactiva). */
@@ -631,6 +704,51 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
      */
     async verifyLink(tenantId: number, actor: CollectionActor, linkId: number): Promise<PaymentLink> {
         const link = await this.linkForActor(tenantId, actor, linkId, 'view');
+        return this.refreshLink(tenantId, link);
+    }
+
+    /**
+     * v0.1.361 — Cómo quedó un pago armado por un formulario, para la página
+     * de vuelta del checkout. Se busca por NUESTRA referencia (aleatoria, la
+     * lleva la dirección de vuelta) y por el formulario: no sirve para ver
+     * otro pago. Si sigue pendiente, se le pregunta al proveedor (a lo sumo
+     * cada 15 segundos por link: el aviso a veces llega después que la
+     * persona). Sólo devuelve estado, concepto y monto.
+     */
+    async formPaymentStatus(tenantId: number, formId: number, reference: string): Promise<PublicFormPaymentStatus | null> {
+        if (!/^ib_[A-Za-z0-9_-]{8,48}$/.test(reference)) return null;
+        const find = async (): Promise<PaymentLinkRowDb | undefined> =>
+            (
+                await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select()
+                        .from(paymentLinks)
+                        .where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.formId, formId), eq(paymentLinks.reference, reference)))
+                        .limit(1),
+                )
+            )[0];
+        let link = await find();
+        if (!link) return null;
+        const stale = !link.lastCheckedAt || Date.now() - link.lastCheckedAt.getTime() > 15_000;
+        if (link.status === 'pending' && stale && link.connectionId) {
+            await this.refreshLink(tenantId, link).catch((err: unknown) => {
+                this.logger.warn(`Link ${link!.id}: no se pudo consultar el pago al volver del checkout: ${err instanceof Error ? err.message : String(err)}`);
+            });
+            link = (await find()) ?? link;
+        }
+        const expired = link.status === 'pending' && link.expiresAt !== null && link.expiresAt.getTime() <= Date.now();
+        return {
+            status: formPaymentState(expired ? 'expired' : (link.status as PaymentLinkStatus)),
+            title: link.title,
+            amount: link.amount,
+            currency: link.currency,
+            // Pendiente o rechazado (un intento con la tarjeta sin fondos): se puede volver a intentar mientras el link sirva.
+            url: (link.status === 'pending' || link.status === 'rejected') && !expired && !(link.expiresAt && link.expiresAt.getTime() <= Date.now()) ? link.url : null,
+        };
+    }
+
+    /** Le pregunta al proveedor cómo quedó un link y aplica lo que diga. */
+    private async refreshLink(tenantId: number, link: PaymentLinkRowDb): Promise<PaymentLink> {
         if (!link.connectionId || !isCollectionProvider(link.provider)) {
             throw new BadRequestException({ code: 'connection_gone', message: 'La conexión de este link ya no existe: no se puede consultar.', data: { status: 400 } });
         }
@@ -1120,4 +1238,22 @@ function redact(err: unknown, creds: IntegrationCreds): string {
         if (s && s.length >= 4) message = message.split(s).join('••••');
     }
     return message;
+}
+
+/** v0.1.361 — El estado de un link como lo ve la persona que paga. */
+function formPaymentState(status: PaymentLinkStatus): FormPaymentState {
+    switch (status) {
+        case 'approved':
+            return 'paid';
+        case 'pending':
+            return 'pending';
+        case 'expired':
+            return 'expired';
+        case 'cancelled':
+        case 'refunded':
+            return 'cancelled';
+        // Rechazado o con otro monto: para quien paga, no se completó.
+        default:
+            return 'failed';
+    }
 }

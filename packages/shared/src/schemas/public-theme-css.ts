@@ -727,6 +727,11 @@ select.ib-input{appearance:none;-webkit-appearance:none;padding-right:38px;backg
 .ib-done h2{margin:0 0 6px;font-size:calc(var(--ib-title-fs) * .9);font-family:var(--ib-heading-font)}
 .ib-done p{color:var(--ib-muted);margin:0 0 18px;white-space:pre-wrap}
 .ib-done .ib-small{font-size:13px}
+.ib-pay-total{margin:4px 0 12px;font-size:15px;color:var(--ib-text)}
+.ib-pay-total strong{font-weight:700;font-size:17px}
+.ib-done .ib-pay-total{color:var(--ib-text);margin:0 0 12px}
+.ib-pay-btn{display:inline-flex;text-decoration:none;margin:0 0 12px}
+.ib-done p.ib-pay-error{color:var(--ib-error);font-weight:600}
 .ib-split-media{display:none}
 .ib-split .ib-split-media{display:flex;flex:0 0 44%;position:sticky;top:0;height:100vh;height:100dvh;align-items:flex-end;padding:48px}
 .ib-split-right .ib-shell{flex-direction:row-reverse}

@@ -27,6 +27,8 @@ import {
     isFormConditionGroup,
     isFormCalcCondition,
     formCalcIsLive,
+    formPaymentActive,
+    formPaymentAmount,
     formCalcsForLogic,
     formCalcValues,
     withFormCalcValues,
@@ -56,6 +58,7 @@ import {
     type PublicFormOption,
     type SubmitFormInput,
     type SubmitFormResult,
+    type PublicFormPaymentStatus,
     type UpdateFormInput,
     readMirrorListMarker,
     mirrorFromPlace,
@@ -114,6 +117,7 @@ import { FormStatsService, type FormStatsTarget } from './form-stats.service';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
+import { CollectionError, CollectionsService } from '../collections/collections.service';
 
 /** v0.1.352 — Cuánto vale la página guardada de un formulario (y la de uno que no existe). */
 const PAGE_CACHE_TTL_MS = 30_000;
@@ -255,6 +259,12 @@ export interface ConfirmOutcome {
     message: string;
     brand: { company: string; accent: string; logoUrl: string | null; themeCss?: string; bodyClasses?: string[] } | null;
     continueUrl: string | null;
+    /** v0.1.361 — Con cobro: el link para pagar (o por qué no se pudo armar). */
+    payUrl?: string;
+    payLabel?: string;
+    /** El monto ya escrito con el formato de la empresa («150.000 COP»). */
+    payAmountText?: string;
+    payError?: string;
 }
 
 /** v0.1.351 — Las imágenes de un formulario se firman por un día (el vencimiento se redondea a la hora: el navegador las cachea). */
@@ -325,6 +335,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() cache?: PublicCacheService,
         // v0.1.358 — estadísticas (visitas, empezados, enviados…).
         @Optional() private readonly stats?: FormStatsService,
+        // v0.1.361 — cobrar al enviar con la conexión de cobro de la empresa.
+        @Optional() private readonly collections?: CollectionsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -442,6 +454,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const fields = await this.fields.listByListId(tenantId, list.id);
         const config = sanitizeConfig(input.config ?? defaultFormConfig(list.name, fields), fields);
         await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
+        await this.assertPayment(tenantId, config);
         // v0.1.351 — un formulario nuevo nace con el tema por defecto de la empresa (si eligió uno).
         const def = await this.defaultTheme(tenantId);
         if (!config.settings.theme && def) config.settings.theme = def;
@@ -479,6 +492,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const fields = await this.fields.listByListId(tenantId, list.id);
             const clean = sanitizeConfig(input.config, fields);
             await this.assertTemplate(tenantId, list.id, clean.settings.record_template_id);
+            await this.assertPayment(tenantId, clean);
             const prev = readPublicTheme(((current.config as Record<string, unknown>)?.settings as Record<string, unknown> | undefined)?.theme ?? {});
             await this.assertDesign(tenantId, clean, prev.custom_css, actor);
             patch.config = clean as unknown as Record<string, unknown>;
@@ -489,6 +503,22 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         );
         this.forgetPage(current.token, row?.token);
         return this.toDto(row!, await this.publicBase(tenantId));
+    }
+
+    /**
+     * v0.1.361 — La conexión con la que cobra el formulario tiene que ser una
+     * conexión de cobro DEL EQUIPO de esta empresa (una privada es de una
+     * persona; una de otra empresa, nunca). Wompi sólo cobra en pesos.
+     */
+    private async assertPayment(tenantId: number, config: FormConfig): Promise<void> {
+        const pay = config.settings.payment;
+        if (pay.connection_id === null) return;
+        const team = this.collections ? await this.collections.teamConnections(tenantId) : [];
+        const conn = team.find((c) => c.id === pay.connection_id);
+        if (!conn) {
+            throw badRequest('form_payment_connection', 'Elige una conexión de cobro del equipo (Mercado Pago o Wompi) en Ajustes → Integraciones.');
+        }
+        if (conn.provider === 'wompi') pay.currency = 'COP';
     }
 
     /**
@@ -1200,6 +1230,20 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 config.settings.save_progress.device || config.settings.save_progress.email ? { ...config.settings.save_progress } : null,
             // v0.1.360 — acepta enlaces para actualizar un registro (la página pide los datos aparte).
             edit_links: config.settings.edit_links.enabled ? { message: config.settings.edit_links.message } : null,
+            // v0.1.361 — cobrar al enviar (de dónde sale el monto, para mostrar el total).
+            payment: formPaymentActive(config)
+                ? {
+                      source: config.settings.payment.source,
+                      amount: config.settings.payment.source === 'fixed' ? config.settings.payment.amount : null,
+                      calc_key: config.settings.payment.source === 'calc' ? config.settings.payment.calc_key : null,
+                      field_id: config.settings.payment.source === 'field' ? config.settings.payment.field_id : null,
+                      min: config.settings.payment.source === 'field' ? config.settings.payment.min : null,
+                      max: config.settings.payment.source === 'field' ? config.settings.payment.max : null,
+                      currency: config.settings.payment.currency,
+                      after: config.settings.payment.after,
+                      button_label: config.settings.payment.button_label || 'Ir a pagar',
+                  }
+                : null,
         };
     }
 
@@ -1297,6 +1341,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // que el navegador pudo saltarse: las páginas son sólo cómo se muestra.
         const { data, errors, attachmentIds, endingId, calcs } = this.collect(f, byId, input);
         const s = f.config.settings;
+        // v0.1.361 — cobrar al enviar: el monto lo decide el servidor.
+        const payAmount = this.paymentAmountFor(f, data, calcs, errors);
         const emailKey = s.respondent_email_field_id !== null ? jsonbKeyForField(s.respondent_email_field_id) : null;
         const respondentEmail = emailKey && typeof data[emailKey] === 'string' ? (data[emailKey] as string) : null;
         // Doble opt-in: sin correo no hay a quién pedirle la confirmación.
@@ -1335,6 +1381,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const created = await this.finalize(f, fields, data, attachmentIds, accepted);
             if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
             result = { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId, ...(Object.keys(calcs).length ? { calcs } : {}) };
+            if (payAmount > 0) Object.assign(result, await this.chargeFor(f, fields, created.id, data, payAmount, respondentEmail));
         }
         // v0.1.358 — cuenta para las estadísticas (y el avance guardado ya no hace falta).
         void this.stats?.recordSubmit(statsTarget(f), input.elapsed_ms);
@@ -1729,8 +1776,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
               }
             : null;
         let withdrawRef: string | null = null;
+        let createdId = 0;
         try {
-            withdrawRef = (await this.finalize(f, fields, pending.data, attachmentIds, accepted)).withdrawRef;
+            const created = await this.finalize(f, fields, pending.data, attachmentIds, accepted);
+            withdrawRef = created.withdrawRef;
+            createdId = created.id;
         } catch (err) {
             if (err instanceof ForbiddenException) {
                 await this.discardFiles(pending);
@@ -1766,12 +1816,27 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.356 — la pantalla final que le tocó al enviar, con sus respuestas recordadas.
         const ending = pending.endingId ? f.config.settings.endings.find((e) => e.id === pending.endingId) : undefined;
         const message = ending ? ending.message || ending.title : f.config.settings.success_message || 'Recibimos tu respuesta.';
+        // v0.1.361 — con cobro, el link se arma al confirmar (sólo entonces existe el registro).
+        const answers: Record<string, unknown> = Object.fromEntries(
+            Object.entries(pending.data).filter(([k]) => /^f\d+$/.test(k)).map(([k, v]) => [k.slice(1), v]),
+        );
+        const calcs = formCalcValues(formCalcsForLogic(f.config), answers, (key) => key in answers);
+        const payAmount = createdId ? this.paymentAmountFor(f, pending.data, calcs, {}) : 0;
+        const charge = payAmount > 0 ? await this.chargeFor(f, fields, createdId, pending.data, payAmount, pending.email) : {};
         return {
             status: 'confirmed',
             title: '¡Listo! Tu respuesta quedó confirmada',
             message: this.recallServer(f, fields, pending.data, message),
             brand,
             continueUrl: this.endingRedirect(f, ending?.id ?? null),
+            ...(charge.payment
+                ? {
+                      payUrl: charge.payment.url,
+                      payLabel: charge.payment.button_label,
+                      payAmountText: `${formatFormNumber(charge.payment.amount, this.numberFormatOf(f))} ${charge.payment.currency}`,
+                  }
+                : {}),
+            ...(charge.payment_error ? { payError: charge.payment_error } : {}),
         };
     }
 
@@ -2209,6 +2274,110 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return formRecallText(text, (slug) => (recall[slug] ? formAnswerText(pub, recall[slug]!, values, fmtNum) : ''));
     }
 
+    /**
+     * v0.1.361 — El monto a cobrar con lo que respondió la persona (0 = no se
+     * cobra). Un monto escrito fuera del mínimo o el máximo es un error de la
+     * pregunta, como cualquier otro.
+     */
+    private paymentAmountFor(f: ResolvedForm, data: Record<string, unknown>, calcs: Record<string, number>, errors: Record<string, string>): number {
+        if (!formPaymentActive(f.config)) return 0;
+        const p = f.config.settings.payment;
+        const fieldValue = p.source === 'field' && p.field_id !== null ? data[jsonbKeyForField(p.field_id)] : undefined;
+        const out = formPaymentAmount(p, { calcs, fieldValue });
+        if ('error' in out) {
+            const item = f.config.items.find((i) => i.type === 'field' && i.field_id === p.field_id);
+            const nf = this.numberFormatOf(f);
+            if (item && !errors[item.id]) {
+                errors[item.id] =
+                    out.error === 'below_min'
+                        ? `El monto mínimo es ${formatFormNumber(p.min ?? 0, nf)}.`
+                        : `El monto máximo es ${formatFormNumber(p.max ?? 0, nf)}.`;
+            }
+            return 0;
+        }
+        return out.amount;
+    }
+
+    /** El formato de números de la empresa (para los montos que se le escriben a la persona). */
+    private numberFormatOf(f: ResolvedForm): 'comma_dot' | 'dot_comma' | 'space_comma' {
+        const fmt = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
+        return fmt.success ? fmt.data.number_format : 'comma_dot';
+    }
+
+    /**
+     * v0.1.361 — Arma el link de pago de una respuesta ya guardada. Si no se
+     * puede (la conexión se borró, el proveedor no responde), la respuesta NO
+     * se pierde: se le dice a la persona y se avisa a la empresa.
+     */
+    private async chargeFor(
+        f: ResolvedForm,
+        fields: Field[],
+        recordId: number,
+        data: Record<string, unknown>,
+        amount: number,
+        email: string | null,
+    ): Promise<Pick<SubmitFormResult, 'payment' | 'payment_error'>> {
+        const p = f.config.settings.payment;
+        const incidentKey = `form-payment:${f.row.id}`;
+        const fail = (reason: string): Pick<SubmitFormResult, 'payment_error'> => {
+            this.incidents?.report({
+                tenantId: f.row.tenantId,
+                key: incidentKey,
+                source: 'form',
+                sourceId: f.row.id,
+                listId: f.row.listId,
+                ownerId: f.row.createdBy ?? null,
+                title: `El formulario «${f.row.name}» no pudo armar el pago`,
+                message: `Alguien envió el formulario y no se pudo crear su link de pago: ${reason} La respuesta quedó guardada; a la persona le dijimos que se pondrán en contacto.`,
+            });
+            return { payment_error: 'Recibimos tu respuesta, pero no pudimos preparar el pago en este momento. Te contactaremos para completarlo.' };
+        };
+        if (!this.collections || p.connection_id === null) return fail('el formulario no tiene una conexión de cobro.');
+        const title = (this.recallServer(f, fields, data, p.title || f.config.settings.title || f.row.name).trim() || 'Pago').slice(0, 200);
+        const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
+        const pagePath = `/api/v1/public/f/${f.row.token}`;
+        try {
+            const out = await this.collections.createForForm(f.row.tenantId, {
+                formId: f.row.id,
+                connectionId: p.connection_id,
+                listId: f.row.listId,
+                recordId,
+                title,
+                amount,
+                currency: p.currency,
+                payerEmail: email,
+                expiresDays: p.expires_days,
+                returnUrlFor: (ref) => `${base}${pagePath}?pago=${encodeURIComponent(ref)}`,
+            });
+            this.incidents?.resolve(f.row.tenantId, incidentKey);
+            return {
+                payment: {
+                    url: out.url,
+                    amount: out.amount,
+                    currency: out.currency,
+                    after: p.after,
+                    button_label: p.button_label || 'Ir a pagar',
+                },
+            };
+        } catch (err) {
+            const reason = err instanceof CollectionError ? err.message : 'falló algo de nuestro lado.';
+            if (!(err instanceof CollectionError)) this.logger.warn(`Formulario ${f.row.id}: link de pago: ${err instanceof Error ? err.message : String(err)}`);
+            return fail(reason);
+        }
+    }
+
+    /**
+     * v0.1.361 — Cómo quedó el pago al volver del checkout (`?pago=<referencia>`).
+     * Sólo de un link que armó ESTE formulario; desconocido = 404 opaco.
+     */
+    async paymentStatus(token: string, reference: string): Promise<PublicFormPaymentStatus> {
+        const f = await this.resolve(token);
+        if (!this.collections) throw notFound();
+        const out = await this.collections.formPaymentStatus(f.row.tenantId, f.row.id, reference);
+        if (!out) throw notFound();
+        return out;
+    }
+
     /** v0.1.356 — Adónde lleva una pantalla final (o el formulario, sin pantalla propia). */
     private endingRedirect(f: ResolvedForm, endingId: string | null): string | null {
         const e = endingId ? f.config.settings.endings.find((x) => x.id === endingId) : undefined;
@@ -2348,6 +2517,32 @@ const CALC_NUMERIC_TYPES = new Set(['number', 'currency', 'percent', 'rating', '
 /** v0.1.357 — Tipos de campo donde se puede guardar el resultado de un cálculo. */
 const CALC_SAVE_TYPES = new Set(['number', 'currency', 'percent']);
 
+/**
+ * v0.1.361 — El monto del cobro sale de algo que existe en ESTE formulario: un
+ * cálculo suyo o una pregunta de número o moneda que pregunta. Lo que no
+ * existe se suelta (el cobro queda sin efecto hasta que se elija otra cosa).
+ */
+function cleanPayment(
+    pay: FormConfig['settings']['payment'],
+    inForm: ReadonlySet<number>,
+    typeOf: ReadonlyMap<number, string>,
+    calcKeys: ReadonlySet<string>,
+): FormConfig['settings']['payment'] {
+    const fieldOk = pay.field_id !== null && inForm.has(pay.field_id) && ['number', 'currency'].includes(typeOf.get(pay.field_id) ?? '');
+    const min = pay.min;
+    const max = pay.max;
+    const swap = min !== null && max !== null && min > max;
+    return {
+        ...pay,
+        calc_key: pay.calc_key !== null && calcKeys.has(pay.calc_key) ? pay.calc_key : null,
+        field_id: fieldOk ? pay.field_id : null,
+        min: swap ? max : min,
+        max: swap ? min : max,
+        title: pay.title.trim(),
+        button_label: pay.button_label.trim(),
+    };
+}
+
 export function sanitizeConfig(
     config: FormConfig,
     fields: ReadonlyArray<{ id: number; type: string; slug?: string; config?: Record<string, unknown> }>,
@@ -2485,6 +2680,7 @@ export function sanitizeConfig(
         jumps,
         endings,
         calcs,
+        payment: cleanPayment(s.payment, inForm, typeOf, calcKeys),
     };
 
     return formConfigSchema.parse({

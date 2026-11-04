@@ -708,6 +708,13 @@
       "when": 1784200000700,
       "tag": "0100_form_stats_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1784200000800,
+      "tag": "0101_form_payments",
+      "breakpoints": true
     }
   ]
 }
