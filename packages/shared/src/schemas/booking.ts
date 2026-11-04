@@ -149,7 +149,8 @@ const calendarIdSchema = z
     .string()
     .min(1)
     .max(512)
-    .regex(/^[^\s\u0000-\u001f<>"]+$/, 'Calendario no válido');
+    // Sin espacios, comillas, «<>» ni caracteres de control (se mira el código: el lint no deja escribirlos en una regex).
+    .refine((v) => !/[\s<>"]/.test(v) && ![...v].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f), 'Calendario no válido');
 /** Un enlace https (o vacío). */
 const httpsOrEmpty = z
     .string()
