@@ -272,6 +272,32 @@ describe('remapJson', () => {
         expect(out.settings.endings[0]!.title).toBe('Hola {{nombre}}');
     });
 
+    it('v0.1.357 — formulario: los cálculos, el campo donde se guardan y la imagen de la bienvenida apuntan a lo NUEVO', () => {
+        const out = remapJson(
+            {
+                settings: {
+                    calcs: [{ id: 'calc1', key: 'puntaje', parts: [{ field_id: 10, points: { empresa: 5 } }, { field_id: 11, multiplier: 2 }], save_field_id: 12 }],
+                    jumps: [{ id: 'jjjj1', from: 'start', when: { calc: 'puntaje', op: 'gt', value: 7 }, to: 'end' }],
+                    welcome: { enabled: true, file_id: 40 },
+                },
+            },
+            maps(),
+        ) as {
+            settings: {
+                calcs: Array<{ key: string; parts: Array<{ field_id: number; points?: Record<string, number> }>; save_field_id: number }>;
+                jumps: Array<{ when: { calc: string; value: number } }>;
+                welcome: { file_id: number };
+            };
+        };
+        const c = out.settings.calcs[0]!;
+        expect(c.parts.map((p) => p.field_id)).toEqual([110, 111]);
+        expect(c.save_field_id).toBe(112);
+        // Los puntos van por el valor de la opción (no son ids) y la regla mira el cálculo por su nombre.
+        expect(c.parts[0]!.points).toEqual({ empresa: 5 });
+        expect(out.settings.jumps[0]!.when).toEqual({ calc: 'puntaje', op: 'gt', value: 7 });
+        expect(out.settings.welcome.file_id).toBe(140);
+    });
+
     it('deja intactos los slugs y los valores que no son referencias', () => {
         const out = remapJson({ field: 'estado', op: 'eq', value: 10 }, maps());
         expect(out).toEqual({ field: 'estado', op: 'eq', value: 10 });

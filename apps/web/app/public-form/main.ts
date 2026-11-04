@@ -18,7 +18,17 @@
  * postMessage y se reemplazan en vivo.
  */
 import type { PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
-import { formAnswerText, formAnswered, formFlow, formRecallText, formScaleValues, splitFormPages, type FormFlow } from '@imagina-base/shared/src/schemas/form-logic';
+import {
+    FORM_CALC_VALUE_PREFIX,
+    formAnswerText,
+    formAnswered,
+    formFlow,
+    formRecallText,
+    formScaleValues,
+    splitFormPages,
+    type FormCalcLike,
+    type FormFlow,
+} from '@imagina-base/shared/src/schemas/form-logic';
 
 type FieldItem = PublicFormFieldItem;
 type ImageItem = Extract<PublicFormItem, { type: 'image' }>;
@@ -96,7 +106,21 @@ let uploads: Record<string, Upload[]> = {};
 let itemEls: Record<string, HTMLElement> = {};
 let errEls: Record<string, HTMLElement> = {};
 let selectedId: string | null = null;
-let pages: Array<{ break_id: string | null; title: string; items: Item[] }> = [];
+/**
+ * Lo que se muestra de a una vez: una página del formulario o, en el modo
+ * «una pregunta por pantalla» (v0.1.357), una pregunta (con los títulos y
+ * textos que van antes). `page` = la página real a la que pertenece (los
+ * saltos se deciden por páginas).
+ */
+interface Unit {
+    break_id: string | null;
+    title: string;
+    items: Item[];
+    page: number;
+    /** ¿Es lo primero de su página? (ahí va el título de la página). */
+    first: boolean;
+}
+let pages: Unit[] = [];
 let pageEls: HTMLElement[] = [];
 let current = 0;
 let root: HTMLElement | null = null;
@@ -115,6 +139,12 @@ let captchaWidget: unknown = null;
 let captchaMounted = false;
 /** v0.1.355 — El campo de texto del «Otro» de cada pregunta (se muestra al elegir esa opción). */
 let otherEls: Record<string, { wrap: HTMLElement; input: HTMLInputElement }> = {};
+/** v0.1.357 — Ya tocó «Empezar» en la bienvenida. */
+let started = false;
+/** v0.1.357 — En la vista previa, mostrar la bienvenida (la pide el constructor). */
+let previewWelcome = false;
+/** v0.1.357 — El resultado de cada cálculo que mandó el servidor al enviar. */
+let finalCalcs: Record<string, number> | null = null;
 
 // ───────────────────────────── Utilidades ─────────────────────────────
 
@@ -190,8 +220,12 @@ function fields(): FieldItem[] {
  * calcula una vez por cambio (`dirty()` lo invalida).
  */
 let flowCache: FormFlow | null = null;
+/** v0.1.357 — Los cálculos que la página puede hacer (los demás los hace el servidor al enviar). */
+function liveCalcs(): FormCalcLike[] {
+    return (meta?.calcs ?? []).filter((c) => c.parts !== null).map((c) => ({ key: c.key, start: c.start, parts: c.parts }));
+}
 function flow(): FormFlow {
-    if (!flowCache) flowCache = formFlow((meta?.items ?? []) as never, values, meta?.jumps ?? []);
+    if (!flowCache) flowCache = formFlow((meta?.items ?? []) as never, values, meta?.jumps ?? [], liveCalcs());
     return flowCache;
 }
 function dirty(): void {
@@ -211,6 +245,13 @@ let recallNodes: Array<{ node: Node; tpl: string }> = [];
 function recallValue(slug: string): string {
     const key = meta?.recall?.[slug];
     if (!key) return '';
+    // v0.1.357 — un cálculo: el que mandó el servidor al enviar o el que va llevando la página.
+    if (key.startsWith(FORM_CALC_VALUE_PREFIX)) {
+        if (BOOT.preview) return `[${slug}]`;
+        const ck = key.slice(FORM_CALC_VALUE_PREFIX.length);
+        const v = finalCalcs?.[ck] ?? flow().calcs[ck];
+        return typeof v === 'number' && Number.isFinite(v) ? fmtNum(v) : '';
+    }
     const text = formAnswerText((meta?.items ?? []) as never, key, values, fmtNum);
     if (text || !BOOT.preview) return text;
     return `[${slug}]`;
@@ -255,11 +296,67 @@ function fmtNum(n: number): string {
 function paged(): boolean {
     return pages.length > 1;
 }
-/** v0.1.356 — Las páginas por las que pasa la persona, en orden (con los saltos). */
+/** v0.1.357 — ¿Una pregunta por pantalla? */
+function conversational(): boolean {
+    return meta?.layout === 'conversational';
+}
+function isQuestion(i: Item): boolean {
+    return (i.type === 'field' && !i.hidden) || i.type === 'matrix';
+}
+/** v0.1.357 — ¿Con una sola elección ya está respondida? (pasa sola a la siguiente). */
+function autoAdvances(f: FieldItem): boolean {
+    if (f.display === 'scale' || f.display === 'yes_no') return true;
+    if (f.field_type === 'rating') return f.display !== 'slider';
+    const single = f.field_type === 'select' || (f.field_type === 'team' && !f.multiple);
+    return single && f.display !== 'dropdown' && f.display !== 'search';
+}
+/**
+ * v0.1.357 — Parte el formulario en lo que se muestra de a una vez. Por
+ * páginas (lo de siempre) o, una pregunta por pantalla: cada pregunta con los
+ * títulos, textos e imágenes que van antes de ella; lo que queda al final de
+ * una página va con su última pregunta.
+ */
+function buildUnits(items: Item[]): Unit[] {
+    const real = splitFormPages(items as Array<Item & { title?: string }>) as Array<{ break_id: string | null; title: string; items: Item[] }>;
+    if (!conversational()) return real.map((p, i) => ({ ...p, page: i, first: true }));
+    const out: Unit[] = [];
+    real.forEach((p, pi) => {
+        let buf: Item[] = [];
+        let first = true;
+        const push = (list: Item[]): void => {
+            out.push({ break_id: p.break_id, title: first ? p.title : '', items: list, page: pi, first });
+            first = false;
+        };
+        for (const it of p.items) {
+            buf.push(it);
+            if (isQuestion(it)) {
+                push(buf);
+                buf = [];
+            }
+        }
+        if (buf.length) {
+            const last = out[out.length - 1];
+            if (last && last.page === pi) last.items.push(...buf);
+            else push(buf);
+        }
+    });
+    return out;
+}
+/** v0.1.356 — Lo que ve la persona, en orden (las páginas del camino; con una pregunta por pantalla, las preguntas a la vista). */
 function visiblePages(): number[] {
     // En la vista previa se puede ver cualquier página (sin respuestas, un salto no decide nada).
     if (BOOT.preview) return pages.map((_, i) => i);
-    return flow().path;
+    const path = new Set(flow().path);
+    const out: number[] = [];
+    pages.forEach((u, i) => {
+        if (!path.has(u.page)) return;
+        if (conversational()) {
+            const qs = u.items.filter(isQuestion);
+            if (qs.length ? !qs.some((q) => visible(q)) : !u.items.some((it) => visible(it))) return;
+        }
+        out.push(i);
+    });
+    return out;
 }
 function isLastPage(): boolean {
     const vis = visiblePages();
@@ -1457,7 +1554,7 @@ function paintPages(): void {
     pageEls.forEach((n, idx) => (n.hidden = idx !== current));
     const pos = Math.max(0, vis.indexOf(current)) + 1;
     const total = Math.max(1, vis.length);
-    if (stepsLabel) stepsLabel.textContent = `Paso ${pos} de ${total}`;
+    if (stepsLabel) stepsLabel.textContent = conversational() ? `Pregunta ${pos} de ${total}` : `Paso ${pos} de ${total}`;
     if (barEl) barEl.style.width = `${Math.round((pos / total) * 100)}%`;
     if (dotsEl) {
         dotsEl.textContent = '';
@@ -1483,10 +1580,25 @@ function goToPage(idx: number, focus = true): void {
         } catch {
             target?.scrollIntoView();
         }
-        const title = pageEls[idx]?.querySelector<HTMLElement>('.ib-page-title');
-        (stepsLabel ?? title)?.focus({ preventScroll: true });
+        focusCurrent();
     }
     reportHeight();
+}
+
+/**
+ * Lleva el foco a lo que se está viendo: el «Paso 2 de 3» (lo anuncian los
+ * lectores de pantalla) o el título de la página. v0.1.357 — con una
+ * pregunta por pantalla, en una compu, directo a la respuesta (en el celular
+ * no: abriría el teclado sin que la persona lo pida).
+ */
+function focusCurrent(): void {
+    const box = pageEls[current];
+    const answer =
+        conversational() && matchMedia('(hover: hover) and (pointer: fine)').matches
+            ? box?.querySelector<HTMLElement>('input:not([type=hidden]):not([type=radio]):not([type=checkbox]), textarea, select')
+            : null;
+    const title = box?.querySelector<HTMLElement>('.ib-page-title');
+    (answer ?? stepsLabel ?? title)?.focus({ preventScroll: true });
 }
 
 function primaryButton(text: string, type: 'submit' | 'button'): HTMLButtonElement {
@@ -1518,9 +1630,41 @@ function shell(): HTMLElement {
 function applyBodyClasses(): void {
     const v = view();
     const cls = ['ib-body', ...(v?.classes ?? [])];
+    if (meta?.layout === 'conversational') cls.push('ib-layout-conv');
     if (embedded && !BOOT.preview) cls.push('ib-embedded');
     if (embedded && !BOOT.preview && v?.embed_background) cls.push('ib-embed-bg');
     document.body.className = cls.join(' ');
+}
+
+/** v0.1.357 — La bienvenida: imagen, título, mensaje, cuánto toma y «Empezar». */
+function welcomeNode(w: NonNullable<PublicFormMeta['welcome']>): HTMLElement {
+    const kids: HTMLElement[] = [];
+    if (w.image_url) kids.push(el('div', { cls: 'ib-welcome-img' }, [el('img', { src: w.image_url, alt: '', decoding: 'async', fetchpriority: 'high' })]));
+    if (w.title) {
+        const h = el('h2');
+        setRecall(h, w.title);
+        kids.push(h);
+    }
+    if (w.message) kids.push(paragraphs(w.message, 'ib-welcome-msg'));
+    if (w.minutes) kids.push(el('div', { cls: 'ib-welcome-time', text: w.minutes === 1 ? '⏱ Toma 1 minuto' : `⏱ Toma unos ${w.minutes} minutos` }));
+    const btn = primaryButton(w.button_label || 'Empezar', 'button');
+    btn.setAttribute('data-testid', 'form-welcome-start');
+    btn.addEventListener('click', () => {
+        if (BOOT.preview) return;
+        started = true;
+        render(false);
+        try {
+            root?.scrollIntoView({ block: 'start' });
+        } catch {
+            // nada
+        }
+        focusCurrent();
+        reportHeight();
+    });
+    kids.push(btn);
+    const box = el('div', { cls: 'ib-welcome', 'data-testid': 'form-welcome' }, kids);
+    if (BOOT.preview) box.insertBefore(pvTag('Bienvenida · lo primero que ve la persona'), box.firstChild);
+    return box;
 }
 
 function header(): HTMLElement {
@@ -1565,7 +1709,18 @@ function render(keepPage: boolean): void {
         return;
     }
 
-    pages = splitFormPages(meta.items as Array<Item & { title?: string }>) as typeof pages;
+    // v0.1.357 — la bienvenida: lo primero que ve, con «Empezar». Las
+    // respuestas que llegan en la dirección ya cuentan (su texto puede decir
+    // «Hola, {{nombre}}»).
+    const w = meta.welcome;
+    if (w && (BOOT.preview ? previewWelcome : !started)) {
+        prefill({});
+        r.appendChild(welcomeNode(w));
+        if (w.title) r.classList.add('ib-welcome-hide');
+        return;
+    }
+
+    pages = buildUnits(meta.items);
     if (!keepPage || current >= pages.length) current = 0;
 
     const form = el('form', { cls: 'ib-form', novalidate: true });
@@ -1574,7 +1729,7 @@ function render(keepPage: boolean): void {
     if (paged() && progress !== 'none') {
         stepsLabel = el('strong', { tabindex: '-1' });
         const top = el('div', { cls: 'ib-steps-top' }, [stepsLabel]);
-        if (progress === 'steps') {
+        if (progress === 'steps' && !(conversational() && pages.length > 12)) {
             dotsEl = el('div', { cls: 'ib-dots', role: 'presentation' });
             form.appendChild(el('div', { cls: 'ib-steps', 'aria-live': 'polite' }, [top, dotsEl]));
         } else {
@@ -1582,10 +1737,10 @@ function render(keepPage: boolean): void {
             form.appendChild(el('div', { cls: 'ib-steps', 'aria-live': 'polite' }, [top, el('div', { cls: 'ib-progress', role: 'presentation' }, [barEl])]));
         }
     }
-    pages.forEach((p, pidx) => {
+    pages.forEach((p) => {
         const box = el('div', { cls: 'ib-page' });
-        if (paged() && (p.title || (BOOT.preview && p.break_id))) {
-            const t = p.title ? el('h2', { cls: 'ib-page-title' }) : pvTag(`Página ${pidx + 1} · sin título`);
+        if (paged() && p.first && (p.title || (BOOT.preview && p.break_id))) {
+            const t = p.title ? el('h2', { cls: 'ib-page-title' }) : pvTag(`Página ${p.page + 1} · sin título`);
             if (p.title) setRecall(t, p.title);
             if (p.break_id) previewable(t, p.break_id);
             box.appendChild(t);
@@ -1621,7 +1776,9 @@ function render(keepPage: boolean): void {
             if (before.length) goToPage(before[before.length - 1]!);
         });
         nextBtn.addEventListener('click', () => advance());
-        form.appendChild(el('div', { cls: 'ib-actions ib-paged' }, [prevBtn, el('span', { cls: 'ib-grow' }), nextBtn, submitBtn]));
+        // v0.1.357 — una pregunta por pantalla: Enter también sigue.
+        const hint = conversational() ? el('span', { cls: 'ib-conv-hint', text: 'o pulsa Enter ↵', 'aria-hidden': 'true' }) : null;
+        form.appendChild(el('div', { cls: 'ib-actions ib-paged' }, [prevBtn, el('span', { cls: 'ib-grow' }), hint, nextBtn, submitBtn]));
     } else {
         form.appendChild(el('div', { cls: 'ib-actions' }, [submitBtn]));
     }
@@ -1640,6 +1797,25 @@ function render(keepPage: boolean): void {
         }
         const after = visiblePages().filter((i) => i > current);
         if (after.length) goToPage(after[0]!);
+    }
+
+    // v0.1.357 — una pregunta por pantalla: elegir una opción de una
+    // selección, una escala o Sí/No pasa sola a la siguiente (como al tocar
+    // «Siguiente»). Con el teclado (flechas) no: ahí se confirma con Enter.
+    if (conversational() && paged() && !BOOT.preview) {
+        form.addEventListener('click', (e) => {
+            const unit = pages[current];
+            const box = pageEls[current];
+            if (!unit || !box || !(e.target instanceof Node) || !box.contains(e.target)) return;
+            const q = unit.items.find(isQuestion);
+            if (!q || q.type !== 'field' || !autoAdvances(q)) return;
+            if (!(e.target as Element).closest?.('.ib-choice,.ib-scale button,.ib-yesno button,.ib-stars button')) return;
+            const at = current;
+            setTimeout(() => {
+                if (current !== at || isLastPage() || empty(values[q.key]) || choseOther(q)) return;
+                advance();
+            }, 380);
+        });
     }
 
     form.addEventListener('submit', (e) => {
@@ -1706,8 +1882,18 @@ function submit(hpValue: string): void {
             ),
         )
         .then((res) => {
-            const b = res.b as { pending_confirmation?: boolean; email_hint?: string; redirect_url?: string; ending_id?: string | null; message?: string; data?: { errors?: Record<string, string> } };
+            const b = res.b as {
+                pending_confirmation?: boolean;
+                email_hint?: string;
+                redirect_url?: string;
+                ending_id?: string | null;
+                calcs?: Record<string, number>;
+                message?: string;
+                data?: { errors?: Record<string, string> };
+            };
             if (res.ok) {
+                // v0.1.357 — el puntaje lo dice el servidor (la pantalla final lo puede mostrar).
+                if (b.calcs && typeof b.calcs === 'object') finalCalcs = b.calcs;
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
                 if (b.redirect_url) return goTo(b.redirect_url);
                 return done(b.ending_id ?? null);
@@ -1891,6 +2077,8 @@ if (BOOT.preview) {
             scheme?: 'light' | 'dark' | null;
             /** v0.1.356 — ver una pantalla final (`''` = el «¡Gracias!» del formulario). */
             ending?: string | null;
+            /** v0.1.357 — ver la bienvenida. */
+            welcome?: boolean;
         } | null;
         if (e.origin !== location.origin || !d || d.type !== 'imb-form-preview') return;
         const keep = window.scrollY;
@@ -1904,6 +2092,7 @@ if (BOOT.preview) {
         else document.documentElement.removeAttribute('data-scheme');
         values = {};
         uploads = {};
+        previewWelcome = d.welcome === true;
         if (meta && typeof d.ending === 'string') {
             recallNodes = [];
             const r = root!;

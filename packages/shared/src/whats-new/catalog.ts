@@ -1271,4 +1271,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Formularios → Editar**, abre la pestaña **Lógica**. Para recordar una respuesta, escribe su nombre entre llaves o usa **Agregar una respuesta** debajo de cada texto.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.357-puntaje-conversacional',
+        version: '0.1.357',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Tests con puntaje y formularios de una pregunta por pantalla',
+        summary:
+            'Suma puntos según lo que responde cada persona y muéstrale el resultado: «Sacaste 8 puntos». Haz que pregunte de a una pregunta por pantalla, como una conversación, y recibe a cada persona con una bienvenida.',
+        media: {
+            slides: [
+                {
+                    title: 'Puntaje',
+                    text: 'Cada respuesta suma sus puntos. Muestra el resultado al final, elige con él la pantalla final o el salto, y guárdalo en la lista.',
+                    illustration: 'form-score',
+                },
+                {
+                    title: 'Una pregunta por pantalla',
+                    text: 'Al elegir una opción pasa sola a la siguiente, con el avance arriba. Ideal para responder desde el celular.',
+                    illustration: 'form-conversational',
+                },
+                {
+                    title: 'Una bienvenida',
+                    text: 'Un título, un mensaje, una imagen y «Toma unos 2 minutos» antes de la primera pregunta.',
+                    illustration: 'form-design',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Formularios → Editar**: el puntaje está en **Lógica → Cálculos y puntaje**; una pregunta por pantalla y la bienvenida, en los ajustes del formulario.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

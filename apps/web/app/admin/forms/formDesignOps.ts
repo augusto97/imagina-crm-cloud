@@ -1,6 +1,9 @@
 import {
+    FORM_CALC_KEY_RE,
+    FORM_MAX_CALCS,
     fieldDefaultOf,
     formConditionRules,
+    isFormCalcCondition,
     isFormConditionGroup,
     FORM_JUMP_END,
     FORM_JUMP_ENDING_PREFIX,
@@ -11,6 +14,8 @@ import {
     isUserWritableType,
     newFormItemId,
     splitFormPages,
+    type FormCalc,
+    type FormCalcPart,
     type FormConfig,
     type FormCondition,
     type FormEnding,
@@ -209,7 +214,7 @@ export function withoutLogicOn(config: FormConfig, fieldIds: ReadonlySet<number>
     if (fieldIds.size === 0 && !breakId) return config;
     const clean = (c: FormShowIf | null): FormShowIf | null => {
         if (!c) return null;
-        const rules = formConditionRules(c).filter((r) => !fieldIds.has(r.field_id));
+        const rules = formConditionRules(c).filter((r) => isFormCalcCondition(r) || !fieldIds.has(r.field_id));
         if (rules.length === 0) return null;
         // Una sola regla se guarda suelta (como la guarda el editor).
         return isFormConditionGroup(c) && rules.length > 1 ? { match: c.match, rules } : rules[0]!;
@@ -226,6 +231,8 @@ export function withoutLogicOn(config: FormConfig, fieldIds: ReadonlySet<number>
                 return when ? [{ ...j, when }] : [];
             }),
             endings: config.settings.endings.map((e) => ({ ...e, when: clean(e.when) })),
+            // v0.1.357 — lo que sumaba una pregunta borrada deja de sumar.
+            calcs: config.settings.calcs.map((c) => ({ ...c, parts: c.parts.filter((p) => !fieldIds.has(p.field_id)) })),
         },
     };
 }
@@ -339,7 +346,209 @@ export function moveEnding(config: FormConfig, id: string, dir: -1 | 1): FormCon
 
 /** Cuántas reglas de lógica tiene (para el contador de la pestaña). */
 export function logicCount(config: FormConfig): number {
-    return config.settings.jumps.length + config.settings.endings.length;
+    return config.settings.jumps.length + config.settings.endings.length + config.settings.calcs.length;
+}
+
+// ─────────────────────── Cálculos y puntaje (v0.1.357) ───────────────────────
+
+/** El nombre para usar entre llaves a partir del que escribe la persona: «Puntaje final» → `puntaje_final`. */
+export function calcKeyFrom(name: string, taken: ReadonlySet<string>): string {
+    let base = name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 36);
+    if (!/^[a-z]/.test(base)) base = `calc_${base}`.replace(/_+$/, '');
+    if (!FORM_CALC_KEY_RE.test(base)) base = 'calculo';
+    let key = base;
+    for (let n = 2; taken.has(key); n++) key = `${base}_${n}`;
+    return key;
+}
+
+/** Nombres que ya están en uso: los de los campos de la lista y los de los otros cálculos. */
+export function takenCalcKeys(config: FormConfig, fieldSlugs: ReadonlyArray<string>, exceptId?: string): Set<string> {
+    return new Set([...fieldSlugs, ...config.settings.calcs.filter((c) => c.id !== exceptId).map((c) => c.key)]);
+}
+
+/** Un cálculo nuevo («Puntaje»), con un nombre entre llaves que no choca con nada. */
+export function addCalc(config: FormConfig, fieldSlugs: ReadonlyArray<string>, name = 'Puntaje'): { config: FormConfig; id: string } {
+    if (config.settings.calcs.length >= FORM_MAX_CALCS) return { config, id: '' };
+    const id = newFormItemId();
+    const calc: FormCalc = { id, key: calcKeyFrom(name, takenCalcKeys(config, fieldSlugs)), name, start: 0, parts: [], save_field_id: null };
+    return { config: updateSettings(config, { calcs: [...config.settings.calcs, calc] }), id };
+}
+
+export function updateCalc(config: FormConfig, id: string, patch: Partial<FormCalc>): FormConfig {
+    return updateSettings(config, { calcs: config.settings.calcs.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+}
+
+/** Cambia lo que suma una pregunta (null = deja de sumar). */
+export function setCalcPart(config: FormConfig, id: string, fieldId: number, part: Omit<FormCalcPart, 'field_id'> | null): FormConfig {
+    return updateSettings(config, {
+        calcs: config.settings.calcs.map((c) => {
+            if (c.id !== id) return c;
+            const rest = c.parts.filter((p) => p.field_id !== fieldId);
+            const empty = !part || (part.multiplier === null && Object.keys(part.points).length === 0);
+            if (empty) return { ...c, parts: rest };
+            // En el orden del formulario (así se lee igual que las preguntas).
+            const next = [...rest, { field_id: fieldId, ...part }];
+            const order = calcSourceOrder(config);
+            next.sort((a, b) => (order.get(a.field_id) ?? 1e9) - (order.get(b.field_id) ?? 1e9));
+            return { ...c, parts: next };
+        }),
+    });
+}
+
+function calcSourceOrder(config: FormConfig): Map<number, number> {
+    const out = new Map<number, number>();
+    let n = 0;
+    for (const i of config.items) {
+        if (i.type === 'field') out.set(i.field_id, n++);
+        else if (i.type === 'matrix') for (const r of i.rows) out.set(r.field_id, n++);
+    }
+    return out;
+}
+
+/** Reemplaza `{{viejo}}` por `{{nuevo}}` en un texto (conserva lo de después de la barra). */
+function swapToken(text: string, from: string, to: string): string {
+    if (!text || !text.includes('{{')) return text;
+    const re = new RegExp(`\\{\\{\\s*${from}\\s*(\\|[^{}]*)?\\}\\}`, 'g');
+    return text.replace(re, (_m, rest?: string) => `{{${to}${rest ?? ''}}}`);
+}
+
+/**
+ * Cambia el nombre entre llaves de un cálculo: también en las reglas que lo
+ * miran y en los textos que lo muestran (si no, quedarían apuntando a nada).
+ */
+export function renameCalcKey(config: FormConfig, id: string, nextKey: string): FormConfig {
+    const calc = config.settings.calcs.find((c) => c.id === id);
+    if (!calc || calc.key === nextKey || !FORM_CALC_KEY_RE.test(nextKey)) return config;
+    const from = calc.key;
+    const rule = (c: FormShowIf | null): FormShowIf | null => {
+        if (!c) return c;
+        const fix = (r: FormCondition): FormCondition => (isFormCalcCondition(r) && r.calc === from ? { ...r, calc: nextKey } : r);
+        return isFormConditionGroup(c) ? { ...c, rules: c.rules.map(fix) } : fix(c);
+    };
+    const t = (x: string): string => swapToken(x, from, nextKey);
+    const s = config.settings;
+    return {
+        ...config,
+        items: config.items.map((i): FormItem => {
+            if (i.type === 'field' || i.type === 'matrix') return { ...i, label: t(i.label), help: t(i.help) } as FormItem;
+            if (i.type === 'heading' || i.type === 'text') return { ...i, text: t(i.text) } as FormItem;
+            if (i.type === 'page_break') return { ...i, title: t(i.title) } as FormItem;
+            if (i.type === 'image') return { ...i, caption: t(i.caption) } as FormItem;
+            return i;
+        }),
+        settings: {
+            ...s,
+            title: t(s.title),
+            description: t(s.description),
+            success_title: t(s.success_title),
+            success_message: t(s.success_message),
+            welcome: { ...s.welcome, title: t(s.welcome.title), message: t(s.welcome.message) },
+            jumps: s.jumps.map((j) => ({ ...j, when: rule(j.when) })),
+            endings: s.endings.map((e) => ({ ...e, title: t(e.title), message: t(e.message), when: rule(e.when) })),
+            calcs: s.calcs.map((c) => (c.id === id ? { ...c, key: nextKey } : c)),
+        },
+    };
+}
+
+/** Quita un cálculo y las reglas que lo miraban (un salto que se queda sin reglas también se va). */
+export function removeCalc(config: FormConfig, id: string): FormConfig {
+    const calc = config.settings.calcs.find((c) => c.id === id);
+    if (!calc) return config;
+    const clean = (c: FormShowIf | null): FormShowIf | null => {
+        if (!c) return null;
+        const rules = formConditionRules(c).filter((r) => !(isFormCalcCondition(r) && r.calc === calc.key));
+        if (rules.length === 0) return null;
+        return isFormConditionGroup(c) && rules.length > 1 ? { match: c.match, rules } : rules[0]!;
+    };
+    const s = config.settings;
+    return updateSettings(config, {
+        calcs: s.calcs.filter((c) => c.id !== id),
+        jumps: s.jumps.flatMap((j) => {
+            if (!j.when) return [j];
+            const when = clean(j.when);
+            return when ? [{ ...j, when }] : [];
+        }),
+        endings: s.endings.map((e) => ({ ...e, when: clean(e.when) })),
+    });
+}
+
+/** Una pregunta que puede sumar a un cálculo, con lo que se puede puntuar. */
+export interface CalcSource {
+    fieldId: number;
+    label: string;
+    /** Puntos por opción, o la respuesta (un número) multiplicada. */
+    kind: 'choices' | 'number';
+    /** Varias opciones: se suman. */
+    multiple: boolean;
+    choices: Array<{ value: string; label: string }>;
+}
+
+const CALC_NUMBER_TYPES = new Set(['number', 'currency', 'percent', 'rating', 'duration']);
+
+/** Las preguntas del formulario que pueden sumar puntos, en orden (también las filas de una matriz). */
+export function calcSources(config: FormConfig, fieldsById: ReadonlyMap<number, { label: string; type: string; config?: Record<string, unknown> }>): CalcSource[] {
+    const out: CalcSource[] = [];
+    const seen = new Set<number>();
+    const add = (fieldId: number, label: string, yes?: string, no?: string): void => {
+        const f = fieldsById.get(fieldId);
+        if (!f || seen.has(fieldId)) return;
+        let src: CalcSource | null = null;
+        if (f.type === 'select' || f.type === 'multi_select') {
+            const opts = (f.config?.options as Array<{ value: string; label?: string }> | undefined) ?? [];
+            src = { fieldId, label, kind: 'choices', multiple: f.type === 'multi_select', choices: opts.map((o) => ({ value: o.value, label: o.label || o.value })) };
+        } else if (f.type === 'checkbox') {
+            src = { fieldId, label, kind: 'choices', multiple: false, choices: [{ value: 'true', label: yes || 'Sí' }, { value: 'false', label: no || 'No' }] };
+        } else if (CALC_NUMBER_TYPES.has(f.type)) {
+            src = { fieldId, label, kind: 'number', multiple: false, choices: [] };
+        }
+        if (src) {
+            seen.add(fieldId);
+            out.push(src);
+        }
+    };
+    for (const i of config.items) {
+        if (i.type === 'field') {
+            // Ordenar elige el orden de TODAS las opciones: no hay una respuesta que puntuar.
+            if (i.display === 'ranking' || i.display === 'signature') continue;
+            add(i.field_id, i.label || fieldsById.get(i.field_id)?.label || '', i.yes_label, i.no_label);
+        } else if (i.type === 'matrix') {
+            for (const r of i.rows) add(r.field_id, `${i.label ? `${i.label} · ` : ''}${r.label || fieldsById.get(r.field_id)?.label || ''}`);
+        }
+    }
+    return out;
+}
+
+/** Entre cuánto y cuánto puede dar un cálculo de puntos por opción (null si alguna respuesta se multiplica). */
+export function calcRange(calc: FormCalc, sources: readonly CalcSource[]): { min: number; max: number } | null {
+    if (calc.parts.length === 0) return null;
+    let min = calc.start;
+    let max = calc.start;
+    const byId = new Map(sources.map((x) => [x.fieldId, x]));
+    for (const p of calc.parts) {
+        if (p.multiplier !== null) return null;
+        const vals = Object.values(p.points);
+        if (vals.length === 0) continue;
+        if (byId.get(p.field_id)?.multiple) {
+            min += vals.filter((v) => v < 0).reduce((a, b) => a + b, 0);
+            max += vals.filter((v) => v > 0).reduce((a, b) => a + b, 0);
+        } else {
+            // Puede no responder (0) o elegir la de más o la de menos.
+            min += Math.min(0, ...vals);
+            max += Math.max(0, ...vals);
+        }
+    }
+    return { min: Number(min.toFixed(6)), max: Number(max.toFixed(6)) };
+}
+
+/** Los cálculos que puede mirar una regla de un salto o una pantalla final. */
+export function calcChoices(config: FormConfig): Array<{ key: string; name: string }> {
+    return config.settings.calcs.map((c) => ({ key: c.key, name: c.name || c.key }));
 }
 
 /** Una condición nueva sobre un campo. */

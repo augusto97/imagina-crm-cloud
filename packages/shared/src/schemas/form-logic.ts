@@ -14,15 +14,36 @@ export interface FormConditionLike {
 type FormCondition = FormConditionLike;
 
 /**
+ * v0.1.357 — Una regla sobre un cálculo del formulario («si el puntaje es
+ * mayor que 7»). Sólo en saltos y pantallas finales.
+ */
+export interface FormCalcConditionLike {
+    calc: string;
+    op: 'eq' | 'neq' | 'gt' | 'lt';
+    value?: unknown;
+}
+
+/** Una regla: sobre una pregunta o (v0.1.357) sobre un cálculo. */
+export type FormRuleLike = FormConditionLike | FormCalcConditionLike;
+
+/** v0.1.357 — ¿Es una regla sobre un cálculo? */
+export function isFormCalcRule(r: FormRuleLike | null | undefined): r is FormCalcConditionLike {
+    return !!r && typeof (r as FormCalcConditionLike).calc === 'string';
+}
+
+/**
  * v0.1.356 — Varias condiciones juntas: se cumplen TODAS (`all`) o ALGUNA
  * (`any`). Una condición suelta (lo de siempre) vale igual que un grupo de
  * una sola regla.
  */
 export interface FormConditionGroupLike {
     match: 'all' | 'any';
-    rules: ReadonlyArray<FormConditionLike>;
+    rules: ReadonlyArray<FormRuleLike>;
 }
-export type FormShowIfLike = FormConditionLike | FormConditionGroupLike;
+export type FormShowIfLike = FormRuleLike | FormConditionGroupLike;
+
+/** v0.1.357 — Cómo se guarda el valor de un cálculo junto a las respuestas (`calc:puntaje`). */
+export const FORM_CALC_VALUE_PREFIX = 'calc:';
 
 /** ¿Es un grupo de condiciones (y no una condición suelta)? */
 export function isFormConditionGroup(c: FormShowIfLike | null | undefined): c is FormConditionGroupLike {
@@ -30,14 +51,23 @@ export function isFormConditionGroup(c: FormShowIfLike | null | undefined): c is
 }
 
 /** Las reglas de una condición o de un grupo, en una lista. */
-export function formConditionRules(c: FormShowIfLike | null | undefined): FormConditionLike[] {
+export function formConditionRules(c: FormShowIfLike | null | undefined): FormRuleLike[] {
     if (!c) return [];
     return isFormConditionGroup(c) ? [...c.rules] : [c];
 }
 
-/** Los campos de los que depende una condición o un grupo. */
+/** Los campos de los que depende una condición o un grupo (sin los cálculos). */
 export function formConditionFieldIds(c: FormShowIfLike | null | undefined): number[] {
-    return [...new Set(formConditionRules(c).map((r) => r.field_id))];
+    const out = new Set<number>();
+    for (const r of formConditionRules(c)) if (!isFormCalcRule(r)) out.add(r.field_id);
+    return [...out];
+}
+
+/** v0.1.357 — Los cálculos de los que depende una condición o un grupo. */
+export function formConditionCalcKeys(c: FormShowIfLike | null | undefined): string[] {
+    const out = new Set<string>();
+    for (const r of formConditionRules(c)) if (isFormCalcRule(r)) out.add(r.calc);
+    return [...out];
 }
 
 /** ¿Está vacío este valor como respuesta? (casilla sin marcar cuenta como vacía). */
@@ -61,6 +91,25 @@ function asNumber(v: unknown): number | null {
         return Number.isFinite(n) ? n : null;
     }
     return null;
+}
+
+/** v0.1.357 — Una regla sobre un cálculo: compara números (un cálculo que no se pudo hacer no cumple nada). */
+function evaluateCalcRule(rule: FormCalcConditionLike, value: unknown): boolean {
+    const a = asNumber(value);
+    const b = asNumber(rule.value);
+    if (a === null || b === null) return false;
+    switch (rule.op) {
+        case 'eq':
+            return Math.abs(a - b) < 1e-9;
+        case 'neq':
+            return Math.abs(a - b) >= 1e-9;
+        case 'gt':
+            return a > b;
+        case 'lt':
+            return a < b;
+        default:
+            return false;
+    }
 }
 
 /** Evalúa una condición contra la respuesta actual del campo que controla. */
@@ -162,7 +211,9 @@ export function formConditionMet<T extends LogicItemLike>(
 ): boolean {
     const rules = formConditionRules(cond);
     if (rules.length === 0) return true;
-    const one = (rule: FormConditionLike): boolean => {
+    const one = (rule: FormRuleLike): boolean => {
+        // v0.1.357 — un cálculo: su valor viaja junto a las respuestas (`calc:puntaje`).
+        if (isFormCalcRule(rule)) return evaluateCalcRule(rule, values[FORM_CALC_VALUE_PREFIX + rule.calc]);
         const controller = formControllerOf(items, rule.field_id);
         // Una condición sobre un campo que ya no está en el formulario no se cumple.
         if (!controller) return false;
@@ -250,6 +301,74 @@ export interface FormJumpLike {
 
 type FlowItem = { id: string; type: string; title?: string; hidden?: boolean; field_id?: number; key?: string; rows?: ReadonlyArray<MatrixRowLike>; show_if: FormShowIfLike | null };
 
+// ─────────────────────── Cálculos y puntaje (v0.1.357) ───────────────────────
+
+/** Lo que aporta una pregunta a un cálculo (`key` = la clave de la respuesta, el id del campo como texto). */
+export interface FormCalcPartLike {
+    key: string;
+    points: Readonly<Record<string, number>>;
+    multiplier: number | null;
+}
+
+/** Un cálculo listo para hacerse (`parts` null = lo hace el servidor; aquí vale su inicio). */
+export interface FormCalcLike {
+    key: string;
+    start: number;
+    parts: ReadonlyArray<FormCalcPartLike> | null;
+}
+
+/**
+ * v0.1.357 — Lo que suma una respuesta a un cálculo: los puntos de la opción
+ * elegida (varias opciones se suman; Sí/No y la casilla son `true`/`false`;
+ * una escala, su número como texto) o, si la pregunta tiene un factor, la
+ * respuesta numérica multiplicada por él. Sin respuesta, nada.
+ */
+export function formCalcPartValue(part: FormCalcPartLike, answer: unknown): number {
+    const pts = (k: string): number => {
+        const v = part.points[k];
+        return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+    };
+    if (answer === null || answer === undefined) return 0;
+    if (typeof answer === 'boolean') return pts(String(answer));
+    if (Array.isArray(answer)) return answer.reduce<number>((acc, a) => acc + pts(String(a)), 0);
+    if (part.multiplier !== null && part.multiplier !== undefined) {
+        const n = asNumber(answer);
+        return n === null ? 0 : n * part.multiplier;
+    }
+    if (typeof answer === 'number') return pts(String(answer));
+    if (typeof answer === 'string') return answer.trim() === '' ? 0 : pts(answer.trim());
+    return 0;
+}
+
+/** Redondea a 6 decimales (así 0,1 + 0,2 da 0,3). */
+function roundCalc(n: number): number {
+    return Number.isFinite(n) ? Number(n.toFixed(6)) : 0;
+}
+
+/**
+ * v0.1.357 — El valor de cada cálculo con las respuestas que CUENTAN (las de
+ * las preguntas por las que pasó la persona y que se le mostraron). `counts`
+ * decide por la clave de la respuesta.
+ */
+export function formCalcValues(calcs: ReadonlyArray<FormCalcLike>, values: Record<string, unknown>, counts: (key: string) => boolean): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const c of calcs) {
+        let total = Number.isFinite(c.start) ? c.start : 0;
+        for (const p of c.parts ?? []) if (counts(p.key)) total += formCalcPartValue(p, values[p.key]);
+        out[c.key] = roundCalc(total);
+    }
+    return out;
+}
+
+/** Las respuestas más los cálculos (`calc:puntaje`), para evaluar las reglas que miran un cálculo. */
+export function withFormCalcValues(values: Record<string, unknown>, calcs: Record<string, number>): Record<string, unknown> {
+    const keys = Object.keys(calcs);
+    if (keys.length === 0) return values;
+    const out: Record<string, unknown> = { ...values };
+    for (const k of keys) out[FORM_CALC_VALUE_PREFIX + k] = calcs[k];
+    return out;
+}
+
 /** El recorrido de una persona por el formulario con sus respuestas actuales. */
 export interface FormFlow {
     /** Las páginas del formulario (los ítems con `field_id` normalizado). */
@@ -262,6 +381,8 @@ export interface FormFlow {
     endingId: string | null;
     /** ¿Un salto terminó el formulario antes de la última página? */
     endedEarly: boolean;
+    /** v0.1.357 — El valor de cada cálculo con las respuestas del camino. */
+    calcs: Record<string, number>;
 }
 
 /**
@@ -272,11 +393,23 @@ export interface FormFlow {
  * condición. Lo usan la página pública (para «Siguiente» y el avance) y el
  * servidor (para saber qué respuestas aceptar) — la misma función.
  */
-export function formFlow(items: ReadonlyArray<FlowItem>, values: Record<string, unknown>, jumps: ReadonlyArray<FormJumpLike> = []): FormFlow {
+export function formFlow(
+    items: ReadonlyArray<FlowItem>,
+    values: Record<string, unknown>,
+    jumps: ReadonlyArray<FormJumpLike> = [],
+    /** v0.1.357 — Los cálculos (un salto puede mirar el puntaje que se lleva hasta esa página). */
+    calcs: ReadonlyArray<FormCalcLike> = [],
+): FormFlow {
     const norm = items.map((i) => ({ ...i, field_id: i.field_id ?? (i.key !== undefined ? Number(i.key) : undefined) }));
     const pages = splitFormPages(norm);
     const reach = new Set<(typeof norm)[number]>();
     const isReachable = (c: (typeof norm)[number]): boolean => reach.has(c);
+    // v0.1.357 — una respuesta cuenta en un cálculo si su pregunta está en el camino y a la vista.
+    const counts = (key: string): boolean => {
+        const ctl = formControllerOf(norm, Number(key));
+        return !!ctl && reach.has(ctl) && formItemVisible(ctl, norm, values, 0, isReachable);
+    };
+    const calcNow = (): Record<string, number> => formCalcValues(calcs, values, counts);
     const path: number[] = [];
     let endingId: string | null = null;
     let endedEarly = false;
@@ -297,7 +430,10 @@ export function formFlow(items: ReadonlyArray<FlowItem>, values: Record<string, 
         }
         path.push(i);
         const key = page.break_id ?? FORM_START_PAGE;
-        const jump = jumps.find((j) => j.from === key && (!j.when || formConditionMet(j.when, norm, values, 0, isReachable)));
+        const here = jumps.filter((j) => j.from === key);
+        // Los cálculos se hacen sólo si algún salto de esta página los mira.
+        const jv = here.some((j) => formConditionCalcKeys(j.when).length > 0) ? withFormCalcValues(values, calcNow()) : values;
+        const jump = here.find((j) => !j.when || formConditionMet(j.when, norm, jv, 0, isReachable));
         if (jump) {
             if (jump.to === FORM_JUMP_END || jump.to.startsWith(FORM_JUMP_ENDING_PREFIX)) {
                 endedEarly = i < pages.length - 1;
@@ -318,6 +454,7 @@ export function formFlow(items: ReadonlyArray<FlowItem>, values: Record<string, 
         path,
         endingId,
         endedEarly,
+        calcs: calcNow(),
         shown: (id) => {
             const it = byId.get(id);
             return !!it && reach.has(it) && formItemVisible(it, norm, values, 0, isReachable);
@@ -343,7 +480,9 @@ export function formEndingFor<E extends { id: string; when: FormShowIfLike | nul
     }
     const norm = items.map((i) => ({ ...i, field_id: i.field_id ?? (i.key !== undefined ? Number(i.key) : undefined) }));
     const reachIds = new Set(norm.filter((n) => flow.shown(n.id) || n.hidden).map((n) => n.id));
-    return endings.find((e) => !!e.when && formConditionRules(e.when).length > 0 && formConditionMet(e.when, norm, values, 0, (c) => reachIds.has(c.id))) ?? null;
+    // v0.1.357 — una pantalla final puede mirar un cálculo («si el puntaje es mayor que 7»).
+    const v = withFormCalcValues(values, flow.calcs);
+    return endings.find((e) => !!e.when && formConditionRules(e.when).length > 0 && formConditionMet(e.when, norm, v, 0, (c) => reachIds.has(c.id))) ?? null;
 }
 
 // ─────────────────────── Recordar respuestas (v0.1.356) ───────────────────────

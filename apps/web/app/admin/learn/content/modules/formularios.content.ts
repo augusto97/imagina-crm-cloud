@@ -486,6 +486,103 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Siguiente: puntaje y una pregunta por pantalla', article: 'formularios-puntaje' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-puntaje',
+        route: '/lists',
+        related: ['formularios-logica', 'formularios-tipos-pregunta', 'formularios-ajustes'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un formulario puede **sumar puntos** según lo que responde cada persona —la nota de un test, qué tan listo está un cliente para comprar, un total—, mostrar el resultado al final y elegir con él la pantalla final o el salto. También puede preguntar **de a una pregunta por pantalla**, como una conversación, y recibir a la persona con una **bienvenida**.',
+            },
+            { t: 'anim', key: 'form-score', caption: '«3 o más» suma 5 y «Sí» suma 3: el puntaje llega a 8 y la pantalla final dice «¡Excelente! Sacaste 8 puntos».' },
+            { t: 'h', text: 'Sumar puntos' },
+            {
+                t: 'steps',
+                items: [
+                    'En el constructor, abre la pestaña **Lógica** y baja hasta **Cálculos y puntaje**.',
+                    'Toca **Agregar un cálculo**. Ponle un **Nombre** («Puntaje») y, si quieres, desde cuánto **Empieza**.',
+                    'En **Qué suma cada respuesta**, toca cada pregunta y escribe los puntos de cada opción. En una pregunta de número (o una escala), escribe por cuánto se multiplica la respuesta.',
+                    'Debajo ves entre cuánto y cuánto puede dar el resultado.',
+                    'Toca **Guardar**.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Qué suma cada tipo de pregunta',
+                rows: [
+                    { name: 'Selección', what: 'Los puntos de la opción elegida.', tip: 'Una opción sin puntos suma 0; puedes poner números negativos para restar.' },
+                    { name: 'Varias opciones', what: 'Se suman los puntos de todas las que eligió.' },
+                    { name: 'Sí o No y casillas', what: 'Unos puntos para «Sí» y otros para «No»: el «No» también es una respuesta.' },
+                    { name: 'Número, calificación, porcentaje o escala', what: 'La respuesta multiplicada por el factor que elijas: con 1, una escala del 0 al 10 suma lo que eligió.' },
+                    { name: 'Lo que no cuenta', what: 'Una pregunta que no se le mostró (por su condición o porque un salto se saltó su página) no suma, aunque tuviera algo escrito.' },
+                ],
+            },
+            { t: 'h', text: 'Usar el resultado' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Mostrarlo', what: 'Escribe su nombre entre llaves en cualquier texto: «Sacaste {{puntaje}} puntos». **Agregar una respuesta** también lo ofrece.' },
+                    { name: 'Elegir la pantalla final', what: 'En la condición de una pantalla final elige el cálculo: «Puntaje · es mayor que · 7» lleva a «¡Excelente!».' },
+                    { name: 'Saltar', what: 'Un salto puede mirar el puntaje que lleva hasta esa página: con menos de 5, pasa directo a la última página.' },
+                    { name: 'Guardarlo en la lista', what: 'En **Guardar el resultado en** elige un campo **Número** de la lista que el formulario no pregunte. Así puedes filtrar u ordenar los registros por el puntaje.', tip: 'Si no aparece ninguno, crea el campo en la lista primero.' },
+                    { name: 'El nombre entre llaves', what: 'Se arma solo desde el nombre («Puntaje final» → {{puntaje_final}}). Si lo cambias, se cambia también en los textos y en las reglas que lo usan.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'El puntaje de un test no se ve antes de tiempo',
+                md: 'Si el resultado sólo aparece al final, quien responde no puede ver en la página cuánto vale cada respuesta: lo calcula el servidor al enviar. Sólo si un salto o un texto de las preguntas lo usa mientras se responde, la página lo va calculando.',
+            },
+            { t: 'h', text: 'Una pregunta por pantalla' },
+            { t: 'anim', key: 'form-conversational', caption: 'Primero la bienvenida y su «Empezar»; cada respuesta pasa sola a la siguiente pregunta hasta el «¡Gracias!».' },
+            {
+                t: 'p',
+                md: 'En los ajustes del formulario, en **Cómo se responde**, elige **Una pregunta por pantalla**. Cada pregunta ocupa la pantalla, con «Pregunta 2 de 5» arriba.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Pasa sola', what: 'Al elegir una opción, una calificación, una escala o Sí/No, pasa a la siguiente. En lo demás, con **Siguiente** o la tecla Enter.' },
+                    { name: 'Títulos y textos', what: 'Aparecen junto a la pregunta que sigue; el título de una página, en su primera pregunta.' },
+                    { name: 'La lógica sigue igual', what: 'Las condiciones, los saltos, el puntaje y las pantallas finales funcionan igual: las preguntas que no le corresponden ni aparecen.' },
+                    { name: 'En el celular', what: 'Es la forma más cómoda de responder en una pantalla chica.' },
+                ],
+            },
+            { t: 'h', text: 'La bienvenida' },
+            {
+                t: 'steps',
+                items: [
+                    'En los ajustes del formulario, en **Bienvenida**, marca **Mostrar una pantalla de bienvenida**.',
+                    'Escribe el **Título** (vacío = el del formulario), el **Mensaje** y el **Texto del botón** («Empezar»).',
+                    'Si quieres, agrega una **Imagen** y deja marcado **Decir cuánto toma**: la app lo calcula con las preguntas.',
+                    'Toca **Ver la bienvenida** para mirarla en la vista previa.',
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Diagnóstico gratis en un gimnasio',
+                md: 'Pulso Fit, en Medellín, pone en su sitio un test de cinco preguntas, una por pantalla, con una bienvenida: «¿Qué tan en forma estás? Toma 1 minuto». Cada respuesta suma puntos; con más de 7, la pantalla final dice «¡Estás listo para el plan avanzado, {{nombre}}!» y ofrece agendar una clase. El puntaje queda en el campo **Nivel** del registro, así el equipo llama primero a los que están más cerca de comprar.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Puedo tener varios cálculos?', a: 'Sí, hasta cinco por formulario: por ejemplo, un puntaje de conocimiento y otro de interés.' },
+                    { q: '¿Una pregunta puede aparecer según el puntaje?', a: 'No: «Mostrar sólo si…» mira respuestas. El puntaje decide saltos y pantallas finales, que ocurren al terminar una página o el formulario.' },
+                    { q: '¿Qué pasa si borro una pregunta que sumaba puntos?', a: 'Deja de sumar. Si borras un cálculo, se quitan también las reglas que lo miraban.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Siguiente: agradecimiento y cierre', article: 'formularios-ajustes' },
                 ],
             },

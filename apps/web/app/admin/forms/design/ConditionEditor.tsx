@@ -1,12 +1,16 @@
 import { Plus, X } from 'lucide-react';
 
 import {
+    FORM_CALC_OPS,
     FORM_CONDITION_MAX_RULES,
     FORM_CONDITION_OPS,
     formConditionRules,
+    isFormCalcCondition,
     isFormConditionGroup,
+    type FormCalcCondition,
     type FormCondition,
     type FormConditionOp,
+    type FormFieldCondition,
     type FormShowIf,
 } from '@imagina-base/shared';
 
@@ -37,6 +41,13 @@ export const OP_LABELS: Record<FormConditionOp, string> = {
 
 const NUMERIC = new Set(['number', 'currency', 'percent', 'rating', 'duration']);
 
+/** v0.1.357 — Un cálculo del formulario que una regla puede mirar (saltos y pantallas finales). */
+export interface CalcChoice {
+    key: string;
+    name: string;
+}
+const CALC_PREFIX = 'calc:';
+
 /** Las comparaciones que tienen sentido para el tipo del campo que controla. */
 export function opsFor(type: string | undefined): FormConditionOp[] {
     if (type === 'checkbox') return ['eq', 'is_empty', 'is_not_empty'];
@@ -60,6 +71,7 @@ export function ConditionEditor({
     emptyHint,
     addLabel = 'Agregar una condición',
     testId = 'form-condition',
+    calcs = [],
 }: {
     value: FormShowIf | null;
     onChange: (v: FormShowIf | null) => void;
@@ -69,17 +81,23 @@ export function ConditionEditor({
     emptyHint: string;
     addLabel?: string;
     testId?: string;
+    /** v0.1.357 — Cálculos que se pueden mirar (sólo en saltos y pantallas finales). */
+    calcs?: ReadonlyArray<CalcChoice>;
 }): JSX.Element {
     const usable = candidates.filter((c, i, all) => fieldsById.has(c.field_id) && all.findIndex((x) => x.field_id === c.field_id) === i);
     const rules = formConditionRules(value);
     const match = isFormConditionGroup(value) ? value.match : 'all';
     const set = (next: FormCondition[], m: 'all' | 'any' = match): void => onChange(packRules(next, m));
-    const first = usable[usable.length - 1]?.field_id;
+    const firstField = usable[usable.length - 1]?.field_id;
+    // Sin preguntas antes, la primera regla puede ser sobre un cálculo.
+    const firstRule = (): FormCondition | null =>
+        firstField !== undefined ? { field_id: firstField, op: 'eq', value: '' } : calcs[0] ? { calc: calcs[0].key, op: 'gt', value: 0 } : null;
+    const first = firstRule();
 
-    if (usable.length === 0 && rules.length === 0) return <p className="imcrm-text-xs imcrm-text-muted-foreground">{__(emptyHint)}</p>;
+    if (usable.length === 0 && calcs.length === 0 && rules.length === 0) return <p className="imcrm-text-xs imcrm-text-muted-foreground">{__(emptyHint)}</p>;
     if (rules.length === 0) {
         return (
-            <Button variant="outline" size="sm" className="imcrm-self-start" onClick={() => first !== undefined && set([{ field_id: first, op: 'eq', value: '' }])} data-testid={`${testId}-add`}>
+            <Button variant="outline" size="sm" className="imcrm-self-start" onClick={() => first && set([first])} data-testid={`${testId}-add`}>
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                 {__(addLabel)}
             </Button>
@@ -113,18 +131,19 @@ export function ConditionEditor({
                         testId={testId}
                         rule={rule}
                         usable={usable}
+                        calcs={calcs}
                         fieldsById={fieldsById}
                         onChange={(r) => set(rules.map((x, i) => (i === idx ? r : x)))}
                         onRemove={() => set(rules.filter((_, i) => i !== idx))}
                     />
                 </div>
             ))}
-            {rules.length < FORM_CONDITION_MAX_RULES && first !== undefined && (
+            {rules.length < FORM_CONDITION_MAX_RULES && first && (
                 <Button
                     variant="ghost"
                     size="sm"
                     className="imcrm-self-start"
-                    onClick={() => set([...rules, { field_id: first, op: 'eq', value: '' }])}
+                    onClick={() => set([...rules, first])}
                     data-testid={`${testId}-more`}
                 >
                     <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -135,10 +154,19 @@ export function ConditionEditor({
     );
 }
 
+/** Las comparaciones de una regla sobre un cálculo (un número). */
+export const CALC_OP_LABELS: Record<(typeof FORM_CALC_OPS)[number], string> = {
+    eq: 'es igual a',
+    neq: 'no es',
+    gt: 'es mayor que',
+    lt: 'es menor que',
+};
+
 function RuleRow({
     testId,
     rule,
     usable,
+    calcs,
     fieldsById,
     onChange,
     onRemove,
@@ -146,7 +174,125 @@ function RuleRow({
     testId: string;
     rule: FormCondition;
     usable: ReadonlyArray<{ field_id: number }>;
+    calcs: ReadonlyArray<CalcChoice>;
     fieldsById: Map<number, FieldEntity>;
+    onChange: (r: FormCondition) => void;
+    onRemove: () => void;
+}): JSX.Element {
+    // v0.1.357 — elegir un cálculo o una pregunta en el mismo desplegable.
+    const pickSource = (raw: string): void => {
+        if (raw.startsWith(CALC_PREFIX)) onChange({ calc: raw.slice(CALC_PREFIX.length), op: 'gt', value: 0 });
+        else onChange({ field_id: Number(raw), op: 'eq', value: '' });
+    };
+    if (isFormCalcCondition(rule)) return <CalcRuleRow rule={rule} usable={usable} calcs={calcs} fieldsById={fieldsById} onPick={pickSource} onChange={onChange} onRemove={onRemove} />;
+    return <FieldRuleRow testId={testId} rule={rule} usable={usable} calcs={calcs} fieldsById={fieldsById} onPick={pickSource} onChange={onChange} onRemove={onRemove} />;
+}
+
+/** El desplegable de «qué mira la regla»: las preguntas y, si hay, los cálculos. */
+function SourceSelect({
+    value,
+    missing,
+    usable,
+    calcs,
+    fieldsById,
+    onPick,
+}: {
+    value: string;
+    missing: string | null;
+    usable: ReadonlyArray<{ field_id: number }>;
+    calcs: ReadonlyArray<CalcChoice>;
+    fieldsById: Map<number, FieldEntity>;
+    onPick: (raw: string) => void;
+}): JSX.Element {
+    return (
+        <Select value={value} onChange={(e) => onPick(e.target.value)} aria-label={__('Pregunta que controla')} className="imcrm-min-w-0 imcrm-flex-1">
+            {missing && <option value={value}>{missing}</option>}
+            {usable.map((c) => (
+                <option key={c.field_id} value={c.field_id}>
+                    {fieldsById.get(c.field_id)?.label}
+                </option>
+            ))}
+            {calcs.length > 0 && (
+                <optgroup label={__('Cálculos')}>
+                    {calcs.map((c) => (
+                        <option key={c.key} value={CALC_PREFIX + c.key}>
+                            {c.name || c.key}
+                        </option>
+                    ))}
+                </optgroup>
+            )}
+        </Select>
+    );
+}
+
+function CalcRuleRow({
+    rule,
+    usable,
+    calcs,
+    fieldsById,
+    onPick,
+    onChange,
+    onRemove,
+}: {
+    rule: FormCalcCondition;
+    usable: ReadonlyArray<{ field_id: number }>;
+    calcs: ReadonlyArray<CalcChoice>;
+    fieldsById: Map<number, FieldEntity>;
+    onPick: (raw: string) => void;
+    onChange: (r: FormCondition) => void;
+    onRemove: () => void;
+}): JSX.Element {
+    const known = calcs.some((c) => c.key === rule.calc);
+    const raw = rule.value === undefined || rule.value === null ? '' : String(rule.value);
+    return (
+        <>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                <SourceSelect value={CALC_PREFIX + rule.calc} missing={known ? null : __('Cálculo borrado')} usable={usable} calcs={calcs} fieldsById={fieldsById} onPick={onPick} />
+                <Button variant="ghost" size="icon" className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0" aria-label={__('Quitar esta condición')} onClick={onRemove}>
+                    <X className="imcrm-h-3.5 imcrm-w-3.5" />
+                </Button>
+            </div>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                <Select value={rule.op} onChange={(e) => onChange({ ...rule, op: e.target.value as FormCalcCondition['op'] })} aria-label={__('Comparación')} className="imcrm-flex-1">
+                    {FORM_CALC_OPS.map((o) => (
+                        <option key={o} value={o}>
+                            {__(CALC_OP_LABELS[o])}
+                        </option>
+                    ))}
+                </Select>
+                <Input
+                    className="imcrm-w-24"
+                    inputMode="decimal"
+                    value={raw}
+                    onChange={(e) => {
+                        const t = e.target.value.trim().replace(',', '.');
+                        const n = Number(t);
+                        onChange({ ...rule, value: t === '' || t === '-' || !Number.isFinite(n) ? t : n });
+                    }}
+                    aria-label={__('Valor')}
+                    data-testid="form-condition-calc-value"
+                />
+            </div>
+        </>
+    );
+}
+
+function FieldRuleRow({
+    testId,
+    rule,
+    usable,
+    calcs,
+    fieldsById,
+    onPick,
+    onChange,
+    onRemove,
+}: {
+    testId: string;
+    rule: FormFieldCondition;
+    usable: ReadonlyArray<{ field_id: number }>;
+    calcs: ReadonlyArray<CalcChoice>;
+    fieldsById: Map<number, FieldEntity>;
+    onPick: (raw: string) => void;
     onChange: (r: FormCondition) => void;
     onRemove: () => void;
 }): JSX.Element {
@@ -161,24 +307,12 @@ function RuleRow({
     return (
         <>
             <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                <Select
-                    value={String(rule.field_id)}
-                    onChange={(e) => onChange({ field_id: Number(e.target.value), op: 'eq', value: '' })}
-                    aria-label={__('Pregunta que controla')}
-                    className="imcrm-min-w-0 imcrm-flex-1"
-                >
-                    {missing && <option value={String(rule.field_id)}>{__('Pregunta borrada')}</option>}
-                    {usable.map((c) => (
-                        <option key={c.field_id} value={c.field_id}>
-                            {fieldsById.get(c.field_id)?.label}
-                        </option>
-                    ))}
-                </Select>
+                <SourceSelect value={String(rule.field_id)} missing={missing ? __('Pregunta borrada') : null} usable={usable} calcs={calcs} fieldsById={fieldsById} onPick={onPick} />
                 <Button variant="ghost" size="icon" className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0" aria-label={__('Quitar esta condición')} onClick={onRemove}>
                     <X className="imcrm-h-3.5 imcrm-w-3.5" />
                 </Button>
             </div>
-            <Select value={rule.op} onChange={(e) => onChange({ ...rule, op: e.target.value as FormConditionOp })} aria-label={__('Comparación')}>
+            <Select value={rule.op} onChange={(e) => onChange({ ...rule, op: e.target.value as FormConditionOp } as FormFieldCondition)} aria-label={__('Comparación')}>
                 {ops.map((o) => (
                     <option key={o} value={o}>
                         {__(OP_LABELS[o])}

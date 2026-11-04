@@ -14,6 +14,7 @@ export const meta: LearnModuleMeta = {
         'Escalas del 0 al 10, Sí o No, deslizador, firma, matriz, ordenar opciones y «Otro» con espacio para escribir',
         'Preguntas que aparecen según otra respuesta, formularios por pasos y datos ocultos desde el enlace',
         'Saltos entre páginas, pantallas finales distintas y respuestas que se recuerdan: «Hola, {{nombre}}»',
+        'Tests con puntaje, una pregunta por pantalla y una bienvenida con «Empezar»',
         'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
         'Comparte el enlace o insértalo en tu sitio, y deja que una automatización conteste sola',
@@ -62,6 +63,15 @@ export const meta: LearnModuleMeta = {
             minutes: 9,
             level: 'intermediate',
             keywords: 'logica saltar pagina salto ramificacion terminar antes pantalla final mensaje distinto recordar respuesta nombre llaves variables todas alguna varias reglas y o',
+            needs: 'manage_forms',
+        },
+        {
+            id: 'formularios-puntaje',
+            title: 'Puntaje, una pregunta por pantalla y bienvenida',
+            summary: 'Suma puntos según las respuestas para un test o una evaluación, úsalos en saltos y pantallas finales, guárdalos en la lista, responde de a una pregunta y recibe a la persona con una bienvenida.',
+            minutes: 8,
+            level: 'intermediate',
+            keywords: 'puntaje puntos test examen evaluacion quiz nota calculo calcular sumar total resultado una pregunta por pantalla conversacional estilo typeform bienvenida portada empezar cuanto toma',
             needs: 'manage_forms',
         },
         {

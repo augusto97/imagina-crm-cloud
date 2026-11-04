@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { formConfigSchema, type FormConfig } from '@imagina-base/shared';
 
 import {
+    addCalc,
+    calcKeyFrom,
+    calcRange,
+    calcSources,
+    removeCalc,
+    renameCalcKey,
+    setCalcPart,
     addContentItem,
     addFieldItem,
     addMatrixItem,
@@ -273,5 +280,78 @@ describe('v0.1.356 — lógica en el constructor', () => {
         expect(withToken('Hola', '{{nombre}}')).toBe('Hola {{nombre}}');
         expect(withToken('Hola ', '{{nombre}}')).toBe('Hola {{nombre}}');
         expect(withToken('', '{{nombre}}')).toBe('{{nombre}}');
+    });
+});
+
+describe('v0.1.357 — cálculos en el constructor', () => {
+    const byId = new Map([
+        [2, { label: 'Tipo', type: 'select', config: { options: [{ value: 'persona', label: 'Persona' }, { value: 'empresa', label: 'Empresa' }] } }],
+        [4, { label: 'Edad', type: 'number', config: {} }],
+        [7, { label: 'Acepta', type: 'checkbox', config: {} }],
+        [9, { label: 'Notas', type: 'long_text', config: {} }],
+    ]);
+    function withCalc(): FormConfig {
+        return formConfigSchema.parse({
+            items: [
+                { id: 'aaaa1', type: 'field', field_id: 2 },
+                { id: 'aaaa2', type: 'field', field_id: 7, display: 'yes_no', yes_label: 'Claro' },
+                { id: 'aaaa3', type: 'field', field_id: 9, label: 'Tienes {{puntaje}}' },
+                { id: 'aaaa4', type: 'field', field_id: 4 },
+            ],
+            settings: {
+                success_title: 'Sacaste {{puntaje|0}}',
+                calcs: [{ id: 'calc1', key: 'puntaje', name: 'Puntaje', parts: [{ field_id: 2, points: { empresa: 5 } }] }],
+                endings: [{ id: 'fin01', title: 'Alto', when: { calc: 'puntaje', op: 'gt', value: 3 } }],
+                jumps: [{ id: 'jjjj1', from: 'start', when: { calc: 'puntaje', op: 'lt', value: 1 }, to: 'end' }],
+            },
+        });
+    }
+
+    it('el nombre entre llaves sale del nombre, sin acentos y sin chocar con un campo', () => {
+        expect(calcKeyFrom('Puntaje final', new Set())).toBe('puntaje_final');
+        expect(calcKeyFrom('Puntuación', new Set(['puntuacion']))).toBe('puntuacion_2');
+        expect(calcKeyFrom('1 nivel', new Set())).toBe('calc_1_nivel');
+        const r = addCalc(withCalc(), ['nombre', 'total']);
+        expect(r.config.settings.calcs.map((c) => c.key)).toEqual(['puntaje', 'puntaje_2']);
+    });
+
+    it('cambiar el nombre lo cambia también en los textos y en las reglas', () => {
+        const next = renameCalcKey(withCalc(), 'calc1', 'nota');
+        expect(next.settings.calcs[0]!.key).toBe('nota');
+        expect(next.settings.success_title).toBe('Sacaste {{nota|0}}');
+        expect((next.items[2] as { label: string }).label).toBe('Tienes {{nota}}');
+        expect(next.settings.endings[0]!.when).toEqual({ calc: 'nota', op: 'gt', value: 3 });
+        expect(next.settings.jumps[0]!.when).toEqual({ calc: 'nota', op: 'lt', value: 1 });
+    });
+
+    it('quitarlo saca las reglas que lo miraban (y el salto que se queda sin condición)', () => {
+        const next = removeCalc(withCalc(), 'calc1');
+        expect(next.settings.calcs).toEqual([]);
+        expect(next.settings.endings[0]!.when).toBeNull();
+        expect(next.settings.jumps).toEqual([]);
+    });
+
+    it('las preguntas que suman, en orden; puntos vacíos dejan de sumar; el rango se calcula', () => {
+        const cfg = withCalc();
+        const src = calcSources(cfg, byId);
+        expect(src.map((s) => [s.fieldId, s.kind])).toEqual([
+            [2, 'choices'],
+            [7, 'choices'],
+            [4, 'number'],
+        ]);
+        expect(src[1]!.choices).toEqual([
+            { value: 'true', label: 'Claro' },
+            { value: 'false', label: 'No' },
+        ]);
+        let next = setCalcPart(cfg, 'calc1', 7, { points: { true: 2, false: -1 }, multiplier: null });
+        expect(next.settings.calcs[0]!.parts.map((p) => p.field_id)).toEqual([2, 7]);
+        expect(calcRange(next.settings.calcs[0]!, src)).toEqual({ min: -1, max: 7 });
+        next = setCalcPart(next, 'calc1', 7, { points: {}, multiplier: null });
+        expect(next.settings.calcs[0]!.parts.map((p) => p.field_id)).toEqual([2]);
+        // Con un factor, el rango no se puede saber.
+        next = setCalcPart(next, 'calc1', 4, { points: {}, multiplier: 1 });
+        expect(calcRange(next.settings.calcs[0]!, src)).toBeNull();
+        // Borrar una pregunta que sumaba la saca del cálculo.
+        expect(removeItem(next, 'aaaa4').settings.calcs[0]!.parts.map((p) => p.field_id)).toEqual([2]);
     });
 });

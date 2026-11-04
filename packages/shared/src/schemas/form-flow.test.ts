@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPublicFormItems, formConfigSchema, formRecallMap, type FormFieldLike } from './form';
-import { formAnswerText, formConditionMet, formEndingFor, formFlow, formItemVisible, formRecallSlugs, formRecallText } from './form-logic';
+import { buildPublicFormItems, formCalcIsLive, formCalcsForLogic, formConfigSchema, formEstimateMinutes, formRecallMap, type FormFieldLike } from './form';
+import { formAnswerText, formCalcPartValue, formCalcValues, formConditionMet, formEndingFor, formFlow, formItemVisible, formRecallSlugs, formRecallText, withFormCalcValues } from './form-logic';
 
 /** v0.1.356 — Lógica: reglas Y/O, saltos entre páginas, pantallas finales y recordar respuestas. */
 
@@ -205,5 +205,104 @@ describe('recordar respuestas', () => {
         });
         // `nit` no se pregunta: no viaja.
         expect(formRecallMap(c, FIELDS)).toEqual({ nombre: '1' });
+    });
+});
+
+describe('v0.1.357 — cálculos y puntaje', () => {
+    const calcConfig = (settings: Record<string, unknown> = {}) =>
+        formConfigSchema.parse({
+            items: [
+                q('aaaa1', 2),
+                q('aaaa2', 7, { display: 'yes_no' }),
+                q('aaaa3', 4),
+                { id: 'pbrk2', type: 'page_break', title: 'Empresa' },
+                q('bbbb1', 5),
+                { id: 'pbrk3', type: 'page_break', title: 'Final' },
+                q('cccc1', 6),
+            ],
+            settings: {
+                calcs: [
+                    {
+                        id: 'calc1',
+                        key: 'puntaje',
+                        name: 'Puntaje',
+                        start: 1,
+                        parts: [
+                            { field_id: 2, points: { empresa: 5, persona: 1 } },
+                            { field_id: 7, points: { true: 3, false: -1 } },
+                            { field_id: 5, multiplier: 0.5 },
+                        ],
+                    },
+                ],
+                ...settings,
+            },
+        });
+
+    it('suma por opción, Sí/No y factor; lo de una página saltada no cuenta', () => {
+        const c = calcConfig();
+        const items = pub(c);
+        const calcs = formCalcsForLogic(c);
+        const all = formFlow(items, { '2': 'empresa', '7': true, '5': 10 }, c.settings.jumps, calcs);
+        expect(all.calcs.puntaje).toBe(1 + 5 + 3 + 5);
+        // El «No» también es una respuesta (resta).
+        expect(formFlow(items, { '2': 'persona', '7': false }, [], calcs).calcs.puntaje).toBe(1 + 1 - 1);
+        // Con un salto que deja afuera la página de empleados, esos puntos no cuentan.
+        const jumps = [{ id: 'jjjj1', from: 'start', when: { field_id: 2, op: 'eq', value: 'persona' }, to: 'pbrk3' } as const];
+        expect(formFlow(items, { '2': 'persona', '7': true, '5': 10 }, jumps as never, calcs).calcs.puntaje).toBe(1 + 1 + 3);
+    });
+
+    it('un salto y una pantalla final pueden mirar el puntaje', () => {
+        const c = calcConfig({
+            jumps: [{ id: 'jjjj1', from: 'start', when: { calc: 'puntaje', op: 'gt', value: 7 }, to: 'pbrk3' }],
+            endings: [
+                { id: 'fin01', title: 'Excelente', when: { calc: 'puntaje', op: 'gt', value: 7 } },
+                { id: 'fin02', title: 'Bien', when: { match: 'all', rules: [{ calc: 'puntaje', op: 'gt', value: 2 }, { field_id: 2, op: 'eq', value: 'persona' }] } },
+            ],
+        });
+        const items = pub(c);
+        const calcs = formCalcsForLogic(c);
+        const high = { '2': 'empresa', '7': true };
+        const f1 = formFlow(items, high, c.settings.jumps, calcs);
+        expect(f1.path).toEqual([0, 2]);
+        expect(formEndingFor(c.settings.endings, items, high, f1)?.id).toBe('fin01');
+        const mid = { '2': 'persona', '7': true };
+        const f2 = formFlow(items, mid, c.settings.jumps, calcs);
+        expect(f2.path).toEqual([0, 1, 2]);
+        expect(formEndingFor(c.settings.endings, items, mid, f2)?.id).toBe('fin02');
+    });
+
+    it('parte por parte: varias opciones se suman y sin respuesta no suma', () => {
+        expect(formCalcPartValue({ key: '1', points: { a: 2, b: 3 }, multiplier: null }, ['a', 'b', 'x'])).toBe(5);
+        expect(formCalcPartValue({ key: '1', points: { a: 2 }, multiplier: null }, null)).toBe(0);
+        expect(formCalcPartValue({ key: '1', points: { '9': 4 }, multiplier: null }, 9)).toBe(4);
+        expect(formCalcPartValue({ key: '1', points: {}, multiplier: 2 }, '1.5')).toBe(3);
+        // 0,1 + 0,2 da 0,3 (redondeado).
+        const v = formCalcValues([{ key: 'k', start: 0.1, parts: [{ key: '1', points: { a: 0.2 }, multiplier: null }] }], { '1': 'a' }, () => true);
+        expect(v.k).toBe(0.3);
+    });
+
+    it('`{{puntaje}}` viaja en el mapa de recuerdos; sólo se manda a la página si se usa mientras se responde', () => {
+        const c = calcConfig({ endings: [{ id: 'fin01', title: 'Sacaste {{puntaje}}', when: null }] });
+        expect(formRecallMap(c, FIELDS)).toEqual({ puntaje: 'calc:puntaje' });
+        expect(formCalcIsLive(c, 'puntaje')).toBe(false);
+        const live = calcConfig({ description: 'Vas {{puntaje}} puntos' });
+        expect(formCalcIsLive(live, 'puntaje')).toBe(true);
+        const byJump = calcConfig({ jumps: [{ id: 'jjjj1', from: 'start', when: { calc: 'puntaje', op: 'lt', value: 2 }, to: 'end' }] });
+        expect(formCalcIsLive(byJump, 'puntaje')).toBe(true);
+    });
+
+    it('una regla sobre un cálculo que no existe no se cumple; los números se comparan como números', () => {
+        const values = withFormCalcValues({}, { puntaje: 7 });
+        expect(formConditionMet({ calc: 'puntaje', op: 'eq', value: '7' }, [], values)).toBe(true);
+        expect(formConditionMet({ calc: 'puntaje', op: 'neq', value: 7 }, [], values)).toBe(false);
+        expect(formConditionMet({ calc: 'otro', op: 'lt', value: 100 }, [], values)).toBe(false);
+    });
+
+    it('bienvenida, modo y cálculos se leen con tolerancia', () => {
+        const c = formConfigSchema.parse({ items: [q('aaaa1', 1)], settings: { welcome: 'x', layout: 'raro', calcs: [{ id: 'X', key: '1mal' }, { id: 'calc2', key: 'ok' }] } });
+        expect(c.settings.welcome.enabled).toBe(false);
+        expect(c.settings.layout).toBe('classic');
+        expect(c.settings.calcs.map((k) => k.key)).toEqual(['ok']);
+        expect(formEstimateMinutes(c)).toBe(1);
     });
 });

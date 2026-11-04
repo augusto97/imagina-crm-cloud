@@ -35,6 +35,7 @@ import {
     buildPublicFormItems,
     buildPublicThemeCss,
     CAPTCHA_PROVIDER_INFO,
+    formEstimateMinutes,
     formRecallMap,
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
@@ -78,6 +79,7 @@ import { ConditionEditor } from './design/ConditionEditor';
 import { LogicMap, LogicPanel, RecallPicker, withToken } from './design/LogicPanel';
 import { MatrixEditor } from './design/QuestionKind';
 import { MyThemes } from './design/MyThemes';
+import { StartSettings } from './design/StartSettings';
 import { ThemeGallery } from './design/ThemeGallery';
 import { ThemeInspector } from './design/ThemeInspector';
 import {
@@ -188,6 +190,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const [shareOpen, setShareOpen] = useState(false);
     // v0.1.356 — la pantalla final que se mira en la vista previa (null = el formulario; '' = la de siempre).
     const [previewEnding, setPreviewEnding] = useState<string | null>(null);
+    /** v0.1.357 — ver la bienvenida en la vista previa. */
+    const [previewWelcome, setPreviewWelcome] = useState(false);
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
     const config = draft.config;
@@ -306,6 +310,23 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             jumps: s.jumps.map((j) => ({ from: j.from, when: j.when, to: j.to })),
             endings: s.endings.map((e) => ({ id: e.id, title: e.title, message: e.message, redirect_url: e.redirect_url, when: e.when })),
             recall: formRecallMap(config, fields),
+            // v0.1.357 — cómo se responde, la bienvenida y los cálculos (aquí con todo lo que suma cada respuesta).
+            layout: s.layout,
+            welcome: s.welcome.enabled
+                ? {
+                      title: s.welcome.title,
+                      message: s.welcome.message,
+                      button_label: s.welcome.button_label || 'Empezar',
+                      image_url: s.welcome.file_id !== null ? imageUrl(s.welcome.file_id) : null,
+                      minutes: s.welcome.show_time ? formEstimateMinutes(config) : null,
+                  }
+                : null,
+            calcs: s.calcs.map((c) => ({
+                key: c.key,
+                name: c.name,
+                start: c.start,
+                parts: c.parts.map((p) => ({ key: String(p.field_id), points: p.points, multiplier: p.multiplier })),
+            })),
         };
     }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
 
@@ -325,10 +346,14 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     useEffect(() => {
         if (!ready) return;
         iframeRef.current?.contentWindow?.postMessage(
-            { type: 'imb-form-preview', meta, selected, css: themeCss, scheme, ending: previewEnding ?? undefined },
+            { type: 'imb-form-preview', meta, selected, css: themeCss, scheme, ending: previewEnding ?? undefined, welcome: previewWelcome && config.settings.welcome.enabled },
             window.location.origin,
         );
-    }, [ready, meta, selected, themeCss, scheme, previewEnding]);
+    }, [ready, meta, selected, themeCss, scheme, previewEnding, previewWelcome, config.settings.welcome.enabled]);
+    // Elegir una pregunta vuelve al formulario (la bienvenida tapa las preguntas).
+    useEffect(() => {
+        if (selected) setPreviewWelcome(false);
+    }, [selected]);
     // Al salir de «Lógica» la vista previa vuelve al formulario.
     useEffect(() => {
         if (leftTab !== 'logic') setPreviewEnding(null);
@@ -520,6 +545,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             dataConsent={dataConsent.data ?? null}
             listId={listId}
             onOpenDesign={openDesign}
+            previewWelcome={previewWelcome}
+            onPreviewWelcome={setPreviewWelcome}
         />
     );
     const preview = (
@@ -1275,10 +1302,15 @@ function SettingsInspector({
     dataConsent,
     listId,
     onOpenDesign,
+    previewWelcome,
+    onPreviewWelcome,
 }: {
     listId: number;
     /** v0.1.351 — lleva a la pestaña «Diseño» (colores, fuentes, tamaños…). */
     onOpenDesign: () => void;
+    /** v0.1.357 — ver la bienvenida en la vista previa. */
+    previewWelcome: boolean;
+    onPreviewWelcome: (on: boolean) => void;
     draft: Draft;
     setName: (name: string) => void;
     config: FormConfig;
@@ -1330,6 +1362,8 @@ function SettingsInspector({
             <Field label={__('Texto del botón')}>
                 <Input value={s.submit_label} onChange={(e) => set({ submit_label: e.target.value })} />
             </Field>
+
+            <StartSettings config={config} fields={fields} onChange={onChange} previewWelcome={previewWelcome} onPreviewWelcome={onPreviewWelcome} />
 
             <Section title={__('Después de enviar')}>
                 <Field label={__('Título del agradecimiento')} hint={__('Para mostrar otro mensaje según lo que responde, agrega una pantalla final en «Lógica».')}>

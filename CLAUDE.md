@@ -11671,6 +11671,56 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         su CSP), constructor 24/24 y 22/22 en celular, y la v0.1.355 sin
         regresiones (29/29 y 17/17).
 
+  - [x] **Formularios, entrega 2 (segunda mitad, segunda parte): puntaje,
+        una pregunta por pantalla y bienvenida (v0.1.357, addendum ADR-S39)**.
+        Con esto la entrega 2 de formularios queda completa. Sin migración:
+        todo vive en `forms.config`.
+        (a) **Cálculos y puntaje** (`settings.calcs`, hasta 5): cada uno con
+        nombre, nombre corto para recordarlo (`{{puntaje}}`, que no puede ser
+        el de un campo: el servidor lo descarta), valor inicial y partes —
+        puntos por opción de una selección, varias opciones (se suman),
+        Sí/No o calificación, o un número por un factor—. Sólo cuentan las
+        respuestas que la persona VIO en su camino (`formCalcValues`, dentro
+        del mismo `formFlow` de v0.1.356), y el resultado se puede **guardar
+        en un campo** número, moneda o porcentaje que el formulario no
+        pregunta (uno por cálculo).
+        (b) **Reglas por puntaje** (`{calc, op, value}`, union en
+        `formConditionSchema`) en saltos y pantallas finales («si el puntaje es
+        mayor que 70, a la pantalla «Excelente»»); en «Mostrar sólo si…» se
+        quitan al guardar.
+        (c) **Los puntos son privados**: las partes viajan a la página sólo si
+        un salto o un texto que se ve mientras se responde las necesita
+        (`formCalcIsLive`); si no, el servidor calcula y devuelve el resultado
+        al enviar (`SubmitFormResult.calcs`), y la pantalla final lo muestra
+        (también la que confirma por correo).
+        (d) **«Una pregunta por pantalla»** (`settings.layout:
+        'conversational'`): cada pregunta en su pantalla con los títulos,
+        textos e imágenes que la preceden; elegir una opción, una escala o
+        Sí/No pasa sola a la siguiente, el resto con «Siguiente» o Enter;
+        «Pregunta X de Y» y los saltos siguen funcionando por página.
+        (e) **Bienvenida** (`settings.welcome`): título (con respuestas que se
+        recuerdan), mensaje, botón, imagen firmada y «Toma unos N minutos»
+        (`formEstimateMinutes`).
+        (f) **Constructor**: «Cálculos y puntaje» en la pestaña Lógica
+        (`CalcPanel`: puntos por opción, factor, rango posible, dónde se
+        guarda; renombrar el nombre corto actualiza reglas y textos) y «Cómo
+        se responde» + «Bienvenida» en Ajustes (`StartSettings`, con «Ver la
+        bienvenida» en la vista previa); el selector de reglas suma el grupo
+        «Cálculos». El asistente/MCP ve cálculos, la forma de responder y la
+        bienvenida en `get_list_schema`; migrar una empresa re-mapea partes y
+        campo destino (test nuevo).
+        **Atrapado en el E2E**: tras «Empezar» el foco iba al «Pregunta 1 de
+        5» y no a la respuesta (`focusCurrent`), y el «Toma 1 minuto» quedaba
+        pegado al botón. Ayuda: guía `form-score`, artículo «Puntaje, una
+        pregunta por pantalla y bienvenida» en Aprende con las ilustraciones
+        `form-score` y `form-conversational`, paso nuevo en el recorrido de
+        formularios y novedad con carrusel. El script de la página pública sube
+        1,4 KB gz (15,9 → 17,3). Tests: 6 de shared (706), 5 de integración de
+        la API + 1 de re-mapeo (specs de formularios 38/38), 4 del front (790);
+        E2E navegador: página pública 27/27 en escritorio y 26/26 en celular
+        oscuro (también contra el build de producción con su CSP), constructor
+        26/26 y 25/25 en celular, y v0.1.355/v0.1.356 sin regresiones.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

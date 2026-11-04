@@ -740,6 +740,26 @@ body.ib-embedded .ib-split-media{display:none}
 .ib-pv-tag{display:inline-block;margin-bottom:6px;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--ib-muted) 16%,transparent);color:var(--ib-muted);font-size:11px;font-weight:500}
 .ib-pv-empty{color:var(--ib-muted);text-align:center;padding:24px 0;font-size:14px}
 .ib-captcha-ph{margin-top:20px;border:1.5px dashed var(--ib-border);border-radius:8px;padding:14px;color:var(--ib-muted);font-size:13px;text-align:center}
+/* v0.1.357 — bienvenida */
+.ib-welcome{text-align:center;padding:12px 4px 4px}
+.ib-welcome-img{margin:0 0 18px}
+.ib-welcome-img img{max-width:100%;max-height:260px;border-radius:10px;object-fit:cover}
+.ib-welcome h2{margin:0 0 8px;font-family:var(--ib-heading-font);font-size:calc(var(--ib-title-fs) * .95);line-height:1.2}
+.ib-welcome .ib-welcome-msg{color:var(--ib-muted);margin:0 auto 18px;max-width:52ch}
+.ib-welcome .ib-welcome-msg p{margin:0 0 10px;white-space:pre-wrap}
+.ib-welcome-time{display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--ib-muted);margin:0 0 18px}
+.ib-welcome .ib-btn{min-width:160px}
+.ib-welcome-hide .ib-header .ib-title,.ib-welcome-hide .ib-header .ib-desc{display:none}
+/* v0.1.357 — una pregunta por pantalla */
+.ib-layout-conv .ib-page:not([hidden]){animation:ib-step-in .28s ease both}
+@keyframes ib-step-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.ib-layout-conv .ib-grid>.ib-item{grid-column:1 / -1}
+.ib-layout-conv .ib-page{min-height:min(46vh,380px);display:flex;flex-direction:column;justify-content:center}
+.ib-layout-conv .ib-field>.ib-label,.ib-layout-conv .ib-matrix>.ib-label{font-size:calc(var(--ib-q-fs) * 1.3);line-height:1.3;margin-bottom:10px}
+.ib-layout-conv .ib-help{font-size:14px}
+.ib-conv-hint{display:none;font-size:12.5px;color:var(--ib-muted);align-self:center}
+@media (hover:hover) and (pointer:fine){.ib-layout-conv .ib-conv-hint{display:inline}}
+body.ib-embedded.ib-layout-conv .ib-page{min-height:0}
 .ib-skeleton{display:grid;gap:18px}
 .ib-skeleton span{display:block;height:var(--ib-input-h);border-radius:var(--ib-input-radius);background:var(--ib-soft)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
