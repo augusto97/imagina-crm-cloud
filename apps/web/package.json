@@ -7,8 +7,9 @@
     "scripts": {
         "dev": "vite --config vite.cloud.config.ts",
         "dev:cloud": "vite --config vite.cloud.config.ts",
-        "build:cloud": "tsc -b && vite build --config vite.cloud.config.ts",
-        "build": "tsc -b --noEmit && vite build --config vite.cloud.config.ts",
+        "build:cloud": "tsc -b && vite build --config vite.cloud.config.ts && vite build --config vite.form.config.ts",
+        "build": "tsc -b --noEmit && vite build --config vite.cloud.config.ts && vite build --config vite.form.config.ts",
+        "build:form": "vite build --config vite.form.config.ts",
         "preview": "vite preview",
         "lint": "eslint \"app/**/*.{ts,tsx}\"",
         "lint:fix": "eslint \"app/**/*.{ts,tsx}\" --fix",

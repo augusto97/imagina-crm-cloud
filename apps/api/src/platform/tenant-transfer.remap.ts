@@ -134,6 +134,13 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);
+/**
+ * v0.1.351 — Objetos cuyos VALORES son ids (las claves son texto libre): la
+ * imagen de cada opción de una pregunta (`valor de la opción → archivo`).
+ */
+const ID_VALUE_RECORDS: Record<string, keyof IdMaps> = {
+    option_images: 'attachment',
+};
 
 /**
  * Recorre un jsonb traduciendo toda referencia conocida. Un id que no resuelve
@@ -170,6 +177,14 @@ export function remapJson(value: unknown, maps: IdMaps): unknown {
             out[key] = Array.isArray(raw)
                 ? raw.map((v) => mapId(maps.list, v)).filter((v): v is number => v !== null)
                 : raw;
+        } else if (ID_VALUE_RECORDS[key] && raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+            const map = maps[ID_VALUE_RECORDS[key]!];
+            const next: Record<string, number> = {};
+            for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+                const id = mapId(map, v);
+                if (id !== null) next[k] = id;
+            }
+            out[key] = next;
         } else {
             out[key] = remapJson(raw, maps);
         }
@@ -525,4 +540,22 @@ export function remapWhatsappConnectionConfig(provider: string, config: Record<s
     if (wa === null || typeof wa !== 'object' || Array.isArray(wa)) return config;
     const w = wa as Record<string, unknown>;
     return { ...config, whatsapp: { ...w, inbound_list_id: w.inbound_list_id === null || w.inbound_list_id === undefined ? null : mapId(maps.list, w.inbound_list_id) } };
+}
+
+/**
+ * v0.1.351 — Los archivos que la EMPRESA referencia en su `settings`: el logo
+ * de la marca y las imágenes de sus temas guardados («Mis temas»). Antes de
+ * esta versión el logo viajaba con el id del servidor de origen y quedaba
+ * roto (o apuntando a otro archivo) en el destino.
+ */
+export function remapTenantSettingsFiles(settings: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
+    const out = { ...settings };
+    const branding = out.branding;
+    if (branding !== null && typeof branding === 'object' && !Array.isArray(branding)) {
+        const b = { ...(branding as Record<string, unknown>) };
+        if (b.logo_file_id !== null && b.logo_file_id !== undefined) b.logo_file_id = mapId(maps.attachment, b.logo_file_id);
+        out.branding = b;
+    }
+    if (Array.isArray(out.public_themes)) out.public_themes = remapJson(out.public_themes, maps);
+    return out;
 }

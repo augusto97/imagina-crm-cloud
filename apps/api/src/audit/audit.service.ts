@@ -40,6 +40,11 @@ export type AuditAction =
     // v0.1.289 — verificación anti-robots de un formulario y de la empresa,
     // y la contraseña del portal de clientes.
     | 'form.captcha_on'
+    // v0.1.351 — «Mis temas» de los formularios.
+    | 'public_theme.create'
+    | 'public_theme.update'
+    | 'public_theme.delete'
+    | 'public_theme.default'
     | 'form.captcha_off'
     | 'workspace.captcha_change'
     | 'workspace.portal_password_on'

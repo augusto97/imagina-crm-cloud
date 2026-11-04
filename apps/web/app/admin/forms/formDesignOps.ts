@@ -1,5 +1,6 @@
 import {
     fieldDefaultOf,
+    formConfigSchema,
     formItemSchema,
     isFormFieldType,
     isUserWritableType,
@@ -25,6 +26,17 @@ interface FieldLike {
     config?: Record<string, unknown>;
 }
 
+/**
+ * v0.1.351 — Lee la configuración que llega del servidor completando los
+ * valores por defecto de cada versión (una pregunta guardada antes no trae
+ * `width` ni `option_images`). Si no valida (datos de una versión futura),
+ * se usa tal cual: mejor eso que vaciar el formulario al guardar.
+ */
+export function readFormConfig(raw: unknown): FormConfig {
+    const parsed = formConfigSchema.safeParse(raw ?? {});
+    return parsed.success ? parsed.data : (raw as FormConfig);
+}
+
 export function insertAfter(items: FormItem[], item: FormItem, afterId: string | null): FormItem[] {
     if (afterId === null) return [...items, item];
     const idx = items.findIndex((i) => i.id === afterId);
@@ -41,15 +53,20 @@ export function addFieldItem(config: FormConfig, fieldId: number, afterId: strin
     return { config: { ...config, items: insertAfter(config.items, item, afterId) }, id: item.id };
 }
 
+/** v0.1.351 — Lo que se agrega desde «Contenido» (sin campo de la lista). */
+export type FormContentType = 'heading' | 'text' | 'page_break' | 'image';
+
 export function addContentItem(
     config: FormConfig,
-    type: 'heading' | 'text' | 'page_break',
+    type: FormContentType,
     afterId: string | null,
 ): { config: FormConfig; id: string } {
     const item = formItemSchema.parse(
         type === 'page_break'
             ? { id: newFormItemId(), type, title: '' }
-            : { id: newFormItemId(), type, text: type === 'heading' ? 'Nueva sección' : '' },
+            : type === 'image'
+              ? { id: newFormItemId(), type }
+              : { id: newFormItemId(), type, text: type === 'heading' ? 'Nueva sección' : '' },
     );
     return { config: { ...config, items: insertAfter(config.items, item, afterId) }, id: item.id };
 }

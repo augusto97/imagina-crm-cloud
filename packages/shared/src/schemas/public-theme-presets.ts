@@ -1,4 +1,18 @@
-import { publicThemeSchema, type PublicTheme, type PublicThemeInput } from './public-theme';
+import {
+    publicBackgroundSchema,
+    publicButtonSchema,
+    publicCardSchema,
+    publicChoicesSchema,
+    publicCoverSchema,
+    publicInputsSchema,
+    publicLayoutSchema,
+    publicPaletteSchema,
+    publicSplitSchema,
+    publicThemeSchema,
+    publicTypographySchema,
+    type PublicTheme,
+    type PublicThemeInput,
+} from './public-theme';
 import { mixHex } from './public-theme-css';
 
 /**
@@ -18,7 +32,32 @@ export interface PublicThemePreset {
     theme: PublicTheme;
 }
 
+const SECTIONS = {
+    colors: publicPaletteSchema,
+    typography: publicTypographySchema,
+    layout: publicLayoutSchema,
+    cover: publicCoverSchema,
+    split: publicSplitSchema,
+    background: publicBackgroundSchema,
+    card: publicCardSchema,
+    inputs: publicInputsSchema,
+    choices: publicChoicesSchema,
+    button: publicButtonSchema,
+} as const;
+
+/**
+ * El tema se lee con tolerancia (una sección rota cae entera a la de
+ * fábrica), así que una plantilla con un valor fuera de rango perdería su
+ * sección SIN avisar. Aquí cada sección se valida estricta: un error es de
+ * código y lo atrapa el test de las plantillas.
+ */
 function build(id: string, input: PublicThemeInput): PublicTheme {
+    for (const [key, schema] of Object.entries(SECTIONS)) {
+        const value = (input as Record<string, unknown>)[key];
+        if (value === undefined) continue;
+        const r = schema.safeParse(value);
+        if (!r.success) throw new Error(`Plantilla «${id}»: la sección ${key} no es válida (${r.error.issues[0]?.path.join('.')}: ${r.error.issues[0]?.message})`);
+    }
     return publicThemeSchema.parse({ ...input, preset: id });
 }
 

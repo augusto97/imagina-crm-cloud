@@ -12,6 +12,8 @@ import {
     moveItemTo,
     pageCount,
     pageNumbers,
+    questionCount,
+    readFormConfig,
     removeItem,
     updateItem,
 } from './formDesignOps';
@@ -89,6 +91,23 @@ describe('constructor de formularios', () => {
         expect(pageCount(dup.config)).toBe(3);
         const tail = addContentItem(base(), 'page_break', 'aaaa3');
         expect(pageCount(tail.config)).toBe(1);
+    });
+
+    it('v0.1.351 — una configuración guardada antes recibe los valores nuevos (ancho, imágenes, tema)', () => {
+        const old = { items: [{ id: 'aaaa1', type: 'field', field_id: 1, label: '', display: 'auto' }], settings: { title: 'X' } };
+        const out = readFormConfig(old);
+        expect(out.items[0]).toMatchObject({ width: 'full', hide_label: false, columns: null, option_images: {} });
+        expect(out.settings.theme).toBeNull();
+        // Algo que no valida se conserva tal cual (no se vacía el formulario).
+        const weird = { items: [{ id: 'aaaa1', type: 'futuro' }] };
+        expect(readFormConfig(weird)).toBe(weird);
+    });
+
+    it('v0.1.351 — agrega un ítem de imagen vacío, sin condición', () => {
+        const { config, id } = addContentItem(base(), 'image', 'aaaa2');
+        expect(config.items.map((i) => i.id)).toEqual(['aaaa1', 'aaaa2', id, 'aaaa3']);
+        expect(config.items[2]).toMatchObject({ type: 'image', file_id: null, alt: '', width: 'full', max_height: null, show_if: null });
+        expect(questionCount(config)).toBe(3);
     });
 
     it('v0.1.289 — el correo de quien responde: sólo preguntas de email; quitarla apaga confirmación y copia', () => {

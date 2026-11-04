@@ -352,13 +352,13 @@ export const articles: LearnArticle[] = [
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Color', what: 'El color de la franja de arriba, del botón y de los detalles. Vacío = **El de tu marca**.' },
                     { name: 'Mostrar el logo de la empresa', what: 'Pone tu logo arriba del título. El logo y el color de la marca se configuran en **Ajustes → Marca**.' },
+                    { name: 'Colores, fuentes y más', what: 'Abre la pestaña **Diseño**: plantillas, colores, tipografía, tamaños, bordes, fondo, portada y el botón.', tip: 'Lo explicamos completo en «Diseña tu formulario: plantillas, colores, fuentes y tamaños».' },
                 ],
             },
             {
                 t: 'p',
-                md: 'El formulario siempre se ve en modo claro, con la tipografía de la app, y se adapta solo al ancho del teléfono. Las secciones **Correo de quien responde**, **Verificación anti-robots**, **Datos personales** e **Insertar en tu sitio** tienen su propio artículo.',
+                md: 'El formulario se adapta solo al ancho del teléfono. Las secciones **Correo de quien responde**, **Verificación anti-robots**, **Datos personales** e **Insertar en tu sitio** tienen su propio artículo.',
             },
             {
                 t: 'example',
@@ -378,6 +378,129 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Configurar la marca', to: '/settings?s=marca' },
+                    { label: 'Siguiente: correo y seguridad', article: 'formularios-correo-seguridad' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-diseno',
+        route: '/lists',
+        related: ['formularios-constructor', 'formularios-ajustes', 'formularios-publicar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cada formulario puede verse exactamente como tu marca: una plantilla de partida, tus colores, tus fuentes, el tamaño de cada cosa, las esquinas, los bordes, una imagen de fondo o una portada. Todo se hace en la pestaña **Diseño** del constructor y lo ves cambiar al instante en la vista previa, que es la página real que se publica.\n\nLos formularios que ya tenías siguen viéndose igual que antes —con el diseño **Clásico**— hasta que elijas otro.',
+            },
+            { t: 'anim', key: 'form-design', caption: 'Elegir una plantilla en la pestaña Diseño: el mismo formulario cambia de colores, esquinas y botón.' },
+            { t: 'h', text: 'Empieza por una plantilla' },
+            {
+                t: 'steps',
+                items: [
+                    'Ve a **Configurar lista → Formularios** y edita el formulario.',
+                    'Toca la pestaña **Diseño** (a la izquierda; en el celular, en la barra de arriba). También llegas desde **Ajustes → Apariencia → Colores, fuentes y más**.',
+                    'En **Plantillas** toca la que más se parezca a lo que quieres. Todas toman el color de tu marca.',
+                    'Retoca lo que quieras en el panel de la derecha. Si no te convenció, **Ctrl + Z** la deshace.',
+                    'Toca **Guardar**. Mientras no guardes, el formulario publicado sigue como estaba.',
+                ],
+            },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'LayoutTemplate', title: 'Clásico, Minimalista y Suave', md: 'Tarjeta sobre un fondo claro, sin adornos o con tonos pastel. Sirven para casi todo.', tone: 'blue' },
+                    { icon: 'Briefcase', title: 'Corporativo y Elegante', md: 'Para firmas, consultoras e inmobiliarias: títulos con serifa, más aire y un botón sobrio.', tone: 'slate' },
+                    { icon: 'Sparkles', title: 'Vibrante, Píldoras y Tecnológico', md: 'Fondo con degradado, campos totalmente redondeados o un estilo de app moderna.', tone: 'violet' },
+                    { icon: 'Image', title: 'Con portada y Dividido', md: 'Una foto grande arriba, o la pantalla partida con la imagen a un costado y el formulario al otro.', tone: 'mint' },
+                    { icon: 'Smartphone', title: 'Oscuro', md: 'Fondo oscuro de punta a punta, ideal para eventos, gimnasios o marcas nocturnas.', tone: 'amber' },
+                    { icon: 'LayoutGrid', title: 'Tarjetas y Natural', md: 'Opciones como tarjetas grandes, o tonos cálidos de papel con bordes suaves.', tone: 'rose' },
+                ],
+            },
+            { t: 'h', text: 'Todo lo que puedes ajustar' },
+            {
+                t: 'p',
+                md: 'Con la pestaña **Diseño** abierta y ninguna pregunta elegida, el panel derecho muestra **Diseño del formulario**, dividido en secciones que se abren y se cierran. Cada sección tiene su botón para volver a lo de la plantilla.',
+            },
+            {
+                t: 'settings',
+                title: 'Secciones del diseño',
+                rows: [
+                    { name: 'Colores', what: '**Modo** (claro, oscuro o automático), **Acento** de botones y detalles (vacío = el de tu marca), fondo, tarjeta, texto, texto secundario, bordes, errores y el fondo y el borde de los campos.', tip: 'Si un texto queda difícil de leer, la app te avisa con el contraste medido (lo recomendado es 4,5 a 1).' },
+                    { name: 'Tipografía', what: '**Fuente del texto** y **Fuente de los títulos** (19 a elegir), tamaño del texto, interlineado, tamaño, peso y espacio entre letras del título, y tamaño y peso de las preguntas.' },
+                    { name: 'Página', what: '**Ancho del formulario**, alto del logo, relleno, espacio entre preguntas, **Con tarjeta** o **Sin tarjeta**, encabezado a la izquierda o centrado, mostrar el título y la descripción, la franja de color, centrar en la pantalla y cómo se ve el avance de un formulario por pasos (barra, pasos o nada).' },
+                    { name: 'Fondo', what: 'Un **Color**, un **Degradado** (dos colores y su ángulo) o una **Imagen**, que puedes oscurecer o desenfocar para que el formulario resalte. También un patrón suave: puntos, cuadrícula o diagonal.' },
+                    { name: 'Portada', what: 'Una imagen arriba de la tarjeta, con su alto y qué parte se ve. Sin imagen, un degradado de tu marca.' },
+                    { name: 'Dividido', what: 'Parte la pantalla: una imagen (o el color de tu marca con una frase grande) a la izquierda o a la derecha, y el formulario al otro lado. En el celular la imagen va arriba.' },
+                    { name: 'Tarjeta', what: 'Esquinas, grosor del borde y sombra de la tarjeta.' },
+                    { name: 'Campos', what: 'Estilo de las casillas (**Con borde**, **Con relleno**, **Línea** o **Redondo**), tamaño, esquinas, grosor del borde y dónde va la etiqueta: arriba, **Al costado** o **Dentro del campo**.', tip: 'Con «Dentro del campo» la etiqueta sube cuando la persona empieza a escribir.' },
+                    { name: 'Opciones', what: 'Cómo se ven las preguntas de selección: **Lista**, **Botones** o **Tarjetas**, en cuántas columnas, sus esquinas y la forma de las imágenes de las tarjetas.' },
+                    { name: 'Botón', what: 'Estilo (relleno, contorno, suave o sólo texto), tamaño, alineación, **Ancho completo**, esquinas, sombra, **Texto en mayúsculas** y un ícono (flecha, avión de papel, visto).' },
+                    { name: 'CSS propio', what: 'Sólo para administradores: reglas de CSS para retoques finos, sobre el diseño elegido.', tip: 'No se puede cargar nada de afuera: las direcciones, los @import y las fuentes externas se quitan al guardar, y la app te dice qué quitó.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Modo oscuro sin pensar en colores',
+                md: 'Con **Modo → Automático**, el formulario se ve claro u oscuro según el teléfono o la computadora de quien responde. Los colores oscuros se calculan solos a partir de los tuyos, con buen contraste. Para revisar los dos, usa **Claro / Oscuro** arriba de la vista previa.',
+            },
+            { t: 'h', text: 'El diseño de cada pregunta' },
+            {
+                t: 'p',
+                md: 'Toca una pregunta en la vista previa: además de sus opciones de siempre, el panel muestra **Diseño de esta pregunta**.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Ancho', what: 'Completo, **Mitad** o un tercio. Dos preguntas de «Mitad» seguidas quedan lado a lado (en el celular, una debajo de la otra).', tip: 'Nombre y apellido, o ciudad y teléfono, lado a lado acortan mucho un formulario.' },
+                    { name: 'Ocultar la etiqueta', what: 'Esconde el texto de la pregunta. Úsalo con un texto de ejemplo que diga qué se pide; los lectores de pantalla la siguen leyendo.' },
+                    { name: 'Cómo se muestran las opciones', what: '**Según el tema**, **Lista desplegable**, **Botones** o **Tarjetas**, sólo para esa pregunta.' },
+                    { name: 'Imagen de cada opción', what: 'Con **Tarjetas**, cada opción puede llevar su foto: los planes de un gimnasio, los platos de un menú, los modelos de una casa.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'En **Agregar → Contenido** también hay un bloque **Imagen**, para poner una foto, un mapa o un logo entre las preguntas, con su texto alternativo y un pie de foto opcional. Las imágenes se achican solas antes de subirse, así la página carga rápido.',
+            },
+            {
+                t: 'example',
+                title: 'Un gimnasio que vende planes',
+                md: 'Fit Zone, en Barranquilla, armó «Elige tu plan» con la plantilla **Oscuro** y su acento naranja. La pregunta **Plan** muestra sus opciones como **Tarjetas** en dos columnas, cada una con la foto de la sede; **Nombre** y **Celular** van a **Mitad** del ancho, lado a lado, y el botón **Quiero mi plan** va a **Ancho completo** con una flecha.',
+            },
+            { t: 'h', text: 'Mis temas: tu diseño en todos los formularios' },
+            {
+                t: 'steps',
+                items: [
+                    'Cuando el diseño quede como quieres, abre **Mis temas** en la pestaña **Diseño** y toca **Guardar este diseño como tema**.',
+                    'Ponle un nombre («Marca 2026»). Ya aparece en todos los formularios de la empresa.',
+                    'Para usarlo en otro formulario, ábrelo y toca el tema en **Mis temas**.',
+                    'Toca la estrella de un tema para que los **formularios nuevos** nazcan con él.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Cada formulario guarda su propia copia del diseño: si después cambias o borras un tema, los formularios que ya lo usaban no cambian. Para actualizarlos, aplica el tema de nuevo en cada uno.',
+            },
+            { t: 'h', text: 'Rápido aunque tenga mucho diseño' },
+            {
+                t: 'p',
+                md: 'La página del formulario se arma de una sola vez: los estilos van incluidos, sólo se descargan las fuentes que usa (y la del texto se pide primero), y las imágenes salen de tu propio almacenamiento. Así abre rápido incluso con la señal débil del celular.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Puedo usar mi propia fuente?', a: 'Puedes elegir entre 19 fuentes, entre ellas Inter, Roboto, Montserrat, Poppins, Lato, Playfair y Merriweather. Por seguridad no se cargan fuentes de otros sitios, ni siquiera desde el CSS propio.' },
+                    { q: '¿Por qué no veo la sección «CSS propio»?', a: 'Sólo la puede cambiar un administrador de la empresa. Si el formulario ya trae CSS propio, se conserva tal cual aunque otra persona edite el resto del diseño.' },
+                    { q: '¿El diseño se ve igual insertado en mi sitio?', a: 'Sí. Si no quieres que se vea el fondo dentro de tu página, apaga **Página → Al insertarlo en otro sitio, mostrar el fondo** y queda sólo la tarjeta.' },
+                    { q: '¿Qué imágenes puedo subir?', a: 'PNG, JPG, GIF, WebP o AVIF. Las imágenes SVG no se aceptan en los formularios públicos.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Ver el recorrido de formularios', tour: 'forms' },
                     { label: 'Siguiente: correo y seguridad', article: 'formularios-correo-seguridad' },
                 ],
             },

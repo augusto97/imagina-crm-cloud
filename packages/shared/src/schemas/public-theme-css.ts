@@ -277,6 +277,7 @@ export function publicThemeView(theme: PublicTheme): PublicThemeView {
     if (!theme.layout.show_description) c.push('ib-no-desc');
     if (theme.background.kind !== 'color' || theme.background.pattern !== 'none') c.push('ib-has-bg');
     if (theme.split.enabled) c.push('ib-split', `ib-split-${theme.split.side}`);
+    c.push(`ib-ratio-${theme.choices.image_ratio}`);
     return {
         classes: c,
         label_position: theme.inputs.label_position,
@@ -504,7 +505,7 @@ body.ib-embedded:not(.ib-embed-bg) .ib-card{box-shadow:none}
 .ib-heading{font-family:var(--ib-heading-font);font-size:calc(var(--ib-q-fs) + 3px);font-weight:650;margin-top:6px;padding-top:14px;border-top:1px solid var(--ib-border);line-height:1.3}
 .ib-text p{margin:0 0 6px;white-space:pre-wrap}
 .ib-image{margin:0}
-.ib-image img{display:block;max-width:100%;height:auto;border-radius:var(--ib-choice-radius);margin:0 auto}
+.ib-image img{display:block;max-width:100%;height:auto;border-radius:min(var(--ib-choice-radius),24px);margin:0 auto}
 .ib-image figcaption{color:var(--ib-muted);font-size:13px;margin-top:6px;text-align:center}
 .ib-label{display:block;font-size:var(--ib-q-fs);font-weight:var(--ib-q-fw);line-height:1.35;margin-bottom:6px}
 .ib-req{color:var(--ib-error);margin-left:3px}
@@ -554,7 +555,7 @@ select.ib-input{appearance:none;-webkit-appearance:none;padding-right:38px;backg
 .ib-choices-buttons .ib-choice{min-height:0;padding:9px 16px;border-radius:max(var(--ib-choice-radius),6px)}
 .ib-choices-buttons .ib-choice input{position:absolute;opacity:0;pointer-events:none}
 .ib-choices-buttons .ib-choice.ib-checked{background:var(--ib-accent);border-color:var(--ib-accent);color:var(--ib-accent-ink)}
-.ib-choices-cards .ib-choice{flex-direction:column;align-items:stretch;padding:0;gap:0;overflow:hidden;min-height:0}
+.ib-choices-cards .ib-choice{flex-direction:column;align-items:stretch;padding:0;gap:0;overflow:hidden;min-height:0;border-radius:min(var(--ib-choice-radius),24px)}
 .ib-choices-cards .ib-choice input{position:absolute;top:10px;right:10px;z-index:1}
 .ib-choices-cards .ib-choice-img{display:block;aspect-ratio:16/10;background:var(--ib-soft)}
 .ib-ratio-square .ib-choice-img{aspect-ratio:1/1}.ib-ratio-portrait .ib-choice-img{aspect-ratio:3/4}

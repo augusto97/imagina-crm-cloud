@@ -46,6 +46,12 @@ export const DEFAULT_LIGHT_PALETTE: Record<PublicPaletteKey, string> = {
     error: '#c0262d',
 };
 
+/**
+ * Esquinas «completamente redondas» (píldora). Campos, opciones y botones
+ * aceptan de 0 a 40 px en el editor o este valor; el CSS lo dibuja como 999px.
+ */
+export const PUBLIC_ROUND_RADIUS = 999;
+
 export const publicPaletteSchema = z.object({
     background: color.default(DEFAULT_LIGHT_PALETTE.background),
     card: color.default(DEFAULT_LIGHT_PALETTE.card),
@@ -192,7 +198,8 @@ export type PublicLabelPosition = (typeof PUBLIC_LABEL_POSITIONS)[number];
 export const publicInputsSchema = z.object({
     style: z.enum(PUBLIC_INPUT_STYLES).default('outlined'),
     size: z.enum(PUBLIC_SIZES).default('md'),
-    radius: z.number().int().min(0).max(32).default(8),
+    /** Esquinas en px; PUBLIC_ROUND_RADIUS (999) = completamente redondo. */
+    radius: z.number().int().min(0).max(PUBLIC_ROUND_RADIUS).default(8),
     border_width: z.number().min(0).max(3).default(1),
     /** Etiqueta arriba, a la izquierda (en pantallas anchas) o dentro del campo. */
     label_position: z.enum(PUBLIC_LABEL_POSITIONS).default('top'),
@@ -207,7 +214,7 @@ export const publicChoicesSchema = z.object({
     style: z.enum(PUBLIC_CHOICE_STYLES).default('list'),
     /** Columnas de la lista o de las tarjetas (en el celular, como mucho 2). */
     columns: z.number().int().min(1).max(4).default(1),
-    radius: z.number().int().min(0).max(32).default(8),
+    radius: z.number().int().min(0).max(PUBLIC_ROUND_RADIUS).default(8),
     image_ratio: z.enum(PUBLIC_IMAGE_RATIOS).default('landscape'),
 });
 export type PublicChoices = z.infer<typeof publicChoicesSchema>;
@@ -221,7 +228,7 @@ export const publicButtonSchema = z.object({
     size: z.enum(PUBLIC_SIZES).default('md'),
     full_width: z.boolean().default(false),
     align: z.enum(PUBLIC_BUTTON_ALIGNS).default('left'),
-    radius: z.number().int().min(0).max(40).default(8),
+    radius: z.number().int().min(0).max(PUBLIC_ROUND_RADIUS).default(8),
     shadow: z.boolean().default(false),
     uppercase: z.boolean().default(false),
     icon: z.enum(PUBLIC_BUTTON_ICONS).default('none'),

@@ -117,6 +117,7 @@ import {
     type IdMaps,
     remapSyncSettings,
     remapViewConfig,
+    remapTenantSettingsFiles,
     remapWhatsappConnectionConfig,
 } from './tenant-transfer.remap';
 
@@ -912,6 +913,13 @@ export class TenantTransferService {
             maps.attachment.set(Number(a.id), ins!.id);
         }
         counts.attachments = maps.attachment.size;
+        // 5b. v0.1.351 — el logo de la marca y las imágenes de «Mis temas»
+        //     apuntan a adjuntos: ahora que existen, con sus ids nuevos.
+        {
+            const [cur] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            const next = remapTenantSettingsFiles((cur?.settings ?? {}) as Row, maps);
+            await tx.update(tenants).set({ settings: next }).where(eq(tenants.id, tenantId));
+        }
         if (missingFiles > 0) {
             warnings.push(
                 `${missingFiles} adjunto(s) llegaron sin sus bytes: la ficha los muestra pero la descarga da 404.`,

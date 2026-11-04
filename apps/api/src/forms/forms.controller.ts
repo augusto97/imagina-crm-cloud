@@ -5,6 +5,7 @@ import {
     Delete,
     Get,
     HttpCode,
+    Inject,
     Param,
     ParseIntPipe,
     Patch,
@@ -28,7 +29,11 @@ import {
     type SubmitFormInput,
     type SubmitFormResult,
     type UpdateFormInput,
+    DEFAULT_PUBLIC_THEME,
+    buildPublicThemeCss,
+    publicThemeView,
 } from '@imagina-base/shared';
+import { ENV, type Env } from '../config/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuditService } from '../audit/audit.service';
 import { SessionGuard } from '../auth/session.guard';
@@ -39,7 +44,16 @@ import { ListsService } from '../lists/lists.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { DataConsentService } from '../data-consent/data-consent.service';
 import { CaptchaService } from './captcha.service';
-import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, newNonce, renderFormNoticePage, renderFormPage } from './form-page';
+import {
+    FORM_EMBED_JS,
+    formFrameAncestors,
+    formMissingBuildPage,
+    formPageCsp,
+    loadFormClient,
+    newNonce,
+    renderFormNoticePage,
+    renderFormPage,
+} from './form-page';
 import { FormsService, type ConfirmOutcome } from './forms.service';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
@@ -102,7 +116,7 @@ export class FormsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createFormSchema)) input: CreateFormInput,
     ): Promise<FormDto> {
-        return this.forms.create(req.tenant!.tenantId, req.authUserId!, list, input);
+        return this.forms.create(req.tenant!.tenantId, req.authUserId!, list, input, { isAdmin: req.tenant!.role === 'admin' });
     }
 
     @Patch(':id')
@@ -116,7 +130,7 @@ export class FormsController {
         const tenantId = req.tenant!.tenantId;
         const before =
             input.enabled !== undefined || input.regenerate_token || input.config !== undefined ? await this.forms.get(tenantId, list, id) : null;
-        const doc = await this.forms.update(tenantId, list, id, input);
+        const doc = await this.forms.update(tenantId, list, id, input, { isAdmin: req.tenant!.role === 'admin' });
         // v0.1.289 — prender o apagar la verificación anti-robots queda en la bitácora.
         if (before && before.config.settings.captcha !== doc.config.settings.captcha) {
             await this.audit.log({
@@ -218,25 +232,41 @@ export class PublicFormsController {
  */
 @Controller('public/f')
 export class PublicFormPageController {
-    constructor(private readonly forms: FormsService) {}
+    constructor(
+        private readonly forms: FormsService,
+        @Inject(ENV) private readonly env: Env,
+    ) {}
 
     @Get('preview')
     preview(@Res() reply: FastifyReply): void {
         const nonce = newNonce();
+        const client = this.formClient();
+        if (client === undefined) {
+            reply.status(503).header('Cache-Control', 'no-store').type('text/html; charset=utf-8').send(formMissingBuildPage());
+            return;
+        }
+        // La vista previa arranca con el diseño clásico; el editor manda el
+        // CSS del tema que se está diseñando por postMessage.
+        const look = classicLook();
         reply
-            .header('Content-Security-Policy', formPageCsp(nonce, "'self'"))
+            .header('Content-Security-Policy', formPageCsp(nonce, "'self'", null, { dev: client === null }))
             .header('X-Robots-Tag', 'noindex')
             .header('Cache-Control', 'no-store')
             .type('text/html; charset=utf-8')
-            .send(renderFormPage({ nonce, title: 'Vista previa', meta: null, token: 'preview' }));
+            .send(renderFormPage({ nonce, title: 'Vista previa', meta: null, token: 'preview', themeCss: look.css, bodyClasses: look.classes, preloadFont: null, client }));
     }
 
     /**
-     * Script para insertar el formulario en un sitio: ajusta el alto del marco
-     * a su contenido y, si el formulario redirige al enviar, lleva a toda la
-     * página. Sólo escucha a los marcos `data-imagina-form` y sólo mensajes
-     * que vienen de SU origen.
+     * v0.1.351 — El script del formulario: el compilado (en producción o con
+     * `WEB_DIST_DIR`) para servir en línea; `null` = desarrollo (el módulo de
+     * vite); `undefined` = producción SIN el build (instalación rota).
      */
+    private formClient(): string | null | undefined {
+        const useBuild = this.env.NODE_ENV === 'production' || this.env.WEB_DIST_DIR.trim() !== '';
+        if (!useBuild) return null;
+        return loadFormClient(this.env.WEB_DIST_DIR) ?? undefined;
+    }
+
     @Get('embed.js')
     embedScript(@Res() reply: FastifyReply): void {
         reply
@@ -316,19 +346,46 @@ export class PublicFormPageController {
                 .send(notAvailablePage());
             return;
         }
+        const client = this.formClient();
+        if (client === undefined) {
+            reply.status(503).header('Cache-Control', 'no-store').type('text/html; charset=utf-8').send(formMissingBuildPage());
+            return;
+        }
         reply
             // v0.1.289 — con captcha entran a la CSP SÓLO los dominios de ese proveedor.
-            .header('Content-Security-Policy', formPageCsp(nonce, formFrameAncestors(info.allowed_domains), info.captcha?.provider ?? null))
+            .header(
+                'Content-Security-Policy',
+                formPageCsp(nonce, formFrameAncestors(info.allowed_domains), info.captcha?.provider ?? null, { dev: client === null }),
+            )
             .header('X-Robots-Tag', 'noindex')
             // El sello anti-robots viaja en la página: nunca se cachea.
             .header('Cache-Control', 'no-store')
             .header('Referrer-Policy', 'strict-origin-when-cross-origin')
             .type('text/html; charset=utf-8')
-            .send(renderFormPage({ nonce, title: info.title, meta: info.meta, token }));
+            .send(
+                renderFormPage({
+                    nonce,
+                    title: info.title,
+                    meta: info.meta,
+                    token,
+                    themeCss: info.theme_css,
+                    bodyClasses: info.body_classes,
+                    preloadFont: info.preload_font,
+                    client,
+                }),
+            );
     }
 }
 
 const NEUTRAL_BRAND = { company: '', accent: '#475467', logoUrl: null };
+
+/** El diseño clásico (para la vista previa antes de que llegue el del editor). */
+function classicLook(): { css: string; classes: string[] } {
+    return {
+        css: buildPublicThemeCss(DEFAULT_PUBLIC_THEME, { accent: '#0e7490' }),
+        classes: publicThemeView(DEFAULT_PUBLIC_THEME).classes,
+    };
+}
 
 function notAvailablePage(): string {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Formulario no disponible</title>

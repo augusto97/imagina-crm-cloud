@@ -1,3 +1,5 @@
+import { PublicThemesController } from './public-themes.controller';
+import { PublicThemesService } from './public-themes.service';
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { FieldsModule } from '../fields/fields.module';
@@ -21,8 +23,8 @@ import { FormsService } from './forms.service';
 @Global()
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule, RecordTemplatesModule],
-    controllers: [FormsController, PublicFormsController, PublicFormPageController, PlatformCaptchaController, WorkspaceCaptchaController],
-    providers: [FormsService, CaptchaService],
-    exports: [FormsService, CaptchaService],
+    controllers: [FormsController, PublicFormsController, PublicFormPageController, PlatformCaptchaController, WorkspaceCaptchaController, PublicThemesController],
+    providers: [FormsService, CaptchaService, PublicThemesService],
+    exports: [FormsService, CaptchaService, PublicThemesService],
 })
 export class FormsModule {}

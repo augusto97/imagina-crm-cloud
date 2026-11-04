@@ -12,6 +12,7 @@ export const meta: LearnModuleMeta = {
     highlights: [
         'Arma el formulario con los campos de tu lista y míralo tal como lo verá quien responde',
         'Preguntas que aparecen según otra respuesta, formularios por pasos y datos ocultos desde el enlace',
+        'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
         'Comparte el enlace o insértalo en tu sitio, y deja que una automatización conteste sola',
     ],
@@ -45,11 +46,20 @@ export const meta: LearnModuleMeta = {
         },
         {
             id: 'formularios-ajustes',
-            title: 'Ajustes: agradecimiento, cierre por fecha o cupo y apariencia',
-            summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y con qué colores se ve.',
+            title: 'Ajustes: agradecimiento, cierre por fecha o cupo y logo',
+            summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y si muestra tu logo.',
             minutes: 7,
             level: 'basic',
             keywords: 'gracias redireccion enviar otra respuesta cupo maximo fecha de cierre cerrado color logo plantilla de registro',
+            needs: 'manage_forms',
+        },
+        {
+            id: 'formularios-diseno',
+            title: 'Diseña tu formulario: plantillas, colores, fuentes y tamaños',
+            summary: 'Elige una plantilla, ajusta colores, tipografía, tamaños, bordes, fondo, portada y botón, ponle diseño a cada pregunta y guarda tus temas para toda la empresa.',
+            minutes: 9,
+            level: 'basic',
+            keywords: 'diseño plantilla tema colores fuente tipografia tamaño ancho borde esquinas sombra fondo imagen degradado portada dividido boton modo oscuro css propio mis temas tarjetas con foto media columna',
             needs: 'manage_forms',
         },
         {

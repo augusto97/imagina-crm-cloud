@@ -119,6 +119,10 @@ describe('tema de las páginas públicas', () => {
         }
         expect(presets.find((p) => p.id === 'dark')!.theme.mode).toBe('dark');
         expect(presets.find((p) => p.id === 'vibrant')!.theme.background.kind).toBe('gradient');
+        // Las redondeadas conservan sus secciones (una sección fuera de rango se perdería entera).
+        const pills = presets.find((p) => p.id === 'pills')!.theme;
+        expect(pills.button).toMatchObject({ radius: 999, full_width: true, size: 'lg' });
+        expect(pills.choices).toMatchObject({ style: 'buttons', radius: 999 });
     });
 });
 
