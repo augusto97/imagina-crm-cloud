@@ -388,6 +388,38 @@ vuelta desde el calendario; antes v0.1.349 reglas, cupos y festivos por país,
 v0.1.348 Microsoft Teams), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-04 — **Formularios mucho más potentes y personalizables** (ESPERANDO
+  que el usuario apruebe el orden). Pedido: "que la funcionalidad de
+  formularios fuera más completa como hiciste con esta app de agendamiento…
+  más personalizable, estilizable, se puedan controlar los tamaños de todo,
+  bordes, colores, estilos, plantillas de diseño… revisa otras apps de
+  formularios… bonito y eficiente en carga y rendimiento". Se revisaron
+  Typeform, Tally, Fillout y Jotform. Hoy el formulario sólo deja elegir el
+  color del botón y mostrar el logo (la página es una tarjeta fija de 660 px
+  con la fuente del sistema), y su script de ~40 KB viaja sin minificar ni
+  cachear en cada visita. Se propusieron TRES entregas:
+  1. **Diseño**: un motor de temas COMÚN a las páginas públicas (formularios
+     ahora, la página de la agenda después), con colores, modo
+     claro/oscuro/automático, las 19 fuentes de ADR-S37, tamaños, espacios,
+     bordes, esquinas y sombras. También estilos de campos, etiquetas,
+     opciones (botones/tarjetas con imagen) y botón; fondo
+     (degradado/imagen), portada, diseño dividido, ancho por pregunta (lado a
+     lado), una galería de plantillas de diseño, «Mis temas» de la empresa y
+     CSS propio opcional. En rendimiento: script y estilos cacheados y
+     minificados, sólo la fuente elegida, la primera página dibujada en el
+     HTML.
+  2. **Preguntas y lógica**: firma, NPS/escala, sí/no, opciones con imagen,
+     matriz, ranking, «Otro», lista con buscador, deslizador. Lógica con
+     varias reglas Y/O, saltar a una página, varias pantallas finales,
+     cálculos/puntaje, recordar respuestas («Hola {{nombre}}»), modo
+     conversacional (una pregunta por pantalla) y bienvenida.
+  3. **Medir, insertar y cobrar**: guardar el avance y continuar, estadísticas
+     (visitas, empezados, enviados, dónde abandonan, de dónde llegan), formas
+     de insertar (ventana emergente, panel, pantalla completa, QR), enlace para
+     actualizar un registro existente, cobrar al enviar (Mercado Pago/Wompi de
+     la empresa) y plantillas de formularios completos.
+  Orden propuesto: formularios 1 → la entrega 3 de la agenda (que reusa el
+  motor de temas) → formularios 2 y 3.
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
   ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
   agendamientos está muy básica… seleccionar su asesor, diferentes franjas,
