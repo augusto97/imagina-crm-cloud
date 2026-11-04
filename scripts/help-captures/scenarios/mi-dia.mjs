@@ -10,10 +10,21 @@ async function del(ctx, url) {
     await ctx.page.request.fetch(`${ctx.base}/api/v1${url}`, { method: 'DELETE', headers: { 'x-tenant-id': String(ctx.tenantId) } });
 }
 
-const rows = (res) => (Array.isArray(res) ? res : (res?.data ?? []));
+/** Las filas de una respuesta: `[...]`, `{ data: [...] }` o la bandeja `{ data: { items } }`. */
+const rows = (res) => {
+    if (Array.isArray(res)) return res;
+    const d = res?.data;
+    if (Array.isArray(d)) return d;
+    return Array.isArray(d?.items) ? d.items : [];
+};
 
-/** Recordatorios (ya vencidos) para que la campana tenga avisos reales. */
-async function seedNotifications(ctx) {
+/**
+ * Recordatorios ya vencidos para que la campana tenga avisos reales. El reloj
+ * de recordatorios corre cada minuto, así que se crean al EMPEZAR (export
+ * `prepare`, lo llama run.mjs antes de las demos) y la demo de la campana va
+ * al final del archivo: cuando llega, los avisos ya están.
+ */
+async function createDueReminders(ctx) {
     const { api } = ctx;
     const unread = rows(await api.get('/me/notifications?unread=1').catch(() => null));
     if (unread.length >= 3) return;
@@ -35,13 +46,19 @@ async function seedNotifications(ctx) {
         await api.post('/me/reminders', { list_id: list.id, record_id: rec.id, remind_at: past, note }).catch(() => {});
     }
     await api.post('/me/reminders', { remind_at: past, note: 'Pagar el arriendo del local' }).catch(() => {});
-    // El reloj de recordatorios corre cada minuto.
-    for (let i = 0; i < 30; i++) {
-        await sleep(4000);
+}
+
+/** Espera (a lo sumo dos vueltas del reloj) a que los avisos estén en la campana. */
+async function waitForNotifications(ctx) {
+    const { api } = ctx;
+    for (let i = 0; i < 40; i++) {
         const n = rows(await api.get('/me/notifications?unread=1').catch(() => null));
         if (n.length >= 3) return;
+        await sleep(3000);
     }
 }
+
+export const prepare = createDueReminders;
 
 /** Recordatorios pendientes (no vencidos) para la pestaña «Recordatorios». */
 async function seedPendingReminders(ctx) {
@@ -72,16 +89,6 @@ export default [
             { shot: '[role="tablist"]', caption: 'Desde aquí creas uno nuevo, lo marcas como hecho o lo borras.' },
             { click: '[data-tour="rail-mywork"]', caption: null },
             { shot: '[data-testid="mywork-panel"]', caption: 'El panel lateral resume cuánto está vencido, qué vence hoy y lo más urgente.' },
-        ],
-    },
-    {
-        key: 'dia-campana',
-        title: 'La campana de avisos',
-        setup: seedNotifications,
-        steps: [
-            { go: '/lists/{list:Tareas}/records', wait: '[data-tour="records-table"]', caption: 'El número rojo de la campana dice cuántos avisos no leíste.' },
-            { click: '[data-tour="topbar-notifications"] button >> nth=0', caption: 'Toca la campana.', then: 'text=Marcar todo como leído' },
-            { shot: '[data-testid="notification-bell"]', caption: 'La bandeja: Todos o Sin leer, y abajo Ir a Mi trabajo y Preferencias. Toca un aviso para abrir su registro.' },
         ],
     },
     {
@@ -143,6 +150,16 @@ export default [
             { click: '[data-tour="panel-lists"] li:has(a[href*="/lists/tareas/"]) button[aria-label="Anclar a favoritos"]', caption: 'Toca el pin para anclarla a favoritos.' },
             { click: '[data-tour="rail-favorites"]', caption: 'Después abre «Favoritos» en el riel.' },
             { shot: true, caption: 'Tus favoritos: listas, tableros y vistas, agrupados por carpeta o por tipo.' },
+        ],
+    },
+    {
+        key: 'dia-campana',
+        title: 'La campana de avisos',
+        setup: waitForNotifications,
+        steps: [
+            { go: '/lists/{list:Tareas}/records', wait: '[data-tour="records-table"]', caption: 'El número rojo de la campana dice cuántos avisos no leíste.' },
+            { click: '[data-tour="topbar-notifications"] button >> nth=0', caption: 'Toca la campana.', then: 'text=Marcar todo como leído' },
+            { shot: '[data-testid="notification-bell"]', caption: 'La bandeja: Todos o Sin leer, y abajo Ir a Mi trabajo y Preferencias. Toca un aviso para abrir su registro.' },
         ],
     },
 ];

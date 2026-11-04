@@ -5166,6 +5166,38 @@ herramienta de diseño y otra dependencia). Un sitio de documentación aparte
 (no conoce el rol de quien lee ni la marca de su empresa, y saca a la persona
 de la app).
 
+**Addendum v0.1.364 — Las capturas y las pruebas, en varias máquinas a la
+vez.** Una versión tardaba ~36 minutos en estar publicada: ~16 de pruebas de la
+API antes de fusionar (cada archivo levanta su propio Postgres y Redis y corren
+en serie) y ~20 del release, de los cuales ~17 eran las capturas grabadas una
+detrás de otra en una sola máquina. Se repartió el trabajo:
+
+- **Pruebas**: `ci.yml` corre lint, tipos, build y las pruebas de shared en un
+  job y las de la API en **4 máquinas** (`vitest --shard`); un job final
+  llamado `ci` junta el resultado, así el check que se espera para fusionar
+  sigue teniendo el mismo nombre. No corre al fusionar a main: el squash deja
+  en main el mismo árbol que ya pasó en el PR.
+- **Capturas**: el release compila una vez (artefacto), graba las capturas en
+  **5 máquinas** y un último job junta los cuadros, rehace `demos.json`
+  (`manifest.mjs`) y arma el bundle. El reparto (`shard.mjs`) es por ARCHIVO de
+  escenarios —las demos de un archivo pueden depender de lo que dejó la
+  anterior— y pesa cada archivo con lo que tardaron sus demos la última vez
+  (`timings.json`; `timings.mjs` lo refresca con el log de un release): del más
+  pesado al más liviano, a la máquina con menos carga. Es determinístico, así
+  cada máquina calcula sola qué le toca. Si una parte falla, la versión sale con
+  las demás.
+- **Lo que tarda en estar listo se prepara antes**: un archivo de escenarios
+  puede exportar `prepare(ctx)`, que corre antes de sus demos (los avisos de
+  recordatorio dependen del reloj de cada minuto).
+
+Al revisarlo aparecieron fallas de las capturas: la demo de la campana leía
+mal la respuesta de la bandeja (`{ data: { items } }`) y esperaba siempre sus 2
+minutos completos; «Publicar el formulario» no veía la página pública —el API
+de las capturas corre en modo desarrollo y pedía los módulos de vite, que el
+servidor estático no tiene; ahora `ci.sh` fija `WEB_DIST_DIR`—, y «Crear un
+formulario» buscaba un botón que pasó a ser un selector. Tiempo esperado: ~5
+minutos de pruebas y ~10 de publicación.
+
 ---
 
 ### ADR-S76 — Galería de ideas: casos de uso como datos que se ACTIVAN sobre las listas de la empresa (v0.1.323)
@@ -6784,4 +6816,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.148.0 (El enlace de aprobación para el administrador de Microsoft 365)
+**Versión del documento:** 1.149.0 (Pruebas y capturas en varias máquinas a la vez)

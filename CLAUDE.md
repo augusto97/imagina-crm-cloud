@@ -12010,6 +12010,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el tamaño y el orden de Microsoft (falla sin el arreglo); test de que
         el error no repite el token.
 
+  - [x] **Publicar más rápido: pruebas y capturas en varias máquinas a la vez
+        (v0.1.364, addendum ADR-S75, pregunta del usuario: "¿por qué se demoran
+        tanto las versiones en publicar? tarda más de media hora")**. No era el
+        tamaño de la app (armar el bundle tarda 12 s): eran ~16 min de pruebas
+        de la API antes de fusionar (182 archivos, cada uno con su Postgres y
+        Redis, en serie) y ~20 de release, de los cuales ~17 eran las 110
+        capturas del centro de aprendizaje grabadas una tras otra.
+        (a) **CI** (`ci.yml`): un job con lint, tipos, build y las pruebas de
+        shared, y las de la API en **4 máquinas** (`vitest --shard`, sin
+        repetir ni dejar archivos: 46/46/46/44); el job final `ci` junta el
+        resultado y conserva el nombre del check. Ya no corre al fusionar a
+        main (el squash deja el mismo árbol que pasó en el PR) y un push nuevo
+        al PR cancela la corrida anterior.
+        (b) **Release** (`release.yml`): `build` compila una vez y sube el
+        artefacto, `captures` graba en **5 máquinas** y `publish` junta los
+        cuadros, rehace `demos.json` y publica (sale igual si una parte de las
+        capturas falla). El reparto (`scripts/help-captures/shard.mjs`) es por
+        ARCHIVO de escenarios —las demos de un archivo pueden depender de la
+        anterior— y pesa cada archivo con lo que tardaron sus demos
+        (`timings.json`; `timings.mjs <log>` lo refresca): del más pesado a la
+        máquina con menos carga, ~170 s cada una. `manifest.mjs` arma el índice
+        (lo usan run.mjs y el release) y un archivo de escenarios puede
+        exportar `prepare(ctx)`, que corre antes de sus demos.
+        (c) **Dos capturas rotas y una lenta**: la de la campana leía la
+        bandeja como lista cuando es `{ data: { items } }` y esperaba siempre
+        sus 2 minutos completos (ahora los recordatorios se crean al empezar y
+        la demo va última: 4 s); «Publicar el formulario» no veía la página
+        pública —el API de las capturas corre en modo desarrollo y pedía los
+        módulos de vite, que el servidor estático no tiene; `ci.sh` fija
+        `WEB_DIST_DIR`—, y «Crear un formulario» buscaba un botón que pasó a
+        ser el selector «Cómo se pregunta» en v0.1.355 (las dos fallaban y
+        esos artículos mostraban su animación).
+        Verificado en local: las 4 partes de las pruebas cubren los 182
+        archivos sin repetir, la parte 3 de 5 de las capturas grabó sus 22
+        demos en ~3,5 min, las de formularios y la campana salen bien, y el
+        índice junta las partes. Esperado: ~5 min de pruebas y ~10 de
+        publicación (antes ~36 en total).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

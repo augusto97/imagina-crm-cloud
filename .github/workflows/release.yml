@@ -51,21 +51,23 @@ jobs:
           echo "go=${GO}" >> "$GITHUB_OUTPUT"
           echo "→ release ${REF} · publicar=${GO}"
 
+  # v0.1.364 — La publicación va en tres pasos: compilar una vez, grabar las
+  # capturas del centro de aprendizaje en 5 máquinas a la vez (eran ~17 min en
+  # una sola) y juntar todo en el bundle. De ~20 a ~10 minutos.
   build:
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-
-      - name: Habilitar pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.33.0 --activate
+          node-version: 22
+          cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
@@ -75,19 +77,96 @@ jobs:
           pnpm --filter @imagina-base/api build
           pnpm --filter @imagina-base/web build:cloud
 
-      # v0.1.322 — capturas reales del centro de aprendizaje (ADR-S75): una
-      # copia efímera de la app sobre una empresa de ejemplo graba cada demo y
-      # deja los cuadros en el build del SPA. Si falla, el release sale igual
-      # (la ayuda se ve con sus ilustraciones) y queda el aviso en el log.
-      - name: Capturas del centro de aprendizaje
-        continue-on-error: true
-        timeout-minutes: 75
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            packages/shared/dist
+            apps/api/dist
+            apps/web/dist-cloud
+
+  # v0.1.322 — capturas reales del centro de aprendizaje (ADR-S75): una copia
+  # efímera de la app sobre una empresa de ejemplo graba cada demo. Cada
+  # máquina graba su parte (scripts/help-captures/shard.mjs reparte por archivo
+  # de escenarios según lo que tardó cada uno). Si una falla, el release sale
+  # igual con lo que grabaron las demás: lo que falte se ve con su ilustración.
+  captures:
+    needs: [gate, build]
+    if: needs.gate.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+
+      - name: Capturas (parte ${{ matrix.shard }} de 5)
+        env:
+          HC_SHARD: ${{ matrix.shard }}/5
         run: |
-          bash scripts/help-captures/ci.sh apps/web/dist-cloud/help-media || {
-            echo "::warning::No se pudieron generar las capturas del centro de aprendizaje; el release sale sin ellas."
-            rm -rf apps/web/dist-cloud/help-media
+          bash scripts/help-captures/ci.sh help-media || {
+            echo "::warning::La parte ${{ matrix.shard }} de las capturas falló; el release sale sin ellas (esa ayuda se ve con sus ilustraciones)."
           }
-          rm -f apps/web/dist-cloud/help-media/fallo-*.png
+          rm -f help-media/fallo-*.png help-media/demos.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: help-media-${{ matrix.shard }}
+          retention-days: 1
+          if-no-files-found: ignore
+          path: help-media
+
+  publish:
+    needs: [gate, build, captures]
+    # Sale aunque alguna parte de las capturas falle (son un extra).
+    if: always() && needs.gate.outputs.go == 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+
+      - name: Juntar las capturas
+        # Si ninguna parte grabó nada, la versión sale igual (sin capturas).
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: help-media-*
+          merge-multiple: true
+          path: apps/web/dist-cloud/help-media
+
+      - name: Índice de las capturas
+        run: node scripts/help-captures/manifest.mjs apps/web/dist-cloud/help-media
 
       - name: Armar bundle autocontenido
         env:

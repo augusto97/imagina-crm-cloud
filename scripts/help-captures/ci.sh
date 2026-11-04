@@ -18,6 +18,8 @@ LOGS=${HC_LOGS:-/tmp/help-captures}
 mkdir -p "$LOGS"
 
 # HC_ONLY=clave1,clave2: grabar sólo esas demos.
+# HC_SHARD=2/5: sólo los escenarios de la máquina 2 de 5 (v0.1.364: el release
+# reparte las capturas en varias máquinas a la vez; ver shard.mjs).
 # HC_DATABASE_URL / HC_REDIS_URL: usar una base y un Redis que ya existen
 # (para probarlo en una máquina de desarrollo sin pisar sus puertos).
 if [ -z "${HC_DATABASE_URL:-}" ]; then
@@ -35,6 +37,11 @@ export APP_BASE_URL=http://localhost:$WEB_PORT
 export MAIL_TRANSPORT=log
 export RATE_LIMIT_AUTH_MAX=500
 export UPLOADS_DIR=$LOGS/uploads
+# v0.1.364 — las páginas públicas (formularios, tableros) se sirven con el front
+# YA compilado. Sin esto, en desarrollo el API pide los módulos de vite, que
+# este servidor estático no tiene: la página del formulario salía en blanco y
+# las demos de formularios fallaban por tiempo de espera desde v0.1.359.
+export WEB_DIST_DIR=$ROOT/apps/web/dist-cloud
 # Operador de la plataforma para las capturas del módulo «Plataforma».
 export HC_SUPERADMIN_EMAIL=operador@ejemplo.test
 export HC_SUPERADMIN_PASSWORD=Operador-de-demo-$RANDOM-1
@@ -65,5 +72,5 @@ node scripts/help-captures/prepare-operator.mjs --email "$HC_SUPERADMIN_EMAIL" -
 if [ -z "${PW_CHROMIUM:-}" ]; then
     pnpm exec playwright-core install --with-deps chromium > "$LOGS/playwright.log" 2>&1
 fi
-node scripts/help-captures/run.mjs --base "http://localhost:$WEB_PORT" --email "$EMAIL" --password "$PASS" --out "$OUT" ${HC_ONLY:+--only "$HC_ONLY"}
+node scripts/help-captures/run.mjs --base "http://localhost:$WEB_PORT" --email "$EMAIL" --password "$PASS" --out "$OUT" ${HC_ONLY:+--only "$HC_ONLY"} ${HC_SHARD:+--shard "$HC_SHARD"}
 echo "capturas en $OUT ($(du -sh "$OUT" | cut -f1))"

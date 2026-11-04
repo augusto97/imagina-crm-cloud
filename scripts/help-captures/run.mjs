@@ -15,12 +15,14 @@
  * sistema (con registros de ejemplo). El WebP lo codifica el propio Chromium
  * (canvas → webp), así no hace falta ffmpeg ni sharp.
  */
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 import { fillLists } from './fill.mjs';
+import { VIEWPORT, buildManifest } from './manifest.mjs';
+import { parseShard, pickShard } from './shard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
@@ -34,8 +36,10 @@ const EMAIL = arg('email', process.env.CAPTURE_EMAIL);
 const PASSWORD = arg('password', process.env.CAPTURE_PASSWORD);
 const OUT = path.resolve(arg('out', path.join(root, 'apps/web/public/help-media')));
 const ONLY = arg('only', '');
+// v0.1.364 — `--shard 2/5` (o HC_SHARD): sólo los archivos de escenarios que
+// le tocan a esta máquina (ver shard.mjs).
+const SHARD = parseShard(arg('shard', process.env.HC_SHARD ?? ''));
 const STRICT = process.argv.includes('--strict');
-const VIEWPORT = { width: 1100, height: 700 };
 const DPR = 1.5;
 const QUALITY = 0.8;
 
@@ -102,11 +106,30 @@ async function main() {
     // ── Escenarios ───────────────────────────────────────────────────────
     const dir = path.join(here, 'scenarios');
     const files = readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort();
-    const scenarios = [];
+    const modules = [];
     for (const f of files) {
         const mod = await import(pathToFileURL(path.join(dir, f)).href);
-        const list = Array.isArray(mod.default) ? mod.default : [mod.default];
-        for (const s of list) if (s && (!ONLY || ONLY.split(',').includes(s.key))) scenarios.push(s);
+        const list = (Array.isArray(mod.default) ? mod.default : [mod.default]).filter(Boolean);
+        modules.push({ file: f, mod, list });
+    }
+    const mine = SHARD ? pickShard(modules.map((m) => ({ file: m.file, keys: m.list.map((s) => s.key) })), SHARD, loadTimings()) : null;
+    if (SHARD) console.log(`máquina ${SHARD.index} de ${SHARD.total}: ${[...mine].join(', ') || '(nada)'}`);
+    const scenarios = [];
+    const ctxBase = { page, api, lists, base: BASE, sleep, tenantId };
+    for (const { file, mod, list } of modules) {
+        if (mine && !mine.has(file)) continue;
+        const picked = list.filter((s) => !ONLY || ONLY.split(',').includes(s.key));
+        if (picked.length === 0) continue;
+        // Lo que tarda en estar listo (un aviso que llega con el reloj de cada
+        // minuto) se prepara antes de empezar, así no se espera en la demo.
+        if (typeof mod.prepare === 'function') {
+            try {
+                await mod.prepare(ctxBase);
+            } catch (e) {
+                console.log(`  no se pudo preparar ${file}: ${e.message.split('\n')[0]}`);
+            }
+        }
+        scenarios.push(...picked);
     }
 
     mkdirSync(OUT, { recursive: true });
@@ -162,17 +185,13 @@ async function main() {
     if (STRICT && failed.length) process.exit(1);
 }
 
-/** Junta los `demos/<clave>/demo.json` en un solo índice. */
-function buildManifest(out) {
-    const demos = {};
-    const base = path.join(out, 'demos');
-    if (existsSync(base)) {
-        for (const key of readdirSync(base).sort()) {
-            const f = path.join(base, key, 'demo.json');
-            if (existsSync(f)) demos[key] = JSON.parse(readFileSync(f, 'utf8'));
-        }
+/** Segundos que tardó cada demo la última vez (para repartir parejo). */
+function loadTimings() {
+    try {
+        return JSON.parse(readFileSync(path.join(here, 'timings.json'), 'utf8'));
+    } catch {
+        return {};
     }
-    return { generated_at: new Date().toISOString(), version: readFileSync(path.join(root, 'VERSION'), 'utf8').trim(), viewport: VIEWPORT, demos };
 }
 
 // ── API de la app (con la sesión del navegador) ──────────────────────────
