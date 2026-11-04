@@ -52,6 +52,44 @@ const CONSENT = '__consent';
 const FLOAT_TYPES = new Set(['text', 'long_text', 'email', 'url', 'phone', 'number', 'duration']);
 
 let meta: PublicFormMeta | null = BOOT.meta;
+
+// ─────────────────────── Sello anti-robots (v0.1.352) ───────────────────────
+// La página ya no lo trae (así se puede guardar en caché): se pide la primera
+// vez que la persona toca el formulario. Una persona tarda más de unos
+// segundos en completarlo; si alguien envía muy rápido (un formulario de un
+// solo clic), se espera lo que falta antes de mandarlo.
+const MIN_FILL_MS = 2600;
+let stampPromise: Promise<{ stamp: string; at: number }> | null = null;
+
+function ensureStamp(): Promise<{ stamp: string; at: number }> {
+    if (meta?.stamp) return Promise.resolve({ stamp: meta.stamp, at: 0 });
+    if (!stampPromise) {
+        stampPromise = fetch(`${API}/stamp`, { credentials: 'omit', cache: 'no-store' })
+            .then((r) => (r.ok ? (r.json() as Promise<{ stamp?: string }>) : Promise.reject(new Error('stamp'))))
+            .then((b) => {
+                if (!b.stamp) throw new Error('stamp');
+                return { stamp: b.stamp, at: Date.now() };
+            })
+            .catch((err: unknown) => {
+                stampPromise = null;
+                throw err;
+            });
+    }
+    return stampPromise;
+}
+
+/** El sello, esperando lo que falte para que el envío no cuente como «demasiado rápido». */
+function readyStamp(): Promise<string> {
+    return ensureStamp().then(({ stamp, at }) => {
+        const wait = at + MIN_FILL_MS - Date.now();
+        return wait > 0 ? new Promise<string>((r) => setTimeout(() => r(stamp), wait)) : stamp;
+    });
+}
+
+function kickStamp(): void {
+    if (BOOT.preview) return;
+    void ensureStamp().catch(() => undefined);
+}
 let values: Record<string, unknown> = {};
 let uploads: Record<string, Upload[]> = {};
 let itemEls: Record<string, HTMLElement> = {};
@@ -485,7 +523,10 @@ function filesControl(f: FieldItem, id: string): Control {
             render();
             const fd = new FormData();
             fd.append('file', file, file.name);
-            fetch(`${API}/files?field=${encodeURIComponent(key)}`, { method: 'POST', body: fd, credentials: 'omit', headers: { 'X-Form-Stamp': meta?.stamp ?? '' } })
+            ensureStamp()
+                .then(({ stamp }) =>
+                    fetch(`${API}/files?field=${encodeURIComponent(key)}`, { method: 'POST', body: fd, credentials: 'omit', headers: { 'X-Form-Stamp': stamp } }),
+                )
                 .then((r) => r.json().then((b: { message?: string; token?: string; name?: string }) => ({ ok: r.ok, b })))
                 .then((res) => {
                     if (!res.ok) throw new Error(res.b?.message || 'No se pudo subir el archivo.');
@@ -878,13 +919,17 @@ function submit(hpValue: string): void {
     }
     const label = m.submit_label || 'Enviar';
     setBusy(true, label);
-    const body: Record<string, unknown> = { values: outValues, uploads: outUploads, stamp: m.stamp, hp: hpValue };
+    const body: Record<string, unknown> = { values: outValues, uploads: outUploads, hp: hpValue };
     if (m.captcha) body.captcha = captchaToken;
     if (m.data_consent && consentCb) {
         body.consent = consentCb.checked;
         body.consent_version = m.data_consent.version;
     }
-    fetch(`${API}/submit`, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    readyStamp()
+        .then((stamp) => {
+            body.stamp = stamp;
+            return fetch(`${API}/submit`, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        })
         .then((r) =>
             r.json().then(
                 (b: Record<string, unknown>) => ({ ok: r.ok, b }),
@@ -900,6 +945,8 @@ function submit(hpValue: string): void {
             }
             // El token del captcha ya se usó (el servidor lo verifica una vez).
             if (m.captcha) resetCaptcha();
+            // Un sello vencido (la pestaña quedó abierta un día): el próximo intento pide otro.
+            if ((res.b as { code?: string }).code === 'form_stale') stampPromise = null;
             const errs = b.data?.errors;
             if (errs) {
                 const ids = Object.keys(errs);
@@ -1082,3 +1129,10 @@ if (BOOT.preview) {
 }
 
 render(false);
+
+// v0.1.352 — el sello se pide al primer contacto con el formulario (no al cargarlo).
+if (!BOOT.preview) {
+    for (const ev of ['pointerdown', 'focusin', 'keydown', 'touchstart'] as const) {
+        app.addEventListener(ev, kickStamp, { once: true, passive: true });
+    }
+}

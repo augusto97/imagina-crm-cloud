@@ -34,10 +34,12 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { formFrameAncestors, formPageCsp, newNonce } from '../forms/form-page';
+import { cacheablePageCsp, formFrameAncestors, formPageCsp, newNonce } from '../forms/form-page';
+import { PublicBusyError } from '../public-cache/public-cache';
+import { PUBLIC_PAGE_CACHE_CONTROL, busyPage, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { appointmentNotFoundPage, bookingNotAvailablePage, renderBookingPage } from './booking-page';
-import { BookingPublicService } from './booking-public.service';
+import { appointmentNotFoundPage, bookingClientHash, bookingNotAvailablePage, renderBookingPage } from './booking-page';
+import { BookingPublicService, type CachedBookingPage } from './booking-public.service';
 import { BookingService, type BookingEditorOptions } from './booking.service';
 import { BookingMyCalendarService } from './booking-my-calendar.service';
 import { ForbiddenException } from '@nestjs/common';
@@ -232,6 +234,20 @@ export class PublicBookingController {
         return this.svc.meta(token);
     }
 
+    /** v0.1.352 — El sello anti-robots, a pedido (la página ya no lo trae). Nunca se guarda en caché. */
+    @Get(':token/stamp')
+    async stamp(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
+        try {
+            reply.header('Cache-Control', 'no-store').send(await this.svc.stamp(token));
+        } catch (err) {
+            if (err instanceof PublicBusyError) {
+                reply.status(503).header('Retry-After', '3').header('Cache-Control', 'no-store').send({ code: 'public_busy', message: 'Hay muchas visitas en este momento. Prueba de nuevo en unos segundos.' });
+                return;
+            }
+            throw err;
+        }
+    }
+
     @Get(':token/slots')
     slots(
         @Req() req: FastifyRequest,
@@ -260,6 +276,9 @@ export class PublicBookingController {
  */
 @Controller('public/b')
 export class PublicBookingPageController {
+    /** La página armada por cada agenda en caché (se va con ella). */
+    private readonly renderedPages = new WeakMap<CachedBookingPage, { body: Precompressed; csp: string }>();
+
     constructor(private readonly svc: BookingPublicService) {}
 
     @Get('preview')
@@ -303,27 +322,60 @@ export class PublicBookingPageController {
             );
     }
 
+    /**
+     * v0.1.352 (ADR-S95) — La página de reservar: armada y comprimida UNA vez,
+     * vale medio minuto para todas las visitas (no lleva nada personal ni el
+     * sello anti-robots, que se pide al empezar). El navegador o una CDN la
+     * pueden guardar; la siguiente visita del mismo navegador recibe un 304.
+     */
     @Get(':token')
-    async page(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
-        const info = await this.svc.pageInfo(token);
-        const nonce = newNonce();
-        if (!info) {
+    async page(@Req() req: FastifyRequest, @Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
+        let cached: CachedBookingPage | null;
+        try {
+            cached = await this.svc.cachedPage(token);
+        } catch (err) {
+            if (err instanceof PublicBusyError) {
+                reply
+                    .status(503)
+                    .header('Retry-After', '3')
+                    .header('Cache-Control', 'no-store')
+                    .header('X-Robots-Tag', 'noindex')
+                    .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors *")
+                    .type('text/html; charset=utf-8')
+                    .send(busyPage());
+                return;
+            }
+            throw err;
+        }
+        if (!cached) {
             reply
                 .status(404)
-                .header('Content-Security-Policy', formPageCsp(nonce, '*'))
+                .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors *")
                 .header('X-Robots-Tag', 'noindex')
+                .header('Cache-Control', 'public, max-age=30')
                 .type('text/html; charset=utf-8')
                 .send(bookingNotAvailablePage());
             return;
         }
+        const page = this.rendered(cached, token);
         reply
-            .header('Content-Security-Policy', formPageCsp(nonce, formFrameAncestors(info.allowed_domains), info.meta.captcha?.provider ?? null))
+            .header('Content-Security-Policy', page.csp)
             .header('X-Robots-Tag', 'noindex')
-            // El sello anti-robots viaja en la página: nunca se cachea.
-            .header('Cache-Control', 'no-store')
-            .header('Referrer-Policy', 'strict-origin-when-cross-origin')
-            .type('text/html; charset=utf-8')
-            .send(renderBookingPage({ nonce, title: info.title, boot: { mode: 'book', token, meta: info.meta, manage: null } }));
+            .header('Cache-Control', PUBLIC_PAGE_CACHE_CONTROL)
+            .header('Referrer-Policy', 'strict-origin-when-cross-origin');
+        sendPrecompressed(req, reply, page.body, 'text/html; charset=utf-8');
+    }
+
+    private rendered(cached: CachedBookingPage, token: string): { body: Precompressed; csp: string } {
+        const hit = this.renderedPages.get(cached);
+        if (hit) return hit;
+        const { info } = cached;
+        const page = {
+            body: precompress(renderBookingPage({ title: info.title, boot: { mode: 'book', token, meta: info.meta, manage: null } })),
+            csp: cacheablePageCsp(bookingClientHash(), formFrameAncestors(info.allowed_domains), info.meta.captcha?.provider ?? null),
+        };
+        this.renderedPages.set(cached, page);
+        return page;
     }
 }
 

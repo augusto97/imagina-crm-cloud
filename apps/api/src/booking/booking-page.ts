@@ -1,5 +1,5 @@
 import { CAPTCHA_PROVIDER_INFO, type CaptchaProvider, type PublicBookingMeta, type PublicManageMeta } from '@imagina-base/shared';
-import { escapeHtml } from '../forms/form-page';
+import { escapeHtml, inlineScriptHash, inlineScriptText } from '../forms/form-page';
 
 /**
  * D5 — Página pública de una agenda (`/api/v1/public/b/:token`), la de
@@ -142,8 +142,20 @@ export interface BookingPageBoot {
     action?: 'cancel' | null;
 }
 
-export function renderBookingPage(opts: { nonce: string; title: string; boot: BookingPageBoot }): string {
+/**
+ * v0.1.352 (ADR-S95) — `sha256-…` del script de la agenda: la página de
+ * reservar se guarda en caché y la CSP autoriza el script por su hash (es el
+ * mismo para todas las visitas), no con un nonce distinto por respuesta.
+ */
+let clientHash: string | null = null;
+export function bookingClientHash(): string {
+    clientHash ??= inlineScriptHash(CLIENT_JS);
+    return clientHash;
+}
+
+export function renderBookingPage(opts: { nonce?: string; title: string; boot: BookingPageBoot }): string {
     const boot = jsonForScript({ ...opts.boot, scripts: CAPTCHA_SCRIPTS });
+    const nonce = opts.nonce ? ` nonce="${opts.nonce}"` : '';
     return `<!doctype html>
 <html lang="es">
 <head>
@@ -156,7 +168,7 @@ export function renderBookingPage(opts: { nonce: string; title: string; boot: Bo
 <body>
 <div class="wrap"><div class="card"><div class="band"></div><div class="inner" id="root" data-testid="booking-root"></div></div></div>
 <script type="application/json" id="boot">${boot}</script>
-<script nonce="${opts.nonce}">${CLIENT_JS}</script>
+<script${nonce}>${inlineScriptText(CLIENT_JS)}</script>
 </body>
 </html>`;
 }
@@ -202,6 +214,32 @@ const CLIENT_JS = String.raw`
   };
   var captchaToken = null, captchaWidget = null;
   var pvReq = 0, pvWait = {};
+
+  // v0.1.352 — el sello anti-robots ya no viaja en la página (así se puede
+  // guardar en caché): se pide al primer contacto y, si alguien reserva muy
+  // rápido, se espera lo que falte antes de mandar.
+  var stampReq = null;
+  function ensureStamp() {
+    if (meta && meta.stamp) return Promise.resolve({ stamp: meta.stamp, at: 0 });
+    if (!stampReq) {
+      stampReq = fetch(API + '/stamp', { headers: { accept: 'application/json' }, cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error('stamp'); return r.json(); })
+        .then(function (j) { if (!j || !j.stamp) throw new Error('stamp'); return { stamp: j.stamp, at: Date.now() }; })
+        .catch(function (e) { stampReq = null; throw e; });
+    }
+    return stampReq;
+  }
+  function readyStamp() {
+    return ensureStamp().then(function (s) {
+      var wait = s.at + 2600 - Date.now();
+      return wait > 0 ? new Promise(function (r) { setTimeout(function () { r(s.stamp); }, wait); }) : s.stamp;
+    });
+  }
+  if (MODE === 'book') {
+    ['pointerdown', 'focusin', 'keydown', 'touchstart'].forEach(function (ev) {
+      root.addEventListener(ev, function () { ensureStamp().catch(function () {}); }, { once: true, passive: true });
+    });
+  }
 
   function el(tag, attrs, kids) {
     var n = document.createElement(tag);
@@ -683,13 +721,17 @@ const CLIENT_JS = String.raw`
     var body = {
       service_id: st.service, staff_id: st.staff, start: st.slot.start, duration_min: chosenDuration(serviceById(st.service)),
       name: st.values.__name.trim(), email: st.values.__email.trim(), values: values,
-      stamp: meta.stamp, hp: (document.getElementById('hp') || {}).value || '', time_zone: visitorTz
+      hp: (document.getElementById('hp') || {}).value || '', time_zone: visitorTz
     };
     if ((st.values.__phone || '').trim()) body.phone = st.values.__phone.trim();
     if (meta.data_consent) { body.consent = st.values.__consent === true; body.consent_version = meta.data_consent.version; }
     if (meta.captcha) body.captcha = captchaToken || '';
     st.busy = true; st.alert = ''; render();
-    fetch(API + '/book', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body) })
+    readyStamp()
+      .then(function (stamp) {
+        body.stamp = stamp;
+        return fetch(API + '/book', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body) });
+      })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; }); })
       .then(function (res) {
         st.busy = false;
@@ -702,6 +744,7 @@ const CLIENT_JS = String.raw`
         }
         var msg = (res.body && res.body.message) || 'No pudimos agendar tu cita. Prueba de nuevo.';
         var code = res.body && res.body.code;
+        if (code === 'booking_stale') stampReq = null;
         if (code === 'booking_slot_taken') {
           // Otro lo tomó un segundo antes: de vuelta a los horarios (frescos).
           st.cache = {}; st.slot = null; st.step = 'date'; st.alert = msg; render();

@@ -62,6 +62,7 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
+import { PublicCacheModule } from './public-cache/public-cache.service';
 import { RecordsModule } from './records/records.module';
 import { ButtonsModule } from './buttons/buttons.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
@@ -89,6 +90,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         DbModule,
         RedisModule,
         RecordChangeHubModule,
+        PublicCacheModule,
         NotifyHubModule,
         // C5 — aviso en proceso de "una aprobación se resolvió" (esperas de automatizaciones).
         ApprovalHubModule,

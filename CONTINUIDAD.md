@@ -453,7 +453,12 @@ agenda, v0.1.349 reglas, cupos y festivos por país), en `main`.
   subir el tope por página; (5) tope de conexiones a la base propio para lo
   público; (6) adelantar los modos de inserción que cargan al hacer clic
   (botón flotante, ventana emergente). Se recomendó hacerlo ANTES de la entrega
-  3 de la agenda. **Esperando su respuesta: no arrancar sin su OK.**
+  3 de la agenda. El usuario respondió **"Si, hazlo primero y luego la tercera
+  entrega"** → **HECHO en v0.1.352** (ADR-S95). Cambio de decisión respecto de
+  la propuesta, explicado al usuario: el script del formulario quedó EN LÍNEA
+  (autorizado por su hash en la CSP) en vez de un archivo aparte, porque la
+  página entera ya se cachea y un archivo aparte sólo suma un pedido.
+  **SIGUIENTE**: la entrega 3 de la agenda.
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
   ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
   agendamientos está muy básica… seleccionar su asesor, diferentes franjas,

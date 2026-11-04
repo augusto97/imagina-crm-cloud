@@ -106,7 +106,8 @@ import {
     updateSettings,
     type FormContentType,
 } from './formDesignOps';
-import { formEmbedCode, formPublicUrl, useCaptchaAvailability,
+import { EmbedCodePicker } from './EmbedCodePicker';
+import { formPublicOrigin, formPublicUrl, useCaptchaAvailability,
     useDataConsentAvailability, useUpdateForm } from './useForms';
 
 /**
@@ -563,7 +564,9 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                     </Button>
                 </div>
             </header>
-            {shareOpen && <SharePanel form={form} enabled={enabled} onClose={() => setShareOpen(false)} onPublish={() => void togglePublish()} />}
+            {shareOpen && (
+                <SharePanel form={form} enabled={enabled} accent={resolvedAccent(config.settings, brandColor)} onClose={() => setShareOpen(false)} onPublish={() => void togglePublish()} />
+            )}
 
             {narrow ? (
                 <>
@@ -679,7 +682,7 @@ function CopyRow({ label, value, testId }: { label: string; value: string; testI
     );
 }
 
-function SharePanel({ form, enabled, onClose, onPublish }: { form: FormDto; enabled: boolean; onClose: () => void; onPublish: () => void }): JSX.Element {
+function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormDto; enabled: boolean; accent: string; onClose: () => void; onPublish: () => void }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="form-share-panel">
             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
@@ -700,10 +703,13 @@ function SharePanel({ form, enabled, onClose, onPublish }: { form: FormDto; enab
                     {__('Publicar ahora')}
                 </Button>
             )}
-            <div className="imcrm-grid imcrm-gap-3 md:imcrm-grid-cols-2">
-                <CopyRow label={__('Enlace')} value={formPublicUrl(form)} testId="form-link" />
-                <CopyRow label={__('Insertar en tu sitio')} value={formEmbedCode(form)} testId="form-embed" />
-            </div>
+            <CopyRow label={__('Enlace')} value={formPublicUrl(form)} testId="form-link" />
+            <EmbedCodePicker
+                target={{ url: formPublicUrl(form), origin: formPublicOrigin(form), title: form.name, kind: 'form' }}
+                accent={accent}
+                testId="form-embed"
+                dataTour="form-embed-mode"
+            />
             <a
                 href={formPublicUrl(form)}
                 target="_blank"

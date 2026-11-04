@@ -145,6 +145,13 @@ const envSchema = z.object({
     // Rate limit por IP/minuto: general y bucket estricto para auth/portal.
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(15),
+    /**
+     * v0.1.352 (ADR-S95) — Cuántas páginas públicas (formularios, agendas,
+     * horarios) se pueden armar A LA VEZ consultando la base. Lo público no
+     * puede llevarse todas las conexiones del pool (`DB_POOL_MAX`, 20 por
+     * defecto) y frenar la app del equipo; lo que no entra espera en fila.
+     */
+    PUBLIC_DB_CONCURRENCY: z.coerce.number().int().min(1).max(200).default(8),
     // Token opcional para GET /metrics (SEC-17). Vacío = abierto (dev). Seteado
     // = requiere `Authorization: Bearer <token>` (compatible con scrapers).
     METRICS_TOKEN: z.string().default(''),

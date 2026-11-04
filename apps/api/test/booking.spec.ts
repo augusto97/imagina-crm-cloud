@@ -29,6 +29,7 @@ import { bookingClientEmail } from '../src/booking/booking-email';
 import { buildIcs, foldIcsLine } from '../src/booking/booking-ics';
 import { renderBookingPage } from '../src/booking/booking-page';
 import { BookingPublicService } from '../src/booking/booking-public.service';
+import { PublicCache } from '../src/public-cache/public-cache';
 import { BookingRemindersService } from '../src/booking/booking-reminders.service';
 import { BookingService } from '../src/booking/booking.service';
 import { BookingHolidaysService, colombianFallback, parseHolidayIcs } from '../src/booking/booking-holidays';
@@ -308,6 +309,10 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
     let token: string;
     let D: string;
     let E: string;
+    let rt: RealtimeService;
+    let hub: RecordChangeHub;
+    let env: Env;
+    let availability: BookingAvailabilityService;
 
     const IP = '203.0.113.9';
     let ipSeq = 0;
@@ -376,11 +381,11 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         [pg, rd] = await Promise.all([startPostgres(), startRedis()]);
         redis = new IORedis(rd.url, { maxRetriesPerRequest: 1 });
         tenantDb = new TenantDb(pg.db);
-        const rt = new RealtimeService();
+        rt = new RealtimeService();
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         dispatcher = new CapturingDispatcher();
-        const hub = new RecordChangeHub();
+        hub = new RecordChangeHub();
         recs = new RecordsService(
             tenantDb,
             new RecordsRepository(),
@@ -393,11 +398,11 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             undefined,
             hub,
         );
-        const env = loadEnv({ FILES_SIGNING_SECRET: 'book-secret', APP_BASE_URL: 'https://app.test' });
+        env = loadEnv({ FILES_SIGNING_SECRET: 'book-secret', APP_BASE_URL: 'https://app.test' });
         files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-book-'))), env);
         mailbox = new CapturingMailTransport();
         calendar = new FakeCalendar(env, redis, tenantDb);
-        const availability = new BookingAvailabilityService(tenantDb, calendar, NO_HOLIDAYS);
+        availability = new BookingAvailabilityService(tenantDb, calendar, NO_HOLIDAYS);
         myCalendar = new BookingMyCalendarService(tenantDb, calendar, null as never, { resolve: () => Promise.resolve({}) } as never);
         booking = new BookingService(pg.db, tenantDb, lists, fieldsSvc, availability, NO_HOLIDAYS, calendar, myCalendar);
         const notify = new NotifyHub();
@@ -1126,6 +1131,69 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             if (prev === undefined) delete process.env.DEV_ALLOW_PRIVATE_EGRESS;
             else process.env.DEV_ALLOW_PRIVATE_EGRESS = prev;
             server.close();
+        }
+    });
+    it('v0.1.352 — página y horarios en caché: muchas visitas calculan una vez; reservar, un cambio del equipo o cambiar la agenda los renuevan', async () => {
+        await freshPage();
+        const cache = new PublicCache({ maxEntries: 200, concurrency: 4, maxQueue: 100, queueTimeoutMs: 5000 });
+        const cached = new BookingPublicService(
+            pg.db, tenantDb, lists, fieldsSvc, recs, files, redis as never, dispatcher, env, availability, calendar, rt, hub,
+            new NotifyHub(), undefined, undefined, undefined, new MailService(env, mailbox), undefined, undefined, cache as never,
+        );
+        cached.onModuleInit();
+        const admin = new BookingService(pg.db, tenantDb, lists, fieldsSvc, availability, NO_HOLIDAYS, calendar, myCalendar, undefined, cache as never);
+        const spy = vi.spyOn(availability, 'slots');
+        try {
+            const q = { service: 'svcconsulta', staff: 'any', from: D, to: D } as const;
+            // Veinte visitas a la vez miran la misma semana: se calcula UNA vez.
+            const first = await Promise.all(Array.from({ length: 20 }, () => cached.slots(token, nextIp(), q)));
+            expect(spy).toHaveBeenCalledTimes(1);
+            expect(new Set(first.map((r) => JSON.stringify(r))).size).toBe(1);
+            expect(first[0]!.slots.length).toBeGreaterThan(0);
+            // La página no trae el sello: se pide aparte, siempre fresco.
+            const info = await cached.pageInfo(token);
+            expect(info!.meta.stamp).toBe('');
+            expect((await cached.stamp(token)).stamp).toMatch(/^\d+\.[0-9a-f]{64}$/);
+            expect((await cached.meta(token)).stamp).toMatch(/^\d+\.[0-9a-f]{64}$/);
+
+            // Reservar el primer horario: los horarios se calculan de nuevo y ya no lo ofrecen.
+            const taken = first[0]!.slots[0]!;
+            const res = await cached.book(token, nextIp(), {
+                service_id: 'svcconsulta', staff_id: 'any', start: taken.start, name: 'Visita 1', email: 'v1@cliente.co',
+                values: {}, stamp: stamp(pageId), time_zone: TZ,
+            });
+            expect(res.ok).toBe(true);
+            // La reserva renueva los horarios dos veces: al guardar y cuando el
+            // aviso del registro nuevo llega (en segundo plano). Se espera a ambos.
+            await vi.waitFor(() => expect(cache.version(`slots:${tenantId}`)).toBeGreaterThanOrEqual(2));
+            // (La reserva vuelve a comprobar el horario por su cuenta: se cuentan sólo los pedidos de horarios.)
+            spy.mockClear();
+            const after = await cached.slots(token, nextIp(), q);
+            expect(spy).toHaveBeenCalledTimes(1);
+            expect(after.slots.find((s) => s.start === taken.start)).toBeUndefined();
+
+            // Lo guardado se usa mientras nadie cambia nada…
+            await cached.slots(token, nextIp(), q);
+            expect(spy).toHaveBeenCalledTimes(1);
+            // …y un cambio del equipo en la lista de la agenda lo renueva.
+            const [rec] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, listId)));
+            await recs.update(tenantId, { userId: ana, role: 'admin' }, 'citas', rec!.id, { data: { [`f${f.notas!.id}`]: 'Cambio del equipo' } });
+            await vi.waitFor(async () => {
+                await cached.slots(token, nextIp(), q);
+                expect(spy).toHaveBeenCalledTimes(2);
+            });
+
+            // Cambiar la agenda desde el constructor: la página guardada deja de valer.
+            const cfg = pageConfig();
+            cfg.settings.title = 'Agenda renovada';
+            await admin.update(tenantId, 'citas', pageId, { config: cfg });
+            expect((await cached.pageInfo(token))!.title).toBe('Agenda renovada');
+            // Despublicarla: deja de existir para el visitante en el acto.
+            await admin.update(tenantId, 'citas', pageId, { enabled: false });
+            expect(await cached.pageInfo(token)).toBeNull();
+            await expect(cached.stamp(token)).rejects.toMatchObject({ status: 404 });
+        } finally {
+            spy.mockRestore();
         }
     });
 });
