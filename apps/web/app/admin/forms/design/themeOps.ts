@@ -5,7 +5,6 @@ import {
     readPublicTheme,
     type FormConfig,
     type FormFieldItem,
-    type FormSettings,
     type PublicChoiceStyle,
     type PublicTheme,
 } from '@imagina-base/shared';
@@ -14,6 +13,9 @@ import {
  * v0.1.351 (ADR-S94) — Operaciones PURAS del diseño del formulario. Todo
  * devuelve un `FormConfig` nuevo: pasan por el `change()` del constructor y
  * se deshacen con Ctrl+Z como cualquier otro cambio.
+ *
+ * v0.1.354 — Genéricas: sirven para cualquier configuración con
+ * `settings.theme` y `settings.accent_color` (el formulario y la agenda).
  *
  * Reglas:
  * - `settings.theme` null = el diseño de siempre («Clásico»). El primer
@@ -31,13 +33,26 @@ export type ThemeResetKey = ThemeSectionKey | 'custom_css';
 
 const FALLBACK_ACCENT = '#0e7490';
 
-/** El tema que se ve: el guardado o, sin él, el de siempre. */
-export function effectiveTheme(settings: Pick<FormSettings, 'theme'>): PublicTheme {
-    return settings.theme ? readPublicTheme(settings.theme) : DEFAULT_PUBLIC_THEME;
+/** Lo que el diseño necesita de una configuración (formulario o agenda). */
+export interface ThemedSettings {
+    theme?: PublicTheme | null;
+    accent_color: string | null;
+}
+export interface Themed {
+    settings: ThemedSettings;
+}
+
+/**
+ * El tema que se ve: el guardado o, sin él, el de siempre. `base` = el «de
+ * siempre» de quien lo usa (v0.1.354: la agenda tiene el suyo, más ancho y con
+ * «Paso X de Y»); por defecto, el de los formularios.
+ */
+export function effectiveTheme(settings: Pick<ThemedSettings, 'theme'>, base: PublicTheme = DEFAULT_PUBLIC_THEME): PublicTheme {
+    return settings.theme ? readPublicTheme(settings.theme) : base;
 }
 
 /** ¿El formulario usa el diseño de siempre (sin tema propio)? */
-export function isClassicTheme(settings: Pick<FormSettings, 'theme'>): boolean {
+export function isClassicTheme(settings: Pick<ThemedSettings, 'theme'>): boolean {
     return settings.theme === null || settings.theme === undefined;
 }
 
@@ -45,8 +60,8 @@ export function isClassicTheme(settings: Pick<FormSettings, 'theme'>): boolean {
  * El tema desde donde se edita: el guardado o el de siempre, con el color
  * viejo del formulario como acento si el tema todavía no tiene uno.
  */
-export function startTheme(settings: Pick<FormSettings, 'theme' | 'accent_color'>): PublicTheme {
-    const base = effectiveTheme(settings);
+export function startTheme(settings: ThemedSettings, classic: PublicTheme = DEFAULT_PUBLIC_THEME): PublicTheme {
+    const base = effectiveTheme(settings, classic);
     if (settings.accent_color && !base.colors.accent) {
         return { ...base, colors: { ...base.colors, accent: settings.accent_color } };
     }
@@ -54,49 +69,58 @@ export function startTheme(settings: Pick<FormSettings, 'theme' | 'accent_color'
 }
 
 /** Acento de respaldo (cuando el tema no fija uno): el viejo del formulario o el de la marca. */
-export function fallbackAccent(settings: Pick<FormSettings, 'accent_color'>, brand: string | null | undefined): string {
+export function fallbackAccent(settings: Pick<ThemedSettings, 'accent_color'>, brand: string | null | undefined): string {
     return settings.accent_color ?? (brand && /^#[0-9a-f]{6}$/i.test(brand) ? brand : FALLBACK_ACCENT);
 }
 
 /** El acento que se ve: el del tema, el viejo del formulario o el de la marca. */
-export function resolvedAccent(settings: Pick<FormSettings, 'theme' | 'accent_color'>, brand: string | null | undefined): string {
-    return effectiveTheme(settings).colors.accent ?? fallbackAccent(settings, brand);
+export function resolvedAccent(settings: ThemedSettings, brand: string | null | undefined, classic: PublicTheme = DEFAULT_PUBLIC_THEME): string {
+    return effectiveTheme(settings, classic).colors.accent ?? fallbackAccent(settings, brand);
 }
 
 /** Pone el tema en el formulario (y suelta el color viejo, que ya vive en el tema). */
-export function withTheme(config: FormConfig, theme: PublicTheme): FormConfig {
+export function withTheme<C extends Themed>(config: C, theme: PublicTheme): C {
     return { ...config, settings: { ...config.settings, theme, accent_color: null } };
 }
 
 /** Cambia una sección del tema (colores, tipografía, página…). */
-export function patchThemeSection<K extends ThemeSectionKey>(config: FormConfig, key: K, patch: Partial<PublicTheme[K]>): FormConfig {
-    const start = startTheme(config.settings);
+export function patchThemeSection<C extends Themed, K extends ThemeSectionKey>(
+    config: C,
+    key: K,
+    patch: Partial<PublicTheme[K]>,
+    classic: PublicTheme = DEFAULT_PUBLIC_THEME,
+): C {
+    const start = startTheme(config.settings, classic);
     return withTheme(config, { ...start, preset: null, [key]: { ...start[key], ...patch } });
 }
 
 /** Cambia algo de primer nivel del tema (modo, colores oscuros, CSS propio). */
-export function patchTheme(config: FormConfig, patch: Partial<Pick<PublicTheme, 'mode' | 'dark_colors' | 'custom_css'>>): FormConfig {
-    const start = startTheme(config.settings);
+export function patchTheme<C extends Themed>(
+    config: C,
+    patch: Partial<Pick<PublicTheme, 'mode' | 'dark_colors' | 'custom_css'>>,
+    classic: PublicTheme = DEFAULT_PUBLIC_THEME,
+): C {
+    const start = startTheme(config.settings, classic);
     return withTheme(config, { ...start, ...patch, preset: null });
 }
 
 /** Un color del modo oscuro (null = el calculado solo). */
-export function patchDarkColor(config: FormConfig, key: string, value: string | null): FormConfig {
-    const start = startTheme(config.settings);
+export function patchDarkColor<C extends Themed>(config: C, key: string, value: string | null, classic: PublicTheme = DEFAULT_PUBLIC_THEME): C {
+    const start = startTheme(config.settings, classic);
     const dark: Record<string, string | null | undefined> = { ...(start.dark_colors ?? {}) };
     if (value === null) delete dark[key];
     else dark[key] = value;
-    return patchTheme(config, { dark_colors: dark as PublicTheme['dark_colors'] });
+    return patchTheme(config, { dark_colors: dark as PublicTheme['dark_colors'] }, classic);
 }
 
 /** Vuelve una sección a los valores de fábrica. */
-export function resetThemeSection(config: FormConfig, key: ThemeResetKey): FormConfig {
+export function resetThemeSection<C extends Themed>(config: C, key: ThemeResetKey, classic: PublicTheme = DEFAULT_PUBLIC_THEME): C {
     if (isClassicTheme(config.settings)) {
         // Sin tema: sólo el color viejo puede estar "cambiado".
         return key === 'colors' && config.settings.accent_color ? { ...config, settings: { ...config.settings, accent_color: null } } : config;
     }
-    const start = startTheme(config.settings);
-    const D = DEFAULT_PUBLIC_THEME;
+    const start = startTheme(config.settings, classic);
+    const D = classic;
     let next: PublicTheme;
     if (key === 'colors') next = { ...start, colors: D.colors, mode: D.mode, dark_colors: D.dark_colors };
     else if (key === 'custom_css') next = { ...start, custom_css: D.custom_css };
@@ -121,10 +145,10 @@ function stableStringify(v: unknown): string {
 }
 
 /** ¿La sección tiene cambios respecto del diseño de fábrica? (para el punto y «Restablecer») */
-export function themeSectionModified(settings: Pick<FormSettings, 'theme' | 'accent_color'>, key: ThemeResetKey): boolean {
+export function themeSectionModified(settings: ThemedSettings, key: ThemeResetKey, classic: PublicTheme = DEFAULT_PUBLIC_THEME): boolean {
     if (isClassicTheme(settings)) return key === 'colors' && Boolean(settings.accent_color);
-    const t = effectiveTheme(settings);
-    const D = DEFAULT_PUBLIC_THEME;
+    const t = effectiveTheme(settings, classic);
+    const D = classic;
     if (key === 'colors') {
         return !stableEqual(t.colors, D.colors) || t.mode !== D.mode || !stableEqual(t.dark_colors, D.dark_colors) || Boolean(settings.accent_color);
     }
@@ -153,7 +177,7 @@ export interface ApplyThemeOptions {
 }
 
 /** Aplica una plantilla o un tema guardado: reemplaza el tema entero. */
-export function applyTheme(config: FormConfig, theme: PublicTheme, opts: ApplyThemeOptions): FormConfig {
+export function applyTheme<C extends Themed>(config: C, theme: PublicTheme, opts: ApplyThemeOptions): C {
     const current = isClassicTheme(config.settings) ? null : effectiveTheme(config.settings);
     const next: PublicTheme = { ...theme };
     if (opts.carryImages && current) {
@@ -165,7 +189,7 @@ export function applyTheme(config: FormConfig, theme: PublicTheme, opts: ApplyTh
 }
 
 /** La plantilla marcada en la galería (sin tema = «Clásico»). */
-export function activePresetId(settings: Pick<FormSettings, 'theme'>): string | null {
+export function activePresetId(settings: Pick<ThemedSettings, 'theme'>): string | null {
     if (isClassicTheme(settings)) return 'classic';
     return effectiveTheme(settings).preset;
 }
@@ -174,10 +198,10 @@ export function activePresetId(settings: Pick<FormSettings, 'theme'>): string | 
  * Lo que se guarda: si quedó el color viejo junto a un tema (datos de antes),
  * pasa al acento del tema y el viejo queda en null.
  */
-export function normalizeForSave(config: FormConfig): FormConfig {
+export function normalizeForSave<C extends Themed>(config: C, classic: PublicTheme = DEFAULT_PUBLIC_THEME): C {
     const s = config.settings;
     if (isClassicTheme(s) || !s.accent_color) return config;
-    const t = effectiveTheme(s);
+    const t = effectiveTheme(s, classic);
     return withTheme(config, t.colors.accent ? t : { ...t, colors: { ...t.colors, accent: s.accent_color } });
 }
 
@@ -188,7 +212,7 @@ export function formImageIds(config: FormConfig): number[] {
 }
 
 /** Tema que trae CSS propio (para avisarle a quien no es administrador). */
-export function themeHasCustomCss(settings: Pick<FormSettings, 'theme'>): boolean {
+export function themeHasCustomCss(settings: Pick<ThemedSettings, 'theme'>): boolean {
     return effectiveTheme(settings).custom_css.trim() !== '';
 }
 

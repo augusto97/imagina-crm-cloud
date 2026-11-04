@@ -382,11 +382,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.353**
-(agenda: aprobación de las citas y seguridad de la página — código por correo,
-correos temporales, frenos por correo y enlaces versionados; addendum ADR-S67;
-antes v0.1.352 formularios y agenda insertados que aguantan mucho tráfico,
-ADR-S95, y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.354**
+(la página de la agenda con el motor de temas de los formularios: plantillas,
+colores, tipografía, qué se muestra y distribución; addendum ADR-S94; antes
+v0.1.353 aprobación de citas y seguridad de la página, addendum ADR-S67,
+v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
+y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-04 — **Formularios mucho más potentes y personalizables**. El
@@ -428,8 +429,10 @@ ADR-S95, y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   ella, a propósito: dibujar la primera página en el HTML del servidor (el
   formulario lo arma el script inline; la medición dio ~335 ms de primera
   pintura en 4G lento, apenas 27 ms más que antes, así que no se justificó).
-  **SIGUIENTE**: la entrega 3 de la agenda (aprobación de citas, rediseño con
-  este mismo motor de temas, seguridad reforzada), después formularios 2 y 3.
+  La entrega 3 de la agenda quedó **HECHA** (v0.1.353 aprobación y seguridad,
+  v0.1.354 la página con este mismo motor de temas). **SIGUIENTE**:
+  formularios entrega 2 (preguntas y lógica), después la 3 (medir, insertar,
+  cobrar).
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -489,11 +492,13 @@ ADR-S95, y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
      quién aprueba, plazo y qué pasa si nadie decide, panel en la ficha) y
      **seguridad reforzada** (código por correo, correos temporales
      bloqueados, frenos por correo, enlaces versionados: el del correo
-     anterior ya no hace cambios). **SIGUIENTE — v0.1.354**: el **rediseño
-     visual** de la página pública de la agenda con el motor de temas de los
-     formularios (ADR-S94: plantillas, colores, tipografía, portada, logo,
-     mostrar u ocultar partes, distribución). Después, formularios entregas 2
-     (preguntas y lógica) y 3 (medir, insertar, cobrar).
+     anterior ya no hace cambios) y **v0.1.354 — HECHA**: la página pública
+     de la agenda con el motor de temas de los formularios (ADR-S94:
+     plantillas, «Mis temas», colores, tipografía, portada, logo, mostrar u
+     ocultar partes, distribución del calendario y los horarios, semana desde
+     el domingo). **Con esto las tres entregas de la agenda quedan
+     completas.** Siguiente: formularios entregas 2 (preguntas y lógica) y 3
+     (medir, insertar, cobrar).
   Quedan fuera salvo que el usuario lo pida: cobrar al agendar y formularios de
   enrutamiento.
   **Nota de desarrollo**: el tenant 1 del entorno de dev está en plan `trial`
@@ -1334,6 +1339,29 @@ ADR-S95, y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.354** — **La agenda de citas con tu diseño** (addendum
+  ADR-S94; segunda mitad de la entrega 3 de la agenda: con esto las tres
+  entregas aprobadas quedan completas).
+  - La página pública de la agenda usa el MISMO motor de temas de los
+    formularios: sección **Diseño** del constructor con plantillas, «Mis
+    temas», colores, tipografía, tamaños, portada, fondo y CSS propio (sólo
+    admin). Sin tema, el de siempre (ninguna agenda cambia sola).
+  - **Mostrar u ocultar**: lugar, duración/descripción y precio de cada
+    servicio, foto y cargo de quien atiende. **Distribución**: calendario al
+    lado o arriba de los horarios, horarios en cuadrícula o lista, semana
+    desde el lunes o el domingo.
+  - Vale también para la página donde el cliente cambia o cancela su cita; el
+    color del diseño va en los correos. Las agendas nuevas nacen con el tema
+    por defecto de «Mis temas» (que pasa a valer para formularios y agendas).
+  - Asistente/MCP: `design` (plantilla, color y qué se muestra).
+  - **Bug encontrado y arreglado**: en el celular, volver a la pestaña «Vista
+    previa» del constructor de la agenda o del de formularios la dejaba sin lo
+    que se editaba.
+  - Sin migración. Tests: 2 de integración + 1 del asistente, 2 de shared, 3
+    del front; E2E navegador: constructor 19/19 (escritorio y celular oscuro),
+    página pública 14/14 y 15/15 en celular oscuro sin violaciones de CSP,
+    reserva y página de la cita con el diseño 9/9.
+  - **Siguiente**: formularios entrega 2 (preguntas y lógica).
 - **2026-11-04 · v0.1.353** — **Agenda: aprobación de las citas y seguridad de
   la página** (addendum ADR-S67; primera mitad de la entrega 3 aprobada por el
   usuario, después de v0.1.352).

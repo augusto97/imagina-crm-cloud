@@ -179,7 +179,7 @@ describe('v0.1.352 — páginas cacheables: el script se autoriza por su hash', 
     });
 
     it('agenda: el hash de la CSP es el del script que lleva la página', () => {
-        const html = renderBookingPage({ title: 'A', boot: { mode: 'book', token: 't', meta: null, manage: null } });
+        const html = renderBookingPage({ title: 'A', boot: { mode: 'book', token: 't', meta: null, manage: null }, themeCss: '', bodyClasses: [] });
         const inline = /<script>([\s\S]*?)<\/script>\n<\/body>/.exec(html)![1]!;
         expect(bookingClientHash()).toBe(sha(inline));
         expect(html).not.toContain('nonce=');

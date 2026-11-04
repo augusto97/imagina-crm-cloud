@@ -14,12 +14,15 @@ import {
     Loader2,
     Mail,
     Monitor,
+    Moon,
+    Palette,
     Plus,
     Redo2,
     RefreshCw,
     Send,
     ShieldCheck,
     Smartphone,
+    Sun,
     Tag,
     Trash2,
     Undo2,
@@ -35,6 +38,11 @@ import {
     BOOKING_MAPPING_KEYS,
     BOOKING_SLOT_INTERVALS,
     BOOKING_STATUS_LABELS,
+    BOOKING_CLASSIC_THEME,
+    bookingTheme,
+    buildPublicThemeCss,
+    publicThemeFileIds,
+    resolvePublicPalettes,
     type BookingConfig,
     type BookingMappingKey,
     type BookingPageDto,
@@ -43,7 +51,8 @@ import {
 } from '@imagina-base/shared';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { ColorField } from '@/components/design/DesignStyleControls';
+import { useSession } from '@/cloud/session';
+import { getThemeState } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -61,6 +70,9 @@ import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section, Segmented } from '../automations/email/EmailBlockInspector';
 import { useCaptchaAvailability, useDataConsentAvailability } from '../forms/useForms';
+import { useAttachmentUrls } from '../forms/design/useFormThemes';
+import { fallbackAccent, resolvedAccent } from '../forms/design/themeOps';
+import { BookingDesignEditor } from './BookingDesignEditor';
 import { SmsCounter } from '@/cloud/components/sms/smsUi';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { extractFieldOptions } from '../records/fieldOptions';
@@ -131,6 +143,7 @@ const SECTIONS: Array<{ id: BookingSection; label: string; icon: LucideIcon }> =
     { id: 'aprobacion', label: 'Aprobación y seguridad', icon: ShieldCheck },
     { id: 'campos', label: 'Campos de la lista', icon: ListChecks },
     { id: 'correos', label: 'Correos y recordatorios', icon: Mail },
+    { id: 'diseno', label: 'Diseño', icon: Palette },
     { id: 'publicar', label: 'Publicar', icon: Send },
 ];
 
@@ -172,6 +185,10 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
     const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
     const [shareOpen, setShareOpen] = useState(false);
+    // v0.1.354 — con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
+    const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
+    // El CSS propio del diseño lo escribe sólo un administrador (el rol, no la capacidad).
+    const isAdmin = useSession((st) => st.memberships.find((m) => m.tenant_id === st.activeTenantId)?.role === 'admin');
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
     const config = draft.config;
@@ -228,7 +245,10 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
 
     // ── Vista previa: la página real, alimentada por postMessage ──
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const [ready, setReady] = useState(false);
+    // Cuántas veces avisó la vista previa que está lista: en el celular la
+    // pestaña «Vista previa» se desmonta y el iframe vuelve a cargar, así que
+    // cada aviso tiene que volver a mandarle lo que se está editando.
+    const [ready, setReady] = useState(0);
     const members = useMemo(() => options.data?.members ?? [], [options.data]);
     const timeZone = options.data?.time_zone ?? 'America/Bogota';
     const photoIds = useMemo(() => config.staff.flatMap((s) => (s.photo_file_id !== null ? [s.photo_file_id] : [])), [config.staff]);
@@ -255,7 +275,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         const onMessage = (e: MessageEvent): void => {
             if (e.origin !== window.location.origin || e.source !== iframeRef.current?.contentWindow) return;
             const data = e.data as { type?: string; id?: number; service?: string; staff?: string; from?: string; to?: string; duration?: number } | null;
-            if (data?.type === 'imb-booking-ready') setReady(true);
+            if (data?.type === 'imb-booking-ready') setReady((n) => n + 1);
             if (data?.type === 'imb-booking-slots-request' && typeof data.id === 'number') {
                 const reply = (slots: unknown[]): void => {
                     iframeRef.current?.contentWindow?.postMessage({ type: 'imb-booking-slots', id: data.id, slots }, window.location.origin);
@@ -275,10 +295,32 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
     }, [listId, page.id]);
+    // ── v0.1.354 — El diseño (ADR-S94): el CSS del tema que recibe la vista previa ──
+    const brandColor = branding.data?.primary_color ?? '#0e7490';
+    const theme = useMemo(() => bookingTheme(config.settings), [config.settings]);
+    const themeImageIds = useMemo(() => publicThemeFileIds(theme), [theme]);
+    const themeImageUrls = useAttachmentUrls(themeImageIds);
+    const themeCss = useMemo(() => {
+        const img = (id: number | null): string | null => (id === null ? null : (themeImageUrls.get(id) ?? null));
+        return buildPublicThemeCss(theme, {
+            accent: fallbackAccent(config.settings, brandColor),
+            images: {
+                cover: img(theme.cover.file_id),
+                split: img(theme.split.file_id),
+                background: theme.background.kind === 'image' ? img(theme.background.file_id) : null,
+            },
+        });
+    }, [theme, config.settings, brandColor, themeImageUrls]);
+    const scheme = theme.mode === 'auto' ? previewScheme : null;
+    const previewBg = useMemo(() => {
+        const pals = resolvePublicPalettes(theme, fallbackAccent(config.settings, brandColor));
+        return (scheme === 'dark' && pals.dark ? pals.dark : pals.main).background;
+    }, [theme, config.settings, brandColor, scheme]);
+
     useEffect(() => {
         if (!ready) return;
-        iframeRef.current?.contentWindow?.postMessage({ type: 'imb-booking-preview', meta }, window.location.origin);
-    }, [ready, meta]);
+        iframeRef.current?.contentWindow?.postMessage({ type: 'imb-booking-preview', meta, css: themeCss, scheme }, window.location.origin);
+    }, [ready, meta, themeCss, scheme]);
 
     const problems = useMemo(
         () =>
@@ -358,6 +400,10 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             onPublish={() => void togglePublish()}
             onRegenerate={() => void regenerate()}
             busy={update.isPending}
+            brand={brandColor}
+            isAdmin={isAdmin}
+            narrow={narrow}
+            pageName={draft.name}
         />
     );
     const nav = (
@@ -394,6 +440,37 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
                     {__('Vista previa con los horarios reales — nada se reserva aquí')}
                 </span>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                {theme.mode === 'auto' && (
+                    <div
+                        role="group"
+                        aria-label={__('Modo de la vista previa')}
+                        className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5"
+                        data-testid="booking-preview-scheme"
+                    >
+                        {(
+                            [
+                                ['light', Sun, __('Claro')],
+                                ['dark', Moon, __('Oscuro')],
+                            ] as const
+                        ).map(([key, Icon, label]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                title={`${__('Ver como en un dispositivo en modo')} ${label.toLowerCase()}`}
+                                aria-pressed={previewScheme === key}
+                                onClick={() => setPreviewScheme(key)}
+                                className={cn(
+                                    'imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px]',
+                                    previewScheme === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
+                                )}
+                            >
+                                <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+                                <span className="imcrm-hidden sm:imcrm-inline">{label}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <div role="group" aria-label={__('Dispositivo')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
                     {(
                         [
@@ -413,13 +490,19 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                         </button>
                     ))}
                 </div>
+                </div>
             </div>
             <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
                 <iframe
                     ref={iframeRef}
                     src="/api/v1/public/b/preview"
                     title={__('Vista previa de la agenda')}
-                    className={cn('imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-white', device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full imcrm-max-w-[760px]')}
+                    style={{ background: previewBg }}
+                    className={cn(
+                        'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border',
+                        device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full',
+                        device === 'desktop' && (theme.split.enabled ? 'imcrm-max-w-[1100px]' : 'imcrm-max-w-[860px]'),
+                    )}
                     data-testid="booking-preview"
                 />
             </div>
@@ -464,7 +547,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             {shareOpen && (
                 <SharePanel
                     page={current}
-                    accent={current.config.settings.accent_color ?? branding.data?.primary_color ?? '#0e7490'}
+                    accent={resolvedAccent(current.config.settings, brandColor, BOOKING_CLASSIC_THEME)}
                     onClose={() => setShareOpen(false)}
                     onPublish={() => void togglePublish()}
                 />
@@ -625,6 +708,11 @@ interface SectionEditorProps {
     onPublish: () => void;
     onRegenerate: () => void;
     busy: boolean;
+    /** v0.1.354 — para «Diseño». */
+    brand: string;
+    isAdmin: boolean;
+    narrow: boolean;
+    pageName: string;
 }
 
 function SectionEditor(p: SectionEditorProps): JSX.Element {
@@ -650,6 +738,16 @@ function SectionEditor(p: SectionEditorProps): JSX.Element {
             {p.section === 'aprobacion' && <ApprovalEditor {...p} />}
             {p.section === 'campos' && <FieldsEditor {...p} />}
             {p.section === 'correos' && <EmailsEditor {...p} />}
+            {p.section === 'diseno' && (
+                <BookingDesignEditor
+                    config={p.config}
+                    onChange={p.onChange}
+                    brand={p.brand}
+                    isAdmin={p.isAdmin}
+                    narrow={p.narrow}
+                    suggestedName={p.config.settings.title || p.pageName}
+                />
+            )}
             {p.section === 'publicar' && <PublishEditor {...p} />}
         </div>
     );
@@ -663,7 +761,8 @@ const SECTION_HINTS: Record<BookingSection, string> = {
     aprobacion: __('Si alguien del equipo aprueba cada cita antes de confirmarla, y cómo se protege la página de reservas falsas.'),
     campos: __('En qué campo de la lista se guarda cada dato de la cita, y qué más se le pregunta al cliente.'),
     correos: __('El correo de confirmación (con el archivo para agregarla al calendario), los recordatorios y lo que ve al terminar.'),
-    publicar: __('Cómo se ve la página, dónde se puede insertar y su enlace.'),
+    diseno: __('Una plantilla o tu propio diseño: colores, tipografía, tamaños, portada, fondo, qué se muestra y cómo se distribuye.'),
+    publicar: __('Los textos de la página, dónde se puede insertar y su enlace.'),
 };
 
 function ServicesEditor({ config, onChange }: SectionEditorProps): JSX.Element {
@@ -1462,14 +1561,14 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
             <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link-inline" />
             <EmbedCodePicker
                 target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: s.title.trim() || page.name, kind: 'booking' }}
-                accent={s.accent_color ?? '#0e7490'}
+                accent={resolvedAccent(s, '#0e7490', BOOKING_CLASSIC_THEME)}
                 testId="booking-embed-inline"
             />
             <Button variant="ghost" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onRegenerate} disabled={busy} data-testid="booking-regenerate">
                 <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                 {__('Cambiar la dirección')}
             </Button>
-            <Section title={__('Cómo se ve')}>
+            <Section title={__('Textos de la página')}>
                 <Field label={__('Título')}>
                     <Input value={s.title} onChange={(e) => setS({ title: e.target.value })} placeholder={page.name} data-testid="booking-title" />
                 </Field>
@@ -1479,8 +1578,9 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
                 <Field label={__('Dónde es la cita')} hint={__('Una dirección, «Videollamada»… Va en la página, el correo y el archivo del calendario.')}>
                     <Input value={s.location} onChange={(e) => setS({ location: e.target.value })} data-testid="booking-location" />
                 </Field>
-                <ColorField label={__('Color')} value={s.accent_color} onChange={(v) => setS({ accent_color: v })} placeholder={__('El de la marca')} />
-                <Check label={__('Mostrar el logo de la empresa')} checked={s.show_logo} onChange={(v) => setS({ show_logo: v })} />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Los colores, el logo, la tipografía y qué se muestra están en «Diseño».')}
+                </p>
                 <Field label={__('Mensaje cuando no recibe reservas')}>
                     <Textarea rows={2} value={s.closed_message} onChange={(e) => setS({ closed_message: e.target.value })} />
                 </Field>

@@ -11528,6 +11528,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sin `.ics`, estado del registro, página de la cita «no fue
         confirmada») y constructor 17/17 en escritorio y en celular oscuro.
 
+  - [x] **Agenda de citas, tercera entrega (segunda mitad): la página con tu
+        diseño (v0.1.354, addendum ADR-S94)**. La página pública de la agenda
+        usa el MISMO motor de temas de los formularios. (a) **Modelo**:
+        `settings.theme` (`PublicTheme`; null = el de siempre,
+        `BOOKING_CLASSIC_THEME`, con el ancho, el relleno y el «Paso X de Y»
+        de antes: ninguna agenda cambia sola) y `settings.display`
+        (`bookingDisplaySchema`: mostrar u ocultar lugar, duración y
+        descripción, precio, fotos y cargo de quien atiende; calendario al
+        lado o arriba de los horarios; horarios en cuadrícula o lista; semana
+        desde el lunes o el domingo), leídos con tolerancia. Sin migración.
+        (b) **Página**: `PUBLIC_BASE_CSS` + lo propio de la agenda
+        (`BOOKING_CSS`) + `#ib-theme`, la estructura y las clases de los
+        formularios (`bookingBodyClasses`: las del tema + `bk-*`), los datos
+        del cliente con los campos del tema, el avance como barra si el tema
+        lo pide, y «Tu cita» visible en la página de la cita aunque el diseño
+        oculte el título. El calendario apilado no pasa de 440 px. El cliente
+        sigue en línea con su CSP por hash (ADR-S95).
+        (c) **Servidor**: el «look» (CSS, clases, fuente a precargar) se arma
+        una vez por página en la caché pública, y también para la página de
+        la cita y la vista previa; el color del diseño manda en la página y en
+        los correos. Mismas reglas que los formularios: el CSS propio sólo lo
+        agrega un admin (o viene de un tema guardado) y se guarda limpio; las
+        imágenes son de la empresa y nunca SVG; una agenda nueva nace con el
+        tema por defecto de «Mis temas» (que pasa a valer para formularios y
+        agendas, con sus textos al día).
+        (d) **Editor**: sección **Diseño** del constructor (galería, «Mis
+        temas», «Mostrar u ocultar», «Distribución» y el mismo panel por
+        secciones, `ThemeInspector` genérico con `variant: 'booking'`); el
+        título y el lugar quedan en «Publicar → Textos de la página».
+        (e) Asistente/MCP: `design` en `propose_configure_booking_page`
+        (plantilla, color y qué se muestra, conservando el CSS propio y las
+        imágenes) y el diseño en `get_list_schema`.
+        **Bug atrapado en el E2E**: en el celular, volver a la pestaña «Vista
+        previa» del constructor de la agenda (y del de formularios) recargaba
+        el iframe y quedaba sin lo que se editaba; ahora cada aviso de «lista»
+        vuelve a mandarlo. Ayuda: guía «¿Cómo cambio cómo se ve mi agenda de
+        citas…?», artículo «Diseñar la página de la agenda» en Aprende con la
+        ilustración `agenda-diseno` y novedad con carrusel. Tests: 2 de
+        integración del diseño en `booking.spec` + 1 del asistente, 2 de
+        shared y 3 del front (API de la agenda 64, shared 676, front 775 en
+        verde) — E2E navegador: constructor 19/19 en escritorio y en celular
+        oscuro, página pública 14/14 en escritorio y celular y 15/15 en
+        celular oscuro (cero violaciones de CSP), reserva y página de la cita
+        con el diseño 9/9 en escritorio y celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

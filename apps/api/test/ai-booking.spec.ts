@@ -244,6 +244,29 @@ describe('Asistente/MCP: agenda de citas', () => {
         ]);
     });
 
+    it('v0.1.354 — el diseño: plantilla de la galería, color y qué se muestra; una plantilla que no existe se explica', async () => {
+        const bad = await call('propose_configure_booking_page', spec({ name: 'Agenda diseñada', design: { template: 'no_existe' } }));
+        expect(isError(bad)).toBe(true);
+        expect(json(bad).error).toContain('cards');
+        const proposed = json(
+            await call(
+                'propose_configure_booking_page',
+                spec({ name: 'Agenda diseñada', staff: [{ user_id: adminId, schedule: weekdays }], design: { template: 'cards', accent: '#7c3aed', show_prices: false, calendar_layout: 'stacked' } }),
+            ),
+        );
+        expect(proposed.ok).toBe(true);
+        await apply(proposed.proposal_id);
+        const pages = await withTenant(pg.db, tenantId, (tx) => tx.select().from(bookingPages));
+        const page = pages.find((x) => x.name === 'Agenda diseñada')!;
+        const settings = (page.config as { settings: { theme: { preset: string; colors: { accent: string } }; display: Record<string, unknown> } }).settings;
+        expect(settings.theme.preset).toBe('cards');
+        expect(settings.theme.colors.accent).toBe('#7c3aed');
+        expect(settings.display).toMatchObject({ show_prices: false, calendar_layout: 'stacked' });
+        const schema = json(await call('get_list_schema', { list: 'citas' }));
+        const described = (schema.booking_pages as Array<Record<string, unknown>>).find((x) => x.name === 'Agenda diseñada')!;
+        expect(described.design).toMatchObject({ template: 'cards', accent: '#7c3aed', show_prices: false, calendar_layout: 'stacked' });
+    });
+
     it('con el alcance de sólo lectura no se ofrece la herramienta', async () => {
         const tools = await readClient.listTools();
         expect(tools.tools.map((t) => t.name)).not.toContain('propose_configure_booking_page');

@@ -45,7 +45,7 @@ import { cacheablePageCsp, formFrameAncestors, formPageCsp, newNonce } from '../
 import { PublicBusyError } from '../public-cache/public-cache';
 import { PUBLIC_PAGE_CACHE_CONTROL, busyPage, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { appointmentNotFoundPage, bookingClientHash, bookingNotAvailablePage, renderBookingPage } from './booking-page';
+import { appointmentNotFoundPage, bookingClassicLook, bookingClientHash, bookingNotAvailablePage, renderBookingPage } from './booking-page';
 import { BookingPublicService, type CachedBookingPage } from './booking-public.service';
 import { BookingService, type BookingEditorOptions } from './booking.service';
 import { BookingMyCalendarService } from './booking-my-calendar.service';
@@ -115,7 +115,7 @@ export class BookingController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createBookingPageSchema)) input: CreateBookingPageInput,
     ): Promise<BookingPageDto> {
-        const doc = await this.booking.create(req.tenant!.tenantId, req.authUserId!, list, input);
+        const doc = await this.booking.create(req.tenant!.tenantId, req.authUserId!, list, input, { isAdmin: req.tenant!.role === 'admin' });
         this.publicSvc.forgetLists(req.tenant!.tenantId);
         return doc;
     }
@@ -130,7 +130,7 @@ export class BookingController {
     ): Promise<BookingPageDto> {
         const tenantId = req.tenant!.tenantId;
         const before = input.enabled !== undefined || input.regenerate_token ? await this.booking.get(tenantId, list, id) : null;
-        const doc = await this.booking.update(tenantId, list, id, input);
+        const doc = await this.booking.update(tenantId, list, id, input, { isAdmin: req.tenant!.role === 'admin' });
         // Publicar deja que cualquiera con el enlace agende en la lista: queda en
         // la bitácora (igual que los formularios y la lista pública).
         if (before && (before.enabled !== doc.enabled || input.regenerate_token)) {
@@ -315,12 +315,23 @@ export class PublicBookingPageController {
     @Get('preview')
     preview(@Res() reply: FastifyReply): void {
         const nonce = newNonce();
+        const classic = bookingClassicLook();
         reply
             .header('Content-Security-Policy', formPageCsp(nonce, "'self'"))
             .header('X-Robots-Tag', 'noindex')
             .header('Cache-Control', 'no-store')
             .type('text/html; charset=utf-8')
-            .send(renderBookingPage({ nonce, title: 'Vista previa', boot: { mode: 'preview', token: 'preview', meta: null, manage: null } }));
+            // La vista previa arranca con el diseño de siempre; el editor manda
+            // el CSS del tema que se está diseñando por postMessage.
+            .send(
+                renderBookingPage({
+                    nonce,
+                    title: 'Vista previa',
+                    boot: { mode: 'preview', token: 'preview', meta: null, manage: null },
+                    themeCss: classic.css,
+                    bodyClasses: classic.classes,
+                }),
+            );
     }
 
     @Get('manage/:ref')
@@ -349,6 +360,9 @@ export class PublicBookingPageController {
                     nonce,
                     title: info.meta.booking.title,
                     boot: { mode: 'manage', token: ref, meta: null, manage: info.meta, action: accion === 'cancelar' ? 'cancel' : null },
+                    themeCss: info.look.css,
+                    bodyClasses: info.look.classes,
+                    preloadFont: info.look.preload,
                 }),
             );
     }
@@ -402,7 +416,15 @@ export class PublicBookingPageController {
         if (hit) return hit;
         const { info } = cached;
         const page = {
-            body: precompress(renderBookingPage({ title: info.title, boot: { mode: 'book', token, meta: info.meta, manage: null } })),
+            body: precompress(
+                renderBookingPage({
+                    title: info.title,
+                    boot: { mode: 'book', token, meta: info.meta, manage: null },
+                    themeCss: info.look.css,
+                    bodyClasses: info.look.classes,
+                    preloadFont: info.look.preload,
+                }),
+            ),
             csp: cacheablePageCsp(bookingClientHash(), formFrameAncestors(info.allowed_domains), info.meta.captcha?.provider ?? null),
         };
         this.renderedPages.set(cached, page);

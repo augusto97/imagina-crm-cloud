@@ -1181,4 +1181,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Agenda → Editar**, abre **Aprobación y seguridad**. Elige si las citas se aprueban, quién decide y en cuánto tiempo. Cada servicio puede tener su propia regla.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.354-agenda-diseno',
+        version: '0.1.354',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Tu agenda de citas, con tu diseño',
+        summary:
+            'La página donde tus clientes agendan ya se diseña como los formularios: plantillas, colores, tipografía, tamaños, portada y fondo. Además eliges qué se muestra (precios, fotos, lugar) y cómo se acomodan el calendario y los horarios.',
+        media: {
+            slides: [
+                {
+                    title: 'Plantillas listas',
+                    text: 'Elige Clásico, Tarjetas, Oscuro, Píldoras, Con portada y más: toman el color de tu marca y lo ves al instante en la vista previa.',
+                    illustration: 'agenda-diseno',
+                },
+                {
+                    title: 'Muestra sólo lo que quieres',
+                    text: 'Oculta los precios, las fotos o el lugar; pon el calendario al lado o arriba de los horarios, y los horarios en cuadrícula o en lista.',
+                    illustration: 'citas-slots',
+                },
+                {
+                    title: 'Un mismo estilo en todas tus páginas',
+                    text: 'Guarda el diseño en «Mis temas» y úsalo en tus formularios y en tus otras agendas. También vale para la página donde el cliente cambia o cancela su cita.',
+                    illustration: 'form-design',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Agenda → Editar**, abre **Diseño**. Las agendas que ya tenías siguen con su diseño de siempre hasta que elijas otro.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

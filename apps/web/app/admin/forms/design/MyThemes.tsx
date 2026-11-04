@@ -23,7 +23,7 @@ import {
 
 /**
  * v0.1.351 (ADR-S94) — «Mis temas»: los diseños que la empresa guardó para
- * reusar en todos sus formularios. Uno puede ser el de los formularios
+ * reusar en todos sus formularios y agendas. Uno puede ser el de los
  * nuevos (la estrella).
  */
 export function MyThemes({
@@ -58,7 +58,7 @@ export function MyThemes({
         if (!name) return;
         try {
             await create.mutateAsync({ name, theme: current });
-            toast.success(__('Tema guardado'), __('Ya puedes usarlo en cualquier formulario de la empresa.'));
+            toast.success(__('Tema guardado'), __('Ya puedes usarlo en cualquier formulario o agenda de la empresa.'));
             setNaming(null);
         } catch (err) {
             toast.error(__('No se pudo guardar el tema'), themeErrorMessage(err));
@@ -80,7 +80,7 @@ export function MyThemes({
     const replace = async (t: SavedPublicTheme): Promise<void> => {
         const ok = await confirm({
             title: __('¿Reemplazar «%s» con este diseño?').replace('%s', t.name),
-            description: __('Los formularios que ya lo usan no cambian: cada uno guarda su propia copia del diseño.'),
+            description: __('Los formularios y agendas que ya lo usan no cambian: cada uno guarda su propia copia del diseño.'),
             confirmLabel: __('Reemplazar'),
         });
         if (!ok) return;
@@ -97,8 +97,8 @@ export function MyThemes({
             title: __('¿Borrar el tema «%s»?').replace('%s', t.name),
             description:
                 t.id === defaultId
-                    ? __('Es el tema de los formularios nuevos: desde ahora nacerán con el diseño Clásico. Los formularios que ya lo usan no cambian.')
-                    : __('Los formularios que ya lo usan no cambian: cada uno guarda su propia copia del diseño.'),
+                    ? __('Es el tema de los formularios y agendas nuevos: desde ahora nacerán con el diseño Clásico. Los que ya lo usan no cambian.')
+                    : __('Los formularios y agendas que ya lo usan no cambian: cada uno guarda su propia copia del diseño.'),
             confirmLabel: __('Borrar'),
             destructive: true,
         });
@@ -141,12 +141,12 @@ export function MyThemes({
                 <>
                     <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-themes-default">
                         {defaultTheme
-                            ? __('Los formularios nuevos nacen con «%s».').replace('%s', defaultTheme.name)
-                            : __('Los formularios nuevos nacen con el diseño Clásico. Marca un tema con la estrella para cambiarlo.')}
+                            ? __('Los formularios y agendas nuevos nacen con «%s».').replace('%s', defaultTheme.name)
+                            : __('Los formularios y agendas nuevos nacen con el diseño Clásico. Marca un tema con la estrella para cambiarlo.')}
                     </p>
                     {list.length === 0 && (
                         <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-2 imcrm-py-2 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                            {__('Todavía no hay temas guardados. Guarda este diseño para usarlo en tus otros formularios.')}
+                            {__('Todavía no hay temas guardados. Guarda este diseño para usarlo en tus otros formularios y agendas.')}
                         </p>
                     )}
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -194,7 +194,7 @@ export function MyThemes({
                                         </span>
                                         <span className="imcrm-min-w-0 imcrm-flex-1">
                                             <span className="imcrm-block imcrm-truncate imcrm-text-xs imcrm-font-medium">{t.name}</span>
-                                            {inUse && <span className="imcrm-block imcrm-text-[10px] imcrm-text-primary">{__('En uso en este formulario')}</span>}
+                                            {inUse && <span className="imcrm-block imcrm-text-[10px] imcrm-text-primary">{__('En uso aquí')}</span>}
                                         </span>
                                     </button>
                                     <button
@@ -202,8 +202,8 @@ export function MyThemes({
                                         onClick={() => void toggleDefault(t)}
                                         disabled={setDefault.isPending}
                                         aria-pressed={isDefault}
-                                        title={isDefault ? __('Es el tema de los formularios nuevos (toca para quitarlo)') : __('Usar como tema por defecto para formularios nuevos')}
-                                        aria-label={isDefault ? __('Quitar como tema por defecto') : __('Usar como tema por defecto para formularios nuevos')}
+                                        title={isDefault ? __('Es el tema de los formularios y agendas nuevos (toca para quitarlo)') : __('Usar como tema por defecto para formularios y agendas nuevos')}
+                                        aria-label={isDefault ? __('Quitar como tema por defecto') : __('Usar como tema por defecto para formularios y agendas nuevos')}
                                         className={cn(
                                             'imcrm-rounded imcrm-p-1',
                                             isDefault ? 'imcrm-text-amber-500' : 'imcrm-text-muted-foreground imcrm-opacity-60 hover:imcrm-opacity-100 group-hover:imcrm-opacity-100',

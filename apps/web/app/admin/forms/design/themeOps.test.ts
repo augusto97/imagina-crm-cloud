@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PUBLIC_THEME, formConfigSchema, publicThemePresets, type FormConfig, type FormFieldItem } from '@imagina-base/shared';
+import { BOOKING_CLASSIC_THEME, DEFAULT_PUBLIC_THEME, bookingConfigSchema, formConfigSchema, publicThemePresets, type FormConfig, type FormFieldItem } from '@imagina-base/shared';
 
 import {
     activePresetId,
@@ -14,6 +14,7 @@ import {
     resetThemeSection,
     resolvedAccent,
     sameTheme,
+    startTheme,
     setOptionImage,
     stableEqual,
     themeSectionModified,
@@ -151,5 +152,30 @@ describe('diseño del formulario', () => {
         const item = { option_images: { a: 1 } } as unknown as FormFieldItem;
         expect(setOptionImage(item, 'b', 2)).toEqual({ option_images: { a: 1, b: 2 } });
         expect(setOptionImage(item, 'a', null)).toEqual({ option_images: {} });
+    });
+});
+
+describe('v0.1.354 — el mismo motor para la agenda (su diseño «de siempre» como base)', () => {
+    const booking = () => bookingConfigSchema.parse({});
+    it('sin tema, empezar a diseñar parte del de siempre de la agenda, no del de los formularios', () => {
+        const c = booking();
+        expect(startTheme(c.settings, BOOKING_CLASSIC_THEME).layout.width).toBe(BOOKING_CLASSIC_THEME.layout.width);
+        expect(startTheme(c.settings, BOOKING_CLASSIC_THEME).layout.width).not.toBe(DEFAULT_PUBLIC_THEME.layout.width);
+        const next = patchThemeSection(c, 'colors', { accent: '#7c3aed' }, BOOKING_CLASSIC_THEME);
+        expect(next.settings.theme!.colors.accent).toBe('#7c3aed');
+        // Lo demás queda como el de siempre de la agenda (ancho y «Paso X de Y»).
+        expect(next.settings.theme!.layout.width).toBe(BOOKING_CLASSIC_THEME.layout.width);
+        expect(next.settings.theme!.layout.progress).toBe('steps');
+        expect(themeSectionModified(next.settings, 'layout', BOOKING_CLASSIC_THEME)).toBe(false);
+        expect(themeSectionModified(next.settings, 'colors', BOOKING_CLASSIC_THEME)).toBe(true);
+        const back = resetThemeSection(next, 'colors', BOOKING_CLASSIC_THEME);
+        expect(back.settings.theme!.colors.accent).toBeNull();
+    });
+    it('aplicar una plantilla en la agenda conserva el CSS propio si quien aplica no es admin', () => {
+        const c = booking();
+        c.settings.theme = { ...BOOKING_CLASSIC_THEME, custom_css: '.ib-title{color:red}' };
+        const applied = applyTheme(c, preset('cards'), { keepCustomCss: true, carryImages: true });
+        expect(applied.settings.theme!.choices.style).toBe('cards');
+        expect(applied.settings.theme!.custom_css).toBe('.ib-title{color:red}');
     });
 });

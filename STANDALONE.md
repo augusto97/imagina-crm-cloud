@@ -4252,7 +4252,7 @@ el enlace fijo) y elegir el calendario de un RECURSO.
 
 **Addendum v0.1.353 — Aprobación de las citas y seguridad de la página
 (tercera entrega, primera mitad).** El diseño de la página con el motor de
-temas (ADR-S94) va en v0.1.354.
+temas (ADR-S94) va en v0.1.354 (ver el addendum de ADR-S94).
 
 1. **Modelo**: `config.approval` (`bookingApprovalSchema`: `mode` none | all |
    new_clients, `hours` 1-168, `on_timeout` decline | approve,
@@ -6211,6 +6211,45 @@ preguntas, lógica y cobros sin tocar el diseño.
   entra una sola vez; inline ahorra la ida y vuelta.
 - **Guardar el HTML/CSS final**: se guarda el MODELO; el CSS se arma al
   servir, así una mejora del motor llega a todos los formularios.
+
+**Addendum v0.1.354 — La página de la agenda con el mismo motor (tercera
+entrega de la agenda, segunda mitad).**
+
+1. **Modelo**: `settings.theme` de la agenda es un `PublicTheme` (null = el de
+   siempre, `BOOKING_CLASSIC_THEME`: el clásico de los formularios con el
+   ancho, el relleno, el título y el «Paso X de Y» que tenía la página, así
+   ninguna agenda cambia sola) más `settings.display`
+   (`bookingDisplaySchema`): mostrar u ocultar el lugar, la duración/
+   descripción y el precio de cada servicio, la foto y el cargo de quien
+   atiende; el calendario al lado (con container query, sólo si la página es
+   ancha) o arriba de los horarios; horarios en cuadrícula o lista; semana
+   desde el lunes o el domingo. Los dos se leen con tolerancia (un tema o una
+   distribución dañados no tiran la configuración).
+2. **Una sola base de CSS**: la página sirve `PUBLIC_BASE_CSS` + lo propio de
+   la agenda (`BOOKING_CSS`: calendario, horarios, opciones con foto) + el
+   tema (`#ib-theme`); la estructura (`.ib-shell`, `.ib-card`, portada,
+   dividido, avance) y las clases del `<body>` (`bookingBodyClasses`: las del
+   tema + `bk-*`) son las de los formularios, así una mejora del motor llega
+   a las dos. El cliente sigue en línea y su CSP por hash (ADR-S95) no cambia.
+3. **Servidor**: el «look» (CSS + clases + fuente a precargar) se arma una vez
+   por página en la caché de lo público y también para la página de la cita
+   (cambiar o cancelar) y la vista previa (el de siempre hasta que el editor
+   manda el suyo). El color elegido en el diseño manda también en los correos.
+4. **Mismas reglas que los formularios**: el CSS propio sólo lo cambia un
+   admin (se acepta el que ya tenía o el de un tema guardado de la empresa) y
+   se guarda limpio; las imágenes del diseño son de la empresa y nunca SVG
+   (`invalid_image`); una agenda nueva nace con el tema por defecto de
+   «Mis temas», que pasa a valer para formularios y agendas.
+5. **Editor**: sección **Diseño** del constructor con la galería, «Mis temas»,
+   «Mostrar u ocultar», «Distribución» y el mismo panel por secciones
+   (`ThemeInspector` genérico con `variant: 'booking'` y la base clásica de la
+   agenda); el título, la descripción y el lugar quedan en «Publicar → Textos
+   de la página». En el celular, volver a la pestaña de la vista previa la
+   recarga: el constructor (y el de formularios, mismo bug) le reenvía lo que
+   se edita en cada aviso de «lista».
+6. **Asistente/MCP**: `propose_configure_booking_page` acepta `design`
+   (plantilla de la galería, color y qué se muestra; conserva el CSS propio y
+   las imágenes) y `get_list_schema` describe el diseño de cada agenda.
 
 ### ADR-S95 — Formularios y agenda insertados que aguantan mucho tráfico (v0.1.352)
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookingConfigSchema, type BookingConfig } from '@imagina-base/shared';
+import { BOOKING_CLASSIC_THEME, bookingConfigSchema, publicThemePresets, type BookingConfig } from '@imagina-base/shared';
 
 import {
     addQuestion,
@@ -268,5 +268,35 @@ describe('v0.1.350 — dónde es la cita y el calendario de cada persona', () =>
         });
         expect(meta.services[0]!.location.kind).toBe('link');
         expect(JSON.stringify(meta)).not.toContain('secreto');
+    });
+
+    it('v0.1.354 — la vista previa lleva el diseño: el de siempre, o el tema con su color y qué se muestra', () => {
+        const ctx = {
+            name: 'Agenda',
+            fields,
+            members: [{ id: 12, name: 'Ana' }],
+            accent: '#0e7490',
+            logoUrl: null,
+            company: 'Acme',
+            timeZone: 'America/Bogota',
+            numberFormat: 'dot_comma' as const,
+            captchaProvider: null,
+            dataConsent: null,
+        };
+        const base = bookingConfigSchema.parse({ services: [{ id: 'svcuno', name: 'Consulta', duration_min: 30 }], staff: [{ id: 'stfana', kind: 'user', staff_user_id: 12 }] });
+        const plain = buildPreviewMeta(base, ctx);
+        // Sin tema: el de siempre de la agenda (con «Paso X de Y»), en el color de la marca.
+        expect(plain.theme!.progress).toBe(BOOKING_CLASSIC_THEME.layout.progress);
+        expect(plain.theme!.choice_style).toBe('list');
+        expect(plain.accent_color).toBe('#0e7490');
+        expect(plain.display).toMatchObject({ calendar_layout: 'side', slot_style: 'grid', week_start: 'monday' });
+        const cards = publicThemePresets('#0e7490').find((x) => x.id === 'cards')!.theme;
+        const themed = structuredClone(base);
+        themed.settings.theme = { ...cards, colors: { ...cards.colors, accent: '#7c3aed' } };
+        themed.settings.display = { ...themed.settings.display, show_prices: false, slot_style: 'list' };
+        const meta = buildPreviewMeta(themed, ctx);
+        expect(meta.theme!.choice_style).toBe('cards');
+        expect(meta.accent_color).toBe('#7c3aed');
+        expect(meta.display).toMatchObject({ show_prices: false, slot_style: 'list' });
     });
 });

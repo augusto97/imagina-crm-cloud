@@ -244,7 +244,10 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
 
     // ── Vista previa: la página real, alimentada por postMessage ──
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const [ready, setReady] = useState(false);
+    // Cuántas veces avisó la vista previa que está lista: en el celular la
+    // pestaña «Vista previa» se desmonta y el iframe vuelve a cargar, así que
+    // cada aviso tiene que volver a mandarle lo que se está editando.
+    const [ready, setReady] = useState(0);
     // C1 — las preguntas «Equipo» se eligen entre los equipos de la empresa.
     const teams = useTeams(fields.some((f) => f.type === 'team'));
     const teamOptions = useMemo(
@@ -307,7 +310,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         const onMessage = (e: MessageEvent): void => {
             if (e.origin !== window.location.origin || e.source !== iframeRef.current?.contentWindow) return;
             const data = e.data as { type?: string; id?: string } | null;
-            if (data?.type === 'imb-form-ready') setReady(true);
+            if (data?.type === 'imb-form-ready') setReady((n) => n + 1);
             if (data?.type === 'imb-form-select' && typeof data.id === 'string') {
                 setSelected(data.id);
                 if (narrow) setMobileTab('settings');

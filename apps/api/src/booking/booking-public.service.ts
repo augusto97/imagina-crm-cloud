@@ -18,8 +18,10 @@ import {
     bookingLocationText,
     bookingMergeValue,
     bookingPriceLabel,
+    bookingTheme,
     brandingSchema,
     buildPublicFormItems,
+    buildPublicThemeCss,
     formatBookingWhen,
     formItemVisible,
     isBookingQuestionType,
@@ -28,6 +30,8 @@ import {
     isValidTimeZone,
     jsonbKeyForField,
     pickServiceDuration,
+    publicThemePreloadFont,
+    publicThemeView,
     resolveTimeZone,
     serviceApprovalMode,
     serviceDurations,
@@ -54,6 +58,7 @@ import {
     type PublicBookingMeta,
     type PublicBookingSlots,
     type PublicManageMeta,
+    type PublicTheme,
     type RescheduleAppointmentInput,
     type TenantFormat,
 } from '@imagina-base/shared';
@@ -88,6 +93,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingAvailabilityService, type PageContext } from './booking-availability.service';
 import { BookingCalendarService, type CalendarProvider } from './booking-calendar';
 import { appointmentRecordData, readBookingConfig, staffKey, statusFromValue, statusValueFor } from './booking-config';
+import { bookingBodyClasses } from './booking-page';
 import { bookingClientEmail, bookingCodeEmail, bookingMailHasIcs, type BookingMailKind } from './booking-email';
 import { buildIcs } from './booking-ics';
 import type { BookingSimulator } from './booking-simulator';
@@ -142,10 +148,18 @@ export const bookingCacheKey = (token: string): string => `booking:${token}`;
 export const slotsNamespace = (tenantId: number): string => `slots:${tenantId}`;
 
 /** Lo que se guarda de una agenda: la página resuelta y lo que ve el visitante. */
+/** v0.1.354 — El diseño de la página (ADR-S94): CSS del tema, clases del `<body>` y la fuente a precargar. */
+export interface BookingLook {
+    css: string;
+    classes: string[];
+    preload: string | null;
+}
 export interface CachedBookingPage {
     p: ResolvedPage;
-    info: { page_id: number; title: string; allowed_domains: string[]; meta: PublicBookingMeta };
+    info: { page_id: number; title: string; allowed_domains: string[]; meta: PublicBookingMeta; look: BookingLook };
 }
+/** Las imágenes del diseño viajan firmadas (la página no tiene sesión); un día alcanza de sobra para una visita. */
+const BOOKING_IMAGE_TTL = 24 * 3600;
 const MANAGE_LIMITS = [
     { scope: 'ip', window: 600, max: 20 },
     { scope: 'page', window: 3600, max: 500 },
@@ -325,7 +339,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             }
             // El sello ya no viaja en la página: el visitante lo pide al empezar.
             const meta = { ...(await this.buildMeta(p)), stamp: '' };
-            return { p, info: { page_id: p.pageId, title: meta.title, allowed_domains: p.config.settings.allowed_domains, meta } };
+            return { p, info: { page_id: p.pageId, title: meta.title, allowed_domains: p.config.settings.allowed_domains, meta, look: this.themeLook(p) } };
         }, MISSING_CACHE_TTL_MS);
     }
 
@@ -422,7 +436,28 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     private brand(p: ResolvedPage): { company: string; accent: string; logoFileId: number | null } {
         const parsed = brandingSchema.safeParse(p.tenantSettings.branding ?? {});
         const b = parsed.success ? parsed.data : brandingSchema.parse({});
-        return { company: b.app_name || p.tenantName, accent: p.config.settings.accent_color ?? b.primary_color ?? '#0e7490', logoFileId: b.logo_file_id };
+        // v0.1.354 — el color elegido en el diseño manda (también en los correos).
+        const themed = p.config.settings.theme ? bookingTheme(p.config.settings).colors.accent : null;
+        return { company: b.app_name || p.tenantName, accent: themed ?? p.config.settings.accent_color ?? b.primary_color ?? '#0e7490', logoFileId: b.logo_file_id };
+    }
+
+    /**
+     * v0.1.354 (ADR-S94) — El diseño de la página: el tema de la agenda (o el
+     * de siempre), con el acento de la agenda / la marca y sus imágenes
+     * firmadas. El CSS propio sale ya limpio de `buildPublicThemeCss`.
+     */
+    themeLook(p: ResolvedPage): BookingLook {
+        const theme: PublicTheme = bookingTheme(p.config.settings);
+        const sign = (id: number | null): string | null => (id === null ? null : this.files.signedUrl(p.tenantId, id, BOOKING_IMAGE_TTL));
+        const css = buildPublicThemeCss(theme, {
+            accent: this.brand(p).accent,
+            images: {
+                cover: sign(theme.cover.file_id),
+                split: sign(theme.split.file_id),
+                background: theme.background.kind === 'image' ? sign(theme.background.file_id) : null,
+            },
+        });
+        return { css, classes: bookingBodyClasses(publicThemeView(theme), p.config.settings.display), preload: publicThemePreloadFont(theme) };
     }
 
     private async base(tenantId: number): Promise<string> {
@@ -522,6 +557,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             data_consent: consent ? DataConsentService.toPublic(consent) : null,
             verify_email: s.verify_email,
             pending_message: s.pending_message,
+            theme: publicThemeView(bookingTheme(s)),
+            display: s.display,
         };
     }
 
@@ -1273,10 +1310,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     /** La página HTML de gestión: null si el enlace no sirve (mismo 404 para todo). */
-    async managePage(ref: string): Promise<{ meta: PublicManageMeta; allowed_domains: string[] } | null> {
+    async managePage(ref: string): Promise<{ meta: PublicManageMeta; allowed_domains: string[]; look: BookingLook } | null> {
         try {
             const { p } = await this.resolveAppointment(ref);
-            return { meta: await this.manageMeta(ref), allowed_domains: p.config.settings.allowed_domains };
+            return { meta: await this.manageMeta(ref), allowed_domains: p.config.settings.allowed_domains, look: this.themeLook(p) };
         } catch {
             return null;
         }
