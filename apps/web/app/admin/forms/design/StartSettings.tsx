@@ -1,4 +1,5 @@
-import { Eye, LayoutList, MessageSquare } from 'lucide-react';
+import { Copy, Eye, LayoutList, MessageSquare, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
 
 import { formEstimateMinutes, type FormConfig, type FormLayout } from '@imagina-base/shared';
 
@@ -30,12 +31,15 @@ export function StartSettings({
     onChange,
     previewWelcome,
     onPreviewWelcome,
+    formId,
 }: {
     config: FormConfig;
     fields: FieldEntity[];
     onChange: (next: FormConfig) => void;
     previewWelcome: boolean;
     onPreviewWelcome: (on: boolean) => void;
+    /** v0.1.360 — el id del formulario (para la variable del enlace). */
+    formId?: number;
 }): JSX.Element {
     const s = config.settings;
     const w = s.welcome;
@@ -135,6 +139,98 @@ export function StartSettings({
                     </p>
                 </div>
             </Section>
+
+            <EditLinksSettings config={config} onChange={onChange} formId={formId} />
         </>
+    );
+}
+
+/**
+ * v0.1.360 — Enlaces para que alguien actualice SU registro con este
+ * formulario: se encienden aquí, se mandan desde la ficha («Enlace para
+ * actualizar») o desde una automatización con la variable.
+ */
+function EditLinksSettings({ config, onChange, formId }: { config: FormConfig; onChange: (next: FormConfig) => void; formId?: number }): JSX.Element {
+    const el = config.settings.edit_links;
+    const set = (patch: Partial<FormConfig['settings']['edit_links']>): void => onChange(updateSettings(config, { edit_links: { ...el, ...patch } }));
+    const [copied, setCopied] = useState(false);
+    const [revoked, setRevoked] = useState(false);
+    const token = formId ? `{{formulario.${formId}.enlace}}` : '';
+    return (
+        <Section title={__('Actualizar un registro')}>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="form-edit-links" data-tour="form-edit-links">
+                <Check label={__('Permitir enlaces para actualizar un registro')} checked={el.enabled} onChange={(v) => set({ enabled: v })} />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Mándale a un cliente un enlace que abre este formulario con sus datos ya puestos; al enviarlo, se actualiza su registro en vez de crear otro. Sirve para «actualiza tus datos», completar lo que falta o confirmar una inscripción.')}
+                </p>
+                {el.enabled && (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
+                        <Field label={__('Cada enlace dura (días)')} hint={__('Pasado ese tiempo deja de servir y hay que mandar otro.')}>
+                            <Input
+                                type="number"
+                                min={1}
+                                max={365}
+                                value={el.days}
+                                onChange={(e) => {
+                                    const n = Math.round(Number(e.target.value));
+                                    if (Number.isFinite(n)) set({ days: Math.min(365, Math.max(1, n)) });
+                                }}
+                                data-testid="form-edit-days"
+                            />
+                        </Field>
+                        <Field label={__('Mensaje al guardar')} hint={__('Vacío: «¡Listo! Guardamos tus cambios.»')}>
+                            <Textarea rows={2} value={el.message} onChange={(e) => set({ message: e.target.value })} data-testid="form-edit-message" />
+                        </Field>
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            <span>
+                                {__('Cómo se manda: en la ficha del registro, «Enlace para actualizar»; o en un correo, WhatsApp o SMS de una automatización con esta variable:')}
+                            </span>
+                            {token && (
+                                <span className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                                    <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-foreground" data-testid="form-edit-token">
+                                        {token}
+                                    </code>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="imcrm-h-6 imcrm-gap-1 imcrm-px-1.5 imcrm-text-[11px]"
+                                        onClick={() => {
+                                            void navigator.clipboard?.writeText(token).then(() => {
+                                                setCopied(true);
+                                                window.setTimeout(() => setCopied(false), 1500);
+                                            });
+                                        }}
+                                    >
+                                        <Copy className="imcrm-h-3 imcrm-w-3" />
+                                        {copied ? __('Copiada') : __('Copiar')}
+                                    </Button>
+                                </span>
+                            )}
+                            <span>{__('Lo que el formulario no pregunta no se toca. Una pregunta que la persona deja vacía borra ese dato; un archivo o una firma se quedan si no sube otros.')}</span>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="imcrm-gap-1.5 imcrm-self-start imcrm-text-xs"
+                            data-testid="form-edit-revoke"
+                            onClick={() => {
+                                set({ version: Math.min(1_000_000, el.version + 1) });
+                                setRevoked(true);
+                            }}
+                        >
+                            <RotateCcw className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Invalidar los enlaces ya enviados')}
+                        </Button>
+                        {revoked && (
+                            <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                                {__('Al guardar, los enlaces que ya mandaste dejan de servir. Los nuevos funcionan normal.')}
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+        </Section>
     );
 }

@@ -110,3 +110,31 @@ export function useFormStats(listId: number, formId: number | null, days: number
         refetchInterval: 60_000,
     });
 }
+
+/** v0.1.360 — Un formulario que acepta enlaces para actualizar un registro. */
+export interface EditLinkForm {
+    id: number;
+    name: string;
+    title: string;
+    days: number;
+}
+
+/**
+ * v0.1.360 — Los formularios publicados de la lista que aceptan enlaces para
+ * actualizar un registro (la ficha ofrece «Enlace para actualizar»). Sin
+ * permiso de editar registros, el servidor responde 403 y el botón no aparece.
+ */
+export function useEditLinkForms(listId: number | undefined) {
+    return useQuery({
+        queryKey: ['form-edit-links', listId ?? 0],
+        queryFn: async () => (await api.get<EditLinkForm[]>(`/lists/${listId}/forms/edit-links`)).data,
+        enabled: listId !== undefined && listId > 0,
+        staleTime: 5 * 60_000,
+        retry: false,
+    });
+}
+
+/** v0.1.360 — Pide el enlace para actualizar un registro con un formulario. */
+export async function createEditLink(listId: number, formId: number, recordId: number): Promise<{ url: string; expires_at: string }> {
+    return (await api.post<{ url: string; expires_at: string }>(`/lists/${listId}/forms/${formId}/edit-link`, { record_id: recordId })).data;
+}

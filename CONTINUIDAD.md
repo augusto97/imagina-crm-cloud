@@ -382,9 +382,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.359**
-(formularios: plantillas, panel lateral, pantalla completa y código QR;
-addendum ADR-S39 y ADR-S95; antes v0.1.358 estadísticas y guardar el avance,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.360**
+(formularios: enlace para que un cliente actualice su registro, addendum
+ADR-S39; antes v0.1.359 plantillas, panel lateral, pantalla completa y código
+QR, addendum ADR-S39 y ADR-S95, v0.1.358 estadísticas y guardar el avance,
 v0.1.357 puntaje y cálculos, una pregunta por pantalla y bienvenida, v0.1.356 la lógica —varias reglas todas/alguna, saltos
 entre páginas, pantallas finales según las respuestas y recordar respuestas con
 `{{nombre}}`—, v0.1.355 más formas de preguntar
@@ -445,10 +446,10 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   La entrega 3 se partió en cuatro versiones: **estadísticas y guardar el
   avance HECHOS en v0.1.358**; **más formas de insertar (panel lateral,
   pantalla completa, QR) y plantillas de formularios HECHAS en v0.1.359**;
-  después **v0.1.360** (enlace firmado para que alguien actualice un registro
-  que ya existe) y **v0.1.361** (cobrar al enviar con el Mercado Pago o Wompi
-  de la empresa).
-  **SIGUIENTE**: v0.1.360.
+  **enlace firmado para que alguien actualice un registro que ya existe HECHO
+  en v0.1.360**; después **v0.1.361** (cobrar al enviar con el Mercado Pago o
+  Wompi de la empresa).
+  **SIGUIENTE**: v0.1.361.
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1355,6 +1356,52 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.360** — **Formularios: enlace para que un cliente
+  actualice su registro** (addendum ADR-S39; tercera de las versiones de la
+  entrega 3).
+  - **Encenderlo**: en los ajustes del formulario, **Actualizar un registro**
+    (`settings.edit_links {enabled, days, version, message}`): días que sirve
+    cada enlace (1-365, 30 por defecto), el mensaje al guardar, la variable para
+    automatizaciones con «Copiar» e **«Invalidar los enlaces ya enviados»**
+    (sube la versión). Sin migración.
+  - **El enlace**: `?editar=<registro>.<vence>.<firma>`, firma HMAC (scope
+    `formedit`) que ata empresa, formulario, registro, vencimiento (redondeado
+    a la hora) y versión; nada se guarda por enlace.
+  - **Mandarlo**: ícono **«Enlace para actualizar»** en la ficha (modal y
+    página; sólo si un formulario de la lista lo permite y quien mira puede
+    editar ESE registro, con el ACL de la lista) que crea y copia el enlace; o
+    la variable **`{{formulario.<id>.enlace}}`** en un correo, WhatsApp o SMS
+    (`configureFormEditRuntime` + `editLinkMaker` en el motor; aparece en el
+    selector de variables).
+  - **La página**: abre con los datos del registro ya puestos (también fecha y
+    hora local, condiciones y «Ya tienes: contrato.pdf» en archivos), dice
+    «Estás actualizando tus datos», el botón es «Guardar cambios» y saca el
+    código de la barra de direcciones (queda en la pestaña, así recargar sigue
+    funcionando). Guarda SÓLO lo que el formulario pregunta en el camino de la
+    persona: una pregunta vacía vacía el campo, un archivo sin cambio se
+    conserva, lo oculto y lo de páginas saltadas no se toca. Actualiza por
+    `RecordsService.update` → dispara «Cuando se actualiza un registro».
+  - **Sin** captcha, cupo, estadísticas, confirmación por correo ni guardar el
+    avance; la autorización de datos sí se registra. Enlace roto, vencido, de
+    otra versión, de otro registro o en la papelera → «ya no sirve» (410);
+    cerrado por fecha o solo lectura → 403.
+  - Asistente/MCP: `get_list_schema` muestra los días y la variable de cada
+    formulario con enlaces.
+  - Ayuda: artículo «Enlace para que un cliente actualice sus datos» en Aprende
+    → Formularios con la ilustración `form-edit-link`, guía `form-edit-link`,
+    paso nuevo en el recorrido de formularios y novedad con carrusel. El script
+    de la página pública sube 0,9 KB gz (20,3 → 21,2).
+  - Tests: 6 de integración (`forms-edit.spec`: armar/cargar/guardar,
+    enlace alterado/otro registro/vencido/versión/papelera/apagado, ACL y 409,
+    cerrado por fecha, archivo obligatorio, variable del motor), shared 719,
+    front 795; specs de formularios y automatizaciones 90/90. E2E navegador
+    28/28 en escritorio y 26/26 en celular oscuro (constructor y variable,
+    ícono en página y modal, enlace copiado, página prellenada con fecha y hora
+    local y la condición del NIT, recargar conserva el modo, guardado sin crear
+    otro registro, correo vaciado, NIT conservado, notas internas intactas,
+    enlace alterado «ya no sirve», cero errores de CSP o JS).
+  - **Siguiente**: v0.1.361 (cobrar al enviar con el Mercado Pago o Wompi de la
+    empresa).
 - **2026-11-04 · v0.1.359** — **Formularios: plantillas, panel lateral,
   pantalla completa y código QR** (addendum ADR-S39 y ADR-S95; segunda de las
   versiones de la entrega 3, que se partió en cuatro: el enlace para actualizar

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { formSettingsSchema, submitFormSchema } from './form';
 import {
+    FORM_EDIT_CODE_RE,
     formStatEventsSchema,
     formStatFields,
     formStatSource,
@@ -95,5 +96,17 @@ describe('v0.1.358 — estadísticas de formularios', () => {
         expect(submitFormSchema.safeParse({ stamp: 'x', draft: 'corto' }).success).toBe(false);
         expect(saveFormDraftSchema.parse({ stamp: 'x', email: ' Ana@Correo.COM ', values: { '12': 'Ana' }, page: 2 }).email).toBe('ana@correo.com');
         expect(saveFormDraftSchema.safeParse({ stamp: 'x', email: 'no-es-correo' }).success).toBe(false);
+    });
+
+    it('v0.1.360 — enlaces para actualizar: apagados por defecto, tolerantes y con un código de forma fija', () => {
+        expect(formSettingsSchema.parse({}).edit_links).toEqual({ enabled: false, days: 30, version: 1, message: '' });
+        // Días fuera de rango o una versión rota no tiran el ajuste entero.
+        expect(formSettingsSchema.parse({ edit_links: { enabled: true, days: 9000, version: -3 } }).edit_links).toEqual({ enabled: true, days: 30, version: 1, message: '' });
+        expect(formSettingsSchema.parse({ edit_links: 'sí' }).edit_links.enabled).toBe(false);
+        const code = `42.1893456000.${'a1'.repeat(16)}`;
+        expect(FORM_EDIT_CODE_RE.test(code)).toBe(true);
+        expect(submitFormSchema.safeParse({ stamp: 'x', edit: code }).success).toBe(true);
+        expect(submitFormSchema.safeParse({ stamp: 'x', edit: '42.1893456000.zz' }).success).toBe(false);
+        expect(FORM_EDIT_CODE_RE.test(`42.1893456000.${'A1'.repeat(16)}`)).toBe(false);
     });
 });

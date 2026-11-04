@@ -20,6 +20,7 @@ import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { RecordQrButton } from '@/admin/qr/RecordQrButton';
+import { RecordEditLinkButton } from '@/admin/forms/RecordEditLinkButton';
 import { RecordShareButton } from '@/admin/guests/RecordShareButton';
 import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
@@ -275,6 +276,7 @@ export function RecordPage(): JSX.Element {
                                     compact
                                 />
                             )}
+                            {!isGuest && <RecordEditLinkButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!isGuest && <SendWhatsappButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!isGuest && <SendSmsButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!storeRules && !isGuest && (
@@ -357,6 +359,7 @@ export function RecordPage(): JSX.Element {
                         {!isGuest && (
                             <RecordQrButton listId={listInfo.id} recordId={rec.id} fields={fields.data ?? []} listSettings={listInfo.settings as Record<string, unknown>} compact />
                         )}
+                        {!isGuest && <RecordEditLinkButton listId={listInfo.id} recordId={rec.id} compact />}
                         {!isGuest && <SendWhatsappButton listId={listInfo.id} recordId={rec.id} compact />}
                         {!isGuest && <SendSmsButton listId={listInfo.id} recordId={rec.id} compact />}
                         {!storeRules && !isGuest && (

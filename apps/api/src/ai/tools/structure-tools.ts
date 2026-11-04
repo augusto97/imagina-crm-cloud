@@ -1353,6 +1353,10 @@ export class StructureTools implements AiProposalApplier {
                         // Pide la casilla de autorización de tratamiento de datos
                         // (Ley 1581): la empresa la activó y el formulario no la apagó.
                         asks_data_consent: st.data_consent && consent !== null,
+                        // v0.1.360 — enlaces para que alguien actualice SU registro con
+                        // este formulario: en un correo o WhatsApp de una automatización,
+                        // la variable `{{formulario.<id>.enlace}}`.
+                        edit_links: st.edit_links.enabled ? { days: st.edit_links.days, variable: `{{formulario.${f.id}.enlace}}` } : null,
                     };
                 }),
                 // D5 — páginas de agenda: lo que se reserva y quién atiende (las

@@ -856,6 +856,13 @@ export const TOURS: TourDef[] = [
                 body: 'El ícono de **Estadísticas** te dice cuántos lo abren, cuántos lo empiezan y lo envían, en qué pregunta lo dejan y de dónde llegan. En los ajustes, **Guardar el avance** les deja terminarlo después.',
                 tip: 'Si muchos lo dejan en la misma pregunta, prueba hacerla opcional o pasarla al final.',
             },
+            {
+                id: 'update',
+                art: 'form-edit-link',
+                title: 'Que el cliente actualice sus datos',
+                body: 'En los ajustes, **Actualizar un registro** crea enlaces que abren el formulario con los datos del cliente: corrige lo que cambió y se guarda en ese registro. Mándalo desde la ficha o en una automatización.',
+                tip: 'Mándalo sólo al dueño de esos datos: quien tenga el enlace puede verlos y cambiarlos.',
+            },
         ],
     },
 

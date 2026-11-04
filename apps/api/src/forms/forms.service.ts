@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import {
     BadRequestException,
@@ -81,6 +81,7 @@ import {
     type FormStatEventsInput,
     type FormStatsDto,
     type PublicFormDraft,
+    type PublicFormEdit,
     type SaveFormDraftInput,
     type SaveFormDraftResult,
 } from '@imagina-base/shared';
@@ -89,7 +90,9 @@ import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, formDrafts, formPendingSubmissions, forms, lists, recordTemplates, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
+import { attachments, formDrafts, formPendingSubmissions, forms, lists, recordTemplates, records, tenants, type FormPendingRow, type FormRow, type PendingConsent } from '../db/schema';
+import { listRowInScope, type AclSubject } from '../lists/list-acl';
+import { configureFormEditRuntime, editLinkCode, editLinkUrl, parseEditCode, readEditLinks } from './form-edit-links';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { DataConsentService, newWithdrawRef } from '../data-consent/data-consent.service';
 import { DomainsService } from '../domains/domains.service';
@@ -338,6 +341,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     }
 
     onModuleInit(): void {
+        // v0.1.360 — el motor de automatizaciones arma `{{formulario.<id>.enlace}}` con esto.
+        configureFormEditRuntime({
+            sign: (tenantId, formId, recordId, exp, version) => this.editSig(tenantId, formId, recordId, exp, version),
+            linkBase: async (tenantId) => (await this.publicBase(tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, ''),
+        });
         // Archivos subidos a un formulario que nunca se envió: no tienen que
         // quedar ocupando espacio. Cada nodo barre; ZREM decide quién borra.
         // v0.1.289 — y las respuestas que nadie confirmó en 48 h (con sus archivos).
@@ -357,6 +365,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
     onModuleDestroy(): void {
         if (this.sweeper) clearInterval(this.sweeper);
+        configureFormEditRuntime(null);
     }
 
     // ─────────────────────────── Administración ───────────────────────────
@@ -869,6 +878,249 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             .catch(() => undefined);
     }
 
+    // ─────────────── v0.1.360 — Actualizar un registro con el formulario ───────────────
+
+    /** La firma de un enlace para actualizar (HMAC, recortada a 32 hexadecimales). */
+    private editSig(tenantId: number, formId: number, recordId: number, exp: number, version: number): string {
+        return this.files.signParts('formedit', tenantId, formId, recordId, exp, version).slice(0, 32);
+    }
+
+    /**
+     * El registro de un código válido (firma de ESTE formulario y su versión
+     * vigente, sin vencer) o null. La firma se compara en tiempo constante.
+     */
+    private verifyEdit(f: ResolvedForm, code: string): number | null {
+        const parsed = parseEditCode(code);
+        if (!parsed) return null;
+        const want = this.editSig(f.row.tenantId, f.row.id, parsed.recordId, parsed.exp, f.config.settings.edit_links.version);
+        const a = Buffer.from(parsed.sig, 'utf8');
+        const b = Buffer.from(want, 'utf8');
+        return a.length === b.length && timingSafeEqual(a, b) ? parsed.recordId : null;
+    }
+
+    /** Al actualizar no importa el cupo (no suma una respuesta); sí la fecha de cierre y el solo-lectura. */
+    private editClosedReason(f: ResolvedForm): string | null {
+        const s = f.config.settings;
+        if (f.readOnly || pastCloseDate(s.closes_at, f.timeZone)) return s.closed_message;
+        return null;
+    }
+
+    /** El registro a actualizar: de la lista del formulario y fuera de la papelera. */
+    private async editableRecord(f: ResolvedForm, recordId: number): Promise<{ id: number; data: Record<string, unknown>; createdBy: number } | null> {
+        const [row] = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+            tx
+                .select({ id: records.id, data: records.data, createdBy: records.createdBy })
+                .from(records)
+                .where(and(eq(records.tenantId, f.row.tenantId), eq(records.listId, f.row.listId), eq(records.id, recordId), isNull(records.deletedAt)))
+                .limit(1),
+        );
+        return row ? { id: row.id, data: (row.data ?? {}) as Record<string, unknown>, createdBy: row.createdBy } : null;
+    }
+
+    /** Un enlace para actualizar que ya no sirve (vencido, de otra versión o roto). */
+    private editExpired(): HttpException {
+        return new HttpException(
+            {
+                code: 'form_edit_expired',
+                message: 'Este enlace para actualizar tus datos ya no sirve. Pide uno nuevo a quien te lo envió.',
+                data: { status: 410 },
+            },
+            HttpStatus.GONE,
+        );
+    }
+
+    /**
+     * Lo que la página necesita para actualizar un registro: lo que tiene hoy
+     * en las preguntas del formulario (y el nombre de sus archivos). Sólo las
+     * preguntas del formulario: nada más del registro sale de aquí.
+     */
+    async loadEdit(token: string, code: string): Promise<PublicFormEdit> {
+        const f = await this.resolve(token);
+        if (!f.config.settings.edit_links.enabled) throw notFound();
+        const recordId = this.verifyEdit(f, code);
+        if (recordId === null) throw this.editExpired();
+        const closed = this.editClosedReason(f);
+        if (closed) throw new ForbiddenException({ code: 'form_closed', message: closed, data: { status: 403 } });
+        const rec = await this.editableRecord(f, recordId);
+        if (!rec) throw this.editExpired();
+        const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
+        const typeOf = new Map(fields.map((x) => [x.id, x.type]));
+        const values: Record<string, unknown> = {};
+        const fileIds = new Map<number, number[]>();
+        const take = (fieldId: number): void => {
+            const v = rec.data[jsonbKeyForField(fieldId)];
+            if (v === undefined || v === null) return;
+            if (typeOf.get(fieldId) === 'file') {
+                const ids = (Array.isArray(v) ? v : [v]).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0).slice(0, MAX_FILES_PER_FIELD);
+                if (ids.length) fileIds.set(fieldId, ids);
+                return;
+            }
+            values[String(fieldId)] = v;
+        };
+        for (const i of f.config.items) {
+            if (i.type === 'field') {
+                take(i.field_id);
+                if (i.other_field_id) take(i.other_field_id);
+            } else if (i.type === 'matrix') {
+                for (const r of i.rows) take(r.field_id);
+            }
+        }
+        const files: Record<string, string[]> = {};
+        const allIds = [...fileIds.values()].flat();
+        if (allIds.length) {
+            const rows = await this.tenantDb.withTenant(f.row.tenantId, (tx) =>
+                tx
+                    .select({ id: attachments.id, title: attachments.filename })
+                    .from(attachments)
+                    .where(and(eq(attachments.tenantId, f.row.tenantId), inArray(attachments.id, allIds))),
+            );
+            const titleOf = new Map(rows.map((r) => [r.id, r.title]));
+            for (const [fieldId, ids] of fileIds) {
+                const names = ids.map((id) => titleOf.get(id)).filter((t): t is string => typeof t === 'string');
+                if (names.length) files[String(fieldId)] = names;
+            }
+        }
+        const exp = Number(code.split('.')[1]);
+        return { values, files, expires_at: new Date(exp * 1000).toISOString() };
+    }
+
+    /**
+     * Guarda los cambios de un enlace para actualizar: mismas reglas que un
+     * envío (sello, campo trampa, frenos, la autorización de datos), pero
+     * actualiza el registro del enlace con lo que preguntó el formulario. No
+     * pide captcha (el enlace firmado ya es la credencial), no cuenta para el
+     * cupo ni para las estadísticas, y no confirma por correo (el enlace llegó
+     * al correo de la persona).
+     */
+    private async submitEdit(f: ResolvedForm, ip: string, input: SubmitFormInput, meta: { userAgent?: string | null }): Promise<SubmitFormResult> {
+        if (!f.config.settings.edit_links.enabled) throw notFound();
+        const recordId = this.verifyEdit(f, input.edit ?? '');
+        if (recordId === null) throw this.editExpired();
+        const closed = this.editClosedReason(f);
+        if (closed) throw new ForbiddenException({ code: 'form_closed', message: closed, data: { status: 403 } });
+        if (input.hp && input.hp.trim() !== '') return { ok: true, redirect_url: null, updated: true };
+        this.checkStamp(f.row.id, input.stamp);
+        await this.enforce(SUBMIT_LIMITS, f.row.id, ip, 'respuestas');
+        const rec = await this.editableRecord(f, recordId);
+        if (!rec) throw this.editExpired();
+
+        const fields = await this.fields.listByListId(f.row.tenantId, f.row.listId);
+        const byId = new Map(fields.map((x) => [x.id, x]));
+        const { data, errors, attachmentIds, calcs } = this.collect(f, byId, input, { existing: rec.data });
+        const consent = await this.consentFor(f);
+        if (consent && input.consent !== true) errors[CONSENT_ERROR_KEY] = CONSENT_REQUIRED_MESSAGE;
+        if (Object.keys(errors).length > 0) throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors });
+
+        // Ley 1581 — la prueba se guarda antes que los cambios, ya atada al registro.
+        let evidenceId: number | null = null;
+        if (consent && this.dataConsent) {
+            const version = await this.dataConsent.acceptedVersion(f.row.tenantId, input.consent_version, consent);
+            const ev = await this.dataConsent.recordForm(f.row.tenantId, {
+                version: version.version,
+                textHash: version.textHash,
+                formId: f.row.id,
+                formName: f.config.settings.title || f.row.name,
+                listId: f.row.listId,
+                recordId: rec.id,
+                ...(await this.subjectOf(f, fields, { ...rec.data, ...data })),
+                acceptedAt: new Date(),
+                ip: ip || null,
+                userAgent: meta.userAgent ?? null,
+            });
+            evidenceId = ev.id;
+        }
+
+        try {
+            if (Object.keys(data).length > 0) {
+                await this.records.update(f.row.tenantId, SYSTEM_ACTOR, String(f.row.listId), rec.id, { data });
+            }
+        } catch (err) {
+            if (evidenceId !== null && this.dataConsent) await this.dataConsent.discard(f.row.tenantId, evidenceId);
+            if (err instanceof HttpException && err.getStatus() === 400) {
+                const body = err.getResponse() as { data?: { errors?: Record<string, string> } };
+                const mapped = mapRecordErrors(f.config, fields, body.data?.errors ?? {});
+                if (Object.keys(mapped).length > 0) throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors: mapped });
+            }
+            this.logger.warn(`Formulario ${f.row.id}: no se pudieron guardar los cambios del registro ${rec.id}: ${err instanceof Error ? err.message : String(err)}`);
+            throw new HttpException(
+                { code: 'form_unavailable', message: 'No pudimos guardar tus cambios en este momento. Prueba de nuevo más tarde.', data: { status: 503 } },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        await this.claimUploads(f, attachmentIds);
+        return { ok: true, redirect_url: null, updated: true, ...(Object.keys(calcs).length ? { calcs } : {}) };
+    }
+
+    /** Los archivos llegaron con su respuesta: dejan de ser «pendientes» y cuentan para el plan. */
+    private async claimUploads(f: ResolvedForm, attachmentIds: number[]): Promise<void> {
+        if (attachmentIds.length === 0) return;
+        await this.redis.zrem(PENDING_UPLOADS_KEY, ...attachmentIds.map((id) => `${f.row.tenantId}:${id}`)).catch(() => undefined);
+        await this.tenantDb
+            .withTenant(f.row.tenantId, (tx) =>
+                tx
+                    .update(attachments)
+                    .set({ pendingFormId: null })
+                    .where(and(eq(attachments.tenantId, f.row.tenantId), inArray(attachments.id, attachmentIds))),
+            )
+            .catch(() => undefined);
+    }
+
+    /**
+     * El enlace para que alguien actualice un registro con este formulario
+     * (la ficha lo copia). Lo pide quien puede EDITAR ese registro: el enlace
+     * deja cambiar lo que el formulario pregunta.
+     */
+    async createEditLink(tenantId: number, actor: AclSubject, listIdOrSlug: string, formId: number, recordId: number): Promise<{ url: string; expires_at: string }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const row = await this.load(tenantId, list.id, formId);
+        const config = readConfig(row.config);
+        if (!row.enabled) {
+            throw new HttpException(
+                { code: 'form_not_published', message: 'Publica el formulario para poder mandar enlaces.', data: { status: 409 } },
+                HttpStatus.CONFLICT,
+            );
+        }
+        if (!config.settings.edit_links.enabled) {
+            throw new HttpException(
+                { code: 'form_edit_links_off', message: 'Activa «Enlaces para actualizar» en los ajustes del formulario.', data: { status: 409 } },
+                HttpStatus.CONFLICT,
+            );
+        }
+        const [rec] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: records.id, data: records.data, createdBy: records.createdBy })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, recordId), isNull(records.deletedAt)))
+                .limit(1),
+        );
+        if (!rec || !listRowInScope(list.settings as Record<string, unknown>, actor, 'edit', { id: rec.id, createdBy: rec.createdBy, data: rec.data })) {
+            throw new NotFoundException({ code: 'record_not_found', message: `Registro ${recordId} no encontrado`, data: { status: 404 } });
+        }
+        const { code, expiresAt } = editLinkCode((t, fid, rid, exp, v) => this.editSig(t, fid, rid, exp, v), tenantId, row.id, rec.id, config.settings.edit_links);
+        const base = (await this.publicBase(tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
+        return { url: editLinkUrl(base, row.token, code), expires_at: expiresAt.toISOString() };
+    }
+
+    /** Los formularios publicados de la lista que aceptan enlaces para actualizar (para la ficha). */
+    async editLinkForms(tenantId: number, listIdOrSlug: string): Promise<Array<{ id: number; name: string; title: string; days: number }>> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: forms.id, name: forms.name, config: forms.config })
+                .from(forms)
+                .where(and(eq(forms.tenantId, tenantId), eq(forms.listId, list.id), eq(forms.enabled, true)))
+                .orderBy(asc(forms.id)),
+        );
+        const out: Array<{ id: number; name: string; title: string; days: number }> = [];
+        for (const r of rows) {
+            const links = readEditLinks(r.config);
+            if (!links) continue;
+            const title = readConfig(r.config).settings.title;
+            out.push({ id: r.id, name: r.name, title: title || r.name, days: links.days });
+        }
+        return out;
+    }
+
     /** Los avances vencidos se borran (conexión base, de a 500). */
     async sweepExpiredDrafts(now = new Date()): Promise<number> {
         const gone = await this.db
@@ -946,6 +1198,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             // v0.1.358 — guardar el avance (en el dispositivo / con un enlace al correo).
             save_progress:
                 config.settings.save_progress.device || config.settings.save_progress.email ? { ...config.settings.save_progress } : null,
+            // v0.1.360 — acepta enlaces para actualizar un registro (la página pide los datos aparte).
+            edit_links: config.settings.edit_links.enabled ? { message: config.settings.edit_links.message } : null,
         };
     }
 
@@ -1025,6 +1279,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     /** Recibe una respuesta: valida, crea el registro y avisa a las automatizaciones. */
     async submit(token: string, ip: string, input: SubmitFormInput, meta: { userAgent?: string | null } = {}): Promise<SubmitFormResult> {
         const f = await this.resolve(token);
+        // v0.1.360 — con un enlace para actualizar, se actualiza ESE registro.
+        if (input.edit) return this.submitEdit(f, ip, input, meta);
         const closed = this.closedReason(f);
         if (closed) throw new ForbiddenException({ code: 'form_closed', message: closed, data: { status: 403 } });
 
@@ -1198,20 +1454,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 this.logger.warn(`Formulario ${f.row.id}: la autorización ${ev.id} no quedó atada al registro: ${String(err)}`),
             );
         }
-        if (attachmentIds.length > 0) {
-            await this.redis
-                .zrem(PENDING_UPLOADS_KEY, ...attachmentIds.map((id) => `${f.row.tenantId}:${id}`))
-                .catch(() => undefined);
-            // Llegaron con su respuesta: desde ahora cuentan para el plan.
-            await this.tenantDb
-                .withTenant(f.row.tenantId, (tx) =>
-                    tx
-                        .update(attachments)
-                        .set({ pendingFormId: null })
-                        .where(and(eq(attachments.tenantId, f.row.tenantId), inArray(attachments.id, attachmentIds))),
-                )
-                .catch(() => undefined);
-        }
+        await this.claimUploads(f, attachmentIds);
         this.dispatcher.dispatch({
             tenantId: f.row.tenantId,
             listId: f.row.listId,
@@ -1804,12 +2047,28 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         f: ResolvedForm,
         byId: Map<number, Field>,
         input: SubmitFormInput,
+        /**
+         * v0.1.360 — actualizar un registro: `existing` = lo que el registro
+         * tiene hoy. Una pregunta que se mostró y quedó vacía BORRA el valor (la
+         * persona lo vio y lo quitó); un archivo o firma sin subir otro se queda
+         * como estaba; una pregunta oculta nunca se escribe (decide la lógica con
+         * el valor del registro, no con el de la dirección); lo de una página que
+         * no recorrió no se toca.
+         */
+        edit?: { existing: Record<string, unknown> },
     ): { data: Record<string, unknown>; errors: Record<string, string>; attachmentIds: number[]; endingId: string | null; calcs: Record<string, number> } {
         const pub = buildPublicFormItems(f.config, [...byId.values()]);
         // Una pregunta oculta sin «completar desde la dirección» no se guarda:
         // tampoco decide saltos, pantallas finales ni puntaje.
         const values: Record<string, unknown> = { ...input.values };
-        if (!f.config.settings.allow_prefill) for (const i of pub) if (i.type === 'field' && i.hidden) delete values[i.key];
+        if (edit) {
+            for (const i of pub) {
+                if (i.type !== 'field' || !i.hidden) continue;
+                const cur = edit.existing[jsonbKeyForField(Number(i.key))];
+                if (cur === undefined || cur === null) delete values[i.key];
+                else values[i.key] = cur;
+            }
+        } else if (!f.config.settings.allow_prefill) for (const i of pub) if (i.type === 'field' && i.hidden) delete values[i.key];
         // v0.1.356 — el camino por las páginas (con los saltos): una pregunta de
         // una página que la persona no recorrió no se pide ni se guarda, aunque
         // el navegador mande lo que había escrito antes de cambiar de rumbo.
@@ -1824,10 +2083,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             data[jsonbKeyForField(field.id)] = res.value;
             return null;
         };
+        const clear = (field: Field): void => {
+            data[jsonbKeyForField(field.id)] = null;
+        };
         for (const item of pub) {
             if (item.type === 'matrix') {
                 if (!flow.shown(item.id)) continue;
-                this.collectMatrix(item, byId, values, put, errors);
+                this.collectMatrix(item, byId, values, put, errors, edit ? clear : undefined);
                 continue;
             }
             if (item.type !== 'field') continue;
@@ -1835,7 +2097,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             if (!field || !isFormFieldType(field.type)) continue;
             const key = item.key;
             if (!item.hidden && !flow.shown(item.id)) continue;
-            if (item.hidden && !f.config.settings.allow_prefill) continue;
+            if (item.hidden && (edit || !f.config.settings.allow_prefill)) continue;
 
             let raw: unknown = values[key];
             if (field.type === 'file') {
@@ -1851,6 +2113,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 }
                 raw = ids.length > 0 ? ids : null;
                 attachmentIds.push(...ids);
+                // v0.1.360 — al actualizar, sin archivos nuevos quedan los que tenía.
+                if (edit && ids.length === 0) {
+                    if (item.required && !formAnswered(item.display, edit.existing[jsonbKeyForField(field.id)]) && !errors[item.id]) {
+                        errors[item.id] = 'Esta pregunta es obligatoria.';
+                    }
+                    continue;
+                }
             }
             // v0.1.355 — las formas propias se leen como las dibujó la página.
             if (item.display === 'yes_no') raw = raw === true || raw === 'true' ? true : raw === false || raw === 'false' ? false : null;
@@ -1859,8 +2128,20 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 continue;
             }
             if (item.display === 'yes_no') {
-                if (raw === null) continue;
-            } else if (isEmptyAnswer(raw) && field.type !== 'checkbox') continue;
+                if (raw === null) {
+                    if (edit) clear(field);
+                    continue;
+                }
+            } else if (isEmptyAnswer(raw) && field.type !== 'checkbox') {
+                if (edit) {
+                    clear(field);
+                    if (item.other) {
+                        const target = byId.get(Number(item.other.key));
+                        if (target) clear(target);
+                    }
+                }
+                continue;
+            }
 
             if ((item.display === 'scale' || item.display === 'slider') && item.range) {
                 if (!formRangeAccepts(item.display, item.range, raw)) {
@@ -1895,7 +2176,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                         const otherErr = put(target, text.trim());
                         if (otherErr) errors[item.id] = otherErr;
                     }
-                }
+                } else if (!chosen && target && edit) clear(target);
             }
         }
         // v0.1.357 — el resultado de cada cálculo, en su campo si se eligió uno.
@@ -1941,6 +2222,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         values: Record<string, unknown>,
         put: (field: Field, raw: unknown) => string | null,
         errors: Record<string, string>,
+        /** v0.1.360 — al actualizar, una fila sin respuesta borra su valor. */
+        clear?: (field: Field) => void,
     ): void {
         let missing = false;
         for (const row of item.rows) {
@@ -1950,6 +2233,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const allowed = row.values.filter((v): v is string | number => v !== null);
             if (isEmptyAnswer(raw)) {
                 missing = true;
+                clear?.(field);
                 continue;
             }
             let picked: unknown;

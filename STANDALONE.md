@@ -3152,6 +3152,55 @@ v0.1.360 y cobrar al enviar en v0.1.361).
    (el tema ya se guarda en «Mis temas»; si se pide, el modelo de roles lo
    permite sin cambiar nada de lo anterior).
 
+**Addendum v0.1.360 — Enlace para actualizar un registro.** Tercera de las
+versiones de la entrega 3. Un formulario puede abrir con lo que un registro YA
+tiene y, al guardar, actualizar ese registro en vez de crear otro (el caso
+«¿tus datos siguen al día?»).
+
+1. **El enlace es la credencial, sin guardar nada por enlace.** Es la dirección
+   pública del formulario con `?editar=<registro>.<vence>.<firma>`; la firma es
+   un HMAC (el secreto de los enlaces firmados, scope `formedit`, recortado a
+   32 hexadecimales y comparado en tiempo constante) que ata la empresa, el
+   formulario, el registro, el vencimiento y `settings.edit_links.version`.
+   «Invalidar los enlaces ya enviados» sube la versión: todos los anteriores
+   dejan de servir sin tocar una tabla. El vencimiento (1 a 365 días, 30 por
+   defecto) se redondea hacia arriba a la hora, así los enlaces de un mismo
+   registro pedidos en la misma hora son iguales (un correo masivo no arma uno
+   distinto por segundo), y uno que diga vencer a más de un año se rechaza.
+2. **Quién lo arma.** Desde la ficha (`POST /lists/:l/forms/:id/edit-link`)
+   sólo quien puede EDITAR ese registro según el ACL de la lista
+   (`listRowInScope … 'edit'`; si no, el mismo 404 que un registro ajeno), y
+   sólo con el formulario publicado y los enlaces encendidos (409 con el
+   motivo). En automatizaciones, la variable `{{formulario.<id>.enlace}}`
+   (alias `form.<id>.link`) lo arma por registro con la dirección de la
+   empresa: el módulo de formularios registra al arrancar cómo firmar y qué
+   dirección usar (`configureFormEditRuntime`), así el motor no depende del
+   servicio; sin registrar, la variable sale vacía.
+3. **Qué se escribe.** El mismo `collect()` del envío, en modo actualización:
+   sólo las preguntas que el formulario muestra en el camino de la persona;
+   una mostrada y vacía vacía el campo; un archivo o una firma sin subir algo
+   nuevo conserva lo que había; una pregunta oculta nunca se escribe (para la
+   lógica toma el valor del registro); una página saltada no se toca. Pasa por
+   `RecordsService.update` (validación, actividad, realtime) como el sistema,
+   así dispara **«Cuando se actualiza un registro»**, no «Cuando se envía un
+   formulario». La autorización de datos (ADR-S54) se registra igual, atada a
+   ese registro.
+4. **Lo que NO aplica**: captcha (el enlace firmado ya prueba de dónde vino),
+   cupo, estadísticas, confirmación por correo y guardar el avance. Un
+   formulario cerrado por fecha o una empresa en solo lectura → 403; un enlace
+   alterado, vencido, de otra versión, de otro registro o de un registro en la
+   papelera → 410 `form_edit_expired`; los enlaces apagados → 404.
+5. **Lo que sale del servidor.** `GET /public/forms/:token/edit/:code`
+   devuelve sólo los valores de los campos que el formulario pregunta (también
+   los ocultos, los del «Otro» y las filas de una matriz) y el NOMBRE de los
+   archivos, con `no-store` y `no-referrer`. La página saca el código de la
+   barra de direcciones apenas lo lee (queda en `sessionStorage` de esa
+   pestaña) y la página en sí sigue siendo la misma para todos (la caché de
+   ADR-S95 no cambia).
+6. **Fuera de alcance**: que el cliente pida su propio enlace escribiendo su
+   correo (sería otra puerta de entrada; el portal ya cubre ese caso con
+   sesión), y editar varios registros con un mismo enlace.
+
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 
 **Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado
@@ -6595,4 +6644,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.144.0 (Plantillas de formularios, panel lateral, pantalla completa y QR)
+**Versión del documento:** 1.145.0 (Enlace para actualizar un registro con un formulario)
