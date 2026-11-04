@@ -11372,6 +11372,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Ayuda**: artículo «Diseña tu formulario» en Aprende con la
         ilustración `form-design`, guía `form-design`, paso nuevo en el
         recorrido de formularios y novedad con carrusel.
+        **De paso, el CSS propio**: los escapes de CSS se DECODIFICAN antes de
+        revisar (`u\72l(` = `url(`, `\3c` = `<`) y las llamadas que cargan
+        algo se quitan enteras, con su argumento (antes quedaba
+        `none(https://…)`, inofensivo pero con la dirección escrita).
+        **Tests**: 7 de integración (`form-design.spec`: página con tema,
+        clases, fuente precargada e imágenes firmadas; formulario viejo con el
+        clásico; CSS sólo admin y limpio; imágenes de la empresa y sin SVG;
+        «Mis temas» con RLS y el por defecto; página de confirmación con el
+        diseño; migración con los ids nuevos), 10 del motor en shared (con los
+        escapes y la validación estricta de las plantillas), 19 del editor en
+        el front (`themeOps` e `imageResize`). En verde: API 1871 + 1 omitido,
+        front 768, shared 670.
+        **E2E navegador**:
+        - escritorio 27/27: plantillas que cambian la vista previa,
+          «Redondo», CSS limpio en la vista previa y al guardar, la mitad de
+          ancho, «Mis temas» con el por defecto, página pública con el diseño
+          y sin violaciones de CSP, celular en oscuro sin scroll lateral;
+        - constructor en celular 7/7, en claro y en oscuro;
+        - un formulario nuevo nace con el tema por defecto.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

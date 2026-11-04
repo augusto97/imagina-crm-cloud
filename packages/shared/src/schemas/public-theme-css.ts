@@ -380,12 +380,38 @@ export function sanitizePublicCss(raw: string): SanitizedCss {
         }
         re.lastIndex = 0;
     };
+    // Los escapes de CSS (`u\72l(` = `url(`, `\3c` = `<`) se DECODIFICAN antes
+    // de revisar, así lo disfrazado se reconoce y se quita como lo demás; las
+    // barras que queden (un `\5c` decodificado) se quitan después.
+    if (/\\/.test(css)) {
+        removed.add('barras invertidas');
+        css = css.replace(/\\([0-9a-fA-F]{1,6})\s?|\\([^\n0-9a-fA-F])/g, (_m, hex: string | undefined, ch: string | undefined) => {
+            if (hex) {
+                const cp = parseInt(hex, 16);
+                return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+            }
+            return ch ?? '';
+        });
+    }
     strip(/[\\]/g, 'barras invertidas');
     strip(/</g, 'el carácter «<»');
     strip(/\/\*[\s\S]*?(\*\/|$)/g, 'comentarios');
     strip(/@import[^;]*;?/gi, '@import');
     strip(/@font-face\s*\{[^}]*\}?/gi, '@font-face');
     strip(/@(namespace|charset|document)[^;{]*[;{]?/gi, '@namespace/@charset');
+    // Primero la llamada ENTERA con su argumento (así no queda la dirección
+    // escrita); de adentro hacia afuera, para image-set(url(…) 1x).
+    const CALL = /\b(-webkit-)?(url|src|image-set|image|cross-fade|element|expression)\s*\((?:"[^"]*"|'[^']*'|[^()"'])*\)/gi;
+    for (let i = 0; i < 6 && CALL.test(css); i++) {
+        CALL.lastIndex = 0;
+        css = css.replace(CALL, (_m, _w, name: string) => {
+            const n = name.toLowerCase();
+            removed.add(n === 'image-set' ? 'image-set()' : n === 'expression' ? 'expression()' : 'url() y otras cargas');
+            return 'none';
+        });
+    }
+    CALL.lastIndex = 0;
+    // Lo que quede abierto (sin cerrar el paréntesis) tampoco carga nada.
     strip(/(-webkit-)?image-set\s*\(/gi, 'image-set()', 'none(');
     strip(/\b(url|src|image|cross-fade|element)\s*\(/gi, 'url() y otras cargas', 'none(');
     strip(/expression\s*\(/gi, 'expression()', 'none(');

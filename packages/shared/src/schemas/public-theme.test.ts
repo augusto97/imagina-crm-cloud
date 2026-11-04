@@ -99,6 +99,12 @@ describe('tema de las páginas públicas', () => {
              .a{background:u\\72l(https://evil.test)} @font-face{font-family:x;src:url(a.woff)} .b{width:expression(alert(1))} .c{background:image-set("a.png" 1x)}`,
         );
         expect(r.css).not.toMatch(/url\(|@import|<|expression\(|@font-face|image-set\(|\\/i);
+        // Ni siquiera queda la dirección escrita.
+        expect(r.css).not.toContain('evil.test');
+        expect(sanitizePublicCss('.a{background:image-set(url(x.png) 1x, url(y.png) 2x)}').css).toBe('.a{background:none}');
+        // Los escapes se decodifican antes de revisar: lo disfrazado se reconoce.
+        expect(sanitizePublicCss('.a{x:\\3c/style>}').css).not.toContain('<');
+        expect(sanitizePublicCss('.q::before{content:"\\201C"}').css).toBe('.q::before{content:"\u201C"}');
         expect(r.css).toContain('.ib-title{color:red;');
         expect(r.removed).toEqual(expect.arrayContaining(['@import', 'url() y otras cargas', 'barras invertidas']));
         // Y el tema lo incluye ya limpio.

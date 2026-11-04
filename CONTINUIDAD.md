@@ -382,10 +382,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.350**
-(agenda de citas: el calendario de cada asesor, Meet o Teams en cada cita y la
-vuelta desde el calendario; antes v0.1.349 reglas, cupos y festivos por país,
-v0.1.348 Microsoft Teams), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.351**
+(formularios con tu diseño: plantillas, colores, fuentes, tamaños, «Mis temas»
+y CSS propio, ADR-S94; antes v0.1.350 el calendario de cada asesor en la
+agenda, v0.1.349 reglas, cupos y festivos por país), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-04 — **Formularios mucho más potentes y personalizables**. El
@@ -423,6 +423,12 @@ v0.1.348 Microsoft Teams), en `main`.
      la empresa) y plantillas de formularios completos.
   Orden propuesto: formularios 1 → la entrega 3 de la agenda (que reusa el
   motor de temas) → formularios 2 y 3.
+  **Estado**: entrega 1 **HECHA en v0.1.351** (ADR-S94). Lo que NO entró de
+  ella, a propósito: dibujar la primera página en el HTML del servidor (el
+  formulario lo arma el script inline; la medición dio ~335 ms de primera
+  pintura en 4G lento, apenas 27 ms más que antes, así que no se justificó).
+  **SIGUIENTE**: la entrega 3 de la agenda (aprobación de citas, rediseño con
+  este mismo motor de temas, seguridad reforzada), después formularios 2 y 3.
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
   ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
   agendamientos está muy básica… seleccionar su asesor, diferentes franjas,
@@ -1292,6 +1298,33 @@ v0.1.348 Microsoft Teams), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-04 · v0.1.351** — **Formularios con tu diseño** (ADR-S94; primera
+  de tres entregas del pedido «formularios más potentes», ver §10).
+  - **Motor de temas común a las páginas públicas** (`publicThemeSchema` en
+    shared): modo claro/oscuro/automático con paleta oscura calculada,
+    colores, 19 fuentes, tamaños, página, fondo (color, degradado, imagen,
+    patrón), portada, dividido, tarjeta, campos, opciones, botón y CSS propio.
+    `settings.theme = null` = el diseño de siempre (nadie ve cambios al
+    actualizar).
+  - **13 plantillas** con el color de la marca, **«Mis temas»** de la empresa
+    (con el tema por defecto de los formularios nuevos) y **diseño por
+    pregunta** (mitad/tercio, ocultar etiqueta, botones o tarjetas con una
+    imagen por opción, bloque Imagen).
+  - **Seguridad**: imágenes sólo de la empresa y sin SVG, por URL firmada; el
+    CSS propio lo cambia sólo un admin y se limpia al guardar y al servir
+    (escapes decodificados primero), con la CSP que no deja cargar nada.
+  - **Rendimiento**: cliente de la página en TS servido inline (25 kB / 9 kB
+    gz), sólo las fuentes usadas con preload. En 4G lento: el clásico abre en
+    ~335 ms y queda listo en ~420 ms (igual que antes); con todo el diseño,
+    ~380 ms el texto y ~610 ms todo cargado.
+  - **Bugs atrapados**: cinco plantillas redondeadas perdían en silencio el
+    botón y las opciones (esquinas de 999 sobre un tope de 40), y migrar una
+    empresa no re-mapeaba el logo de la marca.
+  - Editor hecho por un agente en paralelo (pestaña **Diseño** del
+    constructor) e integrado; ayuda (Aprende, guía, recorrido, novedad).
+  - Tests: API 1871 + 1 omitido, front 768, shared 670; E2E 27/27 escritorio y
+    7/7 constructor en celular claro/oscuro.
 
 - **2026-11-04 · v0.1.350** — **Agenda: el calendario de cada asesor, Meet o
   Teams en cada cita y la vuelta desde el calendario** (addendum ADR-S67;
