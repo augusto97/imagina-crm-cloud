@@ -388,8 +388,11 @@ vuelta desde el calendario; antes v0.1.349 reglas, cupos y festivos por país,
 v0.1.348 Microsoft Teams), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-11-04 — **Formularios mucho más potentes y personalizables** (ESPERANDO
-  que el usuario apruebe el orden). Pedido: "que la funcionalidad de
+- 2026-11-04 — **Formularios mucho más potentes y personalizables**. El
+  usuario aprobó el orden **«Formularios 1 → agenda (Recomendado)»** (diseño de
+  formularios → entrega 3 de la agenda, que reusa el motor de temas →
+  formularios 2 y 3) y **«Sí, como opción avanzada»** el CSS propio (sólo
+  administradores, sin cargar nada de afuera). Pedido: "que la funcionalidad de
   formularios fuera más completa como hiciste con esta app de agendamiento…
   más personalizable, estilizable, se puedan controlar los tamaños de todo,
   bordes, colores, estilos, plantillas de diseño… revisa otras apps de
