@@ -323,6 +323,12 @@ export const articles: LearnArticle[] = [
                 title: 'Las condiciones se encadenan',
                 md: 'Una pregunta condicional puede controlar a otra. Si la primera desaparece, la que depende de ella también. Y el servidor no le cree al navegador: al recibir la respuesta revisa otra vez qué preguntas tenían que verse, así nadie puede colar datos en preguntas que no correspondían.',
             },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Varias reglas y saltos',
+                md: 'Con **Otra condición** una pregunta puede depender de varias respuestas a la vez, todas o alguna. Para saltar a otra página, terminar antes o mostrar un mensaje final distinto, usa la pestaña **Lógica**: lo explicamos en «Saltos, pantallas finales y respuestas que se recuerdan».',
+            },
             { t: 'h', text: 'Formularios por pasos' },
             { t: 'anim', key: 'form-pages', caption: 'Un formulario en tres pasos con barra de progreso.' },
             {
@@ -378,6 +384,109 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Siguiente: ajustes del formulario', article: 'formularios-ajustes' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-logica',
+        route: '/lists',
+        related: ['formularios-condiciones-pasos', 'formularios-tipos-pregunta', 'formularios-ajustes'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Con la pestaña **Lógica** del constructor el formulario se adapta a cada persona: **salta** las páginas que no le corresponden, **termina** con un mensaje distinto según lo que respondió y la **llama por su nombre** en las preguntas que siguen. Todo se ve al instante en la vista previa.',
+            },
+            { t: 'anim', key: 'form-logic', caption: 'Laura escribe su nombre, elige «Persona», salta la página de la empresa y termina en «¡Gracias, Laura!».' },
+            { t: 'h', text: 'Saltar a otra página' },
+            {
+                t: 'steps',
+                items: [
+                    'Divide el formulario en páginas con **Salto de página** (en **Agregar → Contenido**). Sin páginas igual puedes terminar antes o elegir la pantalla final.',
+                    'Abre la pestaña **Lógica**. Cada página tiene su bloque «Al terminar la página…».',
+                    'Toca **Agregar un salto**, elige la pregunta que decide, la comparación y el valor (por ejemplo **Tipo de cliente** · **es** · **Persona**).',
+                    'En **Entonces** elige adónde va: una página de más adelante, **Terminar el formulario** o una pantalla final.',
+                    'Prueba el camino respondiendo en la vista previa y toca **Guardar**.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Cómo funcionan los saltos',
+                rows: [
+                    { name: 'Orden', what: 'Los saltos de una página se revisan de arriba abajo y gana el primero que se cumple. Si ninguno se cumple, sigue a la página siguiente.', tip: 'Cambia el orden con las flechas de cada salto.' },
+                    { name: 'Adónde puede ir', what: 'Sólo hacia adelante: a una página posterior, a terminar el formulario o a una pantalla final. Nunca vuelve a una página anterior.' },
+                    { name: 'Qué preguntas deciden', what: 'Las de esa página y las de las páginas anteriores.' },
+                    { name: 'Lo escrito en una página saltada', what: 'No se pide, no cuenta en otras condiciones y no se guarda, aunque la persona lo hubiera escrito antes de cambiar su respuesta.', tip: 'Si elige «Empresa», escribe el NIT, vuelve y cambia a «Persona», el NIT no llega a la lista.' },
+                    { name: '«Paso 2 de 3»', what: 'La barra de progreso cuenta sólo las páginas por las que pasa esa persona. Si un salto termina el formulario, en esa página ya aparece **Enviar**.' },
+                    { name: 'En la computadora', what: 'A la izquierda, la pestaña **Lógica** muestra el recorrido completo de un vistazo («Si Edad es menor que 18 → Terminar en «Menores»»); se edita a la derecha.' },
+                ],
+            },
+            { t: 'h', text: 'Varias reglas: todas o alguna' },
+            {
+                t: 'p',
+                md: 'Una condición puede tener varias reglas. Toca **Otra condición** y elige si **se tienen que cumplir todas** (y además) o **alguna** (o). Funciona igual en los saltos, en las pantallas finales y en **Mostrar sólo si…** de cada pregunta.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Un ejemplo',
+                md: 'Muestra «¿Quién decide la compra?» sólo si el **tipo es Empresa** y además **tiene más de 10 empleados**. O termina el formulario si **la edad es menor que 18** o **no acepta las condiciones**.',
+            },
+            { t: 'h', text: 'Pantallas finales según las respuestas' },
+            {
+                t: 'steps',
+                items: [
+                    'En la pestaña **Lógica**, sección **Pantallas finales**, toca **Agregar una pantalla final**.',
+                    'Ponle un nombre que sólo ves tú («Empresas grandes»), el título y el mensaje que verá la persona.',
+                    'En **Se muestra si**, agrega su condición (por ejemplo **Empleados** · **es mayor que** · **50**). Sin condición, sólo se muestra si un salto lleva a ella.',
+                    'Toca **Ver** para mirarla en la vista previa.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Qué pantalla ve cada persona',
+                rows: [
+                    { name: 'Un salto que termina en ella', what: 'Si un salto lleva a una pantalla final, esa es la que se muestra.' },
+                    { name: 'La primera que se cumple', what: 'Si no, se revisan las pantallas en orden y gana la primera cuya condición se cumple.', tip: 'Pon arriba la más específica.' },
+                    { name: 'La de siempre', what: 'Si ninguna se cumple, se muestra el agradecimiento de los ajustes del formulario.' },
+                    { name: 'Llevar a una dirección', what: 'Cada pantalla puede abrir otra página (que empiece con https://) en vez de mostrar el mensaje: por ejemplo, la página de pagos sólo para quien pidió el plan de pago.' },
+                    { name: 'Con confirmación por correo', what: 'La pantalla que corresponde se muestra cuando la persona abre el enlace del correo.' },
+                ],
+            },
+            { t: 'h', text: 'Recordar respuestas: «Hola, {{nombre}}»' },
+            {
+                t: 'p',
+                md: 'Escribe el nombre de una respuesta entre llaves dentro de cualquier texto del formulario y se reemplaza por lo que la persona respondió, mientras va respondiendo. Debajo de cada texto, **Agregar una respuesta** lo pone por ti.',
+            },
+            {
+                t: 'settings',
+                title: 'Cómo se escribe',
+                rows: [
+                    { name: '{{nombre}}', what: 'La respuesta como la lee una persona: la etiqueta de la opción elegida, «Sí» o «No», y los números con los separadores de tu empresa.' },
+                    { name: '{{nombre|amigo}}', what: 'Lo que va después de la barra se muestra si todavía no respondió: «Hola, amigo».' },
+                    { name: 'Dónde sirve', what: 'En preguntas, ayudas, títulos de sección y de página, textos, la descripción, el agradecimiento y las pantallas finales.' },
+                    { name: 'Qué nombre usar', what: 'El nombre interno del campo. La pestaña **Lógica** lista los que puedes usar: sólo las preguntas de este formulario.', tip: 'En la vista previa, sin respuestas, se ve «[nombre]» para que sepas dónde irá.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Cotizaciones de una empresa de aseo',
+                md: 'Brillo Total, en Barranquilla, recibe cotizaciones de casas y de oficinas. La primera página pregunta el nombre y si es **Persona** o **Empresa**; un salto lleva a las personas directo a la página de fechas, sin pasar por «Datos de la empresa». Si la empresa tiene más de 50 empleados, termina en «Te llamamos hoy, {{nombre}}»: un asesor la contacta. Al resto le dice «¡Gracias, {{nombre}}! Te enviamos la cotización por correo».',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Puedo volver a una página anterior con un salto?', a: 'No. Los saltos sólo van hacia adelante, así un formulario nunca queda dando vueltas. La persona sí puede volver con el botón **Anterior**.' },
+                    { q: '¿Qué pasa si borro una página o una pregunta que usa la lógica?', a: 'Se quitan solos los saltos que salían o llegaban a esa página y las reglas sobre esa pregunta. Si te equivocas, **Deshacer** lo devuelve.' },
+                    { q: '¿Recordar respuestas funciona en la agenda de citas?', a: 'No, es de los formularios. En la agenda, los correos ya usan los datos de la cita.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Siguiente: agradecimiento y cierre', article: 'formularios-ajustes' },
                 ],
             },
         ],

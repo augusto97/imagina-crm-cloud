@@ -13,6 +13,7 @@ export const meta: LearnModuleMeta = {
         'Arma el formulario con los campos de tu lista y míralo tal como lo verá quien responde',
         'Escalas del 0 al 10, Sí o No, deslizador, firma, matriz, ordenar opciones y «Otro» con espacio para escribir',
         'Preguntas que aparecen según otra respuesta, formularios por pasos y datos ocultos desde el enlace',
+        'Saltos entre páginas, pantallas finales distintas y respuestas que se recuerdan: «Hola, {{nombre}}»',
         'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
         'Comparte el enlace o insértalo en tu sitio, y deja que una automatización conteste sola',
@@ -52,6 +53,15 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'intermediate',
             keywords: 'condicion mostrar solo si salto de pagina pasos barra de progreso oculta prefill origen utm campaña direccion',
+            needs: 'manage_forms',
+        },
+        {
+            id: 'formularios-logica',
+            title: 'Saltos, pantallas finales y respuestas que se recuerdan',
+            summary: 'Salta las páginas que no corresponden, termina con un mensaje distinto según las respuestas, combina varias reglas y llama a cada persona por su nombre.',
+            minutes: 9,
+            level: 'intermediate',
+            keywords: 'logica saltar pagina salto ramificacion terminar antes pantalla final mensaje distinto recordar respuesta nombre llaves variables todas alguna varias reglas y o',
             needs: 'manage_forms',
         },
         {

@@ -11627,6 +11627,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         escritorio y 31/31 en celular oscuro, constructor 17/17 y 18/18 en
         celular.
 
+  - [x] **Formularios, entrega 2 (segunda mitad, primera parte): la lógica
+        (v0.1.356, addendum ADR-S39)**. El formulario elige el camino de cada
+        persona y lo que ve al terminar. (a) **Varias reglas**: una condición
+        puede ser un grupo «se tienen que cumplir todas / alguna»
+        (`formShowIfSchema`; una sola regla se guarda suelta, como antes) en
+        «Mostrar sólo si…», saltos y pantallas finales. (b) **Saltos entre
+        páginas** (`settings.jumps`): por página, el primero que se cumple
+        lleva a una página de más adelante, a terminar o a una pantalla final;
+        nunca hacia atrás. (c) **Un solo motor del camino** (`formFlow`,
+        shared) para la página, la vista previa y el servidor: lo de una
+        página saltada no se exige, no cuenta en otras condiciones y NO se
+        guarda aunque el navegador lo mande. (d) **Pantallas finales**
+        (`settings.endings`): título, mensaje, dirección opcional y
+        condición; gana la del salto, si no la primera que se cumple, si no
+        la de siempre; con confirmación por correo viaja en la respuesta
+        pendiente (migración 0099) y la página que confirma la muestra.
+        (e) **Recordar respuestas** con `{{nombre}}` / `{{nombre|amigo}}` en
+        preguntas, ayudas, títulos, textos, páginas y pantallas finales, como
+        lo lee una persona (etiqueta, Sí/No, números de la empresa); a la
+        página sólo viaja el mapa de los nombres usados que el formulario
+        pregunta. (f) **Constructor**: pestaña **Lógica** (mapa del recorrido
+        a la izquierda y editor a la derecha; en el celular dentro de
+        «Preguntas»), «Ver» cada pantalla final en la vista previa, «Agregar
+        una respuesta» debajo de cada texto, aviso de una regla sin valor, y
+        quitar una página o pregunta limpia su lógica. **Atrapado en las
+        pruebas**: los saltos y pantallas son listas tolerantes, así que una
+        pantalla con la dirección a medio escribir se habría perdido al
+        guardar — ahora el constructor no deja guardar y dice cuál; un grupo
+        que quedaba con una regla se guardaba como grupo; la tira de pestañas
+        de la izquierda desbordaba con «Lógica» (la cantidad pasó a un punto)
+        y la vista previa mostraba «[¿Cómo te llamas?]» en vez de «[nombre]».
+        Migrar una empresa re-mapea las reglas (test nuevo); el asistente/MCP
+        ve saltos y pantallas finales en `get_list_schema`. Ayuda: guía
+        `form-logic` (tope de guías 70 → 80), artículo «Saltos, pantallas
+        finales y respuestas que se recuerdan» en Aprende con la ilustración
+        `form-logic`, paso nuevo en el recorrido de formularios y novedad con
+        carrusel. El script de la página pública sube 1,2 KB gz (14,7 → 15,9).
+        Tests: 12 de shared, 5 de integración de la API + 1 de re-mapeo, 7 del
+        front (shared 700, front 786, specs de formularios/agenda/asistente/
+        migración 125/125); E2E navegador: página pública 22/22 en escritorio
+        y 23/23 en celular oscuro (también contra el build de producción con
+        su CSP), constructor 24/24 y 22/22 en celular, y la v0.1.355 sin
+        regresiones (29/29 y 17/17).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

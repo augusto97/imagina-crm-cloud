@@ -382,10 +382,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.355**
-(formularios: más formas de preguntar —escala/NPS, deslizador, Sí o No,
-firma, lista con buscador, ordenar, «Otro» y matriz—; addendum ADR-S39; antes
-v0.1.354 la página de la agenda con el motor de temas, addendum ADR-S94,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.356**
+(formularios: la lógica —varias reglas todas/alguna, saltos entre páginas,
+pantallas finales según las respuestas y recordar respuestas con
+`{{nombre}}`—; addendum ADR-S39; antes v0.1.355 más formas de preguntar
+—escala/NPS, deslizador, Sí o No, firma, lista con buscador, ordenar, «Otro» y
+matriz—, v0.1.354 la página de la agenda con el motor de temas, addendum ADR-S94,
 v0.1.353 aprobación de citas y seguridad de la página, addendum ADR-S67,
 v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
@@ -434,10 +436,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   v0.1.354 la página con este mismo motor de temas). La entrega 2 se partió
   en dos: **preguntas HECHAS en v0.1.355** (escala/NPS, deslizador, Sí o No,
   firma, lista con buscador, ordenar, «Otro», matriz; las opciones con imagen
-  ya estaban desde v0.1.351). **SIGUIENTE**: la lógica (v0.1.356+: reglas
-  Y/O, saltar a una página, varias pantallas finales, puntaje y cálculos,
-  recordar respuestas, modo conversacional y bienvenida), después la entrega
-  3 (medir, insertar, cobrar).
+  ya estaban desde v0.1.351) y **lógica HECHA en v0.1.356** (reglas Y/O,
+  saltar a una página, varias pantallas finales, recordar respuestas).
+  **SIGUIENTE**: v0.1.357 con puntaje y cálculos, modo conversacional (una
+  pregunta por pantalla) y bienvenida; después la entrega 3 (medir, insertar,
+  cobrar).
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1344,6 +1347,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.356** — **Formularios: la lógica** (addendum ADR-S39;
+  segunda mitad de la entrega 2, primera parte).
+  - **Varias reglas** en una condición, que se cumplan **todas** o **alguna**,
+    en «Mostrar sólo si…», saltos y pantallas finales (una sola regla se
+    guarda como antes).
+  - **Saltos entre páginas**: por página, el primero que se cumple lleva a una
+    página de más adelante, a terminar o a una pantalla final; nunca hacia
+    atrás. Un solo motor del camino (`formFlow`) para la página, la vista
+    previa y el servidor: lo de una página saltada no se pide ni se guarda.
+  - **Pantallas finales** según las respuestas (también al confirmar el correo:
+    migración 0099) y **recordar respuestas** con `{{nombre}}` /
+    `{{nombre|amigo}}` en todos los textos.
+  - **Constructor**: pestaña **Lógica** (mapa a la izquierda, editor a la
+    derecha; en el celular dentro de «Preguntas»), «Ver» cada pantalla final,
+    «Agregar una respuesta» debajo de cada texto, aviso de regla sin valor.
+  - **Atrapado en las pruebas**: una pantalla final con la dirección a medio
+    escribir se habría perdido en silencio al guardar (las listas de saltos y
+    pantallas descartan lo roto) — ahora no deja guardar y dice cuál; la tira
+    de pestañas de la izquierda desbordaba con «Lógica».
+  - Tests: 12 de shared, 5 de la API + 1 de re-mapeo al migrar, 7 del front;
+    E2E navegador: página pública 22/22 y 23/23 en celular oscuro (también con
+    el build de producción y su CSP), constructor 24/24 y 22/22 en celular.
+  - **Siguiente**: v0.1.357 (puntaje y cálculos, modo conversacional y
+    bienvenida).
 - **2026-11-04 · v0.1.355** — **Formularios: más formas de preguntar**
   (addendum ADR-S39; primera mitad de la entrega 2 aprobada por el usuario).
   - **«Cómo se pregunta»** en cada pregunta, según el tipo de campo: escala de

@@ -32,6 +32,7 @@ import {
     type BookingStaffCalendars,
     type BookingTimeOff,
     type PublicBookingMeta,
+    formConditionFieldIds,
 } from '@imagina-base/shared';
 
 import { resolvedAccent } from '../forms/design/themeOps';
@@ -310,7 +311,7 @@ export function removeQuestion(config: BookingConfig, id: string): BookingConfig
         ...config,
         questions: config.questions
             .filter((q) => q.id !== id)
-            .map((q) => (fid !== null && q.show_if?.field_id === fid ? ({ ...q, show_if: null } as BookingQuestion) : q)),
+            .map((q) => (fid !== null && formConditionFieldIds(q.show_if).includes(fid) ? ({ ...q, show_if: null } as BookingQuestion) : q)),
     };
 }
 

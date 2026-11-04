@@ -29,6 +29,7 @@ import {
     stepLabel,
     APPROVAL_TRIGGER_RESULTS,
     splitFormPages,
+    formRecallTexts,
     crmTemplateIdSchema,
     fieldSlugSchema,
     filterOperatorSchema,
@@ -1332,6 +1333,10 @@ export class StructureTools implements AiProposalApplier {
                                     ? [{ kind: 'other', field: fieldById.get(i.field_id)?.slug ?? null, other_text_field: fieldById.get(i.other_field_id)?.slug ?? null }]
                                     : [],
                         ),
+                        // v0.1.356 — saltos entre páginas y pantallas finales (se arman en la pestaña «Lógica»).
+                        page_jumps: st.jumps.length,
+                        endings: st.endings.map((e) => ({ name: e.name || e.title, conditional: e.when !== null })),
+                        recalls_answers: formRecallTexts(f.config).length > 0,
                         captcha: st.captcha,
                         respondent_email_field: emailField?.slug ?? null,
                         confirm_email: st.confirm_email && emailField !== undefined,
