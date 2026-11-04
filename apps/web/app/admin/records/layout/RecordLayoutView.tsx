@@ -19,6 +19,7 @@ import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine'
 
 import { RecordSubtasks } from '../RecordSubtasks';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
@@ -168,10 +169,20 @@ function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
     // E6 — las propuestas de los agentes de IA van siempre debajo de la cabecera
     // (no tienen bloque propio: son algo que decidir, no parte del diseño).
     const proposals = ctx.preview === true ? null : <RecordAgentProposals listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />;
-    if (placed) return proposals;
+    // v0.1.353 — una cita por confirmar se decide arriba, como una aprobación.
+    const booking = ctx.preview === true ? null : <RecordBookingPanel listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />;
+    if (placed) {
+        return (
+            <>
+                {proposals}
+                {booking}
+            </>
+        );
+    }
     return (
         <>
             {proposals}
+            {booking}
             <RecordApprovals listId={ctx.list.id} recordId={ctx.record.id} />
         </>
     );

@@ -18,6 +18,7 @@ import {
     Redo2,
     RefreshCw,
     Send,
+    ShieldCheck,
     Smartphone,
     Tag,
     Trash2,
@@ -27,6 +28,8 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import {
+    BOOKING_APPROVAL_MODES,
+    BOOKING_APPROVAL_MODE_LABELS,
     BOOKING_ASSIGN_MODES,
     BOOKING_ASSIGN_MODE_LABELS,
     BOOKING_MAPPING_KEYS,
@@ -51,7 +54,7 @@ import { useAttachments } from '@/hooks/useAttachments';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -125,6 +128,7 @@ const SECTIONS: Array<{ id: BookingSection; label: string; icon: LucideIcon }> =
     { id: 'atienden', label: 'Quién atiende', icon: Users },
     { id: 'disponibilidad', label: 'Disponibilidad', icon: CalendarDays },
     { id: 'reglas', label: 'Reglas', icon: AlarmClock },
+    { id: 'aprobacion', label: 'Aprobación y seguridad', icon: ShieldCheck },
     { id: 'campos', label: 'Campos de la lista', icon: ListChecks },
     { id: 'correos', label: 'Correos y recordatorios', icon: Mail },
     { id: 'publicar', label: 'Publicar', icon: Send },
@@ -643,6 +647,7 @@ function SectionEditor(p: SectionEditorProps): JSX.Element {
             {p.section === 'atienden' && <StaffEditor {...p} />}
             {p.section === 'disponibilidad' && <AvailabilityEditor {...p} />}
             {p.section === 'reglas' && <RulesEditor {...p} />}
+            {p.section === 'aprobacion' && <ApprovalEditor {...p} />}
             {p.section === 'campos' && <FieldsEditor {...p} />}
             {p.section === 'correos' && <EmailsEditor {...p} />}
             {p.section === 'publicar' && <PublishEditor {...p} />}
@@ -655,6 +660,7 @@ const SECTION_HINTS: Record<BookingSection, string> = {
     atienden: __('Las personas del equipo (las que pueden editar esta lista) o los recursos —una sala, un consultorio— que atienden las citas.'),
     disponibilidad: __('El horario de cada uno, en la zona horaria de la empresa. Los días con otro horario o cerrados van en «Días especiales».'),
     reglas: __('Cuánto margen dejar entre citas, con cuánta anticipación se puede agendar y hasta cuándo.'),
+    aprobacion: __('Si alguien del equipo aprueba cada cita antes de confirmarla, y cómo se protege la página de reservas falsas.'),
     campos: __('En qué campo de la lista se guarda cada dato de la cita, y qué más se le pregunta al cliente.'),
     correos: __('El correo de confirmación (con el archivo para agregarla al calendario), los recordatorios y lo que ve al terminar.'),
     publicar: __('Cómo se ve la página, dónde se puede insertar y su enlace.'),
@@ -1043,6 +1049,138 @@ const MAPPING_LABELS: Record<BookingMappingKey, { label: string; hint?: string }
     meeting_url_field_id: { label: 'Enlace de la reunión', hint: 'Un campo Enlace o Texto: guarda el enlace de la videollamada de cada cita (Meet, Teams o el fijo).' },
 };
 
+const APPROVAL_HOURS = [2, 4, 8, 12, 24, 48, 72, 168];
+
+function approvalHoursLabel(h: number): string {
+    if (h < 24) return sprintf(__('%d horas'), h);
+    const d = h / 24;
+    return d === 1 ? __('1 día') : d === 7 ? __('1 semana') : sprintf(__('%d días'), d);
+}
+
+/**
+ * v0.1.353 — Aprobación de citas y seguridad de la página: si alguien del
+ * equipo aprueba cada cita (o sólo la primera de cada cliente), quién, en
+ * cuánto tiempo y qué pasa si nadie decide; y el código por correo y los
+ * correos temporales.
+ */
+function ApprovalEditor({ config, onChange, options }: SectionEditorProps): JSX.Element {
+    const a = config.approval;
+    const s = config.settings;
+    const setA = (patch: Partial<BookingConfig['approval']>): void => onChange({ ...config, approval: { ...a, ...patch } });
+    const setS = (patch: Partial<BookingConfig['settings']>): void => onChange({ ...config, settings: { ...s, ...patch } });
+    const perService = config.services.filter((x) => x.active && x.approval !== 'inherit');
+    const on = a.mode !== 'none' || perService.some((x) => x.approval !== 'none');
+    const chosen = new Set(a.approver_user_ids);
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-tour="booking-approval">
+            <Section title={__('Aprobación de las citas')}>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" role="radiogroup" aria-label={__('Aprobación de las citas')} data-testid="booking-approval-mode">
+                    {BOOKING_APPROVAL_MODES.map((m) => (
+                        <label
+                            key={m}
+                            className={cn(
+                                'imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-px-3 imcrm-py-2',
+                                a.mode === m ? 'imcrm-border-primary imcrm-bg-primary/5' : 'imcrm-border-border hover:imcrm-bg-accent/50',
+                            )}
+                        >
+                            <input type="radio" name="booking-approval-mode" className="imcrm-mt-0.5" checked={a.mode === m} onChange={() => setA({ mode: m })} value={m} />
+                            <span className="imcrm-flex imcrm-flex-col">
+                                <span className="imcrm-text-sm imcrm-font-medium">{__(BOOKING_APPROVAL_MODE_LABELS[m])}</span>
+                                <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                                    {m === 'none'
+                                        ? __('Cada reserva queda confirmada al instante.')
+                                        : m === 'all'
+                                          ? __('Cada reserva queda «Por confirmar» hasta que alguien la apruebe. Mientras tanto, el horario queda apartado.')
+                                          : __('La primera cita de cada correo espera la aprobación; las siguientes se confirman solas.')}
+                                </span>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+                {perService.length > 0 && (
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="booking-approval-per-service">
+                        {sprintf(__('Con su propia regla: %s.'), perService.map((x) => `${x.name} (${__(BOOKING_APPROVAL_MODE_LABELS[x.approval as 'none'])})`).join(', '))}
+                    </p>
+                )}
+            </Section>
+            {on && (
+                <Section title={__('Quién aprueba')}>
+                    <Check label={__('Quien atiende la cita puede aprobarla')} checked={a.staff_approves} onChange={(v) => setA({ staff_approves: v })} testId="booking-approval-staff" />
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="booking-approvers">
+                        <span className="imcrm-text-xs imcrm-font-medium">{__('Y también estas personas')}</span>
+                        {options.members.length === 0 && <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('No hay personas del equipo que puedan trabajar esta lista.')}</span>}
+                        <div className="imcrm-flex imcrm-max-h-48 imcrm-flex-col imcrm-gap-0.5 imcrm-overflow-y-auto">
+                            {options.members.map((m) => (
+                                <Check
+                                    key={m.id}
+                                    label={m.name.trim() || m.email}
+                                    checked={chosen.has(m.id)}
+                                    onChange={(v) => setA({ approver_user_ids: v ? [...a.approver_user_ids, m.id] : a.approver_user_ids.filter((x) => x !== m.id) })}
+                                    testId={`booking-approver-${m.id}`}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Quien administra la lista siempre puede aprobar. Les llega un aviso con cada cita por confirmar, y la aprueban o rechazan desde la ficha del registro.')}
+                    </p>
+                </Section>
+            )}
+            {on && (
+                <Section title={__('Plazo para decidir')}>
+                    <Field label={__('Hay que decidir antes de')} hint={__('Nunca pasa del inicio de la cita.')}>
+                        <Select value={a.hours} onChange={(e) => setA({ hours: Number(e.target.value) })} data-testid="booking-approval-hours">
+                            {(APPROVAL_HOURS.includes(a.hours) ? APPROVAL_HOURS : [...APPROVAL_HOURS, a.hours].sort((x, y) => x - y)).map((h) => (
+                                <option key={h} value={h}>
+                                    {approvalHoursLabel(h)}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+                    <Segmented
+                        label={__('Si nadie decide a tiempo')}
+                        value={a.on_timeout}
+                        options={[
+                            { value: 'decline', label: __('Se rechaza') },
+                            { value: 'approve', label: __('Se confirma') },
+                        ]}
+                        onChange={(v) => setA({ on_timeout: v as 'decline' | 'approve' })}
+                    />
+                    <Field label={__('Lo que ve el cliente al pedirla')}>
+                        <Textarea rows={2} value={s.pending_message} onChange={(e) => setS({ pending_message: e.target.value })} data-testid="booking-pending-message" />
+                    </Field>
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Le llega un correo «Recibimos tu solicitud», y otro cuando se confirma o se rechaza (con el motivo, si lo escriben). La cita va al calendario de quien atiende recién al aprobarla.')}
+                    </p>
+                </Section>
+            )}
+            <Section title={__('Seguridad de la página')}>
+                <Check
+                    label={__('Pedir que confirme su correo con un código')}
+                    checked={s.verify_email}
+                    onChange={(v) => setS({ verify_email: v })}
+                    testId="booking-verify-email"
+                />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Antes de agendar le llega un código de 6 números a su correo. Así nadie reserva con el correo de otra persona. Recomendado si las citas se aprueban «sólo la primera vez».')}
+                </p>
+                <Check
+                    label={__('No aceptar correos temporales')}
+                    checked={s.block_disposable_email}
+                    onChange={(v) => setS({ block_disposable_email: v })}
+                    testId="booking-block-disposable"
+                />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Rechaza los correos que duran unos minutos (mailinator, yopmail y otros), que suelen usarse para reservas falsas.')}
+                </p>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Siempre activo: un mismo correo no puede pedir más de 5 citas por hora, y el enlace de cada cita deja de servir para hacer cambios cuando llega uno nuevo.')}
+                </p>
+            </Section>
+        </div>
+    );
+}
+
 function FieldsEditor({ config, onChange, fields }: SectionEditorProps): JSX.Element {
     const statusField = config.mapping.status_field_id !== null ? fields.find((f) => f.id === config.mapping.status_field_id) : undefined;
     const statusOptions = statusField ? extractFieldOptions(statusField) : [];
@@ -1070,7 +1208,7 @@ function FieldsEditor({ config, onChange, fields }: SectionEditorProps): JSX.Ele
             })}
             {statusField && (
                 <Section title={__('Valores del estado')}>
-                    {(['confirmed', 'rescheduled', 'cancelled'] as BookingStatus[]).map((st) => {
+                    {(['confirmed', 'rescheduled', 'cancelled', ...(config.approval.mode !== 'none' || config.services.some((x) => x.approval === 'all' || x.approval === 'new_clients') ? (['pending', 'declined'] as const) : [])] as BookingStatus[]).map((st) => {
                         const k = `status_${st}` as const;
                         return (
                             <Field key={st} label={__(BOOKING_STATUS_LABELS[st])}>

@@ -121,6 +121,9 @@ const CSS = `
   .done { text-align: center; padding: 8px 0 4px; }
   .tick { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 10px; }
   .tick.x { background: #f2f4f7; color: var(--muted); }
+  .tick.wait { background: #f3ecfe; color: #6d28d9; }
+  .badge-pending { display: inline-block; margin: 0 0 12px; padding: 3px 10px; border-radius: 99px; background: #f3ecfe; color: #5b21b6; font-size: 13px; font-weight: 600; }
+  .code-input { font-size: 26px !important; letter-spacing: 10px; text-align: center; font-variant-numeric: tabular-nums; max-width: 240px; }
   .done .summary { text-align: left; margin-top: 14px; }
   .muted { color: var(--muted); }
   .small { font-size: 13px; }
@@ -210,7 +213,9 @@ const CLIENT_JS = String.raw`
   try { visitorTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) {}
   var st = {
     step: 'service', service: null, duration: null, staff: 'any', month: null, day: null, slot: null,
-    showTz: null, values: {}, busy: false, cache: {}, alert: '', errors: {}, done: null, cancelOpen: false
+    showTz: null, values: {}, busy: false, cache: {}, alert: '', errors: {}, done: null, cancelOpen: false,
+    // v0.1.353 — el código del correo: a qué correo se mandó y la prueba que devuelve el servidor.
+    codeSent: null, proof: null, codeValue: ''
   };
   var captchaToken = null, captchaWidget = null;
   var pvReq = 0, pvWait = {};
@@ -353,6 +358,7 @@ const CLIENT_JS = String.raw`
   }
   function go(step) { st.step = step; st.alert = ''; render(); try { root.scrollIntoView({ block: 'start' }); } catch (e) {} reportHeight(); }
   function back() {
+    if (st.step === 'code') { go('details'); return; }
     var s = steps(), i = s.indexOf(st.step);
     if (i > 0) go(s[i - 1]);
     else if (MODE === 'manage') { st.step = 'summary'; render(); }
@@ -373,9 +379,9 @@ const CLIENT_JS = String.raw`
   }
 
   function stepBar() {
-    var s = steps(), i = s.indexOf(st.step);
+    var s = steps(), i = s.indexOf(st.step === 'code' ? 'details' : st.step);
     var bar = el('div', { cls: 'steps' });
-    var canBack = i > 0 || MODE === 'manage';
+    var canBack = i > 0 || MODE === 'manage' || st.step === 'code';
     bar.appendChild(canBack ? el('button', { type: 'button', cls: 'back', text: '\u2190 Volver', on: { click: back }, 'data-testid': 'booking-back' }) : el('span'));
     if (i >= 0) bar.appendChild(el('span', { text: 'Paso ' + (i + 1) + ' de ' + s.length }));
     return bar;
@@ -680,8 +686,9 @@ const CLIENT_JS = String.raw`
     var captchaBox = null;
     if (meta.captcha && !PREVIEW) { captchaBox = el('div', { cls: 'captcha' }); form.appendChild(captchaBox); }
     if (meta.captcha && PREVIEW) form.appendChild(el('div', { cls: 'pv', text: 'Aquí va la verificación anti-robots.' }));
+    if (meta.verify_email) form.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-verify-note', text: 'Para terminar, te enviaremos un código a tu correo.' }));
     if (st.alert) form.appendChild(el('div', { cls: 'alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
-    var submit = el('button', { type: 'submit', cls: 'btn', text: st.busy ? 'Agendando…' : 'Confirmar cita', disabled: st.busy, 'data-testid': 'booking-submit' });
+    var submit = el('button', { type: 'submit', cls: 'btn', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : 'Confirmar cita', disabled: st.busy, 'data-testid': 'booking-submit' });
     form.appendChild(el('div', { cls: 'actions' }, [submit]));
     form.addEventListener('submit', function (e) { e.preventDefault(); submitBooking(); });
     root.appendChild(form);
@@ -716,6 +723,8 @@ const CLIENT_JS = String.raw`
     if (meta.data_consent && st.values.__consent !== true) { st.errors.__consent = 'Para agendar, acepta la autorización para el tratamiento de tus datos personales.'; bad = true; }
     if (bad) { st.alert = 'Revisa los datos marcados.'; render(); return; }
     if (PREVIEW) { st.done = { preview: true }; st.step = 'done'; render(); return; }
+    // v0.1.353 — primero el código del correo (si la página lo pide y todavía no se confirmó ESE correo).
+    if (meta.verify_email && !hasProof()) { requestCode(); return; }
     var values = {};
     (meta.questions || []).forEach(function (q) { if (q.type === 'field' && visible(q) && st.values[q.key] !== undefined) values[q.key] = st.values[q.key]; });
     var body = {
@@ -726,6 +735,7 @@ const CLIENT_JS = String.raw`
     if ((st.values.__phone || '').trim()) body.phone = st.values.__phone.trim();
     if (meta.data_consent) { body.consent = st.values.__consent === true; body.consent_version = meta.data_consent.version; }
     if (meta.captcha) body.captcha = captchaToken || '';
+    if (hasProof()) body.email_proof = st.proof.value;
     st.busy = true; st.alert = ''; render();
     readyStamp()
       .then(function (stamp) {
@@ -745,6 +755,7 @@ const CLIENT_JS = String.raw`
         var msg = (res.body && res.body.message) || 'No pudimos agendar tu cita. Prueba de nuevo.';
         var code = res.body && res.body.code;
         if (code === 'booking_stale') stampReq = null;
+        if (code === 'booking_email_unverified') { st.proof = null; requestCode(); return; }
         if (code === 'booking_slot_taken') {
           // Otro lo tomó un segundo antes: de vuelta a los horarios (frescos).
           st.cache = {}; st.slot = null; st.step = 'date'; st.alert = msg; render();
@@ -761,13 +772,80 @@ const CLIENT_JS = String.raw`
       .catch(function () { st.busy = false; st.alert = 'No hay conexión. Revisa tu internet y vuelve a intentar.'; render(); });
   }
 
+  // ── Código del correo (v0.1.353) ──
+  function currentEmail() { return String(st.values.__email || '').trim().toLowerCase(); }
+  function hasProof() { return !!(st.proof && st.proof.email === currentEmail()); }
+  function requestCode() {
+    if (st.busy) return;
+    st.busy = true; st.alert = ''; render();
+    readyStamp()
+      .then(function (stamp) { return post('/code', { email: String(st.values.__email || '').trim(), stamp: stamp }); })
+      .then(function (res) {
+        st.busy = false;
+        if (res.status >= 200 && res.status < 300) {
+          st.codeSent = { email: currentEmail(), minutes: (res.body && res.body.minutes) || 10 };
+          st.codeValue = ''; st.step = 'code'; render();
+          var c = document.getElementById('q_code'); if (c) try { c.focus(); } catch (e) {}
+          return;
+        }
+        if (res.body && res.body.code === 'booking_stale') stampReq = null;
+        if (res.body && res.body.data && res.body.data.errors) { Object.keys(res.body.data.errors).forEach(function (k) { st.errors[k] = res.body.data.errors[k]; }); }
+        st.alert = (res.body && res.body.message) || 'No pudimos enviarte el código. Prueba de nuevo.';
+        st.step = 'details'; render();
+      })
+      .catch(function () { st.busy = false; st.alert = 'No hay conexión. Revisa tu internet y vuelve a intentar.'; render(); });
+  }
+  function verifyCode() {
+    if (st.busy) return;
+    var code = String(st.codeValue || '').replace(/\D/g, '');
+    if (code.length !== 6) { st.alert = 'El código tiene 6 números.'; render(); return; }
+    st.busy = true; st.alert = ''; render();
+    post('/verify-code', { email: String(st.values.__email || '').trim(), code: code })
+      .then(function (res) {
+        st.busy = false;
+        if (res.status >= 200 && res.status < 300 && res.body && res.body.proof) {
+          st.proof = { email: currentEmail(), value: res.body.proof };
+          st.step = 'details';
+          submitBooking();
+          return;
+        }
+        var c2 = res.body && res.body.code;
+        st.alert = (res.body && res.body.message) || 'No pudimos comprobar el código.';
+        if (c2 === 'booking_code_locked' || c2 === 'booking_code_expired') st.codeSent = st.codeSent ? { email: st.codeSent.email, minutes: st.codeSent.minutes, expired: true } : null;
+        render();
+      })
+      .catch(function () { st.busy = false; st.alert = 'No hay conexión. Revisa tu internet y vuelve a intentar.'; render(); });
+  }
+  function renderCode() {
+    root.appendChild(summaryBox(true));
+    root.appendChild(el('h2', { text: 'Confirma tu correo' }));
+    var sent = st.codeSent || { email: currentEmail(), minutes: 10 };
+    root.appendChild(el('p', { cls: 'muted', text: 'Te enviamos un código de 6 números a ' + sent.email + '. Escríbelo para terminar de agendar (vence en ' + sent.minutes + ' minutos).' }));
+    var form = el('form', { novalidate: true, 'data-testid': 'booking-code-form' });
+    var input = el('input', { type: 'text', id: 'q_code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', cls: 'code-input', placeholder: '······', value: st.codeValue || '', 'aria-label': 'Código de 6 números', 'data-testid': 'booking-code' });
+    input.addEventListener('input', function () { st.codeValue = input.value.replace(/\D/g, '').slice(0, 6); if (input.value !== st.codeValue) input.value = st.codeValue; if (st.codeValue.length === 6 && !st.busy) verifyCode(); });
+    form.appendChild(el('div', { cls: 'field' }, [input]));
+    if (st.alert) form.appendChild(el('div', { cls: 'alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
+    var ok = el('button', { type: 'submit', cls: 'btn', text: st.busy ? 'Comprobando…' : 'Confirmar y agendar', disabled: st.busy, 'data-testid': 'booking-code-submit' });
+    var again = el('button', { type: 'button', cls: 'btn ghost', text: 'Enviarme otro código', disabled: st.busy, 'data-testid': 'booking-code-resend', on: { click: function () { requestCode(); } } });
+    var other = el('button', { type: 'button', cls: 'linkbtn', text: 'Usar otro correo', on: { click: function () { st.codeSent = null; st.alert = ''; go('details'); } } });
+    form.appendChild(el('div', { cls: 'actions' }, [ok, again]));
+    form.appendChild(other);
+    form.addEventListener('submit', function (e) { e.preventDefault(); verifyCode(); });
+    root.appendChild(form);
+  }
+
   // ── Confirmación ──
   function renderDone() {
     var a = st.done || {};
-    var box = el('div', { cls: 'done', 'data-testid': 'booking-done' });
-    box.appendChild(el('div', { cls: 'tick', text: '\u2713', 'aria-hidden': 'true' }));
-    box.appendChild(el('h2', { text: a.preview ? 'Vista previa: así se confirma la cita' : '¡Tu cita quedó agendada!' }));
-    if (meta.success_message) box.appendChild(el('p', { cls: 'muted', text: meta.success_message }));
+    var waiting = a.status === 'pending';
+    var box = el('div', { cls: 'done', 'data-testid': 'booking-done', 'data-status': a.status || '' });
+    box.appendChild(el('div', { cls: waiting ? 'tick wait' : 'tick', text: waiting ? '\u23F3' : '\u2713', 'aria-hidden': 'true' }));
+    box.appendChild(el('h2', { text: a.preview ? 'Vista previa: así se confirma la cita' : waiting ? 'Recibimos tu solicitud' : '¡Tu cita quedó agendada!' }));
+    if (waiting) {
+      box.appendChild(el('span', { cls: 'badge-pending', 'data-testid': 'booking-pending', text: 'Por confirmar' }));
+      if (meta.pending_message) box.appendChild(el('p', { cls: 'muted', text: meta.pending_message }));
+    } else if (meta.success_message) box.appendChild(el('p', { cls: 'muted', text: meta.success_message }));
     if (a.preview) {
       box.appendChild(summaryBox(true));
       box.appendChild(el('div', { cls: 'pv', text: 'En la vista previa no se agenda nada.' }));
@@ -781,12 +859,13 @@ const CLIENT_JS = String.raw`
       });
       box.appendChild(sum);
       var acts = el('div', { cls: 'actions', style: 'justify-content:center' });
-      var join = meetingButton(a);
+      var join = waiting ? null : meetingButton(a);
       if (join) acts.appendChild(join);
-      acts.appendChild(el('a', { cls: join ? 'btn ghost' : 'btn', href: a.ics_url, 'data-testid': 'booking-ics', text: 'Agregar a mi calendario' }));
+      // Una solicitud todavía no va al calendario del cliente.
+      if (!waiting) acts.appendChild(el('a', { cls: join ? 'btn ghost' : 'btn', href: a.ics_url, 'data-testid': 'booking-ics', text: 'Agregar a mi calendario' }));
       if (a.can_reschedule || a.can_cancel) acts.appendChild(el('a', { cls: 'btn ghost', href: a.manage_url, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-manage-link', text: 'Cambiar o cancelar' }));
       box.appendChild(acts);
-      if (!join && a.location_kind === 'video') box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-meeting-later', text: 'El enlace de la videollamada te llega en el correo de confirmación.' }));
+      if (!join && !waiting && a.location_kind === 'video') box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-meeting-later', text: 'El enlace de la videollamada te llega en el correo de confirmación.' }));
     }
     root.appendChild(box);
   }
@@ -801,10 +880,15 @@ const CLIENT_JS = String.raw`
   }
   function renderSummary() {
     var a = manage.appointment;
-    if (a.status === 'cancelled') {
-      root.appendChild(el('div', { cls: 'done' }, [el('div', { cls: 'tick x', text: '\u2715' }), el('h2', { text: 'Esta cita está cancelada' })]));
+    if (a.status === 'cancelled' || a.status === 'declined') {
+      root.appendChild(el('div', { cls: 'done', 'data-testid': 'booking-gone' }, [el('div', { cls: 'tick x', text: '\u2715' }), el('h2', { text: a.status === 'declined' ? 'Esta cita no fue confirmada' : 'Esta cita está cancelada' })]));
       root.appendChild(apptSummary(a));
+      if (a.status === 'declined' && meta && !meta.closed) root.appendChild(el('p', { cls: 'muted', text: 'El horario quedó libre. Si quieres, agenda otra desde la página de la empresa.' }));
       return;
+    }
+    if (a.status === 'pending') {
+      root.appendChild(el('span', { cls: 'badge-pending', 'data-testid': 'booking-pending', text: 'Por confirmar' }));
+      root.appendChild(el('p', { cls: 'muted', text: (meta && meta.pending_message) || 'Te avisaremos por correo cuando la confirmen.' }));
     }
     root.appendChild(apptSummary(a));
     if (st.alert) root.appendChild(el('div', { cls: st.alertOk ? 'note-ok' : 'alert', role: 'status', text: st.alert, 'data-testid': 'booking-alert' }));
@@ -812,12 +896,12 @@ const CLIENT_JS = String.raw`
     var acts = el('div', { cls: 'actions' });
     var joinM = meetingButton(a);
     if (joinM) acts.appendChild(joinM);
-    acts.appendChild(el('a', { cls: 'btn ghost', href: a.ics_url, text: 'Agregar a mi calendario' }));
+    if (a.status !== 'pending') acts.appendChild(el('a', { cls: 'btn ghost', href: a.ics_url, text: 'Agregar a mi calendario' }));
     if (a.can_reschedule) acts.appendChild(el('button', { type: 'button', cls: 'btn', text: 'Cambiar el horario', 'data-testid': 'booking-reschedule', on: { click: function () {
       st.service = manage.service_id; st.staff = manage.staff_id || 'any'; st.month = null; st.day = null; st.cache = {};
       var s = steps(); go(s.indexOf('staff') >= 0 ? 'staff' : 'date');
     } } }));
-    if (a.can_cancel) acts.appendChild(el('button', { type: 'button', cls: 'btn danger', text: 'Cancelar la cita', 'data-testid': 'booking-cancel', on: { click: function () { st.cancelOpen = true; render(); } } }));
+    if (a.can_cancel) acts.appendChild(el('button', { type: 'button', cls: 'btn danger', text: a.status === 'pending' ? 'Cancelar la solicitud' : 'Cancelar la cita', 'data-testid': 'booking-cancel', on: { click: function () { st.cancelOpen = true; render(); } } }));
     root.appendChild(acts);
     if (st.cancelOpen && a.can_cancel) {
       var reason = el('textarea', { id: 'q_reason', placeholder: 'Opcional: cuéntanos por qué', maxlength: '500' });
@@ -829,6 +913,13 @@ const CLIENT_JS = String.raw`
   function post(path, body) {
     return fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body || {}) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; }); });
+  }
+  // v0.1.353 — después de un cambio, el enlace viejo ya no sirve: la página pasa al nuevo.
+  function useLink(url) {
+    var m = /\/manage\/([^/?#]+)/.exec(String(url || ''));
+    if (!m) return;
+    API = '/api/v1/public/booking/manage/' + m[1];
+    try { if (!embedded) history.replaceState(null, '', '/api/v1/public/b/manage/' + m[1]); } catch (e) {}
   }
   function doCancel(reason) {
     st.busy = true; render();
@@ -848,7 +939,12 @@ const CLIENT_JS = String.raw`
     var yes = el('button', { type: 'button', cls: 'btn', text: 'Sí, cambiar', 'data-testid': 'booking-reschedule-confirm', on: { click: function () {
       yes.disabled = true; yes.textContent = 'Cambiando…';
       post('/reschedule', { start: s.start, staff_id: st.staff, time_zone: visitorTz }).then(function (res) {
-        if (res.status >= 200 && res.status < 300) { manage.appointment = res.body; st.alert = 'Listo: tu cita cambió de horario. Te enviamos la confirmación por correo.'; st.alertOk = true; st.step = 'summary'; render(); return; }
+        if (res.status >= 200 && res.status < 300) {
+          manage.appointment = res.body;
+          useLink(res.body.manage_url);
+          st.alert = res.body.status === 'pending' ? 'Listo: cambiamos el horario de tu solicitud. Sigue por confirmar.' : 'Listo: tu cita cambió de horario. Te enviamos la confirmación por correo.';
+          st.alertOk = true; st.step = 'summary'; render(); return;
+        }
         st.alert = (res.body && res.body.message) || 'No pudimos cambiar la cita.'; st.alertOk = false;
         if (res.body && res.body.code === 'booking_slot_taken') { st.cache = {}; st.step = 'date'; render(); return; }
         st.step = 'summary'; render();
@@ -878,6 +974,7 @@ const CLIENT_JS = String.raw`
     else if (st.step === 'staff') renderStaff();
     else if (st.step === 'date') renderDate();
     else if (st.step === 'details') renderDetails();
+    else if (st.step === 'code') renderCode();
     reportHeight();
   }
 

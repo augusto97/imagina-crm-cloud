@@ -150,6 +150,7 @@ const pageSpec = z.object({
                 buffer_after_min: z.number().int().min(0).max(240).optional().describe('Margen después propio de este servicio'),
                 min_notice_min: z.number().int().min(0).max(86_400).optional().describe('Aviso mínimo propio de este servicio (minutos)'),
                 location: locationSpec.optional(),
+                approval: z.enum(['inherit', 'none', 'all', 'new_clients']).optional().describe('Aprobación propia del servicio (inherit = la de la página)'),
             }),
         )
         .max(30)
@@ -178,6 +179,19 @@ const pageSpec = z.object({
         })
         .optional(),
     writes: writesSpec.optional(),
+    approval: z
+        .object({
+            mode: z.enum(['none', 'all', 'new_clients']).optional().describe('none = se confirman solas; all = alguien del equipo aprueba cada cita (queda «Por confirmar» y aparta el horario); new_clients = sólo la primera cita de cada correo'),
+            hours: z.number().int().min(1).max(168).optional().describe('Horas para decidir (nunca pasa del inicio de la cita)'),
+            on_timeout: z.enum(['decline', 'approve']).optional().describe('Si nadie decide a tiempo: se rechaza (por defecto) o se confirma'),
+            staff_approves: z.boolean().optional().describe('Quien atiende la cita puede aprobarla (por defecto sí)'),
+            approver_user_ids: z.array(z.number().int().positive()).max(20).optional().describe('Personas que aprueban (ids de list_members); quien administra la lista siempre puede'),
+            pending_message: z.string().max(2000).optional().describe('Lo que ve el cliente al pedirla'),
+        })
+        .optional()
+        .describe('Aprobación de las citas. Por servicio: services[].approval'),
+    verify_email: z.boolean().optional().describe('El cliente confirma su correo con un código de 6 números antes de agendar (recomendado con approval.mode new_clients)'),
+    block_disposable_email: z.boolean().optional().describe('No aceptar correos temporales (mailinator, yopmail…)'),
     questions: z.array(z.string().max(63)).max(30).optional().describe('Slugs de los campos que se le preguntan además (motivo, empresa…)'),
     reminders_min_before: z.array(z.number().int().min(10).max(20_160)).max(5).optional().describe('Recordatorios por correo al cliente, minutos antes (por defecto 1440 y 60)'),
     confirm_email: z.boolean().optional(),
@@ -265,6 +279,7 @@ export class BookingTools implements AiProposalApplier {
                     buffer_after_min: s.buffer_after_min ?? prev?.buffer_after_min ?? null,
                     min_notice_min: s.min_notice_min ?? prev?.min_notice_min ?? null,
                     location: s.location ? this.buildLocation(s.location, `services.${s.name}`) : (prev?.location ?? {}),
+                    approval: s.approval ?? prev?.approval ?? 'inherit',
                     active: true,
                 });
             });
@@ -284,6 +299,19 @@ export class BookingTools implements AiProposalApplier {
             config.rules = { ...config.rules, ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined)) };
         }
 
+        if (input.approval) {
+            const a = input.approval;
+            if (a.approver_user_ids) {
+                const bad = a.approver_user_ids.filter((id) => !memberIds.has(id));
+                if (bad.length > 0) throw new AiToolError(`approval.approver_user_ids: ${bad.join(', ')} no son personas del equipo que puedan trabajar esta lista (usa list_members).`);
+            }
+            const { pending_message: pendingMessage, ...rest } = a;
+            config.approval = { ...config.approval, ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) };
+            if (pendingMessage !== undefined) config.settings = { ...config.settings, pending_message: pendingMessage };
+        }
+        if (input.verify_email !== undefined) config.settings = { ...config.settings, verify_email: input.verify_email };
+        if (input.block_disposable_email !== undefined) config.settings = { ...config.settings, block_disposable_email: input.block_disposable_email };
+
         if (input.writes) {
             for (const [key, slug] of Object.entries(input.writes) as Array<[keyof typeof WRITE_KEYS, string | undefined]>) {
                 if (slug === undefined) continue;
@@ -295,6 +323,8 @@ export class BookingTools implements AiProposalApplier {
                     config.mapping.status_confirmed = null;
                     config.mapping.status_rescheduled = null;
                     config.mapping.status_cancelled = null;
+                    config.mapping.status_pending = null;
+                    config.mapping.status_declined = null;
                 }
                 config.mapping[mk] = f.id;
             }
@@ -360,6 +390,25 @@ export class BookingTools implements AiProposalApplier {
                     .join(', ') || '(ninguno)',
         });
         changes.push({ label: 'Recordatorios', from: null, to: clean.notifications.reminders.map((x) => minutesLabel(x.minutes_before)).join(', ') || 'ninguno' });
+        // v0.1.353 — aprobación y seguridad.
+        const ap = clean.approval;
+        changes.push({
+            label: 'Aprobación',
+            from: null,
+            to:
+                ap.mode === 'none' && !clean.services.some((x) => x.approval === 'all' || x.approval === 'new_clients')
+                    ? 'se confirman solas'
+                    : [
+                          ap.mode === 'all' ? 'alguien aprueba cada cita' : ap.mode === 'new_clients' ? 'sólo la primera cita de cada cliente' : 'según el servicio',
+                          `${ap.hours} h para decidir (si no, ${ap.on_timeout === 'approve' ? 'se confirma' : 'se rechaza'})`,
+                          [ap.staff_approves ? 'quien atiende' : null, ...ap.approver_user_ids.map((id) => names.get(id) ?? `#${id}`)].filter(Boolean).join(', ') || 'quien administra la lista',
+                      ].join(' · '),
+        });
+        changes.push({
+            label: 'Seguridad',
+            from: null,
+            to: [clean.settings.verify_email ? 'código por correo' : null, clean.settings.block_disposable_email ? 'sin correos temporales' : null].filter(Boolean).join(' · ') || 'lo básico (anti-robots y frenos por correo)',
+        });
         if (input.publish !== undefined) changes.push({ label: 'Publicada', from: current ? (current.enabled ? 'sí' : 'no') : 'no', to: input.publish ? 'sí' : 'no' });
         if (problems.length > 0 && input.publish !== true) changes.push({ label: 'Falta para publicar', from: null, to: problems.join(' ') });
 

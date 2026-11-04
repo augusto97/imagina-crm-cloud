@@ -553,7 +553,7 @@ export const bookingSettingsSchema = z.object({
     pending_message: z
         .string()
         .max(2000)
-        .default('Recibimos tu solicitud. Te avisaremos por correo cuando la confirmemos.'),
+        .default('Te avisaremos por correo cuando la confirmemos.'),
 });
 export type BookingSettings = z.infer<typeof bookingSettingsSchema>;
 

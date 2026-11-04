@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronDown, Copy, ImagePlus, Loader2, Plus, Trash2, Users, X } from 'lucide-react';
 import {
+    BOOKING_APPROVAL_MODES,
+    BOOKING_APPROVAL_MODE_LABELS,
     BOOKING_DURATION_PRESETS,
     BOOKING_MAX_SEATS,
     BOOKING_SLOT_INTERVALS,
@@ -286,6 +288,16 @@ export function ServiceCard({
                 </p>
                 {svc.seats > 1 && <Check label={__('Mostrarle al cliente cuántos cupos quedan')} checked={svc.show_seats_left} onChange={(v) => set({ show_seats_left: v })} />}
             </div>
+            <Field label={__('Aprobación de las citas')} hint={__('Si este servicio necesita que alguien del equipo apruebe cada cita antes de confirmarla. Se configura en «Aprobación y seguridad».')}>
+                <Select value={svc.approval} onChange={(e) => set({ approval: e.target.value as BookingServiceItem['approval'] })} data-testid="service-approval">
+                    <option value="inherit">{sprintf(__('Lo de la página (%s)'), __(BOOKING_APPROVAL_MODE_LABELS[config.approval.mode]))}</option>
+                    {BOOKING_APPROVAL_MODES.map((m) => (
+                        <option key={m} value={m}>
+                            {__(BOOKING_APPROVAL_MODE_LABELS[m])}
+                        </option>
+                    ))}
+                </Select>
+            </Field>
             <Fold title={__('Horario propio del servicio')} summary={svc.hours ? __('Sólo en sus franjas') : __('El de quien atiende')} defaultOpen={svc.hours !== null} testId="service-hours">
                 <Check
                     label={__('Ofrecer este servicio sólo en ciertas franjas')}
