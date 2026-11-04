@@ -12,7 +12,7 @@ import {
     type IntegrationDef,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, Wallet } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, Wallet } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
@@ -414,7 +414,9 @@ function ConnectedRow({
                     )}
                 </p>
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {c.usage_count === 0
+                    {c.purpose === 'agenda'
+                        ? __('Es tu calendario para la agenda de citas: se maneja en Ajustes → Cuenta → Mi calendario.')
+                        : c.usage_count === 0
                         ? __('Todavía no la usa ninguna automatización.')
                         : c.usage_count === 1
                           ? __('La usa 1 acción de automatización.')
@@ -432,6 +434,14 @@ function ConnectedRow({
                     </p>
                 )}
             </div>
+            {c.purpose === 'agenda' && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to="/settings?s=calendario" data-testid="imcrm-agenda-calendar-open">
+                        <CalendarDays className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Mi calendario')}
+                    </Link>
+                </Button>
+            )}
             {c.integration_key === 'woocommerce' && c.can_edit && (
                 <Button size="sm" variant="outline" asChild>
                     <Link to={`/settings/stores/${c.id}`} data-testid="imcrm-store-sync-open">

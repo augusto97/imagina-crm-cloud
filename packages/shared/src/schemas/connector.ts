@@ -373,6 +373,12 @@ export const connectionSchema = z.object({
     last_check_error: z.string().nullable(),
     /** Cuántas acciones de automatización la usan hoy. */
     usage_count: z.number().int().min(0),
+    /**
+     * v0.1.350 — Para qué existe: `agenda` = el calendario que una persona
+     * conectó en «Mi calendario» para sus citas (privado y sin acciones de
+     * automatización). Ausente = una conexión común.
+     */
+    purpose: z.enum(['agenda']).nullable().optional(),
     can_edit: z.boolean(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,

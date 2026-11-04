@@ -21,6 +21,7 @@ import { IncidentsPanel } from '@/cloud/components/IncidentsPanel';
 import { TrashPanel } from '@/cloud/components/TrashPanel';
 import { SecurityCard } from '@/admin/settings/SecurityCard';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
+import { MyAgendaCalendarCard } from '@/admin/settings/MyAgendaCalendarCard';
 import { PersonalDataCard } from '@/admin/settings/PersonalDataCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
@@ -227,6 +228,12 @@ export function SettingsPage(): JSX.Element {
                 {active === 'seguridad' && <SecurityCard />}
 
                 {active === 'avisos' && <NotificationPrefsCard />}
+                {/* v0.1.350 — el calendario propio de cada persona, para la agenda de citas. */}
+                {active === 'calendario' && (
+                    <PlanModuleGate module="booking">
+                        <MyAgendaCalendarCard />
+                    </PlanModuleGate>
+                )}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}
                 {/* Per-usuario: descarga/borrado de datos personales (GDPR). */}

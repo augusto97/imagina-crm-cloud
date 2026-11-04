@@ -135,7 +135,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                         copy: ['domain'],
                     },
                     {
-                        text: 'En «Acceso a los datos» (Data access) → «Agregar o quitar permisos»: pega estos permisos en «Agregar permisos manualmente» y guarda. gmail.send, calendar.events y spreadsheets aparecen como «sensibles» y drive.file como «no sensible»; ninguno es «restringido», así que NO hace falta la auditoría de seguridad paga (CASA).',
+                        text: 'En «Acceso a los datos» (Data access) → «Agregar o quitar permisos»: pega estos permisos en «Agregar permisos manualmente» y guarda. gmail.send, calendar.events, calendar.calendarlist.readonly y spreadsheets aparecen como «sensibles» y drive.file como «no sensible»; ninguno es «restringido», así que NO hace falta la auditoría de seguridad paga (CASA).',
                         link: { label: 'Acceso a los datos', url: `${G}/auth/scopes` },
                         copy: ['scopes_lines'],
                     },
@@ -379,7 +379,9 @@ export const SCOPE_JUSTIFICATIONS: Record<string, string> = {
     'https://www.googleapis.com/auth/gmail.send':
         'gmail.send: la app manda correos DESDE la cuenta de Gmail que conecta la empresa cuando una de sus automatizaciones lo indica (por ejemplo, avisarle a un cliente que su factura venció). Sólo envía: no lee, no busca ni guarda correos de la casilla. El usuario define el destinatario, el asunto y el texto en el editor de automatizaciones.',
     'https://www.googleapis.com/auth/calendar.events':
-        'calendar.events: la app crea un evento en el calendario de la cuenta conectada cuando una automatización lo indica (por ejemplo, agendar una cita al registrar una reserva). Además, si la empresa asocia ese calendario a una persona en su agenda de citas en línea, la app consulta los eventos de ese calendario y usa SÓLO su hora de inicio y de fin —no el título, la descripción ni los invitados— para no ofrecerles a los clientes los horarios en que esa persona ya está ocupada; y mueve o borra el evento que ella misma creó cuando el cliente reprograma o cancela su cita. No modifica ningún otro evento del calendario.',
+        'calendar.events: la app crea un evento en el calendario de la cuenta conectada cuando una automatización lo indica (por ejemplo, agendar una cita al registrar una reserva). Además, si la empresa asocia ese calendario a una persona en su agenda de citas en línea, la app consulta los eventos de ese calendario y usa SÓLO su hora de inicio y de fin —no el título, la descripción ni los invitados— para no ofrecerles a los clientes los horarios en que esa persona ya está ocupada; mueve o borra el evento que ella misma creó cuando el cliente reprograma o cancela su cita, le agrega una videollamada de Google Meet si la empresa lo pide, y revisa si quien atiende movió o borró en su calendario un evento creado por la app (mirando sólo el identificador, el inicio y el fin) para mover o cancelar esa cita. No modifica ningún otro evento del calendario.',
+    'https://www.googleapis.com/auth/calendar.calendarlist.readonly':
+        'calendar.calendarlist.readonly: cuando una persona conecta SU calendario para la agenda de citas (Ajustes → Cuenta → Mi calendario), la app le muestra la lista de sus calendarios —sólo el nombre y si puede escribir en cada uno— para que elija en cuáles mirar sus horarios ocupados y en cuál crear las citas. No cambia ni comparte la lista.',
     'https://www.googleapis.com/auth/spreadsheets':
         'spreadsheets: la app agrega una fila a la hoja de cálculo que el usuario elige (pegando su enlace) cuando una automatización lo indica, para exportar registros a Google Sheets. No lista ni abre otras hojas del usuario.',
     'https://www.googleapis.com/auth/drive.file':
@@ -402,7 +404,7 @@ export function videoScriptText(appName: string, appUrl: string): string {
         '4. Vuelve a la app: la conexión aparece como conectada.',
         '5. Abre una automatización con la acción «Enviar correo con Gmail», toca «Probar ahora» y muestra el correo recibido.',
         '6. Igual con «Crear evento en Google Calendar» (muestra el evento en el calendario) y «Agregar fila en Google Sheets» (muestra la fila nueva en la hoja).',
-        '7. Agenda de citas: en Ajustes de una lista → Agenda, asocia el calendario a quien atiende, crea en Google Calendar un evento a una hora de su horario y muestra que ese horario ya no aparece en la página pública de la agenda; agenda una cita y muestra el evento que se crea en el calendario.',
+        '7. Agenda de citas: en Ajustes → Cuenta → Mi calendario conecta Google Calendar y muestra la lista de calendarios para elegir; crea en Google Calendar un evento a una hora de su horario y muestra que ese horario ya no aparece en la página pública de la agenda; agenda una cita y muestra el evento con su enlace de Google Meet; mueve ese evento en Google Calendar y muestra que la cita se movió en la app.',
         '8. Google Drive: conéctalo, elígelo en Ajustes → Almacenamiento, sube un archivo a un registro y muestra que aparece en la carpeta «Imagina Base» del Drive.',
         '9. Explica en voz alta o con subtítulos para qué se usa cada permiso.',
     ].join('\n');

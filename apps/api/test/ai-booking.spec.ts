@@ -104,7 +104,7 @@ describe('Asistente/MCP: agenda de citas', () => {
         const store = new ProposalsStore(redis);
         const comments = new CommentsService(tenantDb, new CommentsRepository(), lists, records, rt);
         const publicLists = new PublicListsService(pg.db, tenantDb, lists, null as never);
-        const booking = new BookingService(pg.db, tenantDb, lists, fields, new BookingAvailabilityService(tenantDb, null as never, NO_HOLIDAYS), NO_HOLIDAYS);
+        const booking = new BookingService(pg.db, tenantDb, lists, fields, new BookingAvailabilityService(tenantDb, null as never, NO_HOLIDAYS), NO_HOLIDAYS, null as never, { memberCalendars: () => Promise.resolve(new Map()) } as never);
         const structure = new StructureTools(
             tenantDb,
             lists,

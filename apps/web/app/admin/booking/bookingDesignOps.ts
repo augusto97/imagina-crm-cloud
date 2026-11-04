@@ -5,6 +5,7 @@ import {
     BOOKING_MAX_SERVICES,
     BOOKING_MAX_STAFF,
     bookableWindow,
+    bookingLocationPublic,
     bookingPriceLabel,
     bookingServiceSchema,
     bookingStaffSchema,
@@ -12,6 +13,8 @@ import {
     defaultBookingWeek,
     holidayCountryForTimeZone,
     serviceDurations,
+    staffOffers,
+    staffVideoProblem,
     isBookingQuestionType,
     newBookingItemId,
     newFormItemId,
@@ -24,6 +27,7 @@ import {
     type BookingQuestion,
     type BookingServiceItem,
     type BookingStaff,
+    type BookingStaffCalendars,
     type BookingTimeOff,
     type PublicBookingMeta,
 } from '@imagina-base/shared';
@@ -376,6 +380,7 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
                 price_label: bookingPriceLabel(x.price, ctx.numberFormat),
                 seats: x.seats,
                 show_seats_left: x.show_seats_left,
+                location: bookingLocationPublic(x.location, s.location),
             })),
         staff: staff.map((x) => ({
             id: x.id,
@@ -406,7 +411,31 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
 /** Lo que falta por sección del constructor (para el punto rojo de cada una). */
 export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'campos' | 'correos' | 'publicar';
 
-export function sectionProblems(config: BookingConfig, fields: readonly FieldLike[]): Partial<Record<BookingSection, string[]>> {
+/**
+ * v0.1.350 — Qué calendario tiene cada persona que atiende, desde lo que
+ * trae el editor (el «Mi calendario» de cada miembro y las conexiones de la
+ * empresa). Es lo que decide si puede crear la videollamada.
+ */
+export function staffCalendarsFrom(
+    config: BookingConfig,
+    members: ReadonlyArray<{ id: number; calendar?: { provider: 'google_calendar' | 'outlook' } | null }>,
+    calendars: ReadonlyArray<{ id: number; provider: 'google_calendar' | 'outlook' }>,
+): BookingStaffCalendars {
+    const out: BookingStaffCalendars = {};
+    for (const st of config.staff) {
+        if (st.kind !== 'user' || st.staff_user_id === null) out[st.id] = { provider: null };
+        else if (st.calendar_source === 'person') out[st.id] = { provider: members.find((m) => m.id === st.staff_user_id)?.calendar?.provider ?? null };
+        else out[st.id] = { provider: st.connection_id !== null ? (calendars.find((c) => c.id === st.connection_id)?.provider ?? null) : null };
+    }
+    return out;
+}
+
+export function sectionProblems(
+    config: BookingConfig,
+    fields: readonly FieldLike[],
+    opts: { staffCalendars?: BookingStaffCalendars; memberNames?: ReadonlyMap<number, string> } = {},
+): Partial<Record<BookingSection, string[]>> {
+    const staffCalendars = opts.staffCalendars;
     const out: Partial<Record<BookingSection, string[]>> = {};
     const push = (k: BookingSection, msg: string): void => {
         (out[k] ??= []).push(msg);
@@ -416,6 +445,26 @@ export function sectionProblems(config: BookingConfig, fields: readonly FieldLik
     for (const svc of config.services) {
         if (svc.active && svc.hours !== null && !svc.hours.some((d) => d.length > 0)) push('servicios', `«${svc.name}» tiene un horario propio vacío.`);
         if (svc.hours !== null && svc.hours.some((d) => dayProblem(d) !== null)) push('servicios', `El horario propio de «${svc.name}» tiene tramos que se pisan.`);
+    }
+    // v0.1.350 — dónde es cada cita.
+    for (const svc of config.services) {
+        if (!svc.active) continue;
+        const loc = svc.location;
+        if (loc.kind === 'link' && loc.url === '') push('servicios', `Escribe el enlace de la videollamada de «${svc.name}».`);
+        if (loc.url !== '' && !isHttpsUrl(loc.url)) push('servicios', `El enlace de «${svc.name}» tiene que empezar por https://.`);
+        if (loc.kind === 'in_person' && loc.address === '' && config.settings.location.trim() === '') push('servicios', `Escribe la dirección de «${svc.name}».`);
+        if (loc.kind === 'phone' && loc.phone === 'client' && config.settings.ask_phone === 'hidden') push('servicios', `«${svc.name}» es por teléfono: pide el teléfono del cliente (Campos de la lista).`);
+        if (loc.kind === 'phone' && loc.phone === 'company' && loc.phone_number === '') push('servicios', `Escribe el número al que llama el cliente para «${svc.name}».`);
+        if (loc.kind === 'video' && staffCalendars) {
+            for (const st of config.staff) {
+                if (!st.active || !staffOffers(st, svc.id)) continue;
+                const why = staffVideoProblem(st, loc.video, staffCalendars[st.id]?.provider ?? null);
+                if (why) push('atienden', `${staffLabelOf(st, opts.memberNames)} no puede atender «${svc.name}» por videollamada: ${why}.`);
+            }
+        }
+    }
+    for (const st of config.staff) {
+        if (st.meeting_url !== '' && !isHttpsUrl(st.meeting_url)) push('atienden', `El enlace de videollamada de ${staffLabelOf(st, opts.memberNames)} tiene que empezar por https://.`);
     }
     const r = config.rules;
     if (r.window_mode === 'range' && (r.range_start === null || r.range_end === null || r.range_start > r.range_end)) push('reglas', 'Elige desde y hasta qué fecha se puede agendar.');
@@ -451,4 +500,42 @@ function moveBy<T extends { id: string }>(items: readonly T[], id: string, delta
     const next = [...items];
     [next[i], next[j]] = [next[j]!, next[i]!];
     return next;
+}
+
+function staffLabelOf(st: BookingStaff, names?: ReadonlyMap<number, string>): string {
+    const n = st.name.trim() || (st.staff_user_id !== null ? (names?.get(st.staff_user_id) ?? '') : '');
+    return n !== '' ? `«${n}»` : st.kind === 'resource' ? 'Un recurso' : 'Una persona';
+}
+
+/** El mismo criterio que el servidor para un enlace (https, sin espacios ni comillas). */
+export function isHttpsUrl(v: string): boolean {
+    return /^https:\/\/[^\s<>"]+$/i.test(v.trim());
+}
+
+/**
+ * v0.1.350 — Un 400 del servidor al guardar, en palabras: a qué servicio o a
+ * quién le falta qué (antes decía sólo «Datos inválidos»).
+ */
+export function bookingSaveErrorText(
+    err: unknown,
+    config: BookingConfig,
+    memberNames?: ReadonlyMap<number, string>,
+): string {
+    const fallback = err instanceof Error ? err.message : String(err);
+    const errors = (err as { errors?: Record<string, string> } | null)?.errors;
+    if (!errors || typeof errors !== 'object') return fallback;
+    const lines = Object.entries(errors).map(([path, msg]) => {
+        const svc = /^config\.services\.(\d+)\./.exec(path);
+        if (svc) {
+            const item = config.services[Number(svc[1])];
+            return item ? `«${item.name}»: ${msg}` : msg;
+        }
+        const st = /^config\.staff\.(\d+)\./.exec(path);
+        if (st) {
+            const item = config.staff[Number(st[1])];
+            return item ? `${staffLabelOf(item, memberNames)}: ${msg}` : msg;
+        }
+        return msg;
+    });
+    return lines.length > 0 ? [...new Set(lines)].join(' ') : fallback;
 }

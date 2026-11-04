@@ -11211,6 +11211,95 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
           cliente.
         - Festivos reales de Colombia y México bajados del calendario oficial.
 
+  - [x] **Agenda de citas, segunda entrega: el calendario de cada asesor,
+        Meet o Teams en cada cita y la vuelta desde el calendario (v0.1.350,
+        addendum ADR-S67).** Lo aprobado por el usuario para esta entrega: que
+        cada asesor conecte su Google Calendar u Outlook y decida en cuáles
+        mira lo ocupado, que cada cita genere su enlace de Meet o Teams, y que
+        mover o borrar el evento en su calendario mueva o cancele la cita.
+        (a) **Ajustes → Cuenta → Mi calendario** (sección nueva para todo
+        miembro, con el módulo de agenda del plan):
+        - cada persona conecta SU cuenta de Google u Outlook;
+        - la conexión es **privada** y no sirve para automatizaciones
+          (`config.purpose = 'agenda'`);
+        - Google pide además ver la lista de calendarios
+          (`calendar.calendarlist.readonly`, sensible, sin auditoría CASA);
+        - marca en **«Mirar lo ocupado en»** sus calendarios (el principal, el
+          del equipo, el familiar) y en **«Crear las citas en»** dónde quiere
+          verlas;
+        - ve **«Agendas donde atiendes»** y puede desconectar (las citas que
+          ya están en su calendario no se borran).
+        Se guarda en `memberships.settings.agenda_calendar` y sólo acepta
+        calendarios de SU cuenta. En Integraciones esa conexión dice que es
+        de la agenda, con un botón a «Mi calendario».
+        (b) **Constructor → Quién atiende → Su calendario**:
+        - **«El suyo»**: el «Mi calendario» de la persona, con su estado («ya
+          lo conectó / todavía no», cuántos calendarios mira, «Cambiar mis
+          calendarios» si eres tú);
+        - **«Una conexión de la empresa»**: una de Integraciones, eligiendo
+          sus calendarios;
+        - y **su enlace de videollamada fijo**, que se usa si la reunión no se
+          puede crear.
+        El servidor sólo usa como «el suyo» una conexión privada del propio
+        asesor: nadie mira el calendario de otro.
+        (c) **Servicios → Dónde es**:
+        - **videollamada**: Meet o Teams según el calendario de quien atiende,
+          o uno fijo;
+        - **en persona**, con dirección;
+        - **por teléfono**: quién llama a quién;
+        - **un enlace fijo** (Zoom), que nunca sale en la página pública;
+        - **lo de la página**;
+        - y una indicación para el cliente.
+        El enlace de la reunión se crea en el evento:
+        - Google: `conferenceData`, y si queda «pendiente» se consulta el
+          evento;
+        - Outlook: `isOnlineMeeting`, y si la cuenta no tiene Teams se cae al
+          enlace fijo de la persona.
+        Llega a la **confirmación con «Unirse a la videollamada»** (la reserva
+        espera hasta 6 s), al correo, al `.ics`, a la página de la cita, a
+        `{{cita.enlace_reunion}}` y al campo **«Enlace de la reunión»** si se
+        mapea (migración 0097: `meeting_url` y `meeting_provider` en la cita).
+        Una agenda con videollamada que alguien no puede crear **no se
+        publica**: el aviso dice a quién le falta qué.
+        (d) **La vuelta**: cada 3 minutos se revisan los calendarios:
+        - Google por cambios desde la última vuelta, con borrados;
+        - Outlook por id, de a 20.
+        Se compara contra lo que escribió la app, así lo que mueve el propio
+        cliente no se confunde. Mover el evento **mueve la cita**
+        (Reprogramada) y borrarlo **la cancela**, según «Si quien atiende
+        cambia la cita en su calendario», con el correo al cliente y el
+        disparador (`por = calendar`). Un calendario que no se puede leer abre
+        un Problema.
+        (e) La guía de Google para el operador suma el permiso nuevo, su
+        justificación y el paso del video; la política de privacidad
+        sugerida lo menciona.
+        **Bugs atrapados**:
+        - Un enlace a medio escribir (`http://…`) quedaba escondido al cambiar
+          «Dónde es» y trababa el guardado con «Datos inválidos». Ahora se
+          limpia, se avisa en la sección y el error del servidor dice qué
+          servicio o quién.
+        - Las casillas de «Mi calendario» no se movían al tocarlas (otra vez
+          la lección de v0.1.207): ahora el valor se fija en el evento.
+        - El aviso de videollamada nombraba «Persona del equipo» en vez de la
+          persona.
+        **Ayuda**: artículo nuevo en Aprende (con la ilustración
+        `citas-calendario-sync`), guía «¿Cómo conecto mi calendario a la
+        agenda de citas y le pongo Meet o Teams?» y novedad con carrusel.
+        **Tests**:
+        - 13 de API en `booking-calendars.spec`, con un Google Calendar y un
+          Microsoft Graph simulados: «Mi calendario», seguridad de «el suyo»,
+          varios calendarios, Meet en todo el recorrido, enlace fijo y Teams
+          que cae, vuelta desde Google y Outlook, lo que mueve la app, no
+          publicar sin videollamada.
+        - shared 660 y front 747 en verde.
+        **E2E navegador** contra los mismos simulados:
+        - «Mi calendario» 12/12, y 11/11 en celular oscuro;
+        - constructor 21/21;
+        - reserva con Meet 12/12: sólo se consultan los calendarios elegidos,
+          el evento en el elegido para crear, el enlace en la confirmación, el
+          registro y la página de la cita;
+        - la vuelta: mover el evento movió la cita y borrarlo la canceló.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, index, integer, jsonb, pgTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { lists } from './lists';
 import { records } from './records';
 import { tenants } from './tenants';
@@ -46,6 +46,13 @@ export interface BookingExternalEvent {
     provider: 'google_calendar' | 'outlook';
     event_id: string;
     calendar: string | null;
+    /**
+     * v0.1.350 — Inicio y fin del evento la última vez que la app lo escribió
+     * o lo vio (ISO). La sincronización compara contra esto —no contra la
+     * cita— para saber si lo movió quien atiende y no la propia app.
+     */
+    start?: string;
+    end?: string;
 }
 
 /**
@@ -81,6 +88,9 @@ export const bookingAppointments = pgTable(
         clientEmail: varchar('client_email', { length: 320 }),
         clientTz: varchar('client_tz', { length: 64 }),
         externalEvent: jsonb('external_event').$type<BookingExternalEvent | null>(),
+        /** v0.1.350 — El enlace de la videollamada (Meet, Teams o el fijo) y de dónde salió. */
+        meetingUrl: text('meeting_url'),
+        meetingProvider: varchar('meeting_provider', { length: 16 }),
         remindersSent: jsonb('reminders_sent').$type<string[]>().notNull().default([]),
         cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

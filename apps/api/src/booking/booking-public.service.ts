@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import {
     bookableWindow,
+    bookingLocationPublic,
+    bookingLocationText,
     bookingMergeValue,
     bookingPriceLabel,
     brandingSchema,
@@ -73,7 +75,7 @@ import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingAvailabilityService, type PageContext } from './booking-availability.service';
-import { BookingCalendarService } from './booking-calendar';
+import { BookingCalendarService, type CalendarProvider } from './booking-calendar';
 import { appointmentRecordData, isCancelledValue, readBookingConfig, staffKey } from './booking-config';
 import { bookingClientEmail, type BookingMailKind } from './booking-email';
 import { buildIcs } from './booking-ics';
@@ -117,6 +119,21 @@ function badRequest(code: string, message: string, extra: Record<string, unknown
 
 function unavailable(message = 'No pudimos agendar tu cita en este momento. Prueba de nuevo más tarde.'): HttpException {
     return new HttpException({ code: 'booking_unavailable', message, data: { status: 503 } }, HttpStatus.SERVICE_UNAVAILABLE);
+}
+
+/** v0.1.350 — La videollamada que puede generar el calendario de quien atiende para lo que pide el servicio. */
+function videoFor(video: 'auto' | 'meet' | 'teams', provider: CalendarProvider): 'meet' | 'teams' | null {
+    if (video === 'auto') return provider === 'google_calendar' ? 'meet' : 'teams';
+    if (video === 'meet') return provider === 'google_calendar' ? 'meet' : null;
+    return provider === 'outlook' ? 'teams' : null;
+}
+
+/** Cuánto espera la reserva a que el calendario genere la videollamada (para mostrarla en la confirmación). */
+const MEETING_WAIT_MS = 6000;
+
+interface MeetingInfo {
+    url: string;
+    provider: 'meet' | 'teams' | 'link';
 }
 
 function clientDuplicate(): ConflictException {
@@ -365,6 +382,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     price_label: bookingPriceLabel(x.price, p.format.number_format),
                     seats: x.seats,
                     show_seats_left: x.show_seats_left,
+                    location: bookingLocationPublic(x.location, s.location),
                 })),
             staff: staff.map((x) => ({
                 id: x.id,
@@ -495,9 +513,14 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         let lastReason = 'taken';
         try {
             for (const staff of candidates) {
+                // v0.1.350 — un enlace fijo (del servicio o de la persona) se sabe ya;
+                // el de Meet o Teams lo genera el evento del calendario después.
+                const meeting = await this.immediateMeeting(p, service, staff);
                 const out = await this.tryBook(p, staff, service, start, end, {
+                    meeting,
                     data: {
                         ...answers,
+                        ...this.meetingData(p, meeting),
                         ...appointmentRecordData({
                             config: p.config,
                             fieldsById: new Map(p.fields.map((f) => [f.id, f])),
@@ -552,10 +575,17 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         });
         const base = await this.base(p.tenantId);
         const info = this.eventInfo(p, appt, 'booked', 'client', base, names, null);
-        this.dispatchEvent(p, appt, info, record.data);
         this.notifyStaff(p, appt, staff, 'booked', info);
-        void this.afterChange(p, appt, staff, 'booked', { base, names, withdrawRef: evidence?.withdrawRef ?? null });
-        return { ok: true, appointment: this.summary(p, appt, base, names) };
+        // v0.1.350 — el disparador sale cuando el calendario ya creó el evento
+        // (con la videollamada, si el servicio la pide): así `{{cita.enlace_reunion}}`
+        // ya trae el enlace. La confirmación espera unos segundos a ese enlace.
+        const run = this.afterChange(p, appt, staff, 'booked', { base, names, withdrawRef: evidence?.withdrawRef ?? null, dispatch: { data: record.data, by: 'client', previous: null } });
+        let shown = appt;
+        if (service.location.kind === 'video' && appt.meetingUrl === null) {
+            const ready = await Promise.race([run.calendar, new Promise<null>((ok) => setTimeout(() => ok(null), MEETING_WAIT_MS))]);
+            if (ready) shown = ready;
+        }
+        return { ok: true, appointment: this.summary(p, shown, base, names) };
     }
 
     /**
@@ -570,7 +600,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         service: BookingServiceItem,
         start: Date,
         end: Date,
-        x: { data: Record<string, unknown>; clientName: string; clientEmail: string; clientTz: string | null; durationMin: number },
+        x: { data: Record<string, unknown>; clientName: string; clientEmail: string; clientTz: string | null; durationMin: number; meeting: MeetingInfo | null },
     ): Promise<{ appt: BookingAppointmentRow; record: { id: number; data: Record<string, unknown> } } | { reason: string }> {
         const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
         // Lo del calendario externo y los festivos se leen ANTES del candado (no se espera a la red con él tomado).
@@ -613,6 +643,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         clientEmail: x.clientEmail,
                         clientTz: x.clientTz,
                         remindersSent: this.passedReminders(p.config, start),
+                        meetingUrl: x.meeting?.url ?? null,
+                        meetingProvider: x.meeting?.provider ?? null,
                     })
                     .returning();
                 await tx
@@ -885,7 +917,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             start: appt.startAt.toISOString(),
             end: appt.endAt.toISOString(),
             status: appt.status as BookingStatus,
-            location: p.config.settings.location,
+            location: this.locationText(p, appt),
+            location_kind: svc?.location.kind ?? 'page',
+            // El enlace lo ve sólo quien tiene el enlace firmado de su cita (y no una cancelada).
+            meeting_url: appt.status === 'cancelled' ? null : appt.meetingUrl,
             client_name: appt.clientName ?? '',
             time_zone: p.timeZone,
             manage_url: url,
@@ -939,8 +974,16 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             start: appt.startAt,
             end: appt.endAt,
             summary: `${svc?.name ?? 'Cita'}${b.company ? ` — ${b.company}` : ''}`,
-            description: [staff ? `Con: ${staff}` : '', p.config.notifications.email_note, `Para cambiar o cancelar: ${url}`].filter(Boolean).join('\n\n'),
-            location: p.config.settings.location,
+            description: [
+                staff ? `Con: ${staff}` : '',
+                appt.meetingUrl ? `Videollamada: ${appt.meetingUrl}` : '',
+                p.config.notifications.email_note,
+                `Para cambiar o cancelar: ${url}`,
+            ]
+                .filter(Boolean)
+                .join('\n\n'),
+            // Con videollamada el lugar ES el enlace (los calendarios lo vuelven clicable).
+            location: appt.meetingUrl ?? this.locationText(p, appt),
             sequence: Math.max(0, Math.floor((appt.updatedAt.getTime() - Date.UTC(2026, 0, 1)) / 1000)),
             cancelled: appt.status === 'cancelled',
             url,
@@ -1007,22 +1050,31 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         for (const staff of candidates) {
             const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
             const outside = await this.availability.outside(p, staff, ymd, ymd);
+            const newMeeting = staff.id !== appt.staffId ? await this.immediateMeeting(p, service, staff) : null;
             const out = await this.withStaffLock(p.tenantId, staffKey(p.pageId, staff), async (tx) => {
                 const reason = await this.availability.checkInTx(tx, p, staff, service, start, outside, { excludeRecordId: appt.recordId, durationMin });
                 if (reason) return { reason };
                 // El registro se actualiza por RecordsService (validación, actividad,
                 // automatizaciones) mientras ESTA transacción tiene el candado.
+                // v0.1.350 — con otra persona, la videollamada es otra (la de su calendario, o su enlace fijo).
+                const meetingPatch = staff.id !== appt.staffId ? { meetingUrl: newMeeting?.url ?? null, meetingProvider: newMeeting?.provider ?? null } : {};
                 await this.records.update(
                     p.tenantId,
                     SYSTEM_ACTOR,
                     String(p.listId),
                     appt.recordId,
-                    { data: appointmentRecordData({ config: p.config, fieldsById, service, staff, staffName: names.get(staff.id) ?? staffLabel(staff), start, end, status: 'rescheduled' }) },
+                    {
+                        data: {
+                            ...appointmentRecordData({ config: p.config, fieldsById, service, staff, staffName: names.get(staff.id) ?? staffLabel(staff), start, end, status: 'rescheduled' }),
+                            ...(staff.id !== appt.staffId ? this.meetingData(p, newMeeting, true) : {}),
+                        },
+                    },
                     { origin: 'booking' },
                 );
                 const [row] = await tx
                     .update(bookingAppointments)
                     .set({
+                        ...meetingPatch,
                         startAt: start,
                         endAt: end,
                         staffId: staff.id,
@@ -1067,7 +1119,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         p: ResolvedPage,
         appt: BookingAppointmentRow,
         event: BookingEvent,
-        by: 'client' | 'team',
+        by: 'client' | 'team' | 'calendar',
         base: string,
         names: Map<string, string>,
         previous: { start: Date; end: Date } | null,
@@ -1089,7 +1141,15 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             manage_url: url,
             cancel_url: `${url}?accion=cancelar`,
             time_zone: p.timeZone,
+            location: this.locationText(p, appt),
+            meeting_url: appt.meetingUrl ?? '',
         };
+    }
+
+    /** v0.1.350 — Dónde es la cita, en una línea (sin el enlace: ése va aparte). */
+    private locationText(p: ResolvedPage, appt: BookingAppointmentRow): string {
+        const svc = p.config.services.find((s) => s.id === appt.serviceId);
+        return svc ? bookingLocationText(svc.location, p.config.settings.location, { url: appt.meetingUrl, provider: appt.meetingProvider }) : p.config.settings.location;
     }
 
     /** El disparador «Cuando se agenda, reprograma o cancela una cita». */
@@ -1140,63 +1200,145 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     /**
-     * Lo que no puede tumbar la respuesta al cliente: el correo con el .ics y
-     * el evento en el calendario de quien atiende (crearlo, moverlo o
-     * borrarlo). Lo que falla queda en Problemas.
+     * Lo que no puede tumbar la respuesta al cliente: el evento en el
+     * calendario de quien atiende (crearlo —con la videollamada—, moverlo o
+     * borrarlo), el disparador de automatizaciones (con `dispatch`: sale
+     * DESPUÉS del calendario, así `{{cita.enlace_reunion}}` ya trae el enlace)
+     * y el correo con el .ics. Lo que falla queda en Problemas.
+     *
+     * Devuelve dos promesas que nunca fallan: `calendar` (la cita como quedó
+     * después del calendario) y `done` (todo terminado).
      */
-    private async afterChange(
+    private afterChange(
         p: ResolvedPage,
         appt: BookingAppointmentRow,
         staff: BookingStaff | null,
         event: BookingEvent,
-        x: { base: string; names: Map<string, string>; withdrawRef?: string | null; previous?: BookingAppointmentRow; byTeam?: boolean },
-    ): Promise<void> {
-        try {
-            await this.syncCalendar(p, appt, staff, event, x.previous);
-        } catch (err) {
+        x: {
+            base: string;
+            names: Map<string, string>;
+            withdrawRef?: string | null;
+            previous?: BookingAppointmentRow;
+            byTeam?: boolean;
+            /** v0.1.350 — el cambio llegó DESDE el calendario: no se le escribe de vuelta. */
+            fromCalendar?: boolean;
+            dispatch?: { data: Record<string, unknown> | null; by: 'client' | 'team' | 'calendar'; previous: { start: Date; end: Date } | null };
+        },
+    ): { calendar: Promise<BookingAppointmentRow | null>; done: Promise<void> } {
+        const calendar = (x.fromCalendar ? Promise.resolve(appt) : this.syncCalendar(p, appt, staff, event, x.previous)).catch((err: unknown) => {
             this.logger.warn(`Agenda ${p.pageId}: calendario de la cita ${appt.id}: ${String(err)}`);
-        }
-        const send = event === 'booked' ? p.config.notifications.confirm_email : !x.byTeam || p.config.notifications.notify_client_on_team_change;
-        if (send) {
-            await this.sendClientMail(p, appt, event, {
-                base: x.base,
-                names: x.names,
-                withdrawRef: x.withdrawRef ?? null,
-                previousStart: x.previous?.startAt ?? null,
-                byTeam: x.byTeam === true,
-            });
-        }
+            return null;
+        });
+        const done = (async () => {
+            const row = (await calendar) ?? appt;
+            if (x.dispatch) {
+                const info = this.eventInfo(p, row, event, x.dispatch.by, x.base, x.names, x.dispatch.previous);
+                // Si el calendario agregó el enlace al registro, el disparador lee el registro de nuevo.
+                this.dispatchEvent(p, row, info, row.meetingUrl !== appt.meetingUrl ? null : x.dispatch.data);
+            }
+            const send = event === 'booked' ? p.config.notifications.confirm_email : !x.byTeam || p.config.notifications.notify_client_on_team_change;
+            if (send) {
+                await this.sendClientMail(p, row, event, {
+                    base: x.base,
+                    names: x.names,
+                    withdrawRef: x.withdrawRef ?? null,
+                    previousStart: x.previous?.startAt ?? null,
+                    byTeam: x.byTeam === true,
+                });
+            }
+        })().catch((err: unknown) => this.logger.warn(`Agenda ${p.pageId}: lo que sigue a la cita ${appt.id}: ${String(err)}`));
+        return { calendar, done };
     }
 
-    private async syncCalendar(p: ResolvedPage, appt: BookingAppointmentRow, staff: BookingStaff | null, event: BookingEvent, previous?: BookingAppointmentRow): Promise<void> {
+    /**
+     * v0.1.350 — La videollamada que se sabe ANTES de crear el evento: el
+     * enlace fijo del servicio, o el de la persona cuando su calendario no
+     * puede generar la que pide el servicio. null = no hay, o la genera el
+     * evento del calendario (Meet o Teams).
+     */
+    private async immediateMeeting(p: ResolvedPage, svc: BookingServiceItem | undefined, staff: BookingStaff): Promise<MeetingInfo | null> {
+        const loc = svc?.location;
+        if (!loc) return null;
+        if (loc.kind === 'link') return loc.url !== '' ? { url: loc.url, provider: 'link' } : null;
+        if (loc.kind !== 'video') return null;
+        if (staff.kind === 'user' && staff.create_events) {
+            const ref = await this.calendar.resolveStaff(p.tenantId, staff).catch(() => null);
+            if (ref && videoFor(loc.video, ref.provider)) return null;
+        }
+        return staff.meeting_url !== '' ? { url: staff.meeting_url, provider: 'link' } : null;
+    }
+
+    /** El enlace de la videollamada en el campo elegido de la lista (si la página tiene uno). */
+    private meetingData(p: ResolvedPage, meeting: MeetingInfo | null, clearIfNone = false): Record<string, unknown> {
+        const id = p.config.mapping.meeting_url_field_id;
+        if (id === null || (!meeting && !clearIfNone)) return {};
+        return { [jsonbKeyForField(id)]: meeting?.url ?? null };
+    }
+
+    private async writeMeetingField(p: ResolvedPage, appt: BookingAppointmentRow, url: string | null): Promise<void> {
+        const data = this.meetingData(p, url ? { url, provider: 'link' } : null, true);
+        if (Object.keys(data).length === 0) return;
+        await this.records.update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data }, { origin: 'booking' }).catch((err: unknown) => {
+            this.logger.warn(`Agenda ${p.pageId}: no se pudo guardar el enlace de la videollamada en el registro ${appt.recordId}: ${String(err)}`);
+        });
+    }
+
+    /**
+     * El evento en el calendario de quien atiende: crearlo (con la
+     * videollamada que pide el servicio), moverlo o borrarlo. Devuelve la cita
+     * como quedó (con el evento y el enlace guardados).
+     */
+    private async syncCalendar(p: ResolvedPage, appt: BookingAppointmentRow, staff: BookingStaff | null, event: BookingEvent, previous?: BookingAppointmentRow): Promise<BookingAppointmentRow> {
         const ext = appt.externalEvent ?? previous?.externalEvent ?? null;
         const key = `booking-event:${p.pageId}:${appt.staffId}`;
-        const save = async (value: BookingAppointmentRow['externalEvent']): Promise<void> => {
-            await this.tenantDb.withTenant(p.tenantId, (tx) =>
-                tx.update(bookingAppointments).set({ externalEvent: value }).where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id))),
+        let row = appt;
+        const save = async (patch: Partial<typeof bookingAppointments.$inferInsert>): Promise<void> => {
+            const [r] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+                tx
+                    .update(bookingAppointments)
+                    .set(patch)
+                    .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id)))
+                    .returning(),
             );
+            if (r) row = r;
         };
-        const sameOwner = ext !== null && staff?.connection_id === ext.connection_id;
+        const ref = staff && staff.kind === 'user' ? await this.calendar.resolveStaff(p.tenantId, staff) : null;
+        const sameOwner = ext !== null && ref !== null && ref.connectionId === ext.connection_id;
+        const svc = p.config.services.find((s) => s.id === appt.serviceId);
         try {
             if (event === 'cancelled') {
                 if (ext) {
                     await this.calendar.deleteEvent(p.tenantId, ext);
-                    await save(null);
+                    await save({ externalEvent: null });
                 }
-                return;
+                return row;
             }
             if (event === 'rescheduled' && ext && sameOwner) {
                 await this.calendar.moveEvent(p.tenantId, ext, appt.startAt, appt.endAt);
-                return;
+                // Lo que la app escribió: la sincronización de vuelta no lo toma por un cambio de quien atiende.
+                await save({ externalEvent: { ...ext, start: appt.startAt.toISOString(), end: appt.endAt.toISOString() } });
+                return row;
             }
+            let lostMeeting = false;
             if (ext && !sameOwner) {
-                // Cambió quien atiende: el evento sale del calendario anterior.
+                // Cambió quien atiende (o su calendario): el evento —y su videollamada— sale del anterior.
                 await this.calendar.deleteEvent(p.tenantId, ext).catch(() => undefined);
-                await save(null);
+                lostMeeting = row.meetingProvider === 'meet' || row.meetingProvider === 'teams';
+                await save({ externalEvent: null, ...(lostMeeting ? { meetingUrl: null, meetingProvider: null } : {}) });
             }
-            if (!staff || staff.kind !== 'user' || staff.connection_id === null || !staff.create_events) return;
-            const svc = p.config.services.find((s) => s.id === appt.serviceId);
-            const created = await this.calendar.createEvent(p.tenantId, staff.connection_id, {
+            if (!staff || !ref || !staff.create_events) {
+                if (lostMeeting && staff) {
+                    const fallback = await this.immediateMeeting(p, svc, staff);
+                    if (fallback) await save({ meetingUrl: fallback.url, meetingProvider: fallback.provider });
+                    await this.writeMeetingField(p, row, fallback?.url ?? null);
+                }
+                return row;
+            }
+            const loc = svc?.location;
+            const want = loc?.kind === 'video' ? videoFor(loc.video, ref.provider) : null;
+            const fixedLink = row.meetingProvider === 'link' ? row.meetingUrl : null;
+            const where = loc ? bookingLocationText(loc, p.config.settings.location, { url: fixedLink, provider: fixedLink ? 'link' : null }) : p.config.settings.location;
+            const created = await this.calendar.createEvent(p.tenantId, ref, {
                 title: `${svc?.name ?? 'Cita'} — ${appt.clientName ?? 'Cliente'}`,
                 start: appt.startAt,
                 end: appt.endAt,
@@ -1205,13 +1347,36 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     `Cita agendada en «${p.row.name}».`,
                     appt.clientName ? `Cliente: ${appt.clientName}` : '',
                     appt.clientEmail ? `Correo: ${appt.clientEmail}` : '',
-                    p.config.settings.location ? `Dónde: ${p.config.settings.location}` : '',
+                    fixedLink ? `Videollamada: ${fixedLink}` : '',
                 ]
                     .filter(Boolean)
                     .join('\n'),
+                location: fixedLink ?? where,
+                meeting: want,
             });
-            await save(created);
+            let meeting: MeetingInfo | null = created.meeting;
+            if (!meeting && loc?.kind === 'video' && staff.meeting_url !== '') meeting = { url: staff.meeting_url, provider: 'link' };
+            if (!meeting && loc?.kind === 'link' && loc.url !== '') meeting = { url: loc.url, provider: 'link' };
+            const before = row.meetingUrl;
+            await save({ externalEvent: created.event, meetingUrl: meeting?.url ?? null, meetingProvider: meeting?.provider ?? null });
+            if ((meeting?.url ?? null) !== before) await this.writeMeetingField(p, row, meeting?.url ?? null);
+            const meetKey = `booking-meeting:${p.pageId}:${appt.staffId}`;
+            if (created.meetingError && !meeting) {
+                this.incidents?.report({
+                    tenantId: p.tenantId,
+                    key: meetKey,
+                    source: 'booking',
+                    sourceId: p.pageId,
+                    listId: p.listId,
+                    ownerId: p.createdBy,
+                    title: `La agenda «${p.row.name}» no pudo crear una videollamada`,
+                    message: `${created.meetingError} La cita quedó agendada sin enlace. Ponle a esa persona un enlace de videollamada fijo (Quién atiende) para que siempre tenga uno.`,
+                });
+            } else if (want) {
+                this.incidents?.resolve(p.tenantId, meetKey);
+            }
             this.incidents?.resolve(p.tenantId, key);
+            return row;
         } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             this.incidents?.report({
@@ -1226,6 +1391,95 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             });
             throw err;
         }
+    }
+
+    /**
+     * v0.1.350 — Quien atiende movió o borró el evento de la cita en SU
+     * calendario: la cita se mueve o se cancela por el mismo camino que cuando
+     * el equipo la cambia desde la app (registro, disparador y aviso al
+     * cliente), sin volver a escribir en el calendario. Lo usa la
+     * sincronización de vuelta.
+     */
+    async applyCalendarChange(appt: BookingAppointmentRow, change: { kind: 'gone' } | { kind: 'moved'; start: Date; end: Date }): Promise<'moved' | 'cancelled' | 'ignored'> {
+        const ext = appt.externalEvent;
+        if (!ext || appt.status === 'cancelled') return 'ignored';
+        const p = await this.resolveById(appt.pageId);
+        if (!p || p.readOnly) return 'ignored';
+        const m = p.config.mapping;
+        const sync = p.config.calendar_sync;
+        const setAppt = async (patch: Partial<typeof bookingAppointments.$inferInsert>): Promise<BookingAppointmentRow | null> => {
+            const [r] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+                tx
+                    .update(bookingAppointments)
+                    .set({ ...patch, updatedAt: new Date() })
+                    .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), ne(bookingAppointments.status, 'cancelled')))
+                    .returning(),
+            );
+            return r ?? null;
+        };
+        if (change.kind === 'gone') {
+            // Sin evento ya no hay nada que mover ni borrar del otro lado.
+            if (!sync.cancel) {
+                await setAppt({ externalEvent: null });
+                return 'ignored';
+            }
+            const data: Record<string, unknown> = {};
+            if (m.status_field_id !== null && m.status_cancelled !== null) data[jsonbKeyForField(m.status_field_id)] = m.status_cancelled;
+            if (Object.keys(data).length > 0) {
+                const ok = await this.records
+                    .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data }, { origin: 'booking' })
+                    .then(() => true)
+                    .catch((err: unknown) => {
+                        this.logger.warn(`Agenda ${p.pageId}: no se pudo cancelar la cita ${appt.id} desde el calendario: ${String(err)}`);
+                        return false;
+                    });
+                if (!ok) return 'ignored';
+            }
+            const row = await setAppt({ status: 'cancelled', cancelledAt: new Date(), externalEvent: null });
+            if (!row) return 'ignored';
+            const base = await this.base(p.tenantId);
+            const names = await this.staffNames(p.config);
+            const staff = p.config.staff.find((s) => s.id === row.staffId) ?? null;
+            await this.afterChange(p, row, staff, 'cancelled', { base, names, byTeam: true, fromCalendar: true, dispatch: { data: null, by: 'calendar', previous: null } }).done;
+            return 'cancelled';
+        }
+        const start = change.start;
+        const end = change.end;
+        const moved = { ...ext, start: start.toISOString(), end: end.toISOString() };
+        if (!sync.move || (start.getTime() === appt.startAt.getTime() && end.getTime() === appt.endAt.getTime())) {
+            // La app ya lo tenía así (lo movió ella), o la agenda no sigue los cambios del calendario.
+            await setAppt({ externalEvent: moved });
+            return 'ignored';
+        }
+        const staff = p.config.staff.find((s) => s.id === appt.staffId) ?? null;
+        const data: Record<string, unknown> = {};
+        if (m.start_field_id !== null) data[jsonbKeyForField(m.start_field_id)] = start.toISOString();
+        if (m.end_field_id !== null) data[jsonbKeyForField(m.end_field_id)] = end.toISOString();
+        if (m.duration_field_id !== null) data[jsonbKeyForField(m.duration_field_id)] = Math.round((end.getTime() - start.getTime()) / 60_000);
+        if (m.status_field_id !== null && m.status_rescheduled !== null) data[jsonbKeyForField(m.status_field_id)] = m.status_rescheduled;
+        if (Object.keys(data).length > 0) {
+            const ok = await this.records
+                .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data }, { origin: 'booking' })
+                .then(() => true)
+                .catch((err: unknown) => {
+                    this.logger.warn(`Agenda ${p.pageId}: no se pudo mover la cita ${appt.id} desde el calendario: ${String(err)}`);
+                    return false;
+                });
+            if (!ok) return 'ignored';
+        }
+        const row = await setAppt({ startAt: start, endAt: end, status: 'rescheduled', remindersSent: this.passedReminders(p.config, start), externalEvent: moved });
+        if (!row) return 'ignored';
+        const base = await this.base(p.tenantId);
+        const names = await this.staffNames(p.config);
+        await this.afterChange(p, row, staff, 'rescheduled', {
+            base,
+            names,
+            previous: appt,
+            byTeam: true,
+            fromCalendar: true,
+            dispatch: { data: null, by: 'calendar', previous: { start: appt.startAt, end: appt.endAt } },
+        }).done;
+        return 'moved';
     }
 
     private async emailBrand(p: ResolvedPage, base: string): Promise<PortalEmailBrand> {
@@ -1256,7 +1510,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             start: summary.start,
             end: summary.end,
             previousStart: x.previousStart ? x.previousStart.toISOString() : null,
-            location: p.config.settings.location,
+            location: summary.location,
+            meetingUrl: summary.meeting_url,
             companyTz: p.timeZone,
             clientTz: appt.clientTz,
             timeFormat: p.format.time_format,
@@ -1476,7 +1731,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const info = this.eventInfo(p, row, event, 'team', base, names, event === 'rescheduled' ? { start: appt.startAt, end: appt.endAt } : null);
         this.dispatcher.dispatch({ tenantId: p.tenantId, listId: p.listId, recordId: row.recordId, trigger: 'booking_event', after, booking: info });
         const staff = p.config.staff.find((s) => s.id === row.staffId) ?? null;
-        await this.afterChange(p, row, staff, event, { base, names, previous: appt, byTeam: true });
+        await this.afterChange(p, row, staff, event, { base, names, previous: appt, byTeam: true }).done;
     }
 
     // ─────────────────────────── «Probar» ───────────────────────────

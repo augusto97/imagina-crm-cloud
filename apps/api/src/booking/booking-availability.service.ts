@@ -240,12 +240,16 @@ export class BookingAvailabilityService {
 
     /** Lo ocupado del calendario externo de una persona; si falla, se sigue sin él y se avisa. */
     async externalBusy(ctx: PageContext, s: BookingStaff, fromYmd: string, toYmd: string): Promise<BusyInterval[]> {
-        if (s.kind !== 'user' || s.connection_id === null || !s.read_busy) return [];
+        if (s.kind !== 'user' || !s.read_busy) return [];
         const from = zonedInstant(addDaysYmd(fromYmd, -1), ctx.timeZone);
         const to = zonedInstant(addDaysYmd(toYmd, 2), ctx.timeZone);
         const key = `booking-calendar:${ctx.pageId}:${s.id}`;
         try {
-            const busy = await this.calendar.busy(ctx.tenantId, s.connection_id, from, to);
+            // v0.1.350 — el calendario de la persona («Mi calendario») o la
+            // conexión que eligió la agenda, con los calendarios elegidos.
+            const ref = await this.calendar.resolveStaff(ctx.tenantId, s);
+            if (!ref) return [];
+            const busy = await this.calendar.busy(ctx.tenantId, ref, from, to);
             this.incidents?.resolve(ctx.tenantId, key);
             return busy;
         } catch (err) {
@@ -323,7 +327,7 @@ export class BookingAvailabilityService {
         // Los eventos que la agenda creó en el calendario de esta persona (para
         // no contarlos dos veces, ni que la cita que se reprograma se bloquee a sí misma).
         const ownEvents = new Set<string>();
-        if (staff.kind === 'user' && staff.staff_user_id !== null && staff.connection_id !== null) {
+        if (staff.kind === 'user' && staff.staff_user_id !== null) {
             const rows = await tx
                 .select({ ev: bookingAppointments.externalEvent })
                 .from(bookingAppointments)

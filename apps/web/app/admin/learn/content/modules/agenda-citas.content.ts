@@ -117,6 +117,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Reglas propias del servicio', what: 'Márgenes antes y después, aviso mínimo y cada cuánto empieza un horario sólo para este servicio. Vacío = las de la página.', tip: 'Un procedimiento largo con 30 minutos de limpieza y las consultas cortas sin margen, en la misma agenda.' },
                     { name: 'Precio (opcional)', what: 'Se muestra junto al servicio, con el formato de tu empresa. Es sólo informativo: no se cobra.' },
                     { name: 'Descripción (opcional)', what: 'Una línea que ayuda a elegir: «Incluye lavado y peinado».' },
+                    { name: 'Dónde es', what: '**Videollamada** (cada cita lleva su enlace de Google Meet o Microsoft Teams), **En persona** (con su dirección), **Por teléfono** (quién llama a quién), **Un enlace fijo** (tu sala de Zoom) o **Lo que dice la página**. Se puede sumar una indicación: «Toca el timbre del 302».', tip: 'Un enlace nunca se muestra en la página pública: el cliente lo recibe cuando reservó.' },
                     { name: 'Disponible para agendar', what: 'Apágalo para esconder un servicio sin borrarlo (por ejemplo, en temporada baja).' },
                     { name: 'Subir, Bajar, Quitar el servicio', what: 'El orden en que aparecen en la página, y quitarlo.' },
                 ],
@@ -135,7 +136,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Foto', what: 'Una foto (PNG, JPG, WebP o GIF, hasta 5 MB) que el cliente ve al elegir con quién. Sin foto se muestran sus iniciales.' },
                     { name: 'Cargo o especialidad y descripción (opcional)', what: '«Odontóloga», «Asesor de seguros» y unas líneas sobre la persona: ayudan al cliente a elegir.' },
                     { name: 'Servicios que atiende', what: 'Qué servicios presta. Sin marcar ninguno, atiende todos.', tip: 'La nutricionista no hace masajes: márcale sólo los suyos.' },
-                    { name: 'Su calendario (Google Calendar u Outlook)', what: 'Una conexión de calendario de **Ajustes → Integraciones** para no chocar con lo que ya tiene agendado.' },
+                    { name: 'Su calendario: El suyo / Una conexión de la empresa', what: '**El suyo** usa el calendario que la persona conectó en **Ajustes → Cuenta → Mi calendario** (y ella elige en cuáles mira lo ocupado). **Una conexión de la empresa** usa un calendario de **Ajustes → Integraciones** y ahí eliges sus calendarios.', tip: 'Lo más común es **El suyo**: cada asesor conecta su propia cuenta y nadie más la ve.' },
+                    { name: 'Su enlace de videollamada fijo (opcional)', what: 'Aparece si algún servicio es por videollamada: se usa si la reunión no se puede crear en su calendario (por ejemplo, una cuenta personal de Microsoft sin Teams) o si no tiene calendario.' },
                     { name: 'No ofrecer los horarios ocupados en su calendario', what: 'Las horas en que tiene un evento en su calendario no se ofrecen.', tip: 'Del calendario sólo se lee la hora de inicio y de fin de cada evento: nunca el título, la descripción ni los invitados.' },
                     { name: 'Agregar cada cita a su calendario', what: 'Cada reserva aparece también como evento en su Google Calendar u Outlook.' },
                     { name: 'Recibe citas', what: 'Apágalo para sacar a alguien de la agenda por un tiempo sin borrar su configuración.' },
@@ -161,7 +163,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'info',
-                md: 'Para conectar un calendario, alguien de tu empresa conecta su **Google Calendar** u **Outlook** en **Ajustes → Integraciones**. Después aparece para elegir en **Su calendario**. Si no hay ninguno conectado, la sección te lo dice con el enlace.',
+                md: 'Cada persona conecta **su propio** Google Calendar u Outlook en **Ajustes → Cuenta → Mi calendario**: es privado, nadie más de la empresa lo ve ni lo usa. En **Quién atiende** ves si ya lo conectó. Lo explica a fondo **El calendario de cada asesor, la videollamada y los cambios desde el calendario**.',
             },
             {
                 t: 'example',
@@ -179,7 +181,92 @@ export const articles: LearnArticle[] = [
             {
                 t: 'actions',
                 items: [
-                    { label: 'Conectar Google Calendar u Outlook', to: '/settings?s=conectores' },
+                    { label: 'Conectar mi calendario', to: '/settings?s=calendario' },
+                    { label: 'Siguiente: el calendario de cada asesor', article: 'agenda-calendarios' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'agenda-calendarios',
+        route: '/settings?s=calendario',
+        related: ['agenda-servicios-personas', 'agenda-gestionar', 'agenda-campos-correos'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'La agenda funciona mejor cuando conoce el calendario de quien atiende. Con su **Google Calendar** u **Outlook** conectado pasan tres cosas: la página **no ofrece las horas en que ya está ocupado**, cada cita **se agrega sola a su calendario** (con su enlace de **Google Meet** o **Microsoft Teams** si es por videollamada) y, si la **mueve o la borra en su calendario**, la cita se mueve o se cancela en la app y al cliente le llega el aviso.',
+            },
+            { t: 'anim', key: 'citas-calendario-sync', caption: 'La reunión que Ana ya tenía no se ofrece; la cita llega a su calendario con Meet y, al arrastrarla a las 15:00, se mueve sola y Carla recibe el aviso.' },
+            { t: 'h', text: 'Mi calendario: lo conecta cada persona' },
+            {
+                t: 'steps',
+                items: [
+                    'Ve a **Ajustes → Cuenta → Mi calendario**.',
+                    'Toca **Conectar Google Calendar** o **Conectar Outlook** y entra con tu propia cuenta. Google o Microsoft te piden permiso y vuelves solo a la app.',
+                    'En **Mirar lo ocupado en**, marca tus calendarios: el principal y, si usas otros (el del equipo, el familiar), también esos. Lo ocupado en cualquiera no se ofrece.',
+                    'En **Crear las citas en**, elige el calendario donde quieres ver tus citas.',
+                    'Listo: en **Agendas donde atiendes** ves en qué agendas se usa.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Es una conexión **privada**: nadie más de la empresa la ve ni la usa en automatizaciones. De tus eventos sólo se lee la **hora de inicio y de fin**, nunca el título, la descripción ni los invitados, y sólo se modifican los eventos que creó la propia app.',
+            },
+            { t: 'h', text: 'En la agenda: de dónde sale su calendario' },
+            {
+                t: 'settings',
+                title: 'Quién atiende → Su calendario',
+                rows: [
+                    { name: 'El suyo', what: 'Usa el **Mi calendario** de la persona. Si todavía no lo conectó, lo dice; si eres tú, aparece **Conectar mi calendario**.' },
+                    { name: 'Una conexión de la empresa', what: 'Un Google Calendar u Outlook conectado en **Ajustes → Integraciones** (por ejemplo, el de una sala o el de recepción). Ahí eliges en qué calendarios mirar lo ocupado y en cuál crear las citas.' },
+                    { name: 'No ofrecer los horarios ocupados en su calendario', what: 'Las horas con un evento en sus calendarios no se ofrecen.' },
+                    { name: 'Agregar cada cita a su calendario', what: 'Cada reserva aparece como evento en su calendario. Hace falta para la videollamada: el enlace se crea en ese evento.' },
+                    { name: 'Su enlace de videollamada fijo', what: 'Si la reunión no se puede crear (una cuenta personal de Microsoft no tiene Teams), se usa este enlace.' },
+                ],
+            },
+            { t: 'h', text: 'La videollamada de cada cita' },
+            {
+                t: 'p',
+                md: 'En el servicio elige **Dónde es → Videollamada**. Con **La del calendario de quien atiende**, quien usa Google Calendar recibe un enlace de **Google Meet** y quien usa Outlook uno de **Microsoft Teams**; también puedes fijar una de las dos. El enlace llega al cliente en el **correo de confirmación**, en el botón **Unirse a la videollamada** de la página de su cita y en el archivo del calendario. Si en **Campos de la lista** eliges **Enlace de la reunión**, también queda guardado en el registro.',
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                md: 'Si alguien no puede crear la videollamada (sin calendario, o con Teams pedido y un Google Calendar), la agenda **no se publica** y te dice a quién le falta qué: conectar su calendario, cambiar la videollamada o ponerle un enlace fijo.',
+            },
+            { t: 'h', text: 'Cuando la cambia en su calendario' },
+            {
+                t: 'settings',
+                title: 'Quién atiende → Si quien atiende cambia la cita en su calendario',
+                rows: [
+                    { name: 'Si mueve el evento, mover la cita', what: 'La cita (y el registro) toman la nueva hora y el estado pasa a **Reprogramada**.' },
+                    { name: 'Si borra el evento, cancelar la cita', what: 'La cita se cancela y deja libre el horario.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'La app revisa los calendarios cada pocos minutos. Si en **Correos y recordatorios** está encendido avisarle al cliente cuando el equipo cambia la cita, le llega el correo con la nueva hora. Lo que mueve el propio cliente desde su enlace no se confunde con un cambio de quien atiende.',
+            },
+            {
+                t: 'example',
+                title: 'Una asesoría de seguros',
+                md: 'Seguros Pacífico, en Lima, tiene cuatro asesores que atienden por videollamada. Cada uno conectó su Google Calendar en **Mi calendario** y marcó también el calendario del equipo, donde están las capacitaciones. Los clientes eligen la hora y reciben el enlace de Meet en el correo. Cuando un asesor se enferma, arrastra sus citas del día a otra fecha en su calendario: la lista se actualiza sola y cada cliente recibe la nueva hora.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Qué permisos pide Google?', a: 'Ver y editar los eventos de tu calendario (para crear la cita, su Meet y mirar lo ocupado) y ver la lista de tus calendarios (para que elijas cuáles). La app sólo modifica los eventos que ella misma creó.' },
+                    { q: '¿Y si desconecto mi calendario?', a: 'Las citas que ya están en tu calendario no se borran. La agenda deja de mirar lo ocupado y las citas nuevas no se agregan a él.' },
+                    { q: '¿Funciona con una cuenta personal de Microsoft?', a: 'Sí para mirar lo ocupado y crear las citas. Teams sólo se crea con cuentas de trabajo o estudiantiles: con una personal, usa un enlace fijo.' },
+                    { q: '¿Cada cuánto se ve un cambio hecho en el calendario?', a: 'En pocos minutos (la app revisa cada 3).' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Conectar mi calendario', to: '/settings?s=calendario' },
                     { label: 'Siguiente: horarios y reglas', article: 'agenda-horarios-reglas' },
                 ],
             },

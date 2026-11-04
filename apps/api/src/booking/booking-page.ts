@@ -343,6 +343,19 @@ const CLIENT_JS = String.raw`
     return bar;
   }
 
+  // v0.1.350 — Dónde es cada servicio («Videollamada (Google Meet o Teams)», «En persona · Calle 10…»).
+  function locText(s) {
+    var l = s && s.location;
+    if (!l || l.kind === 'page' || !l.label) return '';
+    return l.detail ? l.label + ' \u00b7 ' + l.detail : l.label;
+  }
+  // Un enlace de videollamada sólo si es https (lo arma el servidor; esto es una segunda barrera).
+  function safeMeeting(u) { return typeof u === 'string' && /^https:\/\/[^\s"<>]+$/.test(u) ? u : null; }
+  function meetingButton(a) {
+    var u = safeMeeting(a.meeting_url);
+    return u ? el('a', { cls: 'btn', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-testid': 'booking-join', text: 'Unirse a la videollamada' }) : null;
+  }
+
   function summaryBox(withSlot) {
     var svc = serviceById(st.service);
     var rows = [];
@@ -350,6 +363,7 @@ const CLIENT_JS = String.raw`
     if (st.staff && st.staff !== 'any') rows.push(['Con', staffName(st.staff)]);
     else if (meta.choose_staff) rows.push(['Con', 'El primero disponible']);
     if (withSlot && st.slot) rows.push(['Cuándo', whenLong(st.slot.start, tzShown())]);
+    if (svc && locText(svc) && MODE !== 'manage') rows.push(['Dónde', locText(svc)]);
     var box = el('div', { cls: 'summary', 'data-testid': 'booking-summary' });
     rows.forEach(function (r) { box.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })])); });
     return box;
@@ -362,6 +376,8 @@ const CLIENT_JS = String.raw`
       var info = durationsOf(s).map(durLabel).join(' · ');
       if (s.seats > 1) info += ' · grupal, hasta ' + s.seats + ' personas';
       var left = el('div', null, [el('div', { cls: 't', text: s.name }), el('div', { cls: 's', text: info })]);
+      var where = locText(s);
+      if (where) left.appendChild(el('div', { cls: 's loc2', text: where, 'data-service-location': s.location.kind }));
       if (s.description) left.appendChild(el('div', { cls: 'd', text: s.description }));
       list.appendChild(el('button', { type: 'button', cls: 'opt', 'data-service': s.id, on: { click: function () {
         st.service = s.id; st.duration = s.duration_min; st.staff = 'any'; st.day = null; st.slot = null;
@@ -722,9 +738,12 @@ const CLIENT_JS = String.raw`
       });
       box.appendChild(sum);
       var acts = el('div', { cls: 'actions', style: 'justify-content:center' });
-      acts.appendChild(el('a', { cls: 'btn', href: a.ics_url, 'data-testid': 'booking-ics', text: 'Agregar a mi calendario' }));
+      var join = meetingButton(a);
+      if (join) acts.appendChild(join);
+      acts.appendChild(el('a', { cls: join ? 'btn ghost' : 'btn', href: a.ics_url, 'data-testid': 'booking-ics', text: 'Agregar a mi calendario' }));
       if (a.can_reschedule || a.can_cancel) acts.appendChild(el('a', { cls: 'btn ghost', href: a.manage_url, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-manage-link', text: 'Cambiar o cancelar' }));
       box.appendChild(acts);
+      if (!join && a.location_kind === 'video') box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-meeting-later', text: 'El enlace de la videollamada te llega en el correo de confirmación.' }));
     }
     root.appendChild(box);
   }
@@ -748,6 +767,8 @@ const CLIENT_JS = String.raw`
     if (st.alert) root.appendChild(el('div', { cls: st.alertOk ? 'note-ok' : 'alert', role: 'status', text: st.alert, 'data-testid': 'booking-alert' }));
     if (a.locked_reason) root.appendChild(el('p', { cls: 'muted', text: a.locked_reason, 'data-testid': 'booking-locked' }));
     var acts = el('div', { cls: 'actions' });
+    var joinM = meetingButton(a);
+    if (joinM) acts.appendChild(joinM);
     acts.appendChild(el('a', { cls: 'btn ghost', href: a.ics_url, text: 'Agregar a mi calendario' }));
     if (a.can_reschedule) acts.appendChild(el('button', { type: 'button', cls: 'btn', text: 'Cambiar el horario', 'data-testid': 'booking-reschedule', on: { click: function () {
       st.service = manage.service_id; st.staff = manage.staff_id || 'any'; st.month = null; st.day = null; st.cache = {};

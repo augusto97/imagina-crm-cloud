@@ -4199,6 +4199,57 @@ Las entregas siguientes: calendarios propios de cada asesor + Meet/Teams +
 sincronización en dos sentidos; después aprobación de citas, diseño de la
 página y más endurecimiento.
 
+**Addendum v0.1.350 — El calendario de cada asesor, la videollamada y la
+vuelta desde el calendario (segunda de tres entregas).**
+1. **«Mi calendario» por persona**: cada miembro conecta SU Google Calendar u
+   Outlook en Ajustes → Cuenta → Mi calendario. Es una conexión OAuth de la
+   galería con `config.purpose = 'agenda'`: **siempre privada**, sin acciones
+   de automatización, con el permiso extra `calendar.calendarlist.readonly` en
+   Google (`integrationScopes(def, { purpose })`, también en el canje y la
+   renovación). Sus preferencias viven en
+   `memberships.settings.agenda_calendar` (`connection_id`, `busy_calendars`
+   —vacío = el principal, hasta 20—, `write_calendar` —null = el principal—):
+   son de la persona, por empresa. Sólo se aceptan ids de SU cuenta (se
+   validan contra la lista del proveedor; uno de sólo lectura no sirve para
+   crear).
+2. **De dónde sale el calendario de quien atiende**
+   (`staff.calendar_source`): `person` = su «Mi calendario» (lo resuelve
+   `resolveStaff`, que exige una conexión **privada del propio
+   `staff_user_id`**: nadie arma una agenda que mire el calendario de otro)
+   o `connection` = una conexión del EQUIPO (o una privada de esa misma
+   persona, de antes) con sus calendarios elegidos en el constructor. Una
+   config vieja con `connection_id` se lee como `connection`. Lo ocupado se
+   pide a cada calendario elegido (caché por calendario) y sólo se lee inicio
+   y fin.
+3. **Dónde es cada servicio** (`service.location`): lo de la página,
+   **videollamada** (`auto` = Meet con Google, Teams con Outlook; o fija),
+   en persona con dirección, por teléfono (quién llama) o un **enlace fijo**
+   (https, nunca en la página pública: llega al reservar). La videollamada se
+   crea en el evento del calendario (`conferenceData` + `conferenceDataVersion=1`
+   en Google —si queda «pendiente» se consulta el evento—; `isOnlineMeeting` en
+   Graph, con reintento sin reunión si la cuenta no tiene Teams) y, si no se
+   puede, cae al **enlace fijo de la persona** (`staff.meeting_url`). El enlace
+   (`booking_appointments.meeting_url` + `meeting_provider`, migración 0097)
+   va al correo (botón «Unirse a la videollamada»), al `.ics`, a la página de
+   la cita, a `{{cita.enlace_reunion}}` y, si se mapea, a un campo de la lista.
+   La reserva espera hasta 6 s el enlace para mostrarlo en la confirmación.
+   Una agenda con videollamada que alguien no puede crear **no se publica**
+   (el motivo dice a quién le falta qué).
+4. **La vuelta**: un scheduler de BullMQ cada 3 min (`booking-calendar-sync`,
+   un nodo por disparo, candado por calendario en Redis) revisa las citas vivas
+   con evento: Google por `updatedMin` + `showDeleted` con cursor en Redis (un
+   pedido por calendario), Outlook por id en `$batch` de a 20. Compara contra lo
+   que la APP escribió la última vez (`external_event.start/end`), así lo que
+   movió la propia app no se toma por un cambio de quien atiende. Mover el
+   evento **mueve la cita** (estado Reprogramada) y borrarlo **la cancela**,
+   según `config.calendar_sync` (ambos encendidos por defecto), con el correo
+   al cliente si la página avisa los cambios del equipo y el disparador con
+   `por = calendar`. Un calendario que no se puede leer abre un Problema
+   (ADR-S44) y se cierra solo al volver.
+Queda para la tercera entrega: aprobación de citas, el diseño de la página y
+el endurecimiento de lo público. Afuera, a propósito: Zoom por OAuth (se usa
+el enlace fijo) y elegir el calendario de un RECURSO.
+
 ---
 
 ### ADR-S68 — App instalable, notificaciones push y escáner de códigos (v0.1.314)

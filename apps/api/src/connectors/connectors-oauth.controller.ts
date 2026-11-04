@@ -52,6 +52,8 @@ export class ConnectorsOAuthController {
         const suffix = result.ok
             ? '&oauth=ok'
             : `&oauth=error&msg=${encodeURIComponent(result.error ?? 'Error desconocido')}`;
-        await reply.redirect(panel + suffix, 302);
+        // v0.1.350 — «Mi calendario» vuelve a su propia sección de Ajustes.
+        const back = result.purpose === 'agenda' ? panel.replace('s=conectores', 's=calendario') : panel;
+        await reply.redirect(back + suffix, 302);
     }
 }

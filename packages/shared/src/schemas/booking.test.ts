@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
     bookingConfigSchema,
+    bookingLocationPublic,
+    bookingLocationText,
+    bookingMergeValue,
     bookingProblems,
+    sampleBookingEvent,
+    staffVideoProblem,
     bookingRulesSchema,
     bookingTriggerMatches,
     defaultBookingConfig,
@@ -297,3 +302,82 @@ describe('Agenda (D5) — horarios libres', () => {
         expect(svc.hours).toBeNull();
     });
 });
+
+describe('v0.1.350 — calendario de cada persona y lugar de la cita', () => {
+    it('una persona vieja con conexión sigue con esa conexión; sin conexión usa la suya', () => {
+        const cfg = bookingConfigSchema.parse({
+            staff: [
+                { id: 'stfa0001', kind: 'user', staff_user_id: 3, connection_id: 9 },
+                { id: 'stfb0002', kind: 'user', staff_user_id: 4 },
+                { id: 'stfc0003', kind: 'user', staff_user_id: 5, calendar_source: 'connection', connection_id: 7 },
+            ],
+        });
+        expect(cfg.staff.map((s) => s.calendar_source)).toEqual(['connection', 'person', 'connection']);
+        expect(cfg.staff[1]!.busy_calendars).toEqual([]);
+        expect(cfg.staff[1]!.write_calendar).toBeNull();
+        expect(cfg.calendar_sync).toEqual({ move: true, cancel: true });
+        expect(cfg.services).toEqual([]);
+    });
+
+    it('el enlace fijo tiene que ser https y un calendario no lleva espacios ni <>', () => {
+        expect(bookingConfigSchema.safeParse({ staff: [{ id: 'stfa0001', meeting_url: 'http://zoom.us/j/1' }] }).success).toBe(false);
+        expect(bookingConfigSchema.safeParse({ staff: [{ id: 'stfa0001', meeting_url: 'https://zoom.us/j/1' }] }).success).toBe(true);
+        expect(bookingConfigSchema.safeParse({ staff: [{ id: 'stfa0001', busy_calendars: ['<x>'] }] }).success).toBe(false);
+        expect(bookingConfigSchema.safeParse({ staff: [{ id: 'stfa0001', busy_calendars: ['equipo@group.calendar.google.com'] }] }).success).toBe(true);
+        expect(bookingConfigSchema.safeParse({ services: [{ id: 'svca0001', name: 'X', location: { kind: 'link', url: 'javascript:alert(1)' } }] }).success).toBe(false);
+    });
+
+    it('lo que ve el cliente antes de reservar nunca trae el enlace', () => {
+        const link = bookingLocationPublic({ kind: 'link', video: 'auto', url: 'https://zoom.us/j/123', address: '', phone: 'client', phone_number: '', note: '' }, '');
+        expect(JSON.stringify(link)).not.toContain('zoom.us');
+        expect(link.label).toBe('Videollamada');
+        expect(bookingLocationPublic({ kind: 'video', video: 'meet', url: '', address: '', phone: 'client', phone_number: '', note: '' }, '').label).toBe('Videollamada por Google Meet');
+        expect(bookingLocationPublic({ kind: 'in_person', video: 'auto', url: '', address: '', phone: 'client', phone_number: '', note: 'Piso 3' }, 'Cra. 7 #12-34').detail).toBe('Cra. 7 #12-34 · Piso 3');
+        expect(bookingLocationPublic({ kind: 'phone', video: 'auto', url: '', address: '', phone: 'company', phone_number: '+57 300 1112233', note: '' }, '').detail).toBe('Llámanos al +57 300 1112233.');
+        expect(bookingLocationPublic({ kind: 'page', video: 'auto', url: '', address: '', phone: 'client', phone_number: '', note: '' }, 'Sede norte')).toEqual({ kind: 'page', label: 'Sede norte', detail: '' });
+    });
+
+    it('una cita reservada dice dónde es y con qué plataforma', () => {
+        const loc = { kind: 'video' as const, video: 'auto' as const, url: '', address: '', phone: 'client' as const, phone_number: '', note: '' };
+        expect(bookingLocationText(loc, '', { url: 'https://teams.microsoft.com/l/x', provider: 'teams' })).toBe('Videollamada por Microsoft Teams');
+        expect(bookingLocationText(loc, '')).toBe('Videollamada');
+        const info = { ...sampleBookingEvent(), location: 'En persona · Sede', meeting_url: 'https://meet.google.com/a', by: 'calendar' as const };
+        expect(bookingMergeValue(info, 'lugar')).toBe('En persona · Sede');
+        expect(bookingMergeValue(info, 'enlace_reunion')).toBe('https://meet.google.com/a');
+        expect(bookingMergeValue(info, 'por')).toBe('quien atiende (desde su calendario)');
+    });
+
+    it('quién puede atender por videollamada', () => {
+        const base = { kind: 'user' as const, create_events: true, meeting_url: '' };
+        expect(staffVideoProblem(base, 'auto', 'google_calendar')).toBeNull();
+        expect(staffVideoProblem(base, 'teams', 'outlook')).toBeNull();
+        expect(staffVideoProblem(base, 'meet', 'outlook')).toMatch(/Google Calendar/);
+        expect(staffVideoProblem(base, 'auto', null)).toMatch(/Mi calendario/);
+        expect(staffVideoProblem({ ...base, create_events: false }, 'auto', 'google_calendar')).toMatch(/Agregar cada cita/);
+        expect(staffVideoProblem({ ...base, meeting_url: 'https://zoom.us/j/1' }, 'meet', null)).toBeNull();
+        expect(staffVideoProblem({ ...base, kind: 'resource' }, 'auto', null)).toMatch(/recurso/);
+    });
+
+    it('los problemas de publicar revisan el lugar de cada servicio', () => {
+        const cfg = bookingConfigSchema.parse({
+            services: [
+                { id: 'svca0001', name: 'Asesoría', location: { kind: 'video', video: 'meet' } },
+                { id: 'svcb0002', name: 'Visita', location: { kind: 'in_person' } },
+                { id: 'svcc0003', name: 'Llamada', location: { kind: 'phone', phone: 'company' } },
+                { id: 'svcd0004', name: 'Zoom', location: { kind: 'link' } },
+            ],
+            staff: [{ id: 'stfa0001', kind: 'user', staff_user_id: 3 }],
+        });
+        const without = bookingProblems(cfg, []);
+        expect(without.some((p) => p.includes('videollamada: '))).toBe(false);
+        expect(without).toEqual(expect.arrayContaining([
+            expect.stringContaining('dirección de «Visita»'),
+            expect.stringContaining('número al que llama el cliente para «Llamada»'),
+            expect.stringContaining('enlace de la videollamada de «Zoom»'),
+        ]));
+        const withCal = bookingProblems(cfg, [], { staffCalendars: { stfa0001: { provider: 'outlook' } } });
+        expect(withCal.some((p) => p.includes('no puede atender «Asesoría» por videollamada') && p.includes('Google Calendar'))).toBe(true);
+        expect(bookingProblems(cfg, [], { staffCalendars: { stfa0001: { provider: 'google_calendar' } } }).some((p) => p.includes('Asesoría'))).toBe(false);
+    });
+});
+

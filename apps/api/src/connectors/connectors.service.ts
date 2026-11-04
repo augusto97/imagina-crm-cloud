@@ -91,7 +91,7 @@ import {
 import { REDIS } from '../redis/redis.module';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { attachments, automations, connections, lists, tenants, users } from '../db/schema';
+import { attachments, automations, connections, lists, memberships, tenants, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { stripSiteMarkers, stripStoreMarkers } from '../lists/store-guard';
 import { verifyWordpress } from './wordpress/wp-verify';
@@ -220,6 +220,8 @@ interface PendingOAuth {
     /** v0.1.203 — app de la galería que se está autorizando. */
     integration?: IntegrationKey;
     visibility?: ConnectorVisibility;
+    /** v0.1.350 — `agenda`: el calendario de la persona para sus citas («Mi calendario»). */
+    purpose?: 'agenda';
 }
 
 /** Con qué app del proveedor se autoriza y renueva una conexión. */
@@ -819,7 +821,7 @@ export class ConnectorsService {
                 clientSecret: app.clientSecret,
                 authorizeUrl: app.authorizeUrl,
                 tokenUrl: app.tokenUrl,
-                scopes: integrationScopes(def),
+                scopes: integrationScopes(def, { purpose: row.config.purpose === 'agenda' ? 'agenda' : null }),
                 extraParams: provider.extra_params,
                 scopeOnToken: provider.scope_on_token,
                 providerKey: def.auth.provider,
@@ -910,6 +912,14 @@ export class ConnectorsService {
         role: Role,
         key: IntegrationKey,
         input: AuthorizeIntegrationInput,
+        /**
+         * v0.1.350 — `agenda`: el calendario de «Mi calendario». Es SIEMPRE
+         * privado (de la persona) y existe aunque el admin no habilite las
+         * conexiones privadas: sólo lo usa la agenda de citas para leer lo
+         * ocupado de esa persona y crear sus citas (no tiene acciones de
+         * automatización).
+         */
+        opts: { purpose?: 'agenda' } = {},
     ): Promise<OAuthStartResult> {
         const def = integrationDef(key);
         if (!def || def.auth.kind !== 'oauth') {
@@ -919,7 +929,11 @@ export class ConnectorsService {
                 data: { status: 400 },
             });
         }
-        let visibility = input.visibility;
+        const purpose = opts.purpose;
+        if (purpose === 'agenda' && key !== 'google_calendar' && key !== 'outlook') {
+            throw new BadRequestException({ code: 'integration_mismatch', message: 'Para tu agenda conecta Google Calendar u Outlook.', data: { status: 400 } });
+        }
+        let visibility = purpose === 'agenda' ? ('private' as ConnectorVisibility) : input.visibility;
         let connectionId: number | null = null;
         if (input.connection_id) {
             const row = await this.requireEditable(tenantId, userId, role, input.connection_id);
@@ -932,7 +946,7 @@ export class ConnectorsService {
             }
             connectionId = row.id;
             visibility = row.visibility as ConnectorVisibility;
-        } else {
+        } else if (purpose !== 'agenda') {
             await this.assertMayUseVisibility(tenantId, role, visibility);
         }
         const app = await this.apps.resolve(def.auth.provider);
@@ -943,12 +957,12 @@ export class ConnectorsService {
                 clientSecret: app.clientSecret,
                 authorizeUrl: app.authorizeUrl,
                 tokenUrl: app.tokenUrl,
-                scopes: integrationScopes(def),
+                scopes: integrationScopes(def, { purpose: purpose ?? null }),
                 extraParams: provider.extra_params,
                 scopeOnToken: provider.scope_on_token,
                 providerKey: def.auth.provider,
             },
-            { tenantId, userId, connectionId, integration: key, visibility },
+            { tenantId, userId, connectionId, integration: key, visibility, ...(purpose ? { purpose } : {}) },
         );
     }
 
@@ -962,7 +976,7 @@ export class ConnectorsService {
         sessionUserId: number,
         code: string,
         state: string,
-    ): Promise<{ ok: boolean; error: string | null }> {
+    ): Promise<{ ok: boolean; error: string | null; purpose?: 'agenda' }> {
         if (code.trim() === '' || state.trim() === '') {
             return { ok: false, error: 'El proveedor no devolvió el código de autorización.' };
         }
@@ -986,14 +1000,17 @@ export class ConnectorsService {
         // Primera conexión de una app de la galería: todavía no hay fila.
         if (pending.connectionId === null) {
             if (!pending.integration) return { ok: false, error: 'La autorización quedó en un estado inválido.' };
-            return this.completeNewIntegration(pending, code);
+            const done = await this.completeNewIntegration(pending, code);
+            return pending.purpose ? { ...done, purpose: pending.purpose } : done;
         }
 
         const row = await this.row(pending.tenantId, pending.connectionId);
         if (!row) return { ok: false, error: 'La conexión ya no existe.' };
+        const purpose = row.config.purpose === 'agenda' ? ('agenda' as const) : undefined;
+        const tag = purpose ? { purpose } : {};
         const secrets = this.readSecrets(row);
         if (secrets === null) {
-            return { ok: false, error: new ConnectionUnusableError(row.name).message };
+            return { ok: false, error: new ConnectionUnusableError(row.name).message, ...tag };
         }
 
         try {
@@ -1008,7 +1025,7 @@ export class ConnectorsService {
                 if (before && after && before.toLowerCase() !== after.toLowerCase() && (await this.filesIn(pending.tenantId, row.id)) > 0) {
                     const error = `Autorizaste con ${after}, pero los archivos de la empresa están en el Drive de ${before}. Reconecta con esa cuenta (o mueve los archivos al servidor antes de cambiarla).`;
                     await this.setOAuthError(pending.tenantId, row.id, error);
-                    return { ok: false, error };
+                    return { ok: false, error, ...tag };
                 }
             }
             await this.storeTokens(pending.tenantId, row, token, {
@@ -1034,11 +1051,11 @@ export class ConnectorsService {
                     scope: token.scope,
                 },
             });
-            return { ok: true, error: null };
+            return { ok: true, error: null, ...tag };
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             await this.setOAuthError(pending.tenantId, row.id, message);
-            return { ok: false, error: message };
+            return { ok: false, error: message, ...tag };
         }
     }
 
@@ -1071,7 +1088,8 @@ export class ConnectorsService {
                     clientSecret: app.clientSecret,
                     authorizeUrl: app.authorizeUrl,
                     tokenUrl: app.tokenUrl,
-                    scopes: integrationScopes(def),
+                    // v0.1.350 — los mismos permisos que se pidieron (el calendario de la agenda suma uno).
+                    scopes: integrationScopes(def, { purpose: pending.purpose ?? null }),
                     extraParams: provider.extra_params,
                     scopeOnToken: provider.scope_on_token,
                     providerKey: def.auth.provider,
@@ -1101,9 +1119,9 @@ export class ConnectorsService {
                         name,
                         baseUrl: '',
                         authType: 'oauth2',
-                        config: { account_label: label, oauth_state: oauthState },
+                        config: { account_label: label, oauth_state: oauthState, ...(pending.purpose ? { purpose: pending.purpose } : {}) },
                         secrets,
-                        visibility: pending.visibility ?? 'workspace',
+                        visibility: pending.purpose === 'agenda' ? 'private' : (pending.visibility ?? 'workspace'),
                         ownerUserId: pending.userId,
                         createdBy: pending.userId,
                     })
@@ -1115,8 +1133,20 @@ export class ConnectorsService {
                     targetType: 'connection',
                     targetId: created!.id,
                     targetLabel: name,
-                    meta: { integration: key, account: label, has_refresh: token.refreshToken !== null },
+                    meta: { integration: key, account: label, has_refresh: token.refreshToken !== null, ...(pending.purpose ? { purpose: pending.purpose } : {}) },
                 });
+                // v0.1.350 — «Mi calendario»: queda como el calendario de la
+                // persona en esta empresa (con los calendarios por defecto).
+                if (pending.purpose === 'agenda') {
+                    const prefs = { connection_id: created!.id, busy_calendars: [], write_calendar: null };
+                    await tx
+                        .update(memberships)
+                        .set({
+                            settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('agenda_calendar', ${JSON.stringify(prefs)}::jsonb)`,
+                            updatedAt: new Date(),
+                        })
+                        .where(and(eq(memberships.tenantId, pending.tenantId), eq(memberships.userId, pending.userId)));
+                }
             });
             return { ok: true, error: null };
         } catch (err) {
@@ -2722,8 +2752,10 @@ export class ConnectorsService {
             auth_key: String(row.config.auth_key ?? ''),
             headers: readConfigPairs(row.config.headers) as ConnectorPair[],
             query_params: readConfigPairs(row.config.query_params) as ConnectorPair[],
-            // Las apps de la galería traen sus acciones del catálogo.
-            actions: def ? [...def.actions] : readConnectorActions(row.config.actions),
+            // Las apps de la galería traen sus acciones del catálogo. El
+            // calendario de «Mi calendario» (v0.1.350) existe sólo para la
+            // agenda: no ofrece acciones de automatización.
+            actions: row.config.purpose === 'agenda' ? [] : def ? [...def.actions] : readConnectorActions(row.config.actions),
             oauth: readOAuthConfig(row.config.oauth),
             oauth_status: this.oauthStatus(row, secrets),
             oauth_redirect_uri: this.oauthRedirectUri(),
@@ -2737,6 +2769,7 @@ export class ConnectorsService {
             last_check_ok: row.lastCheckOk,
             last_check_error: row.lastCheckError,
             usage_count: extra.usage,
+            purpose: row.config.purpose === 'agenda' ? 'agenda' : null,
             can_edit: extra.canEdit,
             created_at: row.createdAt.toISOString(),
             updated_at: row.updatedAt.toISOString(),

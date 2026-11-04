@@ -44,6 +44,7 @@ import {
     moveService,
     removeService,
 } from './bookingDesignOps';
+import { ServiceLocationEditor } from './BookingCalendarParts';
 import { useBookingHolidays } from './useBookingPages';
 
 /**
@@ -260,6 +261,8 @@ export function ServiceCard({
             <Field label={__('Descripción (opcional)')}>
                 <Textarea rows={2} value={svc.description} onChange={(e) => set({ description: e.target.value })} />
             </Field>
+            {/* v0.1.350 — dónde es: videollamada (Meet o Teams), en persona, por teléfono o un enlace fijo. */}
+            <ServiceLocationEditor svc={svc} config={config} onChange={onChange} />
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-2">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                     <Users className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />

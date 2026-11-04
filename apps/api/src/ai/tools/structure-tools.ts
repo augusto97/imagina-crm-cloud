@@ -569,7 +569,7 @@ const automationSpec = z.object({
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
                 'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
-                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled] (sin él, los tres), field_filters?}. ' +
+                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.lugar}}, {{cita.enlace_reunion}} (el enlace de Meet, Teams o el fijo), {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled] (sin él, los tres), field_filters?}. ' +
                 'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}. ' +
                 'email_received (MESA DE AYUDA: llegó un correo al buzón de soporte de la lista — ver `helpdesk` en get_list_schema; las acciones usan {{correo.de}}, {{correo.nombre}}, {{correo.asunto}}, {{correo.texto}}, {{correo.tipo}} (nuevo|respuesta)): {email_kind?: any (default) | new (sólo tickets nuevos) | reply (sólo respuestas del cliente), field_filters?}. ' +
                 'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}.',
@@ -1340,14 +1340,16 @@ export class StructureTools implements AiProposalApplier {
                     public_url: b.public_url ?? b.public_path,
                     bookings: b.bookings_count,
                     upcoming: b.upcoming_count,
-                    services: b.config.services.filter((x) => x.active).map((x) => ({ id: x.id, name: x.name, duration_min: x.duration_min })),
+                    services: b.config.services.filter((x) => x.active).map((x) => ({ id: x.id, name: x.name, duration_min: x.duration_min, location: x.location.kind, ...(x.location.kind === 'video' ? { video: x.location.video } : {}) })),
+                    // v0.1.350 — el calendario: el de la persona («Mi calendario») o una conexión de la empresa.
                     staff: b.config.staff
                         .filter((x) => x.active)
-                        .map((x) => (x.kind === 'resource' ? { resource: x.name } : { user_id: x.staff_user_id, name: x.name || null })),
+                        .map((x) => (x.kind === 'resource' ? { resource: x.name } : { user_id: x.staff_user_id, name: x.name || null, calendar: x.calendar_source, has_meeting_url: x.meeting_url !== '' })),
+                    calendar_sync: b.config.calendar_sync,
                     choose_staff: b.config.settings.choose_staff,
                     rules: b.config.rules,
                     writes: Object.fromEntries(
-                        (['start_field_id', 'end_field_id', 'duration_field_id', 'person_field_id', 'resource_field_id', 'service_field_id', 'name_field_id', 'email_field_id', 'phone_field_id', 'status_field_id'] as const)
+                        (['start_field_id', 'end_field_id', 'duration_field_id', 'person_field_id', 'resource_field_id', 'service_field_id', 'name_field_id', 'email_field_id', 'phone_field_id', 'status_field_id', 'meeting_url_field_id'] as const)
                             .filter((k) => b.config.mapping[k] !== null)
                             .map((k) => [k.replace(/_field_id$/, ''), fieldById.get(b.config.mapping[k]!)?.slug ?? null]),
                     ),

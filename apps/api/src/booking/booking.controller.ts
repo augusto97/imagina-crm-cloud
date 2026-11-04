@@ -1,5 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
+    connectMyAgendaCalendarSchema,
+    updateMyAgendaCalendarSchema,
+    type AgendaCalendarItem,
+    type ConnectMyAgendaCalendarInput,
+    type MyAgendaCalendarDto,
+    type UpdateMyAgendaCalendarInput,
     bookAppointmentSchema,
     bookingPreviewSlotsSchema,
     bookingSlotsQuerySchema,
@@ -33,6 +39,8 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { appointmentNotFoundPage, bookingNotAvailablePage, renderBookingPage } from './booking-page';
 import { BookingPublicService } from './booking-public.service';
 import { BookingService, type BookingEditorOptions } from './booking.service';
+import { BookingMyCalendarService } from './booking-my-calendar.service';
+import { ForbiddenException } from '@nestjs/common';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
@@ -61,6 +69,17 @@ export class BookingController {
     @RequireCapability('manage_lists')
     options(@Req() req: FastifyRequest, @Param('list') list: string): Promise<BookingEditorOptions> {
         return this.booking.editorOptions(req.tenant!.tenantId, list);
+    }
+
+    /**
+     * v0.1.350 — Los calendarios de una conexión de la EMPRESA (para elegir en
+     * cuáles mira lo ocupado una persona). Una privada de otra persona no se
+     * lista: sus calendarios son suyos.
+     */
+    @Get('calendars/:connectionId')
+    @RequireCapability('manage_lists')
+    calendars(@Req() req: FastifyRequest, @Param('connectionId', ParseIntPipe) connectionId: number): Promise<{ data: AgendaCalendarItem[] }> {
+        return this.booking.connectionCalendars(req.tenant!.tenantId, connectionId).then((data) => ({ data }));
     }
 
     /** v0.1.349 — Los festivos de un país y un año (para marcar los que sí se atienden). */
@@ -305,5 +324,48 @@ export class PublicBookingPageController {
             .header('Referrer-Policy', 'strict-origin-when-cross-origin')
             .type('text/html; charset=utf-8')
             .send(renderBookingPage({ nonce, title: info.title, boot: { mode: 'book', token, meta: info.meta, manage: null } }));
+    }
+}
+
+/**
+ * v0.1.350 — «Mi calendario» (Ajustes → Cuenta): cada persona del equipo
+ * conecta su propio Google Calendar u Outlook para sus citas y elige sus
+ * calendarios. Mientras se ve la app como otra persona no se conecta nada (se
+ * vincularía la cuenta de Google de quien mira).
+ */
+@PlanModule('booking')
+@Controller('me/agenda-calendar')
+@UseGuards(SessionGuard, TenantGuard)
+export class MyAgendaCalendarController {
+    constructor(private readonly mine: BookingMyCalendarService) {}
+
+    private noImpersonation(req: FastifyRequest): void {
+        if (req.impersonatedBy !== undefined) {
+            throw new ForbiddenException({ code: 'impersonating', message: 'Mientras ves la app como otra persona no se puede conectar ni cambiar su calendario.', data: { status: 403 } });
+        }
+    }
+
+    @Get()
+    get(@Req() req: FastifyRequest): Promise<MyAgendaCalendarDto> {
+        return this.mine.get(req.tenant!.tenantId, req.authUserId!);
+    }
+
+    @Post('connect')
+    @HttpCode(200)
+    connect(@Req() req: FastifyRequest, @Body(new ZodValidationPipe(connectMyAgendaCalendarSchema)) input: ConnectMyAgendaCalendarInput): Promise<{ authorize_url: string }> {
+        this.noImpersonation(req);
+        return this.mine.connect(req.tenant!.tenantId, req.authUserId!, req.tenant!.role, input);
+    }
+
+    @Patch()
+    update(@Req() req: FastifyRequest, @Body(new ZodValidationPipe(updateMyAgendaCalendarSchema)) input: UpdateMyAgendaCalendarInput): Promise<MyAgendaCalendarDto> {
+        this.noImpersonation(req);
+        return this.mine.update(req.tenant!.tenantId, req.authUserId!, input);
+    }
+
+    @Delete()
+    disconnect(@Req() req: FastifyRequest): Promise<MyAgendaCalendarDto> {
+        this.noImpersonation(req);
+        return this.mine.disconnect(req.tenant!.tenantId, req.authUserId!, req.tenant!.role);
     }
 }

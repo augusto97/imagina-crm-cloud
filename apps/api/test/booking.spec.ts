@@ -22,7 +22,8 @@ import { ActivityService } from '../src/activity/activity.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { NO_HOLIDAYS } from './helpers/no-holidays';
 import { BookingAvailabilityService } from '../src/booking/booking-availability.service';
-import { BookingCalendarService, busyRequest, parseBusy, type CalendarEventInput } from '../src/booking/booking-calendar';
+import { BookingMyCalendarService } from '../src/booking/booking-my-calendar.service';
+import { BookingCalendarService, busyRequest, parseBusy, type CalendarEventInput, type CreatedCalendarEvent, type StaffCalendarRef } from '../src/booking/booking-calendar';
 import { appointmentRecordData, sanitizeBookingConfig } from '../src/booking/booking-config';
 import { bookingClientEmail } from '../src/booking/booking-email';
 import { buildIcs, foldIcsLine } from '../src/booking/booking-ics';
@@ -94,12 +95,18 @@ class FakeCalendar extends BookingCalendarService {
     constructor(env: Env, redis: IORedis, tenantDb: TenantDb) {
         super(tenantDb, undefined as never, redis as never, env);
     }
-    override busy(_tenantId: number, connectionId: number): Promise<BusyInterval[]> {
-        return Promise.resolve(this.busyByConn.get(connectionId) ?? []);
+    override busy(_tenantId: number, ref: StaffCalendarRef | number): Promise<BusyInterval[]> {
+        return Promise.resolve(this.busyByConn.get(typeof ref === 'number' ? ref : ref.connectionId) ?? []);
     }
-    override createEvent(_tenantId: number, connectionId: number, input: CalendarEventInput): Promise<BookingExternalEvent> {
+    override createEvent(_tenantId: number, ref: StaffCalendarRef | number, input: CalendarEventInput): Promise<CreatedCalendarEvent> {
+        const connectionId = typeof ref === 'number' ? ref : ref.connectionId;
         this.created.push({ connectionId, input });
-        return Promise.resolve({ connection_id: connectionId, provider: 'google_calendar', event_id: `ev${this.created.length}`, calendar: 'primary' });
+        const n = this.created.length;
+        return Promise.resolve({
+            event: { connection_id: connectionId, provider: 'google_calendar', event_id: `ev${n}`, calendar: 'primary', start: input.start.toISOString(), end: input.end.toISOString() },
+            meeting: input.meeting ? { url: `https://meet.google.com/fake-${n}`, provider: input.meeting } : null,
+            meetingError: null,
+        });
     }
     override moveEvent(_tenantId: number, ev: BookingExternalEvent, start: Date): Promise<void> {
         this.moved.push({ id: ev.event_id, start });
@@ -285,6 +292,7 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
     let dispatcher: CapturingDispatcher;
     let mailbox: CapturingMailTransport;
     let calendar: FakeCalendar;
+    let myCalendar: BookingMyCalendarService;
     let booking: BookingService;
     let pub: BookingPublicService;
     let reminders: BookingRemindersService;
@@ -390,7 +398,8 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         mailbox = new CapturingMailTransport();
         calendar = new FakeCalendar(env, redis, tenantDb);
         const availability = new BookingAvailabilityService(tenantDb, calendar, NO_HOLIDAYS);
-        booking = new BookingService(pg.db, tenantDb, lists, fieldsSvc, availability, NO_HOLIDAYS);
+        myCalendar = new BookingMyCalendarService(tenantDb, calendar, null as never, { resolve: () => Promise.resolve({}) } as never);
+        booking = new BookingService(pg.db, tenantDb, lists, fieldsSvc, availability, NO_HOLIDAYS, calendar, myCalendar);
         const notify = new NotifyHub();
         notified = [];
         notify.subscribe((e) => {

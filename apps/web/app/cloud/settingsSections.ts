@@ -1,5 +1,6 @@
 import {
     Bell,
+    CalendarCheck,
     CreditCard,
     DoorOpen,
     Gauge,
@@ -52,7 +53,8 @@ export type SettingsSectionId =
     | 'auditoria'
     | 'datos'
     | 'seguridad'
-    | 'avisos';
+    | 'avisos'
+    | 'calendario';
 
 /** `hint`: una línea que dice para qué sirve (el índice del celular y el subtítulo de la sección). */
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon; hint: string };
@@ -77,6 +79,7 @@ const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
     papelera: { id: 'papelera', label: 'Papelera', icon: Trash2, hint: 'Recupera lo borrado en los últimos 30 días' },
     seguridad: { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck, hint: 'Contraseña, verificación en dos pasos y dispositivos' },
     avisos: { id: 'avisos', label: 'Avisos', icon: Bell, hint: 'Qué te llega al correo y al teléfono' },
+    calendario: { id: 'calendario', label: 'Mi calendario', icon: CalendarCheck, hint: 'Tu Google Calendar u Outlook para las citas que atiendes' },
     firma: { id: 'firma', label: 'Firma de email', icon: PenLine, hint: 'La firma de tus correos' },
     datos: { id: 'datos', label: 'Tus datos', icon: DatabaseZap, hint: 'Descargar o borrar tu cuenta' },
     apariencia: { id: 'apariencia', label: 'Apariencia', icon: SunMoon, hint: 'Modo claro u oscuro y la barra de abajo del celular' },
@@ -129,7 +132,8 @@ export function settingsSectionGroups({
             // Papelera: TODO miembro la abre (lo que borró y lo de las listas que ve).
             items: pick((isAdmin || canManageAutomations) && 'problemas', isAdmin && 'auditoria', 'papelera'),
         },
-        { label: 'Cuenta', items: pick('seguridad', 'avisos', 'firma', 'datos', 'apariencia') },
+        // v0.1.350 — «Mi calendario»: el de cada persona para la agenda de citas.
+        { label: 'Cuenta', items: pick('seguridad', 'avisos', 'calendario', 'firma', 'datos', 'apariencia') },
     ];
     // Un rol sin nada de un tema (agente/lector) no ve un grupo vacío.
     return groups.filter((g) => g.items.length > 0);

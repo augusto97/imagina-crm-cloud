@@ -321,7 +321,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             dashboardsService,
             recordTemplatesSvc,
             // D5 — las páginas de agenda viajan en el blueprint.
-            new BookingService(pg.db, tenantDb, listsService, fieldsService, new BookingAvailabilityService(tenantDb, null as never, NO_HOLIDAYS), NO_HOLIDAYS),
+            new BookingService(pg.db, tenantDb, listsService, fieldsService, new BookingAvailabilityService(tenantDb, null as never, NO_HOLIDAYS), NO_HOLIDAYS, null as never, { memberCalendars: () => Promise.resolve(new Map()) } as never),
         );
         const audit = new AuditService(tenantDb);
         templates = new TemplatesService(tenantDb, listsService, blueprints, audit);

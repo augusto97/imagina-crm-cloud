@@ -15,6 +15,7 @@ import {
     removeQuestion,
     removeService,
     sectionProblems,
+    staffCalendarsFrom,
     setDayIntervals,
     setException,
     setMapping,
@@ -202,3 +203,70 @@ describe('constructor de la agenda (operaciones puras)', () => {
 function updatePrice(c: BookingConfig, price: number): BookingConfig {
     return { ...c, services: c.services.map((s) => ({ ...s, price })) };
 }
+
+describe('v0.1.350 — dónde es la cita y el calendario de cada persona', () => {
+    function withVideo(staffPatch: Record<string, unknown> = {}): BookingConfig {
+        return bookingConfigSchema.parse({
+            services: [{ id: 'svcvid', name: 'Asesoría', duration_min: 30, location: { kind: 'video' } }],
+            staff: [{ id: 'stfana', kind: 'user', staff_user_id: 12, ...staffPatch }],
+            mapping: { start_field_id: 1, person_field_id: 2 },
+        });
+    }
+
+    it('sabe qué calendario tiene cada persona: el suyo o la conexión de la empresa', () => {
+        const c = bookingConfigSchema.parse({
+            staff: [
+                { id: 'stfana', kind: 'user', staff_user_id: 12, calendar_source: 'person' },
+                { id: 'stfbeto', kind: 'user', staff_user_id: 13, calendar_source: 'connection', connection_id: 7 },
+                { id: 'stfsala', kind: 'resource', name: 'Sala 1' },
+            ],
+        });
+        const out = staffCalendarsFrom(c, [{ id: 12, calendar: { provider: 'google_calendar' } }, { id: 13, calendar: null }], [{ id: 7, provider: 'outlook' }]);
+        expect(out).toEqual({ stfana: { provider: 'google_calendar' }, stfbeto: { provider: 'outlook' }, stfsala: { provider: null } });
+    });
+
+    it('una videollamada sin calendario ni enlace fijo se avisa en «Quién atiende», con el nombre', () => {
+        const c = withVideo();
+        const p = sectionProblems(c, fields, { staffCalendars: { stfana: { provider: null } }, memberNames: new Map([[12, 'Ana Ruiz']]) });
+        expect(p.atienden?.[0]).toContain('«Ana Ruiz» no puede atender «Asesoría» por videollamada');
+        // Con su Google Calendar, sí.
+        expect(sectionProblems(c, fields, { staffCalendars: { stfana: { provider: 'google_calendar' } } }).atienden).toBeUndefined();
+        // Con un enlace fijo, también.
+        expect(sectionProblems(withVideo({ meeting_url: 'https://zoom.us/j/1' }), fields, { staffCalendars: { stfana: { provider: null } } }).atienden).toBeUndefined();
+        // Teams pedido y su calendario es de Google: se avisa.
+        const teams = { ...c, services: c.services.map((s) => ({ ...s, location: { ...s.location, video: 'teams' as const } })) };
+        expect(sectionProblems(teams, fields, { staffCalendars: { stfana: { provider: 'google_calendar' } } }).atienden?.[0]).toContain('Microsoft Teams');
+        // Sin saber de los calendarios (cargando), no se acusa a nadie.
+        expect(sectionProblems(c, fields).atienden).toBeUndefined();
+    });
+
+    it('un enlace fijo, una dirección o un teléfono que faltan se avisan en Servicios', () => {
+        const base2 = bookingConfigSchema.parse({ services: [{ id: 'svcuno', name: 'Consulta', duration_min: 30 }], staff: [{ id: 'stfana', kind: 'user', staff_user_id: 12 }] });
+        const loc = (location: Record<string, unknown>): BookingConfig => bookingConfigSchema.parse({ ...base2, services: [{ ...base2.services[0], location }] });
+        expect(sectionProblems(loc({ kind: 'link' }), fields).servicios?.[0]).toContain('enlace');
+        expect(sectionProblems(loc({ kind: 'link', url: 'https://zoom.us/j/1' }), fields).servicios).toBeUndefined();
+        expect(sectionProblems(loc({ kind: 'in_person' }), fields).servicios?.[0]).toContain('dirección');
+        expect(sectionProblems(loc({ kind: 'phone', phone: 'company' }), fields).servicios?.[0]).toContain('número');
+    });
+
+    it('la vista previa dice dónde es cada servicio, sin enlaces', () => {
+        const c = bookingConfigSchema.parse({
+            services: [{ id: 'svcuno', name: 'Consulta', duration_min: 30, location: { kind: 'link', url: 'https://zoom.us/j/secreto' } }],
+            staff: [{ id: 'stfana', kind: 'user', staff_user_id: 12 }],
+        });
+        const meta = buildPreviewMeta(c, {
+            name: 'Agenda',
+            fields,
+            members: [{ id: 12, name: 'Ana' }],
+            accent: '#0e7490',
+            logoUrl: null,
+            company: 'Acme',
+            timeZone: 'America/Bogota',
+            numberFormat: 'dot_comma',
+            captchaProvider: null,
+            dataConsent: null,
+        });
+        expect(meta.services[0]!.location.kind).toBe('link');
+        expect(JSON.stringify(meta)).not.toContain('secreto');
+    });
+});
