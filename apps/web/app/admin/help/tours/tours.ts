@@ -829,6 +829,13 @@ export const TOURS: TourDef[] = [
                 tip: 'Guarda el diseño en **Mis temas** para usarlo en todos los formularios de la empresa.',
             },
             {
+                id: 'logic',
+                art: 'form-logic',
+                title: 'Que se adapte a cada persona',
+                body: 'En la pestaña **Lógica** saltas las páginas que no le corresponden, eliges una pantalla final según lo que respondió y la saludas por su nombre escribiendo «Hola, {{nombre}}».',
+                tip: 'Una condición puede tener varias reglas: que se cumplan **todas** o **alguna**.',
+            },
+            {
                 id: 'publish',
                 art: 'form-embed',
                 title: 'Publica y comparte',

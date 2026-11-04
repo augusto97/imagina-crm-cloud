@@ -60,6 +60,8 @@ export const formPendingSubmissions = pgTable(
          * confirmar, con estos datos del envío original. null = no se pidió.
          */
         consent: jsonb('consent').$type<PendingConsent | null>(),
+        /** v0.1.356 — La pantalla final que le tocó al enviar (null = el «¡Gracias!»). */
+        endingId: varchar('ending_id', { length: 24 }),
         expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     },

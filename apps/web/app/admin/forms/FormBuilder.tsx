@@ -35,15 +35,14 @@ import {
     buildPublicFormItems,
     buildPublicThemeCss,
     CAPTCHA_PROVIDER_INFO,
-    FORM_CONDITION_OPS,
+    formRecallMap,
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
     type CaptchaAvailability,
     type FormDataConsentAvailability,
     type FormFileAccept,
-    type FormCondition,
-    type FormConditionOp,
     type FormConfig,
+    type FormShowIf,
     type FormDto,
     type FormItem,
     type PublicChoiceStyle,
@@ -75,6 +74,8 @@ import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section } from '../automations/email/EmailBlockInspector';
 import { FieldItemDesign, ImageItemEditor } from './design/ItemDesign';
+import { ConditionEditor } from './design/ConditionEditor';
+import { LogicMap, LogicPanel, RecallPicker, withToken } from './design/LogicPanel';
 import { MatrixEditor } from './design/QuestionKind';
 import { MyThemes } from './design/MyThemes';
 import { ThemeGallery } from './design/ThemeGallery';
@@ -99,6 +100,8 @@ import {
     availableFields,
     conditionCandidates,
     emailQuestions,
+    endingName,
+    logicCount,
     missingRequired,
     moveItem,
     moveItemTo,
@@ -122,17 +125,6 @@ import { formPublicOrigin, formPublicUrl, useCaptchaAvailability,
  * vista previa y recibe el diseño por postMessage): lo que se ve al diseñar
  * es lo que se publica, sin una segunda implementación que se desfase.
  */
-
-const OP_LABELS: Record<FormConditionOp, string> = {
-    eq: 'es',
-    neq: 'no es',
-    in: 'es alguno de',
-    contains: 'contiene',
-    gt: 'es mayor que',
-    lt: 'es menor que',
-    is_empty: 'está vacío',
-    is_not_empty: 'tiene respuesta',
-};
 
 interface Draft {
     name: string;
@@ -194,6 +186,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     // Con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
     const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
     const [shareOpen, setShareOpen] = useState(false);
+    // v0.1.356 — la pantalla final que se mira en la vista previa (null = el formulario; '' = la de siempre).
+    const [previewEnding, setPreviewEnding] = useState<string | null>(null);
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
     const config = draft.config;
@@ -308,6 +302,10 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             // Ley 1581 — la casilla de autorización con el texto vigente de la empresa.
             data_consent: s.data_consent && dataConsent.data?.active ? dataConsent.data.consent : null,
             theme: publicThemeView(theme),
+            // v0.1.356 — saltos, pantallas finales y las respuestas que se recuerdan.
+            jumps: s.jumps.map((j) => ({ from: j.from, when: j.when, to: j.to })),
+            endings: s.endings.map((e) => ({ id: e.id, title: e.title, message: e.message, redirect_url: e.redirect_url, when: e.when })),
+            recall: formRecallMap(config, fields),
         };
     }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
 
@@ -327,12 +325,29 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     useEffect(() => {
         if (!ready) return;
         iframeRef.current?.contentWindow?.postMessage(
-            { type: 'imb-form-preview', meta, selected, css: themeCss, scheme },
+            { type: 'imb-form-preview', meta, selected, css: themeCss, scheme, ending: previewEnding ?? undefined },
             window.location.origin,
         );
-    }, [ready, meta, selected, themeCss, scheme]);
+    }, [ready, meta, selected, themeCss, scheme, previewEnding]);
+    // Al salir de «Lógica» la vista previa vuelve al formulario.
+    useEffect(() => {
+        if (leftTab !== 'logic') setPreviewEnding(null);
+    }, [leftTab]);
 
     const save = async (extra: { enabled?: boolean } = {}): Promise<boolean> => {
+        // v0.1.356 — una pantalla final con la dirección a medio escribir se perdería al guardar.
+        const badEnding = draft.config.settings.endings.findIndex((e) => !!e.redirect_url && !/^https:\/\/\S+$/.test(e.redirect_url));
+        if (badEnding >= 0) {
+            const e = draft.config.settings.endings[badEnding]!;
+            toast.error(
+                __('Revisa la pantalla final «%s»').replace('%s', endingName(e, badEnding)),
+                __('Su dirección tiene que empezar con https://, o déjala vacía para mostrar el mensaje.'),
+            );
+            setSelected(null);
+            if (narrow) setMobileTab('build');
+            setLeftTab('logic');
+            return false;
+        }
         try {
             const doc = await update.mutateAsync({
                 id: form.id,
@@ -429,16 +444,40 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         <ThemeInspector config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} showLogo={config.settings.show_logo} />
     );
 
+    const openSettings = (): void => {
+        setSelected(null);
+        setPreviewEnding(null);
+        if (narrow) setMobileTab('settings');
+        else setLeftTab('structure');
+    };
+    const logicPanel = (
+        <LogicPanel
+            config={config}
+            fields={fields}
+            fieldsById={fieldsById}
+            onChange={change}
+            previewEnding={previewEnding}
+            onPreviewEnding={(id) => {
+                setPreviewEnding(id);
+                // En el celular la vista previa es otra pestaña: ir a mirarla.
+                if (narrow && id !== null) setMobileTab('preview');
+            }}
+            onOpenSettings={openSettings}
+        />
+    );
+
     const left = (
         <LeftPanel
             tab={leftTab}
             onTab={(t) => {
                 setLeftTab(t);
-                // Elegir «Diseño» muestra los ajustes del tema a la derecha.
-                if (t === 'design') setSelected(null);
+                // Elegir «Diseño» o «Lógica» muestra sus ajustes a la derecha.
+                if (t === 'design' || t === 'logic') setSelected(null);
             }}
             showDesignTab={!narrow}
             designContent={designLibrary}
+            // En el celular la lógica se edita ahí mismo; en la computadora, a la derecha.
+            logicContent={narrow ? logicPanel : <LogicMap config={config} fieldsById={fieldsById} />}
             config={config}
             fields={fields}
             fieldsById={fieldsById}
@@ -467,6 +506,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         />
     ) : leftTab === 'design' && !narrow ? (
         themeInspector
+    ) : leftTab === 'logic' && !narrow ? (
+        logicPanel
     ) : (
         <SettingsInspector
             draft={draft}
@@ -750,7 +791,7 @@ function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormD
 
 // ─────────────────────────── Panel izquierdo ───────────────────────────
 
-type LeftTab = 'add' | 'structure' | 'design';
+type LeftTab = 'add' | 'structure' | 'design' | 'logic';
 
 /** Ancla del recorrido para la pestaña «Diseño» (escritorio y celular). */
 const DESIGN_TAB = { dataTour: 'form-design-tab' } as const;
@@ -765,6 +806,8 @@ interface LeftPanelProps {
     showDesignTab: boolean;
     /** Plantillas y «Mis temas». */
     designContent: React.ReactNode;
+    /** v0.1.356 — el mapa de la lógica (computadora) o su editor (celular). */
+    logicContent: React.ReactNode;
     config: FormConfig;
     fields: FieldEntity[];
     fieldsById: Map<number, FieldEntity>;
@@ -792,14 +835,16 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
     const [dropAt, setDropAt] = useState<number | null>(null);
     const pageOf = pageNumbers(p.config);
     const multiPage = pageCount(p.config) > 1;
+    const rules = logicCount(p.config);
     return (
         <div className="imcrm-flex imcrm-flex-col">
-            <div role="tablist" className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-2 imcrm-pt-2">
+            <div role="tablist" className="imcrm-flex imcrm-gap-0.5 imcrm-border-b imcrm-border-border imcrm-px-1 imcrm-pt-2">
                 {(
                     [
                         ['add', __('Agregar')],
-                        ['structure', `${__('Preguntas')} (${p.config.items.length})`],
+                        ['structure', __('Preguntas')],
                         ...(p.showDesignTab ? ([['design', __('Diseño')]] as const) : []),
+                        ['logic', __('Lógica')],
                     ] as ReadonlyArray<readonly [LeftTab, string]>
                 ).map(([key, label]) => (
                     <button
@@ -808,19 +853,35 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                         type="button"
                         aria-selected={p.tab === key}
                         data-tour={designTabTour(key)}
-                        data-testid={key === 'design' ? 'form-design-tab' : undefined}
+                        data-testid={key === 'design' ? 'form-design-tab' : key === 'logic' ? 'form-logic-tab' : undefined}
+                        // La cantidad de saltos y pantallas finales va en un punto (no entra en el ancho).
+                        aria-label={
+                            key === 'structure' ? `${label} (${p.config.items.length})` : key === 'logic' && rules > 0 ? `${label} (${rules})` : undefined
+                        }
+                        title={key === 'logic' && rules > 0 ? __('%s saltos y pantallas finales').replace('%s', String(rules)) : undefined}
+                        data-count={key === 'logic' ? rules : undefined}
                         onClick={() => p.onTab(key)}
                         className={cn(
-                            '-imcrm-mb-px imcrm-border-b-2 imcrm-px-2 imcrm-pb-2 imcrm-text-xs',
+                            '-imcrm-mb-px imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-1.5 imcrm-pb-2 imcrm-text-xs',
                             p.tab === key ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground',
                         )}
                     >
                         {label}
+                        {key === 'structure' && (
+                            <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground" aria-hidden="true">
+                                {p.config.items.length}
+                            </span>
+                        )}
+                        {key === 'logic' && rules > 0 && (
+                            <span className="imcrm-ml-1 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-primary imcrm-align-middle" aria-hidden="true" />
+                        )}
                     </button>
                 ))}
             </div>
 
-            {p.tab === 'design' && p.showDesignTab ? (
+            {p.tab === 'logic' ? (
+                p.logicContent
+            ) : p.tab === 'design' && p.showDesignTab ? (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3">
                     <button
                         type="button"
@@ -1067,20 +1128,23 @@ function ItemInspector({
             {item.type === 'heading' && (
                 <Field label={__('Título')}>
                     <Input value={item.text} onChange={(e) => set({ text: e.target.value })} />
+                    <RecallPicker config={config} fields={fields} onPick={(t) => set({ text: withToken(item.text, t) })} />
                 </Field>
             )}
             {item.type === 'text' && (
                 <Field label={__('Texto')} hint={__('Una línea en blanco separa párrafos.')}>
                     <Textarea rows={5} value={item.text} onChange={(e) => set({ text: e.target.value })} />
+                    <RecallPicker config={config} fields={fields} onPick={(t) => set({ text: withToken(item.text, t) })} />
                 </Field>
             )}
             {item.type === 'page_break' && (
                 <>
                     <Field label={__('Título de la página que empieza aquí')} hint={__('Opcional. Ej.: «Datos de la empresa».')}>
                         <Input value={item.title} onChange={(e) => set({ title: e.target.value })} data-testid="form-page-title" />
+                        <RecallPicker config={config} fields={fields} onPick={(t) => set({ title: withToken(item.title, t) })} />
                     </Field>
                     <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                        {__('Quien responde ve un paso por vez con «Anterior» y «Siguiente», y no puede avanzar sin completar las obligatorias de la página. Una página cuyas preguntas están todas escondidas por sus condiciones se salta sola.')}
+                        {__('Quien responde ve un paso por vez con «Anterior» y «Siguiente», y no puede avanzar sin completar las obligatorias de la página. Una página cuyas preguntas están todas escondidas por sus condiciones se salta sola. Para saltar a otra página o terminar antes según lo que responde, usa la pestaña «Lógica».')}
                     </p>
                 </>
             )}
@@ -1088,9 +1152,16 @@ function ItemInspector({
                 <>
                     <Field label={__('Pregunta')} hint={__('Vacío = el nombre del campo.')}>
                         <Input value={item.label} placeholder={field.label} onChange={(e) => set({ label: e.target.value })} data-testid="form-item-label" />
+                        <RecallPicker
+                            config={config}
+                            fields={fields}
+                            exceptFieldId={field.id}
+                            onPick={(t) => set({ label: withToken(item.label || field.label, t) })}
+                        />
                     </Field>
                     <Field label={__('Ayuda')} hint={__('Aparece debajo de la pregunta.')}>
                         <Textarea rows={2} value={item.help} placeholder={field.description ?? ''} onChange={(e) => set({ help: e.target.value })} />
+                        <RecallPicker config={config} fields={fields} exceptFieldId={field.id} onPick={(t) => set({ help: withToken(item.help, t) })} />
                     </Field>
                     {(!['checkbox', 'select', 'multi_select', 'team', 'rating', 'file', 'date', 'datetime'].includes(field.type) || item.display === 'search') &&
                         !['scale', 'slider', 'ranking'].includes(item.display) && (
@@ -1163,13 +1234,13 @@ function ItemInspector({
 
             {item.type !== 'page_break' &&
                 !(item.type === 'field' && config.settings.confirm_email && config.settings.respondent_email_field_id === item.field_id) && (
-                <ConditionEditor item={item} config={config} fieldsById={fieldsById} onSet={(show_if) => set({ show_if })} />
+                <ItemCondition item={item} config={config} fieldsById={fieldsById} onSet={(show_if) => set({ show_if })} />
             )}
         </div>
     );
 }
 
-function ConditionEditor({
+function ItemCondition({
     item,
     config,
     fieldsById,
@@ -1178,81 +1249,17 @@ function ConditionEditor({
     item: FormItem;
     config: FormConfig;
     fieldsById: Map<number, FieldEntity>;
-    onSet: (c: FormCondition | null) => void;
+    onSet: (c: FormShowIf | null) => void;
 }): JSX.Element {
-    const candidates = conditionCandidates(config, item.id).filter((c) => fieldsById.has(c.field_id));
-    const cond = item.show_if;
-    const ctl = cond ? fieldsById.get(cond.field_id) : undefined;
-    const options = ctl && (ctl.type === 'select' || ctl.type === 'multi_select')
-        ? ((ctl.config.options as Array<{ value: string; label?: string }> | undefined) ?? [])
-        : [];
-    const ops: FormConditionOp[] = ctl?.type === 'checkbox'
-        ? ['eq', 'is_empty', 'is_not_empty']
-        : ctl && ['number', 'currency', 'percent', 'rating', 'duration'].includes(ctl.type)
-          ? ['eq', 'neq', 'gt', 'lt', 'is_empty', 'is_not_empty']
-          : ctl && (ctl.type === 'select' || ctl.type === 'multi_select')
-            ? ['eq', 'neq', 'is_empty', 'is_not_empty']
-            : [...FORM_CONDITION_OPS].filter((o) => o !== 'in' && o !== 'gt' && o !== 'lt');
-    const needsValue = cond && cond.op !== 'is_empty' && cond.op !== 'is_not_empty';
-
     return (
         <Section title={__('Mostrar sólo si…')}>
-            {candidates.length === 0 ? (
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Para depender de otra respuesta, esa pregunta tiene que estar antes.')}
-                </p>
-            ) : !cond ? (
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="imcrm-self-start"
-                    onClick={() => onSet({ field_id: candidates[candidates.length - 1]!.field_id, op: 'eq', value: '' })}
-                >
-                    {__('Agregar una condición')}
-                </Button>
-            ) : (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="form-condition">
-                    <Select
-                        value={String(cond.field_id)}
-                        onChange={(e) => onSet({ field_id: Number(e.target.value), op: 'eq', value: '' })}
-                        aria-label={__('Pregunta que controla')}
-                    >
-                        {candidates.map((c) => (
-                            <option key={c.field_id} value={c.field_id}>
-                                {fieldsById.get(c.field_id)?.label}
-                            </option>
-                        ))}
-                    </Select>
-                    <Select value={cond.op} onChange={(e) => onSet({ ...cond, op: e.target.value as FormConditionOp })} aria-label={__('Comparación')}>
-                        {ops.map((o) => (
-                            <option key={o} value={o}>
-                                {__(OP_LABELS[o])}
-                            </option>
-                        ))}
-                    </Select>
-                    {needsValue &&
-                        (ctl?.type === 'checkbox' ? (
-                            <Select value={String(cond.value === true)} onChange={(e) => onSet({ ...cond, value: e.target.value === 'true' })}>
-                                <option value="true">{__('Marcada')}</option>
-                                <option value="false">{__('Sin marcar')}</option>
-                            </Select>
-                        ) : options.length > 0 ? (
-                            <Select value={String(cond.value ?? '')} onChange={(e) => onSet({ ...cond, value: e.target.value })} aria-label={__('Valor')}>
-                                <option value="">{__('Elige una opción')}</option>
-                                {options.map((o) => (
-                                    <option key={o.value} value={o.value}>
-                                        {o.label || o.value}
-                                    </option>
-                                ))}
-                            </Select>
-                        ) : (
-                            <Input value={String(cond.value ?? '')} onChange={(e) => onSet({ ...cond, value: e.target.value })} aria-label={__('Valor')} />
-                        ))}
-                    <Button variant="ghost" size="sm" className="imcrm-self-start imcrm-text-muted-foreground" onClick={() => onSet(null)}>
-                        {__('Quitar la condición')}
-                    </Button>
-                </div>
-            )}
+            <ConditionEditor
+                value={item.show_if}
+                onChange={onSet}
+                candidates={conditionCandidates(config, item.id)}
+                fieldsById={fieldsById}
+                emptyHint="Para depender de otra respuesta, esa pregunta tiene que estar antes."
+            />
         </Section>
     );
 }
@@ -1325,11 +1332,13 @@ function SettingsInspector({
             </Field>
 
             <Section title={__('Después de enviar')}>
-                <Field label={__('Título del agradecimiento')}>
+                <Field label={__('Título del agradecimiento')} hint={__('Para mostrar otro mensaje según lo que responde, agrega una pantalla final en «Lógica».')}>
                     <Input value={s.success_title} onChange={(e) => set({ success_title: e.target.value })} />
+                    <RecallPicker config={config} fields={fields} onPick={(t) => set({ success_title: withToken(s.success_title, t) })} />
                 </Field>
                 <Field label={__('Mensaje')}>
                     <Textarea rows={2} value={s.success_message} onChange={(e) => set({ success_message: e.target.value })} />
+                    <RecallPicker config={config} fields={fields} onPick={(t) => set({ success_message: withToken(s.success_message, t) })} />
                 </Field>
                 <Field label={__('O llevar a esta dirección')} hint={__('Opcional. Tiene que empezar con https://')}>
                     <Input

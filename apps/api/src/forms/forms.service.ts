@@ -18,7 +18,17 @@ import {
     buildPublicFormItems,
     defaultFormConfig,
     formConfigSchema,
-    formItemVisible,
+    formEndingFor,
+    formFlow,
+    formRecallMap,
+    formRecallText,
+    formAnswerText,
+    formatFormNumber,
+    isFormConditionGroup,
+    FORM_JUMP_END,
+    FORM_JUMP_ENDING_PREFIX,
+    FORM_START_PAGE,
+    type FormShowIf,
     isEmptyAnswer,
     isFormFieldType,
     effectiveFormDisplay,
@@ -705,6 +715,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             confirm_email: config.settings.confirm_email,
             data_consent: consent ? DataConsentService.toPublic(consent) : null,
             theme: publicThemeView(readPublicTheme(config.settings.theme ?? {})),
+            jumps: config.settings.jumps.map((j) => ({ from: j.from, when: j.when, to: j.to })),
+            endings: config.settings.endings.map((e) => ({ id: e.id, title: e.title, message: e.message, redirect_url: e.redirect_url, when: e.when })),
+            recall: formRecallMap(config, fields),
         };
     }
 
@@ -798,7 +811,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const byId = new Map(fields.map((x) => [x.id, x]));
         // v0.1.289 — el servidor valida TODO el formulario, también las páginas
         // que el navegador pudo saltarse: las páginas son sólo cómo se muestra.
-        const { data, errors, attachmentIds } = this.collect(f, byId, input);
+        const { data, errors, attachmentIds, endingId } = this.collect(f, byId, input);
         const s = f.config.settings;
         const emailKey = s.respondent_email_field_id !== null ? jsonbKeyForField(s.respondent_email_field_id) : null;
         const respondentEmail = emailKey && typeof data[emailKey] === 'string' ? (data[emailKey] as string) : null;
@@ -832,12 +845,12 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 : null;
 
         if (s.confirm_email && respondentEmail) {
-            return this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted);
+            return this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId);
         }
 
         const created = await this.finalize(f, fields, data, attachmentIds, accepted);
         if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
-        return { ok: true, redirect_url: f.config.settings.redirect_url };
+        return { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId };
     }
 
     /**
@@ -1067,6 +1080,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         email: string,
         ip: string,
         consent: AcceptedConsent | null = null,
+        endingId: string | null = null,
     ): Promise<SubmitFormResult> {
         if (!this.mail) {
             throw new HttpException(
@@ -1110,6 +1124,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     attachmentIds,
                     ip: ip.slice(0, 64),
                     consent: pendingConsent,
+                    endingId,
                     expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
                 })
                 .returning({ id: formPendingSubmissions.id }),
@@ -1272,12 +1287,15 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             };
         }
         if (f.config.settings.send_copy) this.sendCopyLater(f, fields, pending.data, pending.email, pending.ip ?? '', withdrawRef);
+        // v0.1.356 — la pantalla final que le tocó al enviar, con sus respuestas recordadas.
+        const ending = pending.endingId ? f.config.settings.endings.find((e) => e.id === pending.endingId) : undefined;
+        const message = ending ? ending.message || ending.title : f.config.settings.success_message || 'Recibimos tu respuesta.';
         return {
             status: 'confirmed',
             title: '¡Listo! Tu respuesta quedó confirmada',
-            message: f.config.settings.success_message || 'Recibimos tu respuesta.',
+            message: this.recallServer(f, fields, pending.data, message),
             brand,
-            continueUrl: f.config.settings.redirect_url,
+            continueUrl: this.endingRedirect(f, ending?.id ?? null),
         };
     }
 
@@ -1553,15 +1571,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         f: ResolvedForm,
         byId: Map<number, Field>,
         input: SubmitFormInput,
-    ): { data: Record<string, unknown>; errors: Record<string, string>; attachmentIds: number[] } {
+    ): { data: Record<string, unknown>; errors: Record<string, string>; attachmentIds: number[]; endingId: string | null } {
         const values = input.values;
         const pub = buildPublicFormItems(f.config, [...byId.values()]);
-        const norm = pub.map((i) => ({
-            type: i.type,
-            field_id: i.type === 'field' ? Number(i.key) : undefined,
-            rows: i.type === 'matrix' ? i.rows : undefined,
-            show_if: i.show_if,
-        }));
+        // v0.1.356 — el camino por las páginas (con los saltos): una pregunta de
+        // una página que la persona no recorrió no se pide ni se guarda, aunque
+        // el navegador mande lo que había escrito antes de cambiar de rumbo.
+        const flow = formFlow(pub, values, f.config.settings.jumps);
         const data: Record<string, unknown> = {};
         const errors: Record<string, string> = {};
         const attachmentIds: number[] = [];
@@ -1573,7 +1589,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         };
         for (const item of pub) {
             if (item.type === 'matrix') {
-                if (!formItemVisible(item, norm, values)) continue;
+                if (!flow.shown(item.id)) continue;
                 this.collectMatrix(item, byId, values, put, errors);
                 continue;
             }
@@ -1581,7 +1597,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const field = byId.get(Number(item.key));
             if (!field || !isFormFieldType(field.type)) continue;
             const key = item.key;
-            if (!item.hidden && !formItemVisible(item, norm, values)) continue;
+            if (!item.hidden && !flow.shown(item.id)) continue;
             if (item.hidden && !f.config.settings.allow_prefill) continue;
 
             let raw: unknown = values[key];
@@ -1645,7 +1661,31 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 }
             }
         }
-        return { data, errors, attachmentIds };
+        // v0.1.356 — la pantalla final que le toca (la decide el servidor con lo que aceptó).
+        const ending = formEndingFor(f.config.settings.endings, pub, values, flow);
+        return { data, errors, attachmentIds, endingId: ending?.id ?? null };
+    }
+
+    /**
+     * v0.1.356 — `{{nombre}}` en un texto que arma el servidor (la página de
+     * confirmación): con lo que quedó guardado de la respuesta (claves `f{id}`).
+     */
+    private recallServer(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, text: string): string {
+        if (!text.includes('{{')) return text;
+        const recall = formRecallMap(f.config, fields);
+        const values: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(data)) if (/^f\d+$/.test(k)) values[k.slice(1)] = v;
+        const pub = buildPublicFormItems(f.config, fields);
+        const fmt = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
+        const nf = fmt.success ? fmt.data.number_format : 'comma_dot';
+        const fmtNum = (n: number): string => formatFormNumber(n, nf);
+        return formRecallText(text, (slug) => (recall[slug] ? formAnswerText(pub, recall[slug]!, values, fmtNum) : ''));
+    }
+
+    /** v0.1.356 — Adónde lleva una pantalla final (o el formulario, sin pantalla propia). */
+    private endingRedirect(f: ResolvedForm, endingId: string | null): string | null {
+        const e = endingId ? f.config.settings.endings.find((x) => x.id === endingId) : undefined;
+        return e ? e.redirect_url : f.config.settings.redirect_url;
     }
 
     /** v0.1.355 — Una matriz: cada fila es un campo; sólo se aceptan las columnas que se mostraron. */
@@ -1838,11 +1878,56 @@ export function sanitizeConfig(
             ? s.respondent_email_field_id
             : null;
     const confirm = s.confirm_email && emailId !== null;
+
+    // v0.1.356 — saltos y pantallas finales: sólo hacia páginas que existen y
+    // están más adelante, con condiciones sobre preguntas del formulario.
+    const pageOf = new Map<string, number>();
+    let page = 0;
+    const breaks: string[] = [];
+    for (const i of unique) {
+        if (i.type === 'page_break') {
+            page++;
+            breaks.push(i.id);
+        }
+        pageOf.set(i.id, page);
+    }
+    const pageIndex = (key: string): number => (key === FORM_START_PAGE ? 0 : breaks.indexOf(key) + 1);
+    const emailItem = emailId !== null ? unique.find((i) => i.type === 'field' && i.field_id === emailId) : undefined;
+    const emailPage = emailItem ? (pageOf.get(emailItem.id) ?? 0) : -1;
+    const endingIds = new Set<string>();
+    const endings = s.endings
+        .filter((e) => (endingIds.has(e.id) ? false : (endingIds.add(e.id), true)))
+        .map((e) => ({ ...e, when: cleanShowIf(e.when, inForm) }));
+    const jumpIds = new Set<string>();
+    const jumps = s.jumps.filter((j) => {
+        if (jumpIds.has(j.id)) return false;
+        const from = pageIndex(j.from);
+        if (from < 0 || (j.from !== FORM_START_PAGE && !breaks.includes(j.from))) return false;
+        let to: number;
+        if (j.to === FORM_JUMP_END) to = Infinity;
+        else if (j.to.startsWith(FORM_JUMP_ENDING_PREFIX)) {
+            if (!endingIds.has(j.to.slice(FORM_JUMP_ENDING_PREFIX.length))) return false;
+            to = Infinity;
+        } else {
+            if (!breaks.includes(j.to)) return false;
+            to = pageIndex(j.to);
+            if (to <= from) return false;
+        }
+        // Una condición que dependía de preguntas que ya no están no se vuelve «siempre».
+        if (j.when && cleanShowIf(j.when, inForm) === null) return false;
+        // Con confirmación por correo, ningún salto puede saltarse la pregunta del correo.
+        if (confirm && emailPage > from && to > emailPage) return false;
+        jumpIds.add(j.id);
+        return true;
+    }).map((j) => ({ ...j, when: cleanShowIf(j.when, inForm) }));
+
     const settings = {
         ...s,
         respondent_email_field_id: emailId,
         confirm_email: confirm,
         send_copy: s.send_copy && emailId !== null,
+        jumps,
+        endings,
     };
 
     return formConfigSchema.parse({
@@ -1850,7 +1935,7 @@ export function sanitizeConfig(
         items: unique.map((i) => {
             // Un salto de página nunca tiene condición propia.
             if (i.type === 'page_break') return { ...i, show_if: null };
-            let out = i.show_if && !inForm.has(i.show_if.field_id) ? { ...i, show_if: null } : i;
+            let out = { ...i, show_if: cleanShowIf(i.show_if, inForm) };
             // Doble opt-in: sin el correo no hay a quién pedirle la confirmación,
             // así que esa pregunta queda obligatoria, visible y sin condición
             // (si no, la respuesta no podría guardarse nunca).
@@ -1860,6 +1945,18 @@ export function sanitizeConfig(
             return out;
         }),
     });
+}
+
+/**
+ * v0.1.356 — Quita de una condición (o grupo) las reglas sobre campos que el
+ * formulario ya no pregunta. Sin reglas, no queda condición.
+ */
+function cleanShowIf(c: FormShowIf | null, inForm: ReadonlySet<number>): FormShowIf | null {
+    if (!c) return null;
+    if (!isFormConditionGroup(c)) return inForm.has(c.field_id) ? c : null;
+    const rules = c.rules.filter((r) => inForm.has(r.field_id));
+    // Una sola regla se guarda suelta, igual que en el editor.
+    return rules.length > 1 ? { match: c.match, rules } : (rules[0] ?? null);
 }
 
 /** Errores del alta (por slug) → la pregunta del formulario que los causó. */

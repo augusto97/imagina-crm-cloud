@@ -11,6 +11,7 @@ import {
     type BookingStaff,
     type BookingStatus,
     type Field,
+    formConditionRules,
 } from '@imagina-base/shared';
 
 /**
@@ -113,7 +114,13 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
         return true;
     });
     const inForm = new Set(questions.flatMap((q) => (q.type === 'field' ? [q.field_id] : [])));
-    const cleanQuestions = questions.map((q) => (q.show_if && !inForm.has(q.show_if.field_id) ? { ...q, show_if: null } : q));
+    // v0.1.356 — la agenda dibuja UNA condición por pregunta: un grupo de una
+    // sola regla se aplana; uno de varias reglas (sólo por la API) se quita.
+    const cleanQuestions = questions.map((q) => {
+        const rules = formConditionRules(q.show_if);
+        const one = rules.length === 1 && inForm.has(rules[0]!.field_id) ? rules[0]! : null;
+        return { ...q, show_if: one };
+    });
 
     const reminders = [...new Map(config.notifications.reminders.map((r) => [r.minutes_before, r])).values()].sort(
         (a, b) => b.minutes_before - a.minutes_before,

@@ -1241,4 +1241,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Formularios → Editar**, toca una pregunta y elige **Cómo se pregunta**. La matriz está en la pestaña **Agregar**.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.356-logica-formularios',
+        version: '0.1.356',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Formularios que se adaptan a cada persona',
+        summary:
+            'Salta las páginas que no le corresponden a cada persona, termina con un mensaje distinto según lo que respondió y salúdala por su nombre: «Gracias, {{nombre}}». Las condiciones ahora pueden tener varias reglas a la vez.',
+        media: {
+            slides: [
+                {
+                    title: 'Saltos entre páginas',
+                    text: 'Si elige «Persona», pasa directo a la última página sin ver «Datos de la empresa». Lo que no le corresponde no se pide ni se guarda.',
+                    illustration: 'form-logic',
+                },
+                {
+                    title: 'Una pantalla final para cada caso',
+                    text: 'A la empresa grande le dices «Te llamamos hoy»; al resto, «Te enviamos la cotización». Cada pantalla puede llevar a otra página.',
+                    illustration: 'form-pages',
+                },
+                {
+                    title: 'Todas o alguna',
+                    text: 'Una pregunta, un salto o una pantalla final pueden depender de varias respuestas: que se cumplan todas o alguna.',
+                    illustration: 'form-conditional',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Formularios → Editar**, abre la pestaña **Lógica**. Para recordar una respuesta, escribe su nombre entre llaves o usa **Agregar una respuesta** debajo de cada texto.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

@@ -78,6 +78,24 @@ export const formConditionSchema = z.object({
 });
 export type FormCondition = z.infer<typeof formConditionSchema>;
 
+/** v0.1.356 — Hasta cuántas reglas tiene un grupo de condiciones. */
+export const FORM_CONDITION_MAX_RULES = 10;
+
+/**
+ * v0.1.356 — Varias condiciones: se cumplen TODAS o ALGUNA. Lo que se arma
+ * con un clic sigue siendo una condición suelta (la forma de siempre); el
+ * grupo aparece al agregar una segunda regla.
+ */
+export const formConditionGroupSchema = z.object({
+    match: z.enum(['all', 'any']).default('all'),
+    rules: z.array(formConditionSchema).min(1).max(FORM_CONDITION_MAX_RULES),
+});
+export type FormConditionGroup = z.infer<typeof formConditionGroupSchema>;
+
+/** Una condición suelta o un grupo. */
+export const formShowIfSchema = z.union([formConditionGroupSchema, formConditionSchema]);
+export type FormShowIf = z.infer<typeof formShowIfSchema>;
+
 const itemIdSchema = z.string().regex(/^[a-z0-9]{4,24}$/);
 
 /** v0.1.351 — Ancho de una pregunta o imagen (de 6 columnas: todo, mitad, un tercio, dos tercios). */
@@ -250,7 +268,7 @@ export const formFieldItemSchema = z.object({
     ranking_options: z.array(z.string().max(120)).max(FORM_RANKING_MAX_OPTIONS).catch([]).default([]),
     /** Archivos: qué tipos acepta esta pregunta. */
     accept: z.enum(FORM_FILE_ACCEPTS).default('any'),
-    show_if: formConditionSchema.nullable().default(null),
+    show_if: formShowIfSchema.nullable().default(null),
     /** v0.1.351 — Ancho en el formulario: dos o tres preguntas lado a lado. */
     width: z.enum(FORM_ITEM_WIDTHS).catch('full').default('full'),
     /** v0.1.351 — No mostrar la etiqueta (queda para lectores de pantalla). */
@@ -270,14 +288,14 @@ export const formHeadingItemSchema = z.object({
     id: itemIdSchema,
     type: z.literal('heading'),
     text: z.string().max(300).default(''),
-    show_if: formConditionSchema.nullable().default(null),
+    show_if: formShowIfSchema.nullable().default(null),
 });
 
 export const formTextItemSchema = z.object({
     id: itemIdSchema,
     type: z.literal('text'),
     text: z.string().max(5000).default(''),
-    show_if: formConditionSchema.nullable().default(null),
+    show_if: formShowIfSchema.nullable().default(null),
 });
 
 /**
@@ -291,7 +309,7 @@ export const formPageBreakItemSchema = z.object({
     type: z.literal('page_break'),
     /** Título de la página que EMPIEZA aquí (opcional). */
     title: z.string().max(200).default(''),
-    show_if: formConditionSchema.nullable().default(null),
+    show_if: formShowIfSchema.nullable().default(null),
 });
 export type FormPageBreakItem = z.infer<typeof formPageBreakItemSchema>;
 
@@ -306,7 +324,7 @@ export const formImageItemSchema = z.object({
     width: z.enum(FORM_ITEM_WIDTHS).catch('full').default('full'),
     /** Alto máximo (px); null = el natural. */
     max_height: z.number().int().min(40).max(1200).nullable().catch(null).default(null),
-    show_if: formConditionSchema.nullable().default(null),
+    show_if: formShowIfSchema.nullable().default(null),
 });
 export type FormImageItem = z.infer<typeof formImageItemSchema>;
 
@@ -341,7 +359,7 @@ export const formMatrixItemSchema = z.object({
     required: z.boolean().default(false),
     rows: z.array(formMatrixRowSchema).max(FORM_MATRIX_MAX_ROWS).default([]),
     columns: z.array(formMatrixColumnSchema).max(FORM_MATRIX_MAX_COLUMNS).default([]),
-    show_if: formConditionSchema.nullable().default(null),
+    show_if: formShowIfSchema.nullable().default(null),
 });
 export type FormMatrixItem = z.infer<typeof formMatrixItemSchema>;
 
@@ -354,6 +372,57 @@ export const formItemSchema = z.discriminatedUnion('type', [
     formMatrixItemSchema,
 ]);
 export type FormItem = z.infer<typeof formItemSchema>;
+
+/**
+ * Una lista donde un elemento roto se descarta sin tirar los demás (una
+ * regla escrita por una versión futura, o a mano por la API).
+ */
+function tolerantArray<T extends z.ZodTypeAny>(schema: () => T, max: number) {
+    return z
+        .array(z.unknown())
+        .catch([])
+        .default([])
+        .transform((arr) =>
+            arr.slice(0, max).flatMap((x) => {
+                const r = schema().safeParse(x);
+                return r.success ? [r.data as z.infer<T>] : [];
+            }),
+        );
+}
+
+export const FORM_MAX_JUMPS = 40;
+export const FORM_MAX_ENDINGS = 10;
+
+/**
+ * v0.1.356 — Un salto: al terminar la página `from` (`start` = la primera;
+ * si no, el id del salto de página que la abre), si se cumple `when` (null =
+ * siempre), ir a `to`: el id del salto de página que abre la página de
+ * destino, `end` (terminar) o `ending:<id>` (terminar en esa pantalla final).
+ */
+export const formJumpSchema = z.object({
+    id: z.string().regex(/^[a-z0-9]{4,24}$/),
+    from: z.string().regex(/^[a-z0-9]{4,24}$/),
+    when: formShowIfSchema.nullable().default(null),
+    to: z.string().regex(/^(?:end|ending:[a-z0-9]{4,24}|[a-z0-9]{4,24})$/),
+});
+export type FormJump = z.infer<typeof formJumpSchema>;
+
+/** v0.1.356 — Una pantalla final con su condición (null = sólo si un salto lleva a ella). */
+export const formEndingSchema = z.object({
+    id: z.string().regex(/^[a-z0-9]{4,24}$/),
+    /** Nombre interno, para reconocerla en el constructor. */
+    name: z.string().max(80).default(''),
+    title: z.string().max(200).default('¡Gracias!'),
+    message: z.string().max(2000).default(''),
+    redirect_url: z
+        .string()
+        .max(2000)
+        .regex(/^https:\/\/[^\s]+$/, 'La dirección tiene que empezar con https://')
+        .nullable()
+        .default(null),
+    when: formShowIfSchema.nullable().default(null),
+});
+export type FormEnding = z.infer<typeof formEndingSchema>;
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -422,6 +491,18 @@ export const formSettingsSchema = z.object({
      * bordes, fondo, portada… null = el de siempre (el «Clásico»).
      */
     theme: publicThemeSchema.nullable().catch(null).default(null),
+    /**
+     * v0.1.356 — Saltos entre páginas: al terminar una página, si se cumple
+     * la condición, ir a otra más adelante o terminar. Se mira el primero que
+     * se cumple de esa página. Uno roto (de una versión futura, o que apunta a
+     * algo que ya no existe) se descarta solo, sin tirar los demás.
+     */
+    jumps: tolerantArray(() => formJumpSchema, FORM_MAX_JUMPS),
+    /**
+     * v0.1.356 — Pantallas finales: la primera cuya condición se cumple (o la
+     * que pide un salto) reemplaza al «¡Gracias!» de siempre.
+     */
+    endings: tolerantArray(() => formEndingSchema, FORM_MAX_ENDINGS),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -530,7 +611,7 @@ export interface PublicFormFieldItem {
         accept?: string;
         accept_label?: string;
     };
-    show_if: FormCondition | null;
+    show_if: FormShowIf | null;
 }
 
 /** v0.1.355 */
@@ -568,14 +649,14 @@ export interface PublicFormMatrixItem {
     multiple: boolean;
     columns: Array<{ label: string }>;
     rows: PublicFormMatrixRow[];
-    show_if: FormCondition | null;
+    show_if: FormShowIf | null;
 }
 
 export type PublicFormItem =
     | PublicFormFieldItem
     | PublicFormMatrixItem
-    | { id: string; type: 'heading'; text: string; show_if: FormCondition | null }
-    | { id: string; type: 'text'; text: string; show_if: FormCondition | null }
+    | { id: string; type: 'heading'; text: string; show_if: FormShowIf | null }
+    | { id: string; type: 'text'; text: string; show_if: FormShowIf | null }
     | { id: string; type: 'page_break'; title: string; show_if: null }
     | {
           id: string;
@@ -585,7 +666,7 @@ export type PublicFormItem =
           caption: string;
           width: FormItemWidth;
           max_height: number | null;
-          show_if: FormCondition | null;
+          show_if: FormShowIf | null;
       };
 
 /** v0.1.289 — Lo que la página pública necesita para dibujar el captcha. */
@@ -625,6 +706,28 @@ export interface PublicFormMeta {
      * opciones, avance, portada…). Los colores y tamaños van en el CSS.
      */
     theme?: PublicThemeView;
+    /** v0.1.356 — Saltos entre páginas (`from`/`to` = ids de los saltos de página). */
+    jumps?: PublicFormJump[];
+    /** v0.1.356 — Pantallas finales (en vez del «¡Gracias!» de siempre). */
+    endings?: PublicFormEnding[];
+    /** v0.1.356 — `{{nombre}}` de los textos → la clave de esa respuesta. */
+    recall?: Record<string, string>;
+}
+
+/** v0.1.356 */
+export interface PublicFormJump {
+    from: string;
+    when: FormShowIf | null;
+    to: string;
+}
+
+/** v0.1.356 */
+export interface PublicFormEnding {
+    id: string;
+    title: string;
+    message: string;
+    redirect_url: string | null;
+    when: FormShowIf | null;
 }
 
 export const submitFormSchema = z.object({
@@ -647,6 +750,8 @@ export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 export interface SubmitFormResult {
     ok: true;
     redirect_url: string | null;
+    /** v0.1.356 — La pantalla final que corresponde (null = el «¡Gracias!» del formulario). */
+    ending_id?: string | null;
     /**
      * v0.1.289 — doble opt-in: la respuesta quedó PENDIENTE y se mandó el
      * correo para confirmarla. `email_hint` = el correo enmascarado.
@@ -1074,6 +1179,51 @@ export function buildPublicFormItems(
 }
 
 /** v0.1.351 — Los archivos (imágenes) que usa un formulario: ítems de imagen e imágenes de opciones. */
+/**
+ * v0.1.356 — Todos los textos del formulario donde se puede recordar una
+ * respuesta con `{{nombre}}`: preguntas, ayudas, títulos, textos, títulos de
+ * página, la descripción y las pantallas finales.
+ */
+export function formRecallTexts(config: FormConfig): string[] {
+    const st = config.settings;
+    const out: string[] = [st.title, st.description, st.success_title, st.success_message];
+    for (const e of st.endings) out.push(e.title, e.message);
+    for (const i of config.items) {
+        if (i.type === 'field') out.push(i.label, i.help);
+        else if (i.type === 'matrix') out.push(i.label, i.help);
+        else if (i.type === 'heading' || i.type === 'text') out.push(i.text);
+        else if (i.type === 'page_break') out.push(i.title);
+        else if (i.type === 'image') out.push(i.caption);
+    }
+    return out.filter((t) => typeof t === 'string' && t.includes('{{'));
+}
+
+/**
+ * v0.1.356 — `{{nombre}}` → la clave (id del campo) de esa respuesta, sólo
+ * para los nombres que aparecen en algún texto y que el formulario pregunta
+ * (una pregunta, una oculta que se completa desde la dirección, una fila de
+ * una matriz o lo escrito en un «Otro»). Nada más de la lista viaja.
+ */
+export function formRecallMap(config: FormConfig, fields: ReadonlyArray<{ id: number; slug: string }>): Record<string, string> {
+    const asked = new Set<number>();
+    for (const i of config.items) {
+        if (i.type === 'field') {
+            asked.add(i.field_id);
+            if (i.other_field_id) asked.add(i.other_field_id);
+        } else if (i.type === 'matrix') for (const r of i.rows) asked.add(r.field_id);
+    }
+    const bySlug = new Map(fields.map((f) => [f.slug, f.id]));
+    const out: Record<string, string> = {};
+    const re = /\{\{\s*([a-z][a-z0-9_]{0,62})\s*(?:\|[^{}]{0,80})?\}\}/g;
+    for (const t of formRecallTexts(config)) {
+        for (const m of t.matchAll(re)) {
+            const id = bySlug.get(m[1]!);
+            if (id !== undefined && asked.has(id)) out[m[1]!] = String(id);
+        }
+    }
+    return out;
+}
+
 export function formConfigFileIds(config: FormConfig): number[] {
     const ids = new Set<number>();
     for (const item of config.items) {

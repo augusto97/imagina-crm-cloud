@@ -1,5 +1,10 @@
 import {
     fieldDefaultOf,
+    formConditionRules,
+    isFormConditionGroup,
+    FORM_JUMP_END,
+    FORM_JUMP_ENDING_PREFIX,
+    FORM_START_PAGE,
     formConfigSchema,
     formItemSchema,
     isFormFieldType,
@@ -7,8 +12,12 @@ import {
     newFormItemId,
     splitFormPages,
     type FormConfig,
+    type FormCondition,
+    type FormEnding,
     type FormItem,
+    type FormJump,
     type FormSettings,
+    type FormShowIf,
     type FieldType,
 } from '@imagina-base/shared';
 
@@ -181,15 +190,161 @@ export function removeItem(config: FormConfig, id: string): FormConfig {
         fieldId !== null && config.settings.respondent_email_field_id === fieldId
             ? { ...config.settings, respondent_email_field_id: null, confirm_email: false, send_copy: false }
             : config.settings;
-    return {
+    const next: FormConfig = {
         ...config,
         settings,
-        items: config.items
-            .filter((i) => i.id !== id)
-            .map((i) =>
-                (fieldId !== null && i.show_if?.field_id === fieldId) || (i.show_if && rowIds.has(i.show_if.field_id)) ? { ...i, show_if: null } : i,
-            ),
+        items: config.items.filter((i) => i.id !== id),
     };
+    const gone = new Set<number>([...(fieldId !== null ? [fieldId] : []), ...rowIds]);
+    return withoutLogicOn(next, gone, target?.type === 'page_break' ? target.id : null);
+}
+
+/**
+ * v0.1.356 — Quita de la lógica lo que dependía de preguntas (o de una
+ * página) que ya no están: las reglas sobre esos campos (una condición que
+ * se queda sin reglas desaparece; un salto cuya condición se vacía, también,
+ * para no volverse «siempre»), y los saltos desde o hacia esa página.
+ */
+export function withoutLogicOn(config: FormConfig, fieldIds: ReadonlySet<number>, breakId: string | null = null): FormConfig {
+    if (fieldIds.size === 0 && !breakId) return config;
+    const clean = (c: FormShowIf | null): FormShowIf | null => {
+        if (!c) return null;
+        const rules = formConditionRules(c).filter((r) => !fieldIds.has(r.field_id));
+        if (rules.length === 0) return null;
+        // Una sola regla se guarda suelta (como la guarda el editor).
+        return isFormConditionGroup(c) && rules.length > 1 ? { match: c.match, rules } : rules[0]!;
+    };
+    return {
+        ...config,
+        items: config.items.map((i) => (i.show_if ? ({ ...i, show_if: clean(i.show_if) } as FormItem) : i)),
+        settings: {
+            ...config.settings,
+            jumps: config.settings.jumps.flatMap((j) => {
+                if (breakId && (j.from === breakId || j.to === breakId)) return [];
+                if (!j.when) return [j];
+                const when = clean(j.when);
+                return when ? [{ ...j, when }] : [];
+            }),
+            endings: config.settings.endings.map((e) => ({ ...e, when: clean(e.when) })),
+        },
+    };
+}
+
+// ─────────────────────── Lógica (v0.1.356) ───────────────────────
+
+/** Una página para elegir en un salto: su clave (`start` o el id del salto) y su nombre. */
+export interface PageChoice {
+    key: string;
+    index: number;
+    label: string;
+}
+
+/** Las páginas del formulario, con «Página 2 · Tu empresa». */
+export function pageChoices(config: FormConfig): PageChoice[] {
+    return splitFormPages(config.items).map((p, index) => ({
+        key: p.break_id ?? FORM_START_PAGE,
+        index,
+        label: `Página ${index + 1}${p.title ? ` · ${p.title}` : ''}`,
+    }));
+}
+
+/** Adónde puede ir un salto desde una página: las de más adelante, terminar o una pantalla final. */
+export function jumpTargets(config: FormConfig, from: string): Array<{ value: string; label: string }> {
+    const pages = pageChoices(config);
+    const at = pages.find((p) => p.key === from)?.index ?? 0;
+    return [
+        ...pages.filter((p) => p.index > at && p.key !== FORM_START_PAGE).map((p) => ({ value: p.key, label: `Ir a la ${p.label.charAt(0).toLowerCase()}${p.label.slice(1)}` })),
+        { value: FORM_JUMP_END, label: 'Terminar el formulario' },
+        ...config.settings.endings.map((e, i) => ({ value: `${FORM_JUMP_ENDING_PREFIX}${e.id}`, label: `Terminar en «${endingName(e, i)}»` })),
+    ];
+}
+
+/** El nombre de una pantalla final para el constructor. */
+export function endingName(e: FormEnding, index: number): string {
+    return e.name.trim() || e.title.trim() || `Pantalla final ${index + 1}`;
+}
+
+/** Las preguntas que pueden decidir un salto desde una página: las de esa página y las anteriores. */
+export function jumpCandidates(config: FormConfig, from: string): Array<{ field_id: number; item_id: string }> {
+    const pages = splitFormPages(config.items);
+    const at = from === FORM_START_PAGE ? 0 : pages.findIndex((p) => p.break_id === from);
+    const upTo = pages.slice(0, Math.max(0, at) + 1).flatMap((p) => p.items);
+    return upTo.flatMap((i) =>
+        i.type === 'field' ? [{ field_id: i.field_id, item_id: i.id }] : i.type === 'matrix' ? i.rows.map((r) => ({ field_id: r.field_id, item_id: i.id })) : [],
+    );
+}
+
+/** Todas las preguntas del formulario (para las condiciones de una pantalla final). */
+export function allCandidates(config: FormConfig): Array<{ field_id: number; item_id: string }> {
+    return conditionCandidates(config, '__end__');
+}
+
+export function addJump(config: FormConfig, from: string, firstField: number | null): FormConfig {
+    const jump: FormJump = {
+        id: newFormItemId(),
+        from,
+        when: firstField !== null ? { field_id: firstField, op: 'eq', value: '' } : null,
+        to: jumpTargets(config, from)[0]?.value ?? FORM_JUMP_END,
+    };
+    return { ...config, settings: { ...config.settings, jumps: [...config.settings.jumps, jump] } };
+}
+
+export function updateJump(config: FormConfig, id: string, patch: Partial<FormJump>): FormConfig {
+    return { ...config, settings: { ...config.settings, jumps: config.settings.jumps.map((j) => (j.id === id ? { ...j, ...patch, id } : j)) } };
+}
+
+export function removeJump(config: FormConfig, id: string): FormConfig {
+    return { ...config, settings: { ...config.settings, jumps: config.settings.jumps.filter((j) => j.id !== id) } };
+}
+
+export function moveJump(config: FormConfig, id: string, dir: -1 | 1): FormConfig {
+    const list = [...config.settings.jumps];
+    const idx = list.findIndex((j) => j.id === id);
+    const to = idx + dir;
+    if (idx < 0 || to < 0 || to >= list.length) return config;
+    [list[idx], list[to]] = [list[to]!, list[idx]!];
+    return { ...config, settings: { ...config.settings, jumps: list } };
+}
+
+export function addEnding(config: FormConfig): FormConfig {
+    const n = config.settings.endings.length + 1;
+    const ending: FormEnding = { id: newFormItemId(), name: `Pantalla final ${n}`, title: '¡Gracias!', message: '', redirect_url: null, when: null };
+    return { ...config, settings: { ...config.settings, endings: [...config.settings.endings, ending] } };
+}
+
+export function updateEnding(config: FormConfig, id: string, patch: Partial<FormEnding>): FormConfig {
+    return { ...config, settings: { ...config.settings, endings: config.settings.endings.map((e) => (e.id === id ? { ...e, ...patch, id } : e)) } };
+}
+
+/** Quita la pantalla y los saltos que llevaban a ella. */
+export function removeEnding(config: FormConfig, id: string): FormConfig {
+    return {
+        ...config,
+        settings: {
+            ...config.settings,
+            endings: config.settings.endings.filter((e) => e.id !== id),
+            jumps: config.settings.jumps.filter((j) => j.to !== `${FORM_JUMP_ENDING_PREFIX}${id}`),
+        },
+    };
+}
+
+export function moveEnding(config: FormConfig, id: string, dir: -1 | 1): FormConfig {
+    const list = [...config.settings.endings];
+    const idx = list.findIndex((e) => e.id === id);
+    const to = idx + dir;
+    if (idx < 0 || to < 0 || to >= list.length) return config;
+    [list[idx], list[to]] = [list[to]!, list[idx]!];
+    return { ...config, settings: { ...config.settings, endings: list } };
+}
+
+/** Cuántas reglas de lógica tiene (para el contador de la pestaña). */
+export function logicCount(config: FormConfig): number {
+    return config.settings.jumps.length + config.settings.endings.length;
+}
+
+/** Una condición nueva sobre un campo. */
+export function newRule(fieldId: number): FormCondition {
+    return { field_id: fieldId, op: 'eq', value: '' };
 }
 
 export function moveItem(config: FormConfig, id: string, dir: -1 | 1): FormConfig {
@@ -260,4 +415,25 @@ export function conditionCandidates(config: FormConfig, id: string): Array<{ fie
 
 export function questionCount(config: FormConfig): number {
     return config.items.reduce((n, i) => n + (i.type === 'field' && !i.hidden ? 1 : i.type === 'matrix' ? i.rows.length : 0), 0);
+}
+
+/**
+ * v0.1.356 — Las respuestas que se pueden recordar en un texto con
+ * `{{nombre}}`: las de los campos que el formulario pregunta (también las
+ * ocultas que llegan por la dirección, las filas de una matriz y lo escrito
+ * en un «Otro»), en el orden del formulario.
+ */
+export function recallChoices<F extends { id: number; slug: string; label: string }>(config: FormConfig, fields: readonly F[]): Array<{ id: number; slug: string; label: string }> {
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    const ids: number[] = [];
+    for (const i of config.items) {
+        if (i.type === 'field') {
+            ids.push(i.field_id);
+            if (i.other_field_id) ids.push(i.other_field_id);
+        } else if (i.type === 'matrix') ids.push(...i.rows.map((r) => r.field_id));
+    }
+    return [...new Set(ids)].flatMap((id) => {
+        const f = byId.get(id);
+        return f ? [{ id: f.id, slug: f.slug, label: f.label }] : [];
+    });
 }

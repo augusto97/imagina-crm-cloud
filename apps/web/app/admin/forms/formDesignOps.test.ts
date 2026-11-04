@@ -19,7 +19,19 @@ import {
     readFormConfig,
     removeItem,
     updateItem,
+    addEnding,
+    addJump,
+    jumpCandidates,
+    jumpTargets,
+    logicCount,
+    moveJump,
+    pageChoices,
+    recallChoices,
+    removeEnding,
+    updateJump,
 } from './formDesignOps';
+import { packRules } from './design/ConditionEditor';
+import { withToken } from './design/LogicPanel';
 
 const fields = [
     { id: 1, label: 'Nombre', type: 'text', is_required: true },
@@ -168,5 +180,98 @@ describe('v0.1.355 — matriz y «Otro» en el constructor', () => {
     it('columnas de arranque: las opciones de una selección o del 1 al máximo de una calificación', () => {
         expect(defaultMatrixColumns(more[6]).map((c) => c.label)).toEqual(['Malo', 'Bueno']);
         expect(defaultMatrixColumns(more[8]).map((c) => c.value)).toEqual(['1', '2', '3', '4']);
+    });
+});
+
+describe('v0.1.356 — lógica en el constructor', () => {
+    /** Página 1: nombre, tipo · Página 2 (pbrk2): NIT · Página 3 (pbrk3): acepta. */
+    function paged(): FormConfig {
+        return formConfigSchema.parse({
+            items: [
+                { id: 'aaaa1', type: 'field', field_id: 1 },
+                { id: 'aaaa2', type: 'field', field_id: 2 },
+                { id: 'pbrk2', type: 'page_break', title: 'Tu empresa' },
+                { id: 'bbbb1', type: 'field', field_id: 3 },
+                { id: 'pbrk3', type: 'page_break', title: '' },
+                { id: 'cccc1', type: 'field', field_id: 6 },
+            ],
+        });
+    }
+
+    it('páginas con su nombre y destinos sólo hacia adelante, terminar o una pantalla final', () => {
+        const c = addEnding(paged());
+        expect(pageChoices(c).map((p) => p.label)).toEqual(['Página 1', 'Página 2 · Tu empresa', 'Página 3']);
+        const fromStart = jumpTargets(c, 'start').map((t) => t.value);
+        expect(fromStart).toEqual(['pbrk2', 'pbrk3', 'end', `ending:${c.settings.endings[0]!.id}`]);
+        // Desde la página 2 ya no se puede volver a la 2 ni a la 1.
+        expect(jumpTargets(c, 'pbrk2').map((t) => t.value)).toEqual(['pbrk3', 'end', `ending:${c.settings.endings[0]!.id}`]);
+    });
+
+    it('un salto decide con las preguntas de su página y las anteriores', () => {
+        expect(jumpCandidates(paged(), 'start').map((x) => x.field_id)).toEqual([1, 2]);
+        expect(jumpCandidates(paged(), 'pbrk2').map((x) => x.field_id)).toEqual([1, 2, 3]);
+    });
+
+    it('agregar, editar, mover y contar saltos', () => {
+        let c = addJump(paged(), 'start', 2);
+        c = addJump(c, 'start', 1);
+        expect(c.settings.jumps).toHaveLength(2);
+        expect(c.settings.jumps[0]!.to).toBe('pbrk2');
+        const [a, b] = c.settings.jumps;
+        c = updateJump(c, a!.id, { to: 'pbrk3', when: { field_id: 2, op: 'eq', value: 'persona' } });
+        expect(c.settings.jumps[0]!.to).toBe('pbrk3');
+        c = moveJump(c, b!.id, -1);
+        expect(c.settings.jumps.map((j) => j.id)).toEqual([b!.id, a!.id]);
+        expect(moveJump(c, b!.id, -1)).toBe(c);
+        c = addEnding(c);
+        expect(logicCount(c)).toBe(3);
+    });
+
+    it('quitar una pantalla final quita los saltos que llevaban a ella', () => {
+        let c = addEnding(paged());
+        const id = c.settings.endings[0]!.id;
+        c = addJump(c, 'start', 2);
+        c = updateJump(c, c.settings.jumps[0]!.id, { to: `ending:${id}` });
+        c = removeEnding(c, id);
+        expect(c.settings.endings).toHaveLength(0);
+        expect(c.settings.jumps).toHaveLength(0);
+    });
+
+    it('quitar una página quita los saltos desde y hacia ella; quitar una pregunta limpia sus reglas', () => {
+        let c = addJump(paged(), 'start', 2);
+        c = updateJump(c, c.settings.jumps[0]!.id, { to: 'pbrk3' });
+        c = addJump(c, 'pbrk2', 3);
+        c = updateJump(c, c.settings.jumps[1]!.id, { to: 'end', when: { match: 'all', rules: [{ field_id: 3, op: 'is_not_empty' }, { field_id: 2, op: 'eq', value: 'empresa' }] } });
+        // Sin la página 3: el primer salto (hacia ella) se va.
+        const sin3 = removeItem(c, 'pbrk3');
+        expect(sin3.settings.jumps.map((j) => j.from)).toEqual(['pbrk2']);
+        // Sin el NIT: el grupo se queda con una sola regla y vuelve a ser una suelta.
+        const sinNit = removeItem(c, 'bbbb1');
+        expect(sinNit.settings.jumps[1]!.when).toEqual({ field_id: 2, op: 'eq', value: 'empresa' });
+        // Sin el tipo: el primer salto se quedaría sin condición → desaparece (no se vuelve «siempre»).
+        const sinTipo = removeItem(c, 'aaaa2');
+        expect(sinTipo.settings.jumps).toHaveLength(1);
+        expect(sinTipo.settings.jumps[0]!.when).toEqual({ field_id: 3, op: 'is_not_empty' });
+    });
+
+    it('una regla se guarda suelta; varias, como grupo', () => {
+        const r1 = { field_id: 1, op: 'is_not_empty' as const };
+        const r2 = { field_id: 2, op: 'eq' as const, value: 'x' };
+        expect(packRules([], 'all')).toBeNull();
+        expect(packRules([r1], 'any')).toEqual(r1);
+        expect(packRules([r1, r2], 'any')).toEqual({ match: 'any', rules: [r1, r2] });
+    });
+
+    it('recordar: sólo las respuestas que el formulario pregunta, con su nombre entre llaves', () => {
+        const slugged = [
+            { id: 1, slug: 'nombre', label: 'Nombre' },
+            { id: 2, slug: 'tipo', label: 'Tipo' },
+            { id: 3, slug: 'nit', label: 'NIT' },
+            { id: 9, slug: 'interno', label: 'Interno' },
+        ];
+        expect(recallChoices(paged(), slugged).map((c) => c.slug)).toEqual(['nombre', 'tipo', 'nit']);
+        expect(withToken('Hola', '{{nombre}}')).toBe('Hola {{nombre}}');
+        expect(withToken('Hola ', '{{nombre}}')).toBe('Hola {{nombre}}');
+        expect(withToken('', '{{nombre}}')).toBe('{{nombre}}');
     });
 });

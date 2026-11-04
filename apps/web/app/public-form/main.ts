@@ -18,7 +18,7 @@
  * postMessage y se reemplazan en vivo.
  */
 import type { PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
-import { formAnswered, formItemVisible, formPageVisible, formScaleValues, splitFormPages } from '@imagina-base/shared/src/schemas/form-logic';
+import { formAnswerText, formAnswered, formFlow, formRecallText, formScaleValues, splitFormPages, type FormFlow } from '@imagina-base/shared/src/schemas/form-logic';
 
 type FieldItem = PublicFormFieldItem;
 type ImageItem = Extract<PublicFormItem, { type: 'image' }>;
@@ -137,7 +137,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Attrs | null,
 
 function paragraphs(text: string, cls: string): HTMLElement {
     const box = el('div', { cls });
-    for (const p of String(text || '').split(/\n{2,}/)) if (p.trim()) box.appendChild(el('p', { text: p }));
+    for (const p of String(text || '').split(/\n{2,}/)) {
+        if (!p.trim()) continue;
+        const para = el('p');
+        setRecall(para, p);
+        box.appendChild(para);
+    }
     return box;
 }
 
@@ -179,17 +184,55 @@ function fields(): FieldItem[] {
     return (meta?.items ?? []).filter((i): i is FieldItem => i.type === 'field');
 }
 
-/** Las preguntas en la forma que esperan las funciones de shared (`key` = id del campo). */
-function visible(item: Item): boolean {
-    return formItemVisible(item as never, (meta?.items ?? []).map(normalized) as never, values);
+/**
+ * v0.1.356 — El camino por las páginas con las respuestas actuales (con los
+ * saltos): la MISMA función que usa el servidor para decidir qué acepta. Se
+ * calcula una vez por cambio (`dirty()` lo invalida).
+ */
+let flowCache: FormFlow | null = null;
+function flow(): FormFlow {
+    if (!flowCache) flowCache = formFlow((meta?.items ?? []) as never, values, meta?.jumps ?? []);
+    return flowCache;
 }
-function normalized(i: Item): { type: string; field_id?: number; rows?: MatrixItem['rows']; show_if: unknown } {
-    return {
-        type: i.type,
-        field_id: i.type === 'field' ? Number(i.key) : undefined,
-        rows: i.type === 'matrix' ? i.rows : undefined,
-        show_if: i.show_if,
-    };
+function dirty(): void {
+    flowCache = null;
+}
+
+/** ¿Se le muestra esta pregunta? (en una página del camino y con su condición cumplida). */
+function visible(item: Item): boolean {
+    return flow().shown(item.id);
+}
+
+// ─────────────── Recordar respuestas: «Hola {{nombre}}» (v0.1.356) ───────────────
+
+let recallNodes: Array<{ node: Node; tpl: string }> = [];
+
+/** La respuesta de `{{nombre}}` como la lee una persona (en la vista previa, sin respuesta, `[nombre]`). */
+function recallValue(slug: string): string {
+    const key = meta?.recall?.[slug];
+    if (!key) return '';
+    const text = formAnswerText((meta?.items ?? []) as never, key, values, fmtNum);
+    if (text || !BOOT.preview) return text;
+    return `[${slug}]`;
+}
+function recall(tpl: string): string {
+    return tpl.includes('{{') ? formRecallText(tpl, recallValue) : tpl;
+}
+/** Escribe un texto que puede llevar `{{nombre}}` y lo anota para reescribirlo al cambiar las respuestas. */
+function setRecall(node: Node, tpl: string): void {
+    node.textContent = recall(tpl);
+    if (tpl.includes('{{')) recallNodes.push({ node, tpl });
+}
+function recallText(tpl: string): Text {
+    const t = document.createTextNode('');
+    setRecall(t, tpl);
+    return t;
+}
+function paintRecall(): void {
+    for (const r of recallNodes) {
+        const next = recall(r.tpl);
+        if (r.node.textContent !== next) r.node.textContent = next;
+    }
 }
 
 /** v0.1.355 — ¿Eligió la opción «Otro» de esta pregunta? */
@@ -212,13 +255,11 @@ function fmtNum(n: number): string {
 function paged(): boolean {
     return pages.length > 1;
 }
+/** v0.1.356 — Las páginas por las que pasa la persona, en orden (con los saltos). */
 function visiblePages(): number[] {
-    const all = (meta?.items ?? []) as never;
-    const out: number[] = [];
-    pages.forEach((p, idx) => {
-        if (formPageVisible(p as never, all, values)) out.push(idx);
-    });
-    return out;
+    // En la vista previa se puede ver cualquier página (sin respuestas, un salto no decide nada).
+    if (BOOT.preview) return pages.map((_, i) => i);
+    return flow().path;
 }
 function isLastPage(): boolean {
     const vis = visiblePages();
@@ -264,6 +305,7 @@ function clearErrs(): void {
 
 /** Revisa las preguntas a la vista de estos ítems; marca y devuelve si hay errores. */
 function validate(items: Item[]): boolean {
+    dirty();
     let bad = false;
     for (const i of items) {
         if (i.type === 'matrix') {
@@ -1039,10 +1081,14 @@ function withOther(f: FieldItem, ctl: Control): Control {
 function matrixNode(i: MatrixItem): HTMLElement {
     const node = el('div', { cls: 'ib-item ib-matrix-item' });
     const label = el('div', { cls: 'ib-label', id: 'l_' + i.id });
-    label.appendChild(document.createTextNode(i.label || 'Responde cada fila'));
+    label.appendChild(recallText(i.label || 'Responde cada fila'));
     if (i.required) label.appendChild(el('span', { cls: 'ib-req', text: '*', 'aria-hidden': 'true' }));
     node.appendChild(label);
-    if (i.help) node.appendChild(el('div', { cls: 'ib-help', text: i.help }));
+    if (i.help) {
+        const h = el('div', { cls: 'ib-help' });
+        setRecall(h, i.help);
+        node.appendChild(h);
+    }
     const table = el('table', { cls: 'ib-matrix', 'aria-labelledby': 'l_' + i.id });
     const headRow = el('tr', null, [el('td', { 'aria-hidden': 'true' })]);
     i.columns.forEach((c) => headRow.appendChild(el('th', { scope: 'col', text: c.label })));
@@ -1320,11 +1366,12 @@ function fieldNode(i: FieldItem, controls: Record<string, Control>): HTMLElement
                     i.field_type === 'rating' ||
                     (i.field_type === 'team' && i.display !== 'dropdown')));
         label = isGroup ? el('div', { cls: 'ib-label', id: 'l_' + i.id }) : el('label', { cls: 'ib-label', for: 'q_' + i.id, id: 'l_' + i.id });
-        label.appendChild(document.createTextNode(i.label));
+        label.appendChild(recallText(i.label));
         if (i.required) label.appendChild(el('span', { cls: 'ib-req', text: '*', 'aria-hidden': 'true' }));
         if (i.hide_label) label.classList.add('ib-sr');
     }
-    const help = i.help ? el('div', { cls: 'ib-help', text: i.help }) : null;
+    const help = i.help ? el('div', { cls: 'ib-help' }) : null;
+    if (help) setRecall(help, i.help);
     if (float && label) {
         node.appendChild(el('div', { cls: 'ib-control' }, [c, label]));
         if (help) node.appendChild(help);
@@ -1350,13 +1397,20 @@ function imageNode(i: ImageItem): HTMLElement {
     } else if (BOOT.preview) {
         node.appendChild(el('div', { cls: 'ib-pv-empty', text: 'Elige una imagen en el panel de la derecha.' }));
     }
-    if (i.caption) node.appendChild(el('figcaption', { text: i.caption }));
+    if (i.caption) {
+        const cap = el('figcaption');
+        setRecall(cap, i.caption);
+        node.appendChild(cap);
+    }
     return node;
 }
 
 function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
     let node: HTMLElement;
-    if (i.type === 'heading') node = el('div', { cls: 'ib-item ib-heading', text: i.text });
+    if (i.type === 'heading') {
+        node = el('div', { cls: 'ib-item ib-heading' });
+        setRecall(node, i.text);
+    }
     else if (i.type === 'text') {
         node = paragraphs(i.text, 'ib-item ib-text');
     } else if (i.type === 'image') node = imageNode(i);
@@ -1373,6 +1427,8 @@ function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
 // ───────────────────────────── Pantalla ─────────────────────────────
 
 function refresh(): void {
+    dirty();
+    paintRecall();
     for (const i of meta?.items ?? []) {
         const n = itemEls[i.id];
         if (!n) continue;
@@ -1471,13 +1527,17 @@ function header(): HTMLElement {
     const m = meta!;
     const box = el('header', { cls: 'ib-header' });
     if (m.logo_url) box.appendChild(el('div', { cls: 'ib-logo' }, [el('img', { src: m.logo_url, alt: m.company || 'Logo', decoding: 'async', fetchpriority: 'high' })]));
-    box.appendChild(el('h1', { cls: 'ib-title', text: m.title }));
+    const h1 = el('h1', { cls: 'ib-title' });
+    setRecall(h1, m.title);
+    box.appendChild(h1);
     if (m.description) box.appendChild(paragraphs(m.description, 'ib-desc'));
     return box;
 }
 
 function render(keepPage: boolean): void {
     itemEls = {};
+    recallNodes = [];
+    dirty();
     errEls = {};
     otherEls = {};
     pageEls = [];
@@ -1525,7 +1585,8 @@ function render(keepPage: boolean): void {
     pages.forEach((p, pidx) => {
         const box = el('div', { cls: 'ib-page' });
         if (paged() && (p.title || (BOOT.preview && p.break_id))) {
-            const t = p.title ? el('h2', { cls: 'ib-page-title', text: p.title }) : pvTag(`Página ${pidx + 1} · sin título`);
+            const t = p.title ? el('h2', { cls: 'ib-page-title' }) : pvTag(`Página ${pidx + 1} · sin título`);
+            if (p.title) setRecall(t, p.title);
             if (p.break_id) previewable(t, p.break_id);
             box.appendChild(t);
         }
@@ -1645,11 +1706,11 @@ function submit(hpValue: string): void {
             ),
         )
         .then((res) => {
-            const b = res.b as { pending_confirmation?: boolean; email_hint?: string; redirect_url?: string; message?: string; data?: { errors?: Record<string, string> } };
+            const b = res.b as { pending_confirmation?: boolean; email_hint?: string; redirect_url?: string; ending_id?: string | null; message?: string; data?: { errors?: Record<string, string> } };
             if (res.ok) {
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
                 if (b.redirect_url) return goTo(b.redirect_url);
-                return done();
+                return done(b.ending_id ?? null);
             }
             // El token del captcha ya se usó (el servidor lo verifica una vez).
             if (m.captcha) resetCaptcha();
@@ -1776,9 +1837,22 @@ function finalScreen(kids: HTMLElement[], testid?: string): void {
     reportHeight();
 }
 
-function done(): void {
+/** v0.1.356 — Lo que muestra una pantalla final (la que corresponde, o el «¡Gracias!» de siempre). */
+function endingKids(endingId: string | null): HTMLElement[] {
     const m = meta!;
-    const kids: HTMLElement[] = [el('div', { cls: 'ib-tick', text: '✓', 'aria-hidden': 'true' }), el('h2', { text: m.success_title || '¡Gracias!' }), el('p', { text: m.success_message || '' })];
+    const ending = endingId ? m.endings?.find((e) => e.id === endingId) : undefined;
+    const title = ending ? ending.title : m.success_title;
+    const message = ending ? ending.message : m.success_message;
+    return [
+        el('div', { cls: 'ib-tick', text: '✓', 'aria-hidden': 'true' }),
+        el('h2', { text: recall(title || '¡Gracias!'), 'data-ending': ending?.id ?? null }),
+        ...(message ? [paragraphs(recall(message), 'ib-done-msg')] : []),
+    ];
+}
+
+function done(endingId: string | null = null): void {
+    const m = meta!;
+    const kids = endingKids(endingId);
     if (m.allow_another) {
         const again = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Enviar otra respuesta' });
         again.addEventListener('click', () => location.reload());
@@ -1809,7 +1883,15 @@ if (embedded && !BOOT.preview) {
 
 if (BOOT.preview) {
     window.addEventListener('message', (e: MessageEvent) => {
-        const d = e.data as { type?: string; meta?: PublicFormMeta; selected?: string | null; css?: string; scheme?: 'light' | 'dark' | null } | null;
+        const d = e.data as {
+            type?: string;
+            meta?: PublicFormMeta;
+            selected?: string | null;
+            css?: string;
+            scheme?: 'light' | 'dark' | null;
+            /** v0.1.356 — ver una pantalla final (`''` = el «¡Gracias!» del formulario). */
+            ending?: string | null;
+        } | null;
         if (e.origin !== location.origin || !d || d.type !== 'imb-form-preview') return;
         const keep = window.scrollY;
         meta = d.meta ?? null;
@@ -1822,6 +1904,15 @@ if (BOOT.preview) {
         else document.documentElement.removeAttribute('data-scheme');
         values = {};
         uploads = {};
+        if (meta && typeof d.ending === 'string') {
+            recallNodes = [];
+            const r = root!;
+            r.textContent = '';
+            r.appendChild(header());
+            r.appendChild(el('div', { cls: 'ib-done', 'data-testid': 'form-ending-preview' }, endingKids(d.ending || null)));
+            window.scrollTo(0, 0);
+            return;
+        }
         render(true);
         // Elegir una pregunta en el constructor lleva a su página.
         if (selectedId && paged()) {

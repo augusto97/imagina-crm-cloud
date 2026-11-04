@@ -250,6 +250,28 @@ describe('remapJson', () => {
         expect(remapJson({ booking_page_id: 80, events: ['booked'] }, m)).toEqual({ booking_page_id: 180, events: ['booked'] });
     });
 
+    it('v0.1.356 — formulario: reglas Y/O, saltos y pantallas finales apuntan a los campos NUEVOS', () => {
+        const out = remapJson(
+            {
+                items: [
+                    { id: 'aaaa1', type: 'field', field_id: 10 },
+                    { id: 'aaaa2', type: 'field', field_id: 12, show_if: { match: 'any', rules: [{ field_id: 10, op: 'eq', value: 'x' }, { field_id: 11, op: 'gt', value: 3 }] } },
+                ],
+                settings: {
+                    jumps: [{ id: 'jjjj1', from: 'start', when: { match: 'all', rules: [{ field_id: 11, op: 'is_empty' }] }, to: 'ending:fin01' }],
+                    endings: [{ id: 'fin01', title: 'Hola {{nombre}}', when: { field_id: 12, op: 'lt', value: 18 } }],
+                },
+            },
+            maps(),
+        ) as { items: Array<{ show_if?: { rules: Array<{ field_id: number }> } }>; settings: { jumps: Array<{ when: { rules: Array<{ field_id: number }> }; to: string }>; endings: Array<{ title: string; when: { field_id: number } }> } };
+        expect(out.items[1]!.show_if!.rules.map((r) => r.field_id)).toEqual([110, 111]);
+        expect(out.settings.jumps[0]!.when.rules[0]!.field_id).toBe(111);
+        // Los destinos y los textos no son ids: quedan iguales.
+        expect(out.settings.jumps[0]!.to).toBe('ending:fin01');
+        expect(out.settings.endings[0]!.when.field_id).toBe(112);
+        expect(out.settings.endings[0]!.title).toBe('Hola {{nombre}}');
+    });
+
     it('deja intactos los slugs y los valores que no son referencias', () => {
         const out = remapJson({ field: 'estado', op: 'eq', value: 10 }, maps());
         expect(out).toEqual({ field: 'estado', op: 'eq', value: 10 });

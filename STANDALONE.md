@@ -2975,6 +2975,59 @@ Queda para la segunda mitad (v0.1.356+): reglas Y/O, saltar a una página,
 varias pantallas finales, puntaje y cálculos, recordar respuestas, modo
 conversacional y bienvenida.
 
+**Addendum v0.1.356 — La lógica del formulario (entrega 2, segunda mitad,
+primera parte).** El formulario deja de ser una lista fija: elige el camino de
+cada persona y lo que ve al terminar.
+
+1. **Condiciones con varias reglas** (`formShowIfSchema`): una condición es
+   la de siempre (`{field_id, op, value}`) o un grupo `{match: 'all'|'any',
+   rules[]}`. Una sola regla se guarda SUELTA (el editor y `sanitizeConfig` lo
+   normalizan), así lo guardado antes se sigue leyendo igual y una agenda (que
+   sólo admite una) aplana el grupo (`formConditionRules`). Vale en «Mostrar
+   sólo si…», en los saltos y en las pantallas finales.
+2. **Saltos entre páginas** (`settings.jumps`): `{from: 'start'|id del salto
+   de página, when, to: id de página | 'end' | 'ending:<id>'}`. De cada página
+   gana el PRIMER salto que se cumple; si ninguno, la siguiente. Sólo hacia
+   adelante (un salto hacia atrás se descarta al guardar): el formulario no
+   puede quedar dando vueltas.
+3. **Un solo motor del camino** (`formFlow`, shared): recorre las páginas con
+   las respuestas, salta las que no tienen nada visible y aplica los saltos.
+   Lo usan la página pública (pasos, «Paso X de Y», cuándo aparece «Enviar»),
+   la vista previa y `collect()` del servidor. **Lo de una página saltada no
+   es alcanzable**: no se exige, no cuenta en otras condiciones y NO se guarda
+   aunque el navegador lo mande (quien eligió «Empresa», escribió el NIT y
+   volvió a «Persona» no deja el NIT en la lista).
+4. **Pantallas finales** (`settings.endings`, tope 10; saltos, tope 40): título, mensaje,
+   dirección https opcional y condición. Manda la que eligió un salto; si no,
+   la primera cuya condición se cumple; si ninguna, el agradecimiento de
+   siempre. Una pantalla sin condición sólo se usa por un salto. El servidor
+   devuelve `ending_id` y su dirección; con confirmación por correo el id viaja
+   en la respuesta pendiente (`form_pending_submissions.ending_id`, migración
+   0099) y la página que confirma muestra esa pantalla.
+5. **Recordar respuestas** (`{{nombre}}`, `{{nombre|si no respondió}}`): en
+   preguntas, ayudas, títulos, textos, títulos de página, descripción,
+   agradecimiento y pantallas finales. La respuesta se escribe como la lee una
+   persona (`formAnswerText`: etiqueta de la opción, «Sí»/«No», números con el
+   formato de la empresa). A la página sólo viaja el mapa `slug → clave` de los
+   nombres que aparecen en algún texto Y que el formulario pregunta
+   (`formRecallMap`): nada más de la lista se expone. Todo se pinta como texto
+   (sin HTML); la página de confirmación lo resuelve en el servidor.
+6. **Listas tolerantes**: `jumps` y `endings` se leen elemento por elemento
+   (`tolerantArray`): un salto o una pantalla rota se descarta sin tirar el
+   resto. Por eso el constructor NO deja guardar una pantalla final con la
+   dirección a medio escribir (se perdería en silencio).
+7. **Constructor**: pestaña **Lógica** (en la computadora, el mapa del
+   recorrido a la izquierda y el editor a la derecha; en el celular, dentro de
+   «Preguntas»), «Ver» una pantalla final en la vista previa, «Agregar una
+   respuesta» debajo de cada texto y aviso de una regla sin valor. Quitar una
+   página o una pregunta limpia la lógica que dependía de ella.
+8. Migrar una empresa re-mapea las reglas de los grupos, saltos y pantallas
+   (son `field_id`); el asistente/MCP ve en `get_list_schema` cuántos saltos y
+   qué pantallas finales tiene cada formulario.
+
+Queda para v0.1.357: puntaje y cálculos, modo conversacional (una pregunta por
+pantalla) y bienvenida.
+
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 
 **Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado
