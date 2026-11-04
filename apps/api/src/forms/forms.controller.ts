@@ -49,12 +49,16 @@ import {
     formFrameAncestors,
     formMissingBuildPage,
     formPageCsp,
+    cacheablePageCsp,
+    inlineScriptHash,
     loadFormClient,
     newNonce,
     renderFormNoticePage,
     renderFormPage,
 } from './form-page';
-import { FormsService, type ConfirmOutcome } from './forms.service';
+import { FormsService, type ConfirmOutcome, type FormPageInfo } from './forms.service';
+import { PublicBusyError } from '../public-cache/public-cache';
+import { PUBLIC_PAGE_CACHE_CONTROL, busyPage, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
@@ -186,6 +190,25 @@ export class PublicFormsController {
         return this.forms.meta(token);
     }
 
+    /**
+     * v0.1.352 (ADR-S95) — El sello anti-robots: la página lo pide cuando el
+     * visitante empieza a completarla. Nunca se guarda en caché (cada uno tiene
+     * la hora en que se pidió).
+     */
+    @Get(':token/stamp')
+    async stamp(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
+        try {
+            const out = await this.forms.stamp(token);
+            reply.header('Cache-Control', 'no-store').send(out);
+        } catch (err) {
+            if (err instanceof PublicBusyError) {
+                reply.status(503).header('Retry-After', '3').header('Cache-Control', 'no-store').send({ code: 'public_busy', message: 'Hay muchas visitas en este momento. Prueba de nuevo en unos segundos.' });
+                return;
+            }
+            throw err;
+        }
+    }
+
     @Post(':token/submit')
     @HttpCode(200)
     submit(
@@ -232,6 +255,11 @@ export class PublicFormsController {
  */
 @Controller('public/f')
 export class PublicFormPageController {
+    /** La página armada por cada `FormPageInfo` de la caché (se va con él). */
+    private readonly renderedPages = new WeakMap<FormPageInfo, RenderedPage>();
+    private hashFor: string | null = null;
+    private hash = '';
+
     constructor(
         private readonly forms: FormsService,
         @Inject(ENV) private readonly env: Env,
@@ -267,14 +295,19 @@ export class PublicFormPageController {
         return loadFormClient(this.env.WEB_DIST_DIR) ?? undefined;
     }
 
+    /**
+     * v0.1.352 — El script que pegan los sitios. Lo pide CADA visita de cada
+     * página donde está insertado, así que va comprimido de antemano, con ETag
+     * (el navegador revalida con un 304 sin bajarlo de nuevo) y con una hora de
+     * caché más un día de `stale-while-revalidate`.
+     */
     @Get('embed.js')
-    embedScript(@Res() reply: FastifyReply): void {
+    embedScript(@Req() req: FastifyRequest, @Res() reply: FastifyReply): void {
         reply
-            .header('Cache-Control', 'public, max-age=3600')
+            .header('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400')
             .header('Cross-Origin-Resource-Policy', 'cross-origin')
-            .header('X-Content-Type-Options', 'nosniff')
-            .type('application/javascript; charset=utf-8')
-            .send(FORM_EMBED_JS);
+            .header('X-Content-Type-Options', 'nosniff');
+        sendPrecompressed(req, reply, embedScriptBody(), 'application/javascript; charset=utf-8');
     }
 
     /**
@@ -333,15 +366,30 @@ export class PublicFormPageController {
             .send(html);
     }
 
+    /**
+     * v0.1.352 (ADR-S95) — La página del formulario. Se arma UNA vez (y se
+     * comprime una vez) y vale medio minuto para todas las visitas: no lleva
+     * nada personal ni el sello anti-robots (lo pide el visitante al empezar a
+     * completarla), así que el navegador o una CDN la pueden guardar, y la
+     * siguiente visita del mismo navegador recibe un 304 de pocos bytes.
+     */
     @Get(':token')
-    async page(@Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
-        const info = await this.forms.pageInfo(token);
-        const nonce = newNonce();
+    async page(@Req() req: FastifyRequest, @Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
+        let info: FormPageInfo | null;
+        try {
+            info = await this.forms.cachedPageInfo(token);
+        } catch (err) {
+            if (err instanceof PublicBusyError) return sendBusy(reply);
+            throw err;
+        }
         if (!info) {
+            // Lo que no existe también se guarda un rato: una dirección inventada
+            // que piden mil veces no llega mil veces al servidor.
             reply
                 .status(404)
-                .header('Content-Security-Policy', formPageCsp(nonce, '*'))
+                .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors *")
                 .header('X-Robots-Tag', 'noindex')
+                .header('Cache-Control', 'public, max-age=30')
                 .type('text/html; charset=utf-8')
                 .send(notAvailablePage());
             return;
@@ -351,30 +399,72 @@ export class PublicFormPageController {
             reply.status(503).header('Cache-Control', 'no-store').type('text/html; charset=utf-8').send(formMissingBuildPage());
             return;
         }
+        const page = this.rendered(info, token, client);
         reply
-            // v0.1.289 — con captcha entran a la CSP SÓLO los dominios de ese proveedor.
-            .header(
-                'Content-Security-Policy',
-                formPageCsp(nonce, formFrameAncestors(info.allowed_domains), info.captcha?.provider ?? null, { dev: client === null }),
-            )
+            .header('Content-Security-Policy', page.csp)
             .header('X-Robots-Tag', 'noindex')
-            // El sello anti-robots viaja en la página: nunca se cachea.
-            .header('Cache-Control', 'no-store')
-            .header('Referrer-Policy', 'strict-origin-when-cross-origin')
-            .type('text/html; charset=utf-8')
-            .send(
-                renderFormPage({
-                    nonce,
-                    title: info.title,
-                    meta: info.meta,
-                    token,
-                    themeCss: info.theme_css,
-                    bodyClasses: info.body_classes,
-                    preloadFont: info.preload_font,
-                    client,
-                }),
-            );
+            .header('Cache-Control', PUBLIC_PAGE_CACHE_CONTROL)
+            .header('Referrer-Policy', 'strict-origin-when-cross-origin');
+        sendPrecompressed(req, reply, page.body, 'text/html; charset=utf-8');
     }
+
+    /** La página lista y comprimida para un `FormPageInfo` (que vale mientras está en la caché). */
+    private rendered(info: FormPageInfo, token: string, client: string | null): RenderedPage {
+        const hit = this.renderedPages.get(info);
+        if (hit) return hit;
+        const html = renderFormPage({
+            title: info.title,
+            meta: info.meta,
+            token,
+            themeCss: info.theme_css,
+            bodyClasses: info.body_classes,
+            preloadFont: info.preload_font,
+            client,
+        });
+        const page: RenderedPage = {
+            body: precompress(html),
+            // v0.1.289 — con captcha entran a la CSP SÓLO los dominios de ese proveedor.
+            csp: cacheablePageCsp(
+                client === null ? null : this.clientHash(client),
+                formFrameAncestors(info.allowed_domains),
+                info.captcha?.provider ?? null,
+                { dev: client === null },
+            ),
+        };
+        this.renderedPages.set(info, page);
+        return page;
+    }
+
+    private clientHash(client: string): string {
+        if (this.hashFor !== client) {
+            this.hashFor = client;
+            this.hash = inlineScriptHash(client);
+        }
+        return this.hash;
+    }
+}
+
+/** La página de un formulario ya armada, comprimida y con su CSP. */
+let embedBody: Precompressed | null = null;
+/** `embed.js` comprimido una sola vez por proceso. */
+function embedScriptBody(): Precompressed {
+    return (embedBody ??= precompress(FORM_EMBED_JS, { quality: 11 }));
+}
+
+interface RenderedPage {
+    body: Precompressed;
+    csp: string;
+}
+
+function sendBusy(reply: FastifyReply): void {
+    reply
+        .status(503)
+        .header('Retry-After', '3')
+        .header('Cache-Control', 'no-store')
+        .header('X-Robots-Tag', 'noindex')
+        .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors *")
+        .type('text/html; charset=utf-8')
+        .send(busyPage());
 }
 
 const NEUTRAL_BRAND = { company: '', accent: '#475467', logoUrl: null };

@@ -6156,6 +6156,99 @@ preguntas, lógica y cobros sin tocar el diseño.
 - **Guardar el HTML/CSS final**: se guarda el MODELO; el CSS se arma al
   servir, así una mejora del motor llega a todos los formularios.
 
+### ADR-S95 — Formularios y agenda insertados que aguantan mucho tráfico (v0.1.352)
+
+**Contexto.** El usuario preguntó: "si lo uso como formulario de contacto de
+una web con muchas visitas, ¿puede ponerme lenta la app?… ¿cómo hacen Cal.com,
+Calendly o las plataformas de formularios para que el consumo sea el mínimo?".
+Se midió la v0.1.351 en modo producción (sandbox de 4 núcleos, un proceso,
+autocannon): la página de un formulario salía a ~300 por segundo (p50 33 ms
+con 10 conexiones, 151 ms con 50), la página de la agenda igual, y cada carga
+hacía 4-6 consultas a la base porque nada se cacheaba: el sello anti-robots
+de cada visita viajaba DENTRO del HTML (`no-store`) y la CSP llevaba un nonce
+nuevo por respuesta. Todo caía en el mismo proceso y la misma base que usa el
+equipo para trabajar. Las otras apps insertan con un iframe o un script que
+crea el iframe (nunca HTML pegado), sirven lo fijo desde caché y sólo lo
+variable desde el servidor, y ofrecen ventanas que cargan al hacer clic.
+
+**Decisión.**
+1. **La página pública es la misma para todos.** El sello sale del HTML
+   (`meta.stamp = ''`) y se pide aparte — `GET /public/forms/:token/stamp` y
+   `GET /public/booking/:token/stamp`, `no-store` — en la primera interacción
+   (foco, toque, tecla). El cliente espera 2,6 s desde que lo recibe antes de
+   enviar (el servidor exige 2,5 s desde que lo emitió), así el sello sigue
+   frenando a los robots que envían al instante.
+2. **CSP por hash, no por nonce.** El script de la página va EN LÍNEA (una
+   sola ida y vuelta, ver ADR-S94) y la CSP lo autoriza con
+   `'sha256-<hash>'` del texto exacto (`inlineScriptHash`, calculado una vez
+   por proceso). Así la página entera se puede guardar. Se probó sacarlo a un
+   archivo con versión, como se había propuesto, y se descartó: la página
+   vuelve a necesitar un segundo pedido y no se gana nada que el caché no dé.
+3. **Caché en memoria con single-flight** (`PublicCache`,
+   `public-cache/public-cache.ts`): la configuración armada de cada formulario
+   y agenda vive 30 s (15 s si no existe); mil pedidos a la vez de la misma
+   clave arman UNA vez. Un armado en curso cuando alguien guarda no deja un
+   resultado viejo guardado (época). Tope LRU de 5.000 entradas.
+4. **Respuesta precomprimida.** La página se comprime una vez (brotli y gzip)
+   y se manda con `ETag` (304 si el navegador ya la tiene) y
+   `Cache-Control: public, max-age=30, stale-while-revalidate=120`: el
+   navegador, y una CDN si el operador la pone delante, también guardan.
+   `embed.js` igual, con una hora de caché.
+5. **Horarios de la agenda cacheados 30 s** por empresa, página, servicio,
+   persona, rango y duración, con una VERSIÓN por empresa
+   (`slots:<tenant>`) que se sube al reservar, cancelar, reprogramar, cambiar
+   la agenda o el calendario de alguien, o tocar un registro de la lista: todas
+   sus claves quedan viejas en O(1), sin recorrerlas. La reserva siempre vuelve
+   a calcular el horario contra la base dentro del candado (ADR-S67): un
+   horario cacheado nunca deja reservar dos veces. El tope por página (1.200 por
+   minuto) sólo cuenta lo que NO salió de caché; el tope por IP sigue siempre.
+6. **Un tope para lo público.** Lo que sí va a la base pasa por una compuerta
+   global: `PUBLIC_DB_CONCURRENCY` armados a la vez (8 por defecto), fila de
+   400 y 8 s de espera; lleno → 503 «Hay muchas visitas en este momento» con
+   `Retry-After`, en vez de que la app del equipo se ponga lenta.
+7. **Varios servidores.** Invalidar en uno avisa a los demás por Redis
+   (pub/sub `imb:public-cache`: clave, prefijo o versión); sin Redis, cada uno
+   ve el cambio al vencer (segundos). En tests no se conecta.
+8. **Insertar sin cargar.** El constructor ofrece tres formas (`embedCode`):
+   **En la página** (el iframe de siempre, `loading="lazy"`), **Ventana al hacer
+   clic** (un botón con texto y color propios, o cualquier enlace del sitio con
+   `data-imagina-popup`) y **Botón flotante** (todo en el `<script>`, con texto,
+   color y esquina). El nuevo `embed.js` empieza a cargar al pasar el mouse,
+   enfocar o tocar, abre una ventana accesible (rol dialog, Escape, clic
+   afuera, vuelve el foco), reusa el marco ya cargado, lo rehace tras un envío,
+   acepta varios scripts en la misma página, sólo abre direcciones
+   `/api/v1/public/(f|b)/` de los orígenes de donde se cargó, y aplica los
+   estilos por el DOM (funciona con una CSP estricta del sitio). La ventana se
+   arma UNA vez y después sólo se muestra u oculta: mover un iframe de lugar en
+   el DOM lo vuelve a cargar (lo atrapó el E2E: la precarga se perdía al abrir y
+   cada cerrar/abrir volvía a pedir la página). Los códigos pegados antes siguen
+   funcionando igual.
+
+**Medición** (mismo sandbox de 4 núcleos, un proceso, autocannon): la misma página del formulario
+   con brotli, **~3.300 por segundo con 10 conexiones (p50 2 ms) y ~3.700 con
+   50 (p50 12 ms)** — antes ~300 (p50 33 y 151 ms): unas 11 veces más. El
+   servidor gasta ~0,2 ms de CPU por visita; una revisita con `ETag` responde
+   304 sin cuerpo (~8.600 por segundo). La página de la agenda pasó de ~300 a
+   ~3.000 por segundo. Los horarios de una semana: 12-17 ms la primera vez y
+   ~2,5 ms desde la caché; con muchos visitantes distintos mirando la misma
+   semana, ~2.950 por segundo (p50 5 ms) sin un solo 429 — antes la página
+   topaba en 1.200 por minuto. El sello que se pide al interactuar: ~6.500 por
+   segundo. `embed.js` pesa 2,5 KB con brotli.
+
+**Consecuencias.** Un formulario de contacto en un sitio con mucho tráfico ya
+no compite con el equipo por la base: la gran mayoría de las cargas no la toca.
+Lo cambiado en el constructor tarda hasta 30 s en verse en otro servidor sin
+Redis o detrás de una CDN (el envío lo valida el servidor al instante). La guía
+para poner Cloudflare delante y subir el tope está en
+`docs/runbook-public-traffic.md`.
+
+**Descartado.**
+- **Script en archivo aparte con versión** (lo que se había propuesto): un
+  segundo pedido por visita sin beneficio extra, ver punto 2.
+- **Generar HTML estático en disco al guardar**: necesita un lugar compartido
+  entre servidores y su limpieza; la memoria con 30 s da lo mismo.
+- **Cachear también el envío o la reserva**: siempre van a la base.
+
 ---
 
-**Versión del documento:** 1.142.0 (Diseño de los formularios: el motor de temas de las páginas públicas)
+**Versión del documento:** 1.143.0 (Formularios y agenda insertados que aguantan mucho tráfico)

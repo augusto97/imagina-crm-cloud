@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Field, HelpdeskSettings, SlaPolicy } from '@imagina-base/shared';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import IORedis from 'ioredis';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -470,6 +470,18 @@ describe('Mesa de ayuda (Postgres + Redis + IMAP reales)', () => {
     });
 
     describe('SLA', () => {
+        // Las pruebas usan fechas fijas (fines de oct-2026). El alta y cada
+        // cambio disparan además un recálculo en segundo plano con el reloj
+        // REAL: pasado el 3-nov ese recálculo ya marcaba las alertas antes de
+        // que la prueba las pidiera. El reloj del proceso queda quieto en el
+        // viernes 30-oct a las 17:30 de Bogotá, antes de cualquier vencimiento.
+        beforeAll(() => {
+            vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-30T22:30:00Z') });
+        });
+        afterAll(() => {
+            vi.useRealTimers();
+        });
+
         const policy = (over: Partial<SlaPolicy> = {}): Partial<SlaPolicy> => ({
             enabled: true,
             priority_field_id: f.prioridad!.id,

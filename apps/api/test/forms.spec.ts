@@ -15,7 +15,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import IORedis from 'ioredis';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -34,6 +34,7 @@ import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
 import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, renderFormPage } from '../src/forms/form-page';
 import { FormsService, pastCloseDate, sanitizeConfig } from '../src/forms/forms.service';
+import { PublicCache } from '../src/public-cache/public-cache';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { MailService } from '../src/mail/mail.service';
@@ -190,6 +191,8 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
     let otherTenant: number;
     let listId: number;
     let f: Record<string, Field>;
+    let recs: RecordsService;
+    let env: ReturnType<typeof loadEnv>;
 
     const oldStamp = (formId: number): string => {
         const ts = Date.now() - 10_000;
@@ -210,7 +213,7 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         dispatcher = new CapturingDispatcher();
-        const recs = new RecordsService(
+        recs = new RecordsService(
             tenantDb,
             new RecordsRepository(),
             lists,
@@ -220,7 +223,7 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
             dispatcher,
             new RelationsRepository(),
         );
-        const env = loadEnv({ FILES_SIGNING_SECRET: 'form-secret' });
+        env = loadEnv({ FILES_SIGNING_SECRET: 'form-secret' });
         files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-forms-'))), env);
         svc = new FormsService(pg.db, tenantDb, lists, fieldsSvc, recs, files, redis as never, dispatcher, env);
 
@@ -292,6 +295,50 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         // Sin publicar: la dirección responde igual que una que no existe.
         await expect(svc.meta(await tokenOf(dto.id))).rejects.toMatchObject({ status: 404 });
         await expect(svc.meta('no-existe-este-token-xyz')).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('v0.1.352 — la página se guarda en caché sin el sello; guardar, despublicar o llenar el cupo la renuevan', async () => {
+        const cache = new PublicCache({ maxEntries: 100, concurrency: 4, maxQueue: 100, queueTimeoutMs: 5000 });
+        const cached = new FormsService(
+            pg.db, tenantDb, lists, fieldsSvc, recs, files, redis as never, dispatcher, env,
+            undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, cache as never,
+        );
+        const { id, token } = await contactForm({ max_submissions: 1 });
+        const resolveSpy = vi.spyOn(fieldsSvc, 'listByListId');
+        try {
+            // Muchas visitas a la vez: se arma UNA vez (una lectura de los campos).
+            const pages = await Promise.all(Array.from({ length: 25 }, () => cached.cachedPageInfo(token)));
+            expect(resolveSpy).toHaveBeenCalledTimes(1);
+            expect(pages.every((p) => p === pages[0])).toBe(true);
+            // El sello no viaja en la página: se pide aparte y cada uno es nuevo.
+            expect(pages[0]!.meta.stamp).toBe('');
+            expect(pages[0]!.form_id).toBe(id);
+            const s1 = (await cached.stamp(token)).stamp;
+            expect(s1).toMatch(/^\d+\.[0-9a-f]{64}$/);
+            expect((await cached.meta(token)).stamp).toMatch(/^\d+\.[0-9a-f]{64}$/);
+            expect(resolveSpy).toHaveBeenCalledTimes(1);
+            // Una dirección inventada también se recuerda (y una mal formada ni consulta).
+            expect(await cached.cachedPageInfo('nadaquever0123456789')).toBeNull();
+            expect(await cached.cachedPageInfo('nadaquever0123456789')).toBeNull();
+            expect(await cached.cachedPageInfo('<script>')).toBeNull();
+            await expect(cached.stamp('nadaquever0123456789')).rejects.toMatchObject({ status: 404 });
+
+            // Guardar el formulario desde el constructor: la página guardada deja de valer.
+            await cached.update(tenantId, 'contactos', id, { name: 'Contacto nuevo' });
+            const config = (await cached.get(tenantId, 'contactos', id)).config;
+            await cached.update(tenantId, 'contactos', id, { config: { ...config, settings: { ...config.settings, title: 'Título nuevo' } } });
+            expect((await cached.cachedPageInfo(token))!.title).toBe('Título nuevo');
+
+            // Llenar el cupo: la página pasa a «cerrado» enseguida.
+            await cached.submit(token, IP, { values: { [f.nombre!.id]: 'Ana' }, uploads: {}, stamp: oldStamp(id) });
+            expect((await cached.cachedPageInfo(token))!.meta.closed).toBeTruthy();
+
+            // Despublicar: deja de existir para el visitante en el acto.
+            await cached.update(tenantId, 'contactos', id, { enabled: false });
+            expect(await cached.cachedPageInfo(token)).toBeNull();
+        } finally {
+            resolveSpy.mockRestore();
+        }
     });
 
     it('lo público trae SÓLO las preguntas del formulario (nada de la lista entera)', async () => {

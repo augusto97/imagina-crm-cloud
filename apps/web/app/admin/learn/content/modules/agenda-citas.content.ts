@@ -471,6 +471,11 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Dónde se puede insertar' },
             {
                 t: 'p',
+                md: 'En **Insertar en tu sitio** eliges cómo se ve: **En la página** (la agenda dentro de tu página), **Ventana al hacer clic** (un botón la abre sobre la página) o **Botón flotante** (un botón fijo en la esquina de cada página). Las dos últimas no cargan nada hasta que alguien las toca: lo más liviano para un sitio con muchas visitas. Es igual que en los formularios.',
+            },
+            { t: 'anim', key: 'embed-popup', caption: 'El botón flotante «Agenda tu cita»: la agenda se abre en una ventana al tocarlo.' },
+            {
+                t: 'p',
                 md: 'En **Sitios permitidos (uno por línea)** escribe los dominios donde se puede insertar la agenda (por ejemplo `miempresa.com` o `*.miempresa.com` para todos sus subdominios). Vacío = cualquier sitio. El enlace directo funciona siempre, desde cualquier lugar.',
             },
             {

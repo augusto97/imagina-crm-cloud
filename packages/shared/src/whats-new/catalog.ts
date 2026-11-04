@@ -1121,4 +1121,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Abre **Configurar lista → Formularios**, edita un formulario y toca la pestaña **Diseño**. Los formularios que ya tenías se siguen viendo igual hasta que elijas otro diseño.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.352-insertar-en-tu-sitio',
+        version: '0.1.352',
+        date: '2026-11-04',
+        kind: 'improvement',
+        title: 'Formularios y agenda en tu sitio: ventana, botón flotante y más rápidos',
+        summary:
+            'Al insertar un formulario o la agenda en tu web ahora eliges cómo se ve: dentro de la página, en una ventana que se abre con un botón o con un botón flotante en la esquina. Y aguantan muchas visitas a la vez sin ponerse lentos.',
+        media: {
+            slides: [
+                {
+                    title: 'Un botón que abre el formulario',
+                    text: 'Con «Ventana al hacer clic» o «Botón flotante», el formulario o la agenda se abre sobre tu página cuando alguien toca el botón. Eliges el texto, el color y la esquina.',
+                    illustration: 'embed-popup',
+                },
+                {
+                    title: 'No se carga hasta que lo usan',
+                    text: 'La mayoría de las visitas mira tu página y nunca abre el formulario: con la ventana o el botón flotante, ni lo pide. Lo más liviano para un sitio con mucho tráfico.',
+                    illustration: 'form-embed',
+                },
+                {
+                    title: 'Más rápido para todos',
+                    text: 'La página del formulario y los horarios de la agenda se preparan una vez y se reusan unos segundos para todos los visitantes, así cargan al instante aunque lleguen muchos a la vez.',
+                    illustration: 'citas-embed',
+                },
+            ],
+        },
+        body: 'Publica el formulario o la agenda y, en **Compartir → Insertar en tu sitio**, elige **En la página**, **Ventana al hacer clic** o **Botón flotante**. Los códigos que ya pegaste siguen funcionando igual.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

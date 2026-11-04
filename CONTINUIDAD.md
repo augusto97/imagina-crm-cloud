@@ -382,10 +382,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.351**
-(formularios con tu diseño: plantillas, colores, fuentes, tamaños, «Mis temas»
-y CSS propio, ADR-S94; antes v0.1.350 el calendario de cada asesor en la
-agenda, v0.1.349 reglas, cupos y festivos por país), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.352**
+(formularios y agenda insertados que aguantan mucho tráfico: caché de lo
+público, ventana al hacer clic y botón flotante, ADR-S95; antes v0.1.351
+formularios con tu diseño, ADR-S94, y v0.1.350 el calendario de cada asesor en
+la agenda), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-04 — **Formularios mucho más potentes y personalizables**. El
@@ -429,6 +430,36 @@ agenda, v0.1.349 reglas, cupos y festivos por país), en `main`.
   pintura en 4G lento, apenas 27 ms más que antes, así que no se justificó).
   **SIGUIENTE**: la entrega 3 de la agenda (aprobación de citas, rediseño con
   este mismo motor de temas, seguridad reforzada), después formularios 2 y 3.
+- 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
+  insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
+  una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
+  calendly o las plataformas de formularios para que el consumo de recursos sea
+  el mínimo?". Se MIDIÓ con la v0.1.351 en modo producción (sandbox de 4
+  núcleos, un proceso, autocannon): cargar un formulario ~300 por segundo
+  (p50 33 ms con 10 conexiones; la parte de datos sola ~520/s, el piso del
+  framework ~11.000/s), página de la agenda ~300/s, horarios de una semana
+  12–16 ms. Cada carga hace 4–6 consultas a la base, nada se cachea
+  (`Cache-Control: no-store` por el sello anti-robots de cada visita) y todo
+  cae en el mismo proceso y la misma base que el equipo. La agenda topa en
+  1.200 consultas de horarios por minuto por página. Ya bien: el iframe va con
+  `loading="lazy"`, `embed.js` cacheado, cliente de 9 KB gz, lo ocupado de
+  Google/Outlook cacheado 90 s. Se le explicó qué hacen las otras (iframe o
+  script que crea el iframe, no HTML pegado; lo fijo desde una CDN y sólo lo
+  variable al servidor; cargar al hacer clic; aislar lo público) y se PROPUSO
+  una versión propia: (1) caché en memoria de la configuración del formulario y
+  de la agenda, 30 s, invalidada al guardar; (2) sacar el sello del HTML para
+  que la página sea cacheable y el script pase a archivo con versión servido
+  por el proxy; (3) listo para poner Cloudflare delante; (4) horarios
+  cacheados 30–60 s por servicio y semana, borrados al reservar/cancelar, y
+  subir el tope por página; (5) tope de conexiones a la base propio para lo
+  público; (6) adelantar los modos de inserción que cargan al hacer clic
+  (botón flotante, ventana emergente). Se recomendó hacerlo ANTES de la entrega
+  3 de la agenda. El usuario respondió **"Si, hazlo primero y luego la tercera
+  entrega"** → **HECHO en v0.1.352** (ADR-S95). Cambio de decisión respecto de
+  la propuesta, explicado al usuario: el script del formulario quedó EN LÍNEA
+  (autorizado por su hash en la CSP) en vez de un archivo aparte, porque la
+  página entera ya se cachea y un archivo aparte sólo suma un pedido.
+  **SIGUIENTE**: la entrega 3 de la agenda.
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
   ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
   agendamientos está muy básica… seleccionar su asesor, diferentes franjas,
@@ -1299,6 +1330,31 @@ agenda, v0.1.349 reglas, cupos y festivos por país), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.352** — **Formularios y agenda insertados que aguantan
+  mucho tráfico** (ADR-S95). Respuesta a la pregunta del usuario sobre usar un
+  formulario como contacto de una web con muchas visitas; aprobado con "Si,
+  hazlo primero y luego la tercera entrega".
+  - **La página pública se arma una vez y se reusa**: sello anti-robots aparte
+    (se pide al interactuar), CSP por hash del script en línea, caché en
+    memoria de 30 s con single-flight, precomprimida con ETag/304 y
+    `Cache-Control` público, invalidación por Redis entre servidores y un tope
+    de armados (`PUBLIC_DB_CONCURRENCY`, 8) con «Hay muchas visitas».
+  - **Horarios de la agenda** cacheados 30 s con versión por empresa; reservar o
+    cambiar algo los borra al instante y la reserva re-chequea en el candado.
+  - **Tres formas de insertar**: en la página, ventana al hacer clic (también
+    con un botón propio del sitio) y botón flotante; el `embed.js` nuevo no
+    carga nada hasta que alguien pasa el mouse o toca.
+  - **Medido**: la página del formulario de ~300 a ~3.300-3.700 por segundo
+    (~11 veces), ~0,2 ms de CPU por visita; agenda ~3.000/s; horarios ~2,5 ms
+    desde caché y ~2.950/s sin 429.
+  - **Cambio de decisión explicado al usuario**: el script quedó en línea
+    (autorizado por su hash), no en un archivo aparte como se había propuesto.
+  - **Bugs atrapados**: mover el iframe en el DOM lo recargaba (la precarga se
+    perdía); el código insertado llevaba el nombre interno del formulario; un
+    test de la mesa de ayuda era una bomba de tiempo (fechas fijas).
+  - Guía del operador: `docs/runbook-public-traffic.md` (Cloudflare y el tope).
+  - **Sigue**: la entrega 3 de la agenda (aprobación de citas, rediseño con el
+    motor de temas, seguridad reforzada), después formularios 2 y 3.
 - **2026-11-04 · v0.1.351** — **Formularios con tu diseño** (ADR-S94; primera
   de tres entregas del pedido «formularios más potentes», ver §10).
   - **Motor de temas común a las páginas públicas** (`publicThemeSchema` en

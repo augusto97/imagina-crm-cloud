@@ -96,15 +96,3 @@ export function formPublicOrigin(form: Pick<FormDto, 'public_path' | 'public_url
     }
 }
 
-/**
- * Código para insertarlo en un sitio: el marco y un script chico que ajusta
- * su alto al del formulario (sin barras ni hueco) y, si al enviar redirige,
- * lleva a toda la página y no sólo al marco.
- */
-export function formEmbedCode(form: Pick<FormDto, 'public_path' | 'public_url' | 'public_origin' | 'name'>): string {
-    const title = form.name.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c] ?? c);
-    return (
-        `<iframe src="${formPublicUrl(form)}" title="${title}" data-imagina-form style="width:100%;height:640px;border:0" loading="lazy"></iframe>\n` +
-        `<script src="${formPublicOrigin(form)}/api/v1/public/f/embed.js" async></script>`
-    );
-}

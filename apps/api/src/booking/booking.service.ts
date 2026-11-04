@@ -35,6 +35,8 @@ import { BookingCalendarService, CalendarListScopeError, isCalendarProvider } fr
 import { BookingMyCalendarService } from './booking-my-calendar.service';
 import { newBookingToken, readBookingConfig, sanitizeBookingConfig } from './booking-config';
 import { BookingHolidaysService } from './booking-holidays';
+import { bookingCacheKey, slotsNamespace } from './booking-public.service';
+import { PublicCacheService } from '../public-cache/public-cache.service';
 
 /** Cuentas que nunca atienden citas: el cliente del portal y el invitado externo. */
 const NOT_STAFF_ROLES = new Set(['client', 'guest']);
@@ -92,7 +94,16 @@ export class BookingService {
         private readonly calendar: BookingCalendarService,
         private readonly myCalendar: BookingMyCalendarService,
         @Optional() private readonly domains?: DomainsService,
+        // v0.1.352 (ADR-S95) — al cambiar la agenda, la página guardada deja de valer.
+        @Optional() private readonly cache?: PublicCacheService,
     ) {}
+
+    /** La página guardada y los horarios de la empresa dejan de valer (en todos los servidores). */
+    private forgetPublic(tenantId: number, ...tokens: Array<string | null | undefined>): void {
+        if (!this.cache) return;
+        for (const t of tokens) if (t) this.cache.invalidate(bookingCacheKey(t));
+        this.cache.bump(slotsNamespace(tenantId));
+    }
 
     // ─────────────────────────── DTO ───────────────────────────
 
@@ -314,6 +325,7 @@ export class BookingService {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.update(bookingPages).set(patch).where(and(eq(bookingPages.tenantId, tenantId), eq(bookingPages.id, current.id))).returning(),
         );
+        this.forgetPublic(tenantId, current.token, row?.token);
         const upcoming = await this.upcomingCounts(tenantId, [row!.id]);
         return this.toDto(row!, fields, await this.publicBase(tenantId), upcoming.get(row!.id) ?? 0, await this.memberProblems(tenantId, list, config, fields));
     }
@@ -322,6 +334,7 @@ export class BookingService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const current = await this.load(tenantId, list.id, id);
         await this.tenantDb.withTenant(tenantId, (tx) => tx.delete(bookingPages).where(and(eq(bookingPages.tenantId, tenantId), eq(bookingPages.id, current.id))));
+        this.forgetPublic(tenantId, current.token);
         return { name: current.name };
     }
 

@@ -346,7 +346,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'tip',
-                md: 'Si activas la confirmación por correo (en «Correo de quien responde»), una respuesta cuenta para el cupo recién cuando la persona la confirma. Así un cupo no se gasta con correos falsos.',
+                md: 'Si activas la confirmación por correo (en «Correo de quien responde»), una respuesta cuenta para el cupo sólo cuando la persona la confirma. Así un cupo no se gasta con correos falsos.',
             },
             { t: 'h', text: 'Apariencia' },
             {
@@ -636,6 +636,29 @@ export const articles: LearnArticle[] = [
                 md: 'El código de **Insertar en tu sitio** es un pedacito de código que se pega en tu página (WordPress, Wix, Shopify o cualquier editor que permita insertar código HTML). El formulario aparece dentro del sitio y las respuestas llegan igual a tu lista.',
             },
             {
+                t: 'p',
+                md: 'Antes de copiarlo, elige **cómo se ve** en tu sitio. Las tres formas reciben las respuestas igual; cambia sólo cuándo se carga el formulario:',
+            },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'PanelsTopLeft', title: 'En la página', md: 'El formulario se ve dentro de tu página, como una parte más. Se carga sólo cuando la persona baja hasta él.', tone: 'blue' },
+                    { icon: 'AppWindow', title: 'Ventana al hacer clic', md: 'Un botón (con el texto y el color que elijas) abre el formulario en una ventana sobre la página. No se carga nada hasta que alguien lo toca.', tone: 'violet' },
+                    { icon: 'MousePointerClick', title: 'Botón flotante', md: 'Un botón fijo en una esquina de cada página donde pegues el código. Ideal para «Escríbenos» o «Agenda tu cita» en todo el sitio.', tone: 'mint' },
+                ],
+            },
+            { t: 'anim', key: 'embed-popup', caption: 'El botón flotante: el formulario se abre y se carga sólo cuando alguien lo toca.' },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Si tu sitio tiene muchas visitas',
+                md: 'Usa la **ventana** o el **botón flotante**: la mayoría de la gente mira la página y nunca abre el formulario, así que ni lo pide. Igual, la página del formulario se arma una sola vez y se guarda unos segundos para todos los visitantes, así aguanta muchas visitas a la vez sin ponerse lenta.',
+            },
+            {
+                t: 'p',
+                md: '¿Ya tienes un botón o un enlace en tu sitio? En **Ventana al hacer clic**, debajo del código, la app te muestra un atributo listo para copiar: pégalo dentro de tu botón y pega el script una sola vez en la página. Ese botón abrirá la ventana con el formulario.',
+            },
+            {
                 t: 'settings',
                 title: 'Sección «Insertar en tu sitio» del constructor',
                 rows: [
@@ -697,7 +720,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'info',
-                md: 'Si el formulario confirma el correo con un clic, la automatización corre recién cuando la persona confirma. Y como el disparador es de esa lista, también reacciona igual que **Cuando se crea un registro**, pero sólo para lo que llegó por un formulario: lo que crea tu equipo a mano no lo dispara.',
+                md: 'Si el formulario confirma el correo con un clic, la automatización corre sólo cuando la persona confirma. Y como el disparador es de esa lista, también reacciona igual que **Cuando se crea un registro**, pero sólo para lo que llegó por un formulario: lo que crea tu equipo a mano no lo dispara.',
             },
             { t: 'h', text: 'Recetas listas para copiar' },
             {

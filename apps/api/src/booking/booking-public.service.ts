@@ -67,6 +67,8 @@ import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service';
 import { ModuleRef } from '@nestjs/core';
+import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
+import { PublicCacheService } from '../public-cache/public-cache.service';
 import { NotifyHub } from '../notifications/notify-hub';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -98,8 +100,21 @@ const BOOK_LIMITS = [
 ] as const;
 const SLOTS_LIMITS = [
     { scope: 'ip', window: 60, max: 90 },
+    // v0.1.352 — cuenta sólo los CÁLCULOS (lo que sale de la caché no pesa).
     { scope: 'page', window: 60, max: 1200 },
 ] as const;
+/** v0.1.352 (ADR-S95) — Cuánto vale lo guardado de una agenda. */
+const PAGE_CACHE_TTL_MS = 30_000;
+const MISSING_CACHE_TTL_MS = 15_000;
+const SLOTS_CACHE_TTL_MS = 30_000;
+export const bookingCacheKey = (token: string): string => `booking:${token}`;
+export const slotsNamespace = (tenantId: number): string => `slots:${tenantId}`;
+
+/** Lo que se guarda de una agenda: la página resuelta y lo que ve el visitante. */
+export interface CachedBookingPage {
+    p: ResolvedPage;
+    info: { page_id: number; title: string; allowed_domains: string[]; meta: PublicBookingMeta };
+}
 const MANAGE_LIMITS = [
     { scope: 'ip', window: 600, max: 20 },
     { scope: 'page', window: 3600, max: 500 },
@@ -210,7 +225,13 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         @Optional() private readonly mail?: MailService,
         @Optional() private readonly dataConsent?: DataConsentService,
         @Optional() private readonly moduleRef?: ModuleRef,
-    ) {}
+        // v0.1.352 (ADR-S95) — la página y los horarios se arman una vez y valen unos segundos.
+        @Optional() cache?: PublicCacheService,
+    ) {
+        this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
+
+    private readonly pcache: PublicCacheLike;
 
     /**
      * SMS (ADR-S82) — se resuelve al usarlo (su módulo depende de registros y
@@ -237,6 +258,61 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         // Cambios del EQUIPO sobre una cita (la ficha, la tabla, el calendario):
         // la cita se mantiene al día (recordatorios, calendario, aviso al cliente).
         this.changes?.subscribe((c) => this.onRecordChange(c));
+        // v0.1.352 — un cambio en una lista con agenda puede ocupar o liberar a
+        // alguien: los horarios guardados de esa empresa dejan de valer.
+        this.changes?.subscribe(async (c) => {
+            if (await this.hasPages(c.tenantId, c.listId)) this.forgetSlots(c.tenantId);
+        });
+    }
+
+    // ───────────────────── Caché de lo público (v0.1.352) ─────────────────────
+
+    /**
+     * La página resuelta y lo que ve el visitante, guardados medio minuto: una
+     * agenda con miles de visitas consulta la base una vez cada 30 s, no una
+     * por visita. Lo que no existe se recuerda menos tiempo. Lanza
+     * `PublicBusyError` si la fila de armados está llena.
+     */
+    cachedPage(token: string): Promise<CachedBookingPage | null> {
+        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return Promise.resolve(null);
+        return this.pcache.get(bookingCacheKey(token), PAGE_CACHE_TTL_MS, async () => {
+            let p: ResolvedPage;
+            try {
+                p = await this.resolve(token);
+            } catch {
+                return null;
+            }
+            // El sello ya no viaja en la página: el visitante lo pide al empezar.
+            const meta = { ...(await this.buildMeta(p)), stamp: '' };
+            return { p, info: { page_id: p.pageId, title: meta.title, allowed_domains: p.config.settings.allowed_domains, meta } };
+        }, MISSING_CACHE_TTL_MS);
+    }
+
+    /** Lo que cambió de la página (o se reservó): la guardada deja de valer en todos los servidores. */
+    forgetPage(token: string | null | undefined, tenantId?: number): void {
+        if (token) this.pcache.invalidate(bookingCacheKey(token));
+        if (tenantId !== undefined) this.forgetSlots(tenantId);
+    }
+
+    /**
+     * Los horarios guardados de una empresa dejan de valer (se reservó, se
+     * canceló, el equipo movió una cita). Es por EMPRESA porque lo ocupado de
+     * una persona cuenta en todas sus agendas.
+     */
+    forgetSlots(tenantId: number): void {
+        this.pcache.bump(slotsNamespace(tenantId));
+    }
+
+    /** v0.1.352 — El sello anti-robots, a pedido (la página ya no lo trae). */
+    async stamp(token: string): Promise<{ stamp: string }> {
+        const cached = await this.cachedPage(token);
+        if (!cached) throw notFound();
+        return { stamp: this.newStamp(cached.p.pageId) };
+    }
+
+    private newStamp(pageId: number): string {
+        const ts = Date.now();
+        return `${ts}.${this.files.signParts('bookstamp', pageId, ts)}`;
     }
 
     // ─────────────────────────── Resolver ───────────────────────────
@@ -321,19 +397,15 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
 
     // ─────────────────────────── Página pública ───────────────────────────
 
-    async pageInfo(token: string): Promise<{ title: string; allowed_domains: string[]; meta: PublicBookingMeta } | null> {
-        let p: ResolvedPage;
-        try {
-            p = await this.resolve(token);
-        } catch {
-            return null;
-        }
-        const meta = await this.buildMeta(p);
-        return { title: meta.title, allowed_domains: p.config.settings.allowed_domains, meta };
+    async pageInfo(token: string): Promise<{ page_id: number; title: string; allowed_domains: string[]; meta: PublicBookingMeta } | null> {
+        return (await this.cachedPage(token))?.info ?? null;
     }
 
+    /** Los datos de la página en JSON: lo fijo de la caché y un sello recién firmado. */
     async meta(token: string): Promise<PublicBookingMeta> {
-        return this.buildMeta(await this.resolve(token));
+        const cached = await this.cachedPage(token);
+        if (!cached) throw notFound();
+        return { ...cached.info.meta, stamp: this.newStamp(cached.p.pageId) };
     }
 
     /** Nombre visible de cada persona o recurso (la persona: su nombre en la app). */
@@ -355,7 +427,6 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     private async buildMeta(p: ResolvedPage): Promise<PublicBookingMeta> {
         const s = p.config.settings;
         const b = this.brand(p);
-        const ts = Date.now();
         const names = await this.staffNames(p.config);
         const keys = s.captcha && this.captcha ? await this.captcha.resolve(p.tenantId, p.tenantSettings) : null;
         const consent = this.dataConsent && s.data_consent ? await this.dataConsent.active(p.tenantId, p.tenantSettings) : null;
@@ -405,17 +476,33 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             })(),
             closed: this.closedReason(p),
             success_message: s.success_message,
-            stamp: `${ts}.${this.files.signParts('bookstamp', p.pageId, ts)}`,
+            stamp: this.newStamp(p.pageId),
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             data_consent: consent ? DataConsentService.toPublic(consent) : null,
         };
     }
 
+    /**
+     * v0.1.352 (ADR-S95) — Los horarios libres, guardados unos segundos por
+     * servicio, persona, rango y duración: mil visitas mirando la misma semana
+     * calculan una vez. Al reservar, cancelar o cambiar una cita se borran (y la
+     * reserva vuelve a comprobar el horario dentro de su candado, así que uno
+     * recién tomado nunca se reserva dos veces). El tope por página cuenta
+     * sólo los cálculos de verdad; el de cada visitante, todos sus pedidos.
+     */
     async slots(token: string, ip: string, q: BookingSlotsQuery): Promise<PublicBookingSlots> {
-        const p = await this.resolve(token);
-        await this.enforce(SLOTS_LIMITS, p.pageId, ip, 'horarios');
+        const cached = await this.cachedPage(token);
+        if (!cached) throw notFound();
+        const p = cached.p;
+        await this.enforce(SLOTS_LIMITS.filter((l) => l.scope === 'ip'), p.pageId, ip, 'horarios');
         if (this.closedReason(p)) return { slots: [], first_day: q.from, last_day: q.to };
-        return this.availability.slots(p, q.service, this.staffSelection(p, q.staff), q.from, q.to, q.duration !== undefined ? { durationMin: q.duration } : {});
+        const staff = this.staffSelection(p, q.staff);
+        const ns = slotsNamespace(p.tenantId);
+        const key = `${ns}:v${this.pcache.version(ns)}:${p.pageId}:${q.service}:${staff}:${q.from}:${q.to}:${q.duration ?? ''}`;
+        return this.pcache.get(key, SLOTS_CACHE_TTL_MS, async () => {
+            await this.enforce(SLOTS_LIMITS.filter((l) => l.scope === 'page'), p.pageId, ip, 'horarios');
+            return this.availability.slots(p, q.service, staff, q.from, q.to, q.duration !== undefined ? { durationMin: q.duration } : {});
+        });
     }
 
     /** «Que lo asigne solo»: el visitante no elige aunque mande un id. */
@@ -551,6 +638,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         if (!created) {
             if (evidence && this.dataConsent) await this.dataConsent.discard(p.tenantId, evidence.id);
+            // Lo que el visitante vio estaba viejo: que los próximos horarios se calculen de nuevo.
+            this.forgetSlots(p.tenantId);
             throw new ConflictException({ code: 'booking_slot_taken', message: SLOT_MESSAGES[lastReason] ?? SLOT_MESSAGES.taken, data: { status: 409 } });
         }
         if (evidence && this.dataConsent) {
@@ -559,6 +648,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
 
         // Después del commit: tiempo real, automatizaciones, avisos, correo y calendario.
         const { appt, record, staff } = created;
+        this.forgetSlots(p.tenantId);
         this.realtime.records(p.tenantId, p.listId);
         this.dispatcher.dispatch({ tenantId: p.tenantId, listId: p.listId, recordId: record.id, trigger: 'record_created', after: record.data });
         const list = await this.lists.get(p.tenantId, String(p.listId)).catch(() => null);
@@ -1013,6 +1103,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id)))
                 .returning(),
         );
+        this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
         const names = await this.staffNames(p.config);
         const staff = p.config.staff.find((s) => s.id === appt.staffId);
@@ -1099,6 +1190,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             done = { row: out.row, staff };
             break;
         }
+        this.forgetSlots(p.tenantId);
         if (!done) throw new ConflictException({ code: 'booking_slot_taken', message: SLOT_MESSAGES[lastReason] ?? SLOT_MESSAGES.taken, data: { status: 409 } });
         const base = await this.base(p.tenantId);
         const info = this.eventInfo(p, done.row, 'rescheduled', 'client', base, names, { start: appt.startAt, end: appt.endAt });
@@ -1405,6 +1497,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (!ext || appt.status === 'cancelled') return 'ignored';
         const p = await this.resolveById(appt.pageId);
         if (!p || p.readOnly) return 'ignored';
+        this.forgetSlots(p.tenantId);
         const m = p.config.mapping;
         const sync = p.config.calendar_sync;
         const setAppt = async (patch: Partial<typeof bookingAppointments.$inferInsert>): Promise<BookingAppointmentRow | null> => {

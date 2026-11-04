@@ -76,6 +76,25 @@ import { TeamsService } from '../teams/teams.service';
 import { CaptchaService } from './captcha.service';
 import { formConfirmEmail, formCopyEmail, type FormAnswerLine } from './form-email';
 import { planModuleOff } from '../billing/plan-module-gate';
+import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
+import { PublicCacheService } from '../public-cache/public-cache.service';
+
+/** v0.1.352 — Cuánto vale la página guardada de un formulario (y la de uno que no existe). */
+const PAGE_CACHE_TTL_MS = 30_000;
+const MISSING_CACHE_TTL_MS = 15_000;
+const formCacheKey = (token: string): string => `form:${token}`;
+
+/** Lo que necesita la página pública de un formulario (lo mismo para todas las visitas). */
+export interface FormPageInfo {
+    form_id: number;
+    title: string;
+    allowed_domains: string[];
+    meta: PublicFormMeta;
+    captcha: PublicFormMeta['captcha'];
+    theme_css: string;
+    body_classes: string[];
+    preload_font: string | null;
+}
 
 /** El sistema crea el registro: no hay persona del equipo detrás del envío. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
@@ -232,7 +251,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly recordTemplates?: RecordTemplatesService,
         // C1 — opciones de las preguntas «Equipo».
         @Optional() private readonly teams?: TeamsService,
-    ) {}
+        // v0.1.352 (ADR-S95) — la página pública se arma una vez y vale unos segundos.
+        @Optional() cache?: PublicCacheService,
+    ) {
+        this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
+
+    private readonly pcache: PublicCacheLike;
 
     /** C1 — Los equipos (id y nombre) sólo si el formulario pregunta un campo «Equipo». */
     private async teamOptions(tenantId: number, fields: ReadonlyArray<{ type: string }>): Promise<PublicFormOption[]> {
@@ -381,6 +406,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.update(forms).set(patch).where(and(eq(forms.tenantId, tenantId), eq(forms.id, current.id))).returning(),
         );
+        this.forgetPage(current.token, row?.token);
         return this.toDto(row!, await this.publicBase(tenantId));
     }
 
@@ -474,6 +500,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.delete(forms).where(and(eq(forms.tenantId, tenantId), eq(forms.id, current.id))),
         );
+        this.forgetPage(current.token);
         return { name: current.name };
     }
 
@@ -550,24 +577,19 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * CSP `frame-ancestors` de la página (los sitios que pueden insertarlo) y,
      * v0.1.289, el proveedor de captcha cuyos dominios entran a la CSP.
      */
-    async pageInfo(token: string): Promise<{
-        title: string;
-        allowed_domains: string[];
-        meta: PublicFormMeta;
-        captcha: PublicFormMeta['captcha'];
-        theme_css: string;
-        body_classes: string[];
-        preload_font: string | null;
-    } | null> {
+    async pageInfo(token: string): Promise<FormPageInfo | null> {
         let f: ResolvedForm;
         try {
             f = await this.resolve(token);
         } catch {
             return null;
         }
-        const meta = await this.buildMeta(f);
+        // v0.1.352 — el sello anti-robots ya no viaja en la página (así se puede
+        // guardar en caché): el visitante lo pide al empezar a completarla.
+        const meta = { ...(await this.buildMeta(f)), stamp: '' };
         const look = this.themeLook(f);
         return {
+            form_id: f.row.id,
             title: meta.title || f.row.name,
             allowed_domains: f.config.settings.allowed_domains,
             meta,
@@ -599,8 +621,47 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return { theme, css, classes: publicThemeView(theme).classes, preload: publicThemePreloadFont(theme) };
     }
 
+    /**
+     * v0.1.352 (ADR-S95) — La página del formulario, guardada unos segundos:
+     * una página con miles de visitas consulta la base una vez cada medio
+     * minuto, no una por visita. Lo que no existe también se recuerda (menos
+     * tiempo), así una dirección inventada no consulta en cada intento. Lanza
+     * `PublicBusyError` si la fila de armados está llena.
+     */
+    cachedPageInfo(token: string): Promise<FormPageInfo | null> {
+        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return Promise.resolve(null);
+        return this.pcache.get(formCacheKey(token), PAGE_CACHE_TTL_MS, () => this.pageInfo(token), MISSING_CACHE_TTL_MS);
+    }
+
+    /**
+     * Los datos del formulario en JSON, con un sello recién hecho. Lo fijo sale
+     * de la caché; el sello se firma en el momento.
+     */
     async meta(token: string): Promise<PublicFormMeta> {
-        return this.buildMeta(await this.resolve(token));
+        const info = await this.cachedPageInfo(token);
+        if (!info) throw notFound();
+        return { ...info.meta, stamp: this.newStamp(info.form_id) };
+    }
+
+    /**
+     * v0.1.352 — El sello anti-robots, a pedido: el visitante lo pide cuando
+     * empieza a completar el formulario (no al cargarlo), así la página se
+     * guarda en caché y las visitas que sólo miran no llegan al servidor.
+     */
+    async stamp(token: string): Promise<{ stamp: string }> {
+        const info = await this.cachedPageInfo(token);
+        if (!info) throw notFound();
+        return { stamp: this.newStamp(info.form_id) };
+    }
+
+    private newStamp(formId: number): string {
+        const ts = Date.now();
+        return `${ts}.${this.files.signParts('formstamp', formId, ts)}`;
+    }
+
+    /** Lo que cambió del formulario: la página guardada deja de valer en todos los servidores. */
+    private forgetPage(...tokens: Array<string | null | undefined>): void {
+        for (const t of tokens) if (t) this.pcache.invalidate(formCacheKey(t));
     }
 
     private async buildMeta(f: ResolvedForm): Promise<PublicFormMeta> {
@@ -609,7 +670,6 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const branding = brandingSchema.safeParse(f.tenantSettings.branding ?? {});
         const b = branding.success ? branding.data : brandingSchema.parse({});
         const format = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
-        const ts = Date.now();
         const keys = config.settings.captcha && this.captcha ? await this.captcha.resolve(row.tenantId, f.tenantSettings) : null;
         const consent = await this.consentFor(f);
         return {
@@ -632,7 +692,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 imageUrl: (id) => this.files.signedUrl(row.tenantId, id, FORM_IMAGE_TTL),
             }),
             closed: this.closedReason(f),
-            stamp: `${ts}.${this.files.signParts('formstamp', row.id, ts)}`,
+            stamp: this.newStamp(row.id),
             max_upload_bytes: this.env.MAX_UPLOAD_BYTES,
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             confirm_email: config.settings.confirm_email,
@@ -1416,6 +1476,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 )
                 .returning({ id: forms.id }),
         );
+        // Con cupo, la página guardada puede pasar a «cerrado»: que se vea ya.
+        if (max !== null) this.forgetPage(f.row.token);
         return rows.length > 0;
     }
 

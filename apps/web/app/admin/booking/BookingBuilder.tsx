@@ -88,8 +88,9 @@ import {
 } from './bookingDesignOps';
 import { CalendarSyncEditor, StaffCalendarPanel } from './BookingCalendarParts';
 import { HolidayPanel, IconBtn, intervalLabel, NOTICE_OPTIONS, ServiceCard, StaffProfile, TimeOffEditor, WeekHoursEditor } from './BookingRulesParts';
+import { EmbedCodePicker } from '../forms/EmbedCodePicker';
 import {
-    bookingEmbedCode,
+    bookingPublicOrigin,
     bookingPublicUrl,
     fetchPreviewSlots,
     useBookingOptions,
@@ -456,7 +457,14 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                     </Button>
                 </div>
             </header>
-            {shareOpen && <SharePanel page={current} onClose={() => setShareOpen(false)} onPublish={() => void togglePublish()} />}
+            {shareOpen && (
+                <SharePanel
+                    page={current}
+                    accent={current.config.settings.accent_color ?? branding.data?.primary_color ?? '#0e7490'}
+                    onClose={() => setShareOpen(false)}
+                    onPublish={() => void togglePublish()}
+                />
+            )}
 
             {narrow ? (
                 <>
@@ -561,7 +569,7 @@ function CopyRow({ label, value, testId }: { label: string; value: string; testI
     );
 }
 
-function SharePanel({ page, onClose, onPublish }: { page: BookingPageDto; onClose: () => void; onPublish: () => void }): JSX.Element {
+function SharePanel({ page, accent, onClose, onPublish }: { page: BookingPageDto; accent: string; onClose: () => void; onPublish: () => void }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="booking-share-panel">
             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
@@ -582,10 +590,13 @@ function SharePanel({ page, onClose, onPublish }: { page: BookingPageDto; onClos
                     {__('Publicar ahora')}
                 </Button>
             )}
-            <div className="imcrm-grid imcrm-gap-3 md:imcrm-grid-cols-2">
-                <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link" />
-                <CopyRow label={__('Insertar en tu sitio')} value={bookingEmbedCode(page)} testId="booking-embed" />
-            </div>
+            <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link" />
+            <EmbedCodePicker
+                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: page.config.settings.title.trim() || page.name, kind: 'booking' }}
+                accent={accent}
+                testId="booking-embed"
+                dataTour="booking-embed-mode"
+            />
             <a href={bookingPublicUrl(page)} target="_blank" rel="noreferrer" className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-self-start imcrm-text-xs imcrm-text-primary hover:imcrm-underline">
                 <ExternalLink className="imcrm-h-3 imcrm-w-3" />
                 {__('Abrir en otra pestaña')}
@@ -1311,7 +1322,11 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
                 </Button>
             )}
             <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link-inline" />
-            <CopyRow label={__('Insertar en tu sitio')} value={bookingEmbedCode(page)} testId="booking-embed-inline" />
+            <EmbedCodePicker
+                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: s.title.trim() || page.name, kind: 'booking' }}
+                accent={s.accent_color ?? '#0e7490'}
+                testId="booking-embed-inline"
+            />
             <Button variant="ghost" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onRegenerate} disabled={busy} data-testid="booking-regenerate">
                 <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                 {__('Cambiar la dirección')}

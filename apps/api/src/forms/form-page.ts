@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -19,8 +19,9 @@ import {
  * formulario decide qué sitios lo pueden insertar.
  *
  * Todo el contenido se arma con `textContent`/`createElement`: ni una
- * etiqueta, descripción u opción llega como HTML. El script lleva nonce y
- * la CSP no deja correr otro.
+ * etiqueta, descripción u opción llega como HTML. La CSP sólo deja correr
+ * el script de la página (v0.1.352: autorizado por su hash, no por un nonce,
+ * para que la página entera se pueda guardar y reusar).
  *
  * v0.1.351 (ADR-S94) — el cliente ya no vive aquí: es
  * `apps/web/app/public-form/main.ts`, compilado aparte a `form.js` (que se
@@ -71,12 +72,26 @@ export function formFrameAncestors(domains: string[]): string {
  * captcha no puede cargar nada de afuera.
  */
 export function formPageCsp(nonce: string, frameAncestors: string, captcha: CaptchaProvider | null = null, opts: { dev?: boolean } = {}): string {
+    return buildPageCsp(`'nonce-${nonce}'`, frameAncestors, captcha, opts);
+}
+
+/**
+ * v0.1.352 (ADR-S95) — La CSP de una página que se guarda en caché: el script
+ * en línea se autoriza por su HASH (es el mismo para todas las visitas de la
+ * versión), no por un nonce, que tendría que ser distinto en cada respuesta y
+ * por eso obligaba a armar la página de cero en cada carga.
+ */
+export function cacheablePageCsp(scriptHash: string | null, frameAncestors: string, captcha: CaptchaProvider | null = null, opts: { dev?: boolean } = {}): string {
+    return buildPageCsp(scriptHash ? `'${scriptHash}'` : '', frameAncestors, captcha, opts);
+}
+
+function buildPageCsp(scriptToken: string, frameAncestors: string, captcha: CaptchaProvider | null, opts: { dev?: boolean }): string {
     const c = captchaCspSources(captcha);
     const join = (base: string, extra: string[]): string => [base, ...extra].join(' ');
     return [
         "default-src 'none'",
         // En desarrollo el cliente es un módulo de vite que importa otros: 'self'.
-        join(`script-src ${opts.dev ? "'self' " : ''}'nonce-${nonce}'`, c.script),
+        join(['script-src', ...(opts.dev ? ["'self'"] : []), ...(scriptToken ? [scriptToken] : [])].join(' '), c.script),
         join("style-src 'unsafe-inline'", c.style),
         // v0.1.351 — sólo imágenes y fuentes propias: el CSS propio de una
         // empresa (ya limpio) tampoco podría cargar nada de afuera.
@@ -90,12 +105,27 @@ export function formPageCsp(nonce: string, frameAncestors: string, captcha: Capt
     ].join('; ');
 }
 
+/** El texto exacto del script en línea (nada puede cerrar la etiqueta). */
+export function inlineScriptText(js: string): string {
+    return js.replace(/<\/script/gi, '<\\/script');
+}
+
+/** `sha256-…` del script en línea, para la CSP de una página cacheable. */
+export function inlineScriptHash(js: string): string {
+    return `sha256-${createHash('sha256').update(inlineScriptText(js), 'utf8').digest('base64')}`;
+}
+
 export function newNonce(): string {
     return randomBytes(16).toString('base64');
 }
 
 interface PageOpts {
-    nonce: string;
+    /**
+     * Sin nonce (v0.1.352): la página se guarda en caché y la CSP autoriza el
+     * script por su hash (`inlineScriptHash`). Con nonce: las páginas que se
+     * arman en cada pedido (la vista previa del constructor).
+     */
+    nonce?: string;
     title: string;
     /** null = vista previa del editor: el diseño llega por postMessage. */
     meta: PublicFormMeta | null;
@@ -122,17 +152,21 @@ function safeClasses(list: readonly string[]): string {
 /**
  * v0.1.351 (ADR-S94) — El HTML de la página: la estructura y las variantes
  * (`PUBLIC_BASE_CSS`, fijo), el tema (`#ib-theme`) y el script del cliente
- * EN LÍNEA con el nonce. Quien abre un formulario casi siempre lo abre una
- * sola vez: así llega todo en un solo viaje, sin esperar otro archivo.
+ * EN LÍNEA. Quien abre un formulario casi siempre lo abre una sola vez: así
+ * llega todo en un solo viaje, sin esperar otro archivo. v0.1.352 (ADR-S95):
+ * la página es igual para todos los visitantes (el sello anti-robots se pide
+ * aparte al interactuar), así que se arma una vez, se comprime una vez y se
+ * sirve desde memoria; la CSP autoriza el script por su hash.
  */
 export function renderFormPage(opts: PageOpts): string {
     const boot = jsonForScript({ token: opts.token, preview: opts.meta === null, meta: opts.meta, scripts: CAPTCHA_SCRIPTS });
     const preload = opts.preloadFont
         ? `<link rel="preload" href="${escapeHtml(opts.preloadFont)}" as="font" type="font/woff2" crossorigin>\n`
         : '';
+    const nonce = opts.nonce ? ` nonce="${opts.nonce}"` : '';
     const script = opts.client
-        ? `<script nonce="${opts.nonce}">${opts.client.replace(/<\/script/gi, '<\\/script')}</script>`
-        : `<script type="module" nonce="${opts.nonce}" src="/app/public-form/main.ts"></script>`;
+        ? `<script${nonce}>${inlineScriptText(opts.client)}</script>`
+        : `<script type="module"${nonce} src="/app/public-form/main.ts"></script>`;
     return `<!doctype html>
 <html lang="es">
 <head>
@@ -202,10 +236,37 @@ export function formMissingBuildPage(): string {
  * lo carga junto al `<iframe data-imagina-form>`. Ajusta el alto del marco al
  * del formulario y sigue la redirección al enviar en la página entera. Sólo
  * atiende mensajes del marco y de su origen.
+ *
+ * v0.1.352 (ADR-S95) — dos formas más que NO cargan nada hasta que alguien
+ * las usa: una **ventana emergente** que abre cualquier elemento con
+ * `data-imagina-popup="<enlace>"` (al pasar el mouse ya empieza a cargar) y
+ * un **botón flotante** (`data-imagina-float` en el propio script). Sólo abre
+ * enlaces de formularios o agendas del origen desde donde se cargó el script.
+ * Todo el estilo va por `element.style` (no `<style>` ni atributos), así
+ * funciona aunque el sitio tenga una CSP estricta.
  */
 export const FORM_EMBED_JS = String.raw`(function () {
-  if (window.__imbFormsEmbed) return;
-  window.__imbFormsEmbed = true;
+  var me = document.currentScript;
+  // Puede haber más de un script en la página (un formulario insertado y un
+  // botón flotante): lo general se arma una vez y cada script suma lo suyo.
+  if (window.__imbFormsEmbed && typeof window.__imbFormsEmbed === 'object') { window.__imbFormsEmbed.add(me); return; }
+
+  // Los orígenes de la app (de donde se cargó el script): sólo se abren
+  // formularios y agendas de ESOS orígenes, nunca otra dirección.
+  var origins = {};
+
+  function safeUrl(raw) {
+    if (!raw) return null;
+    try {
+      var u = new URL(raw, location.href);
+      if (u.protocol !== 'https:' && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return null;
+      if (!origins[u.origin]) return null;
+      if (!/^\/api\/v1\/public\/(f|b)\//.test(u.pathname)) return null;
+      return u.href;
+    } catch (e) { return null; }
+  }
+
+  // ───────────── Mensajes de los marcos (insertados y ventanas) ─────────────
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
@@ -221,12 +282,170 @@ export const FORM_EMBED_JS = String.raw`(function () {
       } else if (d.type === 'imb-form-redirect' && typeof d.url === 'string' && /^https:\/\//i.test(d.url)) {
         window.location.href = d.url;
       } else if (d.type === 'imb-form-submitted') {
+        if (f.getAttribute('data-imagina-popup-frame') !== null) { f.setAttribute('data-imagina-done', ''); return; }
         var r = f.getBoundingClientRect();
         if (r.top < 0) window.scrollBy(0, r.top - 16);
       }
       return;
     }
   });
+
+  // ───────────── Ventana emergente (se carga al hacer clic) ─────────────
+  // Una ventana por dirección, armada UNA vez (al pasar el mouse o al hacer
+  // clic) y después sólo mostrada u ocultada: mover un iframe de lugar en el
+  // DOM lo vuelve a cargar, así que el marco nunca cambia de padre.
+  var popups = {};
+  var open = null;
+
+  function css(el, props) { for (var k in props) el.style[k] = props[k]; return el; }
+  function small() { return window.innerWidth < 600; }
+
+  function layout(p) {
+    css(p.overlay, { padding: small() ? '0' : '16px' });
+    css(p.panel, {
+      width: small() ? '100%' : 'min(680px, 100%)', height: small() ? '100%' : 'auto',
+      maxHeight: small() ? '100%' : 'calc(100vh - 32px)', borderRadius: small() ? '0' : '14px'
+    });
+  }
+
+  function hide(p) {
+    css(p.overlay, { visibility: 'hidden', opacity: '0' });
+    p.overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  function build(url, title) {
+    var p = popups[url];
+    if (p && p.frame.getAttribute('data-imagina-done') !== null) {
+      // Ya se envió: la próxima vez arranca de cero.
+      if (p.overlay.parentNode) p.overlay.parentNode.removeChild(p.overlay);
+      p = null;
+    }
+    if (p) return p;
+    var overlay = css(document.createElement('div'), {
+      position: 'fixed', inset: '0', zIndex: '2147483000', background: 'rgba(15,23,42,.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity .15s'
+    });
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', title || 'Formulario');
+    var panel = css(document.createElement('div'), {
+      position: 'relative', background: '#fff', overflowY: 'auto',
+      boxShadow: '0 24px 60px rgba(15,23,42,.35)', WebkitOverflowScrolling: 'touch'
+    });
+    var x = css(document.createElement('button'), {
+      position: 'sticky', top: '8px', float: 'right', marginRight: '8px', marginTop: '8px', zIndex: '2',
+      width: '36px', height: '36px', borderRadius: '999px', border: '0', cursor: 'pointer',
+      background: 'rgba(255,255,255,.92)', boxShadow: '0 1px 4px rgba(15,23,42,.25)', color: '#1d2330',
+      font: '600 20px/36px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif', padding: '0'
+    });
+    x.type = 'button';
+    x.setAttribute('aria-label', 'Cerrar');
+    x.textContent = '×';
+    x.addEventListener('click', close);
+    var f = document.createElement('iframe');
+    f.src = url;
+    f.title = title || 'Formulario';
+    f.setAttribute('data-imagina-form', '');
+    f.setAttribute('data-imagina-popup-frame', '');
+    f.setAttribute('allow', 'payment');
+    css(f, { width: '100%', height: '560px', border: '0', display: 'block', background: 'transparent' });
+    panel.appendChild(x);
+    panel.appendChild(f);
+    overlay.appendChild(panel);
+    overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
+    p = { overlay: overlay, panel: panel, frame: f, close: x };
+    layout(p);
+    hide(p);
+    document.body.appendChild(overlay);
+    popups[url] = p;
+    return p;
+  }
+
+  // Al pasar el mouse (o tocar) se empieza a cargar: al hacer clic ya está.
+  function preload(url, title) {
+    if (!url || popups[url]) return;
+    build(url, title);
+  }
+
+  function close() {
+    if (!open) return;
+    var o = open;
+    open = null;
+    document.removeEventListener('keydown', onKey, true);
+    document.documentElement.style.overflow = o.overflow;
+    hide(o.p);
+    if (o.opener && o.opener.focus) { try { o.opener.focus(); } catch (e) {} }
+  }
+
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+
+  function openPopup(url, title, opener) {
+    if (open) close();
+    var p = build(url, title);
+    layout(p);
+    css(p.overlay, { visibility: 'visible', opacity: '1' });
+    p.overlay.removeAttribute('aria-hidden');
+    open = { p: p, opener: opener, overflow: document.documentElement.style.overflow };
+    document.documentElement.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKey, true);
+    try { p.close.focus(); } catch (e) {}
+  }
+
+  function targetOf(el) {
+    var t = el && el.closest ? el.closest('[data-imagina-popup]') : null;
+    if (!t) return null;
+    var url = safeUrl(t.getAttribute('data-imagina-popup') || t.getAttribute('href'));
+    return url ? { el: t, url: url, title: t.getAttribute('data-imagina-title') || '' } : null;
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = targetOf(e.target);
+    if (!t) return;
+    e.preventDefault();
+    openPopup(t.url, t.title, t.el);
+  });
+  ['mouseover', 'focusin', 'touchstart'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      var t = targetOf(e.target);
+      if (t) preload(t.url, t.title);
+    }, { passive: true });
+  });
+
+  // ───────────── Botón flotante ─────────────
+  function contrast(hex) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return '#fff';
+    var n = parseInt(m[1], 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 170 ? '#111827' : '#fff';
+  }
+
+  function floating(me) {
+    if (!me) return;
+    var url = safeUrl(me.getAttribute('data-imagina-float'));
+    if (!url) return;
+    var color = /^#[0-9a-f]{6}$/i.test(me.getAttribute('data-imagina-color') || '') ? me.getAttribute('data-imagina-color') : '#0e7490';
+    var left = me.getAttribute('data-imagina-position') === 'left';
+    var title = me.getAttribute('data-imagina-title') || '';
+    var b = css(document.createElement('button'), {
+      position: 'fixed', bottom: '20px', zIndex: '2147482999', padding: '12px 20px', borderRadius: '999px', border: '0',
+      background: color, color: contrast(color), cursor: 'pointer', boxShadow: '0 10px 30px rgba(15,23,42,.28)',
+      font: '600 15px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif'
+    });
+    b.style[left ? 'left' : 'right'] = '20px';
+    b.type = 'button';
+    b.textContent = me.getAttribute('data-imagina-label') || 'Escríbenos';
+    b.setAttribute('data-imagina-popup', url);
+    if (title) b.setAttribute('data-imagina-title', title);
+    b.setAttribute('aria-haspopup', 'dialog');
+    document.body.appendChild(b);
+  }
+  function add(script) {
+    try { if (script && script.src) origins[new URL(script.src, location.href).origin] = true; } catch (e) {}
+    if (document.body) floating(script);
+    else document.addEventListener('DOMContentLoaded', function () { floating(script); });
+  }
+  window.__imbFormsEmbed = { add: add };
+  add(me);
 })();
 `;
 

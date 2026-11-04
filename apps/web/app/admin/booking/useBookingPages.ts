@@ -113,17 +113,6 @@ export function bookingPublicOrigin(page: Pick<BookingPageDto, 'public_path' | '
     }
 }
 
-/**
- * Código para insertarla en un sitio: el marco y el MISMO script de los
- * formularios (`embed.js`), que ajusta el alto del marco a su contenido.
- */
-export function bookingEmbedCode(page: Pick<BookingPageDto, 'public_path' | 'public_url' | 'public_origin' | 'name'>): string {
-    const title = page.name.replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c] ?? c);
-    return (
-        `<iframe src="${bookingPublicUrl(page)}" title="${title}" data-imagina-form style="width:100%;height:720px;border:0" loading="lazy"></iframe>\n` +
-        `<script src="${bookingPublicOrigin(page)}/api/v1/public/f/embed.js" async></script>`
-    );
-}
 
 /** v0.1.349 — Los festivos de un país en un año (para marcar los que sí se atienden). */
 export function useBookingHolidays(listId: number, country: string | null, year: number) {
